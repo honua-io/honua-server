@@ -5,20 +5,24 @@ import { join } from 'node:path';
 import { CatalogContractFailure } from './catalog-channel-contract.mjs';
 import { collectPages, openInstalledClient, ownedClientEndpoint, requirePublishedPackage } from './installed-client.mjs';
 import { inspectorRateBudget } from './inspector-rate-budget.mjs';
-import { acceptInspectorResult, classifyInspectorFailure } from './inspector-result.mjs';
+import { acceptInspectorResult, classifyInspectorFailure, classifyClientFailure } from './inspector-result.mjs';
 
 const VIEW_META = 'honua.io/workflow-view';
 const INSPECTOR_VERSION = '2.10.1';
 
 export async function openStockSdk(baseUrl, apiKey) {
-  const opened = await openInstalledClient({ baseUrl, apiKey, name: 'honua-stock-contract', timeoutMs: 180_000 });
+  const invoke = async (context, operation) => {
+    try { return await operation(); }
+    catch (error) { throw new CatalogContractFailure('sdk-invocation-failed', classifyClientFailure(error, context)); }
+  };
+  const opened = await invoke({ method: 'initialize' }, () => openInstalledClient({ baseUrl, apiKey, name: 'honua-stock-contract', timeoutMs: 180_000 }));
   return {
     metadata: opened.metadata,
-    discover: view => collectPages(async cursor => {
+    discover: view => invoke({ method: 'tools/list', view }, () => collectPages(async cursor => {
       const result = await opened.client.listTools({ cursor, _meta: { [VIEW_META]: view } }, { timeout: 10_000 });
       return { items: result.tools, nextCursor: result.nextCursor };
-    }, 'incomplete-discovery'),
-    call: (view, name, args) => opened.client.callTool({ name, arguments: args, _meta: { [VIEW_META]: view } }, undefined, { timeout: 10_000 }),
+    }, 'incomplete-discovery')),
+    call: (view, name, args) => invoke({ method: 'tools/call', view, tool: name }, () => opened.client.callTool({ name, arguments: args, _meta: { [VIEW_META]: view } }, undefined, { timeout: 10_000 })),
     close: () => opened.client.close(),
   };
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { acceptInspectorResult, classifyInspectorFailure } from './inspector-result.mjs';
+import { acceptInspectorResult, classifyInspectorFailure, classifyClientFailure } from './inspector-result.mjs';
 
 test('Inspector tool-error exit preserves a complete refusal but cannot accept a successful result', () => {
   const refusal = { isError: true, structuredContent: { code: 'invalid_argument' } };
@@ -33,4 +33,21 @@ test('Inspector rejects arbitrary status, error code and non-JSON diagnostics', 
     assert.equal(details.exitCode, undefined);
     assert.equal(JSON.stringify(details).includes('secret'), false);
   }
+});
+
+test('Inspector distinguishes timeout and protocol failures without copying messages', () => {
+  const details = classifyInspectorFailure('Request timed out: private-token; protocol version unsupported', { code: 1 }, {
+    method: 'tools/list', view: 'setup', extra: [], stdout: '',
+  });
+  assert.equal(details.timeoutDiagnostic, true);
+  assert.equal(details.protocolDiagnostic, true);
+  assert.equal(JSON.stringify(details).includes('private-token'), false);
+});
+
+test('SDK diagnostics retain operation and fixed categories without private messages', () => {
+  const details = classifyClientFailure(Object.assign(new Error('MCP error: schema invalid private-token'), { code: -32602 }), { method: 'tools/call', view: 'setup', tool: 'read' });
+  assert.equal(details.method, 'tools/call');
+  assert.equal(details.rpcCode, -32602);
+  assert.equal(details.schemaDiagnostic, true);
+  assert.equal(JSON.stringify(details).includes('private-token'), false);
 });
