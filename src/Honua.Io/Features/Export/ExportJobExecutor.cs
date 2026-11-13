@@ -14,8 +14,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Io.Export;
 
-// Runs a claimed Export job. The worker has already entered the submitter's security scope and owns
-// the terminal state; ExportJobTerminalCallback closes the progress when the job fails or is cancelled.
 internal sealed class ExportJobExecutor(
     IUniversalProgressStore progressStore,
     IServiceScopeFactory scopeFactory,
@@ -47,15 +45,11 @@ internal sealed class ExportJobExecutor(
         var start = await StartProcessingAsync(job, request, cancellationToken).ConfigureAwait(false);
         return start switch
         {
-            { AlreadyCompleted: true } => JobExecutionResult.Succeeded(start.Progress!.Warnings),
             { Progress: null } => NotRetryable("Export progress is no longer active."),
             _ => await ExportAsync(new ExportRun(request, start.Progress, context), cancellationToken).ConfigureAwait(false)
         };
     }
 
-    // A worker that requeued an already-completed export finds Completed and does nothing. A Console
-    // retry finds the ended outcome without a cancellation request and starts over; a cancellation
-    // request means the export was cancelled.
     private async Task<ExportStart> StartProcessingAsync(ExecutionJobRecord job, ExportJob request, CancellationToken cancellationToken)
     {
         var existing = await progressStore.GetProgressAsync<ExportProgress>(request.JobId, cancellationToken).ConfigureAwait(false);
@@ -66,20 +60,12 @@ internal sealed class ExportJobExecutor(
             return new ExportStart(initial);
         }
 
-        if (existing.Status == OperationStatus.Completed)
-        {
-            return new ExportStart(existing, AlreadyCompleted: true);
-        }
-
         if (existing.Status == OperationStatus.Cancelled && job.CancellationRequestedAt.HasValue)
         {
             throw new OperationCanceledException("The export was cancelled before it started.");
         }
 
-        var processing = existing.Status is OperationStatus.Queued or OperationStatus.Processing
-            ? existing with
-            { Status = OperationStatus.Processing, CurrentPhase = ExportingPhase }
-            : Fresh(request);
+        var processing = Fresh(request);
         var admission = await progressStore.TrySetProgressAsync(
                 new OperationProgressWrite(request.JobId, processing, ExportJobService.Retention),
                 existing.Status,
@@ -93,7 +79,6 @@ internal sealed class ExportJobExecutor(
     private static ExportStart Lost(ExportProgress? current) => current?.Status switch
     {
         OperationStatus.Cancelled => throw new OperationCanceledException("The export was cancelled before it started."),
-        OperationStatus.Completed => new ExportStart(current, AlreadyCompleted: true),
         _ => new ExportStart(null)
     };
 
@@ -303,7 +288,7 @@ internal sealed class ExportJobExecutor(
         _ => "application/octet-stream"
     };
 
-    private sealed record ExportStart(ExportProgress? Progress, bool AlreadyCompleted = false);
+    private sealed record ExportStart(ExportProgress? Progress);
 
     private sealed record ExportFileResult(string Path, int WrittenCount, IReadOnlyList<string> Warnings);
 

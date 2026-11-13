@@ -47,7 +47,7 @@ public sealed class LocalDispatchRepairTests(DatabaseFixtureAdapter database) : 
         using var services = ExportServices();
         var worker = harness.CreateWorker(
             new ExportJobExecutor(progressStore, services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobExecutor>.Instance),
-            new ExportJobTerminalCallback(progressStore, NullLogger<ExportJobTerminalCallback>.Instance));
+            new ExportJobTerminalCallback(NullLogger<ExportJobTerminalCallback>.Instance));
         await worker.StartAsync(CancellationToken.None);
         try
         {

@@ -18,6 +18,38 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// </summary>
 public sealed class LocalBatchComputeBackendCancellationTests
 {
+    [UnitTheory]
+    [InlineData(OperationStatus.Completed)]
+    [InlineData(OperationStatus.Cancelled)]
+    [InlineData(OperationStatus.Failed)]
+    public async Task ObserveAsync_ExportProgressCannotFinalizeDurableWorkerAttempt(OperationStatus status)
+    {
+        var progressStore = Substitute.For<IUniversalProgressStore>();
+        progressStore.GetProgressAsync("export-race", Arg.Any<CancellationToken>())
+            .Returns(Honua.Infrastructure.Progress.ExportProgress.CreateInitial("export-race", "csv", "svc", 0, 1)
+                with { Status = status });
+        var backend = new LocalBatchComputeBackend(progressStore, []);
+        var job = new ExecutionJobRecord
+        {
+            OperationId = "export-race",
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Export,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "export"
+            }
+        };
+
+        var observation = await backend.ObserveAsync(job);
+
+        Assert.Equal(ExecutionJobStatus.Running, observation.Status);
+    }
+
     [UnitTest]
     public async Task CancelAsync_SignalsExecutionJobNotifierWhenExportRegistersLast()
     {

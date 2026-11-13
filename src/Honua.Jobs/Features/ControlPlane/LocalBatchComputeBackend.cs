@@ -82,7 +82,9 @@ internal sealed class LocalBatchComputeBackend(
             };
         }
 
-        var mappedStatus = MapStatus(progress.Status, job.Status);
+        var mappedStatus = job.Spec.Kind is ExecutionJobKind.Export or ExecutionJobKind.TileCache
+            ? job.Status
+            : MapStatus(progress.Status, job.Status);
         return new BatchComputeObservation
         {
             Status = mappedStatus,

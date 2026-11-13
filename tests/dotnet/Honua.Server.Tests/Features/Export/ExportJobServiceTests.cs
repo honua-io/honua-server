@@ -361,7 +361,7 @@ public sealed class ExportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task Execute_AfterTheExportCompleted_IsANoOpSuccess()
+    public async Task Execute_RetryWithStaleCompletedProgress_RebuildsTheDeletedArtifact()
     {
         var progressStore = new ComparingInMemoryProgressStore();
         var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
@@ -374,16 +374,20 @@ public sealed class ExportJobServiceTests
             CompletedAt = DateTimeOffset.UtcNow
         });
         var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ExportJobTestData.CreateFeatures());
         var storage = Substitute.For<ICloudFileStorage>();
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ExportJobTestData.Uploaded("rebuilt", "text/csv"));
+        storage.GetPresignedUrlAsync("rebuilt", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns("https://example.test/rebuilt.csv");
 
-        // The worker requeued the job after the executor had already recorded the completion.
         var result = await RunAsync(progressStore, store, storage, record with { AttemptCount = 2 });
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
-        store.ReceivedCalls().Should().BeEmpty("a completed export is not read again");
-        await storage.DidNotReceive().UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
+        await storage.Received(1).UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
         (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!.DownloadUrl
-            .Should().Be("https://example.test/first.csv");
+            .Should().Be("https://example.test/rebuilt.csv");
     }
 
     [UnitTheory]
@@ -434,9 +438,9 @@ public sealed class ExportJobServiceTests
         var running = ExportProgress.CreateInitial("export-1", "csv", "svc", 1, 10) with { Status = OperationStatus.Processing };
         await progressStore.SetProgressAsync("export-1", running);
         var now = DateTimeOffset.UtcNow;
-        var callback = new ExportJobTerminalCallback(progressStore, NullLogger<ExportJobTerminalCallback>.Instance);
+        var callback = new ExportJobTerminalCallback(NullLogger<ExportJobTerminalCallback>.Instance);
 
-        await callback.OnTerminalAsync(new ExecutionJobRecord
+        var terminal = new ExecutionJobRecord
         {
             OperationId = "export-1",
             Status = jobStatus,
@@ -451,15 +455,48 @@ public sealed class ExportJobServiceTests
                 Backend = "local",
                 WorkloadName = "export:csv:svc:1"
             }
-        }, CancellationToken.None);
+        };
+        var jobStore = new InMemoryExecutionJobStore();
+        await jobStore.TryCreateAsync(terminal);
+        await callback.OnTerminalAsync(terminal, CancellationToken.None);
 
-        var closed = (await progressStore.GetProgressAsync<ExportProgress>("export-1"))!;
+        var closed = (ExportProgress)(await new ExecutionJobProgressReader(progressStore, jobStore)
+            .ReadAsync("export-1", CancellationToken.None))!;
         closed.Status.Should().Be(expected);
         closed.CompletedAt.Should().Be(now);
         if (expected == OperationStatus.Failed)
         {
             closed.ErrorMessage.Should().Be("license expired");
         }
+    }
+
+    [UnitTest]
+    public async Task TerminalCallback_AfterManualRetry_LeavesTheNewAttemptProgressAlone()
+    {
+        var progressStore = new ComparingInMemoryProgressStore();
+        var running = ExportProgress.CreateInitial("export-retry", "csv", "svc", 1, 10)
+            with { Status = OperationStatus.Processing };
+        await progressStore.SetProgressAsync("export-retry", running);
+        var callback = new ExportJobTerminalCallback(NullLogger<ExportJobTerminalCallback>.Instance);
+        var oldAttempt = new ExecutionJobRecord
+        {
+            OperationId = "export-retry",
+            Status = ExecutionJobStatus.Cancelled,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Export,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "export"
+            }
+        };
+
+        await callback.OnTerminalAsync(oldAttempt, CancellationToken.None);
+
+        (await progressStore.GetProgressAsync<ExportProgress>("export-retry"))!.Status
+            .Should().Be(OperationStatus.Processing);
     }
 
     private static ExportJobService CreateService(

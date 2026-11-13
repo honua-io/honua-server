@@ -8,4 +8,6 @@ namespace Honua.Core.Features.ControlPlane.Abstractions;
 public interface IBoundedExecutionJobStore
 {
     Task<bool> TryCreateWithinCapacityAsync(ExecutionJobRecord job, int maximumOutstanding, CancellationToken cancellationToken = default);
+
+    Task<bool> TryRetryWithinCapacityAsync(ExecutionJobRecord job, int maximumOutstanding, CancellationToken cancellationToken = default);
 }

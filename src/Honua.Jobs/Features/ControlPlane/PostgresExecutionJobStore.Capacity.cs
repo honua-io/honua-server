@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Domain;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.ControlPlane;
 
@@ -40,6 +41,50 @@ internal sealed partial class PostgresExecutionJobStore
             token.ThrowIfCancellationRequested();
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             return inserted;
+        }, StatementRepeat.SafeToRepeat, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<bool> TryRetryWithinCapacityAsync(
+        ExecutionJobRecord job,
+        int maximumOutstanding,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumOutstanding);
+        if (job.Status != ExecutionJobStatus.Queued)
+        {
+            throw new ArgumentException("A retry must enter the queue.", nameof(job));
+        }
+
+        var row = ExecutionJobRow.From(job);
+        return await _database.ExecuteAsync(async (connection, attempt, token) =>
+        {
+            if (attempt.EarlierAttemptMayHaveCommitted
+                && await IsStoredAsync(connection, job with { Version = job.Version + 1 }, row, token).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
+            await LockCapacityAsync(transaction, row.Kind, token).ConfigureAwait(false);
+            if (await CountOutstandingAsync(transaction, row.Kind, token).ConfigureAwait(false) >= maximumOutstanding)
+            {
+                return false;
+            }
+
+            await using var command = new NpgsqlCommand($"""
+                {_compareAndSet}
+                AND kind = @kind AND status IN ('Failed', 'Cancelled')
+                """, connection, transaction);
+            AddAttemptStateParameters(command, job);
+            row.AddRecordParameters(command);
+            command.Parameters.AddWithValue("expected_version", NpgsqlDbType.Bigint, job.Version);
+            command.Parameters.AddWithValue("retry_delay", NpgsqlDbType.Interval, RetryDelay(job));
+            command.Parameters.Add(IsTerminalParameter(job));
+            command.Parameters.Add(RetentionParameter(null));
+            var updated = await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+            token.ThrowIfCancellationRequested();
+            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            return updated;
         }, StatementRepeat.SafeToRepeat, cancellationToken).ConfigureAwait(false);
     }
 

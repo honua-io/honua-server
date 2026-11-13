@@ -3,60 +3,18 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Infrastructure.Progress;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-// Every ended tile job leaves the outstanding count here. The executor reports its own outcome; this
-// closes the tile progress when the worker ends the job without it (license expiry, timeout, operator
-// cancellation, retries exhausted after a lost node).
-internal sealed partial class TileCacheJobTerminalCallback(
-    IUniversalProgressStore progressStore,
-    ILogger<TileCacheJobTerminalCallback> logger) : IJobTerminalCallback
+internal sealed class TileCacheJobTerminalCallback : IJobTerminalCallback
 {
-    private static readonly TimeSpan ProgressRetention = TimeSpan.FromHours(24);
-
-    public async ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
     {
-        if (job.Spec.Kind != ExecutionJobKind.TileCache)
+        if (job.Spec.Kind == ExecutionJobKind.TileCache)
         {
-            return;
+            TileOperationMetrics.RecordJobEnded(job);
         }
 
-        TileOperationMetrics.RecordJobEnded(job);
-        if (job.Status is not (ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled))
-        {
-            return;
-        }
-
-        try
-        {
-            var progress = await progressStore.GetProgressAsync<TileOperationProgress>(job.OperationId, cancellationToken)
-                .ConfigureAwait(false);
-            if (progress is null || progress.Status is not (OperationStatus.Queued or OperationStatus.Processing))
-            {
-                return;
-            }
-
-            var terminal = ExecutionJobProgressReader.Project(progress, job);
-            await progressStore.TrySetProgressAsync(
-                    new OperationProgressWrite(job.OperationId, terminal, ProgressRetention),
-                    progress.Status,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        // Best effort by contract: a failed projection must not block the job's terminal transition.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Log.ProgressProjectionFailed(logger, job.OperationId, ex);
-        }
-    }
-
-    private static partial class Log
-    {
-        [LoggerMessage(9225, LogLevel.Warning, "Failed to close tile operation progress for terminal job {OperationId}")]
-        public static partial void ProgressProjectionFailed(ILogger logger, string operationId, Exception exception);
+        return ValueTask.CompletedTask;
     }
 }

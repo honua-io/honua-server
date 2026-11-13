@@ -217,10 +217,10 @@ public sealed class TileOperationJobTests
             with
             { Status = OperationStatus.Processing };
         await progressStore.SetProgressAsync("tile-1", running);
-        var callback = new TileCacheJobTerminalCallback(progressStore, NullLogger<TileCacheJobTerminalCallback>.Instance);
+        var callback = new TileCacheJobTerminalCallback();
         var now = DateTimeOffset.UtcNow;
 
-        await callback.OnTerminalAsync(new ExecutionJobRecord
+        var terminal = new ExecutionJobRecord
         {
             OperationId = "tile-1",
             Status = jobStatus,
@@ -229,9 +229,13 @@ public sealed class TileOperationJobTests
             CompletedAt = now,
             ErrorMessage = "license expired",
             Spec = TileCacheExecutionSpecBuilder.Build(SeedRequest(), null, new TileCacheBatchOptions()),
-        }, CancellationToken.None);
+        };
+        var jobStore = new InMemoryExecutionJobStore();
+        await jobStore.TryCreateAsync(terminal);
+        await callback.OnTerminalAsync(terminal, CancellationToken.None);
 
-        var closed = (await progressStore.GetProgressAsync<TileOperationProgress>("tile-1"))!;
+        var closed = (TileOperationProgress)(await new ExecutionJobProgressReader(progressStore, jobStore)
+            .ReadAsync("tile-1", CancellationToken.None))!;
         closed.Status.Should().Be(expected);
         closed.CompletedAt.Should().Be(now);
         if (expected == OperationStatus.Failed)
@@ -378,11 +382,8 @@ public sealed class TileOperationJobTests
     }
 
     [UnitTest]
-    public async Task LocalBackend_ObserveAsync_ReflectsWorkerProgress()
+    public async Task LocalBackend_ObserveAsync_UsesDurableStatusAndWorkerProgress()
     {
-        // Submission seeds a TileOperationProgress; the LocalBatchComputeBackend
-        // observes that progress and maps it to an execution-job status, which is the
-        // canonical observation path used by the reconciler and admin status API.
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new AcceptingInMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
@@ -393,7 +394,7 @@ public sealed class TileOperationJobTests
         var jobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin));
         var job = (await jobStore.GetAsync(jobId))!;
 
-        // Worker reports in-flight progress.
+        job = job with { Status = ExecutionJobStatus.Running };
         var seeded = (await progressStore.GetProgressAsync<TileOperationProgress>(jobId))!;
         await progressStore.SetProgressAsync(jobId, seeded with
         {
@@ -405,14 +406,16 @@ public sealed class TileOperationJobTests
         running.Status.Should().Be(ExecutionJobStatus.Running);
         running.Message.Should().Be("Seeding tiles (10/20)");
 
-        // Worker reports completion.
         await progressStore.SetProgressAsync(jobId, seeded with
         {
             Status = OperationStatus.Completed,
             CurrentPhase = "seed completed"
         });
 
-        var done = await localBackend.ObserveAsync(job);
+        var beforeWorkerCommit = await localBackend.ObserveAsync(job);
+        beforeWorkerCommit.Status.Should().Be(ExecutionJobStatus.Running);
+
+        var done = await localBackend.ObserveAsync(job with { Status = ExecutionJobStatus.Succeeded });
         done.Status.Should().Be(ExecutionJobStatus.Succeeded);
     }
 

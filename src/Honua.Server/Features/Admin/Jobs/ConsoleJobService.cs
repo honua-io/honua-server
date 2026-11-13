@@ -15,6 +15,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
+using Honua.Io.Export;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Jobs;
@@ -353,6 +354,13 @@ internal sealed partial class ConsoleJobService(
         };
     }
 
+    private static Task<bool> AdmitRetryAsync(IExecutionJobStore store, ExecutionJobRecord job, CancellationToken cancellationToken)
+        => job.Spec.Kind == ExecutionJobKind.Export
+            ? store is IBoundedExecutionJobStore bounded
+                ? bounded.TryRetryWithinCapacityAsync(job, ExportJobService.MaxOutstandingExports, cancellationToken)
+                : Task.FromResult(false)
+            : store.TrySetAsync(job, cancellationToken: cancellationToken);
+
     public async Task<ConsoleJobControlResponse?> RetryAsync(
         HttpContext context,
         string jobId,
@@ -416,9 +424,9 @@ internal sealed partial class ConsoleJobService(
             CurrentPhase = "Queued for manual retry"
         };
 
-        if (!await jobStore.TrySetAsync(retried, cancellationToken: cancellationToken).ConfigureAwait(false))
+        if (!await AdmitRetryAsync(jobStore, retried, cancellationToken).ConfigureAwait(false))
         {
-            throw new ConsoleJobConflictException("Job retry could not be confirmed because the record changed.");
+            throw new ConsoleJobConflictException("Job retry could not be confirmed because capacity is exhausted or the record changed.");
         }
 
         if (retryDispatch.Queue != null)

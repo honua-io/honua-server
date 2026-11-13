@@ -51,6 +51,24 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore, IBoundedExec
         }
     }
 
+    public Task<bool> TryRetryWithinCapacityAsync(ExecutionJobRecord job, int maximumOutstanding, CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            var count = _jobs.Values.Count(existing => existing.Spec.Kind == job.Spec.Kind
+                && existing.Status is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled));
+            if (count >= maximumOutstanding || !_jobs.TryGetValue(job.OperationId, out var current)
+                || current.Version != job.Version || current.Spec.Kind != job.Spec.Kind
+                || current.Status is not (ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled))
+            {
+                return Task.FromResult(false);
+            }
+
+            _jobs[job.OperationId] = job with { Version = job.Version + 1 };
+            return Task.FromResult(true);
+        }
+    }
+
     public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
     {
         lock (_gate)

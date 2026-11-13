@@ -136,7 +136,8 @@ public sealed class ExportJobTests(DatabaseFixtureAdapter database) : IClassFixt
             await worker.StopAsync(CancellationToken.None);
         }
 
-        var progress = (await nodes.Progress.GetProgressAsync<ExportProgress>(job.JobId))!;
+        var progress = (ExportProgress)(await new ExecutionJobProgressReader(nodes.Progress, harness.JobStore)
+            .ReadAsync(job.JobId, CancellationToken.None))!;
         progress.Status.Should().Be(OperationStatus.Cancelled);
         progress.DownloadUrl.Should().BeNull();
         await nodes.Storage.Received().DeleteAsync("export-file", Arg.Any<CancellationToken>());
@@ -216,7 +217,7 @@ public sealed class ExportJobTests(DatabaseFixtureAdapter database) : IClassFixt
                 .AddSingleton(Storage)
                 .AddSingleton<ICrsRegistry>(new ExportJobTestData.NullCrsRegistry())
                 .BuildServiceProvider();
-            Terminal = new ExportJobTerminalCallback(progress, NullLogger<ExportJobTerminalCallback>.Instance,
+            Terminal = new ExportJobTerminalCallback(NullLogger<ExportJobTerminalCallback>.Instance,
                 _services.GetRequiredService<IServiceScopeFactory>());
         }
 
