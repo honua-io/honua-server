@@ -32,7 +32,10 @@ internal enum PreSubmissionCancelOutcome
 
 internal readonly record struct PreSubmissionCancelResult(
     PreSubmissionCancelOutcome Outcome,
-    ExecutionJobRecord? Job);
+    ExecutionJobRecord? Job)
+{
+    public ExecutionJobRecord? TerminalTransition { get; init; }
+}
 
 internal enum BackendCancelApplyOutcome
 {
@@ -87,7 +90,7 @@ internal static class ExecutionJobCancellationHelper
         if (await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
             ControlPlaneTelemetry.RecordExecutionTransition(job, cancelled);
-            return new(PreSubmissionCancelOutcome.Cancelled, cancelled);
+            return new(PreSubmissionCancelOutcome.Cancelled, cancelled) { TerminalTransition = cancelled };
         }
 
         var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);

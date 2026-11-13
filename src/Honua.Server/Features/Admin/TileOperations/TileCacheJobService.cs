@@ -249,7 +249,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         var outcome = await ExecutionJobCancellationHelper.TryApplyAsync(
             _jobStore!, job.OperationId, job, "Cancelled", cancellationToken: cancellationToken).ConfigureAwait(false);
         // Ending a queued job here fires no terminal callback, so it leaves the outstanding count here.
-        if (outcome.State == ExecutionJobCancellationState.Cancelled && job.ClaimedBy == null)
+        if (outcome.TerminalTransition != null)
         {
             TileOperationMetrics.RecordJobEnded(job);
         }

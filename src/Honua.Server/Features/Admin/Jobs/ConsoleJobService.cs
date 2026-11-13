@@ -286,7 +286,10 @@ internal sealed partial class ConsoleJobService(
             if (preResult.Outcome == PreSubmissionCancelOutcome.Cancelled && preResult.Job != null)
             {
                 await RemoveFromQueueIfPresentAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
-                await NotifyTerminalCallbacksAsync(preResult.Job).ConfigureAwait(false);
+                if (preResult.TerminalTransition != null)
+                {
+                    await NotifyTerminalCallbacksAsync(preResult.TerminalTransition).ConfigureAwait(false);
+                }
                 JobControlAction(logger, "cancel", job.OperationId, preResult.Job.Status.ToString());
                 return ControlResponse(preResult.Job, "cancel", "Job cancelled before submission.");
             }
@@ -348,7 +351,8 @@ internal sealed partial class ConsoleJobService(
 
         return result.State switch
         {
-            ExecutionJobCancellationState.Cancelled when result.Job != null => await CompleteLocalCancelAsync(result.Job, cancellationToken).ConfigureAwait(false),
+            ExecutionJobCancellationState.Cancelled when result.TerminalTransition != null => await CompleteLocalCancelAsync(result.TerminalTransition, cancellationToken).ConfigureAwait(false),
+            ExecutionJobCancellationState.Cancelled when result.Job != null => ControlResponse(result.Job, "cancel", "Job is already cancelled."),
             ExecutionJobCancellationState.CancellationRequested when result.Job != null => ControlResponse(result.Job, "cancel", "Job cancellation requested."),
             ExecutionJobCancellationState.TerminalConflict => throw new ConsoleJobConflictException("Terminal jobs cannot be cancelled."),
             _ => throw new ConsoleJobConflictException("Job cancellation could not be confirmed.")

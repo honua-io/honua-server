@@ -22,11 +22,8 @@ internal sealed class TileCacheAttemptProgress(
         {
             _expected = await progressStore.GetProgressAsync(progress.JobId, cancellationToken).ConfigureAwait(false);
             await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
-            if (_expected?.Status == OperationStatus.Cancelled)
-            {
-                throw new OperationCanceledException("The tile operation was cancelled.", cancellationToken);
-            }
-
+            // A manual retry retains the previous attempt's cancelled snapshot. The current
+            // execution context checks durable cancellation and lease ownership before replacement.
             if (await TryWriteAsync(progress, cancellationToken).ConfigureAwait(false))
             {
                 return;

@@ -93,7 +93,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
     }
 
     // GET /admin/tile-operations/jobs/{id} reads the tile-shaped progress, not the job record.
-    private async Task<TileOperationProgress> StartAsync(
+    private static async Task<TileOperationProgress> StartAsync(
         TileCacheRun run,
         IJobExecutionContext context,
         CancellationToken cancellationToken)
