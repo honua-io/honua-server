@@ -67,12 +67,15 @@ class ShardRunnerRoutingTests(unittest.TestCase):
 
 
 class ServicePortIsolationTests(unittest.TestCase):
+    def workflow_postgres_jobs(self, workflow):
+        jobs = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"]
+        for name, job in jobs.items():
+            if "postgres" in job.get("services", {}):
+                yield workflow, name, job
+
     def postgres_jobs(self):
         for workflow in SHARD_JOBS:
-            jobs = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"]
-            for name, job in jobs.items():
-                if "postgres" in job.get("services", {}):
-                    yield workflow, name, job
+            yield from self.workflow_postgres_jobs(workflow)
 
     def assert_assigned_port(self, workflow, name, job):
         self.assertEqual(job["services"]["postgres"]["ports"], [5432])
