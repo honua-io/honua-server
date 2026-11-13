@@ -327,7 +327,7 @@ jobs:
             -e Kestrel__Endpoints__Http__Url=http://+:8080 \
             -e Kestrel__Endpoints__Grpc__Url=http://+:8081 \
             '${{ matrix.tag }}')"
-          if ! python3 "$OWNED_SERVER" wait --container "$CONTAINER" --url "$SERVER_URL/healthz/ready" --timeout 180; then
+          if ! python3 "$OWNED_SERVER" wait --container "$CONTAINER" --container-port 8080 --url "$SERVER_URL/healthz/ready" --timeout 180; then
             docker logs "$CONTAINER" || true
             exit 1
           fi

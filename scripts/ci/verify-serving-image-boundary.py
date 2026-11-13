@@ -333,7 +333,7 @@ def verify_serving_image(image: str, compilation: str = "native-aot") -> list[st
 
     launch_command = [*(config.get("Entrypoint") or []), *(config.get("Cmd") or [])]
     for argument in launch_command:
-        if PurePosixPath(str(argument)).name.casefold() == "honua.server.dll":
+        if compilation == "native-aot" and PurePosixPath(str(argument)).name.casefold() == "honua.server.dll":
             violations.append(
                 f"configured launch command uses managed server entrypoint: {argument}"
             )

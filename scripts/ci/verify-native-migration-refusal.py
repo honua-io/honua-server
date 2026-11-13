@@ -94,8 +94,8 @@ def main() -> None:
                        image_source_sha=labels.get("org.opencontainers.image.revision"))
         if labels.get("honua.runtime.compilation") != "native-aot":
             raise ValueError("image must declare native-aot compilation")
-        if image["Config"].get("Entrypoint") != ["/app/honua-entrypoint"]:
-            raise ValueError("expected production file-secret entrypoint")
+        if image["Config"].get("Entrypoint") != ["/app/Honua.Server"]:
+            raise ValueError("expected production native entrypoint")
         if receipt["image_source_sha"] != args.source_sha:
             raise ValueError("image revision does not match requested source SHA")
         # Never inherit approval/skip settings, including from a caller's environment.
