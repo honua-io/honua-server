@@ -51,8 +51,8 @@ internal static class PublicationDescriptorRules
             violations.Add(IdentityMapping);
         }
 
-        var bounds = descriptor["bounds"]!.Values<double>().ToArray();
-        if (bounds[0] >= bounds[2] || bounds[1] >= bounds[3])
+        var filterBounds = descriptor["capture"]!["filter"]?["bbox"];
+        if (IsInverted(descriptor["bounds"]!) || (filterBounds is not null && IsInverted(filterBounds)))
         {
             violations.Add(BoundsOrder);
         }
@@ -64,6 +64,12 @@ internal static class PublicationDescriptorRules
         }
 
         return violations;
+    }
+
+    private static bool IsInverted(JToken bounds)
+    {
+        var values = bounds.Values<double>().ToArray();
+        return values[0] >= values[2] || values[1] >= values[3];
     }
 
     private static IEnumerable<string> ArtifactFields(JObject artifact) =>
@@ -79,7 +85,9 @@ internal static class PublicationDescriptorRules
         var declared = fields.FirstOrDefault(field => field.Value<string>("name") == identityField);
         return declared?.Value<string>("type") == "string"
             && publicFields.Contains(identityField)
-            && ArtifactFields((JObject)descriptor["artifacts"]!["pmtiles"]!).Contains(identity.Value<string>("pmtilesProperty"))
-            && ArtifactFields((JObject)descriptor["artifacts"]!["geoparquet"]!).Contains(identity.Value<string>("geoparquetColumn"));
+            && identity.Value<string>("pmtilesProperty") == identityField
+            && identity.Value<string>("geoparquetColumn") == identityField
+            && ArtifactFields((JObject)descriptor["artifacts"]!["pmtiles"]!).Contains(identityField)
+            && ArtifactFields((JObject)descriptor["artifacts"]!["geoparquet"]!).Contains(identityField);
     }
 }
