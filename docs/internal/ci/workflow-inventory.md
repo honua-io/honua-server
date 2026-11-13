@@ -80,10 +80,12 @@ completes.
 Verification workflows cancel superseded admission per PR. Review Event Bridge
 and both Review Gate Attestation jobs also cancel older events by PR identity
 across head updates; fork completion payloads without a PR number use the head
-repository/ref until the trusted resolver identifies the PR. They skip draft
+repository/ref until the trusted resolver identifies the PR. They skip ordinary draft
 PR payloads and re-read live draft state before attestation, including comment
 and workflow-completion events. CodeQL already cancels by PR number and skips
 draft PR analysis; its scheduled/manual analysis remains enabled.
+Review event ordering is not guaranteed. A late old-head event reconciles the current live PR head after cancelling an older resolver. Draft conversion retains a lightweight cancellation path into the shared attestation group; the live draft is then shed before checkout or status publication. Other draft pull-request payloads skip resolution.
+
 Trusted observers resolve the current PR before expensive jobs: prebuild
 producers/parity legs cancel by PR and matrix identity. Claude cancels resolver
 admission per PR and serializes duplicate exact-head reviews; unrelated comments

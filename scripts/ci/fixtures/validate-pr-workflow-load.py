@@ -296,6 +296,19 @@ class PullRequestLoadTests(unittest.TestCase):
         event["event"]["pull_request"]["head"]["repo"]["full_name"] = "fork/repo"
         self.assertFalse(evaluate(condition, event))
 
+    def test_review_gate_admits_draft_conversion_only_for_cancellation(self):
+        gate = workflow("review-gate.yml")
+        condition = gate["jobs"]["resolve"]["if"]
+        for action, draft, admitted in (("opened", True, False),
+                                         ("synchronize", True, False),
+                                         ("converted_to_draft", True, True),
+                                         ("ready_for_review", False, True)):
+            with self.subTest(action=action):
+                event = {"event_name": "pull_request_target", "event": {
+                    "action": action, "pull_request": {"draft": draft}}}
+                self.assertEqual(evaluate(condition, event), admitted)
+        self.assertEqual(gate["jobs"]["attest"]["concurrency"]["cancel-in-progress"], "true")
+
     def test_trusted_observers_keep_current_draft_refusal(self):
         observer = workflow("server-test-prebuild-observe.yml")
         parity = workflow("server-test-prebuild-parity.yml")

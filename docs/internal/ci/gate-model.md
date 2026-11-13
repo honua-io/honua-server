@@ -46,6 +46,8 @@ errors fail. Review helpers cancel superseded events per PR and re-read live
 review/admission state before acting. Superseded normalization producers
 and consumers exit neutrally before producing data or mutating a branch.
 
+Review event ordering is not guaranteed. A late old-head event reconciles the current live PR head after cancelling an older resolver. Draft conversion retains a lightweight cancellation path into the shared attestation group; the live draft is then shed before checkout or status publication. Other draft pull-request payloads skip resolution.
+
 ## Verification stages
 
 Every stage reacts to a repository event; no stage polls. A change is verified

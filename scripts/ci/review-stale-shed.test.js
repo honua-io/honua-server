@@ -102,13 +102,13 @@ const runShed = async (script, { payload = {}, env = {}, pull, associated = [] }
 const OPEN_PR = { number: 42, state: 'open', head: { sha: 'a'.repeat(40) } };
 const MERGED_PR = { number: 42, state: 'closed', head: { sha: 'a'.repeat(40) } };
 
-test('review-gate sheds a workflow_run whose subject head has moved', async () => {
+test('late old-head workflow_run still reconciles the current head after cancelling its resolver', async () => {
   const result = await runShed(GATE_SHED, {
     payload: { workflow_run: { head_sha: 'b'.repeat(40), pull_requests: [{ number: 42 }] } },
     pull: OPEN_PR,
   });
-  assert.equal(result.superseded, true);
-  assert.match(result.notices.join('\n'), /superseded: event subject b{40} is not current head a{40}/);
+  assert.equal(result.superseded, false);
+  assert.equal(result.failure, null);
 });
 
 test('review-gate admits a workflow_run that is still the current head', async () => {
@@ -168,7 +168,7 @@ test('review-gate sheds neutrally: a job summary line and no failure', async () 
   // must never turn a superseded event into a red run.
   const result = await runShed(GATE_SHED, {
     payload: { pull_request: { number: 42, head: { sha: 'b'.repeat(40) } } },
-    pull: OPEN_PR,
+    pull: MERGED_PR,
   });
   assert.equal(result.failure, null, 'the review-gate shed must not fail the run');
   assert.equal(result.summaryLines.length, 1);
@@ -229,8 +229,6 @@ test('review helpers cancel superseded events per PR and skip draft payloads', (
 
 test('review helpers shed live drafts even for payloads without a draft flag', async () => {
   for (const [script, payload, env] of [
-    [GATE_SHED, { issue: { number: 42 } }, {}],
-    [GATE_SHED, { workflow_run: { head_sha: 'a'.repeat(40), pull_requests: [] } }, {}],
     [BRIDGE_SHED, { pull_request: { number: 42 }, review: { commit_id: 'a'.repeat(40) } }, {}],
     [ATTEST_SHED, {}, { PR: '42' }],
   ]) {
@@ -529,4 +527,23 @@ test('normalization consumer requires both jobs skipped for job-level draft admi
   await assert.rejects(runNormalizationHandoff({
     generatorConclusion: 'failure', skipped: false,
   }), /Expected one non-expired/);
+});
+
+// A draft transition must enter the same publication concurrency group as the
+// running attestation before it can return without publishing a status.
+test('draft conversion and later comments cancel active attestation before shedding the live draft', async () => {
+  const gate = fs.readFileSync(path.join(WORKFLOWS, 'review-gate.yml'), 'utf8');
+  assert.match(gate, /!github\.event\.pull_request\.draft \|\| github\.event\.action == 'converted_to_draft'/);
+  for (const payload of [
+    { action: 'converted_to_draft', pull_request: { number: 42, draft: true } },
+    { issue: { number: 42 } },
+    { workflow_run: { head_sha: 'b'.repeat(40), pull_requests: [{ number: 42 }] } },
+  ]) {
+    const pull = { ...OPEN_PR, draft: true };
+    const resolved = await runShed(GATE_SHED, { payload, pull });
+    assert.equal(resolved.superseded, false, 'must reach the shared attest cancellation group');
+    const attested = await runShed(ATTEST_SHED, { payload, pull, env: { PR: '42' } });
+    assert.equal(attested.superseded, true, 'must stop before checkout or publication');
+    assert.equal(attested.failure, null);
+  }
 });

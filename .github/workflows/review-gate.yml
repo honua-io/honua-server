@@ -31,7 +31,7 @@ env:
 jobs:
   resolve:
     if: >-
-      (!github.event.pull_request || !github.event.pull_request.draft) &&
+      (!github.event.pull_request || !github.event.pull_request.draft || github.event.action == 'converted_to_draft') &&
       (github.event_name != 'issue_comment' || github.event.issue.pull_request) &&
       (github.event_name != 'workflow_run' ||
        github.event.workflow_run.name != 'Review Event Bridge' ||
@@ -57,8 +57,8 @@ jobs:
           script: |
             // A superseded event is shed NEUTRALLY: the step succeeds, records one
             // job-summary line, and leaves `pr` empty so `attest` is never admitted.
-            // Nothing here writes a commit status, so shedding can only withhold a
-            // redundant attestation -- it can never publish a wrong one.
+            // Closed subjects cannot consume admission; open subjects always
+            // reach the live-head reconciliation and cancellation path.
             const shed = async reason => {
               core.notice(`superseded: ${reason}`);
               core.summary.addRaw(`Shed superseded review event: ${reason}`, true);
@@ -99,14 +99,13 @@ jobs:
             // `pull request is not open` is scored as a blocking reason. `reopened`
             // re-fires this workflow with the pull request open again, and
             // claude-review.yml already sheds closed subjects the same way.
-            if (pull.draft) return shed(`PR #${prNumber} is a draft`);
             if (pull.state !== 'open') {
               return shed(`PR #${prNumber} is ${pull.state}; no admission can consume its Review Gate status`);
             }
-            if (eventHead && pull.head.sha !== eventHead) {
-              return shed(
-                `event subject ${eventHead} is not current head ${pull.head.sha} for PR #${prNumber}`);
-            }
+            // Events are unordered: an old head can cancel a newer resolver.
+            // Always reconcile the live head instead of abandoning that replacement.
+            // Live drafts must also reach the attest concurrency group to cancel
+            // active publication, then shed before checkout or status mutation.
 
       - name: Resolve every event to one pull request
         id: target
