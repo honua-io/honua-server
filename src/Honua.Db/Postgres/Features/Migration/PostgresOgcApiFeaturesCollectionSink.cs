@@ -13,6 +13,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
 
@@ -65,8 +66,8 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         var schemaName = CanonicalTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
-        var schema = QuoteIdentifier(schemaName);
-        var table = QuoteIdentifier(target.Table);
+        var schema = SqlIdentifier.QuoteIdentifier(schemaName);
+        var table = SqlIdentifier.QuoteIdentifier(target.Table);
         var sridLiteral = target.Srid.ToString(CultureInfo.InvariantCulture);
 
         var sql = $$"""
@@ -139,8 +140,8 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
             return 0;
         }
 
-        var schema = QuoteIdentifier(schemaName);
-        var table = QuoteIdentifier(target.Table);
+        var schema = SqlIdentifier.QuoteIdentifier(schemaName);
+        var table = SqlIdentifier.QuoteIdentifier(target.Table);
         var sridLiteral = target.Srid.ToString(CultureInfo.InvariantCulture);
 
         var sql = $"""
@@ -208,7 +209,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         var schemaName = CanonicalTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
-        var schema = QuoteIdentifier(schemaName);
+        var schema = SqlIdentifier.QuoteIdentifier(schemaName);
 
         var sql = $"""
             SELECT scope_signature
@@ -244,7 +245,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         var schemaName = CanonicalTargetSchema(target.Schema);
         AssertSafeIdentifier(target.Table, nameof(target.Table));
 
-        var schema = QuoteIdentifier(schemaName);
+        var schema = SqlIdentifier.QuoteIdentifier(schemaName);
 
         var sql = $"""
             INSERT INTO {schema}.ogc_api_features_import_scopes (table_name, collection_id, scope_signature, recorded_at)
@@ -372,9 +373,6 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         // we do not reject them here because operator-supplied schemas may legitimately be longer
         // (e.g. test fixture schemas) and the database is the authoritative truncation point.
     }
-
-    private static string QuoteIdentifier(string identifier)
-        => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 
     private static partial class Log
     {

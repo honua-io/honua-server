@@ -367,7 +367,7 @@ The current pin `7ba422672e0c751843b17beb36e954a019cc19fb` predates #4663 and
 fails the prior-capture/staging invariant; it cannot qualify the 2026.1 safe rollout
 promise. Evidence for the proposed `9f2f16a5b9d19becf052f8b2635cf7c2ce109fdd`
 image passed all five installed scenarios. Its positive receipt does not certify
-the older pin. Both [receipts and compressed logs](../../../../tests/baselines/metadata-release-installed/2026-09-12/)
+the older pin. Both [receipts and compressed logs](https://github.com/honua-io/honua-server/tree/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/tests/baselines/metadata-release-installed/2026-09-12)
 are retained with exact input hashes; the current pin advanced the live graph
 from revision 3 to 4 and exposed `owner_email` during preparation while its
 operation still had no captured prior revision. Re-run against the accepted manifest when
@@ -380,7 +380,7 @@ The 2026-09-15 qualification ran the unchanged harness against the accepted re-p
 SHA-256 `02c076be536514622c32a411e492f18413f257e9d4ff3d04c353dea591b89709`. All five
 installed scenarios passed: the operation captured prior revision 3 and its ETag while the
 live graph stayed on revision 3 without `owner_email` until activation of candidate
-revision 4. Its [receipt and compressed log](../../../../tests/baselines/metadata-release-installed/2026-09-15/)
+revision 4. Its [receipt and compressed log](https://github.com/honua-io/honua-server/tree/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/tests/baselines/metadata-release-installed/2026-09-15)
 qualify the accepted 2026.1 candidate; the 2026-09-12 receipts remain as history.
 
 ## Review Output
