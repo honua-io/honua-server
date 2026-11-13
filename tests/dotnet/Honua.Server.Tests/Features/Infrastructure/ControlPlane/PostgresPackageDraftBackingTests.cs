@@ -22,7 +22,7 @@ public sealed class PostgresPackageDraftBackingTests(DatabaseFixtureAdapter data
     {
         await using var harness = await CreateHarnessAsync();
         var backing = harness.CreatePackageDraftBacking();
-        await backing.UpsertAsync(PackageDraftKind.Map, "map_aging", MapRecord("map_aging"), _ttl, CancellationToken.None);
+        await backing.UpsertAsync(new PackageDraftWrite(PackageDraftKind.Map, "map_aging", MapRecord("map_aging"), _ttl), CancellationToken.None);
         (await backing.TryGetAsync(PackageDraftKind.Map, "map_aging", _ttl, CancellationToken.None)).Should().NotBeNull();
 
         await harness.ExecuteAsync($"UPDATE {harness.Table("package_drafts")} SET expires_at = now() - interval '1 second'");
@@ -37,14 +37,14 @@ public sealed class PostgresPackageDraftBackingTests(DatabaseFixtureAdapter data
         await using var harness = await CreateHarnessAsync();
         var backing = harness.CreatePackageDraftBacking();
         var start = DateTimeOffset.UtcNow;
-        await backing.UpsertAsync(PackageDraftKind.Map, "map_new", MapRecord("map_new", start.AddMinutes(2)), _ttl, CancellationToken.None);
-        await backing.UpsertAsync(PackageDraftKind.Map, "map_old", MapRecord("map_old", start), _ttl, CancellationToken.None);
-        await backing.UpsertAsync(PackageDraftKind.Map, "map_gone", MapRecord("map_gone", start.AddMinutes(1)), _ttl, CancellationToken.None);
-        await backing.UpsertAsync(PackageDraftKind.App, "app_other", AppRecord("app_other"), _ttl, CancellationToken.None);
+        await backing.UpsertAsync(new PackageDraftWrite(PackageDraftKind.Map, "map_new", MapRecord("map_new", start.AddMinutes(2)), _ttl), CancellationToken.None);
+        await backing.UpsertAsync(new PackageDraftWrite(PackageDraftKind.Map, "map_old", MapRecord("map_old", start), _ttl), CancellationToken.None);
+        await backing.UpsertAsync(new PackageDraftWrite(PackageDraftKind.Map, "map_gone", MapRecord("map_gone", start.AddMinutes(1)), _ttl), CancellationToken.None);
+        await backing.UpsertAsync(new PackageDraftWrite(PackageDraftKind.App, "app_other", AppRecord("app_other"), _ttl), CancellationToken.None);
         await harness.ExecuteAsync(
             $"UPDATE {harness.Table("package_drafts")} SET expires_at = now() - interval '1 second' WHERE draft_id = 'map_gone'");
 
-        var live = await backing.ListLiveOldestFirstAsync(PackageDraftKind.Map, _ttl, CancellationToken.None);
+        var live = await backing.ListLiveOldestFirstAsync(PackageDraftKind.Map, _ttl), CancellationToken.None);
 
         live.Select(entry => entry.Id).Should().Equal("map_old", "map_new");
     }

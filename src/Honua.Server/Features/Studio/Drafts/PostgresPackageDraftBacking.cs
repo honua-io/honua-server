@@ -18,13 +18,10 @@ internal sealed class PostgresPackageDraftBacking(JobStoreDatabase database) : I
 
     private readonly string _drafts = database.Table("package_drafts");
 
-    public Task UpsertAsync(
-        PackageDraftKind kind,
-        string id,
-        PackageDraftRecord record,
-        TimeSpan ttl,
-        CancellationToken cancellationToken)
+    public Task UpsertAsync(PackageDraftWrite write, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(write);
+        var (kind, id, record, ttl) = write;
         ArgumentNullException.ThrowIfNull(record);
         if (ttl <= TimeSpan.Zero)
         {

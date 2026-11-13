@@ -408,6 +408,7 @@ internal static class McpEndpointExtensions
             return;
         }
 
+        using var watch = sessions.AcquireSessionWatch(sessionId);
         await BindTokenReplayContinuationAsync(context, sessionId).ConfigureAwait(false);
         StartEventStream(context);
         // Flush the response head so the client (and proxies) see the open SSE

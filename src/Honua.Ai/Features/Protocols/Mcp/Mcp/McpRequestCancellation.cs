@@ -139,7 +139,9 @@ internal sealed partial class McpSessionManager
     {
         private readonly McpSessionManager _owner;
         private readonly CancellationTokenSource _work;
-        private bool _finished;
+        private const int Stopped = 1;
+        private const int Finishing = 2;
+        private int _completionState;
 
         internal McpRequestLease(McpSessionManager owner, McpActiveRequest request, CancellationToken requestToken)
         {
@@ -156,6 +158,11 @@ internal sealed partial class McpSessionManager
 
         internal void Stop()
         {
+            if (Interlocked.CompareExchange(ref _completionState, Stopped, 0) != 0)
+            {
+                return;
+            }
+
             try
             {
                 _work.Cancel();
@@ -173,12 +180,11 @@ internal sealed partial class McpSessionManager
 
         internal async Task<bool> CompleteAsync()
         {
-            if (_finished)
+            var previous = Interlocked.Exchange(ref _completionState, Finishing);
+            if (previous == Finishing)
             {
                 return false;
             }
-
-            _finished = true;
             _owner.UnwatchRequest(this);
             var healthy = true;
             var state = McpRequestState.Missing;
@@ -197,14 +203,14 @@ internal sealed partial class McpSessionManager
                 Interlocked.Decrement(ref _owner._activeRequestCount);
             }
 
-            return healthy && state == McpRequestState.Active && !_work.IsCancellationRequested;
+            return healthy && previous != Stopped && state == McpRequestState.Active && !_work.IsCancellationRequested;
         }
 
         public async ValueTask DisposeAsync()
         {
             try
             {
-                if (!_finished)
+                if (Volatile.Read(ref _completionState) != Finishing)
                 {
                     await CompleteAsync().ConfigureAwait(false);
                 }

@@ -40,7 +40,7 @@ public sealed partial class McpRequestCancellationTests
         await manager.PollOnceAsync(CancellationToken.None);
         Assert.Equal(0, store.Polls);
 
-        manager.GetLifetimeToken(session);
+        using var watch = manager.AcquireSessionWatch(session);
         await manager.PollOnceAsync(CancellationToken.None);
         Assert.True(store.Polls >= 1);
     }

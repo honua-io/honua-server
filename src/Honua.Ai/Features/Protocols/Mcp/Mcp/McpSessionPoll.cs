@@ -144,15 +144,34 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
         }
     }
 
-    private void WatchSession(McpSession session)
+    public IDisposable AcquireSessionWatch(string sessionId)
     {
-        if (_store is null || session.Watched)
+        if (!_sessions.TryGetValue(sessionId, out var session))
         {
-            return;
+            return new SessionWatch(null);
         }
 
-        session.Watched = true;
-        EnsurePolling();
+        Interlocked.Increment(ref session.WatchCount);
+        if (_store is not null)
+        {
+            EnsurePolling();
+        }
+
+        return new SessionWatch(session);
+    }
+
+    private sealed class SessionWatch(McpSession? session) : IDisposable
+    {
+        private McpSession? _session = session;
+
+        public void Dispose()
+        {
+            var watched = Interlocked.Exchange(ref _session, null);
+            if (watched is not null)
+            {
+                Interlocked.Decrement(ref watched.WatchCount);
+            }
+        }
     }
 
     private void WatchRequest(McpRequestLease lease)

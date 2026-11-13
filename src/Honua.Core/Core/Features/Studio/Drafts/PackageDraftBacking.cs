@@ -32,19 +32,15 @@ public sealed record PackageDraftRecord(
 /// <param name="WrittenAt">Utc instant of the write that started the TTL.</param>
 public readonly record struct PackageDraftLiveEntry(string Id, DateTimeOffset WrittenAt);
 
+public sealed record PackageDraftWrite(PackageDraftKind Kind, string Id, PackageDraftRecord Record, TimeSpan Ttl);
+
 /// <summary>
 /// Persistence for <see cref="PackageDraftLedger"/>. A memory instance is private to
 /// one process. A shared instance is what makes two store objects agree.
 /// </summary>
 public interface IPackageDraftBacking
 {
-    /// <summary>Inserts or replaces the record and starts its TTL from <paramref name="record"/>'s write time.</summary>
-    Task UpsertAsync(
-        PackageDraftKind kind,
-        string id,
-        PackageDraftRecord record,
-        TimeSpan ttl,
-        CancellationToken cancellationToken);
+    Task UpsertAsync(PackageDraftWrite write, CancellationToken cancellationToken);
 
     /// <summary>Returns the record, or null when it is missing or already expired. Expired records are dropped.</summary>
     Task<PackageDraftRecord?> TryGetAsync(
@@ -81,17 +77,12 @@ internal sealed class MemoryPackageDraftBacking : IPackageDraftBacking
         _timeProvider = timeProvider;
     }
 
-    /// <inheritdoc />
-    public Task UpsertAsync(
-        PackageDraftKind kind,
-        string id,
-        PackageDraftRecord record,
-        TimeSpan ttl,
-        CancellationToken cancellationToken)
+    public Task UpsertAsync(PackageDraftWrite write, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ArgumentNullException.ThrowIfNull(record);
-        Store(kind)[id] = record;
+        ArgumentNullException.ThrowIfNull(write);
+        ArgumentNullException.ThrowIfNull(write.Record);
+        Store(write.Kind)[write.Id] = write.Record;
         return Task.CompletedTask;
     }
 
