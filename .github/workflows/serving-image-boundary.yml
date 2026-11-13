@@ -320,7 +320,7 @@ jobs:
             --network "$NETWORK" \
             -p "127.0.0.1:$SERVER_PORT:8080" \
             -e ASPNETCORE_ENVIRONMENT=Development \
-            -e HONUA_ADMIN_PASSWORD=ci-jit-boundary-password \
+            -e HONUA_ADMIN_PASSWORD=ci-admin-password \
             -e Security__ConnectionEncryption__MasterKey=0123456789abcdef0123456789abcdef \
             -e "ConnectionStrings__DefaultConnection=Host=$POSTGRES;Database=honua_boundary;Username=postgres;Password=boundary-test" \
             -e ASPNETCORE_URLS=http://+:8080 \
