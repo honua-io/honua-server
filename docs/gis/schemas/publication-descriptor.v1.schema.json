@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://honua.io/schemas/publication-descriptor.v1.schema.json",
+  "title": "Honua publication descriptor v1",
+  "description": "One published version of a layer as a paired PMTiles (display) and GeoParquet (query and export) publication, and the per-publication record of a dataset release manifest. Rules this schema cannot express, which every validator enforces: (1) capture-id: every artifact's captureId equals capture.captureId, so both artifacts come from one capture; (2) unique-field-names: field names are unique; (3) public-fields-only: every name in an artifact's fields list is a declared field with public true; (4) identity-mapping: identity.field is a declared public string field, and identity.pmtilesProperty and identity.geoparquetColumn both name that field and appear in the PMTiles and GeoParquet artifacts' fields; (5) bounds-order: west < east and south < north, for bounds and for capture.filter.bbox; (6) zoom-order: the PMTiles minzoom is not greater than its maxzoom. Clients open only descriptors whose validation.status is passed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "descriptorVersion",
+    "publicationId",
+    "version",
+    "publishedAt",
+    "sourceLayer",
+    "capture",
+    "bounds",
+    "crs",
+    "fields",
+    "identity",
+    "geometry",
+    "artifacts",
+    "validation",
+    "links"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://honua.io/schemas/publication-descriptor.v1.schema.json"
+    },
+    "descriptorVersion": {
+      "const": "1.0"
+    },
+    "publicationId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Immutable; a new value on every successful publish. Artifact paths include it so cached copies never mix versions."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "publishedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this version became the active publication."
+    },
+    "sourceLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service", "layer"],
+      "properties": {
+        "service": { "type": "string", "minLength": 1 },
+        "layer": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "href": { "type": "string", "format": "uri" }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["captureId", "capturedAt", "sourceRevision", "featureCount"],
+      "properties": {
+        "captureId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifies the one read of the source layer; every artifact repeats it and embeds it in its own metadata."
+        },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "sourceRevision": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Data generation or revision the capture read."
+        },
+        "featureCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Features in each artifact after the filter."
+        },
+        "filter": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "description": "Row selection applied to the capture before both artifacts were written.",
+          "properties": {
+            "bbox": { "$ref": "#/$defs/bounds" },
+            "where": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "bounds": {
+      "$ref": "#/$defs/bounds",
+      "description": "[west, south, east, north] of the published features in WGS 84 degrees."
+    },
+    "crs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "geoparquet", "pmtiles"],
+      "properties": {
+        "source": { "$ref": "#/$defs/crsIdentifier", "examples": ["EPSG:3750"] },
+        "geoparquet": { "$ref": "#/$defs/crsIdentifier", "examples": ["OGC:CRS84"] },
+        "pmtiles": { "const": "EPSG:3857" }
+      }
+    },
+    "fields": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Every source field and whether it is published. A field with public false appears in no artifact, metadata or export.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type", "public"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$" },
+          "type": { "enum": ["string", "integer", "number", "boolean", "date", "datetime"] },
+          "public": { "type": "boolean" },
+          "title": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "type", "pmtilesProperty", "geoparquetColumn"],
+      "description": "Stable feature identity: a rendered tile feature resolves to its GeoParquet record through these names, never through tile geometry.",
+      "properties": {
+        "field": { "type": "string", "minLength": 1, "examples": ["tmk_txt"] },
+        "type": { "const": "string", "description": "Kept as text so leading zeros survive." },
+        "pmtilesProperty": { "type": "string", "minLength": 1 },
+        "geoparquetColumn": { "type": "string", "minLength": 1 }
+      }
+    },
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "encoding", "types"],
+      "description": "Authoritative geometry in the GeoParquet artifact. PMTiles geometry is simplified for display only.",
+      "properties": {
+        "column": { "type": "string", "minLength": 1 },
+        "encoding": {
+          "enum": [
+            "wkb",
+            "geoarrow-point",
+            "geoarrow-linestring",
+            "geoarrow-polygon",
+            "geoarrow-multipoint",
+            "geoarrow-multilinestring",
+            "geoarrow-multipolygon"
+          ]
+        },
+        "types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "GeometryCollection"]
+          }
+        },
+        "bboxColumn": { "type": "string", "minLength": 1 }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "required": ["pmtiles", "geoparquet"],
+      "description": "Artifacts of this publication keyed by role. A dataset release may add further roles (catalog, documentation, related tables); each carries the same capture ID.",
+      "properties": {
+        "pmtiles": { "$ref": "#/$defs/pmtilesArtifact" },
+        "geoparquet": { "$ref": "#/$defs/geoparquetArtifact" }
+      },
+      "additionalProperties": { "$ref": "#/$defs/releaseArtifact" }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "validatedAt", "checks"],
+      "properties": {
+        "status": { "enum": ["passed", "failed"] },
+        "validatedAt": { "type": "string", "format": "date-time" },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "status"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "status": { "enum": ["passed", "failed", "unavailable"] },
+              "detail": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stac"],
+      "properties": {
+        "stac": {
+          "type": "string",
+          "format": "uri-reference",
+          "description": "STAC item or collection that makes this publication discoverable."
+        },
+        "self": { "type": "string", "format": "uri-reference" },
+        "source": { "type": "string", "format": "uri", "description": "The live source layer, for server-side queries." }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "publisher": { "type": "string" },
+        "license": { "type": "string" },
+        "attribution": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "bounds": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number", "minimum": -180, "maximum": 180 },
+        { "type": "number", "minimum": -90, "maximum": 90 },
+        { "type": "number", "minimum": -180, "maximum": 180 },
+        { "type": "number", "minimum": -90, "maximum": 90 }
+      ],
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "crsIdentifier": {
+      "type": "string",
+      "pattern": "^(EPSG:[0-9]{4,6}|OGC:CRS84)$"
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["href", "mediaType", "bytes", "sha256", "captureId", "fields"],
+      "properties": {
+        "href": {
+          "type": "string",
+          "format": "uri-reference",
+          "description": "Absolute, or relative to the descriptor URL. Never carries expiring credentials."
+        },
+        "mediaType": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "captureId": { "type": "string", "minLength": 1 },
+        "fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" },
+          "description": "Attribute names this artifact contains."
+        }
+      }
+    },
+    "releaseArtifact": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/artifact" }],
+      "unevaluatedProperties": false
+    },
+    "pmtilesArtifact": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/artifact" }],
+      "required": ["vectorLayer", "minzoom", "maxzoom"],
+      "unevaluatedProperties": false,
+      "properties": {
+        "mediaType": { "const": "application/vnd.pmtiles" },
+        "vectorLayer": { "type": "string", "minLength": 1 },
+        "minzoom": { "type": "integer", "minimum": 0, "maximum": 30 },
+        "maxzoom": { "type": "integer", "minimum": 0, "maximum": 30 }
+      }
+    },
+    "geoparquetArtifact": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/artifact" }],
+      "unevaluatedProperties": false,
+      "properties": {
+        "mediaType": { "const": "application/vnd.apache.parquet" },
+        "rowGroups": { "type": "integer", "minimum": 1 },
+        "sortedBy": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
