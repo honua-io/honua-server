@@ -1,5 +1,6 @@
 """Prepare the private schema-140 fixture with current advisory warning policy."""
 from pathlib import Path
+import re
 import sys
 
 
@@ -23,6 +24,18 @@ def apply_advisory_policy(context):
               '    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>\n'
               '  </PropertyGroup>\n')
     props.write_text(content.replace('</Project>', policy + '</Project>'))
+    for project in Path(context).rglob('*.csproj'):
+        content = project.read_text()
+        content = re.sub(r'(<WarningsNotAsErrors>)([^<]*)(</WarningsNotAsErrors>)',
+                         preserve_inherited_warnings, content)
+        project.write_text(content)
+
+
+def preserve_inherited_warnings(match):
+    opening, warnings, closing = match.groups()
+    if '$(WarningsNotAsErrors)' not in warnings:
+        warnings = '$(WarningsNotAsErrors);' + warnings
+    return opening + warnings + closing
 
 
 if __name__ == '__main__':

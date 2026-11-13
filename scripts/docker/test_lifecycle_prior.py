@@ -30,7 +30,14 @@ class LifecyclePriorTests(unittest.TestCase):
                              '<TreatWarningsAsErrors>true</TreatWarningsAsErrors>'
                              '<WarningsNotAsErrors>CS1234</WarningsNotAsErrors>'
                              '</PropertyGroup></Project>')
+            project = Path(directory) / 'src/Honua.Core/Honua.Core.csproj'
+            project.parent.mkdir(parents=True)
+            project.write_text('<Project><PropertyGroup>'
+                               '<WarningsNotAsErrors>CA2009;IDE0073</WarningsNotAsErrors>'
+                               '</PropertyGroup></Project>')
             apply_advisory_policy(directory)
+            self.assertEqual('$(WarningsNotAsErrors);CA2009;IDE0073',
+                             ET.parse(project).getroot().findtext('.//WarningsNotAsErrors'))
             root = ET.parse(props).getroot()
             self.assertEqual('true', root.findtext('.//TreatWarningsAsErrors'))
             warnings = root.findall('.//WarningsNotAsErrors')
