@@ -24,9 +24,9 @@ drift.
 | Dockerfile | Build argument | Image reference |
 | --- | --- | --- |
 | `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea` |
-| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:11.0.0-resolute@sha256:bc0d6653979efba491ab3d6f589d691f96c309c3c3ef81325efa6978e7b7f242` |
+| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:11.0.0-resolute-chiseled-extra@sha256:cea9d5494f358fe43082300c24d1cd9f651066b6b7de1e5735bca8d3ade68649` |
 | `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea` |
-| `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute@sha256:6d3e208d8f5ba599ad9e80c615b5c1a2e355fd903f585cb07342dde29441675a` |
+| `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute-chiseled-extra@sha256:661d3e8cfdab9503453095a5b53b17f63402400266c0e0f6f2d1b1192e6da5c9` |
 | `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea` |
 | `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea` |
 | `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute@sha256:6d3e208d8f5ba599ad9e80c615b5c1a2e355fd903f585cb07342dde29441675a` |

@@ -229,7 +229,9 @@ class PrManagedBuildTests(unittest.TestCase):
                        'Prove the raster execution cases ran, not skipped']:
             self.assertIn(marker, worker)
         self.assertNotIn('Build production PDAL native tools', consumer)
-        commands = re.findall(r'^          dotnet test (.*?)(?=\n\s*\n|\n\s*- name:|\Z)',consumer,re.S | re.M)
+        full_profile_proofs, separator, _ = consumer.partition('- name: Verify default PostGIS store profile')
+        self.assertTrue(separator)
+        commands = re.findall(r'^          dotnet test (.*?)(?=\n\s*\n|\n\s*- name:|\Z)',full_profile_proofs,re.S | re.M)
         self.assertEqual(len(commands), 5)
         for command in commands:
             self.assertIn('--no-build',command)

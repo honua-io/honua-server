@@ -139,11 +139,12 @@ def _package_names(path: str, content: bytes) -> Iterable[str]:
             yield match.group(0)
 
 
-def scan_rootfs(stream: BinaryIO, entrypoint: str) -> list[str]:
+def scan_rootfs(stream: BinaryIO, entrypoint: str, compilation: str = "native-aot") -> list[str]:
     """Return invariant violations found in an exported container rootfs tar."""
     violations: list[str] = []
     entrypoint = _normalise(entrypoint)
     entrypoint_seen = False
+    managed_server_seen = False
 
     with tarfile.open(fileobj=stream, mode="r|*") as archive:
         for member in archive:
@@ -157,7 +158,9 @@ def scan_rootfs(stream: BinaryIO, entrypoint: str) -> list[str]:
                     violations.append(f"native entrypoint is not an ELF executable: {entrypoint}")
 
             if member.isfile() and PurePosixPath(path).name.casefold() == "honua.server.dll":
-                violations.append(f"managed server entrypoint is present: {path}")
+                managed_server_seen = True
+                if compilation == "native-aot":
+                    violations.append(f"managed server entrypoint is present: {path}")
 
             if not member.isdir():
                 reason = _forbidden_file_reason(path)
@@ -180,6 +183,9 @@ def scan_rootfs(stream: BinaryIO, entrypoint: str) -> list[str]:
 
     if not entrypoint_seen:
         violations.append(f"native entrypoint is missing: {entrypoint}")
+
+    if compilation == "jit" and not managed_server_seen:
+        violations.append("JIT managed server assembly is missing")
 
     return sorted(set(violations))
 
@@ -308,7 +314,7 @@ def verify_image_attestations(image: str) -> list[dict]:
     return records
 
 
-def verify_serving_image(image: str) -> list[str]:
+def verify_serving_image(image: str, compilation: str = "native-aot") -> list[str]:
     inspect = _docker("image", "inspect", image, capture=True)
     metadata = json.loads(inspect.stdout)[0]
     config = metadata.get("Config", {})
@@ -317,17 +323,17 @@ def verify_serving_image(image: str) -> list[str]:
 
     if labels.get("honua.runtime.profile") != "web":
         violations.append("image label honua.runtime.profile must be 'web'")
-    if labels.get("honua.runtime.compilation") != "native-aot":
-        violations.append("image label honua.runtime.compilation must be 'native-aot'")
+    if labels.get("honua.runtime.compilation") != compilation:
+        violations.append(f"image label honua.runtime.compilation must be {compilation!r}")
 
-    entrypoint = labels.get("honua.runtime.entrypoint")
+    entrypoint = labels.get("honua.runtime.entrypoint", "/app/Honua.Server" if compilation == "jit" else None)
     if not entrypoint or not entrypoint.startswith("/"):
         violations.append("image label honua.runtime.entrypoint must be an absolute path")
         return violations
 
     launch_command = [*(config.get("Entrypoint") or []), *(config.get("Cmd") or [])]
     for argument in launch_command:
-        if PurePosixPath(str(argument)).name.casefold() == "honua.server.dll":
+        if compilation == "native-aot" and PurePosixPath(str(argument)).name.casefold() == "honua.server.dll":
             violations.append(
                 f"configured launch command uses managed server entrypoint: {argument}"
             )
@@ -337,7 +343,7 @@ def verify_serving_image(image: str) -> list[str]:
         process = subprocess.Popen(["docker", "export", container], stdout=subprocess.PIPE)
         if process.stdout is None:
             raise RuntimeError("docker export did not provide a rootfs stream")
-        violations.extend(scan_rootfs(process.stdout, entrypoint))
+        violations.extend(scan_rootfs(process.stdout, entrypoint, compilation))
         if process.wait() != 0:
             raise subprocess.CalledProcessError(process.returncode, ["docker", "export", container])
     finally:
@@ -466,6 +472,25 @@ def _write_result(violations: list[str], success: str) -> int:
     return 0
 
 
+def verify_serving_request(args: argparse.Namespace) -> int:
+    records = []
+    if args.require_attestations:
+        try:
+            records = verify_image_attestations(args.serving_image)
+        except (OSError, RuntimeError, ValueError, KeyError) as exc:
+            return _write_result([str(exc)], "")
+    violations = verify_serving_image(args.serving_image, args.compilation)
+    if not violations and args.require_attestations:
+        report = json.dumps(records, indent=2) + "\n"
+        print(report, end="")
+        if args.attestation_report:
+            Path(args.attestation_report).write_text(report, encoding="utf-8")
+    return _write_result(
+        violations,
+        f"Serving image {args.serving_image} is {args.compilation} and GDAL/PROJ/GEOS-free.",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -473,6 +498,7 @@ def main() -> int:
     group.add_argument("--worker-image", metavar="IMAGE")
     group.add_argument("--rootfs-tar", metavar="PATH")
     parser.add_argument("--entrypoint", default="/app/Honua.Server")
+    parser.add_argument("--compilation", choices=("native-aot", "jit"), default="native-aot")
     parser.add_argument(
         "--worker-database",
         metavar="CONNECTION_STRING",
@@ -493,22 +519,7 @@ def main() -> int:
         parser.error("--worker-database requires --worker-image")
 
     if args.serving_image:
-        records = []
-        if args.require_attestations:
-            try:
-                records = verify_image_attestations(args.serving_image)
-            except (OSError, RuntimeError, ValueError, KeyError) as exc:
-                return _write_result([str(exc)], "")
-        violations = verify_serving_image(args.serving_image)
-        if not violations and args.require_attestations:
-            report = json.dumps(records, indent=2) + "\n"
-            print(report, end="")
-            if args.attestation_report:
-                Path(args.attestation_report).write_text(report, encoding="utf-8")
-        return _write_result(
-            violations,
-            f"Serving image {args.serving_image} is native AOT and GDAL/PROJ/GEOS-free.",
-        )
+        return verify_serving_request(args)
     if args.worker_image:
         success = f"Worker image {args.worker_image} exposes the required native tools and drivers."
         if args.worker_database:
@@ -523,7 +534,7 @@ def main() -> int:
 
     with open(args.rootfs_tar, "rb") as stream:
         return _write_result(
-            scan_rootfs(stream, args.entrypoint),
+            scan_rootfs(stream, args.entrypoint, args.compilation),
             f"Rootfs archive {args.rootfs_tar} satisfies the serving-image boundary.",
         )
 

@@ -59,4 +59,6 @@ class HumanApprovalClient:
         assert (proposal["proposalId"] == review["proposalId"] == proposal_id
                 and proposal["version"] == review["proposalVersion"]
                 and proposal["planHash"] == review["planHash"]), "proposal review binding differs"
-        return self.request(path + "/approve", {}, headers={"X-Honua-Approval-Capability": review["capability"]})
+        csrf = self.request("/api/v1/admin/auth/csrf")["requestToken"]
+        return self.request(path + "/approve", {}, headers={
+            "X-Honua-Approval-Capability": review["capability"], "X-Honua-CSRF": csrf})
