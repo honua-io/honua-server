@@ -178,8 +178,12 @@ internal sealed class PublishedOperationTool : IMcpTool
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         await EnsureOperationAuthorizationAsync(httpContext, principal, cancellationToken).ConfigureAwait(false);
 
-        var proposalOnly = RequiresProposalSubmission;
-        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate && !proposalOnly)
+        var dryRun = ReadBool(arguments, "dryRun");
+        // Supported previews use normal dispatch so configured preview restrictions
+        // still apply. Only mutations are submitted as approval proposals.
+        var supportedPreview = RequiresProposalSubmission && dryRun && _descriptor.Policy.SupportsDryRun;
+        var proposalOnly = RequiresProposalSubmission && !supportedPreview;
+        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate && !proposalOnly && !supportedPreview)
         {
             // Fail closed until #3586 replaces this refusal with the unified runtime's
             // transport-neutral approval proof. The MCP adapter must not implement an
@@ -207,7 +211,6 @@ internal sealed class PublishedOperationTool : IMcpTool
         };
 
         var parameters = ReadParameters(arguments);
-        var dryRun = ReadBool(arguments, "dryRun");
         var connectionId = ReadString(arguments, "connectionId");
         var serviceName = ReadString(arguments, "serviceName");
         var request = new OperationRequest
