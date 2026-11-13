@@ -187,35 +187,7 @@ public sealed class GeoServicesRestClientSecurityTests
         var handler = GeoServicesRestClient.CreatePinnedDnsHttpMessageHandler((_, _) =>
             Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var socketsHandler = handler.Should().BeOfType<SocketsHttpHandler>().Subject;
-        var connectCallback = socketsHandler.ConnectCallback;
-        connectCallback.Should().NotBeNull();
-
-        var baselineDescriptors = CountOpenFileDescriptors();
-
-        for (var i = 0; i < 128; i++)
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "https://example.com/");
-            var context = SocketConnectionContextFactory.Create(new DnsEndPoint("example.com", 443), request);
-            using var cts = new CancellationTokenSource();
-            cts.Cancel();
-
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-                connectCallback!(context, cts.Token).AsTask());
-        }
-
-        // Drain pending socket finalizers so the FD count reflects actual leaks rather
-        // than queued finalizable state from cancelled ConnectAsync calls. Slow CI runners
-        // were showing >64 transient descriptors without this nudge even though the
-        // production code in ConnectWithPinnedDnsAsync deterministically disposes the
-        // socket on the cancellation path.
-        _ = GC.GetTotalMemory(forceFullCollection: true);
-        GC.WaitForPendingFinalizers();
-        _ = GC.GetTotalMemory(forceFullCollection: true);
-
-        var settledDescriptors = await WaitForDescriptorSettleAsync(
-            baselineDescriptors,
-            TimeSpan.FromSeconds(10));
-        (settledDescriptors - baselineDescriptors).Should().BeLessThan(96);
+        await SocketLeakAssertions.CanceledConnectDoesNotLeakAsync(socketsHandler);
     }
 
     [Trait("Tier", "Fast")]
@@ -248,32 +220,6 @@ public sealed class GeoServicesRestClientSecurityTests
         var httpClient = new HttpClient(handler);
         return new GeoServicesRestClient(httpClient, logger ?? NullLogger<GeoServicesRestClient>.Instance, resolver);
     }
-
-    private static async Task<int> WaitForDescriptorSettleAsync(int baselineDescriptors, TimeSpan timeout)
-    {
-        var deadline = DateTimeOffset.UtcNow.Add(timeout);
-        var lowestObserved = int.MaxValue;
-
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            var current = CountOpenFileDescriptors();
-            if (current < lowestObserved)
-            {
-                lowestObserved = current;
-            }
-
-            if (current <= baselineDescriptors + 16)
-            {
-                return current;
-            }
-
-            await Task.Delay(100);
-        }
-
-        return lowestObserved;
-    }
-
-    private static int CountOpenFileDescriptors() => Directory.GetFiles("/proc/self/fd").Length;
 
     private sealed class CountingHandler : HttpMessageHandler
     {
