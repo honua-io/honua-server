@@ -6,7 +6,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Server.Features.Admin;
 
-// This listener enqueues on the shared transition seam and does not build its own producer, so a hub fault cannot fail the store write.
 internal sealed class RealtimeOperationTransitionListener(AdminRealtimeBroadcaster broadcaster)
     : IWorkflowOperationTransitionListener
 {
@@ -17,7 +16,6 @@ internal sealed class RealtimeOperationTransitionListener(AdminRealtimeBroadcast
     {
         ArgumentNullException.ThrowIfNull(transition);
 
-        _broadcaster.EnqueueTransition(transition);
-        return Task.CompletedTask;
+        return _broadcaster.PublishTransitionAsync(transition, cancellationToken);
     }
 }

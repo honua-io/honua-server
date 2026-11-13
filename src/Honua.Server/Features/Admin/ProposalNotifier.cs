@@ -1,14 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Microsoft.AspNetCore.SignalR;
 
 namespace Honua.Server.Features.Admin;
 
 internal sealed partial class ProposalNotifier(
-    IHubContext<AdminHub> hubContext,
+    AdminRealtimePublisher publisher,
     ILogger<ProposalNotifier> logger) : IProposalNotifier
 {
     public async Task NotifyPendingAsync(OperationProposal proposal, CancellationToken cancellationToken = default)
@@ -43,9 +43,9 @@ internal sealed partial class ProposalNotifier(
             proposal.Plan.RiskLevel.ToString(),
             DateTimeOffset.UtcNow);
 
-        return hubContext.Clients
-            .Group(AdminRealtimeContract.ProposalsGroup)
-            .SendAsync(eventName, payload, cancellationToken);
+        return publisher.PublishAsync(new AdminRealtimeMessage(
+            AdminRealtimeContract.ProposalsTopic, eventName, payload,
+            AdminRealtimeJsonContext.Default.ProposalRealtimeEvent), cancellationToken);
     }
 
     private static partial class Log

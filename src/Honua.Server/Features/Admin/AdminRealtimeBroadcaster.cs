@@ -3,103 +3,45 @@
 
 using System.Globalization;
 using System.Threading.Channels;
+using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Models;
-using Microsoft.AspNetCore.SignalR;
 
 namespace Honua.Server.Features.Admin;
 
-// Broadcasts are non-blocking writes into bounded channels, and a hub failure is logged instead of faulting the sampler or the store write.
 internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
 {
-    // Latest-wins: only the freshest ops-health snapshot matters, so a capacity of one that drops the older
-    // pending snapshot coalesces bursts without buffering.
     private readonly Channel<OpsHealthSnapshotResponse> _opsHealth =
         Channel.CreateBounded<OpsHealthSnapshotResponse>(new BoundedChannelOptions(1)
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleReader = true,
-            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true, SingleWriter = false
         });
-
-    // Each transition is an independent event; bound the buffer and drop the oldest under sustained
-    // backpressure (clients reconcile via the deploy-operations list / operate-events APIs).
-    private readonly Channel<WorkflowOperationTransition> _transitions =
-        Channel.CreateBounded<WorkflowOperationTransition>(new BoundedChannelOptions(256)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleReader = true,
-            SingleWriter = false,
-        });
-
-    private readonly IHubContext<AdminHub> _hubContext;
+    private readonly AdminRealtimePublisher _publisher;
     private readonly OpsHealthFlushSignal _flushSignal;
-    private readonly AdminRealtimeCapabilities _capabilities;
     private readonly ILogger<AdminRealtimeBroadcaster> _logger;
 
-    public AdminRealtimeBroadcaster(
-        IHubContext<AdminHub> hubContext,
-        OpsHealthFlushSignal flushSignal,
-        AdminRealtimeCapabilities capabilities,
+    public AdminRealtimeBroadcaster(AdminRealtimePublisher publisher, OpsHealthFlushSignal flushSignal,
         ILogger<AdminRealtimeBroadcaster> logger)
     {
-        _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
-        _flushSignal = flushSignal ?? throw new ArgumentNullException(nameof(flushSignal));
-        _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-        // Subscribe unconditionally; the handler short-circuits when the backplane is absent. Subscribing in
-        // the constructor guarantees the seam is wired before the sampler produces its first flush.
+        _publisher = publisher;
+        _flushSignal = flushSignal;
+        _logger = logger;
         _flushSignal.Flushed += OnFlushed;
     }
 
-    // The transition forward is non-blocking and swallows transport faults so the store write that raised it is not failed.
-    public void EnqueueTransition(WorkflowOperationTransition transition)
+    public async Task PublishTransitionAsync(WorkflowOperationTransition transition, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(transition);
-
-        if (!_capabilities.BackplaneEnabled)
-        {
-            return;
-        }
-
-        _transitions.Writer.TryWrite(transition);
+        await _publisher.PublishAsync(new AdminRealtimeMessage(AdminRealtimeContract.DeployOperationsTopic,
+            AdminRealtimeContract.DeployOperationEventName, JsonSerializer.SerializeToElement(MapDeployEvent(transition), AdminRealtimeGroupsJsonContext.Default.DeployOperationRealtimeEvent)), cancellationToken).ConfigureAwait(false);
+        var operateEvent = OperateEventResponseMapper.Map(ReleaseTimelineEventFactory.Create(transition));
+        await _publisher.PublishAsync(new AdminRealtimeMessage(AdminRealtimeContract.OperateEventsTopic,
+            AdminRealtimeContract.OperateEventEventName, JsonSerializer.SerializeToElement(operateEvent, AdminRealtimeGroupsJsonContext.Default.OperateEventResponse)), cancellationToken).ConfigureAwait(false);
     }
 
-    private void OnFlushed(object? sender, OpsHealthFlushedEventArgs args)
-    {
-        if (!_capabilities.BackplaneEnabled)
-        {
-            return;
-        }
-
-        try
-        {
-            // Non-blocking latest-wins write; the sampler is never awaited or blocked here.
-            _opsHealth.Writer.TryWrite(args.Snapshot);
-        }
-        // Intentional catch-all: a broadcast-enqueue fault must never propagate
-        // into the sampler that raised this event.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            FlushEnqueueFailed(_logger, ex);
-        }
-    }
+    private void OnFlushed(object? sender, OpsHealthFlushedEventArgs args) => _opsHealth.Writer.TryWrite(args.Snapshot);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        if (!_capabilities.BackplaneEnabled)
-        {
-            return;
-        }
-
-        await Task.WhenAll(
-            DrainOpsHealthAsync(stoppingToken),
-            DrainTransitionsAsync(stoppingToken)).ConfigureAwait(false);
-    }
-
-    private async Task DrainOpsHealthAsync(CancellationToken stoppingToken)
     {
         try
         {
@@ -107,68 +49,17 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
             {
                 try
                 {
-                    await _hubContext.Clients
-                        .Group(AdminRealtimeContract.OpsHealthGroup)
-                        .SendAsync(AdminRealtimeContract.OpsHealthSnapshotEventName, snapshot, stoppingToken)
-                        .ConfigureAwait(false);
+                    await _publisher.PublishAsync(new AdminRealtimeMessage(AdminRealtimeContract.OpsHealthTopic,
+                        AdminRealtimeContract.OpsHealthSnapshotEventName, JsonSerializer.SerializeToElement(snapshot, AdminRealtimeGroupsJsonContext.Default.OpsHealthSnapshotResponse)), stoppingToken).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
+                catch (Exception exception) when (exception is not OutOfMemoryException)
                 {
-                    return;
-                }
-                // Intentional catch-all: this is a per-item send inside the ops-health
-                // drain loop; fail-open, a backplane/transport fault drops this push
-                // and clients re-sync via history rather than aborting the loop.
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                    OpsHealthBroadcastFailed(_logger, ex);
+                    OpsHealthAppendFailed(_logger, exception);
                 }
             }
         }
-        catch (OperationCanceledException)
-        {
-            // Normal shutdown.
-        }
-    }
-
-    private async Task DrainTransitionsAsync(CancellationToken stoppingToken)
-    {
-        try
-        {
-            await foreach (var transition in _transitions.Reader.ReadAllAsync(stoppingToken).ConfigureAwait(false))
-            {
-                try
-                {
-                    var deployEvent = MapDeployEvent(transition);
-                    await _hubContext.Clients
-                        .Group(AdminRealtimeContract.DeployOperationsGroup)
-                        .SendAsync(AdminRealtimeContract.DeployOperationEventName, deployEvent, stoppingToken)
-                        .ConfigureAwait(false);
-
-                    // The operate-events group receives the same wire shape as GET observability/events.
-                    var operateEvent = OperateEventResponseMapper.Map(ReleaseTimelineEventFactory.Create(transition));
-                    await _hubContext.Clients
-                        .Group(AdminRealtimeContract.OperateEventsGroup)
-                        .SendAsync(AdminRealtimeContract.OperateEventEventName, operateEvent, stoppingToken)
-                        .ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    return;
-                }
-                // Intentional catch-all: this is a per-item send inside the transitions
-                // drain loop; fail-open, clients reconcile via the deploy-operations
-                // list / operate-events APIs rather than aborting the loop.
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                    TransitionBroadcastFailed(_logger, ex);
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Normal shutdown.
-        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
     }
 
     private static DeployOperationRealtimeEvent MapDeployEvent(WorkflowOperationTransition transition)
@@ -193,16 +84,9 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
     {
         _flushSignal.Flushed -= OnFlushed;
         _opsHealth.Writer.TryComplete();
-        _transitions.Writer.TryComplete();
         base.Dispose();
     }
 
-    [LoggerMessage(EventId = 9310, Level = LogLevel.Warning, Message = "Ops-health realtime enqueue threw.")]
-    private static partial void FlushEnqueueFailed(ILogger logger, Exception exception);
-
-    [LoggerMessage(EventId = 9311, Level = LogLevel.Warning, Message = "Ops-health realtime broadcast failed; dropping this push (clients re-sync via history).")]
-    private static partial void OpsHealthBroadcastFailed(ILogger logger, Exception exception);
-
-    [LoggerMessage(EventId = 9312, Level = LogLevel.Warning, Message = "Deploy/operate realtime broadcast failed; dropping this push (clients re-sync via list API).")]
-    private static partial void TransitionBroadcastFailed(ILogger logger, Exception exception);
+    [LoggerMessage(EventId = 9311, Level = LogLevel.Warning, Message = "Ops-health realtime append failed; clients reconcile via history.")]
+    private static partial void OpsHealthAppendFailed(ILogger logger, Exception exception);
 }
