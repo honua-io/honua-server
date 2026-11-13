@@ -6,13 +6,14 @@ using Honua.Core.Features.RateLimiting.Domain;
 
 namespace Honua.Server.Features.Infrastructure.Configuration;
 
-internal sealed class PostgresRateLimitPolicyStore(PostgresConfigurationDocuments documents) : IRateLimitPolicyStore
+internal sealed class PostgresRateLimitPolicyStore(PostgresConfigurationDocuments documents, IHttpContextAccessor? contexts = null)
+    : IRateLimitPolicyStore
 {
     private readonly ConfigurationCollectionStore<RateLimitPolicy> _store = new(documents,
-        new("rate-limit-policy", SharedConfigurationJsonContext.Default.RateLimitPolicy));
+        new("rate-limit-policy", SharedConfigurationJsonContext.Default.RateLimitPolicy), contexts);
 
     public async Task<IReadOnlyList<RateLimitPolicy>> ListPoliciesAsync(CancellationToken cancellationToken = default)
-        => (await _store.ReadAsync(cancellationToken).ConfigureAwait(false)).Documents.Select(document => document.Value).ToArray();
+        => (await _store.ReadCurrentAsync(cancellationToken).ConfigureAwait(false)).Documents.Select(document => document.Value).ToArray();
 
     public async Task<RateLimitPolicy?> GetPolicyAsync(Guid policyId, CancellationToken cancellationToken = default)
         => (await ListPoliciesAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault(policy => policy.PolicyId == policyId);

@@ -1,23 +1,27 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Configuration;
 
-internal sealed class PostgresClientCertificateTrustStore(PostgresConfigurationDocuments documents, IOptions<ClientCertificateAuthenticationOptions>? options = null) : IClientCertificateTrustStore, IDisposable
+internal sealed class PostgresClientCertificateTrustStore(
+    PostgresConfigurationDocuments documents,
+    IOptions<ClientCertificateAuthenticationOptions>? options = null,
+    IHttpContextAccessor? contexts = null) : IClientCertificateTrustStore, IDisposable
 {
     private readonly ConfigurationCollectionStore<ClientCertificateTrustProfile> _store = new(documents,
-        new("client-certificate-trust", SharedConfigurationJsonContext.Default.ClientCertificateTrustProfile));
+        new("client-certificate-trust", SharedConfigurationJsonContext.Default.ClientCertificateTrustProfile), contexts);
 
     private readonly SemaphoreSlim _seedGate = new(1, 1);
-    private bool _seeded;
+    private volatile bool _seeded;
 
     public async Task<IReadOnlyList<ClientCertificateTrustProfile>> ListProfilesAsync(string? environmentId = null, CancellationToken cancellationToken = default)
     {
         await SeedProfilesAsync(cancellationToken).ConfigureAwait(false);
-        return (await _store.ReadAsync(cancellationToken).ConfigureAwait(false)).Documents.Select(document => document.Value)
+        return (await _store.ReadCurrentAsync(cancellationToken).ConfigureAwait(false)).Documents.Select(document => document.Value)
             .Where(profile => string.IsNullOrWhiteSpace(environmentId) || string.Equals(profile.EnvironmentId, environmentId, StringComparison.OrdinalIgnoreCase))
             .OrderBy(profile => profile.EnvironmentId, StringComparer.OrdinalIgnoreCase)
             .ThenBy(profile => profile.ProfileId, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -81,22 +85,43 @@ internal sealed class PostgresClientCertificateTrustStore(PostgresConfigurationD
         return removed;
     }
 
-    // Import bootstrap profiles once, without ever replacing shared mappings, disabled profiles or revocations.
+    // Configured profiles are applied once per process. Configuration owns the issuer and trust-anchor settings,
+    // so an operator's config change reaches every task; a disable from either side wins, and revocations and
+    // mappings are unioned so neither configuration nor an administrator can silently drop the other's entries.
     private async Task SeedProfilesAsync(CancellationToken cancellationToken)
     {
+        if (_seeded) { return; }
         await _seedGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_seeded) { return; }
-            foreach (var profile in options?.Value.TrustProfiles.Select(ClientCertificateTrustProfile.FromOptions) ?? [])
+            foreach (var configured in options?.Value.TrustProfiles.Select(ClientCertificateTrustProfile.FromOptions) ?? [])
             {
-                await documents.WriteAsync(new ConfigurationCollection<ClientCertificateTrustProfile>(
-                    "client-certificate-trust", SharedConfigurationJsonContext.Default.ClientCertificateTrustProfile),
-                    new(Key(profile.ProfileId), 0, profile), cancellationToken).ConfigureAwait(false);
+                await _store.MutateAsync(Key(configured.ProfileId),
+                    current => current is null ? configured : ApplyConfigured(current, configured), cancellationToken).ConfigureAwait(false);
             }
             _seeded = true;
         }
         finally { _seedGate.Release(); }
+    }
+
+    internal static ClientCertificateTrustProfile ApplyConfigured(ClientCertificateTrustProfile stored, ClientCertificateTrustProfile configured)
+    {
+        var merged = configured with
+        {
+            Revision = stored.Revision,
+            Enabled = stored.Enabled && configured.Enabled,
+            PrincipalMappings = stored.PrincipalMappings
+                .Concat(configured.PrincipalMappings.Where(mapping => !stored.PrincipalMappings.Any(existing => Equal(existing.MappingId, mapping.MappingId))))
+                .ToArray(),
+            Revocations = stored.Revocations
+                .Concat(configured.Revocations.Where(revocation => !stored.Revocations.Any(existing => Equal(existing.RevocationId, revocation.RevocationId))))
+                .ToArray()
+        };
+        var type = SharedConfigurationJsonContext.Default.ClientCertificateTrustProfile;
+        return JsonSerializer.Serialize(merged, type) == JsonSerializer.Serialize(stored, type)
+            ? stored
+            : merged with { Revision = stored.Revision + 1 };
     }
 
     private static string Key(string profileId) => profileId.ToUpperInvariant();

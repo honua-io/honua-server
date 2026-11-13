@@ -254,6 +254,51 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         (await taskB.GetProfileAsync("bootstrap"))!.Enabled.Should().BeFalse();
     }
 
+    [IntegrationTest]
+    public async Task ConfiguredTrustProfileChange_OnRestartedTask_AppliesToEveryTaskAndKeepsAdminRevocations()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var original = Options.Create(new ClientCertificateAuthenticationOptions
+        {
+            TrustProfiles = [new() { ProfileId = "partner", EnvironmentId = "production", DisplayName = "Partner", AcceptedIssuerThumbprints = ["AA", "BB"] }]
+        });
+        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), original);
+        var adminRevocation = new ClientCertificateRevocationEntry
+        {
+            RevocationId = "admin-revocation", Reason = "Lost", Actor = "operator", FingerprintSha256 = "abc"
+        };
+        await taskA.AddRevocationAsync("partner", adminRevocation);
+        var changed = Options.Create(new ClientCertificateAuthenticationOptions
+        {
+            TrustProfiles = [new() { ProfileId = "partner", EnvironmentId = "production", DisplayName = "Partner", AcceptedIssuerThumbprints = ["AA"], Enabled = false }]
+        });
+
+        var restarted = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), changed);
+        await restarted.ListProfilesAsync();
+
+        var seenByTaskA = (await taskA.GetProfileAsync("partner"))!;
+        seenByTaskA.Enabled.Should().BeFalse();
+        seenByTaskA.AcceptedIssuerThumbprints.Should().Equal("AA");
+        seenByTaskA.Revocations.Should().ContainSingle().Which.Should().Be(adminRevocation);
+        var generation = await harness.CreateConfigurationDocuments().GetGenerationAsync(CancellationToken.None);
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), changed).ListProfilesAsync();
+        (await harness.CreateConfigurationDocuments().GetGenerationAsync(CancellationToken.None)).Should().Be(generation);
+    }
+
+    [IntegrationTest]
+    public async Task ReadAsync_WithDocumentFromAnotherKeyRing_SkipsItInsteadOfFailing()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var readable = Policy(10);
+        await CreateRateStore(harness).CreatePolicyAsync(readable);
+        var foreign = new PostgresRateLimitPolicyStore(harness.CreateConfigurationDocuments(new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()));
+        await foreign.CreatePolicyAsync(Policy(20, name: "Foreign"));
+
+        var policies = await CreateRateStore(harness).ListPoliciesAsync();
+
+        policies.Should().ContainSingle().Which.PolicyId.Should().Be(readable.PolicyId);
+    }
+
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
         => ControlPlaneStateHarness.CreateAsync(database, nameof(PostgresConfigurationStoreTests));
 

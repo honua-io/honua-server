@@ -1,11 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.ControlPlane;
 using Honua.Core.Features.Metadata.Abstractions;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -16,8 +18,11 @@ internal sealed record ConfigurationDocument<T>(string Key, long Revision, T Val
 internal sealed record ConfigurationSnapshot<T>(long Generation, IReadOnlyList<ConfigurationDocument<T>> Documents);
 internal sealed record ConfigurationWrite<T>(string Key, long ExpectedRevision, T? Value);
 
-internal sealed class PostgresConfigurationDocuments(JobStoreDatabase database, IDataProtectionProvider protection) : IConfigurationGenerationSource
+internal sealed partial class PostgresConfigurationDocuments(
+    JobStoreDatabase database, IDataProtectionProvider protection, ILogger<PostgresConfigurationDocuments>? logger = null)
+    : IConfigurationGenerationSource
 {
+    private readonly ILogger _logger = logger ?? (ILogger)NullLogger.Instance;
     private readonly string _documents = database.Table("configuration_documents");
     private readonly string _generation = database.Table("configuration_generation");
 
@@ -47,9 +52,18 @@ internal sealed class PostgresConfigurationDocuments(JobStoreDatabase database, 
                 generation = reader.GetInt64(0);
                 if (!reader.IsDBNull(1))
                 {
-                    var value = JsonSerializer.Deserialize(protector.Unprotect(reader.GetFieldValue<byte[]>(3)), collection.Type)
-                        ?? throw new InvalidOperationException("Configuration document is empty.");
-                    documents.Add(new(reader.GetString(1), reader.GetInt64(2), value));
+                    var key = reader.GetString(1);
+                    // An unreadable document is left out (fails closed for that entry) so it cannot take down every request.
+                    try
+                    {
+                        var value = JsonSerializer.Deserialize(protector.Unprotect(reader.GetFieldValue<byte[]>(3)), collection.Type)
+                            ?? throw new JsonException("Configuration document is empty.");
+                        documents.Add(new(key, reader.GetInt64(2), value));
+                    }
+                    catch (Exception exception) when (exception is CryptographicException or JsonException)
+                    {
+                        DocumentUnreadable(_logger, collection.Kind, key, exception);
+                    }
                 }
             }
             return new ConfigurationSnapshot<T>(generation ?? throw new InvalidOperationException("Configuration generation is unavailable."), documents);
@@ -78,4 +92,7 @@ internal sealed class PostgresConfigurationDocuments(JobStoreDatabase database, 
         }, StatementRepeat.NotAfterSend, cancellationToken);
 
     private IDataProtector Protector(string kind) => protection.CreateProtector("Honua.ConfigurationDocuments", kind);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Configuration document {Kind}/{Key} could not be read and is ignored.")]
+    private static partial void DocumentUnreadable(ILogger logger, string kind, string key, Exception exception);
 }

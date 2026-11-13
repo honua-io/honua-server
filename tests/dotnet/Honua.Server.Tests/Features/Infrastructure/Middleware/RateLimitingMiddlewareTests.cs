@@ -135,6 +135,21 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
+    public async Task InvokeAsync_WhenPolicyStoreFails_EnforcesGlobalLimit()
+    {
+        var policies = Substitute.For<IRateLimitPolicyStore>();
+        policies.ListPoliciesAsync(Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<RateLimitPolicy>>>(_ => throw new InvalidOperationException("store unavailable"));
+        var middleware = CreateMiddleware(limit: 1, policyStore: policies);
+
+        await middleware.InvokeAsync(CreateContext("198.51.100.45"));
+        var secondContext = CreateContext("198.51.100.45");
+        await middleware.InvokeAsync(secondContext);
+
+        secondContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+    }
+
+    [UnitTest]
     public async Task InvokeAsync_UnderLimit_AllowsRequestThrough()
     {
         // Limit of 5; a single request is comfortably under the limit and must pass.

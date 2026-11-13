@@ -97,6 +97,7 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public PostgresIdempotencyReservationStore CreateIdempotencyReservationStore() => new(_jobs.Database);
 
     public PostgresConfigurationDocuments CreateConfigurationDocuments() => new(_jobs.Database, _sharedKeyRing);
+    public PostgresConfigurationDocuments CreateConfigurationDocuments(IDataProtectionProvider keyRing) => new(_jobs.Database, keyRing);
     public PostgresOidcProviderStore CreateOidcStore() => new(CreateConfigurationDocuments());
     public PostgresRateLimitPolicyStore CreateRateStore() => new(CreateConfigurationDocuments());
     public PostgresClientCertificateTrustStore CreateTrustStore() => new(CreateConfigurationDocuments());

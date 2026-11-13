@@ -4,10 +4,30 @@
 namespace Honua.Server.Features.Infrastructure.Configuration;
 
 // Optimistic writes re-read after conflicts, so independent tasks never overwrite unseen changes.
-internal sealed class ConfigurationCollectionStore<T>(PostgresConfigurationDocuments documents, ConfigurationCollection<T> collection)
+internal sealed class ConfigurationCollectionStore<T>(
+    PostgresConfigurationDocuments documents, ConfigurationCollection<T> collection, IHttpContextAccessor? contexts = null)
     where T : class
 {
+    private ConfigurationSnapshot<T>? _current;
+
     public Task<ConfigurationSnapshot<T>> ReadAsync(CancellationToken token) => documents.ReadAsync(collection, token);
+
+    // Hot-path readers reuse the decrypted snapshot while the shared generation is unchanged. The request's
+    // generation was captured before authentication; outside a request the generation row is read directly.
+    public async Task<ConfigurationSnapshot<T>> ReadCurrentAsync(CancellationToken token)
+    {
+        var generation = contexts?.HttpContext?.Items[RequestConfigurationGeneration.ContextKey] is long captured
+            ? captured
+            : await documents.GetGenerationAsync(token).ConfigureAwait(false);
+        var current = Volatile.Read(ref _current);
+        if (current is not null && current.Generation == generation)
+        {
+            return current;
+        }
+        var snapshot = await ReadAsync(token).ConfigureAwait(false);
+        Volatile.Write(ref _current, snapshot);
+        return snapshot;
+    }
 
     public async Task<T> CreateAsync(string key, T value, CancellationToken token)
     {

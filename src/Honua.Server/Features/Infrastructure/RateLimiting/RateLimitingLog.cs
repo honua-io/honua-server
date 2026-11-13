@@ -19,4 +19,7 @@ internal static partial class RateLimitingLog
         Level = LogLevel.Warning,
         Message = "Process-local rate-limit table is at capacity ({Capacity}); evicting the least-recently-used counter")]
     public static partial void MemoryCounterCapacityEvicted(ILogger logger, int capacity);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rate limit policies could not be read; enforcing the global limit")]
+    public static partial void PolicyStoreUnavailable(ILogger logger, Exception exception);
 }
