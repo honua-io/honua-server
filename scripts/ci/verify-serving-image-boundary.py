@@ -472,6 +472,25 @@ def _write_result(violations: list[str], success: str) -> int:
     return 0
 
 
+def verify_serving_request(args: argparse.Namespace) -> int:
+    records = []
+    if args.require_attestations:
+        try:
+            records = verify_image_attestations(args.serving_image)
+        except (OSError, RuntimeError, ValueError, KeyError) as exc:
+            return _write_result([str(exc)], "")
+    violations = verify_serving_image(args.serving_image, args.compilation)
+    if not violations and args.require_attestations:
+        report = json.dumps(records, indent=2) + "\n"
+        print(report, end="")
+        if args.attestation_report:
+            Path(args.attestation_report).write_text(report, encoding="utf-8")
+    return _write_result(
+        violations,
+        f"Serving image {args.serving_image} is {args.compilation} and GDAL/PROJ/GEOS-free.",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -500,22 +519,7 @@ def main() -> int:
         parser.error("--worker-database requires --worker-image")
 
     if args.serving_image:
-        records = []
-        if args.require_attestations:
-            try:
-                records = verify_image_attestations(args.serving_image)
-            except (OSError, RuntimeError, ValueError, KeyError) as exc:
-                return _write_result([str(exc)], "")
-        violations = verify_serving_image(args.serving_image, args.compilation)
-        if not violations and args.require_attestations:
-            report = json.dumps(records, indent=2) + "\n"
-            print(report, end="")
-            if args.attestation_report:
-                Path(args.attestation_report).write_text(report, encoding="utf-8")
-        return _write_result(
-            violations,
-            f"Serving image {args.serving_image} is {args.compilation} and GDAL/PROJ/GEOS-free.",
-        )
+        return verify_serving_request(args)
     if args.worker_image:
         success = f"Worker image {args.worker_image} exposes the required native tools and drivers."
         if args.worker_database:

@@ -44,9 +44,12 @@ def wait_ready(port):
 
 def transfer_database(compose, env, dump=None):
     command = (["pg_dump", "-Fc"] if dump is None else
-               ["pg_restore", "--clean", "--if-exists", "--exit-on-error"])
+               ["pg_restore", "--clean", "--if-exists", "--create", "--exit-on-error"])
+    # Recreate the stopped application's database to remove upgrade-only objects
+    # and avoid dropping partition constraints independently of their parent.
+    database = "honua" if dump is None else "postgres"
     result = subprocess.run(compose + ["exec", "-T", "postgres"] + command +
-                            ["-U", "honua", "-d", "honua"], env=env, input=dump,
+                            ["-U", "honua", "-d", database], env=env, input=dump,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600)
     assert result.returncode == 0, "database backup or restore failed"
     return result.stdout
@@ -111,6 +114,42 @@ def legacy_configuration(common, install, env):
     for key in ("POSTGRES_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_MASTER_KEY", "HONUA_KEYRING_PASSWORD"):
         legacy_env[key] = read_secret(install, key)
     return legacy, legacy_env
+
+
+def test_manual_database_restore_replaces_partitioned_schema(tmp_path):
+    configuration = tmp_path / "compose.yaml"
+    configuration.write_text("""services:
+  postgres:
+    image: postgres:17-alpine
+    network_mode: none
+    environment:
+      POSTGRES_USER: honua
+      POSTGRES_DB: honua
+      POSTGRES_HOST_AUTH_METHOD: trust
+    healthcheck:
+      test: [CMD, pg_isready, -U, honua, -d, honua]
+      interval: 1s
+      timeout: 5s
+      retries: 60
+""")
+    compose = ["docker", "compose", "-f", str(configuration),
+               "-p", "honua-restore-" + secrets.token_hex(4)]
+    env = dict(os.environ)
+    def sql(statement):
+        return run(compose + ["exec", "-T", "postgres", "psql", "-U", "honua", "-d", "honua",
+                              "-tA", "-v", "ON_ERROR_STOP=1", "-c", statement], env=env)
+    try:
+        run(compose + ["up", "-d", "--wait"], env=env)
+        sql("CREATE TABLE observation(id int PRIMARY KEY) PARTITION BY RANGE(id); "
+            "CREATE TABLE observation_default PARTITION OF observation DEFAULT; "
+            "INSERT INTO observation VALUES (1)")
+        backup = transfer_database(compose, env)
+        sql("UPDATE observation SET id=2; CREATE TABLE upgrade_only(id int)")
+        transfer_database(compose, env, backup)
+        assert sql("SELECT id FROM observation") == "1"
+        assert sql("SELECT to_regclass('public.upgrade_only') IS NULL") == "t"
+    finally:
+        run(compose + ["down", "--volumes", "--remove-orphans"], env=env, check=False)
 
 
 def test_manual_catalog_rc1_rollback_and_return(tmp_path):
