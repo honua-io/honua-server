@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Admin;
 
 public sealed partial class TileOperationJobTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(ExecutionJobStatus.Queued, OperationStatus.Queued)]
     [InlineData(ExecutionJobStatus.Running, OperationStatus.Processing)]
     [InlineData(ExecutionJobStatus.Cancelled, OperationStatus.Cancelled)]
@@ -44,7 +44,7 @@ public sealed partial class TileOperationJobTests
         (await progress.GetProgressAsync(jobId)).Should().BeNull();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(ExecutionJobStatus.Cancelled)]
     [InlineData(ExecutionJobStatus.Queued)]
     public void Get_NonSuccessfulDurableJob_HidesPublishedArtifact(ExecutionJobStatus status)

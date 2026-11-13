@@ -26,7 +26,7 @@ namespace Honua.Server.Tests.Features.Export;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class ExportJobServiceTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(ExecutionJobStatus.Queued, OperationStatus.Queued)]
     [InlineData(ExecutionJobStatus.Running, OperationStatus.Processing)]
     [InlineData(ExecutionJobStatus.Cancelled, OperationStatus.Cancelled)]

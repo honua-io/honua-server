@@ -66,9 +66,9 @@ internal sealed class ExportJobExecutor(
         }
 
         var processing = Fresh(request);
-        var admission = await progressStore.TrySetProgressAsync(
+        var admission = await progressStore.TryReplaceProgressAsync(
                 new OperationProgressWrite(request.JobId, processing, ExportJobService.Retention),
-                existing.Status,
+                existing,
                 cancellationToken)
             .ConfigureAwait(false);
         return admission.Outcome == ProgressCompareAndSetOutcome.Updated
@@ -304,10 +304,7 @@ internal sealed class ExportJobExecutor(
 
         public ExportProgress Processing { get; } = processing;
 
-        // "honua-export" is a compile-time relative literal and the job id is always the
-        // server-generated Guid.NewGuid().ToString("N") minted in ExportEndpoints (never
-        // caller-supplied), so this combine cannot silently drop Path.GetTempPath().
-        public string ScratchDir { get; } = Path.Join(Path.GetTempPath(), "honua-export", request.JobId);
+        public string ScratchDir { get; } = Path.Join(Path.GetTempPath(), "honua-export", request.JobId, Guid.NewGuid().ToString("N"));
 
         public string? UploadedFileId { get; set; }
 
