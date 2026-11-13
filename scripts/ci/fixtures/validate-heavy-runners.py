@@ -67,22 +67,38 @@ class ShardRunnerRoutingTests(unittest.TestCase):
 
 
 class ServicePortIsolationTests(unittest.TestCase):
-    def test_every_postgres_service_uses_an_assigned_host_port(self):
+    def postgres_jobs(self):
         for workflow in SHARD_JOBS:
             jobs = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"]
             for name, job in jobs.items():
-                if "postgres" not in job.get("services", {}):
-                    continue
-                with self.subTest(workflow=workflow, job=name):
-                    self.assertEqual(job["services"]["postgres"]["ports"], [5432])
-                    if name == SHARD_JOBS[workflow][0]:
-                        continue  # The shard-specific connection contract is checked above.
-                    first = job["steps"][0]
-                    self.assertEqual(first["env"]["PGPORT"], "${{ job.services.postgres.ports['5432'] }}")
-                    self.assertIn('PGPORT=$PGPORT', first["run"])
-                    self.assertIn('HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;', first["run"])
-                    for step in job["steps"]:
-                        self.assertNotIn("HONUA_TEST_DB_URL", step.get("env", {}))
+                if "postgres" in job.get("services", {}):
+                    yield workflow, name, job
+
+    def assert_assigned_port(self, workflow, name, job):
+        self.assertEqual(job["services"]["postgres"]["ports"], [5432])
+        if name == SHARD_JOBS[workflow][0]:
+            return  # The shard-specific connection contract is checked above.
+        steps = job["steps"]
+        configure = [step for step in steps
+                     if step.get("uses") == "./.github/actions/configure-postgres-connection"]
+        self.assertEqual(len(configure), 1)
+        self.assertEqual(configure[0]["with"]["port"], "${{ job.services.postgres.ports['5432'] }}")
+        checkout = next(step for step in steps if step.get("uses", "").startswith("actions/checkout@"))
+        self.assertLess(steps.index(checkout), steps.index(configure[0]))
+        for step in steps:
+            self.assertNotIn("HONUA_TEST_DB_URL", step.get("env", {}))
+
+    def test_every_postgres_service_uses_an_assigned_host_port(self):
+        for workflow, name, job in self.postgres_jobs():
+            with self.subTest(workflow=workflow, job=name):
+                self.assert_assigned_port(workflow, name, job)
+
+    def test_connection_action_exports_both_consumers(self):
+        action = yaml.safe_load((ROOT / ".github/actions/configure-postgres-connection/action.yml").read_text())
+        step, = action["runs"]["steps"]
+        self.assertEqual(step["env"]["PGPORT"], "${{ inputs.port }}")
+        self.assertIn('PGPORT=$PGPORT', step["run"])
+        self.assertIn('HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;', step["run"])
 
     def test_integration_server_and_docker_smoke_receive_the_assigned_port(self):
         action = yaml.safe_load((ROOT / ".github/actions/setup-honua-server/action.yml").read_text())
