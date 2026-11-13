@@ -90,7 +90,7 @@ public sealed partial class PublishedOperationToolTests
 
         var result = await tool.InvokeAsync(http, Args("""{"dryRun":true}"""), default);
 
-        result.IsError.Should().NotBeTrue();
+        result.IsError.Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Completed");
         calls.Should().Be(1);
     }
