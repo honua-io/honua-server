@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -12,6 +13,17 @@ namespace Honua.Server.Tests.Realtime;
 [Operation(Operations.TestInfrastructure)]
 public sealed class RealtimeNotificationTriggerTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
+    [UnitTest]
+    public void Migration_IsAcceptedAsAdditiveByProductionSafetyClassifier()
+    {
+        const string resource = "Honua.Server.Migrations.159_CreateRealtimeJobCatalogTriggers.sql";
+        using var stream = typeof(Program).Assembly.GetManifestResourceStream(resource)!;
+        using var reader = new StreamReader(stream);
+        var classification = MigrationSafetyClassifier.Classify(resource, reader.ReadToEnd());
+        classification.Classification.Should().Be(MigrationSafetyClassification.Expand);
+        classification.BreakingRules.Should().BeEmpty();
+    }
+
     [IntegrationTest]
     public async Task Jobs_StatusChanges_AppendOnlyPublicFieldsInStableOrder()
     {
