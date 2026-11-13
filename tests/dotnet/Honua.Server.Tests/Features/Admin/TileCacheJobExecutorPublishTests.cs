@@ -35,7 +35,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-public sealed class TileCacheJobExecutorPublishTests
+public sealed partial class TileCacheJobExecutorPublishTests
 {
     [UnitTheory]
     [InlineData("archive", true, 7)]
@@ -835,7 +835,7 @@ public sealed class TileCacheJobExecutorPublishTests
     // parameters on the local backend and TileCacheJobExecutor executes it.
     internal sealed class TileCacheJobRunner(ServiceProvider serviceProvider)
     {
-        private readonly InMemoryUniversalProgressStore _progressStore = new();
+        private readonly Honua.TestKit.Helpers.ComparingInMemoryProgressStore _progressStore = new();
         private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
 
         public Task<string> StartAsync(TileOperationStartRequest request)

@@ -1,0 +1,93 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Tiles;
+using Honua.Server.Features.Admin.TileOperations;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
+using NSubstitute;
+
+namespace Honua.Server.Tests.Features.Admin;
+
+public sealed partial class TileCacheJobExecutorPublishTests
+{
+    [UnitTest]
+    public async Task ExecuteAsync_RetiredAttemptCompletesAfterSuccessor_PreservesSuccessorResult()
+    {
+        var progress = new ComparingInMemoryProgressStore();
+        var paused = Substitute.For<IUniversalProgressStore>();
+        var completing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        paused.GetProgressAsync<TileOperationProgress>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => progress.GetProgressAsync<TileOperationProgress>(call.Arg<string>()));
+        paused.GetProgressAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => progress.GetProgressAsync(call.Arg<string>()));
+        paused.SetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var snapshot = call.Arg<IOperationProgress>();
+                await PauseCompletionAsync(snapshot);
+                await progress.SetProgressAsync(call.Arg<string>(), snapshot);
+            });
+        paused.TryReplaceProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<IOperationProgress?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var write = call.Arg<OperationProgressWrite>();
+                await PauseCompletionAsync(write.Progress);
+                return await progress.TryReplaceProgressAsync(write, call.Arg<IOperationProgress?>());
+            });
+        using var services = BuildScope(new StubCloudStorage(), includeCloudStorage: true);
+        var now = DateTimeOffset.UtcNow;
+        var job = new ExecutionJobRecord
+        {
+            OperationId = Guid.NewGuid().ToString("N"),
+            Status = ExecutionJobStatus.Running,
+            AttemptCount = 1,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Spec = TileCacheExecutionSpecBuilder.Build(new TileOperationStartRequest
+            {
+                Operation = "archive", LayerId = 1, MinZoom = 0, MaxZoom = 0, MaxTiles = 1
+            }, null, new TileCacheBatchOptions())
+        };
+        var context = Substitute.For<IJobExecutionContext>();
+        context.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        var retired = CreateExecutor(paused, services).ExecuteAsync(job, context, CancellationToken.None);
+        try
+        {
+            await completing.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            var successorContext = Substitute.For<IJobExecutionContext>();
+            successorContext.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+            var result = await CreateExecutor(progress, services).ExecuteAsync(
+                job with { AttemptCount = 2 }, successorContext, CancellationToken.None);
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            var winner = await progress.GetProgressAsync<TileOperationProgress>(job.OperationId);
+            winner!.DownloadUrl.Should().NotBeNullOrWhiteSpace();
+            resume.TrySetResult();
+            Func<Task> finishRetired = async () => await retired;
+            await finishRetired.Should().ThrowAsync<OperationCanceledException>();
+            (await progress.GetProgressAsync<TileOperationProgress>(job.OperationId)).Should().Be(winner);
+            await context.DidNotReceive().TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            resume.TrySetResult();
+            try { await retired; }
+            catch (OperationCanceledException) { }
+        }
+
+        async Task PauseCompletionAsync(IOperationProgress snapshot)
+        {
+            if (snapshot.Status == OperationStatus.Completed)
+            {
+                completing.TrySetResult();
+                await resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            }
+        }
+    }
+}

@@ -1278,6 +1278,55 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_UnclaimedTileJob_ReleasesAdmissionOnce()
+    {
+        var operationId = Guid.NewGuid().ToString("N");
+        var operation = $"cancel-{operationId}";
+        long balance = 0;
+        using var listener = new System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (instrument, meter) =>
+        {
+            if (instrument.Name == "honua.tile.jobs.queue_depth")
+            {
+                meter.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "operation" && Equals(tag.Value, operation))
+                {
+                    Interlocked.Add(ref balance, measurement);
+                }
+            }
+        });
+        listener.Start();
+        var now = DateTimeOffset.UtcNow;
+        var job = new ExecutionJobRecord
+        {
+            OperationId = operationId, Status = ExecutionJobStatus.Queued, CreatedAt = now, UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.TileCache, Backend = "local",
+                TargetKind = BatchComputeTargetKind.KubernetesJob, WorkloadName = "tile-cancel",
+                Parameters = new Dictionary<string, string> { ["operation"] = operation }
+            }
+        };
+        await _fixture.GetService<IExecutionJobStore>().TryCreateAsync(job);
+        await _progressStore.SetProgressAsync(operationId,
+            Honua.Core.Features.Tiles.TileOperationProgress.CreateInitial(operationId, operation, null, null, null));
+        _operationIds.Add(operationId);
+        Honua.Server.Features.Admin.TileOperations.TileOperationMetrics.RecordJobQueued(job);
+
+        (await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        balance.Should().Be(0, "only the winning terminal transition releases tile admission");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_CompletedOperation_Returns409Conflict()
     {
         var operationId = Guid.NewGuid().ToString("N");

@@ -72,7 +72,8 @@ public sealed class ExportJobServiceTests
         record.Spec.Parameters[ExportJobService.RequestParameter].Should().NotContain(
             "subject-a",
             "the submitter travels on the record's audit, not in the request parameter");
-        ExportJobService.TryReadRequest(record, out var request).Should().BeTrue();
+        var request = ExportJobService.ReadRequest(record);
+        request.Should().NotBeNull();
         request!.Should().BeEquivalentTo(job with { Submitter = null });
         await jobQueue.Received(1).EnqueueAsync(job.JobId, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
         (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!.Status.Should().Be(OperationStatus.Queued);
@@ -96,7 +97,7 @@ public sealed class ExportJobServiceTests
             }
         };
 
-        ExportJobService.TryReadRequest(record, out var request).Should().BeFalse();
+        var request = ExportJobService.ReadRequest(record);
         request.Should().BeNull();
         var features = Substitute.For<IStreamingFeatureStore>();
         var storage = Substitute.For<ICloudFileStorage>();
