@@ -999,7 +999,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -1011,6 +1011,11 @@ jobs:
           # The server family runs TierTraitEnforcementTests, which compares the
           # baseline with HEAD's first parent. Checkout's default depth 1 omits it.
           fetch-depth: 2
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       # Reclaim runner disk before the build + coverage run; the modular
       # topology pushed some runners over the free-disk limit. Best-effort.
@@ -2148,7 +2153,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2156,6 +2161,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -2288,7 +2298,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2296,6 +2306,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -2404,7 +2419,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2412,6 +2427,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -2544,7 +2564,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2552,6 +2572,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       # Design: skip-if-absent is intentional for cross-repo coordination.
       # Test code lives in honua-sdk-js; this repo provides only CI jobs,
@@ -2644,7 +2669,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2652,6 +2677,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup Honua MCP environment
         id: setup
@@ -2742,7 +2772,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2750,6 +2780,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2785,7 +2820,6 @@ jobs:
 
       - name: Run Postgres compatibility tests
         env:
-          HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
           HONUA_TEST_CONFIGURATION: Release
           COLLECT_COVERAGE: ${{ matrix.collect_coverage }}
           PG_IMAGE: ${{ matrix.pg_image }}
@@ -3046,7 +3080,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -3055,6 +3089,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Pre-pull BuildKit image with retries
         timeout-minutes: 3
@@ -3180,7 +3219,7 @@ jobs:
           SERVER_URL="http://127.0.0.1:$SERVER_PORT"
           CONTAINER="$(docker run -d \
             --network host \
-            -e ConnectionStrings__DefaultConnection="Host=localhost;Database=honua_test;Username=honua;Password=honua" \
+            -e ConnectionStrings__DefaultConnection="Host=localhost;Port=${PGPORT};Database=honua_test;Username=honua;Password=honua" \
             -e ASPNETCORE_ENVIRONMENT=Development \
             -e HONUA_ADMIN_PASSWORD=ci-docker-admin-password \
             -e Security__ConnectionEncryption__MasterKey="0123456789abcdef0123456789abcdef" \
