@@ -75,6 +75,56 @@ public sealed class PostgresVersionJobStoreTests(DatabaseFixtureAdapter database
     }
 
     [IntegrationTest]
+    public async Task SaveAsync_HigherStageWithDifferentIdentity_KeepsAuthoritativeJob()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateVersionJobStore();
+        var pending = Job();
+        var completed = pending with { Status = VersionJobStatus.Succeeded };
+        VersionJob[] replacements =
+        [
+            completed with { Service = "other-service" },
+            completed with { VersionId = Guid.NewGuid() },
+            completed with { Kind = VersionJobKind.Post },
+            completed with { Policy = VersionReconcilePolicy.DefaultWins },
+            completed with { CreatedAt = pending.CreatedAt.AddSeconds(1) },
+            completed with { ConflictDetection = VersionConflictDetection.ByObject }
+        ];
+        await store.SaveAsync(pending);
+
+        foreach (var replacement in replacements)
+        {
+            await harness.CreateVersionJobStore().SaveAsync(replacement);
+            (await store.GetAsync(pending.JobId)).Should().Be(pending);
+        }
+
+        await store.SaveAsync(completed);
+        (await store.GetAsync(pending.JobId)).Should().Be(completed);
+    }
+
+    [IntegrationTest]
+    public async Task SaveAsync_HigherStageOverUnreadableRecord_KeepsTheRecord()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateVersionJobStore();
+        var pending = Job();
+        await store.SaveAsync(pending);
+        foreach (var payload in new[] { "[1]", "null" })
+        {
+            await harness.ExecuteAsync(
+                $"UPDATE {harness.Table("version_jobs")} SET record = @record::json WHERE job_id = @id",
+                new NpgsqlParameter("record", payload), new NpgsqlParameter("id", pending.JobId));
+
+            await harness.CreateVersionJobStore().SaveAsync(pending with { Status = VersionJobStatus.Succeeded });
+
+            (await store.GetAsync(pending.JobId)).Should().BeNull();
+            (await harness.ScalarAsync<string>(
+                $"SELECT record::text FROM {harness.Table("version_jobs")} WHERE job_id = @id",
+                new NpgsqlParameter("id", pending.JobId))).Should().Be(payload);
+        }
+    }
+
+    [IntegrationTest]
     public async Task GetAsync_UnreadableRecord_ReturnsNullAndKeepsTheRow()
     {
         await using var harness = await CreateHarnessAsync();

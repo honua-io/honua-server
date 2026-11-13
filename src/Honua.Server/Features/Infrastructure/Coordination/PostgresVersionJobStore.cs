@@ -12,8 +12,8 @@ using NpgsqlTypes;
 namespace Honua.Server.Features.Infrastructure.Coordination;
 
 // A job moves from pending to running to a terminal status. A save that would move it back, or
-// change a terminal status, is ignored by the predicate of the upsert, so a late write from any
-// node never overwrites a later state.
+// change a terminal status or job identity, is ignored while holding the row lock, so a late
+// write from any node never overwrites a later state or another job's authoritative record.
 internal sealed partial class PostgresVersionJobStore(JobStoreDatabase database, ILogger<PostgresVersionJobStore> logger)
     : IVersionJobStore, IExpiredRowSweep
 {
@@ -28,15 +28,14 @@ internal sealed partial class PostgresVersionJobStore(JobStoreDatabase database,
         return database.ExecuteAsync(
             async (connection, token) =>
             {
+                await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
                 await using var command = new NpgsqlCommand(
                     $"""
-                    INSERT INTO {_jobs} AS stored (job_id, stage, record, expires_at)
+                    INSERT INTO {_jobs} (job_id, stage, record, expires_at)
                     VALUES (@job_id, @stage, @record, now() + @retention)
-                    ON CONFLICT (job_id) DO UPDATE
-                        SET stage = excluded.stage, record = excluded.record, expires_at = excluded.expires_at
-                        WHERE stored.stage < excluded.stage
+                    ON CONFLICT (job_id) DO NOTHING
                     """,
-                    connection);
+                    connection, transaction);
                 var parameters = command.Parameters;
                 parameters.Add(new NpgsqlParameter("job_id", NpgsqlDbType.Uuid) { Value = job.JobId });
                 parameters.Add(new NpgsqlParameter("stage", NpgsqlDbType.Smallint) { Value = Stage(job.Status) });
@@ -45,7 +44,25 @@ internal sealed partial class PostgresVersionJobStore(JobStoreDatabase database,
                     Value = JsonSerializer.Serialize(job, VersionJobJsonContext.Default.VersionJob)
                 });
                 parameters.Add(new NpgsqlParameter("retention", NpgsqlDbType.Interval) { Value = _retention });
-                await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                if (await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 0)
+                {
+                    await using var read = new NpgsqlCommand(
+                        $"SELECT record::text FROM {_jobs} WHERE job_id = @job_id FOR UPDATE",
+                        connection, transaction);
+                    read.Parameters.AddWithValue("job_id", job.JobId);
+                    var record = await read.ExecuteScalarAsync(token).ConfigureAwait(false) as string;
+                    var current = Deserialize(job.JobId, record);
+                    if (current is not null && HasSameIdentity(current, job) && Stage(current.Status) < Stage(job.Status))
+                    {
+                        command.CommandText = $"""
+                            UPDATE {_jobs} SET stage = @stage, record = @record, expires_at = now() + @retention
+                            WHERE job_id = @job_id
+                            """;
+                        await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                    }
+                }
+
+                await transaction.CommitAsync(token).ConfigureAwait(false);
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken);
@@ -65,6 +82,11 @@ internal sealed partial class PostgresVersionJobStore(JobStoreDatabase database,
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
+        return Deserialize(jobId, record);
+    }
+
+    private VersionJob? Deserialize(Guid jobId, string? record)
+    {
         if (record is null)
         {
             return null;
@@ -80,6 +102,11 @@ internal sealed partial class PostgresVersionJobStore(JobStoreDatabase database,
             return null;
         }
     }
+
+    private static bool HasSameIdentity(VersionJob current, VersionJob next)
+        => current.JobId == next.JobId && current.Service == next.Service && current.VersionId == next.VersionId
+            && current.Kind == next.Kind && current.Policy == next.Policy && current.CreatedAt == next.CreatedAt
+            && current.ConflictDetection == next.ConflictDetection;
 
     public Task<int> DeleteExpiredAsync(int batchSize, CancellationToken cancellationToken)
         => database.ExecuteAsync(
