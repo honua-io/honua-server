@@ -9,7 +9,7 @@ internal sealed record ShareExportDefinitionRequest
 {
     public string? ResourceId { get; init; }
     public required string ServiceName { get; init; }
-    public required int LayerId { get; init; }
+    public required int ServiceLayerIndex { get; init; }
     public string? DisplayName { get; init; }
     public required string DestinationType { get; init; }
     public Dictionary<string, string> DestinationConfig { get; init; } = new(StringComparer.Ordinal);
@@ -29,7 +29,7 @@ internal sealed record ShareExportDefinitionResponse
     public required string ExportId { get; init; }
     public string? ResourceId { get; init; }
     public required string ServiceName { get; init; }
-    public required int LayerId { get; init; }
+    public required int ServiceLayerIndex { get; init; }
     public string? DisplayName { get; init; }
     public required string DestinationType { get; init; }
     public required string DestinationStatus { get; init; }
@@ -105,5 +105,5 @@ internal sealed record ShareItemRefResponse
 {
     public string? ResourceId { get; init; }
     public required string ServiceName { get; init; }
-    public required int LayerId { get; init; }
+    public required int ServiceLayerIndex { get; init; }
 }

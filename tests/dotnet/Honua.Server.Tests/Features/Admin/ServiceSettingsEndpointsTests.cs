@@ -218,7 +218,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithValidPayload_ReturnsUpdatedOrNotFound()
     {
         var body = """
@@ -236,7 +236,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     public async Task UpdateLayerMetadata_RepairsAttachmentBindingWithoutChangingStorageOrPublicationPolicy()
     {
@@ -274,7 +274,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_RejectsWriteEnablementOnReadOnlyStorageAtomically()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -298,7 +298,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_RejectsInvalidGlobalIdWithoutPartialPolicyChange()
     {
         var before = _fixture.GetCurrentV2GraphSnapshot().Graph;
@@ -311,7 +311,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_AdminCannotEnableCompositeOwnershipEdits()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -358,7 +358,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     public async Task UpdateLayerMetadata_WithSourceGovernance_UpdatesPublicMetadata()
     {
@@ -393,7 +393,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer, TestProtocols.MapServer)]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     [Endpoint("GET /rest/services/{serviceName}/MapServer/{layerId}")]
     public async Task UpdateLayerMetadata_WithLicenseOnly_UsesLicenseAsGeoServicesCopyright()
@@ -419,7 +419,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithLaterExistingTimestamp_DoesNotRegressUpdatedAt()
     {
         var futureUpdatedAt = DateTimeOffset.UtcNow.AddDays(1);
@@ -450,7 +450,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithProtocolSpecificNameCollision_UpdatesOnlyFeatureServerResource()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -508,7 +508,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithLegacyLayerIndex_UpdatesFeatureResource()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -540,7 +540,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     [Trait("Category", "Integration")]
     [InlineData(true)]
     [InlineData(false)]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithRetiredBindingCollision_UpdatesOnlyActiveResource(
         bool retirePublication)
     {
@@ -598,7 +598,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithDraftStorageBindingCollision_UpdatesOnlyRoutableResource()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -653,7 +653,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     [Trait("Category", "Integration")]
     [InlineData(true)]
     [InlineData(false)]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WhenBindingRetiresDuringUpdate_ReturnsNotFound(
         bool retirePublication)
     {
@@ -703,7 +703,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WhenStorageBindingRetiresDuringUpdate_ReturnsNotFound()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -735,7 +735,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WhenFeatureLayerIsRelinked_DoesNotMutateEitherResource()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -782,7 +782,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithDisabledSameNameFeatureService_IgnoresDisabledPublication()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -837,7 +837,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithMixedPublicationsInFeatureService_UpdatesFeatureResource()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -884,7 +884,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithStandaloneSpdxLicense_DerivesManagedLicenseLink()
     {
         const string expectedLicenseUrl = "https://spdx.org/licenses/MIT.html";
@@ -910,7 +910,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_GovernancePatch_ReconcilesRelationsAndRefreshesLicenseTitle()
     {
         const string oldLicenseUrl = "https://example.test/licenses/cc-by-4.0";
@@ -1028,7 +1028,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_GovernancePatch_ClearsUnmanagedCanonicalLinks()
     {
         const string licenseUrl = "https://example.test/licenses/mit";
@@ -1066,7 +1066,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_UnrelatedPatch_ReturnsUnmanagedCanonicalLinks()
     {
         const string licenseUrl = "https://example.test/imported-license";
@@ -1094,7 +1094,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithMalformedGovernance_ReturnsBadRequest()
     {
         var body = """
@@ -1111,7 +1111,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer, TestProtocols.MapServer, TestProtocols.OgcApiFeatures)]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     [Endpoint("GET /rest/services/{serviceName}/MapServer/{layerId}")]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
@@ -1208,7 +1208,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithTimeInfoPayload_ReturnsOkAndRoundTrips()
     {
         // Regression for honua-io/honua-server#1910 symptom 3: PUTting a timeInfo block
@@ -1241,7 +1241,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithEmptyTimeInfo_ClearsTemporalWithoutError()
     {
         // Companion to the timeInfo round-trip: an empty-field timeInfo clears the
@@ -1292,7 +1292,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithRasterMosaicPayload_ReturnsUpdatedMergeStrategy()
     {
         var body = """
@@ -1313,7 +1313,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithMixedCaseMergeStrategy_NormalizesToCanonical()
     {
         var body = """
@@ -1334,7 +1334,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithUnknownMergeStrategy_ReturnsBadRequest()
     {
         var body = """

@@ -322,7 +322,14 @@ internal static class McpToolOutputSchemas
               "type": ["string", "null"],
               "description": "honua://published-services/{serviceName} URI of the published service when the publish completed."
             },
-            "layerId": { "type": ["string", "null"] },
+            "storageLayerId": {
+              "type": ["string", "null"],
+              "description": "Internal storage layer id used by global admin layer routes."
+            },
+            "serviceLayerIndex": {
+              "type": ["string", "null"],
+              "description": "Service-local index for routes and MCP map tools."
+            },
             "serviceName": { "type": ["string", "null"] },
             "metadataRevision": {
               "type": ["integer", "null"],
@@ -382,9 +389,13 @@ internal static class McpToolOutputSchemas
               "type": ["string", "null"],
               "description": "Published service id (name) — pass to honua_query_features / honua_render_map as serviceId."
             },
-            "layerId": {
+            "storageLayerId": {
               "type": ["string", "null"],
-              "description": "Published layer id — pass to honua_query_features / honua_render_map as layerId."
+              "description": "Internal storage layer id used by global admin layer routes."
+            },
+            "serviceLayerIndex": {
+              "type": ["string", "null"],
+              "description": "Service-local index for honua_query_features and honua_render_map."
             },
             "metadataRevision": {
               "type": ["integer", "null"],
@@ -641,7 +652,7 @@ internal static class McpToolOutputSchemas
                 "properties": {
                   "serviceId": { "type": "string" },
                   "serviceName": { "type": "string" },
-                  "layerId": { "type": "integer" },
+                  "serviceLayerIndex": { "type": "integer" },
                   "studioSourceId": { "type": "string", "description": "Existing Studio catalog key for composition layer.sourceId; not a composition layer.id or a data permission." },
                   "name": { "type": "string" },
                   "type": { "type": "string" },
@@ -661,12 +672,12 @@ internal static class McpToolOutputSchemas
         {
           "type": "object",
           "oneOf": [
-            { "required": ["serviceId", "layerId", "returnedCount", "limit", "resultOffset", "exceededTransferLimit", "features"] },
+            { "required": ["serviceId", "serviceLayerIndex", "returnedCount", "limit", "resultOffset", "exceededTransferLimit", "features"] },
             {{ToolErrorBranch}}
           ],
           "properties": {
             "serviceId": { "type": "string" },
-            "layerId": { "type": "integer" },
+            "serviceLayerIndex": { "type": "integer" },
             "returnedCount": { "type": "integer" },
             "limit": { "type": "integer" },
             "resultOffset": {
@@ -744,10 +755,10 @@ internal static class McpToolOutputSchemas
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["serviceId", "layerId", "styleRendering"],
+                "required": ["serviceId", "serviceLayerIndex", "styleRendering"],
                 "properties": {
                   "serviceId": { "type": "string" },
-                  "layerId": { "type": "integer" },
+                  "serviceLayerIndex": { "type": "integer" },
                   "styleId": { "type": ["string", "null"], "description": "The layer's applied (primary) catalog style; null when the stored default style rendered." },
                   "styleRendering": {
                     "type": "string",
@@ -881,7 +892,7 @@ internal static class McpToolOutputSchemas
         """
         {
           "type": "object",
-          "required": ["serviceId", "layerId", "styleId", "applied", "status", "operationId", "operationInstanceId", "handleId", "correlationId", "createdAt", "updatedAt"],
+          "required": ["serviceId", "serviceLayerIndex", "styleId", "applied", "status", "operationId", "operationInstanceId", "handleId", "correlationId", "createdAt", "updatedAt"],
           "properties": {
             "status": { "type": "string", "description": "Canonical operation handle status (Completed for an applied or previewed preset)." },
             "operationId": { "type": "string", "const": "style.apply-preset" },
@@ -898,7 +909,7 @@ internal static class McpToolOutputSchemas
             "authorizationOutcome": { "type": ["string", "null"] },
             "policyOutcome": { "type": ["string", "null"] },
             "serviceId": { "type": "string" },
-            "layerId": { "type": "integer" },
+            "serviceLayerIndex": { "type": "integer" },
             "styleId": { "type": "string", "description": "The selected preset; bound as primary only when applied=true." },
             "title": { "type": ["string", "null"] },
             "styleVersion": { "type": "integer" },
