@@ -120,7 +120,7 @@ public sealed class SharedCacheMetricsTests : IDisposable
     }
 
     private static CdnInvalidationService Service(ICdnInvalidator invalidator)
-        => new(invalidator, TimeProvider.System, NullLogger<CdnInvalidationService>.Instance);
+        => new(invalidator, NullLogger<CdnInvalidationService>.Instance);
 
     private void Capture(Instrument instrument, double value, ReadOnlySpan<KeyValuePair<string, object?>> tags)
     {

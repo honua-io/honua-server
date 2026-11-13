@@ -149,20 +149,7 @@ internal sealed partial class OutputCacheInvalidationService
 
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            if (scope.ServiceProvider.GetService<IMetadataV2GraphProvider>() is { } graphProvider)
-            {
-                var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-                foreach (var publication in snapshot.Graph.Publications.Where(publication => publication.LayerIndex == layerId))
-                {
-                    if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)
-                        && (string.IsNullOrEmpty(editedService) || Names(service).Contains(editedService, StringComparer.OrdinalIgnoreCase)))
-                    {
-                        names.Add(service.Metadata.Name);
-                        names.Add(service.EffectivePublicName);
-                    }
-                }
-            }
+            names.UnionWith(await CatalogServiceNamesAsync(editedService, layerId, cancellationToken).ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -171,6 +158,30 @@ internal sealed partial class OutputCacheInvalidationService
 
         return [.. names];
     }
+
+    private async Task<string[]> CatalogServiceNamesAsync(string? editedService, int layerId, CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        if (scope.ServiceProvider.GetService<IMetadataV2GraphProvider>() is not { } graphProvider)
+        {
+            return [];
+        }
+
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return PublishedNamesOfLayer(snapshot, editedService, layerId);
+    }
+
+    private static string[] PublishedNamesOfLayer(MetadataV2GraphSnapshot snapshot, string? editedService, int layerId)
+        =>
+        [
+            .. snapshot.Graph.Publications
+                .Where(publication => publication.LayerIndex == layerId)
+                .Select(publication => snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId))
+                .OfType<MetadataV2Service>()
+                .Where(service => string.IsNullOrEmpty(editedService)
+                    || Names(service).Contains(editedService, StringComparer.OrdinalIgnoreCase))
+                .SelectMany(service => new[] { service.Metadata.Name, service.EffectivePublicName }),
+        ];
 
     private static string[] Names(MetadataV2Service service) => [service.Metadata.Id, service.Metadata.Name, service.EffectivePublicName];
 }

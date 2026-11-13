@@ -215,7 +215,8 @@ public sealed partial class CdnCacheTagTests
     public async Task InvalidateEditedLayerAsync_EditRequestCancelledWhileTheCdnIsBusy_PurgesWithTheNextWindow()
     {
         var invalidation = Invalidation(new CdnInvalidationService(
-            _cloudFront, _time, NullLogger<CdnInvalidationService>.Instance, leaseStore: new SharedLeases(_time)));
+            _cloudFront, NullLogger<CdnInvalidationService>.Instance,
+            new CdnPurgeCoordination { TimeProvider = _time, LeaseStore = new SharedLeases(_time) }));
         _cloudFront.OccupyEveryWildcardSlot();
         using var request = new CancellationTokenSource();
 
@@ -257,7 +258,8 @@ public sealed partial class CdnCacheTagTests
     {
         var leases = new SharedLeases(_time);
         var invalidation = Invalidation(new CdnInvalidationService(
-            new NoCdnInvalidator(), _time, NullLogger<CdnInvalidationService>.Instance, leaseStore: leases));
+            new NoCdnInvalidator(), NullLogger<CdnInvalidationService>.Instance,
+            new CdnPurgeCoordination { TimeProvider = _time, LeaseStore = leases }));
 
         await invalidation.InvalidateEditedLayerAsync("parcels", 3, CancellationToken.None);
 
@@ -306,10 +308,13 @@ public sealed partial class CdnCacheTagTests
     private CdnInvalidationService Service(ILeaseStore leases, SharedCacheOptions? options = null)
         => new(
             _cloudFront,
-            _time,
             NullLogger<CdnInvalidationService>.Instance,
-            options: new StaticOptions(options ?? new SharedCacheOptions { CacheTagHeader = TagHeader }),
-            leaseStore: leases);
+            new CdnPurgeCoordination
+            {
+                TimeProvider = _time,
+                Options = new StaticOptions(options ?? new SharedCacheOptions { CacheTagHeader = TagHeader }),
+                LeaseStore = leases,
+            });
 
     private static OutputCacheInvalidationService Invalidation(CdnInvalidationService service, MetadataV2Graph? graph = null)
         => Invalidation(service, graph is null ? null : new TestMetadataV2GraphProvider(graph));

@@ -117,7 +117,7 @@ public sealed partial class CdnCacheTagTests
     {
         var invalidator = new FailingTagBatch(failedBatch);
         var logger = new RecordingLogger();
-        var service = new CdnInvalidationService(invalidator, _time, logger);
+        var service = new CdnInvalidationService(invalidator, logger, new CdnPurgeCoordination { TimeProvider = _time });
         var paths = Enumerable.Range(0, CdnInvalidationService.MaxTagsPerInvalidation + 1)
             .Select(index => $"#honua-scope:tiles/{index}").Append("/ogc/*").ToArray();
 

@@ -51,6 +51,6 @@ public sealed class CdnEmergencyTransitionTests
     }
 
     private CdnInvalidationService Service(SharedLeases leases)
-        => new(_cloudFront, _time, NullLogger<CdnInvalidationService>.Instance,
-            options: new StaticOptions(_options), leaseStore: leases);
+        => new(_cloudFront, NullLogger<CdnInvalidationService>.Instance,
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(_options), LeaseStore = leases });
 }
