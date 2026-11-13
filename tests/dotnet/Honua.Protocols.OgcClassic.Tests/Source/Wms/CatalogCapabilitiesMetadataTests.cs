@@ -87,7 +87,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         _fixture.MutateV2ResourceObjectMetadata(1, metadata => metadata with
         {
             Title = "Survey roads",
-            Links = [new MetadataV2Link { Rel = "metadata", Href = "https://example.com/catalog/roads", Type = "application/xml" }]
+            Links = [new MetadataV2Link { Rel = "describedby", Href = "https://example.com/catalog/roads", Type = "application/xml" }]
         });
         _fixture.UpdateV2ResourceMetadata(1, spatial: new MetadataV2ResourceSpatial
         {
@@ -148,6 +148,36 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         metadataUrl.Elements().Single(element => element.Name.LocalName == "Format").Value.Should().Be("application/xml");
         metadataUrl.Descendants().Single(element => element.Name.LocalName == "OnlineResource")
             .Attribute(XName.Get("href", "http://www.w3.org/1999/xlink"))!.Value.Should().Be(links[0].Href);
+    }
+
+    [IntegrationTheory]
+    [InlineData("1.3.0", "CRS:84", "CRS")]
+    [InlineData("1.1.1", "EPSG:4326", "SRS")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    public async Task WmsCapabilities_Crs84Only_PublishesVersionCompatibleCrs(string version, string expectedCrs, string crsElement)
+    {
+        _fixture.MutateV2ResourceObjectMetadata(1, metadata => metadata with { Title = "CRS84 roads" });
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1];
+        _fixture.UpdateV2ResourceMetadata(1, spatial: resource.Spatial! with
+        {
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            Bbox = new MetadataV2Bbox { West = -123, South = 37, East = -122, North = 38 },
+            SupportedCrs = [new MetadataV2SpatialReference { Srid = 4326, Crs = "http://www.opengis.net/def/crs/OGC/1.3/CRS84" }]
+        });
+        using var response = await _fixture.Client.GetAsync($"/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}");
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        var document = XDocument.Parse(text);
+        var layer = document.Descendants().Single(element => element.Name.LocalName == "Layer" &&
+            element.Elements().Any(child => child.Name.LocalName == "Title" && child.Value == "CRS84 roads"));
+        layer.Elements().Where(element => element.Name.LocalName == crsElement)
+            .Select(element => element.Value).Should().Equal(expectedCrs);
+        var bounds = layer.Elements().Single(element => element.Name.LocalName == "BoundingBox");
+        bounds.Attribute(crsElement)!.Value.Should().Be(expectedCrs);
+        double.Parse(bounds.Attribute("minx")!.Value, CultureInfo.InvariantCulture).Should().BeApproximately(-123, 0.001);
+        double.Parse(bounds.Attribute("miny")!.Value, CultureInfo.InvariantCulture).Should().BeApproximately(37, 0.001);
     }
 
     [IntegrationTheory]

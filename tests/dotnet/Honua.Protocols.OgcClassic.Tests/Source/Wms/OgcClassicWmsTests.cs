@@ -202,7 +202,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
         _fixture.MutateV2ResourceObjectMetadata(WebAppFixture.TestLayerId, metadata => metadata with
         {
-            Links = [new MetadataV2Link { Rel = "metadata", Href = "https://example.com/metadata/autos", Type = "application/xml" }]
+            Links = [new MetadataV2Link { Rel = "describedby", Href = "https://example.com/metadata/autos", Type = "application/xml" }]
         });
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>()).SetGraph(snapshot.Graph with
