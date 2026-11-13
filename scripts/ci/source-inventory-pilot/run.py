@@ -21,7 +21,7 @@ def evaluation_command(project):
     # ResolveReferences performs design-time reference evaluation. Explicitly
     # prevent project-reference builds and compiler execution. GenerateGlobalUsings
     # supplies actual implicit-usings Compile items; it does not compile or emit.
-    return ['dotnet', 'msbuild', project, '/nologo', '/verbosity:quiet',
+    return ['dotnet', 'msbuild', project, '-maxcpucount:4', '/nologo', '/verbosity:quiet',
             '-target:ResolveReferences;GenerateGlobalUsings', '-getItem:Compile,ReferencePath',
             '-getProperty:' + ','.join(PROPERTIES), '-p:Configuration=Release',
             '-p:DesignTimeBuild=true', '-p:BuildProjectReferences=false',

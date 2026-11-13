@@ -30,7 +30,14 @@ public static class CorsConfiguration
         "X-Honua-CSRF", "Content-Type", "Authorization", "X-Esri-Authorization", "X-API-Key", "X-Correlation-ID",
         "X-Grpc-Web", "X-User-Agent", "Range", "If-Range",
         "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since",
-        "Prefer", "X-Honua-Embed-Key", "MCP-Protocol-Version", "Mcp-Method", "Mcp-Name"
+        "Prefer", "X-Honua-Embed-Key", "MCP-Protocol-Version", "Mcp-Method", "Mcp-Name", "Mcp-Session-Id",
+        "Idempotency-Key"
+    ];
+
+    private static readonly string[] BrowserExposedHeaders =
+    [
+        "Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding",
+        "Accept-Ranges", "Content-Range", "Content-Length", "ETag", "Last-Modified", "Mcp-Session-Id"
     ];
 
     public const string DevelopmentPolicy = HttpCorsPolicyNames.Development;
@@ -89,8 +96,7 @@ public static class CorsConfiguration
                         policy.WithOrigins(FilterExplicitOrigins(devOrigins))
                               .AllowAnyMethod()
                               .AllowAnyHeader()
-                              .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding",
-                                  "Accept-Ranges", "Content-Range", "Content-Length", "ETag", "Last-Modified")
+                              .WithExposedHeaders(BrowserExposedHeaders)
                               .AllowCredentials()
                               .SetPreflightMaxAge(TimeSpan.FromMinutes(5));
                     }
@@ -147,8 +153,7 @@ public static class CorsConfiguration
 
             policy.WithMethods("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                   .WithHeaders(ResolveAllowedHeaders(configuration))
-                  .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding",
-                      "Accept-Ranges", "Content-Range", "Content-Length", "ETag", "Last-Modified")
+                  .WithExposedHeaders(BrowserExposedHeaders)
                   .SetIsOriginAllowed(origin => allowCredentials
                       ? explicitOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase)
                       : IsOriginAllowed(origin, allowedOrigins))
