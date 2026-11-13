@@ -7,6 +7,7 @@ using System.Threading.Channels;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Realtime;
+using Honua.Infrastructure.Events;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit.Attributes;
@@ -143,7 +144,7 @@ public sealed class FeatureChangeLogTests(FeatureChangeDatabaseFixture database)
         => new(new JobStoreDatabase(database.DataSource), Options.Create(options ?? new RealtimeOptions()), TimeProvider.System);
 
     private static long ObjectIdOf(RealtimeEvent realtimeEvent)
-        => realtimeEvent.Payload.GetProperty("objectId").GetInt64();
+        => realtimeEvent.Payload.GetProperty(nameof(FeatureChangeEvent.ObjectId)).GetInt64();
 
     private static async Task<IReadOnlyList<RealtimeEvent>> ReadEventsAsync(ChannelReader<RealtimeDelivery> reader, int count)
     {

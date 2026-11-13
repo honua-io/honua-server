@@ -199,9 +199,10 @@ public sealed class TwoTaskFeatureStreamTests(FeatureChangeDatabaseFixture datab
             var changes = new PostgresFeatureChangeLog(jobs, options, TimeProvider.System);
             var dispatcher = new RealtimeDispatcher(log, [changes], options, NullLogger<RealtimeDispatcher>.Instance);
             var presence = new RealtimePresenceBatcher(log);
-            var listener = listen
-                ? RealtimeListener.Create(database.ConnectionString, options, NullLogger<RealtimeListener>.Instance)
-                : null;
+            var listener = RealtimeListener.Create(
+                listen ? database.ConnectionString : null,
+                options,
+                NullLogger<RealtimeListener>.Instance);
             var tail = new RealtimeTailBackgroundService(dispatcher, presence, listener, options, NullLogger<RealtimeTailBackgroundService>.Instance);
             var sessions = new FeatureStreamSessionManager(
                 Options.Create(new FeatureStreamOptions()),
