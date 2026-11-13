@@ -26,16 +26,28 @@ internal static class SharedCacheGuard
         // Every refusal leaves in one form: a refusal that also carries a lifetime contradicts itself, and caches resolve the contradiction differently.
         if (cacheControl.Contains("no-store", StringComparison.OrdinalIgnoreCase))
         {
-            response.Headers.CacheControl = NotShared;
+            LeaveAsNotShared(context);
             return;
         }
 
-        if (ExcludesSharedCaches(cacheControl) || (cacheControl.Length > 0 && ResponseMayBeShared(context)))
+        if (cacheControl.Length > 0 && !ExcludesSharedCaches(cacheControl) && ResponseMayBeShared(context))
         {
             return;
         }
 
-        response.Headers.CacheControl = NotShared;
+        if (ExcludesSharedCaches(cacheControl))
+        {
+            SharedCacheResponse.RemoveCacheTags(context);
+            return;
+        }
+
+        LeaveAsNotShared(context);
+    }
+
+    private static void LeaveAsNotShared(HttpContext context)
+    {
+        context.Response.Headers.CacheControl = NotShared;
+        SharedCacheResponse.RemoveCacheTags(context);
     }
 
     internal static bool ExcludesSharedCaches(string cacheControl)

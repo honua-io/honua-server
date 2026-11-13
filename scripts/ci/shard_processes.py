@@ -3,7 +3,9 @@ import subprocess
 
 
 def descendant_pids(parent):
-    listing = subprocess.check_output(['ps', '-e', '-o', 'pid=,ppid='], text=True)
+    # The deadline may still be signalling the supervisor's process group.
+    listing = subprocess.check_output(['ps', '-e', '-o', 'pid=,ppid='], text=True,
+                                      start_new_session=True)
     pairs = [tuple(map(int, line.split())) for line in listing.splitlines()]
     descendants = {parent}
     while True:

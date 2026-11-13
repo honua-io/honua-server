@@ -117,8 +117,14 @@ class PullRequestLoadTests(unittest.TestCase):
         gate = workflow("pr-gate.yml")
         self.assertIn("ready_for_review", gate["on"]["pull_request"].get("types", []))
         self.assertIn("converted_to_draft", gate["on"]["pull_request"].get("types", []))
-        self.assertEqual(gate["jobs"]["required"]["name"], "PR Gate")
-        self.assertEqual(gate["jobs"]["affected-shards"]["name"], "PR Gate / Affected shards")
+        # Ready runs report the exact required contexts. A draft run must not:
+        # a ready transition creates them only after its heavy needs finish.
+        for key, context in (("required", "PR Gate"), ("affected-shards", "PR Gate / Affected shards")):
+            name = gate["jobs"][key]["name"]
+            ready = evaluate(name, {"event_name": "pull_request", "event": {"pull_request": {"draft": False}}})
+            self.assertEqual(ready, context, key)
+            draft = evaluate(name, {"event_name": "pull_request", "event": {"pull_request": {"draft": True}}})
+            self.assertEqual(draft, f"{context} (draft)", key)
         required = ("clean-code.yml", "repo-hygiene.yml")
         for name, key, job in workflow_jobs(required):
             with self.subTest(workflow=name, job=key):
