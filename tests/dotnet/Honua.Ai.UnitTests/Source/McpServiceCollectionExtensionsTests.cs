@@ -18,7 +18,6 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -337,35 +336,24 @@ public sealed partial class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
-    public void AddStudioDraftFactories_WithoutRedis_ResolvesInMemoryPackageDraftStore()
+    public void AddStudioDraftFactories_WithoutASystemDatabase_ResolvesInMemoryPackageDraftStore()
     {
         var services = BuildBaseServices();
         services.AddStudioDraftFactories();
         using var provider = services.BuildServiceProvider();
 
         provider.GetRequiredService<IPackageDraftStore>().Should().BeOfType<InMemoryPackageDraftStore>(
-            "a host with no multiplexer keeps the single-process store");
+            "a host with no system database keeps the single-process store");
     }
 
     [UnitTest]
-    public void AddMcpDataAccessSurface_WithoutRedis_ResolvesInMemoryPackageDraftStore()
+    public void AddMcpDataAccessSurface_WithoutASystemDatabase_ResolvesInMemoryPackageDraftStore()
     {
         var services = BuildBaseServices();
         services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
         using var provider = services.BuildServiceProvider();
 
         provider.GetRequiredService<IPackageDraftStore>().Should().BeOfType<InMemoryPackageDraftStore>();
-    }
-
-    [UnitTest]
-    public void AddMcpDataAccessSurface_WithRedisMultiplexer_ResolvesRedisPackageDraftStore()
-    {
-        var services = BuildBaseServices();
-        services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
-        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
-        using var provider = services.BuildServiceProvider();
-
-        provider.GetRequiredService<IPackageDraftStore>().Should().BeOfType<RedisPackageDraftStore>();
     }
 
     [UnitTest]

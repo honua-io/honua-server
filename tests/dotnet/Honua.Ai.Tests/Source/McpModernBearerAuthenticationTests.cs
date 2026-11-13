@@ -200,7 +200,7 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
     {
         var token = invalidity switch
         {
-            "expired" => CreateToken("invalid-owner", expiresInMinutes: -30),
+            "expired" => CreateToken("invalid-owner", lifetime: TimeSpan.FromMinutes(-30)),
             "audience" => CreateToken("invalid-owner", audience: "different-audience"),
             "issuer" => CreateToken("invalid-owner", issuer: "https://different-issuer.example"),
             "signature" => CreateToken("invalid-owner", signingKey: new string('x', 64)),
@@ -220,7 +220,7 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/package-families")]
     public async Task Request_TokenValidityExceedsRetentionMaximum_IsRefusedOnEverySurface(string surface)
     {
-        var token = CreateToken("over-limit-owner", expiresInMinutes: 25 * 60, additionalClaims: Authority);
+        var token = CreateToken("over-limit-owner", lifetime: TimeSpan.FromHours(25), additionalClaims: Authority);
         using var request = BuildReplayProbe(surface, token);
         using var response = await _fixture.Client.SendAsync(request);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -235,11 +235,11 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
         await fixture.InitializeAsync();
         try
         {
-            var token = CreateToken("expiring-owner", expiresInMinutes: 1, additionalClaims: Authority);
+            var token = CreateToken("expiring-owner", lifetime: TimeSpan.FromSeconds(30), additionalClaims: Authority);
             using var first = BuildModernDiscovery(token);
             using var admitted = await fixture.Client.SendAsync(first);
             admitted.StatusCode.Should().Be(HttpStatusCode.OK);
-            await Task.Delay(TimeSpan.FromSeconds(65));
+            await WaitUntilPastAsync(new JsonWebToken(token).ValidTo);
             using var retry = BuildModernDiscovery(token);
             using var expired = await fixture.Client.SendAsync(retry);
             expired.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -273,6 +273,15 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
         var result = document.RootElement.GetProperty("result");
         result.GetProperty("resultType").GetString().Should().Be("complete");
         return result.Clone();
+    }
+
+    private static async Task WaitUntilPastAsync(DateTime expiresUtc)
+    {
+        var remaining = expiresUtc.AddSeconds(1) - DateTime.UtcNow;
+        if (remaining > TimeSpan.Zero)
+        {
+            await Task.Delay(remaining);
+        }
     }
 
     private static HttpRequestMessage BuildReplayProbe(string surface, string bearer) => surface switch

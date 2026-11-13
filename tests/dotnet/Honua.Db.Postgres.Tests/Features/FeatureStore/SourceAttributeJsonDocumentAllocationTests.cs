@@ -86,4 +86,55 @@ public sealed class SourceAttributeJsonDocumentAllocationTests(PostgresFixture f
         documentMedian.Should().BeLessThan(textMedian * 95 / 100,
             "removing the UTF-16 string should reduce per-row allocations before changing the production reader");
     }
+
+    [Theory]
+    [InlineData("jsonb")]
+    [InlineData("json")]
+    [InlineData("text")]
+    public async Task ReadInto_AttributesColumn_MatchesStringReadForEveryColumnType(string columnType)
+    {
+        // The production reader parses json/jsonb columns from Npgsql's UTF-8 buffer and falls
+        // back to the string for any other type. Every type must yield the same values.
+        const string payload = """{"id":9223372036854775807,"feature_name":"Kāneʻohe 🌋","temperature":23.5,"active":true,"missing":null,"na\u006de":"quote\" and newline\n","details":{"coordinates":[1,2]}}""";
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            $"SELECT ($1::jsonb)::{columnType}, NULL::{columnType} FROM generate_series(1, 3)", connection);
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Jsonb, Value = payload });
+        await using var reader = await command.ExecuteReaderAsync();
+        var attributesReader = new FeatureAttributeReadContext();
+        var rows = 0;
+
+        while (await reader.ReadAsync())
+        {
+            var expected = new Dictionary<string, object?>();
+            FeatureAttributeJsonReader.ReadInto(reader.GetString(0), expected);
+            var actual = new Dictionary<string, object?>();
+            attributesReader.ReadInto(reader, 0, actual);
+            var absent = new Dictionary<string, object?>();
+            attributesReader.ReadInto(reader, 1, absent);
+
+            actual.Keys.Should().BeEquivalentTo(expected.Keys);
+            foreach (var (name, value) in expected)
+            {
+                AssertAttributeValue(actual[name], value);
+            }
+
+            absent.Should().BeEmpty();
+            rows++;
+        }
+
+        rows.Should().Be(3);
+    }
+
+    private static void AssertAttributeValue(object? actual, object? expected)
+    {
+        if (expected is JsonElement element)
+        {
+            actual.Should().BeOfType<JsonElement>().Which.GetRawText().Should().Be(element.GetRawText());
+        }
+        else
+        {
+            actual.Should().Be(expected);
+        }
+    }
 }

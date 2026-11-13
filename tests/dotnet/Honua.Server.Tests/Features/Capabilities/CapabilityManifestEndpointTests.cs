@@ -53,15 +53,27 @@ namespace Honua.Server.Tests.Features.Capabilities;
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]
-public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
+public sealed partial class CapabilityManifestEndpointTests
+    : IClassFixture<CapabilityManifestEndpointTests.DefaultApplication>, IAsyncLifetime
 {
     private readonly WebAppFixture _fixture;
     private HttpClient _anonymousClient = null!;
     private HttpClient _adminClient = null!;
 
-    public CapabilityManifestEndpointTests()
+    public CapabilityManifestEndpointTests(DefaultApplication defaultApplication)
     {
-        _fixture = CreateManifestFixture();
+        _fixture = defaultApplication.Fixture;
+    }
+
+    // Read-only default application shared by the class; tests that need other configuration
+    // build and dispose their own application.
+    public sealed class DefaultApplication : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = CreateManifestFixture();
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
     }
 
     private static WebAppFixture CreateManifestFixture(
@@ -422,18 +434,43 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
                 });
             });
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
         _anonymousClient = _fixture.CreateClient();
         _adminClient = _fixture.CreateAdminClient();
+        return Task.CompletedTask;
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
     {
         _anonymousClient.Dispose();
         _adminClient.Dispose();
-        await _fixture.DisposeAsync();
+        return Task.CompletedTask;
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_AsAdmin_ReportsInstalledStoresAndFullVariant()
+    {
+        using var response = await _adminClient.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var stores = document.RootElement.GetProperty("dataStores");
+        stores.GetProperty("installedProviders").EnumerateArray()
+            .Select(provider => provider.GetString()).Should().Contain(
+                "postgis");
+        stores.GetProperty("fullImageTagSuffix").GetString().Should().Be("-full");
+        stores.GetProperty("documentationHref").GetString().Should().EndWith("/docs/ops/nightly-images.md#data-store-variants");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_AsAnonymous_OmitsInstalledStoreInventory()
+    {
+        using var response = await _anonymousClient.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        document.RootElement.TryGetProperty("dataStores", out _).Should().BeFalse();
     }
 
     [IntegrationTest]

@@ -4,8 +4,8 @@
 
 import { test, expect } from '@playwright/test';
 import { createMap } from './support/map-harness.js';
+import { getStyleUrl } from './support/style-discovery.js';
 import {
-  BASE_URL,
   POINT_LAYER_ID,
   LINE_LAYER_ID,
   POLYGON_LAYER_ID,
@@ -40,8 +40,8 @@ const GEOMETRY_LAYERS = [
 
 test.describe('Layer Visibility', () => {
   for (const geom of GEOMETRY_LAYERS) {
-    test(`[CERT-RNDR-01] ${geom.name} layer renders and is visible`, async ({ page }) => {
-      const styleUrl = `${BASE_URL}/api/styles/${geom.layerId}.json`;
+    test(`[CERT-RNDR-01] ${geom.name} layer renders and is visible`, async ({ page, request }) => {
+      const styleUrl = await getStyleUrl(request, geom.layerId);
       const map = await createMap(page, {
         styleUrl,
         center: geom.center,
