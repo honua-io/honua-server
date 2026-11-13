@@ -779,8 +779,10 @@ jobs:
       DOTNET_PROCESSOR_COUNT: '4'
       DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
       MSBUILDDISABLENODEREUSE: '1'
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/honua-ci-producer-sdk
     steps:
+      - name: Place the producer SDK in the runner temp directory
+        run: echo "DOTNET_INSTALL_DIR=$RUNNER_TEMP/honua-ci-producer-sdk" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
