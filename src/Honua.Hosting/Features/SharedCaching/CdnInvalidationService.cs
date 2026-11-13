@@ -270,7 +270,12 @@ internal sealed partial class CdnInvalidationService(
         CancellationToken cancellationToken)
     {
         var result = await SendWithRetriesAsync(paths, cancellationToken).ConfigureAwait(false);
-        if (result.Outcome is not CdnInvalidationOutcome.NotConfigured && logger.IsEnabled(LogLevel.Information))
+        if (result.Outcome is CdnInvalidationOutcome.NotConfigured)
+        {
+            return result;
+        }
+
+        if (logger.IsEnabled(LogLevel.Information))
         {
             Log.PurgeRecorded(
                 logger, cause.Reason, cause.ChangeId, Environment.MachineName, result.Outcome.ToString(),
