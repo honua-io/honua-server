@@ -67,14 +67,16 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 out var parseError))
         {
             Log.InvalidSpec(_logger, job.OperationId, parseError);
-            return JobExecutionResult.Failed($"Invalid tile-cache job spec: {parseError}") with { IsRetryable = false };
+            return JobExecutionResult.Failed($"Invalid tile-cache job spec: {parseError}") with
+            { IsRetryable = false };
         }
 
         // A spec without a generation id resumes under the operation id, which durable retries keep,
         // so a retried attempt continues the same generation checkpoint.
         if (string.IsNullOrWhiteSpace(request.GenerationId))
         {
-            request = request with { GenerationId = job.OperationId };
+            request = request with
+            { GenerationId = job.OperationId };
         }
 
         var run = new TileCacheRun(job, request, schemaName, tenantScope);
@@ -88,7 +90,8 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
         return finalProgress.Status == OperationStatus.Completed
             ? JobExecutionResult.Succeeded(finalProgress.Warnings)
             : JobExecutionResult.Failed(finalProgress.ErrorMessage ?? "Tile operation failed.", finalProgress.Warnings)
-                with { IsRetryable = false };
+                with
+                { IsRetryable = false };
     }
 
     // GET /admin/tile-operations/jobs/{id} reads the tile-shaped progress, not the job record.

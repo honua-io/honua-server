@@ -174,9 +174,11 @@ public sealed class TileOperationJobTests
         var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var service = CreateService(jobStore, progressStore, [backend], new TileCacheBatchOptions(), Substitute.For<IJobQueue>());
         var failedJobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin, "tenant_a", "public"));
-        var failed = (await service.GetAsync(failedJobId))! with { Status = OperationStatus.Failed };
+        var failed = (await service.GetAsync(failedJobId))! with
+        { Status = OperationStatus.Failed };
         await progressStore.SetProgressAsync(failedJobId, failed);
-        await jobStore.SetAsync((await jobStore.GetAsync(failedJobId))! with { Status = ExecutionJobStatus.Failed });
+        await jobStore.SetAsync((await jobStore.GetAsync(failedJobId))! with
+        { Status = ExecutionJobStatus.Failed });
 
         var retryJobId = await service.RetryAsync(failedJobId, "admin-b");
 
@@ -212,7 +214,8 @@ public sealed class TileOperationJobTests
     {
         var progressStore = new ComparingInMemoryProgressStore();
         var running = TileOperationProgress.CreateInitial("tile-1", "seed", null, 1, "WebMercatorQuad")
-            with { Status = OperationStatus.Processing };
+            with
+            { Status = OperationStatus.Processing };
         await progressStore.SetProgressAsync("tile-1", running);
         var callback = new TileCacheJobTerminalCallback(progressStore, NullLogger<TileCacheJobTerminalCallback>.Instance);
         var now = DateTimeOffset.UtcNow;
@@ -427,7 +430,8 @@ public sealed class TileOperationJobTests
 
         // Promote to Running so cancellation is meaningful (not a pre-pickup queued cancel).
         var queued = await jobStore.GetAsync(jobId);
-        await jobStore.SetAsync(queued! with { Status = ExecutionJobStatus.Running, ClaimedBy = "worker-a" });
+        await jobStore.SetAsync(queued! with
+        { Status = ExecutionJobStatus.Running, ClaimedBy = "worker-a" });
 
         var cancelled = await service.CancelAsync(jobId);
 
@@ -448,7 +452,8 @@ public sealed class TileOperationJobTests
         var jobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin));
 
         var queued = await jobStore.GetAsync(jobId);
-        await jobStore.SetAsync(queued! with { Status = ExecutionJobStatus.Succeeded });
+        await jobStore.SetAsync(queued! with
+        { Status = ExecutionJobStatus.Succeeded });
 
         var cancelled = await service.CancelAsync(jobId);
 
@@ -474,9 +479,11 @@ public sealed class TileOperationJobTests
         string jobId)
     {
         var record = (await jobStore.GetAsync(jobId))!;
-        await jobStore.SetAsync(record with { Status = ExecutionJobStatus.Running, ClaimedBy = "worker-b", AttemptCount = 1 });
+        await jobStore.SetAsync(record with
+        { Status = ExecutionJobStatus.Running, ClaimedBy = "worker-b", AttemptCount = 1 });
         var progress = (await progressStore.GetProgressAsync<TileOperationProgress>(jobId))!;
-        await progressStore.SetProgressAsync(jobId, progress with { Status = OperationStatus.Processing });
+        await progressStore.SetProgressAsync(jobId, progress with
+        { Status = OperationStatus.Processing });
     }
 
     // ----- Test doubles -----------------------------------------------------
@@ -534,7 +541,8 @@ public sealed class TileOperationJobTests
             if (MoveRecordOnNextWrite)
             {
                 MoveRecordOnNextWrite = false;
-                _records[job.OperationId] = _records[job.OperationId] with { LastHeartbeatAt = DateTimeOffset.UtcNow };
+                _records[job.OperationId] = _records[job.OperationId] with
+                { LastHeartbeatAt = DateTimeOffset.UtcNow };
                 return Task.FromResult(false);
             }
 

@@ -77,7 +77,8 @@ internal sealed class ExportJobExecutor(
         }
 
         var processing = existing.Status is OperationStatus.Queued or OperationStatus.Processing
-            ? existing with { Status = OperationStatus.Processing, CurrentPhase = ExportingPhase }
+            ? existing with
+            { Status = OperationStatus.Processing, CurrentPhase = ExportingPhase }
             : Fresh(request);
         var admission = await progressStore.TrySetProgressAsync(
                 new OperationProgressWrite(request.JobId, processing, ExportJobService.Retention),
@@ -98,7 +99,8 @@ internal sealed class ExportJobExecutor(
 
     private static ExportProgress Fresh(ExportJob request)
         => ExportProgress.CreateInitial(request.JobId, request.Format, request.ServiceName, request.ServiceLayerIndex, request.TotalFeatures)
-            with { Status = OperationStatus.Processing, CurrentPhase = ExportingPhase };
+            with
+            { Status = OperationStatus.Processing, CurrentPhase = ExportingPhase };
 
     private async Task<JobExecutionResult> ExportAsync(ExportRun run, CancellationToken cancellationToken)
     {
@@ -235,7 +237,8 @@ internal sealed class ExportJobExecutor(
     }
 
     private static JobExecutionResult NotRetryable(string message)
-        => JobExecutionResult.Failed(message) with { IsRetryable = false };
+        => JobExecutionResult.Failed(message) with
+        { IsRetryable = false };
 
     private async Task<ExportFileResult> WriteToFileAsync(
         ExportRun run,
