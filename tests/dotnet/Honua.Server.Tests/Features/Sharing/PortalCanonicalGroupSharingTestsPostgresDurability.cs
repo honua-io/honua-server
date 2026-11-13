@@ -122,8 +122,11 @@ public sealed class PortalCanonicalGroupSharingTestsPostgresDurability(DatabaseF
             .AddSingleton<ITenantContext>(tenant)
             .AddSingleton<IPortalAudienceSnapshotProvider>(new PostgresPortalAudienceSnapshotProvider(database.DataSource, _schema))
             .BuildServiceProvider();
-        var context = new DefaultHttpContext { RequestServices = services,
-            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "member")], "test")) };
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "member")], "test"))
+        };
         accessor.HttpContext = context;
         var shares = new PostgresPortalItemSharingStore(database.DataSource, accessor, _schema);
         var legacy = await groups.CreateAsync(new PortalGroupRegistration("Legacy", null, "private", []), "owner", default);

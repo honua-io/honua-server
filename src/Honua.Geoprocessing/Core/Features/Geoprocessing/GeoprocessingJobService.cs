@@ -833,22 +833,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             ? protocolMetadata
             : ResolveEffectiveProtocolControls(protocolMetadata, workload);
 
-        async Task<bool> ConfirmKeyedReplayAsync(CancellationToken replayToken)
-        {
-            if (await jobStore.GetAsync(jobId, replayToken).ConfigureAwait(false) != null)
-            {
-                return true;
-            }
-
-            if (legacyTenantJobId is not null
-                && await jobStore.GetAsync(legacyTenantJobId, replayToken).ConfigureAwait(false) is not null)
-            {
-                return true;
-            }
-
-            var priorFormatId = JobOwnershipSecurity.CreatePriorFormatJobId("gp", resolvedKey!);
-            return await jobStore.GetAsync(priorFormatId, replayToken).ConfigureAwait(false) != null;
-        }
+        Task<bool> ConfirmKeyedReplayAsync(CancellationToken replayToken)
+            => ConfirmKeyedReplayAsyncCore(jobStore, jobId, legacyTenantJobId, resolvedKey!, replayToken);
 
         // Resolve authorized existing submissions before charging admission/quota or
         // minting new side effects (server#4627): a caller-supplied idempotency key whose
@@ -943,7 +929,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         if (isCustomCode)
         {
             (ownerScope, mintedCustomCodeToken, workload) = await _customCodeGate.ValidateMintAndInjectAsync(
-                jobId, principal, specParams, workload, resolvedSecurityContext, cancellationToken).ConfigureAwait(false);
+                new CustomCodeSubmission(jobId, principal, specParams, resolvedSecurityContext),
+                workload, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -972,23 +959,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var partitionKey = string.IsNullOrWhiteSpace(resolvedSecurityContext.TenantId)
             ? null
             : resolvedSecurityContext.TenantId;
-        specParams.Remove(ExecutionAdmissionEvaluator.PartitionKeyParameterKey);
-        specParams.Remove(ExecutionAdmissionEvaluator.CostWeightParameterKey);
-        // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
-        // the plan's steps, overridden by any explicit gp.resource.* request values. Resolved
-        // BEFORE the admission cost weight below (#4629) so the partition throttle can charge by
-        // the plan's actual catalog-derived resource class, not merely its node count.
-        var resourceProfile = ResolveResourceProfile(
-            plan,
-            specParams,
-            isCustomCode,
-            processCatalog);
-        // #4629: a static costWeight=stepCount treats a 1-step raster/native op the same as a
-        // 1-step managed op over ten features — neither reflects real resource cost. Charging the
-        // catalog-derived vCPU class (Managed=1, Native=2, Raster=4; see GpResourceProfile) makes
-        // the partition throttle in ExecutionAdmissionEvaluator admit fewer concurrent heavy jobs
-        // per partition than light ones, while never charging less than one unit per plan step.
-        var costWeight = (double)Math.Max(plan.Steps.Count, resourceProfile.Vcpus ?? 1);
+        var (resourceProfile, costWeight) = ResolveAdmissionResources(
+            plan, specParams, isCustomCode, processCatalog);
         var priority = ResolvePriority(specParams);
 
         // Admission reads the durable active set and the record is created afterwards; the window
@@ -1231,7 +1203,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             cancellationToken).ConfigureAwait(false);
 
         var jobStore = RequireJobStore();
-        var limit = Math.Clamp(filter.Limit, 1, MaxJobListPageSize);
 
         // #2753: scope the store query to the caller for a non-admin so paging
         // is not under-filled. Without this the store returns a page of up-to-`limit` jobs
@@ -1254,17 +1225,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // may carry fewer than `limit` items after post-filtering.
         var tenantScope = _authorizer.CaptureReadScope(principal, _rbacOptions);
         var page = await jobStore.QueryAsync(
-            new ExecutionJobQuery
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                Statuses = filter.Statuses,
-                RequestedBy = ownerScope,
-                ApplyTenantScope = true,
-                TenantId = tenantScope.TenantId,
-                IncludeUnassignedTenant = tenantScope.IncludesLegacy,
-                Cursor = filter.Cursor,
-                Limit = limit
-            },
+            CreateJobListQuery(filter, ownerScope, tenantScope),
             cancellationToken).ConfigureAwait(false);
 
         var items = page.Items
@@ -1278,6 +1239,44 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             NextCursor = page.NextCursor
         };
     }
+
+    private static async Task<bool> ConfirmKeyedReplayAsyncCore(
+        IExecutionJobStore jobStore,
+        string jobId,
+        string? legacyTenantJobId,
+        string resolvedKey,
+        CancellationToken cancellationToken)
+    {
+        if (await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false) is not null)
+        {
+            return true;
+        }
+
+        if (legacyTenantJobId is not null
+            && await jobStore.GetAsync(legacyTenantJobId, cancellationToken).ConfigureAwait(false) is not null)
+        {
+            return true;
+        }
+
+        var priorFormatId = JobOwnershipSecurity.CreatePriorFormatJobId("gp", resolvedKey);
+        return await jobStore.GetAsync(priorFormatId, cancellationToken).ConfigureAwait(false) is not null;
+    }
+
+    private static ExecutionJobQuery CreateJobListQuery(
+        GeoprocessingJobListFilter filter,
+        string? ownerScope,
+        TenantReadScope tenantScope)
+        => new()
+        {
+            Kind = ExecutionJobKind.Geoprocessing,
+            Statuses = filter.Statuses,
+            RequestedBy = ownerScope,
+            ApplyTenantScope = true,
+            TenantId = tenantScope.TenantId,
+            IncludeUnassignedTenant = tenantScope.IncludesLegacy,
+            Cursor = filter.Cursor,
+            Limit = Math.Clamp(filter.Limit, 1, MaxJobListPageSize)
+        };
 
     private const int MaxJobListPageSize = 200;
 
@@ -1784,6 +1783,32 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         return ManagedReprojectFastPath.RequiresNativeWorker(fromSrid, toSrid);
+    }
+
+    private static (GpResourceProfile Profile, double CostWeight) ResolveAdmissionResources(
+        AnalysisPlan plan,
+        Dictionary<string, string> specParams,
+        bool isCustomCode,
+        IProcessCatalog processCatalog)
+    {
+        specParams.Remove(ExecutionAdmissionEvaluator.PartitionKeyParameterKey);
+        specParams.Remove(ExecutionAdmissionEvaluator.CostWeightParameterKey);
+        // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
+        // the plan's steps, overridden by any explicit gp.resource.* request values. Resolved
+        // BEFORE the admission cost weight below (#4629) so the partition throttle can charge by
+        // the plan's actual catalog-derived resource class, not merely its node count.
+        var resourceProfile = ResolveResourceProfile(
+            plan,
+            specParams,
+            isCustomCode,
+            processCatalog);
+        // #4629: a static costWeight=stepCount treats a 1-step raster/native op the same as a
+        // 1-step managed op over ten features — neither reflects real resource cost. Charging the
+        // catalog-derived vCPU class (Managed=1, Native=2, Raster=4; see GpResourceProfile) makes
+        // the partition throttle in ExecutionAdmissionEvaluator admit fewer concurrent heavy jobs
+        // per partition than light ones, while never charging less than one unit per plan step.
+        var costWeight = (double)Math.Max(plan.Steps.Count, resourceProfile.Vcpus ?? 1);
+        return (resourceProfile, costWeight);
     }
 
     private static GpResourceProfile ResolveResourceProfile(

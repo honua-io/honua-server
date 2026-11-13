@@ -25,13 +25,11 @@ internal sealed class CustomCodeSubmitCoordinator(
     private const string PermissionClaimType = "permission";
 
     public async Task<CustomCodeSubmitResult> ValidateMintAndInjectAsync(
-        string jobId,
-        ClaimsPrincipal principal,
-        Dictionary<string, string> specParams,
+        CustomCodeSubmission submission,
         CustomCodeOptions options,
-        CancellationToken cancellationToken,
-        JobSecurityContext? securityContext = null)
+        CancellationToken cancellationToken)
     {
+        var (jobId, principal, specParams, securityContext) = submission;
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(specParams);

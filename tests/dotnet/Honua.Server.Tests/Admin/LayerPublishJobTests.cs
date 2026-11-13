@@ -54,8 +54,10 @@ public sealed class LayerPublishJobTests
         var store = new MemoryProgress();
         await store.SetProgressAsync("legacy-publish", new LayerPublishJobProgress
         {
-            OperationId = "legacy-publish", Status = ProgressStatus.Completed,
-            RowsTotal = 5, StartedAt = DateTimeOffset.UtcNow
+            OperationId = "legacy-publish",
+            Status = ProgressStatus.Completed,
+            RowsTotal = 5,
+            StartedAt = DateTimeOffset.UtcNow
         });
         var service = Service(Substitute.For<ILayerPublishingService>(), LayerPublishRunnerMode.InProcess,
             10, store, requestTenant: tenant);

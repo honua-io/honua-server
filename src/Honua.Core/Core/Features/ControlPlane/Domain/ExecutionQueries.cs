@@ -45,7 +45,6 @@ public sealed record ExecutionJobQuery
     /// </summary>
     public string? TenantId { get; init; }
 
-    /// <summary>Whether the tenant filter also accepts unassigned pre-upgrade jobs.</summary>
     public bool IncludeUnassignedTenant { get; init; }
 
     /// <summary>
