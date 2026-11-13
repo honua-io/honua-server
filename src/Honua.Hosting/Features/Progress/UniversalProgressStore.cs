@@ -157,12 +157,11 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         }
     }
 
-    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress expectedProgress, CancellationToken cancellationToken = default)
+    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(write.Progress);
-        ArgumentNullException.ThrowIfNull(expectedProgress);
         cancellationToken.ThrowIfCancellationRequested();
-        if (write.Progress.Type != expectedProgress.Type)
+        if (expectedProgress is not null && write.Progress.Type != expectedProgress.Type)
         {
             throw new ArgumentException("A progress update cannot change the operation type.", nameof(write));
         }
@@ -186,19 +185,22 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 cancellationToken).ConfigureAwait(false);
             current = persisted.HasValue ? DeserializeProgress(persisted.ToString(), write.OperationId) : null;
         }
-        if (current is null)
+        if (current is null && expectedProgress is not null)
         {
             return ProgressCompareAndSetResult.NotFound;
         }
 
-        if (!OperationProgressSerializer.SameSnapshot(current, expectedProgress))
+        if (current is not null && (expectedProgress is null || !OperationProgressSerializer.SameSnapshot(current, expectedProgress)))
         {
             return ProgressCompareAndSetResult.StatusMismatch(current);
         }
 
         if (AllowsLocalFallback)
         {
-            if (_fallbackStore.TryUpdate($"{KeyPrefix}{write.OperationId}", write.Progress, current))
+            var updated = current is null
+                ? _fallbackStore.TryAdd($"{KeyPrefix}{write.OperationId}", write.Progress)
+                : _fallbackStore.TryUpdate($"{KeyPrefix}{write.OperationId}", write.Progress, current);
+            if (updated)
             {
                 _fallbackExpiry[$"{KeyPrefix}{write.OperationId}"] = DateTime.UtcNow.Add(effectiveTtl);
                 return ProgressCompareAndSetResult.Updated;
@@ -215,7 +217,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             // inside one Redis transaction, including expiry, so lock loss/expiry and unguarded
             // write.Progress writers cannot turn an old heartbeat snapshot into an accepted write.
             var transaction = _redis!.GetDatabase().CreateTransaction();
-            transaction.AddCondition(Condition.HashEqual(key, "data", persisted));
+            transaction.AddCondition(expectedProgress is null
+                ? Condition.KeyNotExists(key)
+                : Condition.HashEqual(key, "data", persisted));
             _ = transaction.HashSetAsync(key,
             [
                 new HashEntry("data", OperationProgressSerializer.Serialize(write.Progress)),

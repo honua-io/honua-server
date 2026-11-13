@@ -25,6 +25,18 @@ public sealed class UniversalProgressStoreCompareAndSetTests
         => UploadProgress.CreateInitial(uploadId, "data.bin", 100) with { Status = status };
 
     [UnitTest]
+    public async Task TryReplaceProgressAsync_MissingSnapshot_PreservesFirstWriter()
+    {
+        var store = CreateInMemoryStore();
+        var progress = CreateProgress("new-lease", OperationStatus.Processing);
+        (await store.TryReplaceProgressAsync(new OperationProgressWrite("new-lease", progress), null)).Outcome
+            .Should().Be(ProgressCompareAndSetOutcome.Updated);
+        (await store.TryReplaceProgressAsync(new OperationProgressWrite("new-lease", progress with { BytesUploaded = 30 }), null)).Outcome
+            .Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
+        (await store.GetProgressAsync<UploadProgress>("new-lease"))!.BytesUploaded.Should().Be(0);
+    }
+
+    [UnitTest]
     public async Task TryReplaceProgressAsync_RunningPrintHeartbeat_UpdatesDespiteComputedDuration()
     {
         var store = CreateInMemoryStore();

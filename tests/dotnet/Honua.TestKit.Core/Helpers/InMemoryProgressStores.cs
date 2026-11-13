@@ -24,7 +24,7 @@ public class AcceptingInMemoryProgressStore : IUniversalProgressStore
         return Task.FromResult(ProgressCompareAndSetResult.Updated);
     }
 
-    public virtual Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress expectedProgress, CancellationToken cancellationToken = default)
+    public virtual Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
     {
         _progress[write.OperationId] = write.Progress;
         return Task.FromResult(ProgressCompareAndSetResult.Updated);
@@ -56,7 +56,7 @@ public sealed class UnrecordedConditionalWriteProgressStore : AcceptingInMemoryP
     public override Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
         => Task.FromResult(ProgressCompareAndSetResult.Updated);
 
-    public override Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress expectedProgress, CancellationToken cancellationToken = default)
+    public override Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
         => Task.FromResult(ProgressCompareAndSetResult.Updated);
 }
 
@@ -64,13 +64,21 @@ public sealed class ComparingInMemoryProgressStore : IUniversalProgressStore
 {
     private readonly ConcurrentDictionary<string, IOperationProgress> _entries = new(StringComparer.Ordinal);
 
-    public Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress expectedProgress, CancellationToken cancellationToken = default)
+    public Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
     {
         while (true)
         {
             if (!_entries.TryGetValue(write.OperationId, out var current))
             {
-                return Task.FromResult(ProgressCompareAndSetResult.NotFound);
+                if (expectedProgress is not null)
+                {
+                    return Task.FromResult(ProgressCompareAndSetResult.NotFound);
+                }
+                if (_entries.TryAdd(write.OperationId, write.Progress))
+                {
+                    return Task.FromResult(ProgressCompareAndSetResult.Updated);
+                }
+                continue;
             }
 
             if (!Equals(current, expectedProgress))

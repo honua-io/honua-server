@@ -53,14 +53,7 @@ internal sealed class ExportJobExecutor(
     private async Task<ExportStart> StartProcessingAsync(ExecutionJobRecord job, ExportJob request, CancellationToken cancellationToken)
     {
         var existing = await progressStore.GetProgressAsync<ExportProgress>(request.JobId, cancellationToken).ConfigureAwait(false);
-        if (existing is null)
-        {
-            var initial = Fresh(request);
-            await progressStore.SetProgressAsync(request.JobId, initial, ExportJobService.Retention, cancellationToken).ConfigureAwait(false);
-            return new ExportStart(initial);
-        }
-
-        if (existing.Status == OperationStatus.Cancelled && job.CancellationRequestedAt.HasValue)
+        if (existing?.Status == OperationStatus.Cancelled && job.CancellationRequestedAt.HasValue)
         {
             throw new OperationCanceledException("The export was cancelled before it started.");
         }
@@ -304,7 +297,7 @@ internal sealed class ExportJobExecutor(
 
         public ExportProgress Processing { get; } = processing;
 
-        public string ScratchDir { get; } = Path.Join(Path.GetTempPath(), "honua-export", request.JobId, Guid.NewGuid().ToString("N"));
+        public string ScratchDir { get; } = Path.Join(Path.GetTempPath(), "honua-export", $"{request.JobId}-{Guid.NewGuid():N}");
 
         public string? UploadedFileId { get; set; }
 

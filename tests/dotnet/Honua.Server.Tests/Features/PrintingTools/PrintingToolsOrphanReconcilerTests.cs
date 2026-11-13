@@ -242,7 +242,7 @@ public class PrintingToolsOrphanReconcilerTests
 
         public Action? BeforeSnapshotReplace { get; set; }
 
-        public Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress expectedProgress, CancellationToken cancellationToken = default)
+        public Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
         {
             BeforeSnapshotReplace?.Invoke();
             lock (_gate)

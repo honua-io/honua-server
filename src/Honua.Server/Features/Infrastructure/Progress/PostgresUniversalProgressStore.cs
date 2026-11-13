@@ -51,13 +51,30 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             : await DescribeRefusalAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress expectedProgress, CancellationToken cancellationToken = default)
+    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(write.Progress);
-        ArgumentNullException.ThrowIfNull(expectedProgress);
-        if (write.Progress.Type != expectedProgress.Type)
+        if (expectedProgress is not null && write.Progress.Type != expectedProgress.Type)
         {
             throw new ArgumentException("A progress update cannot change the operation type.", nameof(write));
+        }
+
+        if (expectedProgress is null)
+        {
+            var created = await WriteAsync(
+                $"""
+                INSERT INTO {_progress} AS snapshot (operation_id, operation_type, status, payload, expires_at)
+                VALUES (@operation_id, @operation_type, @status, @payload, now() + @lifetime)
+                ON CONFLICT (operation_id) DO UPDATE SET {SnapshotAssignments}
+                WHERE snapshot.expires_at <= now()
+                """,
+                new SnapshotWrite(write.OperationId, write.Progress, write.Ttl ?? _defaultLifetime),
+                guard: null,
+                cancellationToken,
+                conditional: true).ConfigureAwait(false);
+            return created
+                ? ProgressCompareAndSetResult.Updated
+                : await DescribeRefusalAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
         }
 
         var storedPayload = await ReadPayloadAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
@@ -151,7 +168,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             StatementRepeat.SafeToRepeat,
             cancellationToken);
 
-    private Task<bool> WriteAsync(string statement, SnapshotWrite write, string? guard, CancellationToken cancellationToken)
+    private Task<bool> WriteAsync(string statement, SnapshotWrite write, string? guard, CancellationToken cancellationToken, bool conditional = false)
         => database.ExecuteAsync(
             async (connection, _, token) =>
             {
@@ -169,7 +186,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
 
                 return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
             },
-            guard is null ? StatementRepeat.SafeToRepeat : StatementRepeat.NotAfterSend,
+            guard is null && !conditional ? StatementRepeat.SafeToRepeat : StatementRepeat.NotAfterSend,
             cancellationToken);
 
     private async Task<ProgressCompareAndSetResult> DescribeRefusalAsync(string operationId, CancellationToken cancellationToken)

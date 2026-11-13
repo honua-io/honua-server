@@ -154,8 +154,8 @@ public sealed partial class ExportJobTests
             .Returns(call => progress.SetProgressAsync(jobId, call.ArgAt<IOperationProgress>(1), call.ArgAt<TimeSpan?>(2)));
         store.TrySetProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<OperationStatus>(), Arg.Any<CancellationToken>())
             .Returns(call => progress.TrySetProgressAsync(call.ArgAt<OperationProgressWrite>(0), call.ArgAt<OperationStatus>(1)));
-        store.TryReplaceProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<IOperationProgress>(), Arg.Any<CancellationToken>())
-            .Returns(call => progress.TryReplaceProgressAsync(call.ArgAt<OperationProgressWrite>(0), call.ArgAt<IOperationProgress>(1)));
+        store.TryReplaceProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<IOperationProgress?>(), Arg.Any<CancellationToken>())
+            .Returns(call => progress.TryReplaceProgressAsync(call.ArgAt<OperationProgressWrite>(0), call.ArgAt<IOperationProgress?>(1)));
         return store;
     }
 

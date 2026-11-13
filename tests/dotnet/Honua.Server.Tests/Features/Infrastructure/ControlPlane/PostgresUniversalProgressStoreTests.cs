@@ -75,6 +75,27 @@ public sealed class PostgresUniversalProgressStoreTests(DatabaseFixtureAdapter d
     }
 
     [IntegrationTest]
+    public async Task TryReplaceProgressAsync_MissingOrExpiredSnapshot_AdmitsOnlyOneWriter()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var progress = Export(OperationStatus.Processing);
+        foreach (var expired in new[] { false, true })
+        {
+            if (expired)
+            {
+                await harness.CreateProgressStore().SetProgressAsync(progress.JobId, progress, TimeSpan.FromSeconds(-1));
+            }
+            var results = await Task.WhenAll(Enumerable.Range(1, 8).Select(writer =>
+                harness.CreateProgressStore().TryReplaceProgressAsync(
+                    new OperationProgressWrite(progress.JobId, progress with { ProcessedFeatures = writer }), null)));
+            results.Count(result => result.Outcome == ProgressCompareAndSetOutcome.Updated).Should().Be(1);
+            results.Count(result => result.Outcome == ProgressCompareAndSetOutcome.StatusMismatch).Should().Be(7);
+            var winner = await harness.CreateProgressStore().GetProgressAsync<ExportProgress>(progress.JobId);
+            winner!.ProcessedFeatures.Should().BeInRange(1, 8);
+        }
+    }
+
+    [IntegrationTest]
     public async Task TryReplaceProgressAsync_TwoWriters_ExactlyOneWins()
     {
         await using var harness = await CreateHarnessAsync();

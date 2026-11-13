@@ -183,10 +183,13 @@ public sealed class ExportJobServiceTests
     public async Task Execute_CsvArtifact_PreservesValuesNullsAndZmOrdinatesAndCompletesTheProgress()
     {
         string? artifact = null;
+        string? scratchDirectory = null;
         var storage = Substitute.For<ICloudFileStorage>();
         storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async call =>
         {
-            using var reader = new StreamReader(call.Arg<FileUploadRequest>().Content, leaveOpen: true);
+            var content = call.Arg<FileUploadRequest>().Content;
+            scratchDirectory = Path.GetDirectoryName(((FileStream)content).Name);
+            using var reader = new StreamReader(content, leaveOpen: true);
             artifact = await reader.ReadToEndAsync();
             return ExportJobTestData.Uploaded("csv-proof", "text/csv");
         });
@@ -233,7 +236,8 @@ public sealed class ExportJobServiceTests
         progress.ProcessedFeatures.Should().Be(2, "the receipt counts rows actually exported, not the estimated 99");
         progress.DownloadUrl.Should().Be("https://example.test/proof.csv");
         progress.Warnings.Should().BeEmpty();
-        Directory.Exists(Path.Join(Path.GetTempPath(), "honua-export", job.JobId)).Should().BeFalse();
+        scratchDirectory.Should().NotBeNull();
+        Directory.Exists(scratchDirectory).Should().BeFalse();
 
         static async IAsyncEnumerable<Feature> FixtureFeatures()
         {
