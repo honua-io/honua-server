@@ -44,7 +44,7 @@ public sealed class PostgresPackageDraftBackingTests(DatabaseFixtureAdapter data
         await harness.ExecuteAsync(
             $"UPDATE {harness.Table("package_drafts")} SET expires_at = now() - interval '1 second' WHERE draft_id = 'map_gone'");
 
-        var live = await backing.ListLiveOldestFirstAsync(PackageDraftKind.Map, _ttl), CancellationToken.None);
+        var live = await backing.ListLiveOldestFirstAsync(PackageDraftKind.Map, _ttl, CancellationToken.None);
 
         live.Select(entry => entry.Id).Should().Equal("map_old", "map_new");
     }
