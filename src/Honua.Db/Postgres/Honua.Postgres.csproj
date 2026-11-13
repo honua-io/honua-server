@@ -43,7 +43,7 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.ObjectPool" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
-    <!-- Pin the upgraded native SQLite runtime instead of the older Microsoft.Data.Sqlite transitive version (#7022). -->
+    <!-- Pin the upgraded native SQLite runtime instead of the older Microsoft.Data.Sqlite transitive version. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
     <PackageReference Include="dbup-postgresql" />
     <PackageReference Include="NetTopologySuite.IO.Esri.Shapefile" />
