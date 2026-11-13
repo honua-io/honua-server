@@ -2,6 +2,7 @@ name: MCP Client Contract
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'src/Honua.Ai/Features/Protocols/Mcp/**'
@@ -34,6 +35,7 @@ concurrency:
 jobs:
   contract:
     name: Every-view MCP channel and input contracts
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:

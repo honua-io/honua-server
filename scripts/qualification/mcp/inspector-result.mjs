@@ -25,17 +25,23 @@ function fixedClientDiagnostic(stderr) {
   }
 }
 
+function classifyDiagnosticText(message) {
+  return {
+    timeoutDiagnostic: /timed? ?out|timeout|abort/i.test(message),
+    protocolDiagnostic: /protocol|initialize|session|method not found/i.test(message),
+    transportDiagnostic: /fetch|connect|ECONN|socket|HTTP|stream/i.test(message),
+    authorizationDiagnostic: /authentication|unauthori|forbidden|\b401\b|\b403\b/i.test(message),
+    rateLimitDiagnostic: /429|rate.?limit|too many requests/i.test(message),
+  };
+}
+
 export function classifyClientFailure(error, context = {}) {
   const message = String(error?.message ?? '');
   return { ...context,
     rpcCode: Number.isInteger(error?.code) && error.code >= -32768 && error.code < 0 ? error.code : undefined,
-    timeoutDiagnostic: /timed? ?out|timeout|abort/i.test(message),
-    protocolDiagnostic: /protocol|initialize|session|method not found/i.test(message),
-    transportDiagnostic: /fetch|connect|ECONN|socket|HTTP|stream/i.test(message),
+    ...classifyDiagnosticText(message),
     schemaDiagnostic: /schema|validation|format|ajv|invalid|Zod/i.test(message),
     packageDiagnostic: /installed.client|package|module/i.test(message),
-    authorizationDiagnostic: /authentication|unauthori|forbidden|\b401\b|\b403\b/i.test(message),
-    rateLimitDiagnostic: /429|rate.?limit|too many requests/i.test(message),
   };
 }
 
@@ -46,12 +52,8 @@ export function classifyInspectorFailure(stderr, error, context) {
     exitCode: typeof error?.code === 'number' ? error.code : error ? undefined : 0,
     timedOut: error?.killed === true,
     ...fixedClientDiagnostic(stderr),
-    timeoutDiagnostic: /timed? ?out|timeout|abort/i.test(stderr),
-    protocolDiagnostic: /protocol|initialize|session|method not found/i.test(stderr),
-    transportDiagnostic: /fetch|connect|ECONN|socket|HTTP|stream/i.test(stderr),
-    rateLimitDiagnostic: /429|rate.?limit|too many requests/i.test(stderr),
+    ...classifyDiagnosticText(stderr),
     schemaDiagnostic: /schema|validation|format|ajv/i.test(stderr),
-    authorizationDiagnostic: /authentication|unauthori|forbidden|\b401\b|\b403\b/i.test(stderr),
     interactiveDiagnostic: /elicitation|approval|input.required/i.test(stderr),
     emptyStdout: context.stdout.trim().length === 0,
   };
