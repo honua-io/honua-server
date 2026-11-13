@@ -277,9 +277,11 @@ internal sealed partial class CdnInvalidationService(
 
         if (logger.IsEnabled(LogLevel.Information))
         {
+            var outcome = result.Outcome.ToString();
+            var recordedPaths = string.Join(' ', paths);
             Log.PurgeRecorded(
-                logger, cause.Reason, cause.ChangeId, Environment.MachineName, result.Outcome.ToString(),
-                result.Detail ?? string.Empty, string.Join(' ', paths));
+                logger, cause.Reason, cause.ChangeId, Environment.MachineName, outcome,
+                result.Detail ?? string.Empty, recordedPaths);
         }
 
         return result;
