@@ -3,11 +3,13 @@
 
 using FluentAssertions;
 using System.Data.Common;
+using System.Text.Json;
 using Honua.Alerts;
 using Honua.Infrastructure.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Realtime;
 using Honua.Server.Features.Realtime;
+using Honua.Server.Features.Admin.Models;
 using Honua.Server.Tests.Infrastructure;
 using Honua.Server.Tests.Realtime;
 using Honua.TestKit.Attributes;
@@ -39,6 +41,7 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
             received.TrySetResult(alert);
             return Task.CompletedTask;
         }, new SubscriptionOptions("remote-task"));
+        consumer.Request!.After.Should().NotBeNull("subscription initialization must preserve events committed before replay becomes live");
         await consumer.WaitUntilLiveAsync();
         var expected = AlertTestFixtures.CreateAlertEvent(dedupeKey: "remote-receiver");
 
@@ -69,6 +72,40 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
 
         await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(10));
         receiver.GetSubscriptions().Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    public async Task Subscribe_SourceClosesDuringBlockedDelivery_CancelsSubscriberImmediately()
+    {
+        await using var harness = await RealtimeLogHarness.CreateAsync(database);
+        var consumer = new ObservedProvider(new PostgresRealtimeFanoutProvider(
+            harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log)));
+        await using var receiver = new RealtimeAlertNotificationBroadcaster(
+            consumer, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = receiver.Subscribe(async (_, cancellationToken) =>
+        {
+            started.TrySetResult();
+            await release.Task.WaitAsync(cancellationToken);
+        });
+        await consumer.WaitUntilLiveAsync();
+        var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = subscription.DisconnectToken.Register(() => disconnected.TrySetResult());
+        var payload = JsonSerializer.SerializeToElement(
+            AlertTestFixtures.CreateAlertEvent(), StreamingOperationsJsonContext.Default.AlertEventEnvelope);
+        consumer.Request!.Writer.TryWrite(new RealtimeDelivery.Event(
+            new RealtimeEvent(RealtimeFamily.Alerts, 1, "service", "alert", payload, DateTimeOffset.UtcNow))).Should().BeTrue();
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            consumer.Request.Writer.TryComplete(new InvalidOperationException("overflow")).Should().BeTrue();
+            await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
     }
 
     [IntegrationTest]
