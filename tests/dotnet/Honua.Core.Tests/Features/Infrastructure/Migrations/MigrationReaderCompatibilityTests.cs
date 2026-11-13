@@ -18,6 +18,28 @@ public sealed class MigrationReaderCompatibilityTests
     private const string Additive = "ALTER TABLE honua.layers ADD COLUMN IF NOT EXISTS future_note text;";
     private const int Reader = 135;
 
+    [UnitTheory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
+    public void Verify_DynamicTriggerFragmentsInOneExecute_RefusesTruncate(string delimiter)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}CREATE TRIGGER "first{{delimiter}} || chr(34) ||
+                    {{delimiter}} BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject();
+                      TRUNCATE honua.evidence;
+                      CREATE TRIGGER {{delimiter}} || chr(34) ||
+                    {{delimiter}}second" BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject(){{delimiter}};
+            END;
+            $body$;
+            """;
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
     [UnitTest]
     public void Verify_IncompleteDynamicTriggerIdentifiers_RefusesTruncate()
     {

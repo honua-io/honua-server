@@ -8,6 +8,26 @@ namespace Honua.Core.Tests.Features.Infrastructure.Migrations;
 [Trait("Tier", "Fast")]
 public sealed class MigrationSafetyClassifierTests
 {
+    [Theory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
+    public void DetectBreakingRules_DynamicTriggerFragmentsInOneExecute_DoNotHideTruncate(string delimiter)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}CREATE TRIGGER "first{{delimiter}} || chr(34) ||
+                    {{delimiter}} BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject();
+                      TRUNCATE honua.evidence;
+                      CREATE TRIGGER {{delimiter}} || chr(34) ||
+                    {{delimiter}}second" BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject(){{delimiter}};
+            END;
+            $body$;
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("truncate-table");
+    }
+
     [Fact]
     public void DetectBreakingRules_IncompleteDynamicTriggerIdentifiers_DoNotHideTruncate()
     {

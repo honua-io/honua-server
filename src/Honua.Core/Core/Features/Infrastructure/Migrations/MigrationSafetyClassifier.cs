@@ -279,7 +279,7 @@ public static class MigrationSafetyClassifier
     // parsed in its own statement scope so concatenated literals join without crossing semicolons.
     // NUL is not valid PostgreSQL source text. Keep execution scopes separate until trigger
     // headers have been removed, so an incomplete dynamic identifier cannot consume SQL
-    // from its caller or a different EXECUTE statement. Other rules still see all SQL.
+    // from its caller, another statement, or a different literal fragment. Other rules still see all SQL.
     private const char ExecutionScopeBoundary = '\0';
 
     private static string ExtractExecutableSql(string sql)
@@ -369,8 +369,9 @@ public static class MigrationSafetyClassifier
                     && IsDynamicExecutePrefix(result, statementStart)
                     && IsDynamicSqlTemplatePosition(result, statementStart))
                 {
-                    AppendExecutableSql(contents, dynamicSql, insideRoutineBody: false);
-                    dynamicSql.Append(' ');
+                    var fragmentSql = new StringBuilder(contents.Length);
+                    AppendExecutableSql(contents, fragmentSql, insideRoutineBody: false);
+                    AppendExecutionScope(dynamicSql, fragmentSql);
                 }
 
                 result.Append(' ');
@@ -395,8 +396,9 @@ public static class MigrationSafetyClassifier
                     && IsDynamicExecutePrefix(result, statementStart)
                     && IsDynamicSqlTemplatePosition(result, statementStart))
                 {
-                    AppendExecutableSql(contents, dynamicSql, insideRoutineBody: false);
-                    dynamicSql.Append(' ');
+                    var fragmentSql = new StringBuilder(contents.Length);
+                    AppendExecutableSql(contents, fragmentSql, insideRoutineBody: false);
+                    AppendExecutionScope(dynamicSql, fragmentSql);
                 }
 
                 result.Append(' ');
