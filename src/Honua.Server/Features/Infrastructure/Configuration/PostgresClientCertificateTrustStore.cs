@@ -1,17 +1,21 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Honua.Infrastructure.Authentication.ClientCertificates;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Configuration;
 
-internal sealed class PostgresClientCertificateTrustStore(
+internal sealed partial class PostgresClientCertificateTrustStore(
     PostgresConfigurationDocuments documents,
     IOptions<ClientCertificateAuthenticationOptions>? options = null,
-    IHttpContextAccessor? contexts = null) : IClientCertificateTrustStore, IDisposable
+    IHttpContextAccessor? contexts = null,
+    ILogger<PostgresClientCertificateTrustStore>? logger = null) : IClientCertificateTrustStore, IDisposable
 {
+    private readonly ILogger _logger = logger ?? (ILogger)NullLogger.Instance;
     private readonly ConfigurationCollectionStore<ClientCertificateTrustProfile> _store = new(documents,
         new("client-certificate-trust", SharedConfigurationJsonContext.Default.ClientCertificateTrustProfile), contexts);
 
@@ -85,9 +89,9 @@ internal sealed class PostgresClientCertificateTrustStore(
         return removed;
     }
 
-    // Configured profiles are applied once per process. Configuration owns the issuer and trust-anchor settings,
-    // so an operator's config change reaches every task; a disable from either side wins, and revocations and
-    // mappings are unioned so neither configuration nor an administrator can silently drop the other's entries.
+    // Configured profiles are applied once per process. Configuration owns issuers, trust anchors and the mappings
+    // it defines. For every security setting both sides can change, the stricter value wins, so neither a restart
+    // nor an administrator can silently weaken the other's choice. Revocations and admin-only mappings are kept.
     private async Task SeedProfilesAsync(CancellationToken cancellationToken)
     {
         if (_seeded) { return; }
@@ -95,9 +99,17 @@ internal sealed class PostgresClientCertificateTrustStore(
         try
         {
             if (_seeded) { return; }
+            var unreadable = (await _store.ReadAsync(cancellationToken).ConfigureAwait(false)).UnreadableKeys;
             foreach (var configured in options?.Value.TrustProfiles.Select(ClientCertificateTrustProfile.FromOptions) ?? [])
             {
-                await _store.MutateAsync(Key(configured.ProfileId),
+                var key = Key(configured.ProfileId);
+                if (unreadable.Contains(key, StringComparer.Ordinal))
+                {
+                    // The stored row stays authoritative and unreadable profiles are not trusted; repair needs the key ring.
+                    ConfiguredProfileUnreadable(_logger, configured.ProfileId);
+                    continue;
+                }
+                await _store.MutateAsync(key,
                     current => current is null ? configured : ApplyConfigured(current, configured), cancellationToken).ConfigureAwait(false);
             }
             _seeded = true;
@@ -111,8 +123,16 @@ internal sealed class PostgresClientCertificateTrustStore(
         {
             Revision = stored.Revision,
             Enabled = stored.Enabled && configured.Enabled,
-            PrincipalMappings = stored.PrincipalMappings
-                .Concat(configured.PrincipalMappings.Where(mapping => !stored.PrincipalMappings.Any(existing => Equal(existing.MappingId, mapping.MappingId))))
+            AllowedSanTypes = configured.AllowedSanTypes.Intersect(stored.AllowedSanTypes).ToArray(),
+            AllowSubjectFallback = stored.AllowSubjectFallback && configured.AllowSubjectFallback,
+            RequireClientAuthenticationEku = stored.RequireClientAuthenticationEku || configured.RequireClientAuthenticationEku,
+            RequireChainTrust = stored.RequireChainTrust || configured.RequireChainTrust,
+            ChainRevocationMode = Strictness(stored.ChainRevocationMode) >= Strictness(configured.ChainRevocationMode)
+                ? stored.ChainRevocationMode : configured.ChainRevocationMode,
+            RevocationStatusUnknownIsFatal = stored.RevocationStatusUnknownIsFatal || configured.RevocationStatusUnknownIsFatal,
+            PrincipalMappings = configured.PrincipalMappings
+                .Select(mapping => MergeMapping(stored.PrincipalMappings.FirstOrDefault(existing => Equal(existing.MappingId, mapping.MappingId)), mapping))
+                .Concat(stored.PrincipalMappings.Where(existing => !configured.PrincipalMappings.Any(mapping => Equal(mapping.MappingId, existing.MappingId))))
                 .ToArray(),
             Revocations = stored.Revocations
                 .Concat(configured.Revocations.Where(revocation => !stored.Revocations.Any(existing => Equal(existing.RevocationId, revocation.RevocationId))))
@@ -123,6 +143,24 @@ internal sealed class PostgresClientCertificateTrustStore(
             ? stored
             : merged with { Revision = stored.Revision + 1 };
     }
+
+    // A mapping defined in configuration takes its identity, roles and scope from configuration; a disable on either side wins.
+    private static ClientCertificatePrincipalMapping MergeMapping(ClientCertificatePrincipalMapping? stored, ClientCertificatePrincipalMapping configured)
+        => stored is null ? configured : configured with
+        {
+            Enabled = stored.Enabled && configured.Enabled,
+            Revision = stored.Revision
+        };
+
+    private static int Strictness(X509RevocationMode mode) => mode switch
+    {
+        X509RevocationMode.Online => 2,
+        X509RevocationMode.Offline => 1,
+        _ => 0
+    };
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Configured client-certificate trust profile {ProfileId} has an unreadable stored copy; it is not trusted until repaired.")]
+    private static partial void ConfiguredProfileUnreadable(ILogger logger, string profileId);
 
     private static string Key(string profileId) => profileId.ToUpperInvariant();
     private static bool Equal(string first, string second) => string.Equals(first, second, StringComparison.OrdinalIgnoreCase);

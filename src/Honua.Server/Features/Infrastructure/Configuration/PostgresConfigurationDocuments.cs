@@ -15,7 +15,10 @@ namespace Honua.Server.Features.Infrastructure.Configuration;
 
 internal sealed record ConfigurationCollection<T>(string Kind, JsonTypeInfo<T> Type);
 internal sealed record ConfigurationDocument<T>(string Key, long Revision, T Value);
-internal sealed record ConfigurationSnapshot<T>(long Generation, IReadOnlyList<ConfigurationDocument<T>> Documents);
+internal sealed record ConfigurationSnapshot<T>(long Generation, IReadOnlyList<ConfigurationDocument<T>> Documents)
+{
+    public IReadOnlyList<string> UnreadableKeys { get; init; } = [];
+}
 internal sealed record ConfigurationWrite<T>(string Key, long ExpectedRevision, T? Value);
 
 internal sealed partial class PostgresConfigurationDocuments(
@@ -45,6 +48,7 @@ internal sealed partial class PostgresConfigurationDocuments(
             command.Parameters.AddWithValue("kind", collection.Kind);
             await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
             var documents = new List<ConfigurationDocument<T>>();
+            var unreadable = new List<string>();
             long? generation = null;
             var protector = Protector(collection.Kind);
             while (await reader.ReadAsync(token).ConfigureAwait(false))
@@ -63,10 +67,14 @@ internal sealed partial class PostgresConfigurationDocuments(
                     catch (Exception exception) when (exception is CryptographicException or JsonException)
                     {
                         DocumentUnreadable(_logger, collection.Kind, key, exception);
+                        unreadable.Add(key);
                     }
                 }
             }
-            return new ConfigurationSnapshot<T>(generation ?? throw new InvalidOperationException("Configuration generation is unavailable."), documents);
+            return new ConfigurationSnapshot<T>(generation ?? throw new InvalidOperationException("Configuration generation is unavailable."), documents)
+            {
+                UnreadableKeys = unreadable
+            };
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 
     public Task<bool> WriteAsync<T>(ConfigurationCollection<T> collection, ConfigurationWrite<T> write, CancellationToken cancellationToken)

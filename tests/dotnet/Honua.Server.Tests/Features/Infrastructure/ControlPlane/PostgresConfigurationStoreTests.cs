@@ -299,6 +299,72 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         policies.Should().ContainSingle().Which.PolicyId.Should().Be(readable.PolicyId);
     }
 
+    [IntegrationTest]
+    public async Task ConfiguredMappingDisable_OnRestartedTask_DisablesMappingOnEveryTask()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
+        (await taskA.GetProfileAsync("partner"))!.PrincipalMappings.Should().ContainSingle().Which.Enabled.Should().BeTrue();
+
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: false)).ListProfilesAsync();
+
+        var mapping = (await taskA.GetProfileAsync("partner"))!.PrincipalMappings.Should().ContainSingle().Subject;
+        mapping.Enabled.Should().BeFalse();
+        mapping.Roles.Should().Equal("reader");
+    }
+
+    [IntegrationTest]
+    public async Task ConfiguredProfile_OnRestartedTask_KeepsStricterAdminChainSettings()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
+        var profile = (await taskA.GetProfileAsync("partner"))!;
+        await taskA.UpsertProfileAsync(profile with
+        {
+            RequireChainTrust = true, ChainRevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.Online
+        });
+
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true)).ListProfilesAsync();
+
+        var merged = (await taskA.GetProfileAsync("partner"))!;
+        merged.RequireChainTrust.Should().BeTrue();
+        merged.ChainRevocationMode.Should().Be(System.Security.Cryptography.X509Certificates.X509RevocationMode.Online);
+    }
+
+    [IntegrationTest]
+    public async Task ConfiguredProfile_WithUnreadableStoredCopy_IsNotTrustedAndDoesNotBlockOtherProfiles()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var foreignKeyRing = new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider();
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(foreignKeyRing), TrustOptions(mappingEnabled: true))
+            .ListProfilesAsync();
+        var store = CreateTrustStore(harness);
+        await store.UpsertProfileAsync(new ClientCertificateTrustProfile { ProfileId = "other", EnvironmentId = "production", DisplayName = "Other" });
+
+        var restarted = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
+
+        (await restarted.ListProfilesAsync()).Select(profile => profile.ProfileId).Should().Equal("other");
+    }
+
+    private static IOptions<ClientCertificateAuthenticationOptions> TrustOptions(bool mappingEnabled) => Options.Create(new ClientCertificateAuthenticationOptions
+    {
+        TrustProfiles =
+        [
+            new()
+            {
+                ProfileId = "partner", EnvironmentId = "production", DisplayName = "Partner", AcceptedIssuerThumbprints = ["AA"],
+                PrincipalMappings =
+                [
+                    new()
+                    {
+                        MappingId = "partner-reader", MatchType = ClientCertificateIdentityType.SanUri, MatchValue = "spiffe://honua/production/partner",
+                        PrincipalId = "partner", DisplayName = "Partner", Roles = ["reader"], Enabled = mappingEnabled
+                    }
+                ]
+            }
+        ]
+    });
+
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
         => ControlPlaneStateHarness.CreateAsync(database, nameof(PostgresConfigurationStoreTests));
 

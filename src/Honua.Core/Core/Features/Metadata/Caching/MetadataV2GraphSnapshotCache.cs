@@ -25,6 +25,7 @@ public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalida
 
     // Only the newest partition remains reachable; in-flight readers may finish with their captured generation.
     // A delayed probe cannot move a process back to an older generation or grow the cache without bound.
+    // A database restored to a lower generation needs a process restart; the generation never decreases otherwise.
     public MetadataV2GraphSnapshotCache ForGeneration(string environment, long generation)
     {
         lock (_generationGate)
