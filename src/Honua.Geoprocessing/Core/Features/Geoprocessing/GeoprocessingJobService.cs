@@ -1210,6 +1210,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // tenant-scoped before pagination so the returned cursor cannot expose a foreign
         // job identifier. The cursor lets the client walk history without dupes; a page
         // may carry fewer than `limit` items after post-filtering.
+        var tenantScope = _authorizer.CaptureReadScope(principal, _rbacOptions);
         var page = await jobStore.QueryAsync(
             new ExecutionJobQuery
             {
@@ -1217,7 +1218,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 Statuses = filter.Statuses,
                 RequestedBy = ownerScope,
                 ApplyTenantScope = true,
-                TenantId = _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId,
+                TenantId = tenantScope.TenantId,
+                IncludeUnassignedTenant = tenantScope.IncludesLegacy,
                 Cursor = filter.Cursor,
                 Limit = limit
             },

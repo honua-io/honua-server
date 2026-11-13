@@ -4,6 +4,8 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Geoprocessing;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
@@ -32,11 +34,19 @@ public sealed partial class GeoprocessingJobServiceTests
         _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
         (await sut.GetJobAsync(job.OperationId, principal)).Should().BeSameAs(job);
 
+        _jobStore.QueryAsync(Arg.Any<ExecutionJobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionJobPage { Items = [job] });
         var context = new DefaultHttpContext { RequestServices = services, User = principal };
         await new TenantContextMiddleware(_ => Task.CompletedTask, Options.Create(new TenantContextOptions()),
             NullLogger<TenantContextMiddleware>.Instance).InvokeAsync(context);
         (await sut.GetJobAsync(job.OperationId, principal)).Should().BeSameAs(job);
         (await sut.GetJobForTerminalAsync(job.OperationId, principal)).Should().BeSameAs(job);
+        var page = await sut.ListJobsAsync(new GeoprocessingJobListFilter(), principal);
+        page.Items.Should().ContainSingle().Which.Should().BeSameAs(job);
+        await _jobStore.Received(1).QueryAsync(
+            Arg.Is<ExecutionJobQuery>(query => query.ApplyTenantScope && query.TenantId == "public"
+                && query.IncludeUnassignedTenant && query.RequestedBy != null),
+            Arg.Any<CancellationToken>());
         var stranger = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.NameIdentifier, "stranger")], "Test"));
         var denied = () => sut.GetJobAsync(job.OperationId, stranger);

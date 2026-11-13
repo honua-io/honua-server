@@ -9,7 +9,7 @@ namespace Honua.Infrastructure.MultiTenancy;
 // headers, enabled defaults and frozen execution bindings remain exact.
 internal sealed class TenantReadScope
 {
-    private bool IncludesLegacy { get; init; }
+    internal bool IncludesLegacy { get; init; }
     internal string? TenantId { get; }
     internal string[] StorageKeys => IncludesLegacy && TenantId is not null
         ? [TenantId, string.Empty] : [TenantId ?? string.Empty];

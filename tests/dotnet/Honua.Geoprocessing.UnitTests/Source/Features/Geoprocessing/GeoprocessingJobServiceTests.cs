@@ -2783,7 +2783,7 @@ public sealed partial class GeoprocessingJobServiceTests
         var page = await sut.ListJobsAsync(new GeoprocessingJobListFilter(), principal);
         page.Items.Should().ContainSingle().Which.Should().BeSameAs(own);
         await _jobStore.Received(1).QueryAsync(
-            Arg.Is<ExecutionJobQuery>(query => query.ApplyTenantScope && query.TenantId == effectiveTenant),
+            Arg.Is<ExecutionJobQuery>(query => query.ApplyTenantScope && query.TenantId == effectiveTenant && !query.IncludeUnassignedTenant),
             Arg.Any<CancellationToken>());
         (await sut.GetJobAsync(own.OperationId, principal)).Should().BeSameAs(own);
         _cancellationNotifier.DidNotReceiveWithAnyArgs().Cancel(default!);

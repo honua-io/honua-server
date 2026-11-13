@@ -57,9 +57,11 @@ internal sealed class GeoprocessingJobAuthorizer
     }
 
     internal bool CanReadJob(OperationAuditInfo audit, ClaimsPrincipal principal, RbacOptions options)
-        => JobOwnershipSecurity.CanAccess(audit,
-            TenantReadScope.For(_httpContextAccessor.HttpContext?.RequestServices.GetService<ITenantContext>(),
-                CaptureSecurityContext(principal, options).TenantId), principal);
+        => JobOwnershipSecurity.CanAccess(audit, CaptureReadScope(principal, options), principal);
+
+    internal TenantReadScope CaptureReadScope(ClaimsPrincipal principal, RbacOptions options)
+        => TenantReadScope.For(_httpContextAccessor.HttpContext?.RequestServices.GetService<ITenantContext>(),
+            CaptureSecurityContext(principal, options).TenantId);
 
     // The snapshot is never taken from the orchestrator or the approval-resume principal, because one carries admin and the other matches no row policy.
     public async Task<JobSecurityContextMembershipResult> ResolveSubmitterSecurityContextAsync(
