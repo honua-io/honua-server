@@ -75,9 +75,9 @@ internal static class AlertsServiceCollectionExtensions
             serviceProvider.SharedLeaseStore(),
             serviceProvider.GetRequiredService<IOptions<AlertOptions>>(),
             serviceProvider.GetRequiredService<ILogger<LeaseLeaderElectionStrategy>>()));
-        services.AddSingleton<InMemoryAlertNotificationBroadcaster>();
-        services.AddSingleton<IAlertNotificationBroadcaster>(sp => sp.GetRequiredService<InMemoryAlertNotificationBroadcaster>());
-        services.AddSingleton<IStreamingSubscriptionManager>(sp => sp.GetRequiredService<InMemoryAlertNotificationBroadcaster>());
+        services.AddSingleton<RealtimeAlertNotificationBroadcaster>();
+        services.AddSingleton<IAlertNotificationBroadcaster>(sp => sp.GetRequiredService<RealtimeAlertNotificationBroadcaster>());
+        services.AddSingleton<IStreamingSubscriptionManager>(sp => sp.GetRequiredService<RealtimeAlertNotificationBroadcaster>());
         services.AddAlertDeliveryChannels(configuration);
 
         // Register the evaluator once and expose it both as the hosted service and as the
