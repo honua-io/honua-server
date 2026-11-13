@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.ControlPlane;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Progress;
 using Honua.Server.Features.Admin.Jobs;
@@ -63,9 +64,28 @@ public sealed partial class TileCacheJobExecutorPublishTests
     [InlineData("console-queued")]
     [InlineData("console-running")]
     [InlineData("tile")]
+    [InlineData("console-backend")]
+    [InlineData("tile-remote")]
     public async Task ConcurrentCancel_OnlyTransitionWinnerReleasesOutstandingJob(string path)
     {
         var initial = ControlJob(path == "console-running" ? ExecutionJobStatus.Running : ExecutionJobStatus.Queued);
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("remote-test");
+        backend.TargetKind.Returns(initial.Spec.TargetKind);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities { SupportsCancellation = true });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled });
+        if (path is "console-backend" or "tile-remote")
+        {
+            initial = initial with
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "provider-operation",
+                CancellationRequestedAt = DateTimeOffset.UtcNow,
+                Spec = initial.Spec with { Backend = backend.BackendName }
+            };
+        }
         var current = initial;
         var store = Substitute.For<IExecutionJobStore>();
         store.GetAsync(initial.OperationId, Arg.Any<CancellationToken>()).Returns(_ => current);
@@ -79,7 +99,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
                 return ReferenceEquals(Interlocked.CompareExchange(ref current, call.Arg<ExecutionJobRecord>(), initial), initial);
             });
         var callback = Substitute.For<IJobTerminalCallback>();
-        using var controls = ControlServices(store, callback);
+        using var controls = ControlServices(store, callback, backend);
         long released = 0;
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, active) =>
@@ -94,12 +114,12 @@ public sealed partial class TileCacheJobExecutorPublishTests
             }
         });
         listener.Start();
-        if (path == "tile")
+        if (path is "tile" or "tile-remote")
         {
             var options = Substitute.For<IOptionsMonitor<TileCacheBatchOptions>>();
             options.CurrentValue.Returns(new TileCacheBatchOptions());
             var service = new TileCacheJobService(store, new ComparingInMemoryProgressStore(),
-                [new LocalBatchComputeBackend(new ComparingInMemoryProgressStore(), [])],
+                path == "tile-remote" ? [backend] : [new LocalBatchComputeBackend(new ComparingInMemoryProgressStore(), [])],
                 options,
                 controls.GetRequiredService<IServiceScopeFactory>(), NullLogger<TileCacheJobService>.Instance,
                 controls.GetRequiredService<IJobQueue>());
@@ -136,12 +156,14 @@ public sealed partial class TileCacheJobExecutorPublishTests
         };
     }
 
-    private static ServiceProvider ControlServices(IExecutionJobStore store, IJobTerminalCallback? callback = null)
+    private static ServiceProvider ControlServices(IExecutionJobStore store, IJobTerminalCallback? callback = null,
+        IBatchComputeBackend? backend = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(store);
         services.AddSingleton(Substitute.For<IJobQueue>());
         if (callback != null) services.AddSingleton(callback);
+        if (backend != null) services.AddSingleton(backend);
         return services.BuildServiceProvider();
     }
 
