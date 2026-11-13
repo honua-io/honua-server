@@ -35,11 +35,11 @@ internal static partial class FeatureStreamEndpoints
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static Task WriteSseResetAsync(HttpResponse response, string reason, long head, CancellationToken cancellationToken)
+    private static Task WriteSseResetAsync(HttpResponse response, FeatureStreamResetFrame reset, CancellationToken cancellationToken)
         => WriteSseEventAsync(
             response,
             "reset",
-            new FeatureStreamResetFrame { Reason = reason, Head = FeatureStreamCursor.Format(head) },
+            reset,
             FeatureStreamJsonContext.Default.FeatureStreamResetFrame,
             null,
             cancellationToken);
@@ -122,7 +122,7 @@ internal static partial class FeatureStreamEndpoints
 
             if (requested.Kind == FeatureStreamCursorKind.Epoch)
             {
-                await WriteSseResetAsync(context.Response, RealtimeResetReasons.CursorEpoch, initialLiveCursor, context.RequestAborted)
+                await WriteSseResetAsync(context.Response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.CursorEpoch, Head = FeatureStreamCursor.Format(initialLiveCursor) }, context.RequestAborted)
                     .ConfigureAwait(false);
             }
 
@@ -198,8 +198,16 @@ internal static partial class FeatureStreamEndpoints
                 if (cursor.HasValue)
                 {
                     var head = await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false);
-                    await WriteSseResetAsync(context.Response, RealtimeResetReasons.Retention, head, linkedCts.Token)
+                    await WriteSseResetAsync(context.Response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.Retention, Head = FeatureStreamCursor.Format(head) }, linkedCts.Token)
                         .ConfigureAwait(false);
+                    if (subscriptionFilter is not StreamSubscriptionFilter { LayerIds: not null })
+                    {
+                        await WriteSseTerminalErrorAsync(context.Response, session.SessionId,
+                            FeatureStreamSessionManager.DefaultSubscriptionId,
+                            "Retention requires resynchronization with an explicit layer selection.", linkedCts.Token).ConfigureAwait(false);
+                        await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
+                        return;
+                    }
                 }
 
                 var snapshotResult = await EmitSnapshotAsync(
@@ -310,9 +318,7 @@ internal static partial class FeatureStreamEndpoints
             catch (FeatureStreamReplayWindowGapException)
             {
                 await RecoverSseReplayGapAsync(
-                    new SseReplayRecovery(deps, logger, context, session),
-                    subscriptionFilter,
-                    mode,
+                    new SseReplayRecovery(deps, logger, context) { Session = session, Filter = subscriptionFilter, Mode = mode },
                     linkedCts.Token).ConfigureAwait(false);
                 return;
             }
@@ -554,9 +560,7 @@ internal static partial class FeatureStreamEndpoints
         catch (FeatureStreamReplayWindowGapException)
         {
             await RecoverSseReplayGapAsync(
-                new SseReplayRecovery(deps, logger, context, session),
-                subscriptionFilter,
-                mode,
+                new SseReplayRecovery(deps, logger, context) { Session = session, Filter = subscriptionFilter, Mode = mode },
                 linkedCts.Token).ConfigureAwait(false);
         }
         catch (IOException)
@@ -572,13 +576,15 @@ internal static partial class FeatureStreamEndpoints
     private sealed record SseReplayRecovery(
         FeatureStreamDependencies Dependencies,
         ILogger Logger,
-        HttpContext Context,
-        FeatureStreamSession Session);
+        HttpContext Context)
+    {
+        public required FeatureStreamSession Session { get; init; }
+        public IStreamSubscriptionFilter? Filter { get; init; }
+        public FeatureStreamSubscriptionMode Mode { get; init; }
+    }
 
     private static async Task RecoverSseReplayGapAsync(
         SseReplayRecovery recovery,
-        IStreamSubscriptionFilter? subscriptionFilter,
-        FeatureStreamSubscriptionMode mode,
         CancellationToken cancellationToken)
     {
         var deps = recovery.Dependencies;
@@ -586,13 +592,13 @@ internal static partial class FeatureStreamEndpoints
         try
         {
             var head = await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
-            await WriteSseResetAsync(response, RealtimeResetReasons.Retention, head, cancellationToken).ConfigureAwait(false);
-            if (subscriptionFilter is StreamSubscriptionFilter filter)
+            await WriteSseResetAsync(response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.Retention, Head = FeatureStreamCursor.Format(head) }, cancellationToken).ConfigureAwait(false);
+            if (recovery.Filter is StreamSubscriptionFilter { LayerIds: not null } filter)
             {
                 var snapshotResult = await EmitSnapshotAsync(
                     deps,
                     recovery.Logger,
-                    CreateSseSnapshotSink(mode, response),
+                    CreateSseSnapshotSink(recovery.Mode, response),
                     recovery.Session.SessionId,
                     FeatureStreamSessionManager.DefaultSubscriptionId,
                     deps.SessionManager.GetDefaultSubscriptionGeneration(recovery.Session.SessionId),

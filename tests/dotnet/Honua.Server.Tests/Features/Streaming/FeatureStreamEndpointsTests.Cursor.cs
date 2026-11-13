@@ -122,4 +122,98 @@ public sealed partial class FeatureStreamEndpointsTests
         frame.Data.GetProperty("head").GetString().Should().Be("features:60");
         (await ReadNextSseEventAsync(reader, timeout.Token)).EventName.Should().Be("snapshot-begin");
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_ExpiredWildcardCursor_ResetsWithoutPublishingSnapshotCheckpoint()
+    {
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IFeatureChangeEventStore>(FakeFeatureChangeEventStore.WithRetentionWindow(
+                FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50)));
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features?cursor=features:1");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        var body = await response.Content.ReadAsStringAsync(timeout.Token);
+        body.Should().Contain("event: reset").And.Contain("retention");
+        body.Should().NotContain("event: snapshot").And.NotContain("id: features:");
+        body.Should().Contain("explicit layer selection");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_ExpiredWildcardCursor_ResetsWithoutPublishingSnapshotCheckpoint()
+    {
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IFeatureChangeEventStore>(FakeFeatureChangeEventStore.WithRetentionWindow(
+                FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50)));
+        await fixture.InitializeAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var socketClient = fixture.CreateWebSocketClient();
+        var configureRequest = socketClient.ConfigureRequest;
+        socketClient.ConfigureRequest = request =>
+        {
+            configureRequest?.Invoke(request);
+            request.Headers["X-API-Key"] = WebAppFixture.SharedAdminPassword;
+        };
+        using var socket = await socketClient.ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features?cursor=features:1"), timeout.Token);
+        var status = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        status.GetProperty("type").GetString().Should().Be("status");
+        var reset = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        reset.GetProperty("type").GetString().Should().Be("reset");
+        reset.GetProperty("reason").GetString().Should().Be("retention");
+        var error = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        error.GetProperty("type").GetString().Should().Be("status");
+        error.GetProperty("status").GetString().Should().Be("error");
+        error.GetProperty("message").GetString().Should().Contain("explicit layer selection");
+    }
+
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/streaming/features")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WebSocket_RetentionAdvancesDuringReplayOrLiveSweep_SendsTypedReset(bool duringReplay)
+    {
+        var store = FakeFeatureChangeEventStore.WithRetentionWindow(
+            FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50));
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IFeatureChangeEventStore>(store);
+        await fixture.InitializeAsync();
+        void AdvanceRetention()
+        {
+            store.QueryCompleted = null;
+            store.SetRetentionWindow(FeatureChangeRetentionWindow.Retained(currentCursor: 100, oldestRetainedCursor: 80));
+        }
+
+        if (duringReplay)
+        {
+            store.QueryCompleted = AdvanceRetention;
+        }
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var query = duringReplay ? "?layers=0&cursor=features:59" : "?layers=0";
+        using var socket = await fixture.CreateWebSocketClient().ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features" + query), timeout.Token);
+        _ = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        if (!duringReplay)
+        {
+            AdvanceRetention();
+        }
+
+        System.Text.Json.JsonElement reset;
+        do
+        {
+            reset = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        }
+        while (reset.GetProperty("type").GetString() == "status");
+        reset.GetProperty("type").GetString().Should().Be("reset");
+        reset.GetProperty("reason").GetString().Should().Be("retention");
+        reset.GetProperty("head").GetString().Should().Be("features:100");
+    }
 }

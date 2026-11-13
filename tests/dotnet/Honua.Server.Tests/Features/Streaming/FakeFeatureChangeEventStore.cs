@@ -16,6 +16,17 @@ internal sealed class FakeFeatureChangeEventStore(int maxRetained = int.MaxValue
     private long _head;
     private long _lastTrimmedCursor;
 
+    public Action? QueryCompleted { get; set; }
+
+    public void SetRetentionWindow(FeatureChangeRetentionWindow window)
+    {
+        lock (_gate)
+        {
+            _fixedWindow = window;
+            _head = window.CurrentCursor;
+        }
+    }
+
     public bool CanPersistEvents => true;
 
     public bool IsUsingInMemoryFallback => false;
@@ -55,9 +66,12 @@ internal sealed class FakeFeatureChangeEventStore(int maxRetained = int.MaxValue
 
     public async Task<FeatureChangeRetentionWindow> GetRetentionWindowAsync(CancellationToken cancellationToken = default)
     {
-        if (_fixedWindow is { } window)
+        lock (_gate)
         {
-            return window;
+            if (_fixedWindow is { } window)
+            {
+                return window;
+            }
         }
 
         IFeatureChangeEventStore store = this;
@@ -82,6 +96,7 @@ internal sealed class FakeFeatureChangeEventStore(int maxRetained = int.MaxValue
                 .Where(e => (from is null || e.Timestamp >= from) && (to is null || e.Timestamp <= to))
                 .Take(limit)
                 .ToArray();
+            QueryCompleted?.Invoke();
             return Task.FromResult(matches);
         }
     }

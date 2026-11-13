@@ -3,6 +3,7 @@
 
 using System.Net.WebSockets;
 using System.Text.Json;
+using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Events;
 
 namespace Honua.Server.Features.Streaming;
@@ -26,7 +27,8 @@ internal static partial class FeatureStreamEndpoints
     {
         var cursor = fromCursor;
         var delivered = 0L;
-        await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), fromCursor, cancellationToken)
+        await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
+            new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock), fromCursor, cancellationToken)
             .ConfigureAwait(false);
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -103,7 +105,8 @@ internal static partial class FeatureStreamEndpoints
 
             if (events.Count < batchSize)
             {
-                await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), cursor, cancellationToken)
+                await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
+                    new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock), cursor, cancellationToken)
                     .ConfigureAwait(false);
                 break;
             }
@@ -111,6 +114,34 @@ internal static partial class FeatureStreamEndpoints
 
         sessionManager?.RecordReplayEventsDelivered(WebSocketTransport, delivered);
         return cursor;
+    }
+
+    private sealed record WebSocketReplayContext(
+        FeatureStreamReplayContext Replay,
+        WebSocket Socket,
+        SemaphoreSlim WriteLock);
+
+    private static async Task EnsureWebSocketReplayableAfterAsync(
+        WebSocketReplayContext context,
+        long cursor,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await EnsureReplayableAfterAsync(context.Replay, cursor, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FeatureStreamReplayWindowGapException)
+        {
+            // Send before the caller disconnects the session and cancels its write token.
+            var head = await context.Replay.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
+            await SendWebSocketJsonAsync(context.Socket, context.WriteLock,
+                JsonSerializer.SerializeToUtf8Bytes(new FeatureStreamResetFrame
+                {
+                    Reason = RealtimeResetReasons.Retention,
+                    Head = FeatureStreamCursor.Format(head)
+                }, FeatureStreamJsonContext.Default.FeatureStreamResetFrame), cancellationToken).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private static async Task<long> ReplayToSseAsync(
