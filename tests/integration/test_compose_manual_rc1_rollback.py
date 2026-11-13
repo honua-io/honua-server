@@ -35,8 +35,8 @@ def wait_ready(port):
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz/ready", timeout=5) as response:
                 if response.status == 200:
                     return
-        except (urllib.error.URLError, TimeoutError):
-            # Startup can refuse connections before the readiness endpoint is available.
+        except (urllib.error.URLError, TimeoutError, ConnectionResetError):
+            # Startup can refuse or reset connections before readiness is available.
             pass
         time.sleep(2)
     raise AssertionError("manual deployment did not become ready")

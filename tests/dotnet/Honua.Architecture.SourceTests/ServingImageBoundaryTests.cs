@@ -458,12 +458,12 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
-    public void ServingImageBoundaryWorkflow_ShouldBuildInspectAllProductionAotImagesAndSmokeCanonicalImage()
+    public void ServingImageBoundaryWorkflow_ShouldInspectCanonicalJitAndPlatformAotImages()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/serving-image-boundary.yml"));
 
-        // The three variants build as parallel matrix legs, not three serial
+        // The canonical JIT and two platform AOT variants build as parallel matrix legs, not three serial
         // step pairs in one job: they share no artifact, cache scope, or step
         // output, and the serial arrangement cost a ~140-minute critical path
         // where the bound should be the slowest single build. The proof that
@@ -471,13 +471,13 @@ public sealed class ServingImageBoundaryTests
         // plus one parameterised build/verify pair, asserted together here.
         foreach (var productionVariant in new[]
                  {
-                     "docker/Dockerfile.aot",
+                     "Dockerfile",
                      "docker/Dockerfile.lambda.aot",
                      "docker/Dockerfile.functions.aot"
                  })
         {
             workflow.Should().Contain($"dockerfile: {productionVariant}",
-                "every production AOT variant needs its own matrix leg");
+                "the canonical JIT and platform AOT variants each need their own matrix leg");
         }
 
         workflow.Should().Contain("file: ${{ matrix.dockerfile }}",
@@ -486,6 +486,8 @@ public sealed class ServingImageBoundaryTests
             "the shared verify step must inspect the image its own leg just built");
         workflow.Should().Contain("fail-fast: false",
             "one variant's failure must not cancel and hide the evidence for the others");
+        workflow.Should().Contain("--compilation ${{ matrix.variant == 'generic' && 'jit' || 'native-aot' }}",
+            "each variant must enforce the boundary for its actual compilation mode");
 
         // PR verification, nightly and release builds share per-variant caches.
         // Keep the architecture explicit so amd64 and arm64 exports cannot collide.
@@ -493,16 +495,19 @@ public sealed class ServingImageBoundaryTests
         var release = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy-platform-images.yml"));
         foreach (var cacheScope in new[]
                  {
-                     "honua-aot-amd64",
+                     "honua-jit-amd64",
                      "honua-lambda-aot-amd64",
                      "honua-functions-aot-amd64"
                  })
         {
             workflow.Should().Contain($"cache_scope: {cacheScope}");
             var variantScope = cacheScope[..^"-amd64".Length];
-            var nightlyScope = variantScope == "honua-functions-aot"
-                ? cacheScope
-                : variantScope + "-${{ matrix.arch }}";
+            var nightlyScope = variantScope switch
+            {
+                "honua-functions-aot" => cacheScope,
+                "honua-jit" => "honua-jit${{ matrix.store_suffix }}-${{ matrix.arch }}",
+                _ => variantScope + "-${{ matrix.arch }}"
+            };
             nightly.Should().Contain($"buildcache:{nightlyScope}", Exactly.Twice(),
                 "nightly must import and export the same per-variant cache as PR builds");
             release.Should().Contain($"cache_scope: {variantScope}",
@@ -511,7 +516,10 @@ public sealed class ServingImageBoundaryTests
 
         workflow.Should().Contain("--variable HONUA_BOUNDARY_SMOKE_PORT --ci-default 8080");
         workflow.Should().Contain("SERVER_URL=\"http://127.0.0.1:$SERVER_PORT\"");
-        workflow.Should().Contain("wait --container \"$CONTAINER\" --url \"$SERVER_URL/healthz/live\"");
+        workflow.Should().Contain("wait --container \"$CONTAINER\" --container-port 8080 --url \"$SERVER_URL/healthz/ready\"");
+        workflow.Should().Contain("file: docker/Dockerfile.aot",
+            "the optional generic AOT image must retain its native migration refusal proof");
+        workflow.Should().Contain("scripts/ci/verify-native-migration-refusal.py");
         workflow.Should().Contain("pull_request:");
         workflow.Should().Contain("paths:");
         workflow.Should().Contain("vars.HONUA_SERVING_IMAGE_SKIP == 'true'");
@@ -555,6 +563,7 @@ public sealed class ServingImageBoundaryTests
         foreach (var imageDefiningInput in new[]
                  {
                      "'.dockerignore'",
+                     "'Dockerfile'",
                      "'docker/Dockerfile.aot'",
                      "'docker/Dockerfile.lambda.aot'",
                      "'docker/Dockerfile.functions.aot'",
