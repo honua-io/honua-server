@@ -232,7 +232,8 @@ public static class MigrationSafetyClassifier
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var normalized = ExtractExecutableSql(sql);
+        var scopedSql = ExtractExecutableSql(sql);
+        var normalized = scopedSql.Replace(ExecutionScopeBoundary, ' ');
         var matchedRules = new List<string>();
 
         if (DeclaredContractPhaseMarker.IsMatch(sql))
@@ -243,7 +244,8 @@ public static class MigrationSafetyClassifier
         foreach (var (ruleName, pattern) in PotentiallyBreakingPatterns)
         {
             var executable = ruleName == "truncate-table"
-                ? MigrationTriggerEvents.ExcludeDeclarations(normalized)
+                ? string.Join(" ", scopedSql.Split(ExecutionScopeBoundary)
+                    .Select(MigrationTriggerEvents.ExcludeDeclarations))
                 : normalized;
             if (pattern.IsMatch(executable))
             {
@@ -275,6 +277,11 @@ public static class MigrationSafetyClassifier
     // or `/* */` outside a string starts a comment, and a `'`/`$tag$` outside a comment starts a
     // literal — so no construct can leak across another's boundary. Executable quoted content is
     // parsed in its own statement scope so concatenated literals join without crossing semicolons.
+    // NUL is not valid PostgreSQL source text. Keep execution scopes separate until trigger
+    // headers have been removed, so an incomplete dynamic identifier cannot consume SQL
+    // from its caller or a different EXECUTE statement. Other rules still see all SQL.
+    private const char ExecutionScopeBoundary = '\0';
+
     private static string ExtractExecutableSql(string sql)
     {
         var result = new StringBuilder(sql.Length);
@@ -354,7 +361,9 @@ public static class MigrationSafetyClassifier
                 var contents = MigrationStringLiterals.Read(sql, ref i, escapeString);
                 if (IsRoutineBodyPrefix(result, statementStart))
                 {
-                    AppendExecutableSql(contents, result, insideRoutineBody: true);
+                    var routineSql = new StringBuilder(contents.Length);
+                    AppendExecutableSql(contents, routineSql, insideRoutineBody: true);
+                    AppendExecutionScope(result, routineSql);
                 }
                 else if (insideRoutineBody
                     && IsDynamicExecutePrefix(result, statementStart)
@@ -378,7 +387,9 @@ public static class MigrationSafetyClassifier
 
                 if (IsRoutineBodyPrefix(result, statementStart))
                 {
-                    AppendExecutableSql(contents, result, insideRoutineBody: true);
+                    var routineSql = new StringBuilder(contents.Length);
+                    AppendExecutableSql(contents, routineSql, insideRoutineBody: true);
+                    AppendExecutionScope(result, routineSql);
                 }
                 else if (insideRoutineBody
                     && IsDynamicExecutePrefix(result, statementStart)
@@ -399,8 +410,7 @@ public static class MigrationSafetyClassifier
             {
                 if (dynamicSql.Length > 0)
                 {
-                    result.Append(' ');
-                    result.Append(dynamicSql);
+                    AppendExecutionScope(result, dynamicSql);
                     result.Append(';');
                     dynamicSql.Clear();
                 }
@@ -411,9 +421,15 @@ public static class MigrationSafetyClassifier
 
         if (dynamicSql.Length > 0)
         {
-            result.Append(' ');
-            result.Append(dynamicSql);
+            AppendExecutionScope(result, dynamicSql);
         }
+    }
+
+    private static void AppendExecutionScope(StringBuilder result, StringBuilder scope)
+    {
+        result.Append(ExecutionScopeBoundary);
+        result.Append(scope);
+        result.Append(ExecutionScopeBoundary);
     }
 
     private static void AppendQuotedIdentifier(string sql, StringBuilder result, ref int index)
