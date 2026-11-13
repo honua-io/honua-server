@@ -173,7 +173,7 @@ public sealed partial class TileOperationJobTests
         var progressStore = new AcceptingInMemoryProgressStore();
         var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var service = CreateService(jobStore, progressStore, [backend], new TileCacheBatchOptions(), Substitute.For<IJobQueue>());
-        var failedJobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin, "tenant_a", "public"));
+        var failedJobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin, "tenant_a"));
         var failed = (await service.GetAsync(failedJobId))! with
         { Status = OperationStatus.Failed };
         await progressStore.SetProgressAsync(failedJobId, failed);
@@ -472,6 +472,25 @@ public sealed partial class TileOperationJobTests
         var service = CreateService(jobStore, progressStore, [localBackend], options, Substitute.For<IJobQueue>());
 
         (await service.CancelAsync("tile-does-not-exist")).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_WhenJobPersistenceThrows_RemovesSeededProgress()
+    {
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new InvalidOperationException("database unavailable")));
+        var progressStore = new AcceptingInMemoryProgressStore();
+        var service = new TileCacheJobService(
+            jobStore, progressStore, [], new StaticOptionsMonitor<TileCacheBatchOptions>(new()),
+            ScopeFactoryFor(Substitute.For<IMetadataV2GraphProvider>()),
+            NullLogger<TileCacheJobService>.Instance, Substitute.For<IJobQueue>());
+
+        var submit = () => service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin));
+
+        await submit.Should().ThrowAsync<InvalidOperationException>().WithMessage("database unavailable");
+        (await progressStore.GetActiveOperationIdsAsync()).Should().BeEmpty();
+        (await service.ListAsync(activeOnly: true)).Should().BeEmpty();
     }
 
     private static async Task MarkRunningAsync(

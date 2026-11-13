@@ -33,7 +33,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             VALUES (@operation_id, @operation_type, @status, @payload, now() + @lifetime)
             ON CONFLICT (operation_id) DO UPDATE SET {SnapshotAssignments}
             """,
-            new SnapshotWrite(operationId, progress, ttl ?? _defaultLifetime),
+            new SnapshotWrite(operationId, progress, ttl ?? _defaultLifetime) { Repeat = StatementRepeat.SafeToRepeat },
             guard: null,
             cancellationToken);
 
@@ -70,8 +70,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
                 """,
                 new SnapshotWrite(write.OperationId, write.Progress, write.Ttl ?? _defaultLifetime),
                 guard: null,
-                cancellationToken,
-                conditional: true).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
             return created
                 ? ProgressCompareAndSetResult.Updated
                 : await DescribeRefusalAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
@@ -168,7 +167,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             StatementRepeat.SafeToRepeat,
             cancellationToken);
 
-    private Task<bool> WriteAsync(string statement, SnapshotWrite write, string? guard, CancellationToken cancellationToken, bool conditional = false)
+    private Task<bool> WriteAsync(string statement, SnapshotWrite write, string? guard, CancellationToken cancellationToken)
         => database.ExecuteAsync(
             async (connection, _, token) =>
             {
@@ -186,7 +185,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
 
                 return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
             },
-            guard is null && !conditional ? StatementRepeat.SafeToRepeat : StatementRepeat.NotAfterSend,
+            write.Repeat,
             cancellationToken);
 
     private async Task<ProgressCompareAndSetResult> DescribeRefusalAsync(string operationId, CancellationToken cancellationToken)
@@ -234,5 +233,8 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             StatementRepeat.SafeToRepeat,
             cancellationToken);
 
-    private readonly record struct SnapshotWrite(string OperationId, IOperationProgress Progress, TimeSpan Lifetime);
+    private readonly record struct SnapshotWrite(string OperationId, IOperationProgress Progress, TimeSpan Lifetime)
+    {
+        public StatementRepeat Repeat { get; init; } = StatementRepeat.NotAfterSend;
+    }
 }

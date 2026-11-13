@@ -33,7 +33,8 @@ internal sealed class ExportJobExecutor(
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(context);
 
-        if (!ExportJobService.TryReadRequest(job, out var request))
+        var request = ExportJobService.ReadRequest(job);
+        if (request is null)
         {
             return NotRetryable("Export request is missing or unreadable.");
         }

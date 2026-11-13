@@ -59,6 +59,15 @@ internal static class TileOperationMetrics
         unit: null,
         "Number of tiles that failed to generate during tile-cache jobs.");
 
+    public static void RecordJobQueued(ExecutionJobRecord job)
+    {
+        if (job.Spec.Kind == ExecutionJobKind.TileCache)
+        {
+            QueueDepth.Add(1,
+                new TagList { { "operation", job.Spec.Parameters.GetValueOrDefault(TileCacheJobParameterKeys.Operation) ?? "unknown" } });
+        }
+    }
+
     public static void RecordJobEnded(ExecutionJobRecord job)
         => QueueDepth.Add(
             -1,

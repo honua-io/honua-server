@@ -174,8 +174,6 @@ internal static class ImportExportTileOperationsRegistration
             services.AddHostedService(sp => sp.GetRequiredService<TileCacheExpiryHostedService>());
         }
 
-        }
-
         Honua.Server.Features.Import.DurableImportServiceCollectionExtensions.AddDurableBackgroundImports(services);
         Honua.Server.Features.Admin.LayerPublishServiceCollectionExtensions.AddLayerPublishJobs(services);
         return services;

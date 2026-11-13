@@ -1,7 +1,7 @@
 # Tile-Cache / PMTiles Batch Worker Contract
 
 Every tile-cache / PMTiles operation (`seed`, `warm`, `invalidate`, `purge`, `archive`,
-`publish`, `expire`, `delete`) runs as a durable `ExecutionJobKind.TileCache` execution job
+`publish`) runs as a durable `ExecutionJobKind.TileCache` execution job
 (honua-server#1697, honua-server#7354). This runbook documents how to send those jobs to a batch
 compute backend (AWS Batch or Kubernetes Jobs) instead of the `local` backend.
 

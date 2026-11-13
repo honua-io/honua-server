@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -86,24 +85,24 @@ internal sealed class ExportJobService(
         }
     }
 
-    internal static bool TryReadRequest(ExecutionJobRecord record, [NotNullWhen(true)] out ExportJob? job)
+    internal static ExportJob? ReadRequest(ExecutionJobRecord record)
     {
-        job = null;
         if (!record.Spec.Parameters.TryGetValue(RequestParameter, out var json) || string.IsNullOrWhiteSpace(json))
         {
-            return false;
+            return null;
         }
 
         try
         {
-            job = JsonSerializer.Deserialize(json, ExportJsonContext.Default.ExportJob);
+            var job = JsonSerializer.Deserialize(json, ExportJsonContext.Default.ExportJob);
+            return job is not null && string.Equals(job.JobId, record.OperationId, StringComparison.Ordinal)
+                ? job
+                : null;
         }
         catch (JsonException)
         {
-            return false;
+            return null;
         }
-
-        return job is not null && string.Equals(job.JobId, record.OperationId, StringComparison.Ordinal);
     }
 
     private static ExecutionJobRecord CreateRecord(ExportJob job, ExportProgress progress)

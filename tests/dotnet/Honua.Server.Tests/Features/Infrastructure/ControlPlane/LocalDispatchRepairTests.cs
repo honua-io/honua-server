@@ -53,7 +53,7 @@ public sealed class LocalDispatchRepairTests(DatabaseFixtureAdapter database) : 
         {
             var finished = await harness.WaitForJobAsync(
                 job.JobId,
-                record => ExecutionJobCancellationHelper.IsTerminal(record.Status),
+                record => record.Status.IsTerminal(),
                 TimeSpan.FromSeconds(60));
             finished.Status.Should().Be(ExecutionJobStatus.Succeeded, finished.ErrorMessage);
         }

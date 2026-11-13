@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Diagnostics;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -60,7 +59,19 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         var request = TileCacheExecutionSpecBuilder.NormalizeRequest(submission.Request);
         var jobRecord = await CreateRecordAsync(submission with { Request = request }, cancellationToken).ConfigureAwait(false);
         await SeedProgressAsync(jobRecord.OperationId, request, cancellationToken).ConfigureAwait(false);
-        if (!await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken).ConfigureAwait(false))
+        bool created;
+        try
+        {
+            created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        // Progress was seeded before persistence; compensate every failed submission and preserve its error.
+        catch
+        {
+            await _progressStore.DeleteProgressAsync(jobRecord.OperationId, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+
+        if (!created)
         {
             await _progressStore.DeleteProgressAsync(jobRecord.OperationId, CancellationToken.None).ConfigureAwait(false);
             throw new InvalidOperationException($"Failed to create tile-cache execution job '{jobRecord.OperationId}'.");
@@ -68,7 +79,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
 
         await DispatchAsync(jobStore, jobRecord, cancellationToken).ConfigureAwait(false);
 
-        TileOperationMetrics.QueueDepth.Add(1, new TagList { { "operation", request.Operation } });
+        TileOperationMetrics.RecordJobQueued(jobRecord);
         Log.JobSubmitted(_logger, jobRecord.OperationId, request.Operation, jobRecord.Spec.Backend);
         return jobRecord.OperationId;
     }

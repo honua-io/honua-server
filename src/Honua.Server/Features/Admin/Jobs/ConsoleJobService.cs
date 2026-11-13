@@ -16,6 +16,7 @@ using Honua.Geoprocessing;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Honua.Io.Export;
+using Honua.Server.Features.Admin.TileOperations;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Jobs;
@@ -429,6 +430,7 @@ internal sealed partial class ConsoleJobService(
             throw new ConsoleJobConflictException("Job retry could not be confirmed because capacity is exhausted or the record changed.");
         }
 
+        TileOperationMetrics.RecordJobQueued(retried);
         if (retryDispatch.Queue != null)
         {
             try
@@ -450,6 +452,10 @@ internal sealed partial class ConsoleJobService(
                         cancellationToken)
                     .ConfigureAwait(false))
                 {
+                    if (job.Spec.Kind == ExecutionJobKind.TileCache)
+                    {
+                        TileOperationMetrics.RecordJobEnded(job);
+                    }
                     await RemoveFromQueueIfPresentAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
                 }
 
