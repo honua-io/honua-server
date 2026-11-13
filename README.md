@@ -250,7 +250,7 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately, resp
 
 ## License
 
-[Fair Core License, Version 1.0, ALv2 Future License](LICENSE) (FCL-1.0-ALv2) — source-available. You may use, copy, modify and redistribute Honua Server for any purpose except a Competing Use: making it available to others in a commercial product or service that substitutes for Honua or offers substantially similar functionality. Internal use, non-commercial education and research, and professional services delivered to a licensee are expressly permitted. You may not circumvent or remove the license-key functionality, which includes edition entitlements and capacity metering (see [NOTICE](NOTICE)). Each version is additionally licensed under the Apache License 2.0 two years after Honua Geo Inc. makes it available.
+[Fair Core License, Version 1.0, ALv2 Future License](LICENSE) (FCL-1.0-ALv2) — source-available. You may use, copy, modify and redistribute Honua Server for any purpose except a Competing Use: making it available to others in a commercial product or service that substitutes for Honua or offers substantially similar functionality. Internal use, non-commercial education and research, and professional services delivered to a licensee are expressly permitted. You may not circumvent or remove the license-key functionality, which includes the signed license envelope and edition entitlements (see [NOTICE](NOTICE)). Each version is additionally licensed under the Apache License 2.0 two years after Honua Geo Inc. makes it available.
 
 Esri, ArcGIS, and other Esri product names are trademarks, registered trademarks, or service marks of
 Esri in the United States and other countries. Honua is not affiliated with, sponsored by, or endorsed
