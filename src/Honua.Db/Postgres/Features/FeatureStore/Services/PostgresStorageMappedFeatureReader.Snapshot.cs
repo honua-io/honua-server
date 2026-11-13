@@ -37,7 +37,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
 
         // The displayed schema projection can add nulls or hide stored fields. Only
         // the original row from this same authorized snapshot can match the writer.
-        var visible = ReadFeature(reader, textAttributes: false, nativeAttributes: null);
+        var visible = ReadFeature(reader, nativeAttributes: null, FeatureAttributeReadContext.Uncached);
         var attributes = _dictionaryPool.Get();
         try
         {
