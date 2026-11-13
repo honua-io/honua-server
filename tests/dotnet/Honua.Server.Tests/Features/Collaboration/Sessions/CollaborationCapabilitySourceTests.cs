@@ -3,6 +3,9 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Collaboration.Operations;
+using Honua.Core.Features.Realtime;
+using Honua.Server.Features.Collaboration.Operations;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.TestKit.Attributes;
@@ -12,6 +15,25 @@ namespace Honua.Server.Tests.Features.Collaboration.Sessions;
 
 public sealed class CollaborationCapabilitySourceTests
 {
+    [UnitTest]
+    public void RegisteredPostgresProvider_EnablesOrderedMultiReplicaCollaborationWithoutRedis()
+    {
+        var repository = Substitute.For<ISavedMapOperationLogRepository>();
+        repository.SupportsReplicaSharedReplay.Returns(true);
+        var fanout = Substitute.For<IRealtimeFanoutProvider>();
+        fanout.Capabilities.Returns(new RealtimeProviderCapabilities(true, true, true));
+        var services = new ServiceCollection();
+        services.AddSingleton(repository);
+        services.AddSingleton(fanout);
+        services.AddSingleton(SavedMapCollaborationTopology.ForMultiReplica(true));
+        services.AddCollaborationSessionTransport();
+        using var container = services.BuildServiceProvider();
+
+        container.GetRequiredService<CollaborationCapabilitySource>().Current.Operations.Should().BeTrue();
+        container.GetRequiredService<CollaborationCapabilitySource>().Current.Cursors.Should().BeTrue();
+        container.GetRequiredService<SavedMapOperationAppendCoordinator>().CanAcceptEdits.Should().BeTrue();
+    }
+
     [UnitTest]
     public void Current_MultiReplicaPubSubWithoutStateOrOrdering_DoesNotOverAdvertise()
     {
