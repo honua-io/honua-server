@@ -42,7 +42,7 @@ internal sealed class ExportJobExecutor(
             return NotRetryable("Export request has no captured submitter identity.");
         }
 
-        var start = await StartProcessingAsync(job, request, cancellationToken).ConfigureAwait(false);
+        var start = await StartProcessingAsync(new ExportAdmission(job, request, context), cancellationToken).ConfigureAwait(false);
         return start switch
         {
             { Progress: null } => NotRetryable("Export progress is no longer active."),
@@ -50,9 +50,11 @@ internal sealed class ExportJobExecutor(
         };
     }
 
-    private async Task<ExportStart> StartProcessingAsync(ExecutionJobRecord job, ExportJob request, CancellationToken cancellationToken)
+    private async Task<ExportStart> StartProcessingAsync(ExportAdmission attempt, CancellationToken cancellationToken)
     {
+        var (job, request, context) = attempt;
         var existing = await progressStore.GetProgressAsync<ExportProgress>(request.JobId, cancellationToken).ConfigureAwait(false);
+        await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
         if (existing?.Status == OperationStatus.Cancelled && job.CancellationRequestedAt.HasValue)
         {
             throw new OperationCanceledException("The export was cancelled before it started.");
@@ -280,6 +282,8 @@ internal sealed class ExportJobExecutor(
         "gpkg" => "application/geopackage+sqlite3",
         _ => "application/octet-stream"
     };
+
+    private sealed record ExportAdmission(ExecutionJobRecord Job, ExportJob Request, IJobExecutionContext Context);
 
     private sealed record ExportStart(ExportProgress? Progress);
 
