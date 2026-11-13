@@ -38,7 +38,7 @@ runs:
         }
         # A newer preinstalled SDK must not win dotnet's default resolution.
         # setup-dotnet installs here, adds this host to PATH and exports DOTNET_ROOT.
-        # This is a job-private installation, not a repository/global SDK policy.
+        # This is a job-private installation; global.json still bounds which SDK may build.
         printf 'DOTNET_INSTALL_DIR=%s/honua-managed-sdk/%s\n' "${RUNNER_TEMP}" "${EXPECTED_DOTNET_SDK}" >> "${GITHUB_ENV}"
 
     - name: Setup .NET
@@ -61,7 +61,7 @@ runs:
         runtime_channel="${BASH_REMATCH[1]}"
         installer="$(mktemp "${RUNNER_TEMP}/honua-dotnet-install.XXXXXX.sh")"
         trap 'rm -f "${installer}"' EXIT
-        curl --fail --silent --show-error --location --retry 3 \
+        curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 2 \
           https://dot.net/v1/dotnet-install.sh --output "${installer}"
         # A newer producer SDK does not include older target shared frameworks.
         # Preserve its host while adding both runtimes to the same private root.
@@ -116,8 +116,7 @@ runs:
     #                the ONLY tier was '**/*.csproj' and the fallback was the bare prefix.
     #
     # ('**/packages.lock.json' is dropped from the old key: this repo has no lock files,
-    # so it hashed nothing. global.json does not exist yet; it is listed so that adding
-    # one later participates in the key automatically.)
+    # so it hashed nothing. global.json is part of the key, so an SDK pin change restores cold.)
     # GitHub makes default-branch caches available to other refs. PRs therefore
     # restore this exact/fallback lineage from trunk, but must not save a second
     # branch-scoped copy of the ~1.7 GB package archive. workflow_run and manual
