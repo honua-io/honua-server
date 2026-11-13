@@ -349,7 +349,7 @@ internal static class McpEndpointExtensions
     /// <c>message</c> event until the session is terminated or the client
     /// disconnects.
     /// </summary>
-    private static async Task HandleGetAsync(HttpContext context, CancellationToken cancellationToken)
+    internal static async Task HandleGetAsync(HttpContext context, CancellationToken cancellationToken)
     {
         if (await McpModernHttp.TryRejectSessionVerbAsync(context).ConfigureAwait(false))
         {
@@ -415,9 +415,13 @@ internal static class McpEndpointExtensions
             return;
         }
 
-        var provider = context.RequestServices.GetRequiredService<IRealtimeFanoutProvider>();
-        var window = await provider.GetWindowAsync(RealtimeFamily.Mcp, cancellationToken).ConfigureAwait(false);
-        await using var subscription = new RealtimeStreamSubscription(provider, sessionId, after ?? window.Head);
+        var provider = context.RequestServices.GetService<IRealtimeFanoutProvider>();
+        var head = provider is null
+            ? 0
+            : (await provider.GetWindowAsync(RealtimeFamily.Mcp, cancellationToken).ConfigureAwait(false)).Head;
+        await using var subscription = provider is null
+            ? null
+            : new RealtimeStreamSubscription(provider, sessionId, after ?? head);
         using var watch = sessions.AcquireSessionWatch(sessionId);
         await BindTokenReplayContinuationAsync(context, sessionId).ConfigureAwait(false);
         StartEventStream(context);
@@ -431,7 +435,14 @@ internal static class McpEndpointExtensions
             cancellationToken, sessions.GetLifetimeToken(sessionId));
         try
         {
-            await McpRealtimeStream.PumpAsync(context.Response.Body, reader, subscription, linked.Token).ConfigureAwait(false);
+            if (subscription is null)
+            {
+                await PumpSessionStreamAsync(context.Response.Body, reader, linked.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                await McpRealtimeStream.PumpAsync(context.Response.Body, reader, subscription, linked.Token).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {

@@ -14,7 +14,9 @@ using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -113,6 +115,22 @@ public sealed class McpStreamingTests
     }
 
     [UnitTest]
+    public async Task Publisher_ConfiguredProviderFailure_DoesNotFallBackToLocalDelivery()
+    {
+        var sessions = new McpSessionManager();
+        var sessionId = sessions.CreateSession();
+        sessions.TryGetReader(sessionId, out var reader).Should().BeTrue();
+        var provider = new RecordingFanoutProvider([], failAppend: true);
+        var publisher = new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance, provider);
+
+        Func<Task> progress = () => publisher.PublishProgress(sessionId, "job-1", 42, 100, null).AsTask();
+        Func<Task> broadcast = () => publisher.BroadcastResourcesListChanged().AsTask();
+        await progress.Should().ThrowAsync<IOException>();
+        await broadcast.Should().ThrowAsync<IOException>();
+        reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task ProgressBridge_PumpsCanonicalJobProgress_ToOwningSessionUntilTerminal()
     {
         var sessions = new McpSessionManager();
@@ -149,6 +167,33 @@ public sealed class McpStreamingTests
         progresses.Should().Equal(expectedProgress,
             "the bridge emits a frame on each observed progress change and a final terminal frame");
         await jobService.Received(3).GetJobAsync("job-1", Principal, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task GetStream_WithoutProvider_DeliversLocalNotificationAndPreservesSession()
+    {
+        var sessions = new McpSessionManager();
+        var sessionId = sessions.CreateSession();
+        sessions.TryEnqueue(sessionId, "local-notification").Should().BeTrue();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(sessions);
+        services.AddSingleton(Options.Create(new McpOptions { ServerInitiatedStreamEnabled = true }));
+        await using var provider = services.BuildServiceProvider();
+        using var output = new MemoryStream();
+        using var cancellation = new CancellationTokenSource();
+        var context = new DefaultHttpContext { RequestServices = provider };
+        context.Request.Headers.Accept = "text/event-stream";
+        context.Request.Headers[McpSessionManager.SessionHeaderName] = sessionId;
+        context.Response.Body = output;
+
+        var streaming = McpEndpointExtensions.HandleGetAsync(context, cancellation.Token);
+        cancellation.Cancel();
+        await streaming;
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        Encoding.UTF8.GetString(output.ToArray()).Should().Contain("data: local-notification");
+        sessions.TryGetReader(sessionId, out _).Should().BeTrue();
     }
 
     [UnitTest]
@@ -200,13 +245,18 @@ public sealed class McpStreamingTests
         return new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance, provider);
     }
 
-    private sealed class RecordingFanoutProvider(List<RealtimeEventDraft> drafts) : IRealtimeFanoutProvider
+    private sealed class RecordingFanoutProvider(List<RealtimeEventDraft> drafts, bool failAppend = false) : IRealtimeFanoutProvider
     {
         public RealtimeProviderCapabilities Capabilities { get; } = new(true, true, true);
 
         public ValueTask<RealtimePosition> AppendAsync(
             RealtimeEventDraft draft, DbTransaction? transaction, CancellationToken cancellationToken)
         {
+            if (failAppend)
+            {
+                return ValueTask.FromException<RealtimePosition>(new IOException("Realtime append failed."));
+            }
+
             drafts.Add(draft);
             return ValueTask.FromResult(new RealtimePosition(RealtimeFamily.Mcp, drafts.Count));
         }
