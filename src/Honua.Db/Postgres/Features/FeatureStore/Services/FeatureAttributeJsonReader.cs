@@ -12,33 +12,6 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 /// </summary>
 internal static class FeatureAttributeJsonReader
 {
-    // pg_type OIDs of json and jsonb (fixed in the PostgreSQL catalog).
-    private const uint JsonOid = 114;
-    private const uint JsonbOid = 3802;
-
-    // json/jsonb columns are parsed from the UTF-8 bytes Npgsql already holds; GetString would
-    // first copy the whole object into a UTF-16 string for every row.
-    internal static void ReadInto(
-        NpgsqlDataReader reader,
-        int ordinal,
-        Dictionary<string, object?> destination,
-        FeatureAttributeNameCache? names = null)
-    {
-        if (reader.IsDBNull(ordinal))
-        {
-            return;
-        }
-
-        if (reader.GetDataTypeOID(ordinal) is JsonbOid or JsonOid)
-        {
-            using var document = reader.GetFieldValue<JsonDocument>(ordinal);
-            ReadInto(document.RootElement, destination, names);
-            return;
-        }
-
-        ReadInto(reader.GetString(ordinal), destination, names);
-    }
-
     internal static void ReadInto(
         string? json,
         Dictionary<string, object?> destination,
@@ -81,6 +54,48 @@ internal static class FeatureAttributeJsonReader
                 ? value.Clone() // Nested values outlive this document, as in the original reader.
                 : JsonElementConverter.ConvertToScalar(value);
         }
+    }
+}
+
+internal sealed class FeatureAttributeReadContext
+{
+    // pg_type OIDs of json and jsonb (fixed in the PostgreSQL catalog).
+    private const uint JsonOid = 114;
+    private const uint JsonbOid = 3802;
+
+    private readonly FeatureAttributeNameCache? _names;
+
+    internal static FeatureAttributeReadContext Uncached { get; } = new(null);
+
+    public FeatureAttributeReadContext() : this(new FeatureAttributeNameCache())
+    {
+    }
+
+    private FeatureAttributeReadContext(FeatureAttributeNameCache? names)
+    {
+        _names = names;
+    }
+
+    // json/jsonb columns are parsed from the UTF-8 bytes Npgsql already holds; GetString would
+    // first copy the whole object into a UTF-16 string for every row.
+    internal void ReadInto(
+        NpgsqlDataReader reader,
+        int ordinal,
+        Dictionary<string, object?> destination)
+    {
+        if (reader.IsDBNull(ordinal))
+        {
+            return;
+        }
+
+        if (reader.GetDataTypeOID(ordinal) is JsonbOid or JsonOid)
+        {
+            using var document = reader.GetFieldValue<JsonDocument>(ordinal);
+            FeatureAttributeJsonReader.ReadInto(document.RootElement, destination, _names);
+            return;
+        }
+
+        FeatureAttributeJsonReader.ReadInto(reader.GetString(ordinal), destination, _names);
     }
 }
 

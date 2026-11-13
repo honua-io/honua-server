@@ -101,7 +101,7 @@ public sealed class SourceAttributeJsonDocumentAllocationTests(PostgresFixture f
             $"SELECT ($1::jsonb)::{columnType}, NULL::{columnType} FROM generate_series(1, 3)", connection);
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Jsonb, Value = payload });
         await using var reader = await command.ExecuteReaderAsync();
-        var names = new FeatureAttributeNameCache();
+        var attributesReader = new FeatureAttributeReadContext();
         var rows = 0;
 
         while (await reader.ReadAsync())
@@ -109,9 +109,9 @@ public sealed class SourceAttributeJsonDocumentAllocationTests(PostgresFixture f
             var expected = new Dictionary<string, object?>();
             FeatureAttributeJsonReader.ReadInto(reader.GetString(0), expected);
             var actual = new Dictionary<string, object?>();
-            FeatureAttributeJsonReader.ReadInto(reader, 0, actual, names);
+            attributesReader.ReadInto(reader, 0, actual);
             var absent = new Dictionary<string, object?>();
-            FeatureAttributeJsonReader.ReadInto(reader, 1, absent, names);
+            attributesReader.ReadInto(reader, 1, absent);
 
             actual.Keys.Should().BeEquivalentTo(expected.Keys);
             foreach (var (name, value) in expected)

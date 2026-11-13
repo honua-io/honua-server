@@ -12,8 +12,8 @@ internal sealed partial class FeatureDataAccess
 {
     // Row readers are synchronous: the row is already buffered once ReadAsync returns, so a
     // per-row Task would only add an allocation. Loops over a result set pass one
-    // FeatureAttributeNameCache so repeated attribute names are not re-allocated per row.
-    private Feature ReadFeature(NpgsqlDataReader reader, FeatureAttributeNameCache? names = null)
+    // FeatureAttributeReadContext so repeated attribute names are not re-allocated per row.
+    private Feature ReadFeature(NpgsqlDataReader reader, FeatureAttributeReadContext? attributesReader = null)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
@@ -26,23 +26,23 @@ internal sealed partial class FeatureDataAccess
                 ImmutableDictionary<string, object?>.Empty.Add("objectid", id));
         }
 
-        var attributes = ReadAttributes(reader, id, names);
+        var attributes = ReadAttributes(reader, id, attributesReader);
         return Feature.Create(id, geometry, attributes);
     }
 
-    private GmlFeature ReadGmlFeature(NpgsqlDataReader reader, FeatureAttributeNameCache? names = null)
+    private GmlFeature ReadGmlFeature(NpgsqlDataReader reader, FeatureAttributeReadContext? attributesReader = null)
     {
         var id = reader.GetInt64(0);
         var geometryGml = reader.IsDBNull(1) ? null : reader.GetString(1);
-        var attributes = ReadAttributes(reader, id, names);
+        var attributes = ReadAttributes(reader, id, attributesReader);
         return GmlFeature.Create(id, geometryGml, attributes);
     }
 
-    private EncodedGeoJsonFeature ReadGeoJsonFeature(NpgsqlDataReader reader, FeatureAttributeNameCache? names = null)
+    private EncodedGeoJsonFeature ReadGeoJsonFeature(NpgsqlDataReader reader, FeatureAttributeReadContext? attributesReader = null)
     {
         var id = reader.GetInt64(0);
         var geometryGeoJson = reader.IsDBNull(1) ? null : reader.GetString(1);
-        var attributes = ReadAttributes(reader, id, names);
+        var attributes = ReadAttributes(reader, id, attributesReader);
         return EncodedGeoJsonFeature.Create(id, geometryGeoJson, attributes);
     }
 
@@ -79,11 +79,11 @@ internal sealed partial class FeatureDataAccess
         return RawGeoServicesFeature.Create(id, legacyAttributesJson, legacyX, legacyY);
     }
 
-    private KmlFeature ReadKmlFeature(NpgsqlDataReader reader, FeatureAttributeNameCache? names = null)
+    private KmlFeature ReadKmlFeature(NpgsqlDataReader reader, FeatureAttributeReadContext? attributesReader = null)
     {
         var id = reader.GetInt64(0);
         var geometryKml = reader.IsDBNull(1) ? null : reader.GetString(1);
-        var attributes = ReadAttributes(reader, id, names);
+        var attributes = ReadAttributes(reader, id, attributesReader);
         return KmlFeature.Create(id, geometryKml, attributes);
     }
 
@@ -116,13 +116,13 @@ internal sealed partial class FeatureDataAccess
     private ImmutableDictionary<string, object?> ReadAttributes(
         NpgsqlDataReader reader,
         long id,
-        FeatureAttributeNameCache? names)
+        FeatureAttributeReadContext? attributesReader)
     {
         var attributesDictionary = _dictionaryPool.Get();
 
         try
         {
-            FeatureAttributeJsonReader.ReadInto(reader, 2, attributesDictionary, names);
+            (attributesReader ?? FeatureAttributeReadContext.Uncached).ReadInto(reader, 2, attributesDictionary);
 
             attributesDictionary["objectid"] = id;
 
