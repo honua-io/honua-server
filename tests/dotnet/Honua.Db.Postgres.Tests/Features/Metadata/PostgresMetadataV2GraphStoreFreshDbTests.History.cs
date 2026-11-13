@@ -113,15 +113,21 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             var store = await CreateHistoryStoreAsync(schema);
             var graph = HistoryGraph("Original");
             var resource = graph.Resources[0];
-            graph = graph with { Resources = [resource with { Metadata = resource.Metadata with
+            graph = graph with
+            {
+                Resources = [resource with { Metadata = resource.Metadata with
             {
                 AdditionalProperties = new() { ["custom"] = JsonSerializer.SerializeToElement(new { source = "survey", pending = (string?)null }) }
-            }}] };
+            }}]
+            };
             var original = await store.SaveAsync(graph, null);
-            var changed = await store.SaveAsync(graph with { Resources = [resource with { Metadata = resource.Metadata with
+            var changed = await store.SaveAsync(graph with
+            {
+                Resources = [resource with { Metadata = resource.Metadata with
             {
                 AdditionalProperties = new() { ["custom"] = JsonSerializer.SerializeToElement(new { source = "field", empty = new { } }) }
-            }, Display = new() { MaxScale = 5000 } }] }, original.Etag);
+            }, Display = new() { MaxScale = 5000 } }]
+            }, original.Etag);
 
             (await ReadHistoryAsync(schema, changed.Revision)).Should().BeEquivalentTo(new[]
             {
