@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Metadata;
@@ -96,6 +97,67 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
 
             (await CountAsync(schema, "metadata_v2_field_history")).Should().Be(before);
             (await store.GetCurrentAsync()).Etag.Should().Be(changed.Etag);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task SaveAsync_MetadataHistory_TracksNestedAdditionsAndRemovalsWithoutRuntimeFields()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(SaveAsync_MetadataHistory_TracksNestedAdditionsAndRemovalsWithoutRuntimeFields));
+        try
+        {
+            var store = await CreateHistoryStoreAsync(schema);
+            var graph = HistoryGraph("Original");
+            var resource = graph.Resources[0];
+            graph = graph with { Resources = [resource with { Metadata = resource.Metadata with
+            {
+                AdditionalProperties = new() { ["custom"] = JsonSerializer.SerializeToElement(new { source = "survey", pending = (string?)null }) }
+            }}] };
+            var original = await store.SaveAsync(graph, null);
+            var changed = await store.SaveAsync(graph with { Resources = [resource with { Metadata = resource.Metadata with
+            {
+                AdditionalProperties = new() { ["custom"] = JsonSerializer.SerializeToElement(new { source = "field", empty = new { } }) }
+            }, Display = new() { MaxScale = 5000 } }] }, original.Etag);
+
+            (await ReadHistoryAsync(schema, changed.Revision)).Should().BeEquivalentTo(new[]
+            {
+                new HistoryEntry("resources", "survey", ["custom", "source"], "\"survey\"", "\"field\"", "system:metadata-publisher"),
+                new HistoryEntry("resources", "survey", ["custom", "pending"], "null", null, "system:metadata-publisher"),
+                new HistoryEntry("resources", "survey", ["custom", "empty"], null, "{}", "system:metadata-publisher")
+            });
+            var removed = await store.SaveAsync(changed.Graph with { Resources = [] }, changed.Etag);
+            (await ReadHistoryAsync(schema, removed.Revision)).Should().ContainEquivalentOf(new HistoryEntry(
+                "resources", "survey", ["title"], "\"Original\"", null, "system:metadata-publisher"));
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task StageAsync_MetadataHistory_RecordsOnlyActivationAndSeparatesEnvironments()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StageAsync_MetadataHistory_RecordsOnlyActivationAndSeparatesEnvironments));
+        try
+        {
+            var store = await CreateHistoryStoreAsync(schema);
+            var original = await store.SaveAsync(HistoryGraph("Original"), null);
+            var before = await CountAsync(schema, "metadata_v2_field_history");
+            var staged = await store.StageAsync(HistoryGraph("Proposed"));
+            (await CountAsync(schema, "metadata_v2_field_history")).Should().Be(before);
+            await store.ActivateRevisionAsync(staged.Revision, original.Etag);
+            (await ReadHistoryAsync(schema, staged.Revision)).Should().ContainSingle().Which
+                .Should().BeEquivalentTo(new HistoryEntry("resources", "survey", ["title"], "\"Original\"", "\"Proposed\"", "system:metadata-publisher"));
+
+            var other = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
+                "Other", FixtureBypassDatabaseSchemaGuard.Instance, schema);
+            await other.SaveAsync(HistoryGraph("Other") with { Environment = "Other" }, null);
+            (await ReadHistoryAsync(schema, original.Revision)).Should().NotContain(entry => entry.NewValue == "\"Other\"");
         }
         finally
         {
