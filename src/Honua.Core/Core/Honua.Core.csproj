@@ -35,7 +35,6 @@
     <PackageReference Include="Honua.Sdk.GeoServices" />
 
     <!-- COG tile decode: managed zstd port, no native dependency (see Directory.Packages.props). -->
-    <PackageReference Include="ZstdSharp.Port" />
     <PackageReference Include="SharpZipLib" />
 
     <!--

@@ -165,7 +165,6 @@
          native libzstd, keeping the serving path AOT- and trim-safe (#2854). Already in the
          graph transitively via Parquet.Net; pinned at the version that resolves today so
          making it a direct reference does not move Parquet's zstd. -->
-    <PackageVersion Include="ZstdSharp.Port" Version="0.8.7" />
     <PackageVersion Include="Xunit.SkippableFact" Version="1.5.23" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.abstractions" Version="2.0.3" />
