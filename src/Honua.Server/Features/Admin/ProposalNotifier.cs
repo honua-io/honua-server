@@ -44,8 +44,8 @@ internal sealed partial class ProposalNotifier(
             DateTimeOffset.UtcNow);
 
         return publisher.PublishAsync(new AdminRealtimeMessage(
-            AdminRealtimeContract.ProposalsTopic, eventName, payload,
-            AdminRealtimeJsonContext.Default.ProposalRealtimeEvent), cancellationToken);
+            AdminRealtimeContract.ProposalsTopic, eventName, JsonSerializer.SerializeToElement(payload,
+                AdminRealtimeJsonContext.Default.ProposalRealtimeEvent)), cancellationToken);
     }
 
     private static partial class Log

@@ -2,8 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Threading.Channels;
 using System.Text.Json;
+using System.Threading.Channels;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Models;
@@ -33,10 +33,12 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
     public async Task PublishTransitionAsync(WorkflowOperationTransition transition, CancellationToken cancellationToken)
     {
         await _publisher.PublishAsync(new AdminRealtimeMessage(AdminRealtimeContract.DeployOperationsTopic,
-            AdminRealtimeContract.DeployOperationEventName, JsonSerializer.SerializeToElement(MapDeployEvent(transition), AdminRealtimeGroupsJsonContext.Default.DeployOperationRealtimeEvent)), cancellationToken).ConfigureAwait(false);
+            AdminRealtimeContract.DeployOperationEventName, JsonSerializer.SerializeToElement(MapDeployEvent(transition),
+                AdminRealtimeGroupsJsonContext.Default.DeployOperationRealtimeEvent)), cancellationToken).ConfigureAwait(false);
         var operateEvent = OperateEventResponseMapper.Map(ReleaseTimelineEventFactory.Create(transition));
         await _publisher.PublishAsync(new AdminRealtimeMessage(AdminRealtimeContract.OperateEventsTopic,
-            AdminRealtimeContract.OperateEventEventName, JsonSerializer.SerializeToElement(operateEvent, AdminRealtimeGroupsJsonContext.Default.OperateEventResponse)), cancellationToken).ConfigureAwait(false);
+            AdminRealtimeContract.OperateEventEventName, JsonSerializer.SerializeToElement(operateEvent,
+                AdminRealtimeGroupsJsonContext.Default.OperateEventResponse)), cancellationToken).ConfigureAwait(false);
     }
 
     private void OnFlushed(object? sender, OpsHealthFlushedEventArgs args) => _opsHealth.Writer.TryWrite(args.Snapshot);
@@ -50,7 +52,8 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
                 try
                 {
                     await _publisher.PublishAsync(new AdminRealtimeMessage(AdminRealtimeContract.OpsHealthTopic,
-                        AdminRealtimeContract.OpsHealthSnapshotEventName, JsonSerializer.SerializeToElement(snapshot, AdminRealtimeGroupsJsonContext.Default.OpsHealthSnapshotResponse)), stoppingToken).ConfigureAwait(false);
+                        AdminRealtimeContract.OpsHealthSnapshotEventName, JsonSerializer.SerializeToElement(snapshot,
+                            AdminRealtimeGroupsJsonContext.Default.OpsHealthSnapshotResponse)), stoppingToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
                 catch (Exception exception) when (exception is not OutOfMemoryException)
