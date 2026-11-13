@@ -6,7 +6,6 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
-using Honua.Server.Tests.Infrastructure;
 using Honua.Server.Tests.Infrastructure.Telemetry;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -18,7 +17,7 @@ namespace Honua.Server.Tests.Realtime;
 // is what a serving process runs: its listener, its tail, its dispatcher, its relay and its stream
 // sessions, over the one shared database. Edits are plain SQL, so no task knows about them except
 // through the change log.
-public sealed class TwoTaskFeatureStreamTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
+public sealed class TwoTaskFeatureStreamTests(FeatureChangeDatabaseFixture database) : IClassFixture<FeatureChangeDatabaseFixture>
 {
     private const int Edits = 200;
     private static readonly TimeSpan _deliveryTimeout = TimeSpan.FromSeconds(30);
@@ -192,7 +191,7 @@ public sealed class TwoTaskFeatureStreamTests(DatabaseFixtureAdapter database) :
 
         public PostgresFeatureChangeEventStore Store { get; }
 
-        public static async Task<FeatureTask> StartAsync(DatabaseFixtureAdapter database, bool listen)
+        public static async Task<FeatureTask> StartAsync(FeatureChangeDatabaseFixture database, bool listen)
         {
             var options = Options.Create(new RealtimeOptions());
             var jobs = new JobStoreDatabase(database.DataSource);

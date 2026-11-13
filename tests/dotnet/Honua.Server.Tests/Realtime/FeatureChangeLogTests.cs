@@ -9,7 +9,6 @@ using Honua.ControlPlane;
 using Honua.Core.Features.Realtime;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
-using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -18,9 +17,9 @@ using Npgsql;
 namespace Honua.Server.Tests.Realtime;
 
 // honua.feature_changes read as the features family: changes made by any session, including plain
-// SQL, are events with their generation as the position. The table is shared with other tests, so
-// every assertion is scoped to this test's layer, or bounded so that other writers cannot break it.
-public sealed class FeatureChangeLogTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
+// SQL, are events with their generation as the position. Each test class uses a migrated database;
+// assertions remain scoped to the test layer.
+public sealed class FeatureChangeLogTests(FeatureChangeDatabaseFixture database) : IClassFixture<FeatureChangeDatabaseFixture>
 {
     private static readonly TimeSpan _deliveryTimeout = TimeSpan.FromSeconds(10);
 

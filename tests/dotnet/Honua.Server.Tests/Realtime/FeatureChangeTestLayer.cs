@@ -2,19 +2,18 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Server.Tests.Infrastructure;
 using Npgsql;
 
 namespace Honua.Server.Tests.Realtime;
 
 // One layer of honua.features with the change-tracking trigger, removed with its changes on dispose.
-internal sealed class FeatureChangeTestLayer(DatabaseFixtureAdapter database, int layerId) : IAsyncDisposable
+internal sealed class FeatureChangeTestLayer(FeatureChangeDatabaseFixture database, int layerId) : IAsyncDisposable
 {
     public int LayerId => layerId;
 
     public string Scope => layerId.ToString(CultureInfo.InvariantCulture);
 
-    public static async Task<FeatureChangeTestLayer> CreateAsync(DatabaseFixtureAdapter database, int layerId)
+    public static async Task<FeatureChangeTestLayer> CreateAsync(FeatureChangeDatabaseFixture database, int layerId)
     {
         var layer = new FeatureChangeTestLayer(database, layerId);
         await layer.ExecuteAsync("""
