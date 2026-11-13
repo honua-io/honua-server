@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.Protocols.Mcp.Views;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
@@ -22,6 +23,24 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 public sealed partial class McpConnectionDiscoveryIntegrationTests
 {
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /mcp")]
+    public async Task StockClientHost_AllViews_StayWithinDescriptorBudgets()
+    {
+        await using var fixture = CreateStockFixture();
+        await fixture.InitializeAsync();
+        var tools = await fixture.Services.GetRequiredService<McpDataAccessSurface>().GetAllToolsAsync();
+        var catalog = tools.Select(tool =>
+            (McpWorkflowViewDescriptorClassifier.Describe(tool), tool is PublishedOperationTool)).ToArray();
+        foreach (var definition in McpWorkflowViewCatalog.All.Values)
+        {
+            var projection = McpWorkflowViewProjector.Project(definition, catalog);
+            projection.BudgetViolations.Should().BeEmpty(
+                $"the installed-client host must publish the complete '{definition.Name}' view");
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("POST /mcp")]
