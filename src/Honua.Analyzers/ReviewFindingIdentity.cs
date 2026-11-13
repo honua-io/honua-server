@@ -28,18 +28,24 @@ internal static class ReviewFindingIdentity
 #endif
     }
 
+    private static string Arity(TypeParameterListSyntax? parameters) =>
+        parameters is null ? string.Empty : "`" + parameters.Parameters.Count;
+
     private static string? Scope(SyntaxNode node) => node switch
     {
         BaseNamespaceDeclarationSyntax declaration => declaration.Name.ToString(),
+        TypeDeclarationSyntax declaration => declaration.Identifier.ValueText + Arity(declaration.TypeParameterList),
         BaseTypeDeclarationSyntax declaration => declaration.Identifier.ValueText,
-        MethodDeclarationSyntax declaration => declaration.Identifier.ValueText + declaration.ParameterList,
+        MethodDeclarationSyntax declaration => declaration.ExplicitInterfaceSpecifier + declaration.Identifier.ValueText +
+            Arity(declaration.TypeParameterList) + declaration.ParameterList,
         ConstructorDeclarationSyntax declaration => declaration.Identifier.ValueText + declaration.ParameterList,
         DestructorDeclarationSyntax declaration => "~" + declaration.Identifier.ValueText,
-        OperatorDeclarationSyntax declaration => "operator" + declaration.OperatorToken + declaration.ParameterList,
-        ConversionOperatorDeclarationSyntax declaration => "operator" + declaration.Type + declaration.ParameterList,
-        LocalFunctionStatementSyntax declaration => declaration.Identifier.ValueText + declaration.ParameterList,
-        PropertyDeclarationSyntax declaration => declaration.Identifier.ValueText,
-        IndexerDeclarationSyntax declaration => "this" + declaration.ParameterList,
+        OperatorDeclarationSyntax declaration => declaration.ExplicitInterfaceSpecifier + "operator" + declaration.OperatorToken + declaration.ParameterList,
+        ConversionOperatorDeclarationSyntax declaration => declaration.ExplicitInterfaceSpecifier + "operator" + declaration.Type + declaration.ParameterList,
+        LocalFunctionStatementSyntax declaration => declaration.Identifier.ValueText +
+            Arity(declaration.TypeParameterList) + declaration.ParameterList,
+        PropertyDeclarationSyntax declaration => declaration.ExplicitInterfaceSpecifier + declaration.Identifier.ValueText,
+        IndexerDeclarationSyntax declaration => declaration.ExplicitInterfaceSpecifier + "this" + declaration.ParameterList,
         AccessorDeclarationSyntax declaration => declaration.Keyword.ValueText,
         VariableDeclaratorSyntax declaration => declaration.Identifier.ValueText,
         AnonymousFunctionExpressionSyntax declaration => declaration.ToString(),

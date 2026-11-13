@@ -106,6 +106,21 @@ public sealed class ReviewBaselineSuppressorTests
         Assert.Empty(await AnalyzeAsync(new Scenario("CA2000", source, "src/C.cs") { Baseline = baseline }));
     }
 
+    [Theory]
+    [InlineData("class C { void Old<T>() {", "C/Old()")]
+    [InlineData("class C<T> { void Old() {", "C/Old()")]
+    [InlineData("class C { void I.Old() {", "C/Old()")]
+    [InlineData("class C { void J.Old() {", "C/I.Old()")]
+    [InlineData("class C { int I.Old { get {", "C/Old/get")]
+    public async Task ReplacementMember_CannotInheritAnotherSignature(string opening, string oldScope)
+    {
+        var source = opening + "\nthrow null!;\n";
+        var hash = Convert.ToHexStringLower(SHA256.HashData(
+            Encoding.UTF8.GetBytes("Existing finding\n" + oldScope + "\nthrow null!;")));
+        var baseline = "CA2000\tsrc/C.cs\t" + hash + "\t1\n";
+        Assert.Single(await AnalyzeAsync(new Scenario("CA2000", source, "src/C.cs") { Baseline = baseline }));
+    }
+
     private static string Baseline(string id)
     {
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("Existing finding\nC\n" + Source)));
