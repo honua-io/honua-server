@@ -172,7 +172,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         var groupId = await CreateGroupAsync(human, humanToken, "Human-managed group");
         var groups = _fixture.Services.GetRequiredService<IPortalGroupStore>();
         var sharing = _fixture.Services.GetRequiredService<IPortalItemSharingStore>();
-        await groups.AddMembersAsync(groupId, ["bob"], CancellationToken.None);
+        await groups.AddUsersAsync(groupId, ["bob"], CancellationToken.None);
         await sharing.ShareAsync("svc-rivers", "alice",
             new PortalItemShareRequest(false, false, [groupId]), CancellationToken.None);
         var originalGroup = (await groups.GetAsync(groupId, CancellationToken.None))!;
@@ -192,12 +192,12 @@ public sealed class SharingCommunityTests : IAsyncLifetime
 
         foreach (var (path, field, value) in new[]
         {
-            ("/sharing/rest/community/createGroup", "title", "Agent-created group"),
             ($"/sharing/rest/community/groups/{groupId}/addUsers", "users", "mallory"),
             ($"/sharing/rest/community/groups/{groupId}/removeUsers", "users", "bob"),
             ("/sharing/rest/content/items/svc-owned/share", "groups", groupId),
             ("/sharing/rest/content/items/svc-rivers/unshare", "groups", groupId),
             ($"/sharing/rest/community/groups/{groupId}/delete", "f", "json"),
+            ("/sharing/rest/community/createGroup", "title", "Agent-created group"),
         })
         {
             using var response = await PostFormAsync(agent, path, (field, value));
@@ -205,6 +205,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
             var body = await response.Content.ReadAsStringAsync();
             body.Should().Contain("ask a person").And.Contain("Console");
             (await groups.GetAsync(groupId, CancellationToken.None)).Should().BeEquivalentTo(originalGroup);
+            (await groups.ListAsync(CancellationToken.None)).Should().ContainSingle();
             (await sharing.GetAsync("svc-owned", CancellationToken.None)).GroupIds.Should().BeEmpty();
             (await sharing.GetAsync("svc-rivers", CancellationToken.None)).GroupIds.Should().Equal(groupId);
         }
