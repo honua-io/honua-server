@@ -334,7 +334,7 @@ public sealed class GeoServerImportServiceStyleApplyTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((string _, LayerPublishRequest request, CancellationToken _) => new PublishedLayerSummary
             {
-                LayerId = 42,
+                StorageLayerId = 42,
                 LayerName = request.LayerName,
                 Schema = request.Schema,
                 Table = request.Table,

@@ -55,7 +55,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/tile.json")]
     public async Task GetTerrainMetadata_WithRasterFixture_ReturnsTileJsonExtensionsAndCacheHeaders()
     {
-        await SeedFullWorldRasterAsync(123.4);
+        await using var heldRasters = await HoldFullWorldRasterAsync(123.4);
 
         var response = await _fixture.Client.GetAsync("/terrain/0/tile.json");
 
@@ -108,7 +108,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/tile.json")]
     public async Task GetTerrainMetadata_WithCollectionName_ResolvesDataset()
     {
-        await SeedFullWorldRasterAsync(12.3);
+        await using var heldRasters = await HoldFullWorldRasterAsync(12.3);
 
         var response = await _fixture.Client.GetAsync("/terrain/Test%20Layer/tile.json");
 
@@ -127,7 +127,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_WithRegisteredDem_ReturnsTerrainRgbPng()
     {
-        await SeedFullWorldRasterAsync(123.4);
+        await using var heldRasters = await HoldFullWorldRasterAsync(123.4);
 
         var response = await _fixture.Client.GetAsync("/terrain/0/0/0/0.png");
 
@@ -155,7 +155,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_OutsideCoverage_ReturnsAllNoDataPng()
     {
-        await RasterIntegrationTestData.ReplaceLayerRastersAsync(
+        await using var heldRasters = await RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -188,7 +188,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_WithPartialCoverage_EncodesCoveredAndUncoveredPixels()
     {
-        await RasterIntegrationTestData.ReplaceLayerRastersAsync(
+        await using var heldRasters = await RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -220,7 +220,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_WithSourceNoData_ReturnsTransparentPixels()
     {
-        await ReplaceLayerRasterSqlAsync("""
+        await using var heldRasters = await HoldRasterSqlAsync("""
             ST_AddBand(
                 ST_MakeEmptyRaster(2, 2, @upperLeftX, @upperLeftY, @scaleX / 2, @scaleY / 2, 0, 0, 3857),
                 '32BF'::text,
@@ -246,7 +246,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_WithValidMinusTenThousandElevation_RemainsOpaque()
     {
-        await SeedFullWorldRasterAsync(-10000);
+        await using var heldRasters = await HoldFullWorldRasterAsync(-10000);
 
         var response = await _fixture.Client.GetAsync("/terrain/0/0/0/0.png");
 
@@ -260,7 +260,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/tile.json")]
     public async Task GetTerrainMetadata_WithUnknownDataset_ReturnsNotFound()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync("/terrain/999999/tile.json");
 
@@ -273,7 +273,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_WithZoomAboveLimit_ReturnsBadRequest()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync("/terrain/0/23/0/0.png");
 
@@ -286,7 +286,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_WithTileCoordinateOutsideMatrix_ReturnsBadRequest()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync("/terrain/0/1/2/0.png");
 
@@ -299,7 +299,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/tile.json")]
     public async Task GetTerrainMetadata_WhenTerrainProtocolDisabled_ReturnsNotFound()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
         // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         _fixture.UpdateV2ServiceMetadata(
@@ -329,7 +329,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_WithUnsupportedMultibandSource_ReturnsUnprocessableEntity()
     {
-        await ReplaceLayerRasterSqlAsync("""
+        await using var heldRasters = await HoldRasterSqlAsync("""
             ST_AddBand(
                 ST_AddBand(
                     ST_MakeEmptyRaster(1, 1, @upperLeftX, @upperLeftY, @scaleX, @scaleY, 0, 0, 3857),
@@ -353,7 +353,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/tile.json")]
     public async Task GetTerrainMetadata_WithUnknownSourceCrs_DoesNotAdvertiseInvalidEpsgCode()
     {
-        await ReplaceLayerWithUnknownCrsRasterAsync();
+        await using var heldRasters = await HoldUnknownCrsRasterAsync();
 
         var response = await _fixture.Client.GetAsync("/terrain/0/tile.json");
 
@@ -365,7 +365,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/tile.json")]
     public async Task GetTerrainMetadata_WithUnregisteredPositiveSourceCrs_DoesNotAdvertiseInvalidEpsgCode()
     {
-        await ReplaceLayerWithUnregisteredCrsRasterAsync();
+        await using var heldRasters = await HoldUnregisteredCrsRasterAsync();
 
         var response = await _fixture.Client.GetAsync("/terrain/0/tile.json");
 
@@ -377,7 +377,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_WithUnknownSourceCrs_ReturnsUnprocessableEntity()
     {
-        await ReplaceLayerWithUnknownCrsRasterAsync();
+        await using var heldRasters = await HoldUnknownCrsRasterAsync();
 
         var response = await _fixture.Client.GetAsync("/terrain/0/0/0/0.png");
 
@@ -391,7 +391,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_WithUnregisteredPositiveSourceCrs_ReturnsUnprocessableEntity()
     {
-        await ReplaceLayerWithUnregisteredCrsRasterAsync();
+        await using var heldRasters = await HoldUnregisteredCrsRasterAsync();
 
         var response = await _fixture.Client.GetAsync("/terrain/0/0/0/0.png");
 
@@ -400,8 +400,8 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         body.Should().Contain("CRS");
     }
 
-    private Task SeedFullWorldRasterAsync(double elevationMeters)
-        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+    private Task<IAsyncDisposable> HoldFullWorldRasterAsync(double elevationMeters)
+        => RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -417,8 +417,8 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
                 CreatedAt: RasterIntegrationTestData.WestAcquisition,
                 Srid: 3857));
 
-    private Task ReplaceLayerWithUnknownCrsRasterAsync()
-        => ReplaceLayerRasterSqlAsync("""
+    private Task<IAsyncDisposable> HoldUnknownCrsRasterAsync()
+        => HoldRasterSqlAsync("""
             ST_AddBand(
                 ST_MakeEmptyRaster(1, 1, @upperLeftX, @upperLeftY, @scaleX, @scaleY, 0, 0, 0),
                 '32BF'::text,
@@ -426,8 +426,8 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
                 NULL)
             """);
 
-    private Task ReplaceLayerWithUnregisteredCrsRasterAsync()
-        => ReplaceLayerRasterSqlAsync($$"""
+    private Task<IAsyncDisposable> HoldUnregisteredCrsRasterAsync()
+        => HoldRasterSqlAsync($$"""
             ST_AddBand(
                 ST_MakeEmptyRaster(1, 1, @upperLeftX, @upperLeftY, @scaleX, @scaleY, 0, 0, {{UnregisteredSrid}}),
                 '32BF'::text,
@@ -435,14 +435,15 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
                 NULL)
             """);
 
-    private async Task ReplaceLayerRasterSqlAsync(string rasterSql)
+    private async Task<IAsyncDisposable> HoldRasterSqlAsync(string rasterSql)
     {
         var schemaName = _fixture.CurrentSchema
             ?? throw new InvalidOperationException("Fixture schema is not initialized.");
 
-        // #2020: serialize the global honua.raster_data DELETE + INSERT under the schema-mutation
-        // advisory lock (multi-statement, parameterized).
-        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        // Hold the seed lock across the write and the case's reads: a parallel default
+        // seed's honua.layers cleanup cascades to honua.raster_data.
+        var lease = await _fixture.Postgres.AcquireSchemaMutationLockAsync();
+        try
         {
             await using var connection = await _fixture.Postgres.GetConnectionAsync(schemaName);
 
@@ -471,7 +472,14 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
             insert.Parameters.AddWithValue("acquisitionDate", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
             insert.Parameters.AddWithValue("createdAt", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
             await insert.ExecuteNonQueryAsync();
-        });
+        }
+        catch
+        {
+            await lease.DisposeAsync();
+            throw;
+        }
+
+        return lease;
     }
 
     private static async Task<SKBitmap> DecodeBitmapAsync(HttpResponseMessage response)

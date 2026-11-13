@@ -33,7 +33,7 @@ internal static class StylePresetOperation
             Determinism = OperationDeterminism.RuntimeDynamic,
             SupportsDryRun = true,
         },
-        InputSchema = [Parameter("serviceId"), Parameter("layerId"), Parameter("styleId")],
+        InputSchema = [Parameter("serviceId"), Parameter("serviceLayerIndex"), Parameter("styleId")],
         OutputSchema = [],
     };
 
@@ -42,7 +42,7 @@ internal static class StylePresetOperation
         Name = name,
         Title = name,
         Required = true,
-        Schema = new WorkflowSchemaDefinition { Type = name == "layerId" ? WorkflowSchemaValueType.WholeNumber : WorkflowSchemaValueType.Text },
+        Schema = new WorkflowSchemaDefinition { Type = name == "serviceLayerIndex" ? WorkflowSchemaValueType.WholeNumber : WorkflowSchemaValueType.Text },
     };
 }
 
@@ -162,7 +162,7 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
     {
         var activity = ActivitySource.StartActivity($"style.apply-preset.{phase}");
         activity?.SetTag("operation.id", StylePresetOperation.OperationId);
-        foreach (var (parameter, tag) in new[] { ("serviceId", "service.id"), ("layerId", "layer.id"), ("styleId", "style.id") })
+        foreach (var (parameter, tag) in new[] { ("serviceId", "service.id"), ("serviceLayerIndex", "layer.service_index"), ("styleId", "style.id") })
         {
             if (request.Parameters.TryGetValue(parameter, out var value))
             {
@@ -210,12 +210,12 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
             throw new ArgumentException("The published service does not exist.", nameof(request));
         }
 
-        if (!int.TryParse(Required(request, "layerId"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+        if (!int.TryParse(Required(request, "serviceLayerIndex"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var serviceLayerIndex))
         {
-            throw new ArgumentException("The published layer ID must be a 32-bit integer.", nameof(request));
+            throw new ArgumentException("The service layer index must be a 32-bit integer.", nameof(request));
         }
 
-        var publication = snapshot.FindPublicationByLayerIndex(serviceId, layerId);
+        var publication = snapshot.FindPublicationByLayerIndex(serviceId, serviceLayerIndex);
         if (publication is null || !snapshot.IsRoutable(publication))
         {
             throw new ArgumentException("The published layer is not routable.", nameof(request));

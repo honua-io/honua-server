@@ -1084,7 +1084,9 @@ internal static class WmtsRequestHandlers
         var v2GeometryType = layer.Resource.ReadGeometryType();
         var hasGeometry = v2GeometryType != MetadataV2GeometryType.None
             || layer.Resource.FindPrimaryGeometryField() is not null;
-        return CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, hasGeometry, v2GeometryType, verticalSelection);
+        return CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, hasGeometry, v2GeometryType, verticalSelection)
+            with
+        { Resource = layer.Resource };
     }
 
     private static bool TryResolveWmtsLayer(IReadOnlyList<WmtsLayer> layers, string layerIdOrName, out WmtsLayer layer)
@@ -1397,8 +1399,10 @@ internal static class WmtsRequestHandlers
             var styleCatalog = request.HttpContext.RequestServices.GetService<ILayerStyleCatalog>();
             if (IsProtocolEnabled(service, "Wms") && styleCatalog is not null)
             {
+                var styleSources = new RasterStyleSources(
+                    styleCatalog, request.HttpContext.RequestServices.GetService<IGeoServicesStyleConverter>());
                 var supportedLegends = await Task.WhenAll(visibleLayers.Select(layer =>
-                    ResolveWmtsLegendSupportAsync(styleCatalog, layer, logger, cancellationToken))).ConfigureAwait(false);
+                    ResolveWmtsLegendSupportAsync(styleSources, layer, logger, cancellationToken))).ConfigureAwait(false);
                 for (var index = 0; index < visibleLayers.Count; index++)
                 {
                     if (supportedLegends[index])
@@ -1432,7 +1436,7 @@ internal static class WmtsRequestHandlers
                 var tileTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsRestEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}");
                 var featureInfoTextTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsRestEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}");
                 var featureInfoJsonTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsRestEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}");
-                var legendHref = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint[..^"WMTS".Length]}WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetWmsLayerName(layer.Resource, layer.Publication))}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
+                var legendHref = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint[..^"WMTS".Length]}WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetServiceLayerIdentifier(layer.Publication) ?? string.Empty)}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
 
                 sb.AppendLine("    <Layer>");
                 var layerTitle = layer.Resource.Metadata.Title
@@ -1699,14 +1703,14 @@ internal static class WmtsRequestHandlers
     }
 
     private static async Task<bool> ResolveWmtsLegendSupportAsync(
-        ILayerStyleCatalog styleCatalog,
+        RasterStyleSources styleSources,
         WmtsLayer layer,
         ILogger logger,
         CancellationToken cancellationToken)
     {
         try
         {
-            var plan = await GetRasterStylePlanAsync(styleCatalog, layer.StorageLayerId, cancellationToken)
+            var plan = await GetRasterStylePlanAsync(styleSources, layer.Resource, layer.StorageLayerId, cancellationToken)
                 .ConfigureAwait(false);
             return LegendImageComposer.SupportsStylePlan(plan);
         }
