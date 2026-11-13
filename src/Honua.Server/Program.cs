@@ -1646,6 +1646,10 @@ app.UseBrowserSessionSecurity();
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
 
+// Mark MCP callers and agent-grant API keys before authorization, so approval gates and the
+// operation policy treat them as agents on every path.
+Honua.Infrastructure.Authentication.AgentPrincipal.UseAgentPrincipalMarking(app);
+
 // Explicit invalid job capabilities must fail even on anonymous data routes, and
 // cannot fall back to a cookie/API key/portal token. Meter and audit before refusal.
 app.UseWhen(ScopedJobAuthentication.HasFailure, invalidJobCapability =>
