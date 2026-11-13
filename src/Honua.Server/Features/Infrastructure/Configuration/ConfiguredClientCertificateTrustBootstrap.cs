@@ -17,9 +17,9 @@ internal sealed partial class ConfiguredClientCertificateTrustBootstrap(
     private static readonly ConfigurationCollection<ConfiguredTrustManifest> _manifests =
         new("client-certificate-trust-configured", SharedConfigurationJsonContext.Default.ConfiguredTrustManifest);
 
-    public async Task ReconcileAsync(CancellationToken token)
+    public async Task<bool> ReconcileAsync(CancellationToken token)
     {
-        if (options is null) { return; }
+        if (options is null) { return true; }
         for (var attempt = 0; attempt < MaximumAttempts; attempt++)
         {
             var profiles = await documents.ReadAsync(_profiles, token).ConfigureAwait(false);
@@ -28,12 +28,21 @@ internal sealed partial class ConfiguredClientCertificateTrustBootstrap(
             if (manifests.UnreadableKeys.Contains(ManifestKey, StringComparer.Ordinal))
             {
                 ConfiguredManifestUnreadable(_logger);
-                return;
+                return false;
             }
             var previous = manifests.Documents.FirstOrDefault(document => document.Key == ManifestKey);
-            if (options.TrustProfilesRevision <= (previous?.Value.Revision ?? 0)) { return; }
+            if (options.TrustProfilesRevision <= (previous?.Value.Revision ?? 0)) { return true; }
+            // Preserve ownership until every affected profile can be reconciled atomically.
+            var unreadable = profiles.UnreadableKeys.FirstOrDefault(key =>
+                options.TrustProfiles.Any(profile => string.Equals(profile.ProfileId, key, StringComparison.OrdinalIgnoreCase))
+                || previous?.Value.Profiles.ContainsKey(key) == true);
+            if (unreadable is not null)
+            {
+                ConfiguredProfileUnreadable(_logger, unreadable);
+                return false;
+            }
             var changes = BuildChanges(profiles, previous);
-            if (await documents.WriteBatchAsync(profiles.Generation, changes, token).ConfigureAwait(false)) { return; }
+            if (await documents.WriteBatchAsync(profiles.Generation, changes, token).ConfigureAwait(false)) { return true; }
         }
         throw new InvalidOperationException("Concurrent trust configuration updates exceeded the retry limit.");
     }
@@ -48,11 +57,6 @@ internal sealed partial class ConfiguredClientCertificateTrustBootstrap(
         {
             var key = configured.ProfileId.ToUpperInvariant();
             next.Profiles[key] = configured.PrincipalMappings.Select(mapping => mapping.MappingId.ToUpperInvariant()).ToArray();
-            if (snapshot.UnreadableKeys.Contains(key, StringComparer.Ordinal))
-            {
-                ConfiguredProfileUnreadable(_logger, configured.ProfileId);
-                continue;
-            }
             var current = snapshot.Documents.FirstOrDefault(document => document.Key == key);
             var formerlyConfigured = previous?.Value.Profiles.GetValueOrDefault(key) ?? [];
             var merged = current is null ? configured : PostgresClientCertificateTrustStore.ApplyConfigured(current.Value, configured, formerlyConfigured);

@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.ControlPlane;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -85,7 +86,7 @@ internal sealed partial class PostgresConfigurationDocuments(
             await LockGenerationAsync(connection, token).ConfigureAwait(false);
             await using var command = CreateWriteCommand(connection, PrepareWrite(collection, write));
             var written = await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
-            await transaction.CommitAsync(token).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
             return written;
         }, StatementRepeat.NotAfterSend, cancellationToken);
 
@@ -105,7 +106,7 @@ internal sealed partial class PostgresConfigurationDocuments(
                 await using var command = CreateWriteCommand(connection, change);
                 if (await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) != 1) { return false; }
             }
-            await transaction.CommitAsync(token).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
             return true;
         }, StatementRepeat.NotAfterSend, cancellationToken);
 

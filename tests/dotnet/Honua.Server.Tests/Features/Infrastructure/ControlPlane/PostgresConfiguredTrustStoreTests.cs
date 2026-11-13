@@ -93,9 +93,12 @@ public sealed class PostgresConfiguredTrustStoreTests(DatabaseFixtureAdapter dat
             ChainRevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.Online
         });
 
-        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true)).ListProfilesAsync();
+        var changed = TrustOptions(mappingEnabled: false);
+        changed.Value.TrustProfilesRevision = 2;
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), changed).ListProfilesAsync();
 
         var merged = (await taskA.GetProfileAsync("partner"))!;
+        merged.PrincipalMappings.Single().Enabled.Should().BeFalse();
         merged.RequireChainTrust.Should().BeTrue();
         merged.ChainRevocationMode.Should().Be(System.Security.Cryptography.X509Certificates.X509RevocationMode.Online);
     }
@@ -151,6 +154,35 @@ public sealed class PostgresConfiguredTrustStoreTests(DatabaseFixtureAdapter dat
 
         (await taskA.GetProfileAsync("partner"))!.Enabled.Should().BeFalse();
         (await taskA.GetProfileAsync("admin-profile"))!.Enabled.Should().BeTrue();
+    }
+
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Bootstrap_UnreadableProfileRecovers_AppliesPendingRemovalAtSameConfigurationRevision(bool removeProfile)
+    {
+        await using var harness = await CreateHarnessAsync();
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true)).ListProfilesAsync();
+        var table = harness.Table("configuration_documents");
+        var payload = await harness.ScalarAsync<byte[]>($"SELECT payload FROM {table} WHERE kind = 'client-certificate-trust' AND key = 'PARTNER'");
+        await harness.ExecuteAsync($"UPDATE {table} SET payload = @payload WHERE kind = 'client-certificate-trust' AND key = 'PARTNER'",
+            new Npgsql.NpgsqlParameter("payload", new byte[] { 0 }));
+        var changed = TrustOptions(mappingEnabled: true);
+        changed.Value.TrustProfilesRevision = 2;
+        if (removeProfile) { changed.Value.TrustProfiles = []; }
+        else { changed.Value.TrustProfiles[0].PrincipalMappings = []; }
+
+        var whileUnreadable = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), changed);
+        (await whileUnreadable.GetProfileAsync("partner")).Should().BeNull();
+        var manifests = new ConfigurationCollection<ConfiguredTrustManifest>("client-certificate-trust-configured", SharedConfigurationJsonContext.Default.ConfiguredTrustManifest);
+        (await harness.CreateConfigurationDocuments().ReadAsync(manifests, CancellationToken.None)).Documents.Single().Value.Revision.Should().Be(1);
+        await harness.ExecuteAsync($"UPDATE {table} SET payload = @payload WHERE kind = 'client-certificate-trust' AND key = 'PARTNER'",
+            new Npgsql.NpgsqlParameter("payload", payload!));
+
+        var profile = (await whileUnreadable.GetProfileAsync("partner"))!;
+        if (removeProfile) { profile.Enabled.Should().BeFalse(); }
+        else { profile.PrincipalMappings.Single().Enabled.Should().BeFalse(); }
+        (await harness.CreateConfigurationDocuments().ReadAsync(manifests, CancellationToken.None)).Documents.Single().Value.Revision.Should().Be(2);
     }
 
     [IntegrationTest]

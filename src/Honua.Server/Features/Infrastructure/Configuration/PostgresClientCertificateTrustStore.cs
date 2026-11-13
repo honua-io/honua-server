@@ -100,8 +100,7 @@ internal sealed partial class PostgresClientCertificateTrustStore(
         try
         {
             if (_seeded) { return; }
-            await _bootstrap.ReconcileAsync(cancellationToken).ConfigureAwait(false);
-            _seeded = true;
+            _seeded = await _bootstrap.ReconcileAsync(cancellationToken).ConfigureAwait(false);
         }
         finally { _seedGate.Release(); }
     }
