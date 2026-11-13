@@ -1,68 +1,46 @@
 ---
 type: guide
 title: "Run a local development environment"
-description: "You'll run Honua from source with .NET Aspire — one command that starts PostGIS, Redis, and the server with a dashboard for logs, traces, and metrics."
+description: "Build Honua from source and run the local Docker Compose stack."
 ---
 # Run a local development environment
 
-You'll run Honua from source with .NET Aspire — one command that starts PostGIS, Redis, and the server with a dashboard for logs, traces, and metrics.
+Use the repo-root Docker Compose stack to run PostGIS, Redis, and Honua Server from a source build.
 
-**Prerequisites:** .NET 10 SDK, Docker (Aspire starts the database and cache as containers), and a clone of [honua-server](https://github.com/honua-io/honua-server).
+**Prerequisites:** Docker with Compose v2, Python 3.11 or later, and GitHub CLI authenticated with package-read access. Clone [honua-server](https://github.com/honua-io/honua-server) and run the following commands from its root.
 
-## Steps
+## Build and start
 
-1. Start the Aspire app host from the repo root.
-
-```bash
-dotnet run --project src/Honua.AppHost
-```
-
-2. Open the Aspire dashboard at the URL printed in the console output. It shows every resource's state, console logs, distributed traces, and metrics in one place.
-
-The app host (`src/Honua.AppHost/Program.cs`) orchestrates:
-
-| Resource | Details |
-|---|---|
-| `postgres` | PostGIS + pgRouting (`pgrouting/pgrouting:17-3.5-3.7.3`) with a persistent `honua-postgres-data` volume and pgAdmin |
-| `honua` database | Created on the postgres resource and injected as the connection string |
-| `redis` | Redis with Redis Commander |
-| `honua-server` | The server project, started after postgres and redis are healthy, with both connection strings wired automatically |
-
-3. Iterate. Stop with `Ctrl+C` and re-run after code changes; the data volume persists between runs.
-
-```bash
-dotnet build src/Honua.Server/Honua.Server.csproj
-```
-
-## Plain Docker Compose alternative
-
-If you don't want the .NET SDK in the loop, build the local image with a GitHub
-token that can read the repository's packages, then start PostGIS, Redis, and
-that image through the repo-root Compose file:
+Build the local image with a GitHub token that can read the repository's packages, then initialize private per-install credentials and start the stack:
 
 ```bash
 GH_TOKEN=$(gh auth token) bash scripts/docker/build-with-github-packages.sh -t honua-server:local .
-docker compose up -d --no-build
+python3 scripts/docker/quickstart.py
+docker compose ps
 ```
 
-The Compose file also supports `--profile minio` and a profiled Console service
-once a compatible Console image is available. It includes development-only
-defaults for the admin password, connection-encryption key, Redis control-plane
-connection, Gate migration policy, and localhost browser origins used by the
-[quickstart](../../get-started/quickstart.md).
+The bootstrap writes random database credentials to a private `.env` file and preserves them on restart. Keep that file with the persistent volumes; editing a saved password does not rotate the database's existing credentials. Ports bind to loopback by default.
 
-## Verify
+The Compose stack includes development-only admin credentials, connection encryption settings, Redis control-plane configuration, and browser origins. Follow the [source quickstart](../../internal/developer/source-quickstart.md) to publish a sample layer and display a map.
 
-> Open `http://localhost:8080/healthz/ready` in a browser.
+## Verify and iterate
 
-Expected output: `Ready`.
+Open `http://localhost:8080/healthz/ready`. Expected response: `Ready`.
+
+After source changes, repeat the image build and bootstrap commands. Inspect logs or stop the stack while retaining its data:
+
+```bash
+docker compose logs --tail 100 honua
+docker compose stop
+```
+
+For .NET hot reload against local PostGIS, follow the [contributor setup guide](../../internal/contributor/development/getting-started.md).
 
 ## Troubleshoot
 
-- **`dotnet run` fails resolving Aspire workloads, or reports "A compatible .NET SDK was not found"** — `global.json` requires a .NET 10 SDK of 10.0.400 or later (any later 10.0 feature band works; SDK 11 is not used). Update the SDK and restore: `dotnet restore Honua.sln`.
-- **Postgres container conflicts with a local Postgres on 5432** — stop the local service or let Aspire's dynamic port mapping stand; connect through the dashboard's listed endpoint, not `localhost:5432`.
-- **Admin endpoints return 401** — local dev runs without an admin password unless you set `HONUA_ADMIN_PASSWORD`; set it before `dotnet run` if you need admin APIs.
-- **Stale schema after switching branches** — migrations only roll forward; drop the `honua-postgres-data` volume (`docker volume rm honua-postgres-data`) to rebuild from scratch.
+- **A host port is occupied:** set `HONUA_HTTP_PORT`, `POSTGRES_PORT`, or `REDIS_PORT` in `.env`, then restart the stack. See the [Compose guide](docker-compose.md) for configuration.
+- **The image build cannot restore private packages:** check GitHub CLI authentication and package-read access.
+- **A service is unhealthy:** inspect `docker compose ps` and `docker compose logs --tail 100` before retrying.
 
 ## Next steps
 
