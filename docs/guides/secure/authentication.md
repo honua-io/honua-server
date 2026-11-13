@@ -288,7 +288,12 @@ Single-tenant deployments use `MultiTenancy:Enabled=false` by default. Valid
 bearer tokens do not need a tenant claim: requests use `MultiTenancy:DefaultTenantId`
 (default `public`). Identity-provider tenant claims such as Entra's `tid` and
 `X-Honua-Tenant` headers do not select another tenant in this mode. Keep the
-configured default aligned with the deployment's data. Explicitly enabling
+configured default aligned with the deployment's data. Portal authorization uses
+this resolved tenant rather than the provider's directory claim. Existing Studio
+issuer/subject owner keys created with tenancy explicitly disabled retain their
+empty tenant suffix when requests resolve to the deployment default; the issuer
+and subject must still match exactly. Frozen execution credentials retain their
+recorded tenant binding. Explicitly enabling
 `MultiTenancy:Enabled` opts into claim/header resolution; bearer calls to
 tenant-bound routes then require a valid tenant claim or an authorized override.
 

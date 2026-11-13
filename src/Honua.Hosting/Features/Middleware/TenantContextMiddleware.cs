@@ -85,7 +85,7 @@ internal sealed class TenantContextMiddleware(
         {
             var tenant = string.IsNullOrWhiteSpace(_options.DefaultTenantId) ? null : _options.DefaultTenantId;
             tenantContext.Set(tenant, tenant is null ? TenantContextSource.Anonymous : TenantContextSource.Default);
-            if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
+            if (isAuthenticated)
             {
                 CanonicalSecurityActor.StampRequestBinding(principal!, tenant);
             }

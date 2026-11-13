@@ -63,6 +63,22 @@ public class TenantContextMiddlewareTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("GET /binding")]
+    public async Task SingleTenantConfiguration_BrowserPrincipal_UsesDeploymentBinding()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: ("tid", "directory-tenant"),
+            authenticationType: "Cookies");
+        var client = await CreateAppAsync(principal, useDefaultOptions: true);
+
+        var response = await client.GetAsync("/binding");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("public|public", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
     public async Task ClaimBased_TidClaim_PopulatesTenantContextFromClaim()
     {
