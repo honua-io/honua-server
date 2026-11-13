@@ -432,10 +432,10 @@ with HonuaAdminClient(base, api_key=key) as admin:
         primary_key="id", fields_list=["id", "name"]))
 
 with HonuaClient(base, api_key=key) as client:
-    result = client.query_features("quickstart", layer.layer_id,
+    result = client.query_features("quickstart", layer.storage_layer_id,
                                    out_fields=["id", "name"], return_geometry=True)
 
-print(f"published service quickstart layer {layer.layer_id}")
+print(f"published service quickstart layer {layer.storage_layer_id}")
 print(json.dumps(result["features"], indent=2))
 ```
 
