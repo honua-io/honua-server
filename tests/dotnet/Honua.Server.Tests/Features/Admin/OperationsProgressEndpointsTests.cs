@@ -1276,6 +1276,89 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         (await jobStore.GetAsync(operationId))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_RemoteTileRace_ReleasesAdmissionOnce(bool submitted)
+    {
+        var operationId = Guid.NewGuid().ToString("N");
+        var operation = $"cancel-{operationId}";
+        var now = DateTimeOffset.UtcNow;
+        var initial = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = submitted ? ExecutionJobStatus.Running : ExecutionJobStatus.Queued,
+            ProviderOperationId = submitted ? "provider-operation" : null,
+            CancellationRequestedAt = submitted ? now : null,
+            CreatedAt = now, UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.TileCache, Backend = "aws-batch",
+                TargetKind = BatchComputeTargetKind.AwsBatch, WorkloadName = "tile-cancel-race",
+                Parameters = new Dictionary<string, string> { ["operation"] = operation }
+            }
+        };
+        var current = initial;
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(operationId, Arg.Any<CancellationToken>()).Returns(_ => current);
+        store.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ExecutionJobRecord>());
+        var bothWriting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writers = 0;
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                if (Interlocked.Increment(ref writers) == 2) bothWriting.TrySetResult();
+                await bothWriting.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                return ReferenceEquals(Interlocked.CompareExchange(ref current, call.Arg<ExecutionJobRecord>(), initial), initial);
+            });
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities { SupportsCancellation = true });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled });
+        var fixture = new WebAppFixture()
+            .ReplaceRequestService<IExecutionJobStore>(store)
+            .ReplaceRequestService<IJobQueue>(Substitute.For<IJobQueue>())
+            .ConfigureServices(services => services.AddSingleton(backend));
+        await fixture.InitializeAsync();
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        long released = 0;
+        using var listener = new System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (instrument, meter) =>
+        {
+            if (instrument.Name == "honua.tile.jobs.queue_depth") meter.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "operation" && Equals(tag.Value, operation)) Interlocked.Add(ref released, value);
+            }
+        });
+        listener.Start();
+        try
+        {
+            await progressStore.SetProgressAsync(operationId,
+                TileOperationProgress.CreateInitial(operationId, operation, null, null, null));
+            var responses = await Task.WhenAll(
+                fixture.Client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null),
+                fixture.Client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null));
+            responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.OK);
+            current.Status.Should().Be(ExecutionJobStatus.Cancelled);
+            writers.Should().Be(2, "both requests race the same nonterminal durable record");
+            released.Should().Be(-1, "only the terminal CAS winner releases tile admission");
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_UnclaimedTileJob_ReleasesAdmissionOnce()

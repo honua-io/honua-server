@@ -60,6 +60,54 @@ public sealed partial class TileCacheJobExecutorPublishTests
         await context.Received().ThrowIfExecutionLeaseLostAsync(Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task TileCancel_CompletesAfterConsoleRetry_PreservesSuccessorProgress()
+    {
+        var job = ControlJob(ExecutionJobStatus.Queued);
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(_ => job);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { job = call.Arg<ExecutionJobRecord>(); return true; });
+        var progress = new ComparingInMemoryProgressStore();
+        await progress.SetProgressAsync(job.OperationId,
+            TileOperationProgress.CreateInitial(job.OperationId, "archive", null, 1, "WebMercatorQuad"));
+        var cancelling = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns(LocalBatchComputeBackend.BackendId);
+        backend.TargetKind.Returns(job.Spec.TargetKind);
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            cancelling.TrySetResult();
+            await resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            return new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled };
+        });
+        using var controls = ControlServices(store, backend: backend);
+        var options = Substitute.For<IOptionsMonitor<TileCacheBatchOptions>>();
+        options.CurrentValue.Returns(new TileCacheBatchOptions());
+        var service = new TileCacheJobService(store, progress, [backend], options,
+            controls.GetRequiredService<IServiceScopeFactory>(), NullLogger<TileCacheJobService>.Instance,
+            controls.GetRequiredService<IJobQueue>());
+        var cancel = service.CancelAsync(job.OperationId);
+        TileOperationProgress? successor = null;
+        try
+        {
+            await cancelling.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            (await service.GetAsync(job.OperationId))!.Status.Should().Be(OperationStatus.Cancelled);
+            await CreateConsole(controls).RetryAsync(new DefaultHttpContext(), job.OperationId, CancellationToken.None);
+            job.Status.Should().Be(ExecutionJobStatus.Queued);
+            successor = TileOperationProgress.CreateInitial(job.OperationId, "archive", null, 1, "WebMercatorQuad") with
+            { Status = OperationStatus.Processing, ProcessedTiles = 1 };
+            await progress.SetProgressAsync(job.OperationId, successor);
+        }
+        finally
+        {
+            resume.TrySetResult();
+            (await cancel).Should().BeTrue();
+        }
+        (await progress.GetProgressAsync<TileOperationProgress>(job.OperationId)).Should().Be(successor);
+    }
+
     [UnitTheory]
     [InlineData("console-queued")]
     [InlineData("console-running")]
