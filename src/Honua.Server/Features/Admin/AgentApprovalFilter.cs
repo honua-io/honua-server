@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Console.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Console.Models;
@@ -57,6 +58,11 @@ internal static class AgentApprovalFilter
             var id = context.Request.RouteValues["id"]?.ToString();
             if (id is not null && await store.GetAsync(id, context.RequestAborted).ConfigureAwait(false) is { } existing)
             {
+                if (update.Generation is { } generation && generation != existing.Generation)
+                {
+                    return TypedResults.Conflict(ApiResponse<object>.Failure("Console content item generation has changed."));
+                }
+
                 changesAudience = !string.Equals(update.OwnerId, existing.OwnerId, StringComparison.Ordinal);
                 // Persist against the same version whose ownership was authorized.
                 update.AuthorizedGeneration = existing.Generation;

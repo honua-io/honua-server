@@ -37,7 +37,7 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
         var requiresAgentApproval = AgentApprovalRule.Applies(request.OperationId, context.Roles);
 
         Task<PolicyDecision> Complete(PolicyDecision decision) => Task.FromResult(
-            requiresAgentApproval && decision.Kind != PolicyDecisionKind.Deny
+            requiresAgentApproval && decision.Kind is not (PolicyDecisionKind.Deny or PolicyDecisionKind.DryRunFirst)
                 ? AgentApprovalRule.Decision
                 : decision);
 
