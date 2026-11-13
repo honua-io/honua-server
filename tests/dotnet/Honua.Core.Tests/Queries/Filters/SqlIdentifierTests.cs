@@ -2,12 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Queries.Filters;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Queries.Filters;
 
 public sealed class SqlIdentifierTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("parcels", "\"parcels\"")]
     [InlineData("Object ID", "\"Object ID\"")]
     [InlineData("schema.table", "\"schema.table\"")]
