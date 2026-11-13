@@ -259,7 +259,7 @@ internal sealed partial class ConsoleJobService(
             return ControlResponse(job, "cancel", "Job is already cancelled.");
         }
 
-        if (ExecutionJobCancellationHelper.IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             throw new ConsoleJobConflictException("Terminal jobs cannot be cancelled.");
         }
@@ -326,7 +326,7 @@ internal sealed partial class ConsoleJobService(
 
             if (applied.Outcome == BackendCancelApplyOutcome.Applied && applied.Job != null)
             {
-                if (ExecutionJobCancellationHelper.IsTerminal(applied.Job.Status))
+                if (applied.Job.Status.IsTerminal())
                 {
                     await RemoveFromQueueIfPresentAsync(applied.Job.OperationId, cancellationToken).ConfigureAwait(false);
                     await NotifyTerminalCallbacksAsync(applied.Job).ConfigureAwait(false);

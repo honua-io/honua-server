@@ -238,7 +238,7 @@ internal sealed partial class AzureBatchComputeBackend(
             var observed = MapObservation(job, providerJobId, state);
             return observed with
             {
-                Message = IsTerminal(observed.Status)
+                Message = observed.Status.IsTerminal()
                     ? observed.Message
                     : $"Azure Batch termination requested for job '{providerJobId}'; {observed.Message}"
             };
@@ -255,11 +255,6 @@ internal sealed partial class AzureBatchComputeBackend(
             };
         }
     }
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 
     internal static BatchComputeObservation MapObservation(
         ExecutionJobRecord job,
@@ -327,7 +322,7 @@ internal sealed partial class AzureBatchComputeBackend(
 
     private static BatchComputeObservation MapMissingObservation(ExecutionJobRecord job, string providerJobId)
     {
-        if (IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             return new BatchComputeObservation
             {

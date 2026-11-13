@@ -189,7 +189,6 @@ public sealed partial class TileOperationJobTests
             failedJobId,
             "a retry resumes the original generation checkpoint rather than restarting the grid");
         retry.Spec.Parameters[TileCacheJobParameterKeys.SchemaName].Should().Be("tenant_a");
-        retry.Spec.Parameters[TileCacheJobParameterKeys.TenantScope].Should().Be("public");
         retry.Audit.RequestedBy.Should().Be("admin-b", "the retry is attributed to the caller who asked for it");
     }
 
@@ -269,7 +268,7 @@ public sealed partial class TileOperationJobTests
         }, Admin));
         var byLayer = await service.SubmitAsync(new TileOperationSubmission(new TileOperationStartRequest
         {
-            Operation = "delete",
+            Operation = "invalidate",
             LayerId = 42,
             TileMatrixSetId = "Web_MercatorQuad",
             Style = "a_b"
@@ -292,7 +291,7 @@ public sealed partial class TileOperationJobTests
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, jobQueue);
 
-        var jobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin, TenantScope: "public"));
+        var jobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin));
 
         jobId.Should().StartWith("tile-");
         var record = await jobStore.GetAsync(jobId);
@@ -300,7 +299,6 @@ public sealed partial class TileOperationJobTests
         record!.Status.Should().Be(ExecutionJobStatus.Queued);
         record.Spec.Kind.Should().Be(ExecutionJobKind.TileCache);
         record.Spec.Backend.Should().Be(LocalBatchComputeBackend.BackendId);
-        record.Spec.Parameters[TileCacheJobParameterKeys.TenantScope].Should().Be("public");
 
         await jobQueue.Received(1).EnqueueAsync(jobId, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
 
@@ -320,15 +318,15 @@ public sealed partial class TileOperationJobTests
 
         var jobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest() with
         {
-            Operation = " DELETE ",
+            Operation = " INVALIDATE ",
             TileMatrixSetId = " WebMercatorQuad ",
             Style = " default ",
         }, Admin));
 
         var record = (await jobStore.GetAsync(jobId))!;
-        record.Spec.Parameters[TileCacheJobParameterKeys.Operation].Should().Be("delete");
+        record.Spec.Parameters[TileCacheJobParameterKeys.Operation].Should().Be("invalidate");
         var progress = (await progressStore.GetProgressAsync<TileOperationProgress>(jobId))!;
-        progress.Operation.Should().Be("delete");
+        progress.Operation.Should().Be("invalidate");
         progress.TileMatrixSetId.Should().Be("WebMercatorQuad");
     }
 

@@ -224,6 +224,7 @@ internal static class AdminOperateOperationCatalog
             Type = type switch { "integer" => WorkflowSchemaValueType.WholeNumber, "number" => WorkflowSchemaValueType.DecimalNumber, "boolean" => WorkflowSchemaValueType.Flag, "array" => WorkflowSchemaValueType.List, "object" => WorkflowSchemaValueType.Structured, _ => WorkflowSchemaValueType.Text },
             AllowsNull = allowsNull,
             Format = resolved.TryGetProperty("format", out var format) ? format.GetString() : null,
+            Description = resolved.TryGetProperty("description", out var description) ? description.GetString() : null,
             EnumValues = resolved.TryGetProperty("enum", out var values) ? values.EnumerateArray().Select(static value => value.ValueKind == JsonValueKind.Null ? null : value.ToString()).ToArray() : [],
             Items = resolved.TryGetProperty("items", out var items) ? ConvertSchema(root, items) : null,
             Properties = resolved.TryGetProperty("properties", out var properties)

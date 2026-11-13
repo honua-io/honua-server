@@ -7,7 +7,6 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
-using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Startup;
@@ -23,38 +22,6 @@ namespace Honua.Server.Tests.Startup;
 
 public sealed class ImportExportTileOperationsRegistrationTests
 {
-    [UnitTest]
-    public void AddTileOperations_WithRedisAndEvictionDisabled_RegistersLiveKeyIndex()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["TileOptions:Eviction:Enabled"] = "false",
-            })
-            .Build();
-
-        services.AddHonuaImportExportAndTileOperations(configuration);
-
-        var descriptor = services.Last(service => service.ServiceType == typeof(ITileCacheKeyIndex));
-        descriptor.ImplementationFactory.Should().NotBeNull();
-        descriptor.ImplementationInstance.Should().NotBe(NullTileCacheKeyIndex.Instance);
-    }
-
-    [UnitTest]
-    public void AddTileOperations_WithoutRedis_RegistersDisabledKeyIndex()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-
-        services.AddHonuaImportExportAndTileOperations(new ConfigurationBuilder().Build());
-
-        var descriptor = services.Last(service => service.ServiceType == typeof(ITileCacheKeyIndex));
-        descriptor.ImplementationInstance.Should().BeSameAs(NullTileCacheKeyIndex.Instance);
-    }
-
     [UnitTest]
     public void AddTileOperations_WithoutSystemDatabase_ComposesNoSharedLeaseStore()
     {

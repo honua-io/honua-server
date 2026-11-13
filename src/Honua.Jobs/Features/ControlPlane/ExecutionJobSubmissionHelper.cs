@@ -136,7 +136,7 @@ internal static partial class ExecutionJobSubmissionHelper
             Version = provisioning.Version + 1,
             Status = submission.Status,
             UpdatedAt = now,
-            CompletedAt = ExecutionJobReconciler.IsTerminal(submission.Status) ? now : provisioning.CompletedAt,
+            CompletedAt = submission.Status.IsTerminal() ? now : provisioning.CompletedAt,
             ProviderOperationId = submission.ProviderOperationId ?? provisioning.ProviderOperationId,
             CurrentPhase = submission.Message ?? provisioning.CurrentPhase,
             ErrorMessage = submission.Status == ExecutionJobStatus.Failed
@@ -186,7 +186,7 @@ internal static partial class ExecutionJobSubmissionHelper
         ILogger? logger = null,
         CancellationToken cancellationToken = default)
     {
-        if (!ExecutionJobReconciler.IsTerminal(job.Status))
+        if (!job.Status.IsTerminal())
         {
             return Task.CompletedTask;
         }
@@ -268,7 +268,7 @@ internal static partial class ExecutionJobSubmissionHelper
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             current = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (current == null || ExecutionJobReconciler.IsTerminal(current.Status))
+            if (current == null || current.Status.IsTerminal())
             {
                 return current;
             }

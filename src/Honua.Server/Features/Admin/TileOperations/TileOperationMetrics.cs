@@ -59,21 +59,6 @@ internal static class TileOperationMetrics
         unit: null,
         "Number of tiles that failed to generate during tile-cache jobs.");
 
-    public static readonly Counter<long> TilesDeleted = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.tile.cache.deleted",
-        unit: null,
-        "Number of generated cache tiles deleted from the cloud tile store by bounded delete jobs.");
-
-    public static readonly Counter<long> TilesExpired = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.tile.cache.expired",
-        unit: null,
-        "Number of generated cache tiles marked stale by bounded expire jobs.");
-
-    public static readonly Counter<long> CacheBytesReleased = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.tile.cache.bytes_released",
-        unit: null,
-        "Bytes released from the generated tile cache by bounded expire/delete jobs.");
-
     public static void RecordJobEnded(ExecutionJobRecord job)
         => QueueDepth.Add(
             -1,

@@ -208,7 +208,7 @@ internal static partial class OperationsProgressEndpoints
             return null;
         }
 
-        if (ExecutionJobCancellationHelper.IsTerminal(executionJob.Status))
+        if (executionJob.Status.IsTerminal())
         {
             if (executionJob.Status == ExecutionJobStatus.Cancelled)
             {
@@ -275,7 +275,7 @@ internal static partial class OperationsProgressEndpoints
                         // Already cancelled — idempotent success.
                         effectiveJob = fresh;
                     }
-                    else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
+                    else if (fresh.Status.IsTerminal())
                     {
                         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
                             progressStore, fresh, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -311,7 +311,7 @@ internal static partial class OperationsProgressEndpoints
                 }
             }
 
-            if (!ExecutionJobCancellationHelper.IsTerminal(effectiveJob.Status))
+            if (!effectiveJob.Status.IsTerminal())
             {
                 await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
                     progressStore, effectiveJob, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -333,7 +333,7 @@ internal static partial class OperationsProgressEndpoints
                 await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                 return null;
             case ExecutionJobCancellationState.CancellationRequested:
-                if (cancelOutcome.Job != null && !ExecutionJobCancellationHelper.IsTerminal(cancelOutcome.Job.Status))
+                if (cancelOutcome.Job != null && !cancelOutcome.Job.Status.IsTerminal())
                 {
                     await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
                         progressStore, cancelOutcome.Job, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -580,7 +580,7 @@ internal static partial class OperationsProgressEndpoints
             var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
             if (executionJob != null)
             {
-                if (ExecutionJobCancellationHelper.IsTerminal(executionJob.Status))
+                if (executionJob.Status.IsTerminal())
                 {
                     if (executionJob.Status == ExecutionJobStatus.Cancelled)
                     {
@@ -711,7 +711,7 @@ internal static partial class OperationsProgressEndpoints
 
                     var updated = applyResult.Job!;
 
-                    if (ExecutionJobCancellationHelper.IsTerminal(updated.Status))
+                    if (updated.Status.IsTerminal())
                     {
                         await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                     }

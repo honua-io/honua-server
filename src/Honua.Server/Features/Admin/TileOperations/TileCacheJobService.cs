@@ -106,7 +106,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     public async Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default)
     {
         var job = await GetJobAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job == null || ExecutionJobCancellationHelper.IsTerminal(job.Status))
+        if (job == null || job.Status.IsTerminal())
         {
             return false;
         }
@@ -137,12 +137,12 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         var job = await GetJobAsync(jobId, cancellationToken).ConfigureAwait(false);
         if (job is not { Status: ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled }
             || job.Spec.Kind != ExecutionJobKind.TileCache
-            || !TileCacheExecutionSpecBuilder.TryParse(job.Spec.Parameters, out var request, out var schemaName, out var tenantScope, out _))
+            || !TileCacheExecutionSpecBuilder.TryParse(job.Spec.Parameters, out var request, out var schemaName, out _))
         {
             return null;
         }
 
-        return await SubmitAsync(new TileOperationSubmission(request, requestedBy, schemaName, tenantScope), cancellationToken)
+        return await SubmitAsync(new TileOperationSubmission(request, requestedBy, schemaName), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -165,7 +165,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
 
         var targetLayerIds = await ResolveTargetLayerIdsAsync(request, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
-        var spec = TileCacheExecutionSpecBuilder.Build(request, submission.SchemaName, submission.TenantScope, _options.CurrentValue);
+        var spec = TileCacheExecutionSpecBuilder.Build(request, submission.SchemaName, _options.CurrentValue);
         spec = spec with
         {
             Parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal)
@@ -370,5 +370,4 @@ internal interface ITileCacheJobService
 internal sealed record TileOperationSubmission(
     TileOperationStartRequest Request,
     string? RequestedBy,
-    string? SchemaName = null,
-    string? TenantScope = null);
+    string? SchemaName = null);

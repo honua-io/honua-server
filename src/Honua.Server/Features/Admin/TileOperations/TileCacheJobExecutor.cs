@@ -63,7 +63,6 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 job.Spec.Parameters,
                 out var request,
                 out var schemaName,
-                out var tenantScope,
                 out var parseError))
         {
             Log.InvalidSpec(_logger, job.OperationId, parseError);
@@ -79,7 +78,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
             { GenerationId = job.OperationId };
         }
 
-        var run = new TileCacheRun(job, request, schemaName, tenantScope);
+        var run = new TileCacheRun(job, request, schemaName);
         var started = await StartAsync(run, context, cancellationToken).ConfigureAwait(false);
         var finalProgress = await RunAsync(run, started, cancellationToken).ConfigureAwait(false);
         await _progressStore.SetProgressAsync(job.OperationId, finalProgress, ProgressRetention, cancellationToken)
@@ -177,7 +176,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 _logger,
                 MaxTilesFor(run.Job),
                 scope.ServiceProvider.GetService<ITileCacheGenerationCheckpointStore>());
-            return await core.ExecuteAsync(started, run.Request, scope.ServiceProvider, cancellationToken, run.TenantScope)
+            return await core.ExecuteAsync(started, run.Request, scope.ServiceProvider, cancellationToken)
                 .ConfigureAwait(false);
         }
         finally
@@ -212,8 +211,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
     private sealed record TileCacheRun(
         ExecutionJobRecord Job,
         TileOperationStartRequest Request,
-        string? SchemaName,
-        string? TenantScope);
+        string? SchemaName);
 
     private static partial class Log
     {
