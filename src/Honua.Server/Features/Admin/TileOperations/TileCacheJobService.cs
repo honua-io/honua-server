@@ -71,8 +71,9 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         return jobRecord.OperationId;
     }
 
-    public Task<TileOperationProgress?> GetAsync(string jobId, CancellationToken cancellationToken = default)
-        => _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken);
+    public async Task<TileOperationProgress?> GetAsync(string jobId, CancellationToken cancellationToken = default)
+        => await new ExecutionJobProgressReader(_progressStore, _jobStore).ReadAsync(jobId, cancellationToken)
+            .ConfigureAwait(false) as TileOperationProgress;
 
     public async Task<IReadOnlyList<TileOperationProgress>> ListAsync(bool activeOnly, CancellationToken cancellationToken = default)
     {
@@ -85,7 +86,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         var result = new List<TileOperationProgress>(operationIds.Count);
         foreach (var operationId in operationIds)
         {
-            var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(operationId, cancellationToken).ConfigureAwait(false);
+            var progress = await GetAsync(operationId, cancellationToken).ConfigureAwait(false);
             if (progress == null
                 || (activeOnly && progress.Status is not (OperationStatus.Queued or OperationStatus.Processing)))
             {

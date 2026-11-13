@@ -102,6 +102,95 @@ public sealed class ExportJobTests(DatabaseFixtureAdapter database) : IClassFixt
         }
     }
 
+    [IntegrationTest]
+    public async Task Export_CancelledOnAnotherNodeDuringUpload_DoesNotPublishDownload()
+    {
+        await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(ExportJobTests));
+        using var nodes = new ExportNodes(new ComparingInMemoryProgressStore());
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+        await nodes.SubmitAsync(harness, job);
+        var otherNode = harness.CreateNodeJobStore();
+        nodes.Storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                while (true)
+                {
+                    var current = (await otherNode.GetAsync(job.JobId))!;
+                    if (await otherNode.TrySetAsync(current with { CancellationRequestedAt = DateTimeOffset.UtcNow }))
+                    {
+                        break;
+                    }
+                }
+
+                return ExportJobTestData.Uploaded("export-file", "text/csv");
+            });
+        var worker = harness.CreateWorker(nodes.CreateExecutor(), nodes.Terminal);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            var finished = await harness.WaitForJobAsync(job.JobId, IsEnded, TimeSpan.FromSeconds(60));
+            finished.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+
+        var progress = (await nodes.Progress.GetProgressAsync<ExportProgress>(job.JobId))!;
+        progress.Status.Should().Be(OperationStatus.Cancelled);
+        progress.DownloadUrl.Should().BeNull();
+        await nodes.Storage.Received().DeleteAsync("export-file", Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    public async Task Export_ConcurrentSubmissionsAcrossNodes_AdmitsOnlyCapacity()
+    {
+        await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(ExportJobTests));
+        var progress = new ComparingInMemoryProgressStore();
+        var submissions = Enumerable.Range(0, 20).Select(async _ =>
+        {
+            var service = new ExportJobService(progress, NullLogger<ExportJobService>.Instance,
+                harness.CreateNodeJobStore(), harness.Queue);
+            try
+            {
+                await service.StartAsync(ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N")));
+                return true;
+            }
+            catch (InvalidOperationException exception) when (exception.Message == ExportJobService.QueueFullMessage)
+            {
+                return false;
+            }
+        });
+        var accepted = await Task.WhenAll(submissions);
+        accepted.Count(value => value).Should().Be(ExportJobService.MaxOutstandingExports);
+        (await harness.JobStore.ListActiveAsync(ExecutionJobKind.Export)).Should().HaveCount(ExportJobService.MaxOutstandingExports);
+    }
+
+    [IntegrationTest]
+    public async Task Export_StatusReadAfterMissedTerminalCallback_ReflectsDurableCancellation()
+    {
+        await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(ExportJobTests));
+        var progress = new ComparingInMemoryProgressStore();
+        using var nodes = new ExportNodes(progress);
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+        await nodes.SubmitAsync(harness, job);
+        var record = (await harness.JobStore.GetAsync(job.JobId))!;
+        (await harness.JobStore.TrySetAsync(record with
+        {
+            Status = ExecutionJobStatus.Cancelled,
+            CompletedAt = DateTimeOffset.UtcNow
+        })).Should().BeTrue();
+
+        // A different node serves this request; the worker's projection callback never ran.
+        var reader = new ExecutionJobProgressReader(progress, harness.CreateNodeJobStore());
+        var response = (ExportProgress)(await reader.ReadAsync(job.JobId, CancellationToken.None))!;
+        response.Status.Should().Be(OperationStatus.Cancelled);
+        response.CompletedAt.Should().NotBeNull();
+        response.DownloadUrl.Should().BeNull();
+        (await progress.GetProgressAsync<ExportProgress>(job.JobId))!.Status.Should().Be(OperationStatus.Queued,
+            "serving the response must not overwrite progress belonging to a concurrent operator retry");
+    }
+
     private static bool IsEnded(ExecutionJobRecord record)
         => record.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 
@@ -115,7 +204,6 @@ public sealed class ExportJobTests(DatabaseFixtureAdapter database) : IClassFixt
         public ExportNodes(ComparingInMemoryProgressStore progress)
         {
             Progress = progress;
-            Terminal = new ExportJobTerminalCallback(progress, NullLogger<ExportJobTerminalCallback>.Instance);
             var store = Substitute.For<IStreamingFeatureStore>();
             store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
                 .Returns(call => Read(call.ArgAt<CancellationToken>(2)));
@@ -128,6 +216,8 @@ public sealed class ExportJobTests(DatabaseFixtureAdapter database) : IClassFixt
                 .AddSingleton(Storage)
                 .AddSingleton<ICrsRegistry>(new ExportJobTestData.NullCrsRegistry())
                 .BuildServiceProvider();
+            Terminal = new ExportJobTerminalCallback(progress, NullLogger<ExportJobTerminalCallback>.Instance,
+                _services.GetRequiredService<IServiceScopeFactory>());
         }
 
         public ComparingInMemoryProgressStore Progress { get; }

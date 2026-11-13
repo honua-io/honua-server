@@ -49,7 +49,7 @@ internal sealed class ExportJobExecutor(
         {
             { AlreadyCompleted: true } => JobExecutionResult.Succeeded(start.Progress!.Warnings),
             { Progress: null } => NotRetryable("Export progress is no longer active."),
-            _ => await ExportAsync(new ExportRun(request, start.Progress), cancellationToken).ConfigureAwait(false)
+            _ => await ExportAsync(new ExportRun(request, start.Progress, context), cancellationToken).ConfigureAwait(false)
         };
     }
 
@@ -144,6 +144,12 @@ internal sealed class ExportJobExecutor(
             .ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
+        if (run.UploadedFileId is not null
+            && !await run.Context.TryPublishArtifactAsync(run.UploadedFileId, cancellationToken).ConfigureAwait(false))
+        {
+            throw new OperationCanceledException("The export attempt can no longer publish its result.");
+        }
+
         var done = run.Processing with
         {
             Status = OperationStatus.Completed,
@@ -300,8 +306,10 @@ internal sealed class ExportJobExecutor(
 
     // One export attempt: the request, its Processing progress, its scratch directory, and the upload
     // it may have to retract.
-    private sealed class ExportRun(ExportJob request, ExportProgress processing)
+    private sealed class ExportRun(ExportJob request, ExportProgress processing, IJobExecutionContext context)
     {
+        public IJobExecutionContext Context { get; } = context;
+
         public ExportJob Request { get; } = request;
 
         public ExportProgress Processing { get; } = processing;

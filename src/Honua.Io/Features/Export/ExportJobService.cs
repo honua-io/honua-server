@@ -38,29 +38,18 @@ internal sealed class ExportJobService(
     public async Task<string> StartAsync(ExportJob job, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(job);
-        if (jobStore is null || jobQueue is null)
+        if (jobStore is not IBoundedExecutionJobStore boundedStore || jobQueue is null)
         {
             throw new InvalidOperationException(DurableQueueUnavailableMessage);
         }
 
-        await EnsureAdmittedAsync(jobStore, cancellationToken).ConfigureAwait(false);
-        await CreateJobAsync(jobStore, job, cancellationToken).ConfigureAwait(false);
+        await CreateJobAsync(boundedStore, job, cancellationToken).ConfigureAwait(false);
         await EnqueueAsync(jobQueue, job.JobId, cancellationToken).ConfigureAwait(false);
         return job.JobId;
     }
 
-    private static async Task EnsureAdmittedAsync(IExecutionJobStore store, CancellationToken cancellationToken)
-    {
-        var outstanding = await store.ListActiveAsync(ExecutionJobKind.Export, MaxOutstandingExports + 1, cancellationToken)
-            .ConfigureAwait(false);
-        if (outstanding.Count >= MaxOutstandingExports)
-        {
-            throw new InvalidOperationException(QueueFullMessage);
-        }
-    }
-
     // The queued progress is written first, so a job never exists without the progress its status URL reads.
-    private async Task CreateJobAsync(IExecutionJobStore store, ExportJob job, CancellationToken cancellationToken)
+    private async Task CreateJobAsync(IBoundedExecutionJobStore store, ExportJob job, CancellationToken cancellationToken)
     {
         var progress = ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures);
         await progressStore.SetProgressAsync(job.JobId, progress, Retention, cancellationToken).ConfigureAwait(false);
@@ -68,7 +57,7 @@ internal sealed class ExportJobService(
         bool created;
         try
         {
-            created = await store.TryCreateAsync(CreateRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
+            created = await store.TryCreateWithinCapacityAsync(CreateRecord(job), MaxOutstandingExports, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -79,7 +68,7 @@ internal sealed class ExportJobService(
         if (!created)
         {
             await progressStore.DeleteProgressAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
-            throw new InvalidOperationException($"Failed to create export execution job '{job.JobId}'.");
+            throw new InvalidOperationException(QueueFullMessage);
         }
     }
 

@@ -498,7 +498,9 @@ public sealed class ExportJobServiceTests
             progressStore,
             services.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<ExportJobExecutor>.Instance);
-        return await executor.ExecuteAsync(record, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+        var context = Substitute.For<IJobExecutionContext>();
+        context.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        return await executor.ExecuteAsync(record, context, CancellationToken.None);
     }
 }
 

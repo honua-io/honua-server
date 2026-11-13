@@ -13,7 +13,7 @@ namespace Honua.TestKit.Helpers;
 // cancel/retry paths (the endpoints resolve IExecutionJobStore optionally and take
 // the durable path when it is present). State is a plain dictionary; not thread-optimised, but the
 // per-test server is single-caller.
-public sealed class InMemoryExecutionJobStore : IExecutionJobStore
+public sealed class InMemoryExecutionJobStore : IExecutionJobStore, IBoundedExecutionJobStore
 {
     private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
     private readonly object _gate = new();
@@ -38,6 +38,16 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore
 
             _jobs[job.OperationId] = job;
             return Task.FromResult(true);
+        }
+    }
+
+    public Task<bool> TryCreateWithinCapacityAsync(ExecutionJobRecord job, int maximumOutstanding, CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            var count = _jobs.Values.Count(existing => existing.Spec.Kind == job.Spec.Kind
+                && existing.Status is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled));
+            return Task.FromResult(count < maximumOutstanding && _jobs.TryAdd(job.OperationId, job));
         }
     }
 

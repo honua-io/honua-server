@@ -40,16 +40,7 @@ internal sealed partial class TileCacheJobTerminalCallback(
                 return;
             }
 
-            var completedAt = job.CompletedAt ?? DateTimeOffset.UtcNow;
-            var terminal = job.Status == ExecutionJobStatus.Cancelled
-                ? (TileOperationProgress)progress.WithCancellation(completedAt, "Cancelled")
-                : progress with
-                {
-                    Status = OperationStatus.Failed,
-                    CompletedAt = completedAt,
-                    ErrorMessage = job.ErrorMessage ?? "Tile operation failed.",
-                    CurrentPhase = "Failed"
-                };
+            var terminal = ExecutionJobProgressReader.Project(progress, job);
             await progressStore.TrySetProgressAsync(
                     new OperationProgressWrite(job.OperationId, terminal, ProgressRetention),
                     progress.Status,

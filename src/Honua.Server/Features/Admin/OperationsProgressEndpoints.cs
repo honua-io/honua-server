@@ -70,7 +70,8 @@ internal static partial class OperationsProgressEndpoints
     private static async Task<IResult> HandleGetOperationStatus(
         string operationId,
         [FromServices] IUniversalProgressStore progressStore,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromServices] IExecutionJobStore? jobStore = null)
     {
         if (string.IsNullOrEmpty(operationId))
         {
@@ -80,7 +81,7 @@ internal static partial class OperationsProgressEndpoints
                 "Operation ID is required");
         }
 
-        var progress = await progressStore.GetProgressAsync(operationId, cancellationToken);
+        var progress = await new ExecutionJobProgressReader(progressStore, jobStore).ReadAsync(operationId, cancellationToken);
 
         if (progress == null)
         {
@@ -844,6 +845,7 @@ internal static partial class OperationsProgressEndpoints
     internal static async Task<IResult> HandleListActiveOperations(
         [FromServices] IUniversalProgressStore progressStore,
         string? type = null,
+        [FromServices] IExecutionJobStore? jobStore = null,
         CancellationToken cancellationToken = default)
     {
         OperationType? operationType = null;
@@ -863,9 +865,11 @@ internal static partial class OperationsProgressEndpoints
         var operationIds = await progressStore.GetActiveOperationIdsAsync(operationType, cancellationToken);
         var operations = new List<JsonElement>();
 
-        await foreach (var progress in ProgressStoreReader.ReadAvailableAsync(
+        await foreach (var storedProgress in ProgressStoreReader.ReadAvailableAsync(
             progressStore, operationIds, cancellationToken))
         {
+            var progress = await new ExecutionJobProgressReader(progressStore, jobStore)
+                .RepairAsync(storedProgress, cancellationToken).ConfigureAwait(false);
             if (progress.Status is OperationStatus.Queued or OperationStatus.Processing)
             {
                 operations.Add(SerializeOperationToElement(progress));
@@ -885,7 +889,8 @@ internal static partial class OperationsProgressEndpoints
     internal static async Task<IResult> HandleGetOperationsByType(
         string operationType,
         [FromServices] IUniversalProgressStore progressStore,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromServices] IExecutionJobStore? jobStore = null)
     {
         if (!Enum.TryParse<OperationType>(operationType, true, out var parsedType))
         {
@@ -898,9 +903,11 @@ internal static partial class OperationsProgressEndpoints
         var operationIds = await progressStore.GetActiveOperationIdsAsync(parsedType, cancellationToken);
         var operations = new List<JsonElement>(operationIds.Count);
 
-        await foreach (var progress in ProgressStoreReader.ReadAvailableAsync(
+        await foreach (var storedProgress in ProgressStoreReader.ReadAvailableAsync(
             progressStore, operationIds, cancellationToken))
         {
+            var progress = await new ExecutionJobProgressReader(progressStore, jobStore)
+                .RepairAsync(storedProgress, cancellationToken).ConfigureAwait(false);
             if (progress.Type == parsedType)
             {
                 operations.Add(SerializeOperationToElement(progress));

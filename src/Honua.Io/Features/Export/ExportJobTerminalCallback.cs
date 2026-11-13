@@ -13,7 +13,8 @@ namespace Honua.Io.Export;
 // expiry, timeout, retries exhausted after a lost node) is decided by the worker and lands here.
 internal sealed class ExportJobTerminalCallback(
     IUniversalProgressStore progressStore,
-    ILogger<ExportJobTerminalCallback> logger) : IJobTerminalCallback
+    ILogger<ExportJobTerminalCallback> logger,
+    IServiceScopeFactory? scopeFactory = null) : IJobTerminalCallback
 {
     public async ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
     {
@@ -25,28 +26,15 @@ internal sealed class ExportJobTerminalCallback(
 
         try
         {
+            await DeleteArtifactsAsync(job, cancellationToken).ConfigureAwait(false);
             var progress = await progressStore.GetProgressAsync<ExportProgress>(job.OperationId, cancellationToken)
                 .ConfigureAwait(false);
-            if (progress is null || progress.Status is not (OperationStatus.Queued or OperationStatus.Processing))
+            if (progress is null)
             {
                 return;
             }
 
-            var completedAt = job.CompletedAt ?? DateTimeOffset.UtcNow;
-            var terminal = job.Status == ExecutionJobStatus.Cancelled
-                ? progress with
-                {
-                    Status = OperationStatus.Cancelled,
-                    CompletedAt = completedAt,
-                    CurrentPhase = "Cancelled by user"
-                }
-                : progress with
-                {
-                    Status = OperationStatus.Failed,
-                    CompletedAt = completedAt,
-                    ErrorMessage = job.ErrorMessage ?? ExportJobExecutor.ExportFailureMessage,
-                    CurrentPhase = "Export failed"
-                };
+            var terminal = ExecutionJobProgressReader.Project(progress, job);
             await progressStore.TrySetProgressAsync(
                     new OperationProgressWrite(job.OperationId, terminal, ExportJobService.Retention),
                     progress.Status,
@@ -57,6 +45,28 @@ internal sealed class ExportJobTerminalCallback(
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ExportJobServiceLog.TerminalProgressFailed(logger, job.OperationId, ex);
+        }
+    }
+
+    private async Task DeleteArtifactsAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        if (scopeFactory is null || job.ArtifactReferences.Count == 0)
+        {
+            return;
+        }
+
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var storage = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();
+        foreach (var fileId in job.ArtifactReferences)
+        {
+            try
+            {
+                await storage.DeleteAsync(fileId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                ExportJobServiceLog.TerminalProgressFailed(logger, job.OperationId, ex);
+            }
         }
     }
 }
