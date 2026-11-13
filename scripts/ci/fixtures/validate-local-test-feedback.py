@@ -119,6 +119,7 @@ class FeedbackTests(unittest.TestCase):
         self.assertTrue(result['emptySelection'])
         feedback.execute(Path('.'), result, run=lambda *a, **k: self.fail('unexpected execution'))
 
+    @patch.dict(os.environ, {'HONUA_STAGE0_MAX_CPU_COUNT': '5'})
     def test_single_admitted_build_then_no_build_tests_and_canonical_shard(self):
         result = self.plan([self.unit], ['Unit', 'Component'])
         calls = []

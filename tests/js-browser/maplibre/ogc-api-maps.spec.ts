@@ -2,6 +2,7 @@
 
 import { test, expect } from '@playwright/test';
 import { createMap } from './support/map-harness.js';
+import { getStyleUrl } from './support/style-discovery.js';
 import { BASE_URL, POINT_CENTER, POINT_LAYER_ID } from './support/constants.js';
 
 const MAP_BBOX = '-122.44,37.76,-122.40,37.79';
@@ -36,7 +37,7 @@ test.describe('OGC API Maps Image Source', () => {
     expect(response.status()).toBe(200);
 
     const map = await createMap(page, {
-      styleUrl: `${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`,
+      styleUrl: await getStyleUrl(request, POINT_LAYER_ID),
       center: POINT_CENTER,
       zoom: 12,
     });
