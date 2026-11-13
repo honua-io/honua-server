@@ -82,7 +82,7 @@ public sealed partial class Wfs20EndpointsTests
     [InterfaceOperation(TestProtocols.Wfs20, "GetPropertyValue")]
     public async Task Wfs_PrefixedField_AdvertisedNcNameRoundTripsAndRejectsUnknownNames()
     {
-        const string typeName = "prefixed_fields_layer";
+        const string typeName = "pub-prefixed-fields-wfs";
         const string ogcCollectionId = "res-prefixed-fields-layer";
         const string canonicalName = "eo:cloud_cover";
         const string unknownName = "missing_x003A_field";
@@ -210,7 +210,7 @@ public sealed partial class Wfs20EndpointsTests
         foreach (var crs84Identifier in acceptedCrs84Identifiers)
         {
             var requestUri =
-                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&COUNT=1&SRSNAME={Uri.EscapeDataString(crs84Identifier)}";
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&COUNT=1&SRSNAME={Uri.EscapeDataString(crs84Identifier)}";
             var response = await _fixture.Client.GetAsync(requestUri);
             var content = await response.Content.ReadAsStringAsync();
 
@@ -226,7 +226,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_RejectsSrsNameThatOnlyContainsCrs84()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&COUNT=1&SRSNAME=CRS84%22%20injected%3D%22true");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&COUNT=1&SRSNAME=CRS84%22%20injected%3D%22true");
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -488,7 +488,7 @@ public sealed partial class Wfs20EndpointsTests
             await fixture.InitializeAsync();
 
             var response = await fixture.Client.GetAsync(
-                "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES=field_types");
+                "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES=pub-field-types-wfs");
             var content = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.OK, content);
 
@@ -530,7 +530,7 @@ public sealed partial class Wfs20EndpointsTests
 
     // WFS local name BuildTypeLocalName derives from the resource title; "Geometry Only Layer"
     // collapses to this slug, which the geometry-from-type regression tests request by TYPENAMES.
-    private const string GeometryFromTypeTypeName = "geometry_only_layer";
+    private const string GeometryFromTypeTypeName = "pub-geometry-from-type-wfs";
 
     /// <summary>
     /// Builds a graph with a single point feature type that declares a geometry type but
@@ -660,9 +660,9 @@ public sealed partial class Wfs20EndpointsTests
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_NullAttribute_EmitsXsiNilNotEmptyString()
     {
-        // Seed feature test_layer.5 has an explicit null event_date (tests/seed/server.yaml).
+        // Seed feature pub-layer-0.5 has an explicit null event_date (tests/seed/server.yaml).
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.5");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=pub-layer-0.5");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -747,7 +747,7 @@ public sealed partial class Wfs20EndpointsTests
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES=test_layer");
+            "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES=pub-layer-0");
         request.Headers.TryAddWithoutValidation("Accept", "application/json;q=1, application/xml;q=0");
 
         var response = await _fixture.Client.SendAsync(request);
@@ -841,7 +841,7 @@ public sealed partial class Wfs20EndpointsTests
     {
         const string outputFormat = "application/geo%2Bjson";
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&OUTPUTFORMAT={outputFormat}&COUNT=1");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&OUTPUTFORMAT={outputFormat}&COUNT=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -854,7 +854,7 @@ public sealed partial class Wfs20EndpointsTests
         document.RootElement.GetProperty("numberReturned").GetInt32().Should().BeLessOrEqualTo(1);
 
         var feature = features.EnumerateArray().Single();
-        feature.GetProperty("id").GetString().Should().StartWith("test_layer.");
+        feature.GetProperty("id").GetString().Should().StartWith("pub-layer-0.");
         feature.GetProperty("properties").TryGetProperty("id", out _).Should().BeFalse();
         feature.GetProperty("properties").TryGetProperty("objectid", out _).Should().BeFalse();
     }
@@ -867,7 +867,7 @@ public sealed partial class Wfs20EndpointsTests
     {
         const string outputFormat = "application/geo%2Bjson";
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&OUTPUTFORMAT={outputFormat}&MAXFEATURES=1");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=pub-layer-0&OUTPUTFORMAT={outputFormat}&MAXFEATURES=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -889,7 +889,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_PropertyNameWildcard_ReturnsAllProperties(string version)
     {
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION={version}&TYPENAME=test_layer&PROPERTYNAME=%2A&MAXFEATURES=1");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION={version}&TYPENAME=pub-layer-0&PROPERTYNAME=%2A&MAXFEATURES=1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -904,7 +904,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_ResultTypeHits_ReturnsCountWithoutFeatures()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&RESULTTYPE=hits");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=pub-layer-0&RESULTTYPE=hits");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -921,13 +921,13 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_DefaultGmlOutput_ReturnsFeatureCollection()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&COUNT=1");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=pub-layer-0&COUNT=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
         content.Should().Contain("FeatureCollection");
-        content.Should().Contain("test_layer");
+        content.Should().Contain("pub-layer-0");
     }
 
     [IntegrationTest]
@@ -937,7 +937,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_DateTimeAttribute_UsesXmlSchemaOffsetLexicalForm()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.1");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=pub-layer-0.1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -952,7 +952,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_Gml4326Output_UsesLatitudeLongitudeCoordinates()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&COUNT=1&SRSNAME=urn:ogc:def:crs:EPSG::4326");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=pub-layer-0&COUNT=1&SRSNAME=urn:ogc:def:crs:EPSG::4326");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -968,7 +968,7 @@ public sealed partial class Wfs20EndpointsTests
     {
         const string outputFormat = "application/geo%2Bjson";
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&BBOX=37.7,-122.5,37.8,-122.3&OUTPUTFORMAT={outputFormat}&COUNT=1");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&BBOX=37.7,-122.5,37.8,-122.3&OUTPUTFORMAT={outputFormat}&COUNT=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -987,7 +987,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_InvalidCount_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&COUNT=abc");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=pub-layer-0&COUNT=abc");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1002,7 +1002,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_InvalidStartIndex_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&STARTINDEX=-1");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=pub-layer-0&STARTINDEX=-1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1018,7 +1018,7 @@ public sealed partial class Wfs20EndpointsTests
     {
         const string notFilter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:Not><fes:ValueReference>category</fes:ValueReference></fes:Not></fes:Filter>";
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&FILTER={Uri.EscapeDataString(notFilter)}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&FILTER={Uri.EscapeDataString(notFilter)}");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1034,7 +1034,7 @@ public sealed partial class Wfs20EndpointsTests
     {
         const string notFilter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:Not><fes:ValueReference>category</fes:ValueReference></fes:Not></fes:Filter>";
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer&VALUEREFERENCE=name&FILTER={Uri.EscapeDataString(notFilter)}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=pub-layer-0&VALUEREFERENCE=name&FILTER={Uri.EscapeDataString(notFilter)}");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1071,7 +1071,7 @@ public sealed partial class Wfs20EndpointsTests
         {
             var filterParameter = filter is null ? string.Empty : $"&FILTER={Uri.EscapeDataString(filter)}";
             var response = await _fixture.Client.GetAsync(
-                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESULTTYPE=hits{filterParameter}");
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESULTTYPE=hits{filterParameter}");
             var content = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.OK, content);
             var numberMatched = XDocument.Parse(content).Root!.Attribute("numberMatched")!.Value;
@@ -1098,10 +1098,10 @@ public sealed partial class Wfs20EndpointsTests
             """;
         var requests = new[]
         {
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&FILTER={Uri.EscapeDataString(fesFilter)}",
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&FILTER={Uri.EscapeDataString(ogcFilter)}",
-            $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer&VALUEREFERENCE=name&FILTER={Uri.EscapeDataString(fesFilter)}",
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&FILTER={Uri.EscapeDataString(ogcFilter)}",
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&FILTER={Uri.EscapeDataString(fesFilter)}",
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&FILTER={Uri.EscapeDataString(ogcFilter)}",
+            $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=pub-layer-0&VALUEREFERENCE=name&FILTER={Uri.EscapeDataString(fesFilter)}",
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=pub-layer-0&FILTER={Uri.EscapeDataString(ogcFilter)}",
         };
 
         foreach (var requestUri in requests)
@@ -1128,7 +1128,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_InvalidResultType_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&RESULTTYPE=summary");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=pub-layer-0&RESULTTYPE=summary");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1162,7 +1162,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_MultiTypeUnqualifiedResourceId_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer,related_test_layer_1&RESOURCEID=101");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0,pub-layer-1&RESOURCEID=101");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1179,7 +1179,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_QualifiedResourceIdWithoutTypeNames_ReturnsFeature(string identifierParameter)
     {
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&{identifierParameter}=test_layer.1");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&{identifierParameter}=pub-layer-0.1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1188,7 +1188,7 @@ public sealed partial class Wfs20EndpointsTests
         XNamespace gml = "http://www.opengis.net/gml/3.2";
         var member = document.Root!.Elements(wfs + "member").Should().ContainSingle().Subject;
         member.Elements().Should().ContainSingle().Subject.Attribute(gml + "id")!
-            .Value.Should().Be("test_layer.1");
+            .Value.Should().Be("pub-layer-0.1");
     }
 
     [IntegrationTest]
@@ -1209,7 +1209,7 @@ public sealed partial class Wfs20EndpointsTests
         using var client = fixture.CreateClient();
         var response = await client.GetAsync(
             "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0" +
-            "&TYPENAMES=test_layer,related_test_layer_1" +
+            "&TYPENAMES=pub-layer-0,pub-layer-1" +
             "&PROPERTYNAME=name%3Bname&FILTER=name%3D%27missing%27%3Bname%3D%27missing%27");
         var content = await response.Content.ReadAsStringAsync();
 
@@ -1225,7 +1225,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_MixedValidAndMalformedResourceIds_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.1,test_layer.bad");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=pub-layer-0.1,pub-layer-0.bad");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1241,7 +1241,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_UnknownUnqualifiedResourceId_ReturnsEmptyFeatureCollection()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test-not-found");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=test-not-found");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1257,7 +1257,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetPropertyValue_MissingValueReference_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer");
+            "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=pub-layer-0");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1363,9 +1363,9 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:xsd="http://www.w3.org/2001/XMLSchema">
               <wfs:StoredQueryDefinition id="{{storedQueryId}}">
                 <wfs:Parameter name="name" type="xsd:string" />
-                <wfs:QueryExpressionText returnFeatureTypes="honua:test_layer"
+                <wfs:QueryExpressionText returnFeatureTypes="honua:pub-layer-0"
                     language="urn:ogc:def:queryLanguage:OGC-WFS::WFSQueryExpression">
-                  <wfs:Query typeNames="test_layer">
+                  <wfs:Query typeNames="pub-layer-0">
                     <fes:Filter><fes:PropertyIsEqualTo>
                       <fes:ValueReference>name</fes:ValueReference><fes:Literal>${name}</fes:Literal>
                     </fes:PropertyIsEqualTo></fes:Filter>
@@ -1489,7 +1489,7 @@ public sealed partial class Wfs20EndpointsTests
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("ListStoredQueriesResponse");
         content.Should().Contain($"id=\"{GetFeatureByIdStoredQueryId}\"");
-        content.Should().Contain("<wfs:ReturnFeatureType>honua:test_layer</wfs:ReturnFeatureType>");
+        content.Should().Contain("<wfs:ReturnFeatureType>honua:pub-layer-0</wfs:ReturnFeatureType>");
     }
 
     [IntegrationTest]
@@ -1616,14 +1616,14 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Insert handle="insert-feature">
-                <honua:test_layer>
+                <honua:pub-layer-0>
                   <honua:name>WFS Transaction Insert</honua:name>
                   <honua:shape>
                     <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
                       <gml:pos>37.123 -122.456</gml:pos>
                     </gml:Point>
                   </honua:shape>
-                </honua:test_layer>
+                </honua:pub-layer-0>
               </wfs:Insert>
             </wfs:Transaction>
             """;
@@ -1638,12 +1638,12 @@ public sealed partial class Wfs20EndpointsTests
         content.Should().Contain("<wfs:totalInserted>1</wfs:totalInserted>");
         content.Should().Contain("handle=\"insert-feature\"");
 
-        var resourceIdMatch = Regex.Match(content, "rid=\"(?<rid>test_layer\\.\\d+)\"", RegexOptions.CultureInvariant);
+        var resourceIdMatch = Regex.Match(content, "rid=\"(?<rid>pub-layer-0\\.\\d+)\"", RegexOptions.CultureInvariant);
         resourceIdMatch.Success.Should().BeTrue(content);
         var resourceId = resourceIdMatch.Groups["rid"].Value;
 
         var queryResponse = await fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID={resourceId}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={resourceId}");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
 
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
@@ -1666,14 +1666,14 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Insert handle="insert-feature">
-                <honua:test_layer>
+                <honua:pub-layer-0>
                   <honua:name>Bad SRS Insert</honua:name>
                   <honua:shape>
                     <gml:Point srsName="not-a-crs">
                       <gml:pos>37.123 -122.456</gml:pos>
                     </gml:Point>
                   </honua:shape>
-                </honua:test_layer>
+                </honua:pub-layer-0>
               </wfs:Insert>
             </wfs:Transaction>
             """;
@@ -1706,14 +1706,14 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Insert handle="anonymous-write">
-                <honua:test_layer>
+                <honua:pub-layer-0>
                   <honua:name>WFS Anonymous Write Insert</honua:name>
                   <honua:shape>
                     <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
                       <gml:pos>37.223 -122.556</gml:pos>
                     </gml:Point>
                   </honua:shape>
-                </honua:test_layer>
+                </honua:pub-layer-0>
               </wfs:Insert>
             </wfs:Transaction>
             """;
@@ -1745,27 +1745,27 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Insert>
-                <honua:test_layer>
+                <honua:pub-layer-0>
                   <honua:name>WFS Transaction Mixed Insert</honua:name>
                   <honua:shape>
                     <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
                       <gml:pos>37.124 -122.457</gml:pos>
                     </gml:Point>
                   </honua:shape>
-                </honua:test_layer>
+                </honua:pub-layer-0>
               </wfs:Insert>
-              <wfs:Update typeName="test_layer">
+              <wfs:Update typeName="pub-layer-0">
                 <wfs:Property>
                   <wfs:ValueReference>name</wfs:ValueReference>
                   <wfs:Value>WFS Transaction Updated</wfs:Value>
                 </wfs:Property>
                 <fes:Filter>
-                  <fes:ResourceId rid="test_layer.{{updateId}}" />
+                  <fes:ResourceId rid="pub-layer-0.{{updateId}}" />
                 </fes:Filter>
               </wfs:Update>
-              <wfs:Delete typeName="test_layer">
+              <wfs:Delete typeName="pub-layer-0">
                 <fes:Filter>
-                  <fes:ResourceId rid="test_layer.{{deleteId}}" />
+                  <fes:ResourceId rid="pub-layer-0.{{deleteId}}" />
                 </fes:Filter>
               </wfs:Delete>
             </wfs:Transaction>
@@ -1794,7 +1794,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_WithNamedFeature_UsesApplicationNameWithoutDuplicateGmlName()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&COUNT=1");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&COUNT=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1809,13 +1809,13 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_GetFeatureByIdStoredQuery_Kvp_ReturnsSingleFeatureElement()
     {
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.1");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=pub-layer-0.1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
-        content.Should().Contain("<honua:test_layer");
-        content.Should().Contain("gml:id=\"test_layer.1\"");
+        content.Should().Contain("<honua:pub-layer-0");
+        content.Should().Contain("gml:id=\"pub-layer-0.1\"");
         content.Should().Contain("<gml:name>Test Feature</gml:name>");
         content.Should().NotContain("FeatureCollection");
     }
@@ -1830,7 +1830,7 @@ public sealed partial class Wfs20EndpointsTests
             <wfs:GetFeature service="WFS" version="2.0.0" count="1"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0">
               <wfs:StoredQuery id="{{GetFeatureByIdStoredQueryId}}">
-                <wfs:Parameter name="id">test_layer.1</wfs:Parameter>
+                <wfs:Parameter name="id">pub-layer-0.1</wfs:Parameter>
               </wfs:StoredQuery>
             </wfs:GetFeature>
             """;
@@ -1841,8 +1841,8 @@ public sealed partial class Wfs20EndpointsTests
         var responseBody = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
-        responseBody.Should().Contain("<honua:test_layer");
-        responseBody.Should().Contain("gml:id=\"test_layer.1\"");
+        responseBody.Should().Contain("<honua:pub-layer-0");
+        responseBody.Should().Contain("gml:id=\"pub-layer-0.1\"");
         responseBody.Should().NotContain("FeatureCollection");
     }
 
@@ -1853,7 +1853,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_GetFeatureByIdStoredQuery_UnknownId_Returns404ExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.999999");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=pub-layer-0.999999");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
@@ -1869,7 +1869,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetFeature_UnknownStoredQuery_ReturnsInvalidParameterValueException()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::UnknownQuery&ID=test_layer.1");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::UnknownQuery&ID=pub-layer-0.1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1892,17 +1892,17 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Insert handle="insert-primary">
-                <honua:test_layer>
+                <honua:pub-layer-0>
                   <honua:name>WFS Multi Layer Primary Insert</honua:name>
                   <honua:shape>
                     <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
                       <gml:pos>37.101 -122.401</gml:pos>
                     </gml:Point>
                   </honua:shape>
-                </honua:test_layer>
+                </honua:pub-layer-0>
               </wfs:Insert>
               <wfs:Insert handle="insert-related">
-                <honua:related_test_layer_1>
+                <honua:pub-layer-1>
                   <honua:name>WFS Multi Layer Related Insert</honua:name>
                   <honua:related_id>1</honua:related_id>
                   <honua:shape>
@@ -1910,7 +1910,7 @@ public sealed partial class Wfs20EndpointsTests
                       <gml:pos>37.202 -122.502</gml:pos>
                     </gml:Point>
                   </honua:shape>
-                </honua:related_test_layer_1>
+                </honua:pub-layer-1>
               </wfs:Insert>
             </wfs:Transaction>
             """;
@@ -1926,22 +1926,22 @@ public sealed partial class Wfs20EndpointsTests
         content.Should().Contain("handle=\"insert-primary\"");
         content.Should().Contain("handle=\"insert-related\"");
 
-        var primaryRidMatch = Regex.Match(content, "rid=\"(?<rid>test_layer\\.\\d+)\"", RegexOptions.CultureInvariant);
+        var primaryRidMatch = Regex.Match(content, "rid=\"(?<rid>pub-layer-0\\.\\d+)\"", RegexOptions.CultureInvariant);
         primaryRidMatch.Success.Should().BeTrue(content);
-        var relatedRidMatch = Regex.Match(content, "rid=\"(?<rid>related_test_layer_1\\.\\d+)\"", RegexOptions.CultureInvariant);
+        var relatedRidMatch = Regex.Match(content, "rid=\"(?<rid>pub-layer-1\\.\\d+)\"", RegexOptions.CultureInvariant);
         relatedRidMatch.Success.Should().BeTrue(content);
 
         var primaryRid = primaryRidMatch.Groups["rid"].Value;
         var relatedRid = relatedRidMatch.Groups["rid"].Value;
 
         var primaryQueryResponse = await fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID={primaryRid}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={primaryRid}");
         var primaryQueryContent = await primaryQueryResponse.Content.ReadAsStringAsync();
         primaryQueryResponse.StatusCode.Should().Be(HttpStatusCode.OK, primaryQueryContent);
         primaryQueryContent.Should().Contain("WFS Multi Layer Primary Insert");
 
         var relatedQueryResponse = await fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=related_test_layer_1&RESOURCEID={relatedRid}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-1&RESOURCEID={relatedRid}");
         var relatedQueryContent = await relatedQueryResponse.Content.ReadAsStringAsync();
         relatedQueryResponse.StatusCode.Should().Be(HttpStatusCode.OK, relatedQueryContent);
         relatedQueryContent.Should().Contain("WFS Multi Layer Related Insert");
@@ -1960,13 +1960,13 @@ public sealed partial class Wfs20EndpointsTests
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Update typeName="test_layer">
+              <wfs:Update typeName="pub-layer-0">
                 <wfs:Property>
                   <wfs:ValueReference>gml:name[1]</wfs:ValueReference>
                   <wfs:Value>WFS XPath Name Updated</wfs:Value>
                 </wfs:Property>
                 <fes:Filter>
-                  <fes:ResourceId rid="test_layer.{{featureId}}" />
+                  <fes:ResourceId rid="pub-layer-0.{{featureId}}" />
                 </fes:Filter>
               </wfs:Update>
             </wfs:Transaction>
@@ -1980,11 +1980,11 @@ public sealed partial class Wfs20EndpointsTests
         content.Should().Contain("<wfs:totalUpdated>1</wfs:totalUpdated>");
 
         var queryResponse = await fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.{featureId}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=pub-layer-0.{featureId}");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
 
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
-        queryContent.Should().Contain("<honua:test_layer");
+        queryContent.Should().Contain("<honua:pub-layer-0");
         queryContent.Should().Contain("<gml:name>WFS XPath Name Updated</gml:name>");
         queryContent.Should().NotContain("FeatureCollection");
     }
@@ -2014,14 +2014,14 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Replace>
-                <honua:test_layer gml:id="test_layer.{{featureId}}">
+                <honua:pub-layer-0 gml:id="pub-layer-0.{{featureId}}">
                   <gml:description>WFS Replace Description</gml:description>
                   <gml:identifier>{{replacementIdentifier}}</gml:identifier>
                   <gml:name>WFS Replace Name</gml:name>
                   <honua:name>WFS Replace Name</honua:name>
-                </honua:test_layer>
+                </honua:pub-layer-0>
                 <fes:Filter>
-                  <fes:ResourceId rid="test_layer.{{featureId}}" />
+                  <fes:ResourceId rid="pub-layer-0.{{featureId}}" />
                 </fes:Filter>
               </wfs:Replace>
             </wfs:Transaction>
@@ -2034,7 +2034,7 @@ public sealed partial class Wfs20EndpointsTests
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<wfs:totalReplaced>1</wfs:totalReplaced>");
         content.Should().Contain("<wfs:ReplaceResults>");
-        content.Should().Contain($"rid=\"test_layer.{featureId}\"");
+        content.Should().Contain($"rid=\"pub-layer-0.{featureId}\"");
 
         await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!);
         await using var command = connection.CreateCommand();
@@ -2044,11 +2044,11 @@ public sealed partial class Wfs20EndpointsTests
         (await command.ExecuteScalarAsync()).Should().Be(true);
 
         var queryResponse = await fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.{featureId}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=pub-layer-0.{featureId}");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
 
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
-        queryContent.Should().Contain("<honua:test_layer");
+        queryContent.Should().Contain("<honua:pub-layer-0");
         queryContent.Should().Contain("WFS Replace Name");
         queryContent.Should().Contain("WFS Replace Description");
         // gml:identifier is gml:CodeWithAuthorityType; codeSpace is mandatory. When the transaction
@@ -2081,14 +2081,14 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Replace>
-                <honua:test_layer gml:id="test_layer.{{featureId}}">
+                <honua:pub-layer-0 gml:id="pub-layer-0.{{featureId}}">
                   <gml:description>Lorem ipsum dolor sit amet.</gml:description>
                   <gml:identifier codeSpace="{{codeSpace}}">{{replacementIdentifier}}</gml:identifier>
                   <gml:name>WFS Replace CodeSpace Name</gml:name>
                   <honua:name>WFS Replace CodeSpace Name</honua:name>
-                </honua:test_layer>
+                </honua:pub-layer-0>
                 <fes:Filter>
-                  <fes:ResourceId rid="test_layer.{{featureId}}" />
+                  <fes:ResourceId rid="pub-layer-0.{{featureId}}" />
                 </fes:Filter>
               </wfs:Replace>
             </wfs:Transaction>
@@ -2102,7 +2102,7 @@ public sealed partial class Wfs20EndpointsTests
         content.Should().Contain("<wfs:totalReplaced>1</wfs:totalReplaced>");
 
         var queryResponse = await fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.{featureId}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=pub-layer-0.{featureId}");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
 
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
@@ -2125,9 +2125,9 @@ public sealed partial class Wfs20EndpointsTests
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Delete typeName="test_layer">
+              <wfs:Delete typeName="pub-layer-0">
                 <fes:Filter>
-                  <fes:ResourceId rid="test_layer.{{featureId}}" />
+                  <fes:ResourceId rid="pub-layer-0.{{featureId}}" />
                 </fes:Filter>
               </wfs:Delete>
             </wfs:Transaction>
@@ -2141,7 +2141,7 @@ public sealed partial class Wfs20EndpointsTests
         content.Should().Contain("<wfs:totalDeleted>1</wfs:totalDeleted>");
 
         var queryResponse = await fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.{featureId}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=pub-layer-0.{featureId}");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
 
         queryResponse.StatusCode.Should().Be(HttpStatusCode.NotFound, queryContent);
@@ -2165,7 +2165,7 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0"
                 xmlns:kml="http://www.opengis.net/kml/2.2">
-              <wfs:Update typeName="test_layer">
+              <wfs:Update typeName="pub-layer-0">
                 <wfs:Property>
                   <wfs:ValueReference>gml:boundedBy</wfs:ValueReference>
                   <wfs:Value>
@@ -2175,7 +2175,7 @@ public sealed partial class Wfs20EndpointsTests
                   </wfs:Value>
                 </wfs:Property>
                 <fes:Filter>
-                  <fes:ResourceId rid="test_layer.{{updateId}}" />
+                  <fes:ResourceId rid="pub-layer-0.{{updateId}}" />
                 </fes:Filter>
               </wfs:Update>
             </wfs:Transaction>
@@ -2277,10 +2277,10 @@ public sealed partial class Wfs20EndpointsTests
         const string requestBody = """
             <wfs:GetFeature service="WFS" version="2.0.0" outputFormat="application/geo+json" count="100"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0">
-              <wfs:Query typeNames="test_layer">
+              <wfs:Query typeNames="pub-layer-0">
                 <wfs:PropertyName>name</wfs:PropertyName>
               </wfs:Query>
-              <wfs:Query typeNames="test_layer">
+              <wfs:Query typeNames="pub-layer-0">
                 <wfs:PropertyName>category</wfs:PropertyName>
               </wfs:Query>
             </wfs:GetFeature>
@@ -2341,7 +2341,7 @@ public sealed partial class Wfs20EndpointsTests
             <wfs:GetFeature service="WFS" version="2.0.0" outputFormat="application/geo+json" count="1"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Query typeNames="test_layer">
+              <wfs:Query typeNames="pub-layer-0">
                 <fes:SortBy>
                   <fes:SortProperty>
                     <fes:ValueReference>objectid</fes:ValueReference>
@@ -2373,7 +2373,7 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0"
                 xmlns:gml="http://www.opengis.net/gml/3.2">
-              <wfs:Query typeNames="test_layer">
+              <wfs:Query typeNames="pub-layer-0">
                 <fes:Filter>
                   <fes:After>
                     <fes:ValueReference>timestamp</fes:ValueReference>
@@ -2413,7 +2413,7 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0"
                 xmlns:gml="http://www.opengis.net/gml/3.2">
-              <wfs:Query typeNames="test_layer">
+              <wfs:Query typeNames="pub-layer-0">
                 <fes:Filter>
                   <fes:Before>
                     <fes:ValueReference>timestamp</fes:ValueReference>
@@ -2450,7 +2450,7 @@ public sealed partial class Wfs20EndpointsTests
     {
         const string outputFormat = "application/geo%2Bjson";
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer&VALUEREFERENCE=name&OUTPUTFORMAT={outputFormat}&COUNT=1");
+            $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=pub-layer-0&VALUEREFERENCE=name&OUTPUTFORMAT={outputFormat}&COUNT=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -2464,7 +2464,7 @@ public sealed partial class Wfs20EndpointsTests
         if (features.GetArrayLength() > 0)
         {
             var feature = features[0];
-            feature.GetProperty("id").GetString().Should().StartWith("test_layer.");
+            feature.GetProperty("id").GetString().Should().StartWith("pub-layer-0.");
             var properties = feature.GetProperty("properties");
             properties.GetProperty("name").GetString().Should().NotBeNullOrWhiteSpace();
             properties.TryGetProperty("id", out _).Should().BeFalse();
@@ -2479,7 +2479,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetPropertyValue_GeometryWithCrs84_RelabelsGeometrySrsName()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer" +
+            "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=pub-layer-0" +
             "&VALUEREFERENCE=geometry&SRSNAME=urn:ogc:def:crs:OGC:1.3:CRS84&COUNT=1");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -2495,7 +2495,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_GetPropertyValue_WithLocalResolve_ReturnsValueCollection()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer&VALUEREFERENCE=name&RESOLVE=local");
+            "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=pub-layer-0&VALUEREFERENCE=name&RESOLVE=local");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -2511,7 +2511,7 @@ public sealed partial class Wfs20EndpointsTests
         const string requestBody = """
             <wfs:GetPropertyValue service="WFS" version="2.0.0" valueReference="name" resolveDepth="1"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0">
-              <wfs:Query typeNames="test_layer" />
+              <wfs:Query typeNames="pub-layer-0" />
             </wfs:GetPropertyValue>
             """;
 
@@ -2533,7 +2533,7 @@ public sealed partial class Wfs20EndpointsTests
         const string requestBody = """
             <wfs:GetPropertyValue service="WFS" version="2.0.0" valueReference="name"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0">
-              <wfs:Query typeNames="test_layer" />
+              <wfs:Query typeNames="pub-layer-0" />
             </wfs:GetPropertyValue>
             """;
 
@@ -2615,9 +2615,9 @@ public sealed partial class Wfs20EndpointsTests
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Delete typeName="test_layer">
+              <wfs:Delete typeName="pub-layer-0">
                 <fes:Filter>
-                  <fes:ResourceId rid="test_layer.999999999" />
+                  <fes:ResourceId rid="pub-layer-0.999999999" />
                 </fes:Filter>
               </wfs:Delete>
             </wfs:Transaction>
@@ -2647,13 +2647,13 @@ public sealed partial class Wfs20EndpointsTests
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Update typeName="test_layer">
+              <wfs:Update typeName="pub-layer-0">
                 <wfs:Property>
                   <wfs:ValueReference>name</wfs:ValueReference>
                   <wfs:Value>should-not-be-written</wfs:Value>
                 </wfs:Property>
                 <fes:Filter>
-                  <fes:ResourceId rid="test_layer.999999999" />
+                  <fes:ResourceId rid="pub-layer-0.999999999" />
                 </fes:Filter>
               </wfs:Update>
             </wfs:Transaction>
@@ -2686,17 +2686,17 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Insert handle="insert-primary">
-                <honua:test_layer>
+                <honua:pub-layer-0>
                   <honua:name>BH009 Primary Layer Feature</honua:name>
                   <honua:shape>
                     <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
                       <gml:pos>37.150 -122.450</gml:pos>
                     </gml:Point>
                   </honua:shape>
-                </honua:test_layer>
+                </honua:pub-layer-0>
               </wfs:Insert>
               <wfs:Insert handle="insert-related">
-                <honua:related_test_layer_1>
+                <honua:pub-layer-1>
                   <honua:name>BH009 Related Layer Feature</honua:name>
                   <honua:related_id>1</honua:related_id>
                   <honua:shape>
@@ -2704,7 +2704,7 @@ public sealed partial class Wfs20EndpointsTests
                       <gml:pos>37.250 -122.550</gml:pos>
                     </gml:Point>
                   </honua:shape>
-                </honua:related_test_layer_1>
+                </honua:pub-layer-1>
               </wfs:Insert>
             </wfs:Transaction>
             """;
@@ -2721,11 +2721,11 @@ public sealed partial class Wfs20EndpointsTests
 
         var primaryRidMatch = Regex.Match(
             content,
-            "rid=\"(?<rid>test_layer\\.\\d+)\"",
+            "rid=\"(?<rid>pub-layer-0\\.\\d+)\"",
             RegexOptions.CultureInvariant);
         var relatedRidMatch = Regex.Match(
             content,
-            "rid=\"(?<rid>related_test_layer_1\\.\\d+)\"",
+            "rid=\"(?<rid>pub-layer-1\\.\\d+)\"",
             RegexOptions.CultureInvariant);
         primaryRidMatch.Success.Should().BeTrue(content);
         relatedRidMatch.Success.Should().BeTrue(content);
@@ -2734,9 +2734,9 @@ public sealed partial class Wfs20EndpointsTests
         var relatedRid = relatedRidMatch.Groups["rid"].Value;
 
         var primary = await fixture.Client.GetStringAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID={primaryRid}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={primaryRid}");
         var related = await fixture.Client.GetStringAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=related_test_layer_1&RESOURCEID={relatedRid}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-1&RESOURCEID={relatedRid}");
         primary.Should().Contain("BH009 Primary Layer Feature");
         related.Should().Contain("BH009 Related Layer Feature");
     }
@@ -2763,7 +2763,7 @@ public sealed partial class Wfs20EndpointsTests
             <wfs:GetFeature service="WFS" version="2.0.0" count="1"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Query typeNames="test_layer">
+              <wfs:Query typeNames="pub-layer-0">
                 <fes:Filter>
                   <fes:PropertyIsLike wildCard="%" singleChar="_" escapeChar="\\">
                     <fes:ValueReference>name</fes:ValueReference>
@@ -2811,13 +2811,13 @@ public sealed partial class Wfs20EndpointsTests
             <wfs:GetFeature service="WFS" version="2.0.0" count="1"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Query typeNames="test_layer">
+              <wfs:Query typeNames="pub-layer-0">
                 <wfs:PropertyName>name</wfs:PropertyName>
                 <fes:Filter><fes:PropertyIsLike wildCard="%" singleChar="_" escapeChar="\\">
                   <fes:ValueReference>name</fes:ValueReference><fes:Literal>{{firstMarker}}</fes:Literal>
                 </fes:PropertyIsLike></fes:Filter>
               </wfs:Query>
-              <wfs:Query typeNames="test_layer">
+              <wfs:Query typeNames="pub-layer-0">
                 <wfs:PropertyName>name</wfs:PropertyName>
                 <fes:Filter><fes:PropertyIsLike wildCard="%" singleChar="_" escapeChar="\\">
                   <fes:ValueReference>name</fes:ValueReference><fes:Literal>{{secondMarker}}</fes:Literal>
@@ -2875,14 +2875,14 @@ public sealed partial class Wfs20EndpointsTests
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Insert handle="insert-3d-line">
-                <honua:test_layer>
+                <honua:pub-layer-0>
                   <honua:name>BH011 3D LineString</honua:name>
                   <honua:shape>
                     <gml:LineString srsName="urn:ogc:def:crs:EPSG::4326" srsDimension="3">
                       <gml:posList srsDimension="3">37.1 -122.1 10.0 37.2 -122.2 20.0</gml:posList>
                     </gml:LineString>
                   </honua:shape>
-                </honua:test_layer>
+                </honua:pub-layer-0>
               </wfs:Insert>
             </wfs:Transaction>
             """;
@@ -2897,12 +2897,12 @@ public sealed partial class Wfs20EndpointsTests
         content.Should().Contain("<wfs:totalInserted>1</wfs:totalInserted>");
 
         // Retrieve the feature and verify the geometry is a 2-vertex LineString, not 3.
-        var ridMatch = Regex.Match(content, "rid=\"(?<rid>test_layer\\.\\d+)\"", RegexOptions.CultureInvariant);
+        var ridMatch = Regex.Match(content, "rid=\"(?<rid>pub-layer-0\\.\\d+)\"", RegexOptions.CultureInvariant);
         ridMatch.Success.Should().BeTrue(content);
         var rid = ridMatch.Groups["rid"].Value;
 
         var queryResponse = await fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID={rid}&OUTPUTFORMAT=application%2Fjson");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={rid}&OUTPUTFORMAT=application%2Fjson");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
 
@@ -2913,7 +2913,7 @@ public sealed partial class Wfs20EndpointsTests
             .GetProperty("coordinates");
 
         // Check the stored vertex order independently of GeoJSON output normalization.
-        var featureId = long.Parse(rid.AsSpan("test_layer.".Length), System.Globalization.CultureInfo.InvariantCulture);
+        var featureId = long.Parse(rid.AsSpan("pub-layer-0.".Length), System.Globalization.CultureInfo.InvariantCulture);
         var stored = await fixture.GetService<IFeatureReader>().GetAsync(WebAppFixture.TestLayerId, featureId);
         stored.Should().NotBeNull();
         var storedLine = new WKBReader().Read(stored!.Value.Geometry)
@@ -2965,7 +2965,7 @@ public sealed partial class Wfs20EndpointsTests
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Delete typeName="test_layer">
+              <wfs:Delete typeName="pub-layer-0">
                 <fes:Filter>
                   <fes:PropertyIsEqualTo>
                     <fes:ValueReference>%%%INVALID%%%</fes:ValueReference>
@@ -3000,7 +3000,7 @@ public sealed partial class Wfs20EndpointsTests
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Delete typeName="test_layer">
+              <wfs:Delete typeName="pub-layer-0">
                 <fes:Filter/>
               </wfs:Delete>
             </wfs:Transaction>

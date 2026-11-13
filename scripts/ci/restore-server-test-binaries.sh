@@ -193,36 +193,10 @@ for pattern in '*.deps.json' '*.runtimeconfig.json'; do
   }
 done
 
-# Every static web asset content root the restored host opens must exist, or this
-# shard would silently serve 404 where a building shard serves 200 (#4453). Roots
-# under the packaging repository are checked at the same relative path here.
-packaged_repo_root="$(jq -r '.repo_root' "${manifest}")"
-missing_roots=()
-while IFS= read -r -d '' swa_manifest; do
-  roots="$(jq -r '.ContentRoots
-    | if type == "array" and all(.[]; type == "string") then .[] else error("ContentRoots is not a string array") end
-  ' "${swa_manifest}")" || {
-    echo "::error::Restored static web assets manifest '${swa_manifest}' has no readable ContentRoots." >&2
-    exit 1
-  }
-  while IFS= read -r root; do
-    root="${root%/}"
-    [[ -n "${root}" ]] || continue
-    if [[ "${root}" == "${packaged_repo_root}"/* ]]; then
-      relative_root="${root#"${packaged_repo_root}/"}"
-      if [[ -d "${stage_root}/${relative_root}" ]]; then
-        root="${stage_root}/${relative_root}"
-      else
-        root="${destination}/${relative_root}"
-      fi
-    fi
-    [[ -d "${root}" ]] || missing_roots+=("${root}")
-  done <<<"${roots}"
-done < <(find "${stage_root}" -type f -name '*.staticwebassets.runtime.json' -print0)
-if (( ${#missing_roots[@]} > 0 )); then
-  echo "::error::Restored payload is missing static web asset content roots a local build serves from: ${missing_roots[*]}" >&2
-  exit 1
-fi
+# Runtime manifests must reference the consumer checkout, never the producer or
+# temporary staging directory. Validate every root before replacing any outputs.
+python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/relocate-server-test-content-roots.py" \
+  "${stage_root}" "${destination}" "${manifest}"
 
 # Install only after all validation, replacing whole output roots. Roll back every
 # replaced root if installation fails; staging resides on the destination filesystem.

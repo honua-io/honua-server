@@ -9,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Admin.Models;
 using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.MetadataV2PermanentFilterLanguages;
@@ -25,40 +26,46 @@ internal sealed class LayerValidationService(
     private const string SeverityWarning = "warning";
     private const string SeverityError = "error";
 
-    public async Task<LayerValidationResponse?> ValidateLayerAsync(
-        int layerId,
+    public async Task<ResourceValidationResult<LayerValidationResponse>> ValidateLayerAsync(
+        int storageLayerId,
         CancellationToken cancellationToken = default)
     {
-        if (layerId < 0)
+        if (storageLayerId < 0)
         {
-            return null;
+            return ResourceValidationResult.NotFound<LayerValidationResponse>($"Layer {storageLayerId} not found.");
         }
 
         var snapshot = await metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+        var resolution = snapshot.ResolveStorageResource(storageLayerId);
+        if (resolution.IsAmbiguous)
         {
-            return null;
+            return ResourceValidationResult.AmbiguousIdentifier<LayerValidationResponse>(resolution.ConflictDetail!);
+        }
+        var resource = resolution.Resource;
+        if (resource is null)
+        {
+            return ResourceValidationResult.NotFound<LayerValidationResponse>($"Layer {storageLayerId} not found.");
         }
 
         var checks = new List<LayerValidationCheck>
         {
-            Pass("catalog-layer", $"Layer {layerId} exists in the metadata v2 graph.")
+            Pass("catalog-layer", $"Layer {storageLayerId} exists in the metadata v2 graph.")
         };
         ValidatePermanentFilter(resource, checks);
 
-        if (!snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(layerId, out var storageBinding))
+        if (!snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(storageLayerId, out var storageBinding))
         {
             checks.Add(Error(
                 "storage-mapping",
                 "Layer does not define a metadata v2 storage binding."));
 
-            return BuildResponse(layerId, resource, null, checks);
+            return ResourceValidationResult.Success(BuildResponse(storageLayerId, resource, null, checks));
         }
 
         var storageMapping = ResolveStorageMapping(resource, storageBinding, checks);
         if (storageMapping == null)
         {
-            return BuildResponse(layerId, resource, null, checks);
+            return ResourceValidationResult.Success(BuildResponse(storageLayerId, resource, null, checks));
         }
 
         checks.Add(Pass(
@@ -86,7 +93,7 @@ internal sealed class LayerValidationService(
                 storageMapping.QualifiedName,
                 null));
 
-            return BuildResponse(layerId, resource, storageMapping, checks);
+            return ResourceValidationResult.Success(BuildResponse(storageLayerId, resource, storageMapping, checks));
         }
 
         checks.Add(Pass(
@@ -98,7 +105,7 @@ internal sealed class LayerValidationService(
         ValidateSrid(storageMapping, table, checks);
         ValidateDeclaredFields(resource, table, checks);
 
-        return BuildResponse(layerId, resource, storageMapping, checks);
+        return ResourceValidationResult.Success(BuildResponse(storageLayerId, resource, storageMapping, checks));
     }
 
     private static TableInfo? FindTable(
@@ -479,7 +486,7 @@ internal sealed class LayerValidationService(
     }
 
     private static LayerValidationResponse BuildResponse(
-        int layerId,
+        int storageLayerId,
         MetadataV2Resource resource,
         StorageValidationMapping? storageMapping,
         IReadOnlyCollection<LayerValidationCheck> checks)
@@ -489,7 +496,7 @@ internal sealed class LayerValidationService(
 
         return new LayerValidationResponse
         {
-            LayerId = layerId,
+            StorageLayerId = storageLayerId,
             LayerName = resource.Metadata.Name,
             IsValid = !hasErrors,
             Status = hasErrors ? "invalid" : hasWarnings ? "warning" : "valid",

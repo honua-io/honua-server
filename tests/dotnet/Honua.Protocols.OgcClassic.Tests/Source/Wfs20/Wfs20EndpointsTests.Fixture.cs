@@ -51,7 +51,7 @@ public sealed partial class Wfs20EndpointsTests : IClassFixture<Wfs20EndpointsTe
     private static async Task<string> GetTestLayerFeatureByIdAsync(WebAppFixture application, long featureId)
     {
         var response = await application.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.{featureId}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=pub-layer-0.{featureId}");
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         return body;
