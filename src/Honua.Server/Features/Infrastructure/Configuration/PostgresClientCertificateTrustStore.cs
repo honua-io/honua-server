@@ -4,7 +4,6 @@
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Honua.Infrastructure.Authentication.ClientCertificates;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Configuration;
@@ -15,12 +14,9 @@ internal sealed partial class PostgresClientCertificateTrustStore(
     IHttpContextAccessor? contexts = null,
     ILogger<PostgresClientCertificateTrustStore>? logger = null) : IClientCertificateTrustStore, IDisposable
 {
-    private readonly ILogger _logger = logger ?? (ILogger)NullLogger.Instance;
+    private readonly ConfiguredClientCertificateTrustBootstrap _bootstrap = new(documents, options?.Value, logger);
     private readonly ConfigurationCollectionStore<ClientCertificateTrustProfile> _store = new(documents,
         new("client-certificate-trust", SharedConfigurationJsonContext.Default.ClientCertificateTrustProfile), contexts);
-
-    private readonly ConfigurationCollectionStore<ConfiguredTrustManifest> _manifest = new(documents,
-        new("client-certificate-trust-configured", SharedConfigurationJsonContext.Default.ConfiguredTrustManifest));
 
     private readonly SemaphoreSlim _seedGate = new(1, 1);
     private volatile bool _seeded;
@@ -97,10 +93,6 @@ internal sealed partial class PostgresClientCertificateTrustStore(
         return removed;
     }
 
-    // Configured profiles are applied once per process. Configuration owns issuers, trust anchors and the mappings
-    // it defines. Imported entries absent from configuration are disabled; re-enabling them is an explicit admin action.
-    // For every security setting both sides can change, the stricter value wins, so neither a restart
-    // nor an administrator can silently weaken the other's choice. Revocations and admin-only mappings are kept.
     private async Task SeedProfilesAsync(CancellationToken cancellationToken)
     {
         if (_seeded) { return; }
@@ -108,44 +100,7 @@ internal sealed partial class PostgresClientCertificateTrustStore(
         try
         {
             if (_seeded) { return; }
-            var unreadable = (await _store.ReadAsync(cancellationToken).ConfigureAwait(false)).UnreadableKeys;
-            var manifest = await _manifest.ReadAsync(cancellationToken).ConfigureAwait(false);
-            var manifestReadable = !manifest.UnreadableKeys.Contains(ManifestKey, StringComparer.Ordinal);
-            var previous = manifest.Documents
-                .FirstOrDefault(document => document.Key == ManifestKey)?.Value.Profiles ?? new Dictionary<string, string[]>(StringComparer.Ordinal);
-            var next = new ConfiguredTrustManifest();
-            foreach (var configured in options?.Value.TrustProfiles.Select(ClientCertificateTrustProfile.FromOptions) ?? [])
-            {
-                var key = Key(configured.ProfileId);
-                next.Profiles[key] = configured.PrincipalMappings.Select(mapping => Key(mapping.MappingId)).ToArray();
-                if (unreadable.Contains(key, StringComparer.Ordinal))
-                {
-                    // The stored row stays authoritative and unreadable profiles are not trusted; repair needs the key ring.
-                    ConfiguredProfileUnreadable(_logger, configured.ProfileId);
-                    continue;
-                }
-                var formerlyConfigured = previous.GetValueOrDefault(key) ?? [];
-                await _store.MutateAsync(key,
-                    current => current is null ? configured : ApplyConfigured(current, configured, formerlyConfigured), cancellationToken).ConfigureAwait(false);
-            }
-            if (!manifestReadable)
-            {
-                // Without the manifest, removed entries cannot be told apart from administrator entries; they stay as stored.
-                ConfiguredManifestUnreadable(_logger);
-                _seeded = true;
-                return;
-            }
-            // A profile removed from configuration is disabled, not deleted, so its revocations and audit history remain.
-            foreach (var removed in previous.Keys.Where(key => !next.Profiles.ContainsKey(key) && !unreadable.Contains(key, StringComparer.Ordinal)))
-            {
-                await _store.MutateAsync(removed,
-                    current => current is not { Enabled: true } ? current : current with { Enabled = false, Revision = current.Revision + 1 },
-                    cancellationToken).ConfigureAwait(false);
-            }
-            var manifestType = SharedConfigurationJsonContext.Default.ConfiguredTrustManifest;
-            await _manifest.MutateAsync(ManifestKey,
-                current => current is not null && JsonSerializer.Serialize(current, manifestType) == JsonSerializer.Serialize(next, manifestType) ? current : next,
-                cancellationToken).ConfigureAwait(false);
+            await _bootstrap.ReconcileAsync(cancellationToken).ConfigureAwait(false);
             _seeded = true;
         }
         finally { _seedGate.Release(); }
@@ -196,13 +151,6 @@ internal sealed partial class PostgresClientCertificateTrustStore(
         _ => 0
     };
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "The configured client-certificate trust manifest is unreadable; entries removed from configuration are not disabled until it is repaired.")]
-    private static partial void ConfiguredManifestUnreadable(ILogger logger);
-
-    [LoggerMessage(Level = LogLevel.Error, Message = "Configured client-certificate trust profile {ProfileId} has an unreadable stored copy; it is not trusted until repaired.")]
-    private static partial void ConfiguredProfileUnreadable(ILogger logger, string profileId);
-
-    private const string ManifestKey = "CONFIGURED";
     private static string Key(string profileId) => profileId.ToUpperInvariant();
     private static bool Equal(string first, string second) => string.Equals(first, second, StringComparison.OrdinalIgnoreCase);
     public void Dispose() => _seedGate.Dispose();

@@ -69,6 +69,7 @@ Authentication__ClientCertificates__Mode=RequiredForAdmin
 A trust profile says which issuers to trust; principal mappings turn a certificate SAN into a Honua principal with roles:
 
 ```bash
+Authentication__ClientCertificates__TrustProfilesRevision=1
 Authentication__ClientCertificates__TrustProfiles__0__ProfileId=prod-native
 Authentication__ClientCertificates__TrustProfiles__0__EnvironmentId=prod
 Authentication__ClientCertificates__TrustProfiles__0__AcceptedIssuerSubjects__0=CN=Honua Prod Operator CA
@@ -127,3 +128,5 @@ More general failures: [Troubleshooting](../deploy/troubleshooting.md).
 
 - [Production security checklist](production-checklist.md)
 - [Authenticate clients](authentication.md)
+
+Increment `Authentication__ClientCertificates__TrustProfilesRevision` whenever changing the configured trust-profile set, including removals and principal mappings. PostgreSQL commits the profiles and their ownership record together and ignores equal or older revisions, so an older task starting during a rolling deployment cannot undo the new configuration. Administrator revocations and disables remain effective across configuration updates.

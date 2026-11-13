@@ -56,6 +56,7 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Authentication__ClientCertificates__EnvironmentId` | — | Environment id matched by `RequiredForEnvironment` and trust profiles. |
 | `Authentication__ClientCertificates__ProtectedAdminPathPrefixes__N` | — | Admin path prefixes protected by client-certificate auth. |
 | `Authentication__ClientCertificates__ProtectedGrpcServices__N` | — | gRPC service names protected by client-certificate auth. |
+| `Authentication__ClientCertificates__TrustProfilesRevision` | `1` | Positive, monotonically increasing revision for the complete configured trust-profile set. Increment when changing or removing configured profiles or mappings. PostgreSQL ignores equal or older revisions during overlapping deployments. |
 | `Authentication__ClientCertificates__TrustProfiles__N__*` | — | Trust-profile definitions (issuer subjects, SAN types, principal mappings, roles). |
 | `Authentication__ClientCertificates__ForwardedCertificate__Enabled` | `false` | Accept proxy-forwarded client certificates. |
 | `Authentication__ClientCertificates__ForwardedCertificate__TrustedProxyNetworks__N` | — | CIDR ranges allowed to forward certificates. |

@@ -20,6 +20,7 @@ internal sealed record ConfigurationSnapshot<T>(long Generation, IReadOnlyList<C
     public IReadOnlyList<string> UnreadableKeys { get; init; } = [];
 }
 internal sealed record ConfigurationWrite<T>(string Key, long ExpectedRevision, T? Value);
+internal sealed record ConfigurationChange(string Kind, string Key, long ExpectedRevision, byte[]? Payload);
 
 internal sealed partial class PostgresConfigurationDocuments(
     JobStoreDatabase database, IDataProtectionProvider protection, ILogger<PostgresConfigurationDocuments>? logger = null)
@@ -80,24 +81,55 @@ internal sealed partial class PostgresConfigurationDocuments(
     public Task<bool> WriteAsync<T>(ConfigurationCollection<T> collection, ConfigurationWrite<T> write, CancellationToken cancellationToken)
         => database.ExecuteAsync(async (connection, _, token) =>
         {
-            var statement = write.Value is null
-                ? $"DELETE FROM {_documents} WHERE kind = @kind AND key = @key AND revision = @revision"
-                : write.ExpectedRevision == 0
-                    ? $"INSERT INTO {_documents} (kind, key, payload) VALUES (@kind, @key, @payload) ON CONFLICT DO NOTHING"
-                    : $"UPDATE {_documents} SET payload = @payload, revision = revision + 1 WHERE kind = @kind AND key = @key AND revision = @revision";
-            await using var command = new NpgsqlCommand(statement, connection);
-            command.Parameters.AddWithValue("kind", collection.Kind);
-            command.Parameters.AddWithValue("key", write.Key);
-            command.Parameters.AddWithValue("revision", write.ExpectedRevision);
-            if (write.Value is not null)
-            {
-                command.Parameters.Add(new NpgsqlParameter("payload", NpgsqlDbType.Bytea)
-                {
-                    Value = Protector(collection.Kind).Protect(JsonSerializer.SerializeToUtf8Bytes(write.Value, collection.Type))
-                });
-            }
-            return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+            await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
+            await LockGenerationAsync(connection, token).ConfigureAwait(false);
+            await using var command = CreateWriteCommand(connection, PrepareWrite(collection, write));
+            var written = await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+            await transaction.CommitAsync(token).ConfigureAwait(false);
+            return written;
         }, StatementRepeat.NotAfterSend, cancellationToken);
+
+    public ConfigurationChange PrepareWrite<T>(ConfigurationCollection<T> collection, ConfigurationWrite<T> write)
+        => new(collection.Kind, write.Key, write.ExpectedRevision, write.Value is null ? null
+            : Protector(collection.Kind).Protect(JsonSerializer.SerializeToUtf8Bytes(write.Value, collection.Type)));
+
+    // Lock the generation before checking the read snapshot: concurrent admin writes either precede
+    // this reconciliation or force it to re-read. Profiles and their ownership manifest commit together.
+    public Task<bool> WriteBatchAsync(long expectedGeneration, IReadOnlyList<ConfigurationChange> changes, CancellationToken cancellationToken)
+        => database.ExecuteAsync(async (connection, _, token) =>
+        {
+            await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
+            if (await LockGenerationAsync(connection, token).ConfigureAwait(false) != expectedGeneration) { return false; }
+            foreach (var change in changes)
+            {
+                await using var command = CreateWriteCommand(connection, change);
+                if (await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) != 1) { return false; }
+            }
+            await transaction.CommitAsync(token).ConfigureAwait(false);
+            return true;
+        }, StatementRepeat.NotAfterSend, cancellationToken);
+
+    private async Task<long> LockGenerationAsync(NpgsqlConnection connection, CancellationToken token)
+    {
+        await using var command = new NpgsqlCommand($"SELECT generation FROM {_generation} WHERE singleton FOR UPDATE", connection);
+        return (long)(await command.ExecuteScalarAsync(token).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Configuration generation is unavailable."));
+    }
+
+    private NpgsqlCommand CreateWriteCommand(NpgsqlConnection connection, ConfigurationChange change)
+    {
+        var statement = change.Payload is null
+            ? $"DELETE FROM {_documents} WHERE kind = @kind AND key = @key AND revision = @revision"
+            : change.ExpectedRevision == 0
+                ? $"INSERT INTO {_documents} (kind, key, payload) VALUES (@kind, @key, @payload) ON CONFLICT DO NOTHING"
+                : $"UPDATE {_documents} SET payload = @payload, revision = revision + 1 WHERE kind = @kind AND key = @key AND revision = @revision";
+        var command = new NpgsqlCommand(statement, connection);
+        command.Parameters.AddWithValue("kind", change.Kind);
+        command.Parameters.AddWithValue("key", change.Key);
+        command.Parameters.AddWithValue("revision", change.ExpectedRevision);
+        if (change.Payload is not null) { command.Parameters.AddWithValue("payload", NpgsqlDbType.Bytea, change.Payload); }
+        return command;
+    }
 
     private IDataProtector Protector(string kind) => protection.CreateProtector("Honua.ConfigurationDocuments", kind);
 

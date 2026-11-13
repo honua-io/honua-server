@@ -49,6 +49,7 @@ public sealed class PostgresConfiguredTrustStoreTests(DatabaseFixtureAdapter dat
         await taskA.AddRevocationAsync("partner", adminRevocation);
         var changed = Options.Create(new ClientCertificateAuthenticationOptions
         {
+            TrustProfilesRevision = 2,
             TrustProfiles = [new() { ProfileId = "partner", EnvironmentId = "production", DisplayName = "Partner", AcceptedIssuerThumbprints = ["AA"], Enabled = false }]
         });
 
@@ -71,7 +72,9 @@ public sealed class PostgresConfiguredTrustStoreTests(DatabaseFixtureAdapter dat
         var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
         (await taskA.GetProfileAsync("partner"))!.PrincipalMappings.Should().ContainSingle().Which.Enabled.Should().BeTrue();
 
-        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: false)).ListProfilesAsync();
+        var changed = TrustOptions(mappingEnabled: false);
+        changed.Value.TrustProfilesRevision = 2;
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), changed).ListProfilesAsync();
 
         var mapping = (await taskA.GetProfileAsync("partner"))!.PrincipalMappings.Should().ContainSingle().Subject;
         mapping.Enabled.Should().BeFalse();
@@ -127,6 +130,7 @@ public sealed class PostgresConfiguredTrustStoreTests(DatabaseFixtureAdapter dat
         });
         var withoutMapping = TrustOptions(mappingEnabled: true);
         withoutMapping.Value.TrustProfiles[0].PrincipalMappings = [];
+        withoutMapping.Value.TrustProfilesRevision = 2;
 
         await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), withoutMapping).ListProfilesAsync();
 
@@ -142,11 +146,59 @@ public sealed class PostgresConfiguredTrustStoreTests(DatabaseFixtureAdapter dat
         var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
         await taskA.UpsertProfileAsync(new ClientCertificateTrustProfile { ProfileId = "admin-profile", EnvironmentId = "production", DisplayName = "Admin" });
 
-        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), Options.Create(new ClientCertificateAuthenticationOptions()))
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), Options.Create(new ClientCertificateAuthenticationOptions { TrustProfilesRevision = 2 }))
             .ListProfilesAsync();
 
         (await taskA.GetProfileAsync("partner"))!.Enabled.Should().BeFalse();
         (await taskA.GetProfileAsync("admin-profile"))!.Enabled.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    public async Task Bootstrap_OlderDeploymentStartsAfterNewerDeployment_KeepsNewProfilesEnabled()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var newer = TrustOptions(mappingEnabled: true);
+        newer.Value.TrustProfilesRevision = 2;
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), newer).ListProfilesAsync();
+
+        var older = Options.Create(new ClientCertificateAuthenticationOptions { TrustProfilesRevision = 1 });
+        var oldTask = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), older);
+
+        (await oldTask.GetProfileAsync("partner"))!.Enabled.Should().BeTrue();
+        (await oldTask.GetProfileAsync("partner"))!.PrincipalMappings.Single().Enabled.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    public async Task Bootstrap_ConfigurationChangesWithoutRevisionBump_KeepsCommittedConfiguration()
+    {
+        await using var harness = await CreateHarnessAsync();
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true)).ListProfilesAsync();
+        var changedWithoutBump = Options.Create(new ClientCertificateAuthenticationOptions());
+
+        var restarted = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), changedWithoutBump);
+
+        (await restarted.GetProfileAsync("partner"))!.Enabled.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    public async Task WriteBatchAsync_CompanionConflict_RollsBackProfileAndGeneration()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var documents = harness.CreateConfigurationDocuments();
+        var profiles = new ConfigurationCollection<ClientCertificateTrustProfile>("client-certificate-trust", SharedConfigurationJsonContext.Default.ClientCertificateTrustProfile);
+        var manifests = new ConfigurationCollection<ConfiguredTrustManifest>("client-certificate-trust-configured", SharedConfigurationJsonContext.Default.ConfiguredTrustManifest);
+        var generation = await documents.GetGenerationAsync(CancellationToken.None);
+        ConfigurationChange[] changes =
+        [
+            documents.PrepareWrite(profiles, new("PARTNER", 0, new() { ProfileId = "partner", EnvironmentId = "production", DisplayName = "Partner" })),
+            documents.PrepareWrite(manifests, new("CONFIGURED", 99, new()))
+        ];
+
+        (await documents.WriteBatchAsync(generation, changes, CancellationToken.None)).Should().BeFalse();
+
+        (await documents.ReadAsync(profiles, CancellationToken.None)).Documents.Should().BeEmpty();
+        (await documents.ReadAsync(manifests, CancellationToken.None)).Documents.Should().BeEmpty();
+        (await documents.GetGenerationAsync(CancellationToken.None)).Should().Be(generation);
     }
 
     private static IOptions<ClientCertificateAuthenticationOptions> TrustOptions(bool mappingEnabled) => Options.Create(new ClientCertificateAuthenticationOptions

@@ -17,5 +17,7 @@ internal sealed partial class SharedConfigurationJsonContext : JsonSerializerCon
 // Records which trust profiles and mappings were imported from configuration, so removing them from configuration revokes them.
 internal sealed record ConfiguredTrustManifest
 {
+    public long Revision { get; init; }
+
     public Dictionary<string, string[]> Profiles { get; init; } = new(StringComparer.Ordinal);
 }
