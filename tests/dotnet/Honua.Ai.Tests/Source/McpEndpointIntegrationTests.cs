@@ -1230,7 +1230,9 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         // its id over HTTP end to end.
         var sessions = _fixture.Services
             .GetRequiredService<Honua.Ai.Protocols.Mcp.McpSessionManager>();
-        sessions.TryCreateSession("sub:someone-else", out var sessionId).Should().BeTrue();
+        var sessionId = await sessions.TryCreateSessionAsync(
+            "sub:someone-else", false, null, CancellationToken.None);
+        sessionId.Should().NotBeNull();
 
         var response = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",

@@ -17,6 +17,11 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
+    // Each import gets its own uniquely named directory directly under the configured temp path,
+    // created owner-only on Unix, so other OS users and processes can neither block nor read it.
+    private static string CreatePrivateScratchDirectory(string prefix)
+        => Directory.CreateTempSubdirectory(prefix).FullName;
+
     private static bool IsZipFileName(string fileName)
         => string.Equals(Path.GetExtension(fileName), ".zip", StringComparison.OrdinalIgnoreCase);
 
@@ -33,8 +38,7 @@ internal sealed partial class StreamingFileImportService
             throw new NotSupportedException("Shapefile imports require a .zip containing .shp and .dbf files.");
         }
 
-        var scratchDir = Path.Join(_shapefileScratchRoot, Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(scratchDir);
+        var scratchDir = CreatePrivateScratchDirectory("honua-shapefile-");
 
         string? zipPath = null;
         Stream? zipStream = null;
@@ -125,8 +129,7 @@ internal sealed partial class StreamingFileImportService
         Stream stream,
         CancellationToken cancellationToken)
     {
-        var scratchDir = Path.Join(_geoPackageScratchRoot, Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(scratchDir);
+        var scratchDir = CreatePrivateScratchDirectory("honua-geopackage-");
 
         var filePath = Path.Join(scratchDir, "upload.gpkg");
 
@@ -160,8 +163,7 @@ internal sealed partial class StreamingFileImportService
         Stream stream,
         CancellationToken cancellationToken)
     {
-        var scratchDir = Path.Join(_kmzScratchRoot, Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(scratchDir);
+        var scratchDir = CreatePrivateScratchDirectory("honua-kmz-");
 
         string? zipPath = null;
         Stream? zipStream = null;
@@ -247,8 +249,7 @@ internal sealed partial class StreamingFileImportService
             return new GeoParquetScratch(stream, null);
         }
 
-        var scratchDir = Path.Join(_geoParquetScratchRoot, Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(scratchDir);
+        var scratchDir = CreatePrivateScratchDirectory("honua-geoparquet-");
 
         var filePath = Path.Join(scratchDir, "upload.parquet");
 
@@ -291,8 +292,7 @@ internal sealed partial class StreamingFileImportService
         Stream stream,
         CancellationToken cancellationToken)
     {
-        var scratchDir = Path.Join(_fileGdbScratchRoot, Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(scratchDir);
+        var scratchDir = CreatePrivateScratchDirectory("honua-filegdb-");
 
         string? zipPath = null;
         Stream? zipStream = null;

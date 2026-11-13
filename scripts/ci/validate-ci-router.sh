@@ -2162,6 +2162,8 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-shard-resources.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-resources.py
   run_fixture scripts/ci/fixtures/test-owned-server.py "${PYTHON_BIN}" scripts/ci/fixtures/test-owned-server.py
   run_fixture scripts/ci/fixtures/test-quickstart-console-smoke.py "${PYTHON_BIN}" scripts/ci/fixtures/test-quickstart-console-smoke.py
+  run_fixture scripts/ci/test-store-profile-workflows.py "${PYTHON_BIN}" scripts/ci/test-store-profile-workflows.py
+  run_fixture scripts/ci/test-manual-rollback-readiness.py "${PYTHON_BIN}" scripts/ci/test-manual-rollback-readiness.py
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then

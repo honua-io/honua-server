@@ -33,26 +33,30 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 /// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Wcs10)]
-public sealed class Wcs10EndpointsTests : IAsyncLifetime
+public sealed class Wcs10EndpointsTests : IClassFixture<Wcs10EndpointsTests.RasterApplication>
 {
     private const long TestRasterId = 377;
     private const string Wcs10Namespace = "http://www.opengis.net/wcs";
     private const string GmlNamespace = "http://www.opengis.net/gml";
     private const string OgcNamespace = "http://www.opengis.net/ogc";
 
-    private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
-    private readonly List<RasterQuery> _exportQueries = [];
+    private readonly IRasterStore _rasterStore;
+    private readonly List<RasterQuery> _exportQueries;
     private readonly WebAppFixture _fixture;
 
-    public Wcs10EndpointsTests()
+    public Wcs10EndpointsTests(RasterApplication application)
     {
-        ConfigureRasterStore(_rasterStore, _exportQueries);
-        _fixture = new WebAppFixture().ReplaceService(_rasterStore);
+        application.RestoreDefaults();
+        _rasterStore = application.RasterStore;
+        _exportQueries = application.ExportQueries;
+        _fixture = application.Application;
     }
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public sealed class RasterApplication : SubstitutedRasterStoreApplication
+    {
+        protected override void ConfigureDefaults(IRasterStore rasterStore, List<RasterQuery> exportQueries)
+            => ConfigureRasterStore(rasterStore, exportQueries);
+    }
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
@@ -124,30 +128,35 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wcs")]
     public async Task Wcs10_ServiceCoverageIdUsesPublicationIndexAndReadsBoundStorageLayer()
     {
+        // Rebinding the metadata graph would leak into the shared application.
+        await using var isolated = new RasterApplication();
+        await isolated.InitializeAsync();
+        isolated.RestoreDefaults();
+
         const int storageLayerId = 2701;
-        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var graph = isolated.Application.GetCurrentV2GraphSnapshot().Graph;
         // The WCS route selects the WCS-enabled service facet, not the separate
         // ImageServer facet that happens to expose the same public layer number.
         var publication = graph.Publications.Single(candidate =>
             candidate.ServiceId == "svc-test" && candidate.LayerIndex == WebAppFixture.TestLayerId);
         var resource = graph.Resources.Single(candidate => candidate.Metadata.Id == publication.ResourceId);
         var bindingId = publication.StorageBindingId ?? resource.PrimaryStorageBindingId;
-        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(graph with
+        isolated.Application.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(graph with
         {
             Revision = graph.Revision + 1,
             StorageBindings = graph.StorageBindings.Select(binding => binding.Metadata.Id == bindingId
                 ? binding with { StorageLayerId = storageLayerId } : binding).ToArray()
-        }, schema: _fixture.CurrentSchema);
+        }, schema: isolated.Application.CurrentSchema);
 
         var raster = CreateRasterInfo() with { LayerId = storageLayerId };
-        _rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, Arg.Any<CancellationToken>())
+        isolated.RasterStore.GetPrimaryRasterInfoAsync(storageLayerId, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<RasterInfo?>(raster));
-        _rasterStore.GetExtentAsync(storageLayerId, TestRasterId, Arg.Any<CancellationToken>())
+        isolated.RasterStore.GetExtentAsync(storageLayerId, TestRasterId, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<RasterExtent?>(raster.Extent));
-        _rasterStore.ExportImageAsync(storageLayerId, TestRasterId, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+        isolated.RasterStore.ExportImageAsync(storageLayerId, TestRasterId, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                _exportQueries.Add(call.ArgAt<RasterQuery>(2));
+                isolated.ExportQueries.Add(call.ArgAt<RasterQuery>(2));
                 return Task.FromResult(new RasterResult
                 {
                     Data = [0x49, 0x49, 0x2A, 0x00],
@@ -162,34 +171,34 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
             });
 
         var endpoint = $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0";
-        var capabilities = await _fixture.Client.GetAsync(endpoint + "&REQUEST=GetCapabilities");
+        var capabilities = await isolated.Application.Client.GetAsync(endpoint + "&REQUEST=GetCapabilities");
         capabilities.StatusCode.Should().Be(HttpStatusCode.OK);
         var brief = XDocument.Parse(await capabilities.Content.ReadAsStringAsync()).Root!
             .Descendants(XName.Get("CoverageOfferingBrief", Wcs10Namespace)).Single();
         brief.Element(XName.Get("name", Wcs10Namespace))!.Value.Should().Be("coverage_0");
 
-        var description = await _fixture.Client.GetAsync(endpoint + "&REQUEST=DescribeCoverage&COVERAGE=coverage_0");
+        var description = await isolated.Application.Client.GetAsync(endpoint + "&REQUEST=DescribeCoverage&COVERAGE=coverage_0");
         description.StatusCode.Should().Be(HttpStatusCode.OK);
         XDocument.Parse(await description.Content.ReadAsStringAsync()).Root!
             .Descendants(XName.Get("CoverageOffering", Wcs10Namespace)).Single()
             .Element(XName.Get("name", Wcs10Namespace))!.Value.Should().Be("coverage_0");
 
-        var export = await _fixture.Client.GetAsync(endpoint + "&REQUEST=GetCoverage&COVERAGE=coverage_0" +
+        var export = await isolated.Application.Client.GetAsync(endpoint + "&REQUEST=GetCoverage&COVERAGE=coverage_0" +
             "&FORMAT=GeoTIFF&BBOX=-122.5,37.7,-122.35,37.84&CRS=EPSG:4326&WIDTH=16&HEIGHT=16");
         export.StatusCode.Should().Be(HttpStatusCode.OK, await export.Content.ReadAsStringAsync());
-        _exportQueries.Should().ContainSingle();
-        await _rasterStore.Received(1).ExportImageAsync(storageLayerId, TestRasterId,
+        isolated.ExportQueries.Should().ContainSingle();
+        await isolated.RasterStore.Received(1).ExportImageAsync(storageLayerId, TestRasterId,
             Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
 
         // The shared resolver also feeds WCS 2.0 identifiers on this route.
         var modernEndpoint = $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=2.0.1";
-        var modernCapabilities = await _fixture.Client.GetAsync(modernEndpoint + "&REQUEST=GetCapabilities");
+        var modernCapabilities = await isolated.Application.Client.GetAsync(modernEndpoint + "&REQUEST=GetCapabilities");
         modernCapabilities.StatusCode.Should().Be(HttpStatusCode.OK);
         var modernSummary = XDocument.Parse(await modernCapabilities.Content.ReadAsStringAsync()).Root!
             .Descendants(XName.Get("CoverageSummary", "http://www.opengis.net/wcs/2.0")).Single();
         modernSummary.Element(XName.Get("CoverageId", "http://www.opengis.net/wcs/2.0"))!
             .Value.Should().Be("coverage_0");
-        var modernDescription = await _fixture.Client.GetAsync(modernEndpoint +
+        var modernDescription = await isolated.Application.Client.GetAsync(modernEndpoint +
             "&REQUEST=DescribeCoverage&COVERAGEID=coverage_0");
         modernDescription.StatusCode.Should().Be(HttpStatusCode.OK,
             await modernDescription.Content.ReadAsStringAsync());

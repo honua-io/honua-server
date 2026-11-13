@@ -196,7 +196,7 @@ public sealed class McpRequestCancellationIntegrationTests : IAsyncLifetime
 
     private static string Query(string id) => $$$$"""
         {"jsonrpc":"2.0","id":"{{{{id}}}}","method":"tools/call","params":{
-          "name":"honua_query_features","arguments":{"serviceId":"test","layerId":0,"returnCountOnly":true}}}
+          "name":"honua_query_features","arguments":{"serviceId":"test","serviceLayerIndex":0,"returnCountOnly":true}}}
         """;
 
     private static string Cancellation(string id) => $$$$"""
