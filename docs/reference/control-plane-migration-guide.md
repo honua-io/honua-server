@@ -49,8 +49,10 @@ capacity. These admin operations are removed with no replacement:
 - `POST /api/v1/admin/tile-operations/evict` and
   `GET /api/v1/admin/tile-operations/cache/inventory`.
 - The `expire` and `delete` tile operations, and the `format` field of the tile
-  operation request. Use `invalidate` to clear generated tiles. A `format` value
-  that clients still send is ignored.
+  operation request. `invalidate` clears response and CDN caches; it does not
+  remove or expire generated tiles in object storage. Those tiles can still be
+  served until their existing TTL expires. There is no admin replacement for
+  `expire` or `delete`. A `format` value that clients still send is ignored.
 - `GET /api/v1/admin/license/capacity`, `POST /api/v1/admin/license/capacity/surge`
   and the `capacity` property of the license status. Licenses that carry capacity
   terms are still accepted; the terms are ignored.

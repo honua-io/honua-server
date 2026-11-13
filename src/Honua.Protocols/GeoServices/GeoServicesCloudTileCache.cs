@@ -79,7 +79,7 @@ internal static class GeoServicesCloudTileCache
             }
 
             var data = await storage.DownloadBytesAsync(objectKey, cancellationToken).ConfigureAwait(false);
-            if (data is not { Length: > 0 })
+            if (data is not { Length: > 0 } || IsExpired(metadata))
             {
                 return null;
             }
