@@ -122,6 +122,7 @@ public sealed class PostgresMcpRequestStoreTests(DatabaseFixtureAdapter database
         var owner = new McpSessionManager(idleTimeout: _idleTimeout, store: harness.CreateMcpSessionStore());
         var other = new McpSessionManager(idleTimeout: _idleTimeout, store: harness.CreateMcpSessionStore());
         var session = (await owner.TryCreateSessionAsync(Alice, false, null, CancellationToken.None))!;
+        using var watch = owner.AcquireSessionWatch(session);
         owner.TryGetReader(session, out var stream).Should().BeTrue();
         var lifetime = owner.GetLifetimeToken(session);
 
