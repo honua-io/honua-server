@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.SharedCaching;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
@@ -45,6 +46,36 @@ public sealed partial class CdnCacheTagTests
             "#honua-scope:rest/services/parcels", "#honua-scope:rest/services/parcels-public",
             "#honua-scope:rest/services/zoning");
         _cloudFront.WildcardPathsInProgress.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task InvalidateEditedStorageLayerAsync_BindinglessPublication_PurgesItsService()
+    {
+        var graph = PublishedStorageLayers() with { StorageBindings = [] };
+        var invalidation = Invalidation(Service(new SharedLeases(_time)), graph);
+
+        await invalidation.InvalidateEditedStorageLayerAsync(3, CancellationToken.None);
+
+        _cloudFront.Accepted.Should().ContainSingle().Which.Should().BeEquivalentTo(
+            "#honua-scope:ogc", "#honua-scope:tiles/3",
+            "#honua-scope:rest/services/parcels", "#honua-scope:rest/services/parcels-public");
+    }
+
+    [UnitTest]
+    public async Task InvalidateEditedStorageLayerAsync_CdnCatalogLookupCanceled_PurgesPublishedNamesInTheNextWindow()
+    {
+        var invalidation = Invalidation(Service(new SharedLeases(_time)), new CatalogCancelingSecondRequest(PublishedStorageLayers() with { StorageBindings = [] }));
+        using var request = new CancellationTokenSource();
+
+        var edit = () => invalidation.InvalidateEditedStorageLayerAsync(3, request.Token);
+
+        await edit.Should().ThrowAsync<OperationCanceledException>();
+        _cloudFront.Accepted.Should().BeEmpty();
+        _time.Advance(CdnInvalidationService.CoalescingWindow);
+        await _cloudFront.AcceptedCountReaches(1);
+        _cloudFront.Accepted.SelectMany(paths => paths).Should().BeEquivalentTo(
+            "#honua-scope:ogc", "#honua-scope:tiles/3",
+            "#honua-scope:rest/services/parcels", "#honua-scope:rest/services/parcels-public");
     }
 
     [UnitTest]
@@ -99,6 +130,20 @@ public sealed partial class CdnCacheTagTests
                 ? new CdnInvalidationResult(CdnInvalidationOutcome.Failed, "batch failed")
                 : new CdnInvalidationResult(CdnInvalidationOutcome.Submitted));
         }
+    }
+
+    private sealed class CatalogCancelingSecondRequest(MetadataV2Graph graph) : IMetadataV2GraphProvider
+    {
+        private readonly TestMetadataV2GraphProvider _catalog = new(graph);
+        private int _requestReads;
+
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => cancellationToken.CanBeCanceled && ++_requestReads == 2
+                ? ValueTask.FromException<MetadataV2GraphSnapshot>(new OperationCanceledException(cancellationToken))
+                : _catalog.GetCurrentAsync(cancellationToken);
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => _catalog.GetByRevisionAsync(revision, cancellationToken);
     }
 
     private static MetadataV2Graph PublishedStorageLayers()
