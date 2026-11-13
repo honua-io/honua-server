@@ -561,7 +561,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             }
 
             // Non-fatal preflight issues (e.g. GeoJSON geometries that will be repaired by the
-        // shared validity gate on import). Relayed on the successful result alongside the
+            // shared validity gate on import). Relayed on the successful result alongside the
             // per-row issues so callers still see them without the whole file being rejected.
             ImportValidationIssue[] preflightWarnings = [];
             if (format.Value == SupportedFileFormat.GeoJson)
