@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -195,13 +196,26 @@ public sealed class McpStreamingTests
     {
         var recorded = new List<RealtimeEventDraft>();
         drafts = recorded;
-        var provider = Substitute.For<IRealtimeFanoutProvider>();
-        provider.AppendAsync(Arg.Any<RealtimeEventDraft>(), null, Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                recorded.Add(call.Arg<RealtimeEventDraft>());
-                return new ValueTask<RealtimePosition>(new RealtimePosition(RealtimeFamily.Mcp, recorded.Count));
-            });
+        var provider = new RecordingFanoutProvider(recorded);
         return new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance, provider);
+    }
+
+    private sealed class RecordingFanoutProvider(List<RealtimeEventDraft> drafts) : IRealtimeFanoutProvider
+    {
+        public RealtimeProviderCapabilities Capabilities { get; } = new(true, true, true);
+
+        public ValueTask<RealtimePosition> AppendAsync(
+            RealtimeEventDraft draft, DbTransaction? transaction, CancellationToken cancellationToken)
+        {
+            drafts.Add(draft);
+            return ValueTask.FromResult(new RealtimePosition(RealtimeFamily.Mcp, drafts.Count));
+        }
+
+        public void Enqueue(RealtimeEventDraft draft) => throw new NotSupportedException();
+
+        public IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request) => throw new NotSupportedException();
+
+        public ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
     }
 }
