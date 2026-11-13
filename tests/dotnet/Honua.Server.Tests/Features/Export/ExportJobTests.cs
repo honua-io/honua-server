@@ -7,6 +7,7 @@ using Honua.ControlPlane;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -227,6 +228,32 @@ public sealed class ExportJobTests(DatabaseFixtureAdapter database) : IClassFixt
             response = (ExportProgress)(await reader.ReadAsync(job.JobId, CancellationToken.None))!;
             AssertFreshAttemptResponse(response, OperationStatus.Processing);
         }
+    }
+
+    [IntegrationTest]
+    public async Task Export_ReplacedAfterArtifactPublication_DoesNotCompleteAnotherAttempt()
+    {
+        await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(ExportJobTests));
+        using var nodes = new ExportNodes(new ComparingInMemoryProgressStore());
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+        await nodes.SubmitAsync(harness, job);
+        var context = Substitute.For<IJobExecutionContext>();
+        ExportProgress? replacement = null;
+        context.TryPublishArtifactAsync("export-file", Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            var processing = (await nodes.Progress.GetProgressAsync<ExportProgress>(job.JobId))!;
+            replacement = processing with { StartedAt = processing.StartedAt.AddMinutes(1) };
+            await nodes.Progress.SetProgressAsync(job.JobId, replacement);
+            return true;
+        });
+
+        var result = await nodes.CreateExecutor().ExecuteAsync(
+            (await harness.JobStore.GetAsync(job.JobId))!, context, CancellationToken.None);
+
+        result.Should().NotBeNull();
+        (await nodes.Progress.GetProgressAsync<ExportProgress>(job.JobId)).Should().Be(replacement,
+            "a superseded worker must not replace the next attempt's processing snapshot");
+        await nodes.Storage.Received().DeleteAsync("export-file", Arg.Any<CancellationToken>());
     }
 
     private static void AssertFreshAttemptResponse(ExportProgress response, OperationStatus expected)

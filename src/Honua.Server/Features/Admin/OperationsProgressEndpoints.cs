@@ -489,6 +489,22 @@ internal static partial class OperationsProgressEndpoints
                 cancellationToken).ConfigureAwait(false);
         }
 
+        // Persist local cancellation before the process-only signal so takeover after a
+        // worker crash observes the accepted request. The worker still owns its terminal state.
+        if (jobStore != null)
+        {
+            var durableJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (durableJob?.Spec.Backend == LocalBatchComputeBackend.BackendId)
+            {
+                var reconcileResult = await TryReconcileDurableCancelAsync(
+                    httpContext, operationId, progressStore, cancellationToken).ConfigureAwait(false);
+                if (reconcileResult != null)
+                {
+                    return reconcileResult;
+                }
+            }
+        }
+
         // Signal in-flight job processors so they can begin aborting work.
         // When a notifier confirms the job is in-flight (returns true), the
         // background worker owns the terminal state transition — it will persist

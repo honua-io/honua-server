@@ -160,6 +160,52 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenLocalWorkerAcceptsSignal_PersistsRequestBeforeSignalling()
+    {
+        var jobs = new InMemoryExecutionJobStore();
+        var notifier = Substitute.For<IJobCancellationNotifier>();
+        var operationId = Guid.NewGuid().ToString("N");
+        Task<ExecutionJobRecord?>? observedAtSignal = null;
+        notifier.Cancel(operationId).Returns(_ =>
+        {
+            observedAtSignal = jobs.GetAsync(operationId);
+            return true;
+        });
+        await using var fixture = new WebAppFixture()
+            .ReplaceRequestService<IExecutionJobStore>(jobs)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IJobCancellationNotifier>();
+                services.AddSingleton(notifier);
+            });
+        await fixture.InitializeAsync();
+        var now = DateTimeOffset.UtcNow;
+        await jobs.TryCreateAsync(new ExecutionJobRecord
+        {
+            OperationId = operationId, Status = ExecutionJobStatus.Running,
+            ClaimedBy = "lost-worker", CreatedAt = now, UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing, Backend = "local",
+                TargetKind = BatchComputeTargetKind.KubernetesJob, WorkloadName = "cancel-in-flight"
+            }
+        });
+        await fixture.GetService<IUniversalProgressStore>().SetProgressAsync(operationId,
+            GeoprocessingProgress.CreateForSubmittedJob(operationId, "cancel-in-flight") with
+            { Status = OperationStatus.Processing });
+
+        var response = await fixture.Client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        observedAtSignal.Should().NotBeNull();
+        (await observedAtSignal!)!.CancellationRequestedAt.Should().NotBeNull(
+            "a worker crash must not discard accepted cancellation");
+        (await jobs.GetAsync(operationId))!.Status.Should().Be(ExecutionJobStatus.Running,
+            "the worker owns the terminal transition");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_WhenDurableJobAlreadySucceeded_Returns409()
     {
         var jobStore = RequireRegisteredService(_fixture.GetOptionalService<IExecutionJobStore>());
