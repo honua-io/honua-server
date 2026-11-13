@@ -1,6 +1,9 @@
 import { CatalogContractFailure } from './catalog-channel-contract.mjs';
 
-export function acceptInspectorResult(stdout, exitCode) {
+export function acceptInspectorResult(stdout, exitCode, error) {
+  if (error && (error.killed || error.signal || !Number.isInteger(error.code))) {
+    throw new CatalogContractFailure('inspector-invocation-failed');
+  }
   const result = JSON.parse(stdout).result;
   if (!result || (exitCode !== 0 && !(exitCode === 5 && result.isError === true))) {
     throw new CatalogContractFailure('inspector-invocation-failed');

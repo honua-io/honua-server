@@ -45,7 +45,7 @@ async function runInspector({ entry, config, directory, method, view, extra, dea
     env, timeout: Math.min(30_000, remaining), maxBuffer: 8 * 1024 * 1024,
   });
   try {
-    return acceptInspectorResult(stdout, error?.code ?? 0);
+    return acceptInspectorResult(stdout, error?.code ?? 0, error);
   } catch {
     throw new CatalogContractFailure('inspector-invocation-failed',
       classifyInspectorFailure(stderr, error, { method, view, extra, stdout }));

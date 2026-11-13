@@ -51,3 +51,18 @@ test('SDK diagnostics retain operation and fixed categories without private mess
   assert.equal(details.schemaDiagnostic, true);
   assert.equal(JSON.stringify(details).includes('private-token'), false);
 });
+
+
+test('Inspector rejects terminated processes even after a complete result or refusal', () => {
+  for (const error of [
+    { code: null, signal: 'SIGTERM', killed: true },
+    { code: null, signal: 'SIGKILL', killed: false },
+    { code: 5, signal: 'SIGTERM', killed: true },
+    { code: null },
+  ]) {
+    for (const isError of [false, true]) {
+      const stdout = JSON.stringify({ result: { isError, structuredContent: {} } });
+      assert.throws(() => acceptInspectorResult(stdout, error.code ?? 0, error), /inspector-invocation-failed/);
+    }
+  }
+});
