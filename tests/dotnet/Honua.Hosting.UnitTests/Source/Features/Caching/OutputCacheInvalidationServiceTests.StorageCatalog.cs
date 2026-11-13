@@ -67,7 +67,7 @@ public sealed partial class OutputCacheInvalidationServiceTests
         public ValueTask<byte[]?> GetAsync(string key, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public ValueTask SetAsync(string key, byte[] value, string[] tags, TimeSpan validFor, CancellationToken cancellationToken) =>
+        public ValueTask SetAsync(string key, byte[] value, string[]? tags, TimeSpan validFor, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public ValueTask EvictByTagAsync(string tag, CancellationToken cancellationToken)
