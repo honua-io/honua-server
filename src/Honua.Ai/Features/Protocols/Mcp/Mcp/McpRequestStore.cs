@@ -19,7 +19,7 @@ internal sealed record McpActiveRequest(string SessionId, string PrincipalKey, s
 // The sessions this node holds streams or work for, and the requests it is running.
 internal sealed record McpPollRequest(IReadOnlyCollection<string> SessionIds, IReadOnlyCollection<McpActiveRequest> Requests);
 
-// The sessions that no longer exist and the requests that are no longer active (cancelled, finished elsewhere or expired).
+// Ended sessions and inactive requests (cancelled, finished elsewhere or expired).
 internal sealed record McpPollResult(IReadOnlyCollection<string> EndedSessions, IReadOnlyCollection<McpActiveRequest> EndedRequests)
 {
     public static readonly McpPollResult Nothing = new([], []);

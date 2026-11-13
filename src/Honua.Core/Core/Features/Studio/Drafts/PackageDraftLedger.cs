@@ -93,7 +93,7 @@ public sealed class PackageDraftLedger : IPackageDraftStore
         }
 
         var record = new PackageDraftRecord(ownerId, _timeProvider.GetUtcNow(), map, app);
-        await _backing.UpsertAsync(kind, id, record, _retention.Ttl, cancellationToken).ConfigureAwait(false);
+        await _backing.UpsertAsync(new PackageDraftWrite(kind, id, record, _retention.Ttl), cancellationToken).ConfigureAwait(false);
         await TrimAsync(kind, cancellationToken).ConfigureAwait(false);
     }
 

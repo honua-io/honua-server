@@ -19,16 +19,13 @@ internal sealed class PostgresPackageDraftBacking(JobStoreDatabase database) : I
     private readonly string _drafts = database.Table("package_drafts");
 
     public Task UpsertAsync(
-        PackageDraftKind kind,
-        string id,
-        PackageDraftRecord record,
-        TimeSpan ttl,
+        PackageDraftWrite write,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(record);
-        if (ttl <= TimeSpan.Zero)
+        ArgumentNullException.ThrowIfNull(write.Record);
+        if (write.Ttl <= TimeSpan.Zero)
         {
-            return RemoveAsync(kind, id, cancellationToken);
+            return RemoveAsync(write.Kind, write.Id, cancellationToken);
         }
 
         return database.ExecuteAsync(
@@ -43,11 +40,11 @@ internal sealed class PostgresPackageDraftBacking(JobStoreDatabase database) : I
                         record = EXCLUDED.record, expires_at = EXCLUDED.expires_at
                     """,
                     connection);
-                AddKey(command, kind, id);
-                command.Parameters.Add(new NpgsqlParameter("owner_id", NpgsqlDbType.Text) { Value = record.OwnerId });
-                command.Parameters.Add(new NpgsqlParameter("written_at", NpgsqlDbType.TimestampTz) { Value = record.WrittenAt.ToUniversalTime() });
-                command.Parameters.Add(new NpgsqlParameter("record", NpgsqlDbType.Json) { Value = Encode(kind, record) });
-                command.Parameters.Add(new NpgsqlParameter("ttl", NpgsqlDbType.Interval) { Value = ttl });
+                AddKey(command, write.Kind, write.Id);
+                command.Parameters.Add(new NpgsqlParameter("owner_id", NpgsqlDbType.Text) { Value = write.Record.OwnerId });
+                command.Parameters.Add(new NpgsqlParameter("written_at", NpgsqlDbType.TimestampTz) { Value = write.Record.WrittenAt.ToUniversalTime() });
+                command.Parameters.Add(new NpgsqlParameter("record", NpgsqlDbType.Json) { Value = Encode(write.Kind, write.Record) });
+                command.Parameters.Add(new NpgsqlParameter("ttl", NpgsqlDbType.Interval) { Value = write.Ttl });
                 await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
             },
             StatementRepeat.SafeToRepeat,

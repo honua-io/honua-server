@@ -27,6 +27,12 @@ public sealed record PackageDraftRecord(
     MapPackage? Map,
     AppPackage? App);
 
+public readonly record struct PackageDraftWrite(
+    PackageDraftKind Kind,
+    string Id,
+    PackageDraftRecord Record,
+    TimeSpan Ttl);
+
 /// <summary>Identifier and write time of a draft the backing still considers live.</summary>
 /// <param name="Id">Minted package identifier.</param>
 /// <param name="WrittenAt">Utc instant of the write that started the TTL.</param>
@@ -38,12 +44,8 @@ public readonly record struct PackageDraftLiveEntry(string Id, DateTimeOffset Wr
 /// </summary>
 public interface IPackageDraftBacking
 {
-    /// <summary>Inserts or replaces the record and starts its TTL from <paramref name="record"/>'s write time.</summary>
     Task UpsertAsync(
-        PackageDraftKind kind,
-        string id,
-        PackageDraftRecord record,
-        TimeSpan ttl,
+        PackageDraftWrite write,
         CancellationToken cancellationToken);
 
     /// <summary>Returns the record, or null when it is missing or already expired. Expired records are dropped.</summary>
@@ -83,15 +85,12 @@ internal sealed class MemoryPackageDraftBacking : IPackageDraftBacking
 
     /// <inheritdoc />
     public Task UpsertAsync(
-        PackageDraftKind kind,
-        string id,
-        PackageDraftRecord record,
-        TimeSpan ttl,
+        PackageDraftWrite write,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ArgumentNullException.ThrowIfNull(record);
-        Store(kind)[id] = record;
+        ArgumentNullException.ThrowIfNull(write.Record);
+        Store(write.Kind)[write.Id] = write.Record;
         return Task.CompletedTask;
     }
 
