@@ -4,6 +4,8 @@
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
 > Last updated: 2026-11-12
 
+The shard retry supervisor captures cancellation before spawning a test process. Cancellation received during startup is replayed once the child is available, with bounded escalation for TERM-ignoring descendants. The CI router exercises both TERM and INT during child creation.
+
 ## Tier Definitions
 
 | Tier | Purpose | Characteristics | Merge-blocking |
