@@ -35,19 +35,19 @@ internal static class AdminApiOperationCatalog
     public static IReadOnlyList<Definition> Definitions { get; } =
     [
         new("admin.layer.publish", "Publish layer", HttpMethod.Post, "/connections/{connectionId}/layers", "publishLayer", true, true, "/connections/{connectionId}/tables/validate"),
-        new("admin.layer.set-enabled", "Set layer enabled", HttpMethod.Put, "/connections/{connectionId}/layers/{layerId}/enabled", "setLayerEnabled", true, QueryParameters: new HashSet<string>(["serviceName"], StringComparer.Ordinal)),
-        new("admin.layer.fields.get", "Get layer fields", HttpMethod.Get, "/metadata/layers/{layerId}/fields", "getAdminLayerFields", false),
-        new("admin.layer.fields.set", "Set layer fields", HttpMethod.Put, "/metadata/layers/{layerId}/fields", "updateAdminLayerFields", true),
-        new("admin.layer.filter.get", "Get layer filter", HttpMethod.Get, "/metadata/layers/{layerId}/filter", "getAdminLayerFilter", false),
-        new("admin.layer.filter.set", "Set layer filter", HttpMethod.Put, "/metadata/layers/{layerId}/filter", "updateAdminLayerFilter", true),
-        new("admin.layer.popup-info.get", "Get layer popup info", HttpMethod.Get, "/metadata/layers/{layerId}/popup-info", "getAdminLayerPopupInfo", false),
-        new("admin.layer.popup-info.set", "Set layer popup info", HttpMethod.Put, "/metadata/layers/{layerId}/popup-info", "setAdminLayerPopupInfo", true, RawBody: true),
-        new("admin.layer.drawing-info.get", "Get layer drawing info", HttpMethod.Get, "/metadata/layers/{layerId}/drawing-info", "getAdminLayerDrawingInfo", false),
-        new("admin.layer.drawing-info.set", "Set layer drawing info", HttpMethod.Put, "/metadata/layers/{layerId}/drawing-info", "setAdminLayerDrawingInfo", true, RawBody: true),
-        new("admin.layer.style.get", "Get layer style", HttpMethod.Get, "/metadata/layers/{layerId}/style", "getAdminLayerStyle", false),
-        new("admin.layer.style.set", "Set layer style", HttpMethod.Put, "/metadata/layers/{layerId}/style", "updateAdminLayerStyle", true),
-        new("admin.layer.style.import-sld", "Import layer SLD", HttpMethod.Post, "/metadata/layers/{layerId}/style/import-sld", "importLayerSldStyle", true),
-        new("admin.layer.style.export-sld", "Export layer SLD", HttpMethod.Get, "/metadata/layers/{layerId}/style/export-sld", "exportLayerSldStyle", false),
+        new("admin.layer.set-enabled", "Set layer enabled", HttpMethod.Put, "/connections/{connectionId}/layers/{storageLayerId}/enabled", "setLayerEnabled", true, QueryParameters: new HashSet<string>(["serviceName"], StringComparer.Ordinal)),
+        new("admin.layer.fields.get", "Get layer fields", HttpMethod.Get, "/metadata/layers/{storageLayerId}/fields", "getAdminLayerFields", false),
+        new("admin.layer.fields.set", "Set layer fields", HttpMethod.Put, "/metadata/layers/{storageLayerId}/fields", "updateAdminLayerFields", true),
+        new("admin.layer.filter.get", "Get layer filter", HttpMethod.Get, "/metadata/layers/{storageLayerId}/filter", "getAdminLayerFilter", false),
+        new("admin.layer.filter.set", "Set layer filter", HttpMethod.Put, "/metadata/layers/{storageLayerId}/filter", "updateAdminLayerFilter", true),
+        new("admin.layer.popup-info.get", "Get layer popup info", HttpMethod.Get, "/metadata/layers/{storageLayerId}/popup-info", "getAdminLayerPopupInfo", false),
+        new("admin.layer.popup-info.set", "Set layer popup info", HttpMethod.Put, "/metadata/layers/{storageLayerId}/popup-info", "setAdminLayerPopupInfo", true, RawBody: true),
+        new("admin.layer.drawing-info.get", "Get layer drawing info", HttpMethod.Get, "/metadata/layers/{storageLayerId}/drawing-info", "getAdminLayerDrawingInfo", false),
+        new("admin.layer.drawing-info.set", "Set layer drawing info", HttpMethod.Put, "/metadata/layers/{storageLayerId}/drawing-info", "setAdminLayerDrawingInfo", true, RawBody: true),
+        new("admin.layer.style.get", "Get layer style", HttpMethod.Get, "/metadata/layers/{storageLayerId}/style", "getAdminLayerStyle", false),
+        new("admin.layer.style.set", "Set layer style", HttpMethod.Put, "/metadata/layers/{storageLayerId}/style", "updateAdminLayerStyle", true),
+        new("admin.layer.style.import-sld", "Import layer SLD", HttpMethod.Post, "/metadata/layers/{storageLayerId}/style/import-sld", "importLayerSldStyle", true),
+        new("admin.layer.style.export-sld", "Export layer SLD", HttpMethod.Get, "/metadata/layers/{storageLayerId}/style/export-sld", "exportLayerSldStyle", false),
         new("folder.list", "List folders", HttpMethod.Get, "/folders", "listFolders", false, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
         new("folder.create", "Create folder", HttpMethod.Post, "/folders", "createFolder", true, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
         new("folder.update", "Update folder", HttpMethod.Patch, "/folders/{id}", "updateFolder", true, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
@@ -59,7 +59,7 @@ internal static class AdminApiOperationCatalog
         new("admin.services.protocols.set", "Set service protocols", HttpMethod.Put, "/services/{serviceName}/protocols", "updateServiceProtocols", true),
         new("admin.services.access-policy.set", "Set service access policy", HttpMethod.Put, "/services/{serviceName}/access-policy", "updateServiceAccessPolicy", true),
         new("admin.services.timeinfo.set", "Set service time info", HttpMethod.Put, "/services/{serviceName}/timeinfo", "updateServiceTimeInfo", true),
-        new("admin.services.layer-metadata.set", "Set service layer metadata", HttpMethod.Put, "/services/{serviceName}/layers/{layerId}/metadata", "updateLayerMetadata", true)
+        new("admin.services.layer-metadata.set", "Set service layer metadata", HttpMethod.Put, "/services/{serviceName}/layers/{serviceLayerIndex}/metadata", "updateLayerMetadata", true)
     ];
 
     public static IReadOnlyList<OperationDescriptor> Descriptors { get; } = BuildDescriptors();

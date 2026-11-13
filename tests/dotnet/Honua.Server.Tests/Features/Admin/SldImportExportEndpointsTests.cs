@@ -29,7 +29,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
     public async Task ImportSld_PolygonSld10_StoresMapLibreStyleAndReturnsDiagnostics()
     {
         var client = _fixture.CreateAdminClient();
@@ -55,7 +55,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
     public async Task ImportSld_Sld11WithSeNamespace_DetectsVersionAndStores()
     {
         var client = _fixture.CreateAdminClient();
@@ -73,7 +73,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
     public async Task ImportSld_MalformedXml_ReturnsBadRequest()
     {
         var client = _fixture.CreateAdminClient();
@@ -89,7 +89,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
     public async Task ImportSld_XxeAttempt_ReturnsBadRequestWithoutLeak()
     {
         var client = _fixture.CreateAdminClient();
@@ -108,7 +108,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
     public async Task ImportSld_TextSymbolizer_StoresSymbolLayerWithTextProperties()
     {
         var client = _fixture.CreateAdminClient();
@@ -134,7 +134,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
     public async Task ImportSld_ExternalGraphic_ReturnsWarningDiagnostic()
     {
         var client = _fixture.CreateAdminClient();
@@ -153,7 +153,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
     public async Task ImportSld_EmptyBody_ReturnsBadRequest()
     {
         var client = _fixture.CreateAdminClient();
@@ -168,7 +168,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
     public async Task ImportSld_NoConvertibleSymbolizers_ReturnsFailureDiagnosticsPayload()
     {
         var client = _fixture.CreateAdminClient();
@@ -202,8 +202,8 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style/export-sld")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/style/export-sld")]
     public async Task ExportSld_AfterPolygonImport_ReturnsValidSldXml()
     {
         var client = _fixture.CreateAdminClient();
@@ -228,7 +228,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style/export-sld")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/style/export-sld")]
     public async Task ExportSld_UnconvertibleStoredStyle_ReturnsFailureDiagnosticsPayload()
     {
         var client = _fixture.CreateAdminClient();
@@ -259,7 +259,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style/export-sld")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/style/export-sld")]
     public async Task ExportSld_StoredStyleMissingLayersArray_ReturnsFailureDiagnosticsPayload()
     {
         var client = _fixture.CreateAdminClient();
@@ -283,8 +283,8 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style/export-sld")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/style/export-sld")]
     public async Task RoundTripSld_PreservesPolygonFillSubset()
     {
         var client = _fixture.CreateAdminClient();

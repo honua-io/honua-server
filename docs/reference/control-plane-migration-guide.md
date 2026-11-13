@@ -10,6 +10,12 @@ This guide covers migration for the Honua control-plane/admin API only.
 This guide covers the Honua control-plane (admin) API only. For SDK support windows and
 release-channel expectations, see [Server + SDK compatibility](../concepts/ecosystem.md).
 
+## rc.2 Layer selectors
+
+Regenerate clients against the matching rc.2 admin contract. Global metadata and Connection routes accept `storageLayerId`; Service-scoped routes accept `serviceLayerIndex` with the Service. Publishing receipts expose `storageLayerId`, while a resolved native publish operation can also report its Service-local `serviceLayerIndex`. These numbers can differ; do not substitute one for the other.
+
+The same change removes storage-derived public WFS, Records and style identifiers. Follow the [Layer identifier migration guide](../guides/migrate/public-layer-identifiers.md) and [breaking release note](release-notes/2026.1-rc.2.md) before qualifying SDKs or saved integrations against the candidate.
+
 ## Withdrawal of the COG publication endpoint
 
 The revert of PR #5027 in PR #5042 withdraws the newly added
