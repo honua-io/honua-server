@@ -92,7 +92,8 @@ internal static partial class WmsRequestHandlers
         // Same style source, same cache, same parse as GetMap: the legend cannot show
         // symbology from a style revision the map is not drawing.
         var stylePlan = await GetRasterStylePlanAsync(
-            styleCatalog,
+            new RasterStyleSources(styleCatalog, context.RequestServices.GetService<IGeoServicesStyleConverter>()),
+            layer.Resource,
             layer.StorageLayerId,
             cancellationToken).ConfigureAwait(false);
 

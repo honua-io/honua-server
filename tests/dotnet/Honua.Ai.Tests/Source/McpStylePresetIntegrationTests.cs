@@ -181,7 +181,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
             "the canonical operation runtime writes a durable audit record for the style change");
 
         var rendered = await CallMcpToolAsync(client, session, "honua_render_map", $$"""
-            {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","layerId":{{WebAppFixture.TestLayerId}}}],
+            {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","serviceLayerIndex":{{WebAppFixture.TestLayerId}}}],
              "bbox":[{{CentreX - 2}},{{CentreY - 2}},{{CentreX + 2}},{{CentreY + 2}}],"bboxSrid":4326,
              "width":128,"height":128,"transparent":true,"maxInlineBytes":1048576}
             """);
@@ -217,7 +217,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
             .GetProperty("applied").GetBoolean().Should().BeTrue();
 
         var rendered = await CallMcpToolAsync(client, session, "honua_render_map", $$"""
-            {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","layerId":{{WebAppFixture.TestLayerId}}}],
+            {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","serviceLayerIndex":{{WebAppFixture.TestLayerId}}}],
              "bbox":[{{EmptyCentreX - 2}},{{EmptyCentreY - 2}},{{EmptyCentreX + 2}},{{EmptyCentreY + 2}}],"bboxSrid":4326,
              "width":128,"height":128,"transparent":true,"maxInlineBytes":1048576}
             """);
@@ -238,16 +238,16 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
     private const int CentreX = 40;
     private const int CentreY = -30;
 
-    private async Task InsertPointFeatureAsync(int layerId, int x, int y)
+    private async Task InsertPointFeatureAsync(int serviceLayerIndex, int x, int y)
     {
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
         await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO features (layer_id, geometry, attributes)
-            VALUES (@layerId, ST_SetSRID(ST_MakePoint(@x, @y), 4326), jsonb_build_object('name', 'style-render-centre'))
+            VALUES (@serviceLayerIndex, ST_SetSRID(ST_MakePoint(@x, @y), 4326), jsonb_build_object('name', 'style-render-centre'))
             """;
-        command.Parameters.AddWithValue("layerId", layerId);
+        command.Parameters.AddWithValue("serviceLayerIndex", serviceLayerIndex);
         command.Parameters.AddWithValue("x", (double)x);
         command.Parameters.AddWithValue("y", (double)y);
         await command.ExecuteNonQueryAsync();
@@ -299,7 +299,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
             Content = new StringContent($$"""
                 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
                   "name":"{{toolName}}","arguments":{"serviceId":"{{WebAppFixture.TestServiceId}}",
-                  "layerId":{{WebAppFixture.TestLayerId}}{{styleArgument}}
+                  "serviceLayerIndex":{{WebAppFixture.TestLayerId}}{{styleArgument}}
                 }
                 }
                 }

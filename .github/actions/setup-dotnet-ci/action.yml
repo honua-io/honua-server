@@ -46,6 +46,30 @@ runs:
       with:
         dotnet-version: ${{ inputs.artifact-sdk-version || inputs.dotnet-version }}
 
+    - name: Install managed target runtimes
+      if: inputs.artifact-sdk-version != ''
+      shell: bash
+      env:
+        CI_ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        : "${DOTNET_INSTALL_DIR:?Managed runtimes require the private SDK root}"
+        target_framework="$(bash "${CI_ACTION_PATH}/../../../scripts/ci/honua-target-framework.sh" "${CI_ACTION_PATH}/../../..")"
+        [[ "${target_framework}" =~ ^net([0-9]+\.[0-9]+)$ ]] || {
+          echo "::error::Unsupported managed target framework: ${target_framework}" >&2; exit 1;
+        }
+        runtime_channel="${BASH_REMATCH[1]}"
+        installer="$(mktemp "${RUNNER_TEMP}/honua-dotnet-install.XXXXXX.sh")"
+        trap 'rm -f "${installer}"' EXIT
+        curl --fail --silent --show-error --location --retry 3 \
+          https://dot.net/v1/dotnet-install.sh --output "${installer}"
+        # A newer producer SDK does not include older target shared frameworks.
+        # Preserve its host while adding both runtimes to the same private root.
+        for runtime in dotnet aspnetcore; do
+          bash "${installer}" --runtime "${runtime}" --channel "${runtime_channel}" \
+            --install-dir "${DOTNET_INSTALL_DIR}" --skip-non-versioned-files --no-path
+        done
+
     - name: Record actual SDK identity
       id: sdk-identity
       shell: bash

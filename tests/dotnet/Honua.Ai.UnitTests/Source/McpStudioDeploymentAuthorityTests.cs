@@ -203,7 +203,7 @@ public sealed class McpStudioDeploymentAuthorityTests
             var authorization = new StudioAuthorizationService(
                 Substitute.For<IOperatorAuthorizationEvaluator>(), new OperatorScopeAuthorizer(),
                 Monitor(new StudioEndUserAuthorizationOptions { Enabled = true }), Monitor(new AdminRoleOptions()),
-                tenant, Monitor(new TenantIsolationOptions { Enabled = true }));
+                tenant, Monitor(new TenantIsolationOptions()));
             _services = new ServiceCollection()
                 .AddSingleton<ITenantContext>(tenant)
                 .AddSingleton(Lifecycle)

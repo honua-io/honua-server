@@ -88,6 +88,9 @@ public sealed partial class PublishServiceToolTests
         schema.GetProperty("properties").TryGetProperty("status", out _).Should().BeTrue();
         schema.GetProperty("properties").TryGetProperty("serviceUri", out _).Should().BeTrue();
         schema.GetProperty("properties").TryGetProperty("metadataRevision", out _).Should().BeTrue();
+        schema.GetProperty("properties").TryGetProperty("storageLayerId", out _).Should().BeTrue();
+        schema.GetProperty("properties").TryGetProperty("serviceLayerIndex", out _).Should().BeTrue();
+        schema.GetProperty("properties").TryGetProperty("layerId", out _).Should().BeFalse();
     }
 
     [UnitTest]
@@ -115,7 +118,8 @@ public sealed partial class PublishServiceToolTests
                     Summary = "Published layer 'Parcels' (id 7) to service 'cadastre'.",
                     Details = new Dictionary<string, string>(StringComparer.Ordinal)
                     {
-                        ["layerId"] = "7",
+                        ["storageLayerId"] = "741",
+                        ["serviceLayerIndex"] = "7",
                         ["serviceName"] = "cadastre",
                     }
                 }
@@ -141,7 +145,9 @@ public sealed partial class PublishServiceToolTests
         content.GetProperty("status").GetString().Should().Be("Completed");
         content.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
         content.GetProperty("serviceUri").GetString().Should().Be("honua://published-services/cadastre");
-        content.GetProperty("layerId").GetString().Should().Be("7");
+        content.GetProperty("storageLayerId").GetString().Should().Be("741");
+        content.GetProperty("serviceLayerIndex").GetString().Should().Be("7");
+        content.TryGetProperty("layerId", out _).Should().BeFalse();
         content.GetProperty("metadataRevision").GetInt64().Should().Be(42);
 
         // The tool adapts onto the canonical service.publish operation rather than
