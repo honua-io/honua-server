@@ -157,8 +157,8 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertEqual(set(required["needs"]), dependencies)
         verdict = next(step for step in required["steps"] if "run" in step)
 
-        def run_verdict(results, draft=False, event="pull_request"):
-            environment = dict(os.environ, GITHUB_EVENT_NAME=event, PR_IS_DRAFT=str(draft).lower())
+        def run_verdict(results, event_environment):
+            environment = dict(os.environ, **event_environment)
             self.assertEqual(verdict["env"]["PR_IS_DRAFT"], "${{ github.event.pull_request.draft }}")
             for name, expression in verdict["env"].items():
                 if name == "PR_IS_DRAFT":
@@ -171,21 +171,27 @@ class PullRequestLoadTests(unittest.TestCase):
                 text=True, capture_output=True, timeout=10,
             ).returncode
 
+        def run_ready_verdict(results):
+            return run_verdict(results, {"GITHUB_EVENT_NAME": "pull_request", "PR_IS_DRAFT": "false"})
+
+        def run_draft_verdict(results, event="pull_request"):
+            return run_verdict(results, {"GITHUB_EVENT_NAME": event, "PR_IS_DRAFT": "true"})
+
         ready = dict.fromkeys(required["needs"], "success")
-        self.assertEqual(run_verdict(ready), 0)
+        self.assertEqual(run_ready_verdict(ready), 0)
         draft = dict.fromkeys(required["needs"], "skipped")
         draft["format"] = "success"
-        self.assertEqual(run_verdict(draft, draft=True), 0)
-        self.assertNotEqual(run_verdict(draft), 0)
-        self.assertNotEqual(run_verdict(draft, draft=True, event="workflow_dispatch"), 0)
+        self.assertEqual(run_draft_verdict(draft), 0)
+        self.assertNotEqual(run_ready_verdict(draft), 0)
+        self.assertNotEqual(run_draft_verdict(draft, event="workflow_dispatch"), 0)
         for dependency in required["needs"]:
             for result in ("skipped", "failure", "cancelled", ""):
                 if dependency != "format" and result == "skipped":
-                    self.assertEqual(run_verdict(dict(draft, **{dependency: result}), draft=True), 0)
+                    self.assertEqual(run_draft_verdict(dict(draft, **{dependency: result})), 0)
                 else:
-                    self.assertNotEqual(run_verdict(dict(draft, **{dependency: result}), draft=True), 0)
+                    self.assertNotEqual(run_draft_verdict(dict(draft, **{dependency: result})), 0)
                 with self.subTest(dependency=dependency, result=result):
-                    self.assertNotEqual(run_verdict(dict(ready, **{dependency: result})), 0)
+                    self.assertNotEqual(run_ready_verdict(dict(ready, **{dependency: result})), 0)
 
     def test_workflow_lint_runs_once_before_fast_build_and_diff_skips(self):
         steps = workflow("pr-gate.yml")["jobs"]["fast-tests"]["steps"]
