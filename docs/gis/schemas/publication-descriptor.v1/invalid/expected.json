@@ -1,0 +1,22 @@
+{
+  "artifact-without-checksum.json": "schema",
+  "bounds-out-of-range.json": "schema",
+  "capture-id-mismatch.json": "capture-id",
+  "duplicate-field-name.json": "unique-field-names",
+  "field-without-public-flag.json": "schema",
+  "identity-field-not-public.json": "identity-mapping",
+  "identity-maps-to-other-field.json": "identity-mapping",
+  "identity-not-in-geoparquet.json": "identity-mapping",
+  "inverted-bounds.json": "bounds-order",
+  "inverted-filter-bounds.json": "bounds-order",
+  "inverted-zoom-range.json": "zoom-order",
+  "missing-capture.json": "schema",
+  "missing-crs.json": "schema",
+  "missing-geoparquet-artifact.json": "schema",
+  "missing-pmtiles-artifact.json": "schema",
+  "missing-stac-link.json": "schema",
+  "non-public-field-in-artifact.json": "public-fields-only",
+  "numeric-identity.json": "schema",
+  "pmtiles-crs-not-web-mercator.json": "schema",
+  "undeclared-field-in-artifact.json": "public-fields-only"
+}
