@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Realtime;
 // the same tables.
 internal sealed class RealtimeLogHarness : IAsyncDisposable
 {
-    private const string MigrationResource = "Honua.Server.Migrations.156_CreateRealtimeEventLog.sql";
+    private const string MigrationResource = "Honua.Server.Migrations.158_CreateRealtimeEventLog.sql";
 
     private readonly PostgresJobSubstrateHarness _jobs;
     private readonly DatabaseFixtureAdapter _fixture;
