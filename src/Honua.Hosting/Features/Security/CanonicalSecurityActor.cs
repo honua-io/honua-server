@@ -212,6 +212,14 @@ internal static class CanonicalSecurityActor
             || principal.Identities.Any(static identity =>
                 identity.IsAuthenticated && IsBearerScheme(identity.AuthenticationType)));
 
+    internal static bool IsOperatorBearerOnlyPrincipal(ClaimsPrincipal principal)
+    {
+        var authenticated = principal.Identities.Where(static identity => identity.IsAuthenticated).ToArray();
+        return authenticated.Length > 0
+            && authenticated.All(static identity => string.Equals(identity.AuthenticationType?.Trim(),
+                OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool IsBearerScheme(string? scheme) =>
         string.Equals(scheme?.Trim(), OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase)
         || string.Equals(scheme?.Trim(), OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.OrdinalIgnoreCase);

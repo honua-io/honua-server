@@ -17,7 +17,7 @@ Expansion (explicitly out of scope here):
 | Revision | Value |
 |---|---|
 | `fixtureRevision` | `sha256:ce94c24647822a598078de88487cb638607e73e0d23a90115ab13d6cce6eb280` |
-| `serverConfigRevision` | `sha256:15f3aeb6e21dae43d3a7b7f2527aff262bf7cc9bf96289782dca36efdecd88bd` |
+| `serverConfigRevision` | `sha256:f48cc5a6ac26320a7d181a32ce7a67aa14a627542c13db595fc9b1a6e053bf32` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
 Any change to an input file changes at least one of these values. Publishing a changed input
@@ -49,7 +49,7 @@ $ LC_ALL=C sha256sum docker/client-compat/seed/publish-attachments.py \
     | sha256sum
 ce94c24647822a598078de88487cb638607e73e0d23a90115ab13d6cce6eb280  -
 $ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
-15f3aeb6e21dae43d3a7b7f2527aff262bf7cc9bf96289782dca36efdecd88bd  -
+f48cc5a6ac26320a7d181a32ce7a67aa14a627542c13db595fc9b1a6e053bf32  -
 ```
 
 **`honua.canonical-json-digest/v1`** — SHA-256 over the canonical JSON serialization of the

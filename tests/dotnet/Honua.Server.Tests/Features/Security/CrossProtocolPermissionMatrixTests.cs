@@ -45,10 +45,27 @@ namespace Honua.Server.Tests.Features.Security;
 /// </para>
 /// </summary>
 public sealed partial class CrossProtocolPermissionMatrixTests
+    : IClassFixture<CrossProtocolPermissionMatrixTests.WildcardQueryReadFixture>
 {
     private const string GrantedRole = "matrix-grant-role";
     private const string UngrantedRole = "matrix-ungranted-role";
     private const string CoarseOnlyRole = "coarse-only-role";
+
+    private readonly WildcardQueryReadFixture _readFixture;
+
+    public CrossProtocolPermissionMatrixTests(WildcardQueryReadFixture readFixture)
+    {
+        _readFixture = readFixture;
+    }
+
+    // Read requests cannot change the wildcard-query policy or catalog, so one application serves
+    // every such case; each test still creates its own client. Writes and other grants keep their own hosts.
+    public sealed class WildcardQueryReadFixture : IDisposable
+    {
+        public WebApplicationFactory<Program> Application { get; } = CreateFactory(Grant("query"));
+
+        public void Dispose() => Application.Dispose();
+    }
 
     // ---- Helpers --------------------------------------------------------
 
@@ -323,8 +340,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task FeatureServerQuery_PerOperationGrant_DoesNotSkipRoleList()
     {
-        using var factory = CreateFactory(Grant("query"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+        using var client = ServiceRbacTestFixture.CreateClient(_readFixture.Application, GrantedRole);
 
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
@@ -338,8 +354,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task FeatureServerQuery_NoGrant_FallsBackToCoarseDeny()
     {
-        using var factory = CreateFactory(Grant("query"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, UngrantedRole);
+        using var client = ServiceRbacTestFixture.CreateClient(_readFixture.Application, UngrantedRole);
 
         var response = await client.GetAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
@@ -434,8 +449,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("GET /odata/Layers({layerId})/Features")]
     public async Task ODataQuery_QueryGrant_DoesNotSkipRoleList()
     {
-        using var factory = CreateFactory(Grant("query"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+        using var client = ServiceRbacTestFixture.CreateClient(_readFixture.Application, GrantedRole);
 
         var response = await client.GetAsync(
             $"/odata/Layers({ServiceRbacTestFixture.AlphaLayerId})/Features");
@@ -449,8 +463,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("GET /odata/Layers({layerId})/Features")]
     public async Task ODataQuery_NoGrant_FallsBackToCoarseDeny()
     {
-        using var factory = CreateFactory(Grant("query"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, UngrantedRole);
+        using var client = ServiceRbacTestFixture.CreateClient(_readFixture.Application, UngrantedRole);
 
         var response = await client.GetAsync(
             $"/odata/Layers({ServiceRbacTestFixture.AlphaLayerId})/Features");
@@ -597,8 +610,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /odata/$batch")]
     public async Task ODataBatch_QueryGrant_DoesNotSkipRoleList()
     {
-        using var factory = CreateFactory(Grant("query"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+        using var client = ServiceRbacTestFixture.CreateClient(_readFixture.Application, GrantedRole);
 
         var batchRequest = new ODataBatchRequest
         {
@@ -630,8 +642,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /odata/$batch")]
     public async Task ODataBatch_NoGrant_FallsBackToCoarseDeny()
     {
-        using var factory = CreateFactory(Grant("query"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, UngrantedRole);
+        using var client = ServiceRbacTestFixture.CreateClient(_readFixture.Application, UngrantedRole);
 
         var batchRequest = new ODataBatchRequest
         {
@@ -665,8 +676,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task OgcFeaturesRead_QueryGrant_DoesNotSkipRoleList()
     {
-        using var factory = CreateFactory(Grant("query"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+        using var client = ServiceRbacTestFixture.CreateClient(_readFixture.Application, GrantedRole);
 
         var response = await client.GetAsync(
             $"/ogc/features/collections/{ServiceRbacTestFixture.AlphaLayerId}/items");
@@ -680,8 +690,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task OgcFeaturesRead_NoGrant_FallsBackToCoarseDeny()
     {
-        using var factory = CreateFactory(Grant("query"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, UngrantedRole);
+        using var client = ServiceRbacTestFixture.CreateClient(_readFixture.Application, UngrantedRole);
 
         var response = await client.GetAsync(
             $"/ogc/features/collections/{ServiceRbacTestFixture.AlphaLayerId}/items");
@@ -776,8 +785,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
     public async Task OgcTilesRead_QueryGrant_DoesNotSkipRoleList()
     {
-        using var factory = CreateFactory(Grant("query"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+        using var client = ServiceRbacTestFixture.CreateClient(_readFixture.Application, GrantedRole);
 
         var response = await client.GetAsync(
             $"/ogc/tiles/collections/{ServiceRbacTestFixture.AlphaLayerId}");
@@ -791,8 +799,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
     public async Task OgcTilesRead_NoGrant_FallsBackToCoarseDeny()
     {
-        using var factory = CreateFactory(Grant("query"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, UngrantedRole);
+        using var client = ServiceRbacTestFixture.CreateClient(_readFixture.Application, UngrantedRole);
 
         var response = await client.GetAsync(
             $"/ogc/tiles/collections/{ServiceRbacTestFixture.AlphaLayerId}");

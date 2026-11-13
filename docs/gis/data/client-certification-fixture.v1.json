@@ -9,7 +9,7 @@
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
   "fixtureRevision": "sha256:ce94c24647822a598078de88487cb638607e73e0d23a90115ab13d6cce6eb280",
-  "serverConfigRevision": "sha256:15f3aeb6e21dae43d3a7b7f2527aff262bf7cc9bf96289782dca36efdecd88bd",
+  "serverConfigRevision": "sha256:f48cc5a6ac26320a7d181a32ce7a67aa14a627542c13db595fc9b1a6e053bf32",
   "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
     "fileDigest": {
@@ -95,7 +95,7 @@
     {
       "path": "tests/config/client-compat-server-v1.json",
       "role": "server-config",
-      "sha256": "sha256:110bc6a968996e4eb4b20fccb15121d8a591bc45a8be1c455bd06dc5d841f942",
+      "sha256": "sha256:b40198620fbb9561d6f2230073c449caa41c2cec452ab70e6e12fc0d47273496",
       "purpose": "Declared server-configuration input: server mode, runtime and database images, environment, base URL, canonical service/layer identity, and the pinned setup-action revision."
     },
     {
@@ -4062,7 +4062,7 @@
         "gapId": "receipt-binding-uses-per-file-digests"
       },
       "server_config_revision": {
-        "value": "sha256:110bc6a968996e4eb4b20fccb15121d8a591bc45a8be1c455bd06dc5d841f942",
+        "value": "sha256:b40198620fbb9561d6f2230073c449caa41c2cec452ab70e6e12fc0d47273496",
         "boundTo": "inputs[tests/config/client-compat-server-v1.json].sha256",
         "convergenceTarget": "serverConfigRevision",
         "gapId": "receipt-binding-uses-per-file-digests"

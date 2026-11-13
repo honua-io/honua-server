@@ -11,9 +11,9 @@ internal sealed class McpMemoryRequestStore(
     private readonly object _gate = new();
 
     public Task<McpRequestState> UpdateRequestAsync(
-        string sessionId, string principalKey, string requestKey, string generation,
-        McpRequestOperation operation, CancellationToken cancellationToken)
+        McpActiveRequest request, McpRequestOperation operation, CancellationToken cancellationToken)
     {
+        var (sessionId, principalKey, requestKey, generation) = request;
         cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
         {
