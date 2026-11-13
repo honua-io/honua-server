@@ -34,6 +34,55 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/live")]
+    public async Task Live_InProcessProvider_WakesAfterCommittedProposalAndWorkflowWrites()
+    {
+        await using var log = await RealtimeLogHarness.CreateAsync(database);
+        var dispatcher = log.CreateDispatcher();
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log) };
+        using var host = CreateFactory(log, dispatcher, storage, inProcess: true);
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+        using var response = await client.GetAsync("/api/v1/admin/live?topics=proposals,operate-events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+        (await ReadFrameAsync(reader)).Kind.Should().Be("status");
+        var proposals = host.Services.GetRequiredService<IOperationProposalStore>();
+        var proposal = new OperationProposal
+        {
+            ProposalId = "local-wakeup",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Kind = default,
+            Status = OperationProposalStatus.AwaitingApproval,
+            Plan = new OperationProposalPlan { ExecutionPayload = "private" }
+        };
+        await AssertCommittedDeliveryAsync(() => proposals.TryCreateAsync(proposal), "ProposalPending");
+        await AssertCommittedDeliveryAsync(() => proposals.TrySetAsync(proposal with { Status = OperationProposalStatus.Submitted }), "ProposalResolved");
+        var operations = host.Services.GetRequiredService<IWorkflowOperationStore>();
+        var operation = BuildTransition("local-wakeup", WorkflowOperationTransitionKind.Created).Operation;
+        await AssertCommittedDeliveryAsync(() => operations.TryCreateAsync(operation), "OperateEvent");
+        var persisted = (await operations.GetAsync(operation.OperationId))!;
+        await AssertCommittedDeliveryAsync(() => operations.TrySetAsync(persisted with
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            UpdatedAt = persisted.UpdatedAt.AddSeconds(1)
+        }), "OperateEvent");
+
+        async Task AssertCommittedDeliveryAsync(Func<Task<bool>> write, string kind)
+        {
+            // Follow the tail service's wake path without a background probe masking a missing signal.
+            await dispatcher.DispatchOnceAsync(default);
+            dispatcher.DrainWakeups();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var wake = dispatcher.WaitForWakeAsync(TimeSpan.FromMinutes(1), timeout.Token);
+            (await write()).Should().BeTrue();
+            (await wake).Should().BeTrue("committed local writes must not wait for the polling interval");
+            await dispatcher.DispatchOnceAsync(default);
+            (await ReadFrameAsync(reader)).Kind.Should().Be(kind);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/live")]
     public async Task Live_WorkflowTransitions_ShareEventIdentityWithRestTimeline()
     {
         await using var log = await RealtimeLogHarness.CreateAsync(database);
@@ -171,7 +220,7 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
         (await ReadFrameAsync(reader)).Kind.Should().Be("ProposalResolved");
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(RealtimeLogHarness log, RealtimeDispatcher dispatcher, ControlPlaneStorage? storage = null)
+    private static WebApplicationFactory<Program> CreateFactory(RealtimeLogHarness log, RealtimeDispatcher dispatcher, ControlPlaneStorage? storage = null, bool inProcess = false)
         => new TestWebApplicationFactory().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
@@ -180,7 +229,9 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
             builder.ConfigureTestServices(services =>
             {
                 services.Replace(ServiceDescriptor.Singleton<IRealtimeFanoutProvider>(
-                    new PostgresRealtimeFanoutProvider(log.Log, dispatcher, new RealtimePresenceBatcher(log.Log))));
+                    inProcess
+                        ? new InProcessRealtimeFanoutProvider(log.Log, dispatcher, new RealtimePresenceBatcher(log.Log))
+                        : new PostgresRealtimeFanoutProvider(log.Log, dispatcher, new RealtimePresenceBatcher(log.Log))));
                 if (storage is not null)
                 {
                     var retention = Options.Create(new ControlPlaneRetentionOptions());
