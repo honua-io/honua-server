@@ -75,6 +75,7 @@ internal static class JsonContextRegistration
         Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
         Honua.Server.Features.Console.Collaboration.Models.StudioMapCollaborationJsonContext.Default,
         Honua.Server.Features.Studio.Models.StudioApiJsonContext.Default,
+        Honua.Server.Features.AgentWorkspace.LocalProcessJsonContext.Default,
         Honua.Core.Features.Studio.Domain.StudioJsonContext.Default,
         Honua.Ai.AnalysisContent.AnalysisContentApiJsonContext.Default,
         Honua.Server.Features.Capabilities.Models.CapabilityManifestJsonContext.Default,

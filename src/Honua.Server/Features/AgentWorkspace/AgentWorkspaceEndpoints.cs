@@ -13,7 +13,6 @@ internal static class AgentWorkspaceEndpoints
         services.AddScoped<AgentWorkspaceAuthorization>();
         services.AddHttpClient<ILocalProcessWorkspaceGateway, LocalProcessWorkspaceGateway>(client => client.Timeout = TimeSpan.FromSeconds(30))
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
-        services.ConfigureHttpJsonOptions(options => options.SerializerOptions.TypeInfoResolverChain.Insert(0, LocalProcessJsonContext.Default));
         return services;
     }
 
