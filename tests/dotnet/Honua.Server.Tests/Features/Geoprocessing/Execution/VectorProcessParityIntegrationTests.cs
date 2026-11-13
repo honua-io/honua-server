@@ -260,6 +260,7 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
 
             using var client = fixture.CreateAdminClient();
             client.Timeout = TimeSpan.FromSeconds(90);
+            await McpPublicationFixtureSetup.UseManagedPublicationKeyAsync(fixture.Services, client);
             using (var resourceResponse = await client.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0",
@@ -280,7 +281,6 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
                     .GetProperty("text").GetString().Should().Contain(artifact.ArtifactId);
             }
 
-            await McpPublicationFixtureSetup.UseManagedPublicationKeyAsync(fixture.Services, client);
             using var publishResponse = await client.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0",
