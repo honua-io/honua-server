@@ -630,6 +630,11 @@ internal static partial class OperationsProgressEndpoints
                         var preResult = await ExecutionJobCancellationHelper.TryCancelPreSubmissionAsync(
                             jobStore, executionJob, cancellationToken).ConfigureAwait(false);
 
+                        if (preResult.TerminalTransition is { Spec.Kind: ExecutionJobKind.TileCache } preSubmissionTileJob)
+                        {
+                            TileOperationMetrics.RecordJobEnded(preSubmissionTileJob);
+                        }
+
                         switch (preResult.Outcome)
                         {
                             case PreSubmissionCancelOutcome.TerminalConflict:
@@ -693,6 +698,11 @@ internal static partial class OperationsProgressEndpoints
                     var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
                     var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
                         jobStore, stampedJob, observation, cancellationToken).ConfigureAwait(false);
+
+                    if (applyResult.TerminalTransition is { Spec.Kind: ExecutionJobKind.TileCache } backendTileJob)
+                    {
+                        TileOperationMetrics.RecordJobEnded(backendTileJob);
+                    }
 
                     switch (applyResult.Outcome)
                     {

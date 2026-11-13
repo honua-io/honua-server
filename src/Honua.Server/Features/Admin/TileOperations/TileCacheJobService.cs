@@ -137,7 +137,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             return false;
         }
 
-        await CloseProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
+        // Reads project durable cancellation; a delayed progress write could overwrite a retry.
         Log.JobCancellationRequested(_logger, jobId, job.Spec.Backend);
         return true;
     }
@@ -283,21 +283,6 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             TileOperationMetrics.RecordJobEnded(applied.TerminalTransition);
         }
         return applied.Outcome == BackendCancelApplyOutcome.Applied;
-    }
-
-    private async Task CloseProgressAsync(string jobId, CancellationToken cancellationToken)
-    {
-        var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken)
-            .ConfigureAwait(false);
-        if (progress is { Status: OperationStatus.Queued or OperationStatus.Processing })
-        {
-            var cancelled = progress.WithCancellation(DateTimeOffset.UtcNow, "Cancellation requested");
-            await _progressStore.TrySetProgressAsync(
-                    new OperationProgressWrite(jobId, cancelled, ProgressRetention),
-                    progress.Status,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
     }
 
     // The record is durable, so the operation is accepted: the next reconciliation sweep queues a
