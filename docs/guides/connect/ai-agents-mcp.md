@@ -431,7 +431,7 @@ Rate limiting stays at the edge by default (nginx/ALB/WAF). The optional app-lev
 {
   "RateLimiting": {
     "Enabled": true,
-    "GlobalRequestsPerMinute": 120   // per principal / per IP; tune to your load
+    "GlobalRequestsPerMinute": 120   // per principal / per IP, per node; tune to your load
   }
 }
 ```

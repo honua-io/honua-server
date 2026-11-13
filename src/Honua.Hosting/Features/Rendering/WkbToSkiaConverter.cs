@@ -41,7 +41,7 @@ internal static class WkbToSkiaConverter
         try
         {
             var reader = new WkbReader(wkb);
-            return ReadGeometry(reader, transform);
+            return ReadGeometry(ref reader, transform);
         }
         catch (InvalidDataException)
         {
@@ -108,13 +108,12 @@ internal static class WkbToSkiaConverter
             return false;
         }
 
-        var x = reader.ReadDouble();
-        var y = reader.ReadDouble();
+        var (x, y) = reader.ReadCoordinate();
         point = transform(x, y);
         return true;
     }
 
-    private static GeometryConversionResult ReadGeometry(WkbReader reader, Func<double, double, SKPoint> transform, int depth = 0)
+    private static GeometryConversionResult ReadGeometry(ref WkbReader reader, Func<double, double, SKPoint> transform, int depth = 0)
     {
         if (depth > MaxGeometryNestingDepth)
         {
@@ -161,19 +160,19 @@ internal static class WkbToSkiaConverter
 
         return geometryType switch
         {
-            WkbPoint => ReadPoint(reader, transform, dimensions),
-            WkbLineString => ReadLineString(reader, transform, dimensions),
-            WkbPolygon => ReadPolygon(reader, transform, dimensions),
-            WkbMultiPoint => ReadMultiPoint(reader, transform, dimensions, depth),
-            WkbMultiLineString => ReadMultiLineString(reader, transform, dimensions, depth),
-            WkbMultiPolygon => ReadMultiPolygon(reader, transform, dimensions, depth),
-            WkbGeometryCollection => ReadGeometryCollection(reader, transform, depth),
+            WkbPoint => ReadPoint(ref reader, transform, dimensions),
+            WkbLineString => ReadLineString(ref reader, transform, dimensions),
+            WkbPolygon => ReadPolygon(ref reader, transform, dimensions),
+            WkbMultiPoint => ReadMultiPoint(ref reader, transform, dimensions, depth),
+            WkbMultiLineString => ReadMultiLineString(ref reader, transform, dimensions, depth),
+            WkbMultiPolygon => ReadMultiPolygon(ref reader, transform, dimensions, depth),
+            WkbGeometryCollection => ReadGeometryCollection(ref reader, transform, depth),
             _ => default
         };
     }
 
     // A negative element count is rejected; an oversized count is left to the later bounds check, and a preallocation must be clamped on its own.
-    private static int ReadElementCount(WkbReader reader)
+    private static int ReadElementCount(ref WkbReader reader)
     {
         var count = reader.ReadInt32();
         if (count < 0)
@@ -184,11 +183,10 @@ internal static class WkbToSkiaConverter
         return count;
     }
 
-    private static GeometryConversionResult ReadPoint(WkbReader reader, Func<double, double, SKPoint> transform, int dimensions)
+    private static GeometryConversionResult ReadPoint(ref WkbReader reader, Func<double, double, SKPoint> transform, int dimensions)
     {
-        var x = reader.ReadDouble();
-        var y = reader.ReadDouble();
-        SkipExtraDimensions(reader, dimensions);
+        var (x, y) = reader.ReadCoordinate();
+        SkipExtraDimensions(ref reader, dimensions);
 
         var point = transform(x, y);
         return new GeometryConversionResult
@@ -198,9 +196,9 @@ internal static class WkbToSkiaConverter
         };
     }
 
-    private static GeometryConversionResult ReadLineString(WkbReader reader, Func<double, double, SKPoint> transform, int dimensions)
+    private static GeometryConversionResult ReadLineString(ref WkbReader reader, Func<double, double, SKPoint> transform, int dimensions)
     {
-        var numPoints = ReadElementCount(reader);
+        var numPoints = ReadElementCount(ref reader);
         if (numPoints == 0)
         {
             return default;
@@ -212,9 +210,8 @@ internal static class WkbToSkiaConverter
             var first = true;
             for (int i = 0; i < numPoints; i++)
             {
-                var x = reader.ReadDouble();
-                var y = reader.ReadDouble();
-                SkipExtraDimensions(reader, dimensions);
+                var (x, y) = reader.ReadCoordinate();
+                SkipExtraDimensions(ref reader, dimensions);
 
                 var point = transform(x, y);
                 if (first)
@@ -237,9 +234,9 @@ internal static class WkbToSkiaConverter
         }
     }
 
-    private static GeometryConversionResult ReadPolygon(WkbReader reader, Func<double, double, SKPoint> transform, int dimensions)
+    private static GeometryConversionResult ReadPolygon(ref WkbReader reader, Func<double, double, SKPoint> transform, int dimensions)
     {
-        var numRings = ReadElementCount(reader);
+        var numRings = ReadElementCount(ref reader);
         if (numRings == 0)
         {
             return default;
@@ -250,7 +247,7 @@ internal static class WkbToSkiaConverter
         {
             for (int ring = 0; ring < numRings; ring++)
             {
-                var numPoints = ReadElementCount(reader);
+                var numPoints = ReadElementCount(ref reader);
                 if (numPoints == 0)
                 {
                     continue;
@@ -259,9 +256,8 @@ internal static class WkbToSkiaConverter
                 var first = true;
                 for (int i = 0; i < numPoints; i++)
                 {
-                    var x = reader.ReadDouble();
-                    var y = reader.ReadDouble();
-                    SkipExtraDimensions(reader, dimensions);
+                    var (x, y) = reader.ReadCoordinate();
+                    SkipExtraDimensions(ref reader, dimensions);
 
                     var point = transform(x, y);
                     if (first)
@@ -287,9 +283,9 @@ internal static class WkbToSkiaConverter
         }
     }
 
-    private static GeometryConversionResult ReadMultiPoint(WkbReader reader, Func<double, double, SKPoint> transform, int dimensions, int depth)
+    private static GeometryConversionResult ReadMultiPoint(ref WkbReader reader, Func<double, double, SKPoint> transform, int dimensions, int depth)
     {
-        var numGeometries = ReadElementCount(reader);
+        var numGeometries = ReadElementCount(ref reader);
         // Clamp list preallocation: a hostile payload can declare a huge count but only carry
         // MinNestedPointBytes bytes per nested geometry; cap to what the remaining buffer can
         // possibly hold, so we never allocate a multi-GB backing array.
@@ -301,7 +297,7 @@ internal static class WkbToSkiaConverter
 
         for (int i = 0; i < numGeometries; i++)
         {
-            var result = ReadGeometry(reader, transform, depth + 1);
+            var result = ReadGeometry(ref reader, transform, depth + 1);
             if (result.Points != null)
             {
                 points.AddRange(result.Points);
@@ -315,15 +311,15 @@ internal static class WkbToSkiaConverter
         };
     }
 
-    private static GeometryConversionResult ReadMultiLineString(WkbReader reader, Func<double, double, SKPoint> transform, int dimensions, int depth)
+    private static GeometryConversionResult ReadMultiLineString(ref WkbReader reader, Func<double, double, SKPoint> transform, int dimensions, int depth)
     {
-        var numGeometries = ReadElementCount(reader);
+        var numGeometries = ReadElementCount(ref reader);
         var combinedPath = new SKPath();
         try
         {
             for (int i = 0; i < numGeometries; i++)
             {
-                var result = ReadGeometry(reader, transform, depth + 1);
+                var result = ReadGeometry(ref reader, transform, depth + 1);
                 using var resultPath = result.Path;
                 if (resultPath != null)
                 {
@@ -340,15 +336,15 @@ internal static class WkbToSkiaConverter
         }
     }
 
-    private static GeometryConversionResult ReadMultiPolygon(WkbReader reader, Func<double, double, SKPoint> transform, int dimensions, int depth)
+    private static GeometryConversionResult ReadMultiPolygon(ref WkbReader reader, Func<double, double, SKPoint> transform, int dimensions, int depth)
     {
-        var numGeometries = ReadElementCount(reader);
+        var numGeometries = ReadElementCount(ref reader);
         var combinedPath = new SKPath();
         try
         {
             for (int i = 0; i < numGeometries; i++)
             {
-                var result = ReadGeometry(reader, transform, depth + 1);
+                var result = ReadGeometry(ref reader, transform, depth + 1);
                 using var resultPath = result.Path;
                 if (resultPath != null)
                 {
@@ -365,9 +361,9 @@ internal static class WkbToSkiaConverter
         }
     }
 
-    private static GeometryConversionResult ReadGeometryCollection(WkbReader reader, Func<double, double, SKPoint> transform, int depth)
+    private static GeometryConversionResult ReadGeometryCollection(ref WkbReader reader, Func<double, double, SKPoint> transform, int depth)
     {
-        var numGeometries = ReadElementCount(reader);
+        var numGeometries = ReadElementCount(ref reader);
         SKPath? combinedPath = new SKPath();
         try
         {
@@ -377,7 +373,7 @@ internal static class WkbToSkiaConverter
 
             for (int i = 0; i < numGeometries; i++)
             {
-                var result = ReadGeometry(reader, transform, depth + 1);
+                var result = ReadGeometry(ref reader, transform, depth + 1);
                 using var resultPath = result.Path;
                 if (resultPath != null)
                 {
@@ -422,7 +418,7 @@ internal static class WkbToSkiaConverter
         }
     }
 
-    private static void SkipExtraDimensions(WkbReader reader, int dimensions)
+    private static void SkipExtraDimensions(ref WkbReader reader, int dimensions)
     {
         for (int i = 2; i < dimensions; i++)
         {
@@ -430,69 +426,4 @@ internal static class WkbToSkiaConverter
         }
     }
 
-    internal sealed class WkbReader
-    {
-        private readonly byte[] _data;
-        private int _position;
-
-        public bool IsLittleEndian { get; set; }
-
-        public int RemainingBytes => _data.Length - _position;
-
-        public WkbReader(byte[] data)
-        {
-            _data = data;
-            _position = 0;
-        }
-
-        public byte ReadByte()
-        {
-            EnsureCanRead(sizeof(byte));
-            return _data[_position++];
-        }
-
-        public int ReadInt32()
-        {
-            EnsureCanRead(sizeof(int));
-            var value = IsLittleEndian
-                ? BitConverter.ToInt32(_data, _position)
-                : BinaryPrimitives_ReadInt32BigEndian(_data.AsSpan(_position));
-            _position += 4;
-            return value;
-        }
-
-        public double ReadDouble()
-        {
-            EnsureCanRead(sizeof(double));
-            var value = IsLittleEndian
-                ? BitConverter.ToDouble(_data, _position)
-                : BinaryPrimitives_ReadDoubleBigEndian(_data.AsSpan(_position));
-            _position += 8;
-            return value;
-        }
-
-        private void EnsureCanRead(int byteCount)
-        {
-            if (_position > _data.Length - byteCount)
-            {
-                throw new InvalidDataException("WKB payload ended unexpectedly.");
-            }
-        }
-
-        private static int BinaryPrimitives_ReadInt32BigEndian(ReadOnlySpan<byte> source)
-        {
-            return (source[0] << 24) | (source[1] << 16) | (source[2] << 8) | source[3];
-        }
-
-        private static double BinaryPrimitives_ReadDoubleBigEndian(ReadOnlySpan<byte> source)
-        {
-            var bytes = new byte[8];
-            for (int i = 0; i < 8; i++)
-            {
-                bytes[7 - i] = source[i];
-            }
-
-            return BitConverter.ToDouble(bytes, 0);
-        }
-    }
 }

@@ -2935,21 +2935,6 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-license-capacity",
-      "route": "/api/v1/admin/license/capacity",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetCapacity_WithAdminAuth_ReturnsMeterState",
-        "Honua.Server.Tests.Features.Licensing.DisabledLicenseIntegrationTests.Production_DisabledWithoutLicense_StartsWithActiveEntitlementsAndTruthfulAdminResponses"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "get-api-v1-admin-license-entitlements",
       "route": "/api/v1/admin/license/entitlements",
       "method": "GET",
@@ -4853,20 +4838,6 @@
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "internal",
       "capability": "admin.multi-tenancy"
-    },
-    {
-      "id": "get-api-v1-admin-tile-operations-cache-inventory",
-      "route": "/api/v1/admin/tile-operations/cache/inventory",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.CacheInventory_WhenNoIndex_ReturnsEmptyInventory"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
     },
     {
       "id": "get-api-v1-admin-tile-operations-jobs",
@@ -18268,20 +18239,6 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "post-api-v1-admin-license-capacity-surge",
-      "route": "/api/v1/admin/license/capacity/surge",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.SetSurgeMode_WithAdminAuth_ActivatesSurgeAccounting"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "post-api-v1-admin-license-upload",
       "route": "/api/v1/admin/license/upload",
       "method": "POST",
@@ -19392,20 +19349,6 @@
       "capability": "admin.multi-tenancy"
     },
     {
-      "id": "post-api-v1-admin-tile-operations-evict",
-      "route": "/api/v1/admin/tile-operations/evict",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.Evict_WhenEvictionDisabled_ReturnsOkAndReportsDisabled"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "post-api-v1-admin-tile-operations-jobs",
       "route": "/api/v1/admin/tile-operations/jobs",
       "method": "POST",
@@ -19421,8 +19364,6 @@
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PublishArchive_Republish_PreservesLogicalArtifactIdAndObjectKey",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishOperation_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishWithoutLayerId_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WhenDeleteRequestWithoutTarget_Returns400",
-        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WhenExpireRequest_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WhenInvalidateRequest_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WithInvalidOperation_Returns400"
       ],
