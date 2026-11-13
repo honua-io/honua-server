@@ -38,7 +38,7 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
     }
 
     /// <summary>
-    /// Runs every scenario discovered under <c>tests/dotnet/eval/scenarios/</c> so that adding
+    /// Runs every scenario discovered under <c>tests/fixtures/eval/</c> so that adding
     /// a new JSON scenario automatically contributes to <c>eval-report.json</c> without
     /// requiring a code change here.
     /// </summary>
@@ -248,7 +248,7 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
     }
 
     /// <summary>
-    /// Enumerates every scenario id under <c>tests/dotnet/eval/scenarios/</c> so the harness
+    /// Enumerates every scenario id under <c>tests/fixtures/eval/</c> so the harness
     /// suite expands automatically as the corpus grows.
     /// </summary>
     public static IEnumerable<object[]> DiscoveredScenarioIds()

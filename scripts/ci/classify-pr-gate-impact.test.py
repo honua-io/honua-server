@@ -174,7 +174,7 @@ for hostile in (
 # status check fires before the path check, which is the fail-closed order.
 for status in ("removed", "renamed", "copied", "changed", "unchanged", ""):
     classified = MODULE.classify(
-        payload([{"filename": "docs/internal/operator/audit-coverage-matrix.md", "status": status}])
+        payload([{"filename": "docs/internal/operations/audit-coverage-matrix.md", "status": status}])
     )
     assert classified["mode"] == "full", status
     assert classified["reason"] == "rename-delete-or-unknown-status", status

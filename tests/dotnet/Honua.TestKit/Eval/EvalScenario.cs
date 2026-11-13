@@ -9,7 +9,7 @@ namespace Honua.TestKit.Eval;
 /// <summary>
 /// Declarative end-to-end eval scenario describing the canonical operator workflow
 /// from intent capture through terminal result validation. Scenarios are authored as
-/// JSON under <c>tests/dotnet/eval/scenarios/</c> and consumed by <see cref="EvalRunner"/>.
+/// JSON under <c>tests/fixtures/eval/</c> and consumed by <see cref="EvalRunner"/>.
 /// </summary>
 public sealed record EvalScenario
 {

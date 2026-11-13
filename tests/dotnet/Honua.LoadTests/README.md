@@ -4,7 +4,7 @@ The `soak` profile drives all eight existing `LoadTestScenarios` with 170
 virtual users, a five-minute ramp-up, at least 3,600 seconds of steady state,
 and a two-minute ramp-down. The candidate receipt is produced by
 [capacity-soak-candidate.yml](../../../.github/workflows/capacity-soak-candidate.yml);
-see its [operator instructions](../../../docs/ops/capacity-soak-receipt.md).
+see its [operator instructions](../../../docs/internal/operations/capacity-soak-receipt.md).
 
 The candidate producer runs `--write-soak-license <path>` alone to create its
 two-day Pro test license. Each invocation uses a fresh signing key held in memory

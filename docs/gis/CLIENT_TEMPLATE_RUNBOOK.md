@@ -15,11 +15,11 @@ Use this runbook when validating a QGIS or BI demo.
 
 ## Template Pack
 
-Template sources are split between [`docs/gis/client-templates`](client-templates/README.md) and [`docs/user/client-templates/qgis`](../user/client-templates/qgis).
+Template sources are split between [`docs/gis/client-templates`](client-templates/README.md) and [`docs/guides/client-templates/qgis`](../user/client-templates/qgis).
 
 | Client | Template Source | Saved Output Artifact |
 |---|---|---|
-| QGIS | [`../user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template`](../user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template) | `Honua-Desktop-Smoke.qgz` |
+| QGIS | [`../user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template`](../guides/client-templates/qgis/Honua-Desktop-Smoke.qgs.template) | `Honua-Desktop-Smoke.qgz` |
 | Power BI Desktop | [`power-bi/Honua-OData-Smoke.pq.template`](client-templates/power-bi/Honua-OData-Smoke.pq.template) and [`power-bi/Honua-OData-Smoke.pbix.template.md`](client-templates/power-bi/Honua-OData-Smoke.pbix.template.md) | `Honua-OData-Smoke.pbix` |
 | Excel | [`excel/Honua-OData-Smoke.pq.template`](client-templates/excel/Honua-OData-Smoke.pq.template) and [`excel/Honua-OData-Smoke.xlsx.template.md`](client-templates/excel/Honua-OData-Smoke.xlsx.template.md) | `Honua-OData-Smoke.xlsx` |
 
@@ -99,7 +99,7 @@ Use these placeholders across templates:
 | `HONUA_API_KEY` | `demo-key-123` | Leave blank if not using API-key auth |
 
 1. Prefer the workflow artifact pack when it is available. Copy `artifacts/client-compat/<service>-<timestamp>/pack/templates/.env.example` to `.env` in that same `templates/` directory.
-2. If you are working directly from the repo instead of the artifact pack, copy [`docs/gis/client-templates/.env.example`](client-templates/.env.example) to a scratch `templates/` directory and also copy the QGIS template from [`docs/user/client-templates/qgis`](../user/client-templates/qgis).
+2. If you are working directly from the repo instead of the artifact pack, copy [`docs/gis/client-templates/.env.example`](client-templates/.env.example) to a scratch `templates/` directory and also copy the QGIS template from [`docs/guides/client-templates/qgis`](../user/client-templates/qgis).
 3. Fill values for your target environment.
 4. Substitute placeholders with `envsubst` from the canonical pack layout:
 

@@ -109,7 +109,7 @@ def receipt(lock: dict, lock_hash: str, source: dict, payload: bytes, artifact_u
     for name in values.keys() - populations.keys():
         populations[name] = dict(kind="distribution" if "Latency" in name else "duration" if name == "recoveryTimeSeconds" else "gauge",
                                  sampleCount=count if "Latency" in name else len(recoveries) if name == "recoveryTimeSeconds" else len(metrics)*3 if name == "saturationRatio" else len(metrics))
-    doc = f"https://github.com/honua-io/honua-server/blob/{candidate['serverRevision']}/docs/ops/capacity-soak-receipt.md"
+    doc = f"https://github.com/honua-io/honua-server/blob/{candidate['serverRevision']}/docs/internal/operations/capacity-soak-receipt.md"
     signals = {}
     for name, value in values.items():
         threshold = lock["thresholds"][name]

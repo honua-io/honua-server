@@ -12,13 +12,13 @@ namespace Honua.TestKit.Eval;
 /// </summary>
 public static class EvalScenarioLoader
 {
-    private const string ScenarioRootSegment = "tests/dotnet/eval/scenarios";
+    private const string ScenarioRootSegment = "tests/fixtures/eval";
 
     /// <summary>
     /// Loads a single scenario by identifier. Searches (in order):
     /// <list type="number">
     ///   <item>Override path from the <c>HONUA_EVAL_SCENARIO_ROOT</c> environment variable.</item>
-    ///   <item>Co-located scenarios under the solution's <c>tests/dotnet/eval/scenarios/</c> directory.</item>
+    ///   <item>Co-located scenarios under the solution's <c>tests/fixtures/eval/</c> directory.</item>
     /// </list>
     /// When <c>HONUA_EVAL_SCENARIO_ROOT</c> is set but the directory does not exist, the loader
     /// fails closed with <see cref="EvalScenarioException"/> rather than falling back to the
