@@ -44,15 +44,24 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro));
     private HttpClient _client = null!;
+    private bool _defaultApplicationStarted;
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task StartDefaultApplicationAsync()
     {
+        if (_defaultApplicationStarted)
+        {
+            return;
+        }
+
+        _defaultApplicationStarted = true;
         await _fixture.InitializeAsync();
         _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
         _client = _fixture.CreateAdminClient();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync() => _defaultApplicationStarted ? _fixture.DisposeAsync() : Task.CompletedTask;
 
     // ── REQ-001/002/003: baseline before deltas, contiguous sequence, SSE ────────
 
@@ -60,6 +69,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotMode_EmitsCompleteBaselineThenCorrelatedMutation()
     {
+        await StartDefaultApplicationAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         using var request = BuildSseRequest(
@@ -112,6 +122,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_RealUpdateAndDelete_ReachTheSubscriberCorrelatedToTheEdit()
     {
+        await StartDefaultApplicationAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         using var request = BuildSseRequest(
@@ -166,6 +177,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotThenDeltaMode_EmitsOneBatchedBaselineThenTheMutation()
     {
+        await StartDefaultApplicationAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot-then-delta");
@@ -227,6 +239,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_SnapshotThenDeltaMode_EmitsOneBatchedBaselineThenTheMutation()
     {
+        await StartDefaultApplicationAsync();
         var wsClient = _fixture.CreateWebSocketClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
@@ -286,6 +299,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_UnknownMode_Returns400ListingTheSupportedModes()
     {
+        await StartDefaultApplicationAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot-only");
@@ -301,6 +315,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_SnapshotMode_EmitsCompleteBaselineThenCorrelatedMutation()
     {
+        await StartDefaultApplicationAsync();
         var wsClient = _fixture.CreateWebSocketClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
@@ -392,6 +407,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotMode_SequenceIsContiguousWhenGlobalCursorSkipsFilteredEvents()
     {
+        await StartDefaultApplicationAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
@@ -536,6 +552,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotMode_CursorAheadOfStore_EmitsReplacementSnapshot()
     {
+        await StartDefaultApplicationAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
@@ -558,6 +575,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotMode_ReplayableCursor_ReplaysDeltasWithoutSnapshot()
     {
+        await StartDefaultApplicationAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
@@ -603,6 +621,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_DeltaModeDefault_EmitsNoSnapshotFrames()
     {
+        await StartDefaultApplicationAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         using var request = BuildSseRequest("/api/v1/streaming/features?layers=0");
@@ -635,6 +654,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotModeWithoutLayerScope_ReturnsBadRequest()
     {
+        await StartDefaultApplicationAsync();
         using var request = BuildSseRequest($"/api/v1/streaming/features?serviceId={TestServiceId}&mode=snapshot");
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
@@ -647,6 +667,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_UnknownMode_ReturnsBadRequest()
     {
+        await StartDefaultApplicationAsync();
         using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=firehose");
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
@@ -1114,6 +1135,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotModeWithValueDependentFilter_IsRejected()
     {
+        await StartDefaultApplicationAsync();
         // A feature admitted into the baseline can be updated so it no longer matches a bbox,
         // attribute, or temporal predicate, and both replay and live fan-out evaluate the
         // POST-mutation image — so the leaving update is filtered out and the client keeps a
@@ -1140,6 +1162,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotModeScopedByLayerOnly_IsStillAccepted()
     {
+        await StartDefaultApplicationAsync();
         // The refusal must be scoped to value-dependent predicates: a feature cannot leave its
         // service/layer by being edited, so plain layer scoping stays convergent.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -1156,6 +1179,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotMode_EveryCanSubscribeLayerInTheCapabilityDocument_ReturnsABaseline()
     {
+        await StartDefaultApplicationAsync();
         // Driven off the capability document rather than a hardcoded layer: the contract is
         // "every layer advertised as canSubscribe can be snapshotted", so a seed change that adds
         // a layer the baseline path cannot serve must fail here instead of shipping (#3181).
@@ -1192,6 +1216,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotThenDeltaMode_EveryCanSubscribeLayerInTheCapabilityDocument_ReturnsABaseline()
     {
+        await StartDefaultApplicationAsync();
         // Same contract over the batched framing: the SDK conformance lane subscribes in
         // snapshot-then-delta, so the batched baseline has to be servable for the same layers.
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
@@ -1278,6 +1303,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotMode_BaselineExceedingPayloadBudget_StaysWithinTheAdvertisedBudget()
     {
+        await StartDefaultApplicationAsync();
         // The degenerate case above (an envelope that cannot fit at all) is not the shape that
         // took demo.honua.io down. There the envelope fit and the FEATURES overran: a 5000-row
         // polygon baseline serialized to ~6.6 MB, the buffering serverless response path capped
@@ -1998,6 +2024,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
     private async Task<long> ApplyEditsAsync(string payload, string resultsProperty, CancellationToken cancellationToken)
     {
+        await StartDefaultApplicationAsync();
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         using var response = await _client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",

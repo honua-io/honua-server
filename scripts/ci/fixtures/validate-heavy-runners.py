@@ -434,7 +434,11 @@ class CiProducerSelectionTests(unittest.TestCase):
         self.assertEqual(build["env"]["DOTNET_PROCESSOR_COUNT"], "4")
         self.assertEqual(build["env"]["DOTNET_CLI_USE_MSBUILD_SERVER"], "false")
         self.assertEqual(build["env"]["MSBUILDDISABLENODEREUSE"], "1")
-        self.assertEqual(build["env"]["DOTNET_INSTALL_DIR"], "${{ runner.temp }}/honua-ci-producer-sdk")
+        self.assertNotIn("DOTNET_INSTALL_DIR", build["env"])
+        self.assertIn(
+            'echo "DOTNET_INSTALL_DIR=$RUNNER_TEMP/honua-ci-producer-sdk" >> "$GITHUB_ENV"',
+            build["steps"][0]["run"],
+        )
         for step in build["steps"]:
             if "sudo " in step.get("run", ""):
                 self.assertEqual(step["if"], "runner.environment == 'github-hosted'")

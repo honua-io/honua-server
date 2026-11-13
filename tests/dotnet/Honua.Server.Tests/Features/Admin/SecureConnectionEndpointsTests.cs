@@ -45,6 +45,7 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
         PropertyNameCaseInsensitive = true
     };
     private readonly WebAppFixture _fixture;
+    private bool _defaultApplicationInitialized;
     private HttpClient _client = null!;
     private ISecureConnectionRegistry _registry = null!;
 
@@ -62,8 +63,11 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
             builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
         });
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task InitializeDefaultApplicationAsync()
     {
+        _defaultApplicationInitialized = true;
         await _fixture.InitializeAsync();
         _client = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
 
@@ -71,12 +75,14 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
         _registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync() => _defaultApplicationInitialized ? _fixture.DisposeAsync() : Task.CompletedTask;
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/connections")]
     public async Task GetConnections_WithAdminAuth_ReturnsConnections()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Act
         var response = await _client.GetAsync("/api/v1/admin/connections");
 
@@ -95,6 +101,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/connections")]
     public async Task GetConnections_WithoutAdminAuth_ReturnsUnauthorized()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange
         using var unauthorizedClient = _fixture.CreateClient(); // No admin auth
 
@@ -109,6 +117,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/connections")]
     public async Task CreateConnection_ValidEncryptedConnection_ReturnsCreated()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange
         var request = new CreateSecureConnectionRequest
         {
@@ -153,6 +163,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/connections")]
     public async Task CreateConnection_ValidSecretRefConnection_ReturnsCreated()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange
         var request = new CreateSecureConnectionRequest
         {
@@ -224,6 +236,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/connections")]
     public async Task CreateConnection_InvalidRequest_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange - Request with both password and secret reference (invalid)
         var request = new CreateSecureConnectionRequest
         {
@@ -256,6 +270,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [InlineData("Prefer")]
     public async Task CreateConnection_SslRequiredRejectsFallbackSslModes(string sslMode)
     {
+        await InitializeDefaultApplicationAsync();
+
         var request = new CreateSecureConnectionRequest
         {
             Name = $"test-invalid-ssl-{Guid.NewGuid():N}",
@@ -283,6 +299,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/connections/{id}")]
     public async Task GetConnection_ExistingConnection_ReturnsDetail()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange - Create a test connection first
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name: $"test-get-detail-{Guid.NewGuid():N}",
@@ -320,6 +338,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/connections/{id}")]
     public async Task GetConnection_NonExistentConnection_ReturnsNotFound()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange
         var nonExistentId = Guid.NewGuid();
 
@@ -334,6 +354,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/connections/{id}/test")]
     public async Task TestConnection_ValidConnection_ReturnsTestResult()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange - Create a test connection
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name: $"test-health-{Guid.NewGuid():N}",
@@ -367,6 +389,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/connections/test")]
     public async Task TestDraftConnection_WithValidRequest_ReturnsResultOrBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
+
         var request = new CreateSecureConnectionRequest
         {
             Name = $"draft-test-{Guid.NewGuid():N}",
@@ -626,6 +650,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [InlineData("Prefer")]
     public async Task TestDraftConnection_SslRequiredRejectsFallbackSslModes(string sslMode)
     {
+        await InitializeDefaultApplicationAsync();
+
         var request = new CreateSecureConnectionRequest
         {
             Name = $"draft-invalid-ssl-{Guid.NewGuid():N}",
@@ -653,6 +679,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/connections/encryption/validate")]
     public async Task ValidateEncryption_WithAdminAuth_ReturnsValidationResult()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Act
         var response = await _client.PostAsync("/api/v1/admin/connections/encryption/validate", null);
 
@@ -673,6 +701,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/connections")]
     public async Task CreateConnection_DuplicateName_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange - Create first connection
         var firstRequest = new CreateSecureConnectionRequest
         {
@@ -760,6 +790,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/connections")]
     public async Task Endpoints_ResponsesSanitized_NoSensitiveDataExposed()
     {
+        await InitializeDefaultApplicationAsync();
+
         // This test ensures that API responses never contain sensitive information
         // like passwords, encryption keys, or actual secret values
 
@@ -802,6 +834,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("PUT /api/v1/admin/connections/{id}")]
     public async Task UpdateConnection_ExistingConnection_ReturnsUpdatedSummary()
     {
+        await InitializeDefaultApplicationAsync();
+
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name: $"test-update-{Guid.NewGuid():N}",
             host: "localhost",
@@ -844,6 +878,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [InlineData("Prefer")]
     public async Task UpdateConnection_SslRequiredRejectsFallbackSslModes(string sslMode)
     {
+        await InitializeDefaultApplicationAsync();
+
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name: $"test-update-invalid-ssl-{Guid.NewGuid():N}",
             host: "localhost",
@@ -877,6 +913,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("DELETE /api/v1/admin/connections/{id}")]
     public async Task DeleteConnection_ExistingConnection_ReturnsOk()
     {
+        await InitializeDefaultApplicationAsync();
+
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name: $"test-delete-{Guid.NewGuid():N}",
             host: "localhost",
@@ -901,6 +939,8 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/connections/encryption/rotate-key")]
     public async Task RotateEncryptionKey_WithAdminAuth_ReturnsBadRequest_BecauseRotationNotSupported()
     {
+        await InitializeDefaultApplicationAsync();
+
         var response = await _client.PostAsync("/api/v1/admin/connections/encryption/rotate-key", null);
 
         // Key rotation is not supported at runtime (requires re-deployment with new master key)
