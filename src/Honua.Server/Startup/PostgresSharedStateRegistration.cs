@@ -2,15 +2,19 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics.CodeAnalysis;
+using Honua.Ai.Protocols.Mcp;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Infrastructure.SecurityState;
+using Honua.Server.Features.Infrastructure.McpSessions;
+using Honua.Server.Features.Studio.Drafts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 
@@ -35,7 +39,11 @@ internal static class PostgresSharedStateRegistration
             provider.GetRequiredService<NpgsqlDataSource>(),
             configuration[SystemSchemaKey]));
         services.TryAddSingleton<PostgresExecutionJobStore>();
-        services.TryAddSingleton<ILeaseStore, PostgresLeaseStore>();
+        services.TryAddSingleton<PostgresLeaseStore>();
+        // A host with no system database runs one node and has no lease store (deliberately null),
+        // so callers that ask with GetService fall back to in-process coordination.
+        services.TryAddSingleton<ILeaseStore>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresLeaseStore>() : null!);
 
         services.TryAddSingleton(provider => new ControlPlaneStorage(
             provider.GetRequiredService<JobStoreDatabase>(),
@@ -59,6 +67,12 @@ internal static class PostgresSharedStateRegistration
         services.AddSharedOrLocal<IIdempotencyReservationStore, PostgresIdempotencyReservationStore>(
             static () => new InMemoryIdempotencyReservationStore());
         services.AddSharedOrLocal<ITokenReplayStore, PostgresTokenReplayStore>(static () => new InMemoryTokenReplayStore());
+        services.AddPackageDrafts();
+        services.TryAddSingleton<PostgresMcpSessionStore>();
+        // Without a system database there is no shared session store (deliberately null), and the
+        // MCP session manager keeps sessions in process.
+        services.TryAddSingleton<IMcpSessionStore>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
         services.AddRetentionSweep<PostgresOperationProposalStore>();
         services.AddRetentionSweep<PostgresWorkflowOperationStore>();
@@ -68,7 +82,27 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresSecurityTokenStore>();
         services.AddRetentionSweep<PostgresTokenReplayStore>();
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();
+        services.AddRetentionSweep<PostgresPackageDraftBacking>();
+        services.AddRetentionSweep<PostgresMcpSessionStore>();
         return services;
+    }
+
+    // The lease store needs the system database; a host without one has no shared leases.
+    public static ILeaseStore? SharedLeaseStore(this IServiceProvider provider)
+        => provider.GetService<NpgsqlDataSource>() is null ? null : provider.GetService<ILeaseStore>();
+
+    private static void AddPackageDrafts(this IServiceCollection services)
+    {
+        services.TryAddSingleton<PostgresPackageDraftBacking>();
+        services.RemoveAll<IPackageDraftStore>();
+        services.AddSingleton<IPackageDraftStore>(provider =>
+        {
+            var retention = provider.GetService<PackageDraftRetentionOptions>() ?? new PackageDraftRetentionOptions();
+            var time = provider.GetService<TimeProvider>() ?? TimeProvider.System;
+            return provider.GetService<NpgsqlDataSource>() is not null
+                ? new PackageDraftLedger(provider.GetRequiredService<PostgresPackageDraftBacking>(), retention, time)
+                : new InMemoryPackageDraftStore(retention, time);
+        });
     }
 
     // The shared store on a host with a system database, a process-local one otherwise.

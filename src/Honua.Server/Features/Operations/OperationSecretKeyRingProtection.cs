@@ -75,8 +75,11 @@ internal static class OperationSecretKeyRingProtection
         // user can read it, lets one pre-create the path as a symlink, and lets two
         // Honua processes overwrite each other's certificate. UnixCreateMode applies
         // 0600 at open(2) time and CreateNew (O_EXCL) refuses an existing path.
+        // A tmpfs mounted over /tmp hides the root pre-created by the image.
+        var temporaryRoot = Path.GetTempPath();
+        Directory.CreateDirectory(temporaryRoot);
         var path = Path.Join(
-            Path.GetTempPath(),
+            temporaryRoot,
             $"honua-operation-keyring-{Guid.NewGuid():N}.pfx");
         var options = new FileStreamOptions
         {
@@ -98,7 +101,7 @@ internal static class OperationSecretKeyRingProtection
         return new MaterializedKeyRing(path, password);
     }
 
-    // Development and Test may start without a key-ring certificate; every other environment that connected to Redis requires one.
+    // Development and Test may start without a key-ring certificate; every other environment with a database requires one.
     public static bool RequiresDurableChannelCertificate(bool isDevelopment, bool isTest, bool keyRingIsShared)
         => keyRingIsShared && !isDevelopment && !isTest;
 
@@ -127,9 +130,10 @@ internal static class OperationSecretKeyRingProtection
         if (string.IsNullOrWhiteSpace(path))
         {
             throw new InvalidOperationException(
-                $"'{CertificatePathKey}' is required when the durable operation secret channel is enabled. "
-                + $"Redis turns that channel on. Mount a PKCS#12 certificate and set '{CertificatePathKey}', or on a "
-                + $"host that cannot mount files (AWS Lambda) set '{CertificateMaterialKey}' to a Secrets Manager reference "
+                $"'{CertificatePathKey}' is required outside Development and Test whenever a database is configured "
+                + "('ConnectionStrings:DefaultConnection'): the operation key ring is stored in that database and this "
+                + $"certificate protects it. Mount a PKCS#12 certificate and set '{CertificatePathKey}', or on a "
+                + $"host that cannot mount files set '{CertificateMaterialKey}' to a Secrets Manager reference "
                 + "for the bundle.");
         }
 

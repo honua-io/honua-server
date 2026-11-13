@@ -9,12 +9,12 @@ See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Con
 
 You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes.
 
-**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.1.12, `honua-sdk` 0.1.19) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
+**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.3.1, `honua-sdk` 0.3.1) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
 
 > The browser fetches tiles without credentials, so steps 2–6 require anonymous reads to be
 > enabled on the published service. Do not proceed after a refused policy change.
 
-Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/{layerId}/{z}/{x}/{y}.mvt`, described by TileJSON at `/tiles/{layerId}/tile.json`, with a ready-made MapLibre style at `/api/styles/{layerId}.json` — no tile cache to build, no style to author.
+Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/{layerId}/{z}/{x}/{y}.mvt`, described by TileJSON at `/tiles/{layerId}/tile.json`, with a ready-made MapLibre style at `/api/styles/{publicationId}.json` (the graph Layer ID) — no tile cache to build, no style to author.
 
 ## Steps
 
@@ -29,7 +29,7 @@ refuses the operation; it does not enable anonymous access. Use the Redis-backed
 profile and retain a successful policy-change result before opening the map.
 
 ```bash
-python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.19' 'mcp==2.1.1'
+python3 -m pip install 'honua-admin==0.3.1' 'honua-sdk==0.3.1' 'mcp==2.1.1'
 python3 - <<'PY'
 import asyncio
 import os
@@ -75,12 +75,12 @@ Open `$HONUA_BASE_URL/tiles/$HONUA_LAYER_ID/tile.json` in a browser (`http://loc
 {"tilejson":"3.0.0","name":"hawaii-cities","scheme":"xyz",
  "tiles":["http://localhost:18080/tiles/1/{z}/{x}/{y}.mvt"],
  "minzoom":0,"maxzoom":22,"bounds":[…],"vector_layers":[{"id":"layer",…}],
- "style":"http://localhost:18080/api/styles/1.json"}
+ "style":"http://localhost:18080/api/styles/<publicationId>.json"}
 ```
 
 3. Fetch the auto-generated MapLibre style. It is a complete MapLibre v8 style document with geometry-appropriate defaults; add `?theme=dark`, `?theme=colorblind-safe`, or `?theme=print` for variants.
 
-Open `$HONUA_BASE_URL/api/styles/$HONUA_LAYER_ID.json` in a browser, replacing `1` with `$HONUA_LAYER_ID`. Add `?theme=dark`, `?theme=colorblind-safe`, or `?theme=print` for a variant.
+Open the `style` URL returned in step 2. Its graph Layer ID can differ from `$HONUA_LAYER_ID`, the numeric Service-local tile selector. Add `?theme=dark`, `?theme=colorblind-safe`, or `?theme=print` for a variant.
 
 4. Save this as `map.html`. It reads the TileJSON, fits the map to your data's bounds, and draws the features over an OpenStreetMap basemap (in every MVT tile the source-layer name is `layer`). Set `layerId` to `$HONUA_LAYER_ID` from the publish step. The sample below uses `1`, which is that id when the publish step printed `1`.
 

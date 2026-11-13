@@ -6,12 +6,15 @@ import argparse
 import json
 import re
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
 
 REFUSAL = "Migration safety gate blocked pending contract-phase migration(s) on an existing database:"
 CONTRACT = "038_DropV1MetadataGraphTables"
+KEY_RING_PATH = "/tmp/honua-refusal-key-ring.pfx"
+KEY_RING_PASSWORD = "refusal-key-ring"
 CONTAINER_LIMITS = ("--memory", "1g", "--memory-swap", "1g", "--cpus", "1", "--pids-limit", "256",
                     "--log-opt", "max-size=10m", "--log-opt", "max-file=1")
 DUMP_LIMIT_BYTES = 64 * 1024 * 1024
@@ -49,6 +52,18 @@ def validate(exit_code: int, logs: str, dumps: list[str], oom: bool) -> None:
         raise ValueError(f"crash dumps created: {dumps}")
 
 
+def write_key_ring_certificate(directory: Path) -> Path:
+    key, cert, pfx = (directory / name for name in ("key.pem", "cert.pem", "key-ring.pfx"))
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+                    "-subj", "/CN=Honua refusal key ring", "-keyout", str(key), "-out", str(cert)],
+                   check=True, capture_output=True, timeout=60)
+    subprocess.run(["openssl", "pkcs12", "-export", "-inkey", str(key), "-in", str(cert),
+                    "-out", str(pfx), "-passout", f"pass:{KEY_RING_PASSWORD}"],
+                   check=True, capture_output=True, timeout=60)
+    pfx.chmod(0o644)  # the server runs as a non-root user
+    return pfx
+
+
 def is_dump(path: str) -> bool:
     name = Path(path).name.lower()
     return name == "core" or name.startswith("core.") or name.endswith((".dmp", ".mdmp", ".core"))
@@ -80,7 +95,7 @@ def main() -> None:
         if labels.get("honua.runtime.compilation") != "native-aot":
             raise ValueError("image must declare native-aot compilation")
         if image["Config"].get("Entrypoint") != ["/app/Honua.Server"]:
-            raise ValueError("expected production native server entrypoint")
+            raise ValueError("expected production native entrypoint")
         if receipt["image_source_sha"] != args.source_sha:
             raise ValueError("image revision does not match requested source SHA")
         # Never inherit approval/skip settings, including from a caller's environment.
@@ -112,7 +127,14 @@ def main() -> None:
                "-e", "Security__ConnectionEncryption__Salt=Z2F0ZWQtYm9vdC1yZWZ1c2FsLXNhbHQ=",
                "-e", "DOTNET_DbgEnableMiniDump=1", "-e", "COMPlus_DbgEnableMiniDump=1",
                "-e", "DOTNET_DbgMiniDumpName=/tmp/gated-boot.dmp",
-               "-e", "COMPlus_DbgMiniDumpName=/tmp/gated-boot.dmp", image["Id"])
+               "-e", "COMPlus_DbgMiniDumpName=/tmp/gated-boot.dmp",
+               "-e", f"Operations__SecretChannel__KeyRingCertificatePath={KEY_RING_PATH}",
+               "-e", f"Operations__SecretChannel__KeyRingCertificatePassword={KEY_RING_PASSWORD}",
+               image["Id"])
+        # Production refuses to start without an operation key-ring certificate
+        # once a database is configured; supply one so boot reaches the migration gate.
+        with tempfile.TemporaryDirectory() as scratch:
+            docker("cp", str(write_key_ring_certificate(Path(scratch))), f"{server}:{KEY_RING_PATH}")
         docker("start", server)
         docker("wait", server, timeout=args.timeout)
         state = json.loads(docker("inspect", server))[0]["State"]

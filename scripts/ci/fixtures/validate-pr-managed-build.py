@@ -88,6 +88,11 @@ class PrManagedBuildTests(unittest.TestCase):
             for result in ['failure','cancelled','skipped','']:
                 self.assertNotEqual(subprocess.run(['bash','-e','-c',script],env=dict(os.environ,**(success | {key:result})),capture_output=True).returncode,0,(key,result))
 
+        draft = success | {key: 'skipped' for key in keys if key != 'FORMAT_RESULT'}
+        draft['PR_IS_DRAFT'] = 'true'
+        self.assertEqual(subprocess.run(['bash', '-e', '-c', script], env=dict(os.environ, **draft),
+                                          capture_output=True).returncode, 0)
+
     def test_fast_architecture_remains_independent_and_required(self):
         fast = job('fast-tests')
         self.assertIn('    needs: runner-select\n', fast)
@@ -224,7 +229,9 @@ class PrManagedBuildTests(unittest.TestCase):
                        'Prove the raster execution cases ran, not skipped']:
             self.assertIn(marker, worker)
         self.assertNotIn('Build production PDAL native tools', consumer)
-        commands = re.findall(r'^          dotnet test (.*?)(?=\n\s*\n|\n\s*- name:|\Z)',consumer,re.S | re.M)
+        full_profile_proofs, separator, _ = consumer.partition('- name: Verify default PostGIS store profile')
+        self.assertTrue(separator)
+        commands = re.findall(r'^          dotnet test (.*?)(?=\n\s*\n|\n\s*- name:|\Z)',full_profile_proofs,re.S | re.M)
         self.assertEqual(len(commands), 5)
         for command in commands:
             self.assertIn('--no-build',command)

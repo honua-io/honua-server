@@ -5,24 +5,14 @@ using System.Collections.Immutable;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.AttributeRules;
-using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Validation.Abstractions;
-using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
-using Honua.Infrastructure.Events;
-using Honua.Infrastructure.Validation;
-using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
@@ -345,9 +335,9 @@ public sealed class EditOwnerSubjectTests
                 var features = new[]
                 {
                     Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
-                        .Add("name", "before").Add("owner", currentOwner())),
+                        .Add("objectid", 7L).Add("name", "before").Add("owner", currentOwner())),
                     Feature.Create(8, null, ImmutableDictionary<string, object?>.Empty
-                        .Add("name", "before").Add("owner", "subject-b")),
+                        .Add("objectid", 8L).Add("name", "before").Add("owner", "subject-b")),
                 }.Where(feature => query.ObjectIds == null || query.ObjectIds.Value.IsDefaultOrEmpty || query.ObjectIds.Value.Contains(feature.Id))
                     .ToImmutableArray();
                 return Task.FromResult(QueryResult<Feature>.Create(features.Length, features));
@@ -447,21 +437,5 @@ public sealed class EditOwnerSubjectTests
         };
 
     private static FeatureServerEditsHandler CreateHandler(IFeatureReader? reader = null)
-        => new(
-            new FeatureServerEditsDependencies(
-                Substitute.For<IResourceValidator>(),
-                Substitute.For<IFeatureWriter>(),
-                reader ?? Substitute.For<IFeatureReader>(),
-                Substitute.For<IFeatureServerGeometryServices>(),
-                Substitute.For<IEditParameterAdapter<GeoServicesEditRequest>>(),
-                Substitute.For<IEditProcessor>(),
-                new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
-                Substitute.For<IFilterExpressionService>(),
-                Substitute.For<IHttpContextAccessor>(),
-                new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>()),
-                Substitute.For<IPluginEditPipeline>(),
-                Substitute.For<IApplyEditsIdempotencyStore>(),
-                Substitute.For<IFeatureEditGuard>(),
-                Substitute.For<IFeatureLockService>()),
-            NullLogger<FeatureServerEditsHandler>.Instance);
+        => EditsHandlerFixture.Create(reader ?? Substitute.For<IFeatureReader>());
 }

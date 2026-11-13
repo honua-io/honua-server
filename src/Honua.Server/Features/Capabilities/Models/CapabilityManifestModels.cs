@@ -1,6 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+using Honua.Core.Features.FeatureStore.Domain;
+
 namespace Honua.Server.Features.Capabilities.Models;
 
 internal static class CapabilityManifestConstants
@@ -291,18 +294,6 @@ internal sealed record CapabilityManifestJobLimits
     public required bool SupportsProgressPolling { get; init; }
 
     public required bool DurableJobRuntimeAvailable { get; init; }
-
-    // The Redis durability attestation never withholds jobs.runner or operations.proposals.
-    public CapabilityManifestRedisDurability? RedisDurability { get; init; }
-}
-
-internal sealed record CapabilityManifestRedisDurability
-{
-    public required string Status { get; init; }
-
-    public string? Cause { get; init; }
-
-    public string? Remediation { get; init; }
 }
 
 internal sealed record CapabilityManifestUploadLimits

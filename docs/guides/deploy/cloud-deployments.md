@@ -124,6 +124,21 @@ excluded until it is re-established on a live Fargate task (honua-release#98).
 - Use the generic web image at the release digest (mirrored to ECR if your account requires it), with the task definition's `runtimePlatform.cpuArchitecture` set to `X86_64`; container ports 8080 (HTTP) and 8081 (h2c gRPC).
 - Health checks: ALB target group on `/healthz/ready`; container health on `/healthz/live`.
 - Inject secrets via ECS task-definition `secrets` from Secrets Manager or SSM Parameter Store.
+- Supply the operation key-ring certificate: any deployment with a database outside Development and Test refuses to start without `Operations__SecretChannel__KeyRingCertificatePath` (a mounted PKCS#12), or `Operations__SecretChannel__KeyRingCertificatePkcs12` set to a Secrets Manager reference when the task cannot mount the file.
+- Behind CloudFront with a VPC origin to an internal ALB over HTTP, the ALB overwrites `X-Forwarded-Proto` with `http` for its own hop, so token issuance and other HTTPS-only surfaces refuse requests. Forward the `CloudFront-Forwarded-Proto` header in the origin request policy, and trust it only from the VPC:
+
+  ```bash
+  ForwardedHeaders__Enabled=true
+  ForwardedHeaders__ForwardLimit=2
+  ForwardedHeaders__ProtoHeaderName=CloudFront-Forwarded-Proto
+  ForwardedHeaders__KnownNetworks__0=10.0.0.0/16   # the VPC CIDR; ALB node addresses change
+  ```
+
+  The limit is two hops because the ALB appends the private address of the CloudFront VPC origin interface after the viewer address CloudFront wrote; both of those addresses come from the VPC, so the server resolves the viewer and ignores any addresses the viewer sent itself.
+
+  Do not forward the viewer's `X-Forwarded-Host` in the origin request policy: neither CloudFront nor the ALB overwrites it, and the server applies it from a trusted hop. Set `Public__BaseUrl` (and `HostValidation__AllowedHosts__<n>` if you list hosts) to the distribution's host.
+
+  Do not set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`: it trusts forwarded headers from every peer and reads the ALB's `X-Forwarded-Proto`.
 - Canary rollouts: provision a stable and a canary ECS service on two ALB target groups, then drive weighted traffic shifts through Honua's deploy API (backend `honua-aws-ecs-alb`) with an automatic telemetry gate — see [Upgrade and roll back](upgrade-and-rollback.md).
 
 ```bash
@@ -248,11 +263,11 @@ The three control-plane event functions run with `ControlPlane__TriggerMode=Even
 
 ### MCP sessions on Lambda
 
-A Lambda API function runs as many execution environments, and an MCP client's requests land on different ones, so the server picks the MCP session mode from the topology. With Redis connected (`ConnectionStrings__Redis`), sessions are shared: any environment honours a session another minted, and `DELETE /mcp` ends it everywhere. With Redis off, sessions are stateless: the `Mcp-Session-Id` is a signed token carrying the negotiated workflow view and principal binding, keyed from `Mcp__SessionSigningKey` or, when that is unset, from the database connection string every environment already has. Any environment can then answer `tools/list` with the negotiated view. A stateless session lasts `Mcp__StatelessSessionLifetime` (default 8 hours) and cannot be revoked, so `DELETE /mcp` answers `405`. The `initialize` result reports the mode in `_meta["honua.io/session-mode"]` (`shared` or `stateless` on Lambda). See [Sessions across replicas](../connect/ai-agents-mcp.md#harden-the-mcp-endpoint-production).
+A Lambda API function runs as many execution environments, and an MCP client's requests land on different ones, so the server picks the MCP session mode from the topology. With a system database, sessions are shared: any environment honours a session another minted, and `DELETE /mcp` ends it everywhere. Without one, sessions are stateless: the `Mcp-Session-Id` is a signed token carrying the negotiated workflow view and principal binding, keyed from `Mcp__SessionSigningKey` or, when that is unset, from the database connection string every environment already has. Any environment can then answer `tools/list` with the negotiated view. A stateless session lasts `Mcp__StatelessSessionLifetime` (default 8 hours) and cannot be revoked, so `DELETE /mcp` answers `405`. The `initialize` result reports the mode in `_meta["honua.io/session-mode"]` (`shared` or `stateless` on Lambda). See [Sessions across replicas](../connect/ai-agents-mcp.md#harden-the-mcp-endpoint-production).
 
 ### Background file imports run on AWS Batch
 
-A Lambda instance is frozen as soon as it returns a response, so the API function never runs a background file import itself. With Redis on and the GP Batch workload configured (`ControlPlane__ExecutionWorkloads__0__*`, `Backend=honua-aws-batch`), the API stages the upload in file storage and submits a `FileImport` execution job to that same Batch queue and job definition. The job definition runs the generic server image. The batch backend starts it with `HONUA_OPERATION_ID` and `HONUA_JOB_KIND=FileImport`, so it runs in the execution-worker profile: it downloads the staged file, imports it, and exits. `GET /api/v1/admin/import/jobs/{jobId}` reports `runner: batch` and the Batch job id as `instanceId`. A dedicated `Kind=FileImport` workload takes precedence over the GP workload when one is configured. Imports larger than about 6 GiB ask for a larger job-definition tier through `batch.ephemeral_gib`.
+A Lambda instance is frozen as soon as it returns a response, so the API function never runs a background file import itself. With Redis on and the GP Batch workload configured (`ControlPlane__ExecutionWorkloads__0__*`, `Backend=honua-aws-batch` and `TargetKind=AwsBatch`; `TargetKind` defaults to `KubernetesJob` on every workload, and the server refuses to start when the two disagree), the API stages the upload in file storage and submits a `FileImport` execution job to that same Batch queue and job definition. The job definition runs the generic server image. The batch backend starts it with `HONUA_OPERATION_ID` and `HONUA_JOB_KIND=FileImport`, so it runs in the execution-worker profile: it downloads the staged file, imports it, and exits. `GET /api/v1/admin/import/jobs/{jobId}` reports `runner: batch` and the Batch job id as `instanceId`. A dedicated `Kind=FileImport` workload takes precedence over the GP workload when one is configured. Imports larger than about 6 GiB ask for a larger job-definition tier through `batch.ephemeral_gib`.
 
 A batch worker cannot read the API instance's local disk, so this path needs shared file storage on both the API function and the Batch job definition:
 
@@ -340,7 +355,7 @@ az functionapp config container set --name honua-prod --resource-group honua \
 
 **Redis is a hard dependency for the ops control plane.** Durable jobs, queued imports, deploy workflows, and the operation gateway are all backed by Redis (ElastiCache / Azure Cache for Redis). Without it these surfaces fail closed — job/import/workflow endpoints return `503` rather than silently running node-local work — and the ops-findings recommended-action gateway reports a degraded, unavailable state. Provision Redis for any environment that runs jobs, imports, workflows, or the deploy control plane; single-host dev/test via Docker Compose is the only tier where you can skip it.
 
-**Managed Redis is supported: AWS ElastiCache, Amazon MemoryDB and Azure Cache for Redis.** Honua needs Redis to be reachable and working. A particular persistence policy is not required (owner ruling, 2026-10-10). On ECS and Lambda, point `ConnectionStrings__redis` at the ElastiCache or MemoryDB endpoint, with TLS and auth as the cluster requires. Also supply the operation key-ring certificate, which every Redis-backed non-development deployment needs (`Operations__SecretChannel__KeyRingCertificatePath`, or `Operations__SecretChannel__KeyRingCertificatePkcs12` from Secrets Manager on Lambda).
+**Managed Redis is supported: AWS ElastiCache, Amazon MemoryDB and Azure Cache for Redis.** Honua needs Redis to be reachable and working. A particular persistence policy is not required (owner ruling, 2026-10-10). On ECS and Lambda, point `ConnectionStrings__redis` at the ElastiCache or MemoryDB endpoint, with TLS and auth as the cluster requires.
 
 **Durability is a property of your Redis deployment.** Choose it to match how much acknowledged job and proposal state you can afford to lose:
 
@@ -349,14 +364,6 @@ az functionapp config container set --name honua-prod --resource-group honua \
 | Amazon MemoryDB | A durable Multi-AZ transaction log; acknowledged writes survive node failure |
 | ElastiCache (Redis OSS / Valkey) | Replication with Multi-AZ failover plus optional snapshots; Redis 7 offers no AOF, so the last writes before a failure can be lost |
 | Self-managed Redis | `appendonly yes`, `appendfsync everysec` (or `always`), `maxmemory-policy noeviction` |
-
-At startup the server tries to read the policy (`INFO persistence` plus `CONFIG GET` for `appendonly`, `appendfsync` and `maxmemory-policy`). It publishes the result as information, never as a gate. The capability manifest (`GET /api/v1/capabilities/manifest`) shows it under `limits.job.redisDurability`:
-
-- `status: "attested"`: the policy was read and is durable.
-- `status: "unverified"`, `cause: "RedisAttestationUnavailable"`: the policy could not be read. ElastiCache and MemoryDB block `CONFIG`, so this is what a managed cell reports. No action is needed.
-- `status: "not-durable"`, with `RedisPersistenceDisabled`, `RedisWritePolicyUnsafe` or `RedisEvictionPolicyUnsafe`: the policy was read and is not durable.
-
-In all three cases `operations.proposals` and `jobs.runner` report `available: true`, `limits.job.durableJobRuntimeAvailable` is `true`, and the `redis` health entry stays `Healthy` with the outcome in its data. Those capabilities read `dependency-unavailable` only when Redis is absent or did not connect at startup, and `license-required` when it is unentitled. `Jobs__RequireDurableStore=true` makes the server refuse to start unless the status is `attested`. ElastiCache and MemoryDB can never satisfy it, so leave it unset there.
 
 On **serverless** substrates a frozen or torn-down process keeps no state of its own, so Redis is the only home for acknowledged job and proposal state. Choose MemoryDB, or accept ElastiCache's replication-and-snapshot durability knowingly.
 
@@ -381,7 +388,6 @@ against a deployed environment.
 
 - **Serverless cold starts time out** — use the `-aot` image variants and confirm `HONUA_SKIP_MIGRATIONS=true`; migrations during cold start are the usual culprit.
 - **Job/import endpoints return `503`** — durable jobs, queued imports, and workflows require Redis (ElastiCache / Azure Cache for Redis); serverless patterns without Redis don't host them.
-- **Logs show "Redis durability attestation: unverified" or "not-durable"**: this is information. The governed control plane and jobs stay enabled. `unverified` is expected on ElastiCache and MemoryDB, which block `CONFIG`. `not-durable` means the policy was read and does not protect acknowledged writes. Change it only if you need that durability (see the durability paragraphs above).
 - **Admin calls return 401** — confirm the secret store value actually reaches the container env as `HONUA_ADMIN_PASSWORD` and requests send it in the `X-API-Key` header.
 
 ## Next steps

@@ -27,10 +27,17 @@ public static class CorsConfiguration
     /// </summary>
     private static readonly string[] DefaultAllowedHeaders =
     [
-        "Content-Type", "Authorization", "X-Esri-Authorization", "X-API-Key", "X-Correlation-ID",
+        "X-Honua-CSRF", "Content-Type", "Authorization", "X-Esri-Authorization", "X-API-Key", "X-Correlation-ID",
         "X-Grpc-Web", "X-User-Agent", "Range", "If-Range",
         "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since",
-        "Prefer", "X-Honua-Embed-Key", "MCP-Protocol-Version", "Mcp-Method", "Mcp-Name"
+        "Prefer", "X-Honua-Embed-Key", "MCP-Protocol-Version", "Mcp-Method", "Mcp-Name", "Mcp-Session-Id",
+        "Idempotency-Key"
+    ];
+
+    private static readonly string[] BrowserExposedHeaders =
+    [
+        "Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding",
+        "Accept-Ranges", "Content-Range", "Content-Length", "ETag", "Last-Modified", "Mcp-Session-Id"
     ];
 
     public const string DevelopmentPolicy = HttpCorsPolicyNames.Development;
@@ -86,11 +93,10 @@ public static class CorsConfiguration
                         // headers must still be enumerated. Mirror the production
                         // policy so the PMTiles RangeProxy strategy (#845) works
                         // for cross-origin browser clients in development.
-                        policy.WithOrigins(devOrigins)
+                        policy.WithOrigins(FilterExplicitOrigins(devOrigins))
                               .AllowAnyMethod()
                               .AllowAnyHeader()
-                              .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding",
-                                  "Accept-Ranges", "Content-Range", "Content-Length", "ETag", "Last-Modified")
+                              .WithExposedHeaders(BrowserExposedHeaders)
                               .AllowCredentials()
                               .SetPreflightMaxAge(TimeSpan.FromMinutes(5));
                     }
@@ -147,9 +153,10 @@ public static class CorsConfiguration
 
             policy.WithMethods("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                   .WithHeaders(ResolveAllowedHeaders(configuration))
-                  .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding",
-                      "Accept-Ranges", "Content-Range", "Content-Length", "ETag", "Last-Modified")
-                  .SetIsOriginAllowed(origin => IsOriginAllowed(origin, allowedOrigins))
+                  .WithExposedHeaders(BrowserExposedHeaders)
+                  .SetIsOriginAllowed(origin => allowCredentials
+                      ? explicitOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase)
+                      : IsOriginAllowed(origin, allowedOrigins))
                   .SetPreflightMaxAge(TimeSpan.FromMinutes(preflightMaxAgeMinutes));
 
             if (allowCredentials)
@@ -187,6 +194,14 @@ public static class CorsConfiguration
             .Concat(configured.Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h.Trim()))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    internal static bool IsExplicitOriginAllowed(IConfiguration configuration, string origin)
+    {
+        return Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+            && string.Equals(origin, uri.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase)
+            && FilterExplicitOrigins(ResolveAllowedOrigins(configuration)).Contains(origin, StringComparer.OrdinalIgnoreCase);
     }
 
     private static string[] ResolveAllowedOrigins(IConfiguration configuration)

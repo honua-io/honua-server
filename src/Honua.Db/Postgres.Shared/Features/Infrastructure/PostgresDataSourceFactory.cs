@@ -53,14 +53,21 @@ internal static class PostgresDataSourceFactory
         limits.StatementTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.StatementTimeout), limits.StatementTimeout);
         limits.IdleInTransactionTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.IdleInTransactionTimeout), limits.IdleInTransactionTimeout);
 
-        if (ControlPlaneEventHandlerHost.IsLambda(configuration))
+        var isLambda = ControlPlaneEventHandlerHost.IsLambda(configuration);
+        if (isLambda)
         {
             ApplyLambdaDefaults(limits, section);
         }
 
-        if (!string.IsNullOrWhiteSpace(configuration[ExecutionWorkerOperationIdVariable]))
+        var isExecutionWorker = !string.IsNullOrWhiteSpace(configuration[ExecutionWorkerOperationIdVariable]);
+        if (isExecutionWorker)
         {
             ApplyExecutionWorkerDefaults(limits, section);
+        }
+
+        if (!isLambda && !isExecutionWorker)
+        {
+            DeploymentConnectionPoolSizing.Apply(limits, section, configuration);
         }
 
         return limits;

@@ -408,6 +408,7 @@ internal static class McpEndpointExtensions
             return;
         }
 
+        using var watch = sessions.AcquireSessionWatch(sessionId);
         await BindTokenReplayContinuationAsync(context, sessionId).ConfigureAwait(false);
         StartEventStream(context);
         // Flush the response head so the client (and proxies) see the open SSE
@@ -778,7 +779,7 @@ internal static class McpEndpointExtensions
             }
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested
-            && ex is (StackExchange.Redis.RedisException or TimeoutException or OperationCanceledException or JsonException or ObjectDisposedException))
+            && ex is (System.Data.Common.DbException or TimeoutException or OperationCanceledException or JsonException or ObjectDisposedException))
         {
             return ErrorResponse(request.Id.Value, McpErrorMapper.RequestRegistryUnavailable());
         }

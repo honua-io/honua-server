@@ -2,7 +2,7 @@
   "schema": "honua.sdk-protocol-fixture/v1",
   "coreFixture": {
     "path": "docs/gis/data/client-certification-fixture.v1.json",
-    "sha256": "27d2f39d105b1f48e56fca7582337ad7e4aac815488a6e5f2433b086ce414f05"
+    "sha256": "5b1cb3c94d37ff7e3fbd3f769c6fb908742002adab50b6bad6d72164cc76f832"
   },
   "inputs": [
     {
@@ -15,7 +15,7 @@
     },
     {
       "path": "src/Honua.Server/appsettings.json",
-      "sha256": "7e18067473c41437800eb5e6c0d82baa6994cb4a0fa7b6c8875163df40ac96f6"
+      "sha256": "61c614318be4d2f2c5c4dcedf91c3e6515e2c39f7bf69be9716584bbc31f4059"
     },
     {
       "path": "eng/Honua.ProtocolProfiles.props",

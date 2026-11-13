@@ -33,6 +33,19 @@ public sealed class OperationSecretKeyRingProtectionTests
     }
 
     [UnitTest]
+    public void Resolve_WithoutCertificatePath_NamesTheDatabaseAsTheReason()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+
+        var action = () => OperationSecretKeyRingProtection.Resolve(configuration);
+
+        action.Should().Throw<InvalidOperationException>()
+            .Which.Message.Should().Contain("ConnectionStrings:DefaultConnection")
+            .And.Contain(OperationSecretKeyRingProtection.CertificateMaterialKey)
+            .And.NotContain("Redis");
+    }
+
+    [UnitTest]
     public void Resolve_WithMissingCertificatePath_FailsClosed()
     {
         var configuration = new ConfigurationBuilder()
@@ -547,5 +560,42 @@ public sealed class OperationSecretKeyRingProtectionTests
         return request.CreateSelfSigned(
             DateTimeOffset.UtcNow.AddMinutes(-1),
             DateTimeOffset.UtcNow.AddMinutes(10));
+    }
+}
+
+[CollectionDefinition("OperationSecretTemporaryDirectory", DisableParallelization = true)]
+public sealed class OperationSecretTemporaryDirectoryTestGroup;
+
+[Collection("OperationSecretTemporaryDirectory")]
+public sealed class OperationSecretTemporaryDirectoryTests
+{
+    [UnitTest]
+    public void WritePkcs12Material_WithMissingTemporaryRoot_CreatesRootAndCertificate()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var original = Environment.GetEnvironmentVariable("TMPDIR");
+        var root = Path.Join(Path.GetTempPath(), $"honua-keyring-test-{Guid.NewGuid():N}", "honua");
+        try
+        {
+            Environment.SetEnvironmentVariable("TMPDIR", root);
+            var written = OperationSecretKeyRingProtection.WritePkcs12Material(Convert.ToBase64String([1, 2, 3]));
+
+            Path.GetDirectoryName(written.Path).Should().Be(root);
+            File.ReadAllBytes(written.Path).Should().Equal(1, 2, 3);
+            File.GetUnixFileMode(written.Path).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TMPDIR", original);
+            var parent = Path.GetDirectoryName(root)!;
+            if (Directory.Exists(parent))
+            {
+                Directory.Delete(parent, recursive: true);
+            }
+        }
     }
 }

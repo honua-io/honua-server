@@ -22,7 +22,10 @@ using Honua.Core.Queries.Filters;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Seeding;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,11 +59,15 @@ public sealed class WebAppFixture : IAsyncLifetime
     private string? _currentSchema;
     private string _environmentName = "Test";
     private bool _useSharedServer;
+    private bool _hasSharedReference;
+    private int _disposeState;
     private bool _useKestrel;
+    private Action<KestrelServerOptions>? _configureKestrelListeners;
     private string? _seedPath;
     private string? _seedProfile;
     private IServiceScope? _serviceScope;
     private string? _serviceOverrideScopeId;
+    private WebAppFixture? _schemaOwner;
 
     /// <summary>
     /// Test service ID used for testing operations.
@@ -184,6 +191,12 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         // Create and seed the fixture schema before the host is built so the host can
         // configure it as an operational schema (#5391). Seeding touches only the database.
+        if (_schemaOwner is not null)
+        {
+            _currentSchema = _schemaOwner.CurrentSchema
+                ?? throw new InvalidOperationException("The schema owner must be initialized before a host shares its schema.");
+        }
+
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
             _currentSchema = await postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
@@ -235,7 +248,14 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         if (_useKestrel)
         {
-            _factory.UseKestrel(0);
+            if (_configureKestrelListeners is null)
+            {
+                _factory.UseKestrel(0);
+            }
+            else
+            {
+                _factory.UseKestrel(_configureKestrelListeners);
+            }
         }
 
         Client = CreateClient();
@@ -440,6 +460,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         // factory/Postgres construction) lives on WebAppFixtureSharedBootstrapMixin.
         await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin
             .EnsureInitializedAsync(SharedAdminPassword);
+        _hasSharedReference = true;
 
         if (_scopedServiceOverrides.Count > 0)
         {
@@ -466,10 +487,30 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
         _serviceScope?.Dispose();
         _serviceScope = null;
 
         if (_useSharedServer)
+        {
+            await DisposeSharedServerAsync();
+        }
+        else
+        {
+            await DisposePrivateServerAsync();
+        }
+    }
+
+    private async Task DisposeSharedServerAsync()
+    {
+        if (!_hasSharedReference)
+        {
+            return;
+        }
+        try
         {
             if (_serviceOverrideScopeId is not null)
             {
@@ -478,35 +519,45 @@ public sealed class WebAppFixture : IAsyncLifetime
                     .Remove(_serviceOverrideScopeId);
                 _serviceOverrideScopeId = null;
             }
-
             if (_currentSchema is not null)
             {
                 await Postgres.DropSchemaAsync(_currentSchema);
             }
-
-            Client.Dispose();
-
-            // Audit-A2: ref-counted teardown of the shared factory + Postgres lives on
-            // WebAppFixtureSharedBootstrapMixin.
+        }
+        finally
+        {
+            Client?.Dispose();
+            _hasSharedReference = false;
             await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.ReleaseAsync();
-            return;
         }
+    }
 
-        if (_currentSchema is not null)
+    private async Task DisposePrivateServerAsync()
+    {
+        try
         {
-            await Postgres.DropSchemaAsync(_currentSchema);
+            if (_currentSchema is not null && _postgres is not null && _schemaOwner is null)
+            {
+                await _postgres.DropSchemaAsync(_currentSchema);
+            }
         }
-
-        // Null when initialization failed: disposing must not hide that failure.
-        Client?.Dispose();
-        if (_factory is not null)
+        finally
         {
-            await _factory.DisposeAsync();
-        }
-
-        if (_postgres is not null)
-        {
-            await _postgres.DisposeAsync();
+            Client?.Dispose();
+            try
+            {
+                if (_factory is not null)
+                {
+                    await _factory.DisposeAsync();
+                }
+            }
+            finally
+            {
+                if (_postgres is not null)
+                {
+                    await _postgres.DisposeAsync();
+                }
+            }
         }
     }
 
@@ -542,7 +593,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// <summary>
     /// Uses a real loopback Kestrel server for HTTP transport tests. Call before initialization.
     /// </summary>
-    public WebAppFixture UseKestrel()
+    public WebAppFixture UseKestrel(Action<KestrelServerOptions>? configureListeners = null)
     {
         if (_factory is not null || _useSharedServer)
         {
@@ -550,6 +601,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         }
 
         _useKestrel = true;
+        _configureKestrelListeners = configureListeners;
         return this;
     }
 
@@ -565,6 +617,17 @@ public sealed class WebAppFixture : IAsyncLifetime
         _configureWebHost = _configureWebHost == null
             ? configureEnvironment
             : _configureWebHost + configureEnvironment;
+        return this;
+    }
+
+    /// <summary>
+    /// Runs this isolated host on another fixture's database schema, as a second task of one
+    /// deployment would. The owner must be initialized first and keeps the schema's lifetime.
+    /// </summary>
+    public WebAppFixture ShareSchemaWith(WebAppFixture owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        _schemaOwner = owner;
         return this;
     }
 
@@ -731,12 +794,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         return _currentSchema;
     }
 
-    /// <summary>
-    /// Audit-A2 follow-up: the secure-connection bootstrap now lives on
-    /// <see cref="Mixins.WebAppFixtureSecureConnectionMixin"/>. This wrapper preserves the call
-    /// site shape that <c>InitializeAsync</c> / <c>CreateIsolatedSchemaAsync</c> use.
-    /// </summary>
-    private Task EnsureTestSecureConnectionAsync()
+    public Task EnsureTestSecureConnectionAsync()
         => Honua.TestKit.Mixins.WebAppFixtureSecureConnectionMixin.EnsureTestSecureConnectionAsync(_serviceScope);
 
     private async Task SeedSchemaAsync(string schemaName)
@@ -826,6 +884,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     public HttpClient CreateClient(Action<HttpClient>? configure = null)
     {
         var client = ActiveFactory.CreateClient();
+        UseHttpListener(client);
         client.Timeout = _defaultTestClientTimeout;
         ApplyCurrentSchemaHeader(client);
         configure?.Invoke(client);
@@ -844,6 +903,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         {
             AllowAutoRedirect = allowAutoRedirect,
         });
+        UseHttpListener(client);
         client.Timeout = _defaultTestClientTimeout;
         ApplyCurrentSchemaHeader(client);
 
@@ -874,6 +934,20 @@ public sealed class WebAppFixture : IAsyncLifetime
         var client = CreateClient();
 
         return client;
+    }
+
+    // Custom listeners must include one plain HTTP listener; the fixture's clients always use it.
+    private void UseHttpListener(HttpClient client)
+    {
+        if (_configureKestrelListeners is null)
+        {
+            return;
+        }
+
+        var addresses = Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses
+            ?? throw new InvalidOperationException("The Kestrel test server did not report its listener addresses.");
+        var httpAddress = addresses.First(address => address.StartsWith(Uri.UriSchemeHttp + "://", StringComparison.Ordinal));
+        client.BaseAddress = new Uri(httpAddress);
     }
 
     private void ApplyCurrentSchemaHeader(HttpClient client)

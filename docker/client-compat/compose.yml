@@ -32,8 +32,8 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    # The multidimensional fixture starts the GDAL worker, which is a durable-job
-    # consumer and therefore requires the same Redis durability contract as production.
+    # The `honua` service still reads ConnectionStrings__Redis; the GDAL worker
+    # claims jobs from PostgreSQL and does not use Redis.
     command: redis-server --appendonly yes --appendfsync always --maxmemory-policy noeviction
     networks:
       - compat
@@ -132,6 +132,7 @@ services:
       # a real signed license may override this to Production.
       ASPNETCORE_ENVIRONMENT: ${HONUA_CLIENT_COMPAT_ENVIRONMENT:-Development}
       ASPNETCORE_URLS: http://+:5000
+      HONUA_HEALTH_PORT: "5000"
       Kestrel__Endpoints__Http__Url: http://+:5000
       Kestrel__Endpoints__Http__Protocols: Http1
       Kestrel__Endpoints__Grpc__Url: http://+:5001
@@ -192,9 +193,7 @@ services:
     networks:
       - compat
     healthcheck:
-      # Published server images are Ubuntu and do not install an HTTP client
-      # (CVE-2021-31879). Probe with bash /dev/tcp. Health routes accept GET only.
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/5000 && printf 'GET /healthz/ready HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
+      test: ["CMD", "/app/honua-healthcheck", "--ready"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -216,7 +215,9 @@ services:
         - github_token
     environment:
       DOTNET_ENVIRONMENT: Development
-      ConnectionStrings__Redis: redis:6379
+      # The worker claims jobs from the server's system PostgreSQL database
+      # (AddGdalWorker throws without it). Same database as `honua` = same queue.
+      ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       GdalWorker__ScratchRoot: /tmp/honua-gdal-worker
       FileStorage__AwsS3__BucketName: honua-multidim-fixtures
       FileStorage__AwsS3__Region: us-east-1
@@ -228,7 +229,8 @@ services:
       AWS_SECRET_ACCESS_KEY: test
       AWS_REGION: us-east-1
     depends_on:
-      redis:
+      # `honua` applies the migrations that create the job queue tables.
+      honua:
         condition: service_healthy
       multidim-object-seed:
         condition: service_completed_successfully
@@ -327,6 +329,8 @@ services:
       - compat
     volumes:
       - ../../tests:/workspace/tests:rw
+      # playwright.config.ts allocates its page port through owned-server.py.
+      - ../../scripts/ci:/workspace/scripts/ci:ro
       - ../../artifacts/client-interop/openlayers:/output
 
   cesium:

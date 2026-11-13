@@ -2,6 +2,7 @@ name: Portal Group Discovery Contract
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'src/Honua.Protocols/GeoServices/Sharing/**'
@@ -27,6 +28,7 @@ concurrency:
 
 jobs:
   contract:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Portal user groups and content
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -55,7 +57,6 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-dotnet-ci
         with:
-          optimize-disk: 'true'
           nuget-cache-read-only: 'true'
       - name: Run actual Portal HTTP read and sharing regressions
         run: |

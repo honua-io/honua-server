@@ -81,7 +81,7 @@ public sealed class OperationsEndpointsTests
             .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishedLayerSummary
             {
-                LayerId = 99,
+                StorageLayerId = 99,
                 LayerName = "Parcels",
                 Schema = "public",
                 Table = "parcels",
@@ -258,7 +258,7 @@ public sealed class OperationsEndpointsTests
                 HttpStatusCode.OK,
                 "the write-authorized semantic response was {0}",
                 writeResponseBody);
-            var writeResult = JsonDocument.Parse(writeResponseBody).RootElement;
+            var writeResult = JsonElement.Parse(writeResponseBody);
             writeResult.GetProperty("data").GetProperty("status").GetString().Should().Be("Completed");
             await invoker.Received(1).SubmitAsync(
                 Arg.Is<OperationRequest>(request => request.OperationId == "admin.metadata.prevalidate"),
@@ -281,7 +281,7 @@ public sealed class OperationsEndpointsTests
             .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishedLayerSummary
             {
-                LayerId = 123,
+                StorageLayerId = 123,
                 LayerName = "Parcels",
                 Schema = "public",
                 Table = "parcels",

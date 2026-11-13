@@ -10,8 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using NSubstitute;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -88,13 +86,15 @@ public sealed partial class McpSessionSharedStoreTests
         var id = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
         (await b.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
 
+        using var watch = a.AcquireSessionWatch(id!);
         var lifetimeOnA = a.GetLifetimeToken(id!);
         lifetimeOnA.IsCancellationRequested.Should().BeFalse();
 
         (await b.TerminateAsync(id!, CancellationToken.None)).Should().Be(McpSessionTermination.Terminated);
 
-        // The removal broadcast ends A's node-local session work (SSE channel,
-        // progress bridges) at once, not on A's next request.
+        // A's poll ends its node-local session work (SSE channel, progress
+        // bridges), not A's next request.
+        await a.PollOnceAsync(CancellationToken.None);
         lifetimeOnA.IsCancellationRequested.Should().BeTrue();
         (await a.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None))
             .Should().Be(McpSessionValidation.Unknown);
@@ -102,7 +102,7 @@ public sealed partial class McpSessionSharedStoreTests
     }
 
     [UnitTest]
-    public async Task RemovalPublishedBeforeAdopt_DoesNotInstallTheDeletedSession()
+    public async Task RemovalRacingAdopt_EndsTheAdoptedSessionOnTheNextPoll()
     {
         var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
         var store = new FakeSharedSessionStore(time);
@@ -110,14 +110,20 @@ public sealed partial class McpSessionSharedStoreTests
         var reader = NewManager(store, time);
         var id = await origin.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
 
-        // The shared read has already copied the record when the other replica's
-        // DELETE publishes. Terminate on this replica finds no local entry.
+        // The shared read has already copied the record when the other replica deletes it.
         store.OnRead = sessionId => store.RemoveAsync(sessionId, CancellationToken.None).GetAwaiter().GetResult();
+        (await reader.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None))
+            .Should().Be(McpSessionValidation.Valid);
+        store.OnRead = null;
+        using var watch = reader.AcquireSessionWatch(id!);
+        var lifetime = reader.GetLifetimeToken(id!);
 
+        await reader.PollOnceAsync(CancellationToken.None);
+
+        lifetime.IsCancellationRequested.Should().BeTrue();
+        reader.TryGetReader(id!, out _).Should().BeFalse();
         (await reader.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None))
             .Should().Be(McpSessionValidation.Unknown);
-        reader.TryGetReader(id!, out _).Should().BeFalse();
-        reader.GetLifetimeToken(id!).CanBeCanceled.Should().BeFalse();
     }
 
     [UnitTest]
@@ -251,6 +257,7 @@ public sealed partial class McpSessionSharedStoreTests
         var b = NewManager(store, time);
 
         var id = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
+        using var watch = a.AcquireSessionWatch(id!);
         var lifetimeOnA = a.GetLifetimeToken(id!);
         for (var i = 0; i < 3; i++)
         {
@@ -363,7 +370,7 @@ public sealed partial class McpSessionSharedStoreTests
             .Should().Be(McpSessionValidation.PrincipalMismatch);
         store.ExpiresAt(id!).Should().Be(expiry, "another identity must not keep the session alive");
 
-        // Removed elsewhere without a broadcast reaching A (a missed message).
+        // Removed elsewhere before A polls.
         store.RemoveSilently(id!);
         (await a.ValidateAccessAsync(id!, "sub:mallory", CancellationToken.None))
             .Should().Be(McpSessionValidation.Unknown, "a gone session must not leak that it was bound to someone else");
@@ -402,11 +409,9 @@ public sealed partial class McpSessionSharedStoreTests
     }
 
     [UnitTest]
-    public void SessionManager_SharesSessions_OnlyWhenRedisOrAStoreIsComposed()
+    public void SessionManager_SharesSessions_OnlyWhenAStoreIsComposed()
     {
-        Compose(services => { }).HasSharedStore.Should().BeFalse("Redis-off keeps the single-instance registry");
-        Compose(services => services.AddSingleton(Substitute.For<IConnectionMultiplexer>()))
-            .HasSharedStore.Should().BeTrue("a composed multiplexer backs sessions with RedisMcpSessionStore");
+        Compose(services => { }).HasSharedStore.Should().BeFalse("a host without a store keeps the single-instance registry");
         Compose(services => services.AddSingleton<IMcpSessionStore>(new FakeSharedSessionStore(TimeProvider.System)))
             .HasSharedStore.Should().BeTrue();
     }

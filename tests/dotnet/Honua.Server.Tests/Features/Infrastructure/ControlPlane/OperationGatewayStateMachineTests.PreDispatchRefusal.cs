@@ -81,7 +81,9 @@ public sealed partial class OperationGatewayStateMachineTests
 
         public PostAuditRefusalScenario(IOperationInstanceStore? instances = null)
         {
-            Proposal = CreateProposal("p-post-audit-refusal", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with { RequestedBy = $"apikey:api-key:{_keyId:D}" };
+            Proposal = CreateProposal("p-post-audit-refusal", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval)
+                with
+            { RequestedBy = $"apikey:api-key:{_keyId:D}" };
             Proposals = new InMemoryProposalStore(Proposal);
             Instances = instances ?? new VolatileOperationInstanceStore();
             Accepted = CreateApprovalHandle(Proposal);
