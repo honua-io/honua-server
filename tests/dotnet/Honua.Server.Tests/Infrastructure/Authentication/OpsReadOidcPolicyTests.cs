@@ -64,8 +64,7 @@ public sealed class OpsReadOidcPolicyTests
             }),
             adminApiKeyStore: store);
         var validation = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            created.Key,
-            AuthenticationExtensions.ApiKeyScheme,
+            new ApiKeyPresentation(created.Key, AuthenticationExtensions.ApiKeyScheme, null),
             dependencies,
             NullLogger.Instance,
             CancellationToken.None);

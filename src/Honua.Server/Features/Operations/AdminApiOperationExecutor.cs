@@ -209,13 +209,13 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         {
             var response = JsonSerializer.Deserialize(payload, LayerPublishingJsonContext.Default.ApiResponsePublishedLayerSummary);
             if (response is not { Success: true, Data: { } published }
-                || string.IsNullOrWhiteSpace(published.ServiceName) || published.LayerId < 0)
+                || string.IsNullOrWhiteSpace(published.ServiceName) || published.StorageLayerId < 0)
             {
                 return resources;
             }
 
             resources["serviceName"] = published.ServiceName;
-            resources["layerId"] = published.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            resources["storageLayerId"] = published.StorageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
         catch (JsonException)
         {

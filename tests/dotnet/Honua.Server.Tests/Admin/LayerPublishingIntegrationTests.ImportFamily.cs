@@ -79,13 +79,14 @@ public sealed partial class LayerPublishingIntegrationTests
             Enabled = true,
             CreateEditableCopy = true
         }, _connectionName);
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
         published.GeometryType.Should().Be("MultiPolygon");
         using var serverMetadata = await GetGeometryJsonAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
         serverMetadata.RootElement.GetProperty("geometryType").GetString().Should().Be("esriGeometryPolygon");
         using var ogcMetadata = await GetGeometryJsonAsync($"/ogc/features/collections/{_layerId}?f=json");
         ogcMetadata.RootElement.GetProperty("geometryType").GetString().Should().Be("MultiPolygon");
-        var described = await CallGeometryCatalogAsync("honua_describe_layer", new { serviceId = _serviceName, layerId = _layerId });
+        var layer = await ReadImportedGeometryCatalogLayerAsync();
+        var described = await CallGeometryCatalogAsync("honua_describe_layer", new { serviceId = layer.GetProperty("serviceId").GetString(), serviceLayerIndex = layer.GetProperty("serviceLayerIndex").GetInt32() });
         described.GetProperty("geometryType").GetString().Should().Be("MultiPolygon");
 
         var collection = $"/ogc/features/collections/{_layerId}/items";

@@ -18,6 +18,7 @@ public sealed class AlertsServiceCollectionExtensionsTests
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
+    [InlineData(null, false)]
     [InlineData("true", false)]
     [InlineData("true", true)]
     [InlineData("false", true)]
@@ -45,7 +46,6 @@ public sealed class AlertsServiceCollectionExtensionsTests
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
     [InlineData("false", false, true, true, true)]
-    [InlineData(null, false, true, true, true)]
     [InlineData("true", true, false, true, false)]
     [InlineData(null, false, true, false, false)]
     public async Task AddAlerts_SafeConfiguration_PreservesExplicitWorkerState(

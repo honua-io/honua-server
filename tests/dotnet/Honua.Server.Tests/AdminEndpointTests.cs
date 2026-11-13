@@ -333,7 +333,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         paths.TryGetProperty("/services/{serviceName}/settings", out _).Should().BeTrue();
         paths.TryGetProperty("/services/{serviceName}/access-policy", out _).Should().BeTrue();
         paths.TryGetProperty("/services/{serviceName}/timeinfo", out _).Should().BeTrue();
-        paths.TryGetProperty("/services/{serviceName}/layers/{layerId}/metadata", out _).Should().BeTrue();
+        paths.TryGetProperty("/services/{serviceName}/layers/{serviceLayerIndex}/metadata", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
