@@ -56,10 +56,12 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
         {
             await StreamAsync(context, reader).ConfigureAwait(false);
         }
-        catch (ChannelClosedException exception) when (exception.InnerException is RealtimeSubscriptionClosedException closed &&
-            closed.Reason == RealtimeResetReasons.SlowConsumer)
+        catch (Exception exception) when (exception is
+            RealtimeSubscriptionClosedException { Reason: RealtimeResetReasons.SlowConsumer } or
+            ChannelClosedException { InnerException: RealtimeSubscriptionClosedException { Reason: RealtimeResetReasons.SlowConsumer } })
         {
-            await WriteAsync(context, Format(new RealtimeDelivery.Reset(closed.Reason, subscription.Position))).ConfigureAwait(false);
+            await WriteAsync(context, Format(new RealtimeDelivery.Reset(RealtimeResetReasons.SlowConsumer,
+                subscription.Position))).ConfigureAwait(false);
         }
     }
 
