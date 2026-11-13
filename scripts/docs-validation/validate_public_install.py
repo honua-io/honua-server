@@ -43,6 +43,11 @@ def free_ports() -> tuple[int, int]:
         return http.getsockname()[1], grpc.getsockname()[1]
 
 
+def stage_compose(work: Path, compose: str) -> None:
+    shutil.copytree(ROOT / "docker/proj-grids", work / "docker/proj-grids")
+    (work / "compose.yaml").write_text(compose)
+
+
 def wait_ready(base: str, timeout: int = 180) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -140,7 +145,7 @@ def main() -> int:
             receipt["anonymousPull"] = True
             receipt["repoDigests"] = json.loads(run(
                 ["docker", "image", "inspect", image, "--format", "{{json .RepoDigests}}"]))
-            (work / "compose.yaml").write_text(blocks["compose"])
+            stage_compose(work, blocks["compose"])
             shell("secrets")
             env_file.update(line.split("=", 1) for line in (work / ".env").read_text().splitlines())
             # The documented .env names the release channel. Compose pulls that
