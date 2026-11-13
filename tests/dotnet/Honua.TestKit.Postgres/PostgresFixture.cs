@@ -22,10 +22,10 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly PostgresSharedState SharedState = new();
     private static readonly string[] SharedStoreMigrations =
-        ["113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql",
+        ["031_CreateMetadataV2Snapshot.sql", "113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql",
             "141_CreateImportedDatasetSpatialMetadata.sql", "147_CreateJobSubstrate.sql",
             "148_CreateControlPlaneState.sql", "149_CreateSecurityState.sql",
-            "150_CreateOAuthClientsAndOperationProgress.sql"];
+            "150_CreateOAuthClientsAndOperationProgress.sql", "154_CreateConfigurationDocuments.sql"];
 
     // Upload tests run with HONUA_SKIP_MIGRATIONS and a seed that mirrors older import
     // functions, not this script. The importer calls these after every committed load.
