@@ -56,11 +56,9 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
         string environment,
         IServiceScopeFactory loadScopeFactory,
         Func<IServiceProvider, IMetadataV2GraphProvider> resolveLoader,
-        IMetadataV2GraphRevisionProbe? revisionProbe,
-        IConfigurationGenerationSource? generationSource = null)
+        IMetadataV2GraphRevisionProbe? revisionProbe)
         : this(inner, cache, environment, loadScopeFactory, resolveLoader)
     {
-        _generationSource = generationSource;
         _revisionProbe = revisionProbe;
     }
 
@@ -72,6 +70,16 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
         : this(inner, cache, environment)
     {
         _revisionProbe = revisionProbe;
+    }
+
+    public CachingMetadataV2GraphProvider(
+        IMetadataV2GraphProvider inner,
+        MetadataV2GraphSnapshotCache cache,
+        MetadataV2GraphCacheConfiguration configuration)
+        : this(inner, cache, configuration.Environment, configuration.LoadScopeFactory,
+            configuration.ResolveLoader, configuration.RevisionProbe)
+    {
+        _generationSource = configuration.GenerationSource;
     }
 
     public async ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)

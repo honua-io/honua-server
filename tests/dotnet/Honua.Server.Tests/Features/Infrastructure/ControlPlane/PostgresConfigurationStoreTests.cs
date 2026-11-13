@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Cryptography;
 using FluentAssertions;
+using Honua.Server.Tests.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Core.Features.Identity.Domain;
 
@@ -58,6 +60,41 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
 
         (await taskB.GetProfileAsync(profile.ProfileId))!.Revocations.Should().ContainSingle().Which.Should().Be(revocation);
         (await CreateTrustStore(harness).GetProfileAsync(profile.ProfileId))!.Revision.Should().Be(3);
+    }
+
+    [IntegrationTest]
+    public async Task AddRevocationAsync_OnTaskA_RejectsCertificateOnTaskB()
+    {
+        await using var harness = await CreateHarnessAsync();
+        using var certificate = ClientCertificateValidationTests.CreateCertificate("CN=Shared client", "spiffe://honua/production/admin");
+        var taskA = CreateTrustStore(harness);
+        await taskA.UpsertProfileAsync(new ClientCertificateTrustProfile
+        {
+            ProfileId = "production", EnvironmentId = "production", DisplayName = "Production",
+            AcceptedIssuerSubjects = [certificate.Issuer], AllowedSanTypes = [ClientCertificateIdentityType.SanUri],
+            PrincipalMappings = [new()
+            {
+                MappingId = "admin", MatchType = ClientCertificateIdentityType.SanUri,
+                MatchValue = "spiffe://honua/production/admin", PrincipalId = "admin", DisplayName = "Administrator",
+                EnvironmentScopes = ["production"], Roles = ["admin"]
+            }]
+        });
+        var monitor = new ClientCertificateValidationTests.TestOptionsMonitor<ClientCertificateAuthenticationOptions>(new()
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional, EnvironmentId = "production"
+        });
+        var taskB = new ClientCertificateValidator(monitor, CreateTrustStore(harness));
+        (await taskB.ValidateAsync(certificate)).Succeeded.Should().BeTrue();
+
+        await taskA.AddRevocationAsync("production", new()
+        {
+            RevocationId = "rotated", Actor = "operator", Reason = "Rotated",
+            FingerprintSha256 = Convert.ToHexString(SHA256.HashData(certificate.RawData))
+        });
+        var result = await taskB.ValidateAsync(certificate);
+
+        result.Succeeded.Should().BeFalse();
+        result.ErrorCode.Should().Be(ClientCertificateValidationErrorCode.CertificateRevoked);
     }
 
     [IntegrationTest]

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Identity.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Server.Features.Infrastructure.Configuration;
