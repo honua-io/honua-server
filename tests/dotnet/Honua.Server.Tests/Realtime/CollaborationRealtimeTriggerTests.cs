@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -14,6 +15,18 @@ namespace Honua.Server.Tests.Realtime;
 [Operation(Operations.TestInfrastructure)]
 public sealed class CollaborationRealtimeTriggerTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
+    [Fact]
+    public async Task Migration_IsAdditiveAndAcceptedByProductionSafetyClassifier()
+    {
+        const string resource = "Honua.Server.Migrations.161_PublishSavedMapOperationsToRealtime.sql";
+        await using var stream = typeof(Program).Assembly.GetManifestResourceStream(resource)!;
+        using var reader = new StreamReader(stream);
+        var sql = await reader.ReadToEndAsync();
+
+        MigrationSafetyClassifier.Classify(resource, sql).Classification.Should()
+            .Be(MigrationSafetyClassification.Expand);
+    }
+
     [IntegrationTest]
     public async Task InsertOperation_Commit_PublishesOnlyTheCommittedReference()
     {
@@ -75,7 +88,7 @@ public sealed class CollaborationRealtimeTriggerTests(DatabaseFixtureAdapter dat
     {
         var harness = await RealtimeLogHarness.CreateAsync(database);
         await harness.ApplyMigrationAsync("Honua.Server.Migrations.092_CreateSavedMapOperationLog.sql");
-        await harness.ApplyMigrationAsync("Honua.Server.Migrations.159_PublishSavedMapOperationsToRealtime.sql");
+        await harness.ApplyMigrationAsync("Honua.Server.Migrations.161_PublishSavedMapOperationsToRealtime.sql");
         return harness;
     }
 
