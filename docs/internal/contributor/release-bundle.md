@@ -1,7 +1,7 @@
 # Release Bundle (Compatibility Train)
 
 The release-bundle orchestrator turns the manual release checklist into one
-evidence-first CI run. It builds **one** Native AOT release-candidate image, runs
+evidence-first CI run. It builds **one** PostGIS-only JIT release-candidate image, runs
 the integration/conformance and Esri-SDK evidence against that exact image
 digest, cuts every SDK against the same candidate (dry-run), assembles the
 release-train manifest, and runs the honua-devops validator to emit the
@@ -72,8 +72,8 @@ The run produces the `release-train-evidence` artifact containing `<id>.json`,
 The scoreboard records per-surface pass/fail and the owning follow-up issue for every gap. Promotion
 (`promote: true`) is a separate, protected-environment step that only proceeds
 when the validator verdict is `pass`: it publishes the SDKs for real and retags
-the immutable RC native-AOT image to the selected unsuffixed channel, with a
-matching `-aot` compatibility alias. It advances `latest` and `latest-aot` only
+the immutable RC PostGIS-only JIT image to the selected unsuffixed channel, with a
+matching `-jit` compatibility alias. It advances `latest` and `latest-jit` only
 when `channel: ga`; preview and RC promotions do not move the stable tags.
 
 ### Required secret

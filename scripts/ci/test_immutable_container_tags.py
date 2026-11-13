@@ -1,8 +1,13 @@
 """Offline coverage for immutable candidate image publication."""
+import contextlib
+import subprocess
+import tempfile
 import importlib.util
 import json
 import itertools
+import os
 import re
+import sys
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -15,6 +20,53 @@ class ImmutableTagsTests(unittest.TestCase):
     def setUpClass(cls):
         cls.module = importlib.util.module_from_spec(SPEC)
         SPEC.loader.exec_module(cls.module)
+
+    def setUp(self):
+        profile = patch.object(self.module, 'supports_full_variant', return_value=True)
+        profile.start()
+        self.addCleanup(profile.stop)
+        layout = patch.object(self.module, 'uses_jit_default', return_value=True)
+        layout.start()
+        self.addCleanup(layout.stop)
+
+    def test_legacy_candidate_does_not_require_full_variant_tags(self):
+        with patch.object(self.module, 'supports_full_variant', return_value=False), patch.object(
+            self.module, 'inspect', side_effect=lambda reference: None if '-full' in reference else 'sha256:' + 'a' * 64
+        ):
+            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''),
+                             (True, True))
+
+    def test_jit_default_completion_uses_aot_arch_tags_and_full_default_manifest(self):
+        observed = []
+        with patch.object(self.module, 'inspect', side_effect=lambda tag: observed.append(tag) or 'sha256:' + 'a' * 64):
+            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (True, True))
+        self.assertIn('ghcr.io/honua/server:nightly-aot-abcdef0-amd64', observed)
+        self.assertIn('ghcr.io/honua/server:nightly-abcdef0-full', observed)
+        self.assertNotIn('ghcr.io/honua/server:nightly-abcdef0-amd64', observed)
+
+    def test_legacy_layout_keeps_original_architecture_tags(self):
+        observed = []
+        with patch.object(self.module, 'uses_jit_default', return_value=False), patch.object(
+            self.module, 'inspect', side_effect=lambda tag: observed.append(tag) or 'sha256:' + 'a' * 64
+        ):
+            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (True, True))
+        self.assertIn('ghcr.io/honua/server:nightly-abcdef0-amd64', observed)
+        self.assertNotIn('ghcr.io/honua/server:nightly-aot-abcdef0-amd64', observed)
+
+    def test_cli_filter_and_digest_lookup_work_without_a_git_repository(self):
+        script = Path(__file__).with_name('immutable-container-tags.py').resolve()
+        with tempfile.TemporaryDirectory() as directory:
+            stub = Path(directory) / 'docker'
+            stub.write_text('#!/bin/sh\nprintf "manifest unknown\\n" >&2\nexit 1\n')
+            stub.chmod(0o755)
+            environment = {**os.environ, 'PATH': directory + os.pathsep + os.environ['PATH']}
+            for arguments, tags, expected in [([], 'ghcr.io/honua/server:latest\n', 'ghcr.io/honua/server:latest'),
+                    (['--tag', 'ghcr.io/honua/server:nightly-aaaaaaa'], '', '')]:
+                with self.subTest(arguments=arguments):
+                    result = subprocess.run([sys.executable, str(script), '--sha', 'a' * 40, *arguments],
+                        cwd=directory, env=environment, input=tags, text=True, capture_output=True, timeout=10)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), expected)
 
     def test_existing_sha_tags_are_preserved_but_floating_tags_can_move(self):
         tags = ['ghcr.io/honua-io/honua-server:nightly-abcdef0',
@@ -51,7 +103,7 @@ class ImmutableTagsTests(unittest.TestCase):
     def test_complete_registry_publication_does_not_depend_on_run_success_or_ref(self):
         with patch.object(self.module, 'inspect', return_value='sha256:' + 'a' * 64):
             self.assertTrue(self.module.already_imaged('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''))
-        with patch.object(self.module, 'inspect', side_effect=[None] + ['sha256:' + 'a' * 64] * 11):
+        with patch.object(self.module, 'inspect', side_effect=itertools.chain([None], itertools.repeat('sha256:' + 'a' * 64))):
             self.assertFalse(self.module.already_imaged('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''))
 
     def test_missing_tag_is_distinct_from_inspection_failure(self):
@@ -67,8 +119,24 @@ class ImmutableTagsTests(unittest.TestCase):
                 self.module.already_imaged('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, '2026.1.0-rc.2')
 
     def test_partial_publication_is_reported_for_safe_legacy_handoffs(self):
-        with patch.object(self.module, 'inspect', side_effect=[None] + ['sha256:' + 'a' * 64] * 11):
+        with patch.object(self.module, 'inspect', side_effect=itertools.chain([None], itertools.repeat('sha256:' + 'a' * 64))):
             self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (False, True))
+
+    def test_missing_default_full_manifest_is_partial_publication(self):
+        missing = 'ghcr.io/honua/server:nightly-abcdef0-full'
+        with patch.object(self.module, 'inspect', side_effect=lambda tag: None if tag == missing else 'sha256:' + 'a' * 64):
+            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (False, True))
+
+    def test_missing_full_variant_is_partial_publication(self):
+        repository = 'ghcr.io/honua/server'
+        for suffix in ('', '-amd64', '-arm64'):
+            missing = f'{repository}:nightly-jit-abcdef0-full{suffix}'
+            with self.subTest(tag=missing), patch.object(
+                self.module, 'inspect', side_effect=lambda reference: None if reference == missing else 'sha256:' + 'a' * 64
+            ):
+                self.assertEqual(
+                    self.module.publication_state(repository, 'abcdef0' + 'a' * 33, ''),
+                    (False, True))
 
     def test_scheduled_partial_retry_cannot_mix_rc_and_nightly_images(self):
         with patch.object(self.module, 'inspect', side_effect=itertools.cycle([None] + ['sha256:' + 'a' * 64] * 11)), \
@@ -91,6 +159,8 @@ class ImmutableTagsTests(unittest.TestCase):
             if 'scripts/ci/immutable-container-tags.py' not in block:
                 continue
             with self.subTest(job=name):
+                if '--already-imaged' in block:
+                    self.assertIn('fetch-depth: 0', block)
                 self.assertTrue('actions/checkout@' in block,
                                 f'{name} runs the immutable-tag guard without checking it out')
 
@@ -119,6 +189,38 @@ class ImmutableTagsTests(unittest.TestCase):
         self.assertIn('if [ "${existing}" != "${CANDIDATE_SHA}" ]; then', workflow)
         self.assertIn('if [ "$PARTIAL_PUBLICATION" = 1 ]; then', workflow)
         self.assertIn('contents/scripts/ci/immutable-container-tags.py?ref=${CANDIDATE_SHA}', workflow)
+
+
+class CandidateProfileTests(unittest.TestCase):
+    def test_profile_detection_uses_the_candidate_tree_and_refuses_unknown_commits(self):
+        module = importlib.util.module_from_spec(SPEC)
+        SPEC.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory, contextlib.chdir(directory):
+            subprocess.run(['git', 'init', '-q'], check=True)
+            subprocess.run(['git', 'config', 'user.name', 'Mike McDougall'], check=True)
+            subprocess.run(['git', 'config', 'user.email', 'mike@honua.io'], check=True)
+            profile = Path('eng/Honua.BuildProfiles.props')
+            profile.parent.mkdir()
+            profile.write_text('<Project/>')
+            Path('Dockerfile').write_text('ENTRYPOINT ["dotnet", "Honua.Server.dll"]\n')
+            nightly = Path('.github/workflows/nightly-container-build.yml')
+            nightly.parent.mkdir(parents=True)
+            nightly.write_text('type=raw,value=nightly-${{ needs.select-candidate.outputs.sha7 }}\n')
+            subprocess.run(['git', 'add', '.'], check=True)
+            subprocess.run(['git', 'commit', '-qm', 'base profile'], check=True)
+            previous = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+            profile.write_text('<Project><PropertyGroup><HonuaStoreProfile>full</HonuaStoreProfile></PropertyGroup></Project>')
+            subprocess.run(['git', 'add', '.'], check=True)
+            subprocess.run(['git', 'commit', '-qm', 'store profile'], check=True)
+            self.assertFalse(module.uses_jit_default(previous))
+            nightly.write_text('type=raw,value=nightly-aot-${{ needs.select-candidate.outputs.sha7 }}\n')
+            subprocess.run(['git', 'add', '.'], check=True)
+            subprocess.run(['git', 'commit', '-qm', 'JIT default'], check=True)
+            self.assertTrue(module.uses_jit_default('HEAD'))
+            self.assertFalse(module.supports_full_variant(previous))
+            self.assertTrue(module.supports_full_variant('HEAD'))
+            with self.assertRaisesRegex(RuntimeError, 'Cannot read candidate'):
+                module.supports_full_variant('0' * 40)
 
 
 if __name__ == '__main__':

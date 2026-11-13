@@ -822,6 +822,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Several self-hosted runners share one host and its /tmp; each job keeps temp files in its own
+      # runner temp directory. Set in a step because the runner context is unavailable in job env.
+      - name: Use the job's own temp directory
+        run: echo "TMPDIR=${RUNNER_TEMP}" >> "${GITHUB_ENV}"
+
       - name: Load validated flaky-test quarantine
         env:
           GH_TOKEN: ${{ github.token }}

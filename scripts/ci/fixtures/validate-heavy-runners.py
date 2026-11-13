@@ -23,6 +23,7 @@ HOSTED_JOBS = {
     "producer-runner", "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
     "merge-queue-gate", "ci-gate", "doctor-notify",
 }
+REUSABLE_JOBS = {"store-image-proofs": "./.github/workflows/store-image-size.yml"}
 PINNED_JOBS = {
     "worker-gdal-tests", "python-integration-tests", "js-integration-tests",
     "esri-leaflet-browser-tests", "maplibre-compat",
@@ -136,8 +137,14 @@ class HeavyRunnerContractTests(unittest.TestCase):
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], "ubuntu-24.04")
 
+    def test_reusable_jobs_delegate_runner_selection(self):
+        for name, workflow in REUSABLE_JOBS.items():
+            with self.subTest(job=name):
+                self.assertEqual(self.jobs[name]["uses"], workflow)
+                self.assertNotIn("runs-on", self.jobs[name])
+
     def test_every_ci_job_has_a_runner_class(self):
-        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | {"build", SHARD_JOBS["ci.yml"][0]})
+        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | set(REUSABLE_JOBS) | {"build", SHARD_JOBS["ci.yml"][0]})
 
 
 PR_GATE_SELECTED_JOBS = {"pr-gate", "server-test-producer"}
