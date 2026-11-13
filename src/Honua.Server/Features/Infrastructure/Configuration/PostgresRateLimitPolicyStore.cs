@@ -33,8 +33,11 @@ internal sealed class PostgresRateLimitPolicyStore(PostgresConfigurationDocument
             .FirstOrDefault(candidate => candidate.Enabled && candidate.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
         return policy is null ? null : new RateLimitStatus
         {
-            PolicyId = policy.PolicyId, Key = key, RequestsConsumed = 0,
-            RequestsRemaining = policy.RequestsPerWindow, WindowResetsAt = DateTimeOffset.UtcNow.Add(policy.WindowDuration)
+            PolicyId = policy.PolicyId,
+            Key = key,
+            RequestsConsumed = 0,
+            RequestsRemaining = policy.RequestsPerWindow,
+            WindowResetsAt = DateTimeOffset.UtcNow.Add(policy.WindowDuration)
         };
     }
 }

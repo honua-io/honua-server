@@ -82,8 +82,13 @@ internal sealed partial class PostgresClientCertificateTrustStore(
         var removed = false;
         await _store.MutateAsync(Key(profileId), current =>
         {
-            removed = current?.Revocations.Any(candidate => Equal(candidate.RevocationId, revocationId)) == true;
-            return !removed ? current : current! with
+            if (current is null)
+            {
+                removed = false;
+                return null;
+            }
+            removed = current.Revocations.Any(candidate => Equal(candidate.RevocationId, revocationId));
+            return !removed ? current : current with
             {
                 Revision = current.Revision + 1,
                 Revocations = current.Revocations.Where(candidate => !Equal(candidate.RevocationId, revocationId)).ToArray()
@@ -93,7 +98,8 @@ internal sealed partial class PostgresClientCertificateTrustStore(
     }
 
     // Configured profiles are applied once per process. Configuration owns issuers, trust anchors and the mappings
-    // it defines; entries it imported and no longer lists are disabled (re-enabling them is an explicit admin action). For every security setting both sides can change, the stricter value wins, so neither a restart
+    // it defines. Imported entries absent from configuration are disabled; re-enabling them is an explicit admin action.
+    // For every security setting both sides can change, the stricter value wins, so neither a restart
     // nor an administrator can silently weaken the other's choice. Revocations and admin-only mappings are kept.
     private async Task SeedProfilesAsync(CancellationToken cancellationToken)
     {

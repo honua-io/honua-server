@@ -975,6 +975,12 @@ class PostGISFixture:
                 )
 
                 self._seed_metadata_v2_snapshot(conn)
+                # Configuration generation also tracks the metadata snapshot, so its
+                # triggers require metadata_v2_current to exist before migration.
+                configuration_sql = (
+                    MIGRATIONS_DIR / "156_CreateConfigurationDocuments.sql"
+                ).read_text()
+                conn.execute(configuration_sql.replace("$HonuaSchema$", "honua"))
 
                 conn.commit()
             finally:

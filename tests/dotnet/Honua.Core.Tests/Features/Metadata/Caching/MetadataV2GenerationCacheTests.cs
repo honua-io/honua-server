@@ -50,6 +50,8 @@ public sealed class MetadataV2GenerationCacheTests
 
     private static MetadataV2GraphSnapshot Snapshot(long revision) => new(new MetadataV2Graph
     {
-        Environment = "production", Revision = revision, GeneratedAt = DateTimeOffset.UtcNow
+        Environment = "production",
+        Revision = revision,
+        GeneratedAt = DateTimeOffset.UtcNow
     }, $"\"rev-{revision}\"", DateTimeOffset.UtcNow);
 }

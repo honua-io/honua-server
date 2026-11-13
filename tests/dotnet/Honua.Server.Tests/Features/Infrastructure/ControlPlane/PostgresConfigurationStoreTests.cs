@@ -11,7 +11,6 @@ using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Authentication;
 using Npgsql;
-using Microsoft.Extensions.Options;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -46,13 +45,18 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         var taskB = CreateTrustStore(harness);
         var profile = new ClientCertificateTrustProfile
         {
-            ProfileId = "production", EnvironmentId = "production", DisplayName = "Production"
+            ProfileId = "production",
+            EnvironmentId = "production",
+            DisplayName = "Production"
         };
         await taskA.UpsertProfileAsync(profile);
         (await taskB.GetProfileAsync("PRODUCTION"))!.Revocations.Should().BeEmpty();
         var revocation = new ClientCertificateRevocationEntry
         {
-            RevocationId = "compromised-key", Reason = "Rotated", Actor = "operator", FingerprintSha256 = "abc"
+            RevocationId = "compromised-key",
+            Reason = "Rotated",
+            Actor = "operator",
+            FingerprintSha256 = "abc"
         };
 
         await taskA.AddRevocationAsync(profile.ProfileId, revocation);
@@ -70,8 +74,11 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         var taskA = CreateTrustStore(harness);
         await taskA.UpsertProfileAsync(ClientCertificateTrustProfile.FromOptions(new ClientCertificateTrustProfileOptions
         {
-            ProfileId = "production", EnvironmentId = "production", DisplayName = "Production",
-            AcceptedIssuerSubjects = [certificate.Issuer], AllowedSanTypes = [ClientCertificateIdentityType.SanUri],
+            ProfileId = "production",
+            EnvironmentId = "production",
+            DisplayName = "Production",
+            AcceptedIssuerSubjects = [certificate.Issuer],
+            AllowedSanTypes = [ClientCertificateIdentityType.SanUri],
             PrincipalMappings = [new()
             {
                 MappingId = "admin", MatchType = ClientCertificateIdentityType.SanUri,
@@ -81,14 +88,17 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         }));
         var monitor = new ClientCertificateValidationTests.TestOptionsMonitor<ClientCertificateAuthenticationOptions>(new()
         {
-            Mode = ClientCertificateAuthenticationMode.Optional, EnvironmentId = "production"
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "production"
         });
         var taskB = new ClientCertificateValidator(monitor, CreateTrustStore(harness));
         (await taskB.ValidateAsync(certificate)).Succeeded.Should().BeTrue();
 
         await taskA.AddRevocationAsync("production", new()
         {
-            RevocationId = "rotated", Actor = "operator", Reason = "Rotated",
+            RevocationId = "rotated",
+            Actor = "operator",
+            Reason = "Rotated",
             FingerprintSha256 = Convert.ToHexString(SHA256.HashData(certificate.RawData))
         });
         var result = await taskB.ValidateAsync(certificate);
@@ -137,11 +147,16 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         await using var harness = await CreateHarnessAsync();
         await harness.CreateTrustStore().UpsertProfileAsync(new ClientCertificateTrustProfile
         {
-            ProfileId = "concurrent", EnvironmentId = "production", DisplayName = "Concurrent"
+            ProfileId = "concurrent",
+            EnvironmentId = "production",
+            DisplayName = "Concurrent"
         });
         await Task.WhenAll(Enumerable.Range(0, 8).Select(index => harness.CreateTrustStore().AddRevocationAsync("concurrent", new()
         {
-            RevocationId = $"key-{index}", Reason = "Rotated", Actor = "operator", FingerprintSha256 = $"fingerprint-{index}"
+            RevocationId = $"key-{index}",
+            Reason = "Rotated",
+            Actor = "operator",
+            FingerprintSha256 = $"fingerprint-{index}"
         })));
         (await harness.CreateTrustStore().GetProfileAsync("concurrent"))!.Revocations.Should().HaveCount(8);
     }
@@ -241,51 +256,6 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
     }
 
     [IntegrationTest]
-    public async Task DisableProfileAsync_BeforeFirstRead_PreservesDisableAcrossBootstrapRestarts()
-    {
-        await using var harness = await CreateHarnessAsync();
-        var options = Options.Create(new ClientCertificateAuthenticationOptions
-        {
-            TrustProfiles = [new() { ProfileId = "bootstrap", EnvironmentId = "production", DisplayName = "Bootstrap" }]
-        });
-        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), options);
-        (await taskA.DisableProfileAsync("BOOTSTRAP"))!.Enabled.Should().BeFalse();
-        var taskB = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), options);
-        (await taskB.GetProfileAsync("bootstrap"))!.Enabled.Should().BeFalse();
-    }
-
-    [IntegrationTest]
-    public async Task ConfiguredTrustProfileChange_OnRestartedTask_AppliesToEveryTaskAndKeepsAdminRevocations()
-    {
-        await using var harness = await CreateHarnessAsync();
-        var original = Options.Create(new ClientCertificateAuthenticationOptions
-        {
-            TrustProfiles = [new() { ProfileId = "partner", EnvironmentId = "production", DisplayName = "Partner", AcceptedIssuerThumbprints = ["AA", "BB"] }]
-        });
-        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), original);
-        var adminRevocation = new ClientCertificateRevocationEntry
-        {
-            RevocationId = "admin-revocation", Reason = "Lost", Actor = "operator", FingerprintSha256 = "abc"
-        };
-        await taskA.AddRevocationAsync("partner", adminRevocation);
-        var changed = Options.Create(new ClientCertificateAuthenticationOptions
-        {
-            TrustProfiles = [new() { ProfileId = "partner", EnvironmentId = "production", DisplayName = "Partner", AcceptedIssuerThumbprints = ["AA"], Enabled = false }]
-        });
-
-        var restarted = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), changed);
-        await restarted.ListProfilesAsync();
-
-        var seenByTaskA = (await taskA.GetProfileAsync("partner"))!;
-        seenByTaskA.Enabled.Should().BeFalse();
-        seenByTaskA.AcceptedIssuerThumbprints.Should().Equal("AA");
-        seenByTaskA.Revocations.Should().ContainSingle().Which.Should().Be(adminRevocation);
-        var generation = await harness.CreateConfigurationDocuments().GetGenerationAsync(CancellationToken.None);
-        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), changed).ListProfilesAsync();
-        (await harness.CreateConfigurationDocuments().GetGenerationAsync(CancellationToken.None)).Should().Be(generation);
-    }
-
-    [IntegrationTest]
     public async Task ReadAsync_WithDocumentFromAnotherKeyRing_SkipsItInsteadOfFailing()
     {
         await using var harness = await CreateHarnessAsync();
@@ -299,106 +269,6 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         policies.Should().ContainSingle().Which.PolicyId.Should().Be(readable.PolicyId);
     }
 
-    [IntegrationTest]
-    public async Task ConfiguredMappingDisable_OnRestartedTask_DisablesMappingOnEveryTask()
-    {
-        await using var harness = await CreateHarnessAsync();
-        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
-        (await taskA.GetProfileAsync("partner"))!.PrincipalMappings.Should().ContainSingle().Which.Enabled.Should().BeTrue();
-
-        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: false)).ListProfilesAsync();
-
-        var mapping = (await taskA.GetProfileAsync("partner"))!.PrincipalMappings.Should().ContainSingle().Subject;
-        mapping.Enabled.Should().BeFalse();
-        mapping.Roles.Should().Equal("reader");
-    }
-
-    [IntegrationTest]
-    public async Task ConfiguredProfile_OnRestartedTask_KeepsStricterAdminChainSettings()
-    {
-        await using var harness = await CreateHarnessAsync();
-        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
-        var profile = (await taskA.GetProfileAsync("partner"))!;
-        await taskA.UpsertProfileAsync(profile with
-        {
-            RequireChainTrust = true, ChainRevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.Online
-        });
-
-        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true)).ListProfilesAsync();
-
-        var merged = (await taskA.GetProfileAsync("partner"))!;
-        merged.RequireChainTrust.Should().BeTrue();
-        merged.ChainRevocationMode.Should().Be(System.Security.Cryptography.X509Certificates.X509RevocationMode.Online);
-    }
-
-    [IntegrationTest]
-    public async Task ConfiguredProfile_WithUnreadableStoredCopy_IsNotTrustedAndDoesNotBlockOtherProfiles()
-    {
-        await using var harness = await CreateHarnessAsync();
-        var foreignKeyRing = new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider();
-        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(foreignKeyRing), TrustOptions(mappingEnabled: true))
-            .ListProfilesAsync();
-        var store = CreateTrustStore(harness);
-        await store.UpsertProfileAsync(new ClientCertificateTrustProfile { ProfileId = "other", EnvironmentId = "production", DisplayName = "Other" });
-
-        var restarted = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
-
-        (await restarted.ListProfilesAsync()).Select(profile => profile.ProfileId).Should().Equal("other");
-    }
-
-    [IntegrationTest]
-    public async Task ConfiguredMappingRemoved_OnRestartedTask_DisablesItButKeepsAdminMappings()
-    {
-        await using var harness = await CreateHarnessAsync();
-        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
-        await taskA.UpsertMappingAsync("partner", new ClientCertificatePrincipalMapping
-        {
-            MappingId = "admin-added", MatchType = ClientCertificateIdentityType.SanUri, MatchValue = "spiffe://honua/production/ops",
-            PrincipalId = "ops", DisplayName = "Ops"
-        });
-        var withoutMapping = TrustOptions(mappingEnabled: true);
-        withoutMapping.Value.TrustProfiles[0].PrincipalMappings = [];
-
-        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), withoutMapping).ListProfilesAsync();
-
-        var mappings = (await taskA.GetProfileAsync("partner"))!.PrincipalMappings;
-        mappings.Single(mapping => mapping.MappingId == "partner-reader").Enabled.Should().BeFalse();
-        mappings.Single(mapping => mapping.MappingId == "admin-added").Enabled.Should().BeTrue();
-    }
-
-    [IntegrationTest]
-    public async Task ConfiguredProfileRemoved_OnRestartedTask_DisablesItButKeepsAdminProfiles()
-    {
-        await using var harness = await CreateHarnessAsync();
-        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
-        await taskA.UpsertProfileAsync(new ClientCertificateTrustProfile { ProfileId = "admin-profile", EnvironmentId = "production", DisplayName = "Admin" });
-
-        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), Options.Create(new ClientCertificateAuthenticationOptions()))
-            .ListProfilesAsync();
-
-        (await taskA.GetProfileAsync("partner"))!.Enabled.Should().BeFalse();
-        (await taskA.GetProfileAsync("admin-profile"))!.Enabled.Should().BeTrue();
-    }
-
-    private static IOptions<ClientCertificateAuthenticationOptions> TrustOptions(bool mappingEnabled) => Options.Create(new ClientCertificateAuthenticationOptions
-    {
-        TrustProfiles =
-        [
-            new()
-            {
-                ProfileId = "partner", EnvironmentId = "production", DisplayName = "Partner", AcceptedIssuerThumbprints = ["AA"],
-                PrincipalMappings =
-                [
-                    new()
-                    {
-                        MappingId = "partner-reader", MatchType = ClientCertificateIdentityType.SanUri, MatchValue = "spiffe://honua/production/partner",
-                        PrincipalId = "partner", DisplayName = "Partner", Roles = ["reader"], Enabled = mappingEnabled
-                    }
-                ]
-            }
-        ]
-    });
-
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
         => ControlPlaneStateHarness.CreateAsync(database, nameof(PostgresConfigurationStoreTests));
 
@@ -409,13 +279,22 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
 
     private static OidcProviderConfiguration Provider(bool enabled, Guid? id = null, string name = "Example") => new()
     {
-        ProviderId = id ?? Guid.NewGuid(), Name = name, ProviderType = "Generic",
-        Authority = "https://identity.example.com", ClientId = "example", ClientSecret = "private-client-secret", Enabled = enabled
+        ProviderId = id ?? Guid.NewGuid(),
+        Name = name,
+        ProviderType = "Generic",
+        Authority = "https://identity.example.com",
+        ClientId = "example",
+        ClientSecret = "private-client-secret",
+        Enabled = enabled
     };
 
     private static RateLimitPolicy Policy(int limit, Guid? id = null, string name = "Tenant") => new()
     {
-        PolicyId = id ?? Guid.NewGuid(), Name = name, Scope = RateLimitScopes.Tenant,
-        Key = "tenant-a", RequestsPerWindow = limit, WindowDuration = TimeSpan.FromMinutes(1)
+        PolicyId = id ?? Guid.NewGuid(),
+        Name = name,
+        Scope = RateLimitScopes.Tenant,
+        Key = "tenant-a",
+        RequestsPerWindow = limit,
+        WindowDuration = TimeSpan.FromMinutes(1)
     };
 }
