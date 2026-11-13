@@ -14,7 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Startup;
 
 // A read-only POST (query, search) shares the GET snapshot schedule instead of probing the catalog
-// revision on every request (#7393); writes and admin requests still read the current revision.
+// revision on every request; writes and admin requests still read the current revision.
 public sealed class HttpMetadataGraphFreshnessRequirementTests
 {
     private static readonly string[] ReadOnlyPostRoutes =
@@ -56,8 +56,7 @@ public sealed class HttpMetadataGraphFreshnessRequirementTests
         => Requirement(Request(HttpMethods.Post, "/api/admin/services/query", readOnly: true))
             .RequireCurrentRevision.Should().BeTrue();
 
-    // 100 POST queries within one revalidation interval on one node: the catalog revision probe (a
-    // primary-key read plus a pool checkout) ran once per request before #7393 and runs once now.
+    // Read-only POST queries share one catalog revision probe per revalidation interval on each node.
     [UnitTest]
     public async Task HundredPostQueries_WithinOneInterval_ProbeTheCatalogOnce()
     {

@@ -5,7 +5,7 @@ namespace Honua.Core.Features.Metadata.Caching;
 
 // Endpoint metadata for a POST route that only reads (a query or search whose parameters do not fit a
 // URL). Such a request may use the metadata snapshot this node checked recently, as a GET does, instead
-// of reading the current catalog revision on every call (#7393). Admin routes ignore the marker.
+// of reading the current catalog revision on every call. Admin routes ignore the marker.
 public sealed class ReadOnlyRequestMetadata
 {
     private ReadOnlyRequestMetadata()
