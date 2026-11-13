@@ -1,5 +1,13 @@
 # CI Workflow Inventory
 
+OData Core is partitioned into `OData Core Endpoints` (the whole
+`ODataEndpointTests` class) and the residual `OData Core` catch-all. Both retain
+the original project, path triggers, tier filters and 29-minute test / 39-minute
+job budgets. Targeted overrides select both children; the coverage validator and
+`test-odata-core-capacity-partition.py` enforce the original inventory exactly
+once, including future methods. This addresses a 29-minute pre-PR capacity
+exhaustion with active output at termination; it does not extend timeouts.
+
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
 > repository (123 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be

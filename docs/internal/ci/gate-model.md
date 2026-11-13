@@ -1,5 +1,13 @@
 # CI Gate Model
 
+OData Core is partitioned into `OData Core Endpoints` (the whole
+`ODataEndpointTests` class) and the residual `OData Core` catch-all. Both retain
+the original project, path triggers, tier filters and 29-minute test / 39-minute
+job budgets. Targeted overrides select both children; the coverage validator and
+`test-odata-core-capacity-partition.py` enforce the original inventory exactly
+once, including future methods. This addresses a 29-minute pre-PR capacity
+exhaustion with active output at termination; it does not extend timeouts.
+
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
 > Last updated: 2026-11-12
