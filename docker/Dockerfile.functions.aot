@@ -40,6 +40,7 @@ COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.
 # publish fails with NETSDK1004 for every project restore skipped.
 COPY eng/ eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
+COPY scripts/ci/analyzer-baseline/ scripts/ci/analyzer-baseline/
 # Copy ALL project files referenced (directly or transitively) by Honua.Server so
 # that `dotnet restore` can generate obj/project.assets.json for every project
 # before `COPY . .` and the --no-restore publish step.
