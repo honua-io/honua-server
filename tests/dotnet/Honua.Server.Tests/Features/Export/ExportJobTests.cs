@@ -192,6 +192,52 @@ public sealed class ExportJobTests(DatabaseFixtureAdapter database) : IClassFixt
             "serving the response must not overwrite progress belonging to a concurrent operator retry");
     }
 
+    [IntegrationTest]
+    public async Task Export_StatusReadBeforeRetryPickup_HidesPreviousAttemptCompletion()
+    {
+        await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(ExportJobTests));
+        var progress = new ComparingInMemoryProgressStore();
+        using var nodes = new ExportNodes(progress);
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+        await nodes.SubmitAsync(harness, job);
+        await progress.SetProgressAsync(job.JobId,
+            ExportProgress.CreateInitial(job.JobId, "csv", "svc", 1, 10) with
+            {
+                Status = OperationStatus.Completed,
+                ProcessedFeatures = 10,
+                CompletedAt = DateTimeOffset.UtcNow,
+                DownloadUrl = "https://example.test/deleted.csv",
+                CurrentPhase = "Completed"
+            });
+        var record = (await harness.JobStore.GetAsync(job.JobId))!;
+        (await harness.JobStore.TrySetAsync(record with { Status = ExecutionJobStatus.Cancelled })).Should().BeTrue();
+        record = (await harness.JobStore.GetAsync(job.JobId))!;
+        (await harness.JobStore.TryRetryWithinCapacityAsync(record with { Status = ExecutionJobStatus.Queued }, 5))
+            .Should().BeTrue();
+
+        var reader = new ExecutionJobProgressReader(progress, harness.CreateNodeJobStore());
+        var response = (ExportProgress)(await reader.ReadAsync(job.JobId, CancellationToken.None))!;
+        AssertFreshAttemptResponse(response, OperationStatus.Queued);
+        (await progress.GetProgressAsync<ExportProgress>(job.JobId))!.Status.Should().Be(OperationStatus.Completed,
+            "response projection must not overwrite another attempt's progress");
+        foreach (var status in new[] { ExecutionJobStatus.Provisioning, ExecutionJobStatus.Running })
+        {
+            record = (await harness.JobStore.GetAsync(job.JobId))!;
+            (await harness.JobStore.TrySetAsync(record with { Status = status })).Should().BeTrue();
+            response = (ExportProgress)(await reader.ReadAsync(job.JobId, CancellationToken.None))!;
+            AssertFreshAttemptResponse(response, OperationStatus.Processing);
+        }
+    }
+
+    private static void AssertFreshAttemptResponse(ExportProgress response, OperationStatus expected)
+    {
+        response.Status.Should().Be(expected);
+        response.CurrentPhase.Should().Be(expected.ToString());
+        response.CompletedAt.Should().BeNull();
+        response.DownloadUrl.Should().BeNull();
+        response.PercentComplete.Should().Be(0);
+    }
+
     private static bool IsEnded(ExecutionJobRecord record)
         => record.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 

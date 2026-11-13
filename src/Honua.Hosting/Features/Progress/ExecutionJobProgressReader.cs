@@ -32,6 +32,8 @@ internal sealed class ExecutionJobProgressReader(IUniversalProgressStore progres
     {
         var status = job.Status switch
         {
+            ExecutionJobStatus.Queued => OperationStatus.Queued,
+            ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running => OperationStatus.Processing,
             ExecutionJobStatus.Succeeded => OperationStatus.Completed,
             ExecutionJobStatus.Failed => OperationStatus.Failed,
             ExecutionJobStatus.Cancelled => OperationStatus.Cancelled,
@@ -42,26 +44,48 @@ internal sealed class ExecutionJobProgressReader(IUniversalProgressStore progres
             return progress;
         }
 
-        var completedAt = job.CompletedAt ?? job.UpdatedAt;
-        var phase = status.Value.ToString();
+        var projection = new StatusProjection(status.Value, progress, job);
         return progress switch
         {
-            ExportProgress export when job.Spec.Kind == ExecutionJobKind.Export => export with
-            {
-                Status = status.Value,
-                CompletedAt = completedAt,
-                CurrentPhase = phase,
-                ErrorMessage = job.ErrorMessage,
-                DownloadUrl = status == OperationStatus.Completed ? export.DownloadUrl : null
-            },
-            TileOperationProgress tiles when job.Spec.Kind == ExecutionJobKind.TileCache => tiles with
-            {
-                Status = status.Value,
-                CompletedAt = completedAt,
-                CurrentPhase = phase,
-                ErrorMessage = job.ErrorMessage
-            },
+            ExportProgress export when job.Spec.Kind == ExecutionJobKind.Export => ProjectExport(export, projection),
+            TileOperationProgress tiles when job.Spec.Kind == ExecutionJobKind.TileCache => ProjectTiles(tiles, projection),
             _ => progress
         };
+    }
+
+    private static ExportProgress ProjectExport(ExportProgress export, StatusProjection projection)
+        => export with
+        {
+            Status = projection.Status,
+            CompletedAt = projection.CompletedAt,
+            CurrentPhase = projection.Phase,
+            ErrorMessage = projection.ErrorMessage,
+            ProcessedFeatures = projection.ResetCounts ? 0 : export.ProcessedFeatures,
+            OutputSizeBytes = projection.ResetCounts ? 0 : export.OutputSizeBytes,
+            DownloadUrl = projection.Status == OperationStatus.Completed ? export.DownloadUrl : null
+        };
+
+    private static TileOperationProgress ProjectTiles(TileOperationProgress tiles, StatusProjection projection)
+        => tiles with
+        {
+            Status = projection.Status,
+            CompletedAt = projection.CompletedAt,
+            CurrentPhase = projection.Phase,
+            ErrorMessage = projection.ErrorMessage,
+            ProcessedTiles = projection.ResetCounts ? 0 : tiles.ProcessedTiles,
+            SuccessfulTiles = projection.ResetCounts ? 0 : tiles.SuccessfulTiles,
+            FailedTiles = projection.ResetCounts ? 0 : tiles.FailedTiles,
+            DownloadUrl = projection.Status == OperationStatus.Completed ? tiles.DownloadUrl : null
+        };
+
+    private sealed record StatusProjection(OperationStatus Status, IOperationProgress Progress, ExecutionJobRecord Job)
+    {
+        private bool Active => Status is OperationStatus.Queued or OperationStatus.Processing;
+        public bool ResetCounts => Active && (Status == OperationStatus.Queued || Progress.Status != Status);
+        public DateTimeOffset? CompletedAt => Active ? null : Job.CompletedAt ?? Job.UpdatedAt;
+        public string? ErrorMessage => Active ? null : Job.ErrorMessage;
+        public string? Phase => Status == OperationStatus.Processing && Progress.Status == Status
+            ? Progress.CurrentPhase
+            : Status.ToString();
     }
 }
