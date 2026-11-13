@@ -5,9 +5,9 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-public sealed class NobleRuntimeLibrdkafkaPublishTests
+public sealed class UbuntuRuntimeLibrdkafkaPublishTests
 {
-    private static readonly string[] NobleRuntimeDockerfiles =
+    private static readonly string[] UbuntuRuntimeDockerfiles =
     [
         "Dockerfile",
         "docker/Dockerfile.aot",
@@ -22,28 +22,28 @@ public sealed class NobleRuntimeLibrdkafkaPublishTests
     ];
 
     [ArchitectureTest]
-    public void NobleRuntimePublishes_OmitLibrdkafkaBuildsThatCannotLoad()
+    public void UbuntuRuntimePublishes_OmitLibrdkafkaBuildsThatCannotLoad()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var targets = File.ReadAllText(Path.Join(repositoryRoot, "Directory.Build.targets"));
 
         targets.Should().Contain("Name=\"RemoveUnloadedLibrdkafkaBuilds\"");
-        targets.Should().Contain("Condition=\"'$(HonuaNobleRuntimePublish)' == 'true'\"");
+        targets.Should().Contain("Condition=\"'$(HonuaUbuntuRuntimePublish)' == 'true'\"");
         targets.Should().Contain("'%(Filename)' == 'alpine-librdkafka'");
         targets.Should().Contain("'$(RuntimeIdentifier)' == 'linux-x64' and '%(Extension)' == '.so' and '%(Filename)' == 'librdkafka'");
 
-        foreach (var relativePath in NobleRuntimeDockerfiles)
+        foreach (var relativePath in UbuntuRuntimeDockerfiles)
         {
             var contents = File.ReadAllText(Path.Join(repositoryRoot, relativePath));
             contents.Should().Contain("dotnet publish src/Honua.Server/Honua.Server.csproj", relativePath);
-            contents.Should().Contain("-p:HonuaNobleRuntimePublish=true", relativePath);
+            contents.Should().Contain("-p:HonuaUbuntuRuntimePublish=true", relativePath);
         }
 
         foreach (var relativePath in OtherServerPublishDockerfiles)
         {
             var contents = File.ReadAllText(Path.Join(repositoryRoot, relativePath));
             contents.Should().Contain("dotnet publish src/Honua.Server/Honua.Server.csproj", relativePath);
-            contents.Should().NotContain("HonuaNobleRuntimePublish", relativePath);
+            contents.Should().NotContain("HonuaUbuntuRuntimePublish", relativePath);
         }
     }
 }

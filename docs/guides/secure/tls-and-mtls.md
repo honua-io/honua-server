@@ -116,6 +116,7 @@ Untrusted certificates return `200` with `data.valid=false` and a stable `data.c
 | Symptom | Fix |
 |---|---|
 | `client_certificate_untrusted_issuer` / `_untrusted_chain` | The chain must build cryptographically; add intermediates or configure `CustomTrustAnchorCertificates` for a private CA. |
+| TLS handshake fails for a client certificate issued by an intermediate CA (Kestrel terminating TLS) | Honua does not download missing intermediates during the handshake (the .NET 11 default for server-side TLS). Have the client send its full chain, or install the intermediate in the server's trust store. |
 | `client_certificate_forwarding_untrusted` behind a proxy | The immediate peer IP is outside `TrustedProxyNetworks`; when `ForwardedHeaders__Enabled=true` Honua checks the pre-rewrite peer IP, so list the proxy's real address. |
 | Profile rejected at startup or upsert (`400`) | Enabled profiles need an issuer subject, thumbprint, or custom anchor — and `AcceptedIssuerSubjects` requires `RequireChainTrust=true`. |
 | Browser/gRPC-Web users prompted for certificates | They shouldn't be: required native modes exempt `application/grpc-web*` requests; only native HTTP/2 gRPC and admin paths are enforced. |
