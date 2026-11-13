@@ -65,12 +65,13 @@ internal static partial class FeatureStreamEndpoints
             await SendWebSocketJsonAsync(
                 webSocket,
                 session.WriteLock,
-                new FeatureStreamResetFrame
-                {
-                    Reason = RealtimeResetReasons.CursorEpoch,
-                    Head = FeatureStreamCursor.Format(initialLiveCursor)
-                },
-                FeatureStreamJsonContext.Default.FeatureStreamResetFrame,
+                JsonSerializer.SerializeToUtf8Bytes(
+                    new FeatureStreamResetFrame
+                    {
+                        Reason = RealtimeResetReasons.CursorEpoch,
+                        Head = FeatureStreamCursor.Format(initialLiveCursor)
+                    },
+                    FeatureStreamJsonContext.Default.FeatureStreamResetFrame),
                 context.RequestAborted).ConfigureAwait(false);
         }
 
@@ -128,12 +129,13 @@ internal static partial class FeatureStreamEndpoints
                     await SendWebSocketJsonAsync(
                         webSocket,
                         session.WriteLock,
-                        new FeatureStreamResetFrame
-                        {
-                            Reason = RealtimeResetReasons.Retention,
-                            Head = FeatureStreamCursor.Format(await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false))
-                        },
-                        FeatureStreamJsonContext.Default.FeatureStreamResetFrame,
+                        JsonSerializer.SerializeToUtf8Bytes(
+                            new FeatureStreamResetFrame
+                            {
+                                Reason = RealtimeResetReasons.Retention,
+                                Head = FeatureStreamCursor.Format(await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false))
+                            },
+                            FeatureStreamJsonContext.Default.FeatureStreamResetFrame),
                         linkedCts.Token).ConfigureAwait(false);
                 }
 
