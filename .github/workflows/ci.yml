@@ -1618,8 +1618,8 @@ jobs:
             'Server Features Admin Alert Endpoints'| \
             'Server Features Streaming Snapshot and Conformance'| \
             'Server Features Data Enrichment and Capabilities'| \
-            'Server Features Miscellaneous'| \
-            'Server Features Studio Packaging') images+=(redis) ;;
+            'Server Features Miscellaneous '[0-9]*| \
+            'Server Features Studio Packaging '[0-9]*) images+=(redis) ;;
           esac
           if [[ "${SERVER_SHARD}" == 'Operator Eval Harness' ]]; then
             images+=(postgis17)

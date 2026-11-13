@@ -14,6 +14,37 @@ namespace Honua.Core.Tests.Raster.CogParser;
 public class TilePredictorTests
 {
     [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(8)]
+    [InlineData(16)]
+    public void Undo_EightBitVectorBoundaries_MatchesOriginalPixels(int channels)
+    {
+        foreach (var width in new[] { 1, 2, 3, 15, 16, 17, 31, 32, 33, 255, 256, 257 })
+        {
+            var expected = new byte[width * channels * 3];
+            new Random(47 + width).NextBytes(expected);
+            var encoded = (byte[])expected.Clone();
+            var stride = width * channels;
+            for (var row = 0; row < encoded.Length; row += stride)
+            {
+                for (var i = stride - 1; i >= channels; i--)
+                {
+                    encoded[row + i] = unchecked((byte)(expected[row + i] - expected[row + i - channels]));
+                }
+            }
+
+            TilePredictor.Undo(encoded, new TilePixelLayout(width, channels, 8,
+                TilePixelLayout.PredictorHorizontalDifferencing, true));
+
+            encoded.Should().Equal(expected, $"width {width}, channels {channels}");
+        }
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Undo_EightBitSingleBand_RunsPrefixSumPerRow()
     {

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.IO.Compression;
+using Honua.Core.Features.Infrastructure.IO;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Options;
 
@@ -45,6 +46,25 @@ internal sealed class AdaptiveGzipCompressionProvider : ICompressionProvider
     }
 }
 
+internal sealed class AdaptiveZstdCompressionProvider : ICompressionProvider
+{
+    private readonly AdaptiveCompressionOptions _options;
+
+    public AdaptiveZstdCompressionProvider(IOptions<AdaptiveCompressionOptions> options)
+    {
+        _options = options.Value;
+    }
+
+    public string EncodingName => "zstd";
+
+    public bool SupportsFlush => true;
+
+    public Stream CreateStream(Stream outputStream)
+    {
+        return new AdaptiveZstdStream(outputStream, _options);
+    }
+}
+
 public sealed class AdaptiveCompressionOptions
 {
     public int FastCompressionThreshold { get; set; } = 4096; // 4KB - use Fastest for small responses
@@ -72,35 +92,13 @@ internal static class AdaptiveCompressionLevelSelector
     }
 }
 
-internal sealed class AdaptiveBrotliStream : AdaptiveCompressionStream
-{
-    public AdaptiveBrotliStream(Stream outputStream, AdaptiveCompressionOptions options)
-        : base(outputStream, options)
-    {
-    }
-
-    protected override Stream CreateCompressionStream(Stream outputStream, CompressionLevel level)
-        => new BrotliStream(outputStream, level, leaveOpen: true);
-}
-
-internal sealed class AdaptiveGzipStream : AdaptiveCompressionStream
-{
-    public AdaptiveGzipStream(Stream outputStream, AdaptiveCompressionOptions options)
-        : base(outputStream, options)
-    {
-    }
-
-    protected override Stream CreateCompressionStream(Stream outputStream, CompressionLevel level)
-        => new GZipStream(outputStream, level, leaveOpen: true);
-}
-
 internal abstract class AdaptiveCompressionStream : Stream
 {
     private readonly Stream _outputStream;
-    private bool _disposed;
     private readonly AdaptiveCompressionOptions _options;
     private readonly MemoryStream _buffer;
     private Stream? _compressionStream;
+    private bool _disposed;
 
     protected AdaptiveCompressionStream(Stream outputStream, AdaptiveCompressionOptions options)
     {
@@ -202,10 +200,11 @@ internal abstract class AdaptiveCompressionStream : Stream
         }
     }
 
+    // Called once the buffered prefix has chosen a level; the codec stream must leave destination open.
+    protected abstract Stream CreateCompressionStream(Stream destination, CompressionLevel level);
+
     private CompressionLevel DetermineCompressionLevel(long contentSize)
         => AdaptiveCompressionLevelSelector.Select(contentSize, _options);
-
-    protected abstract Stream CreateCompressionStream(Stream outputStream, CompressionLevel level);
 
     public override void Flush()
     {
@@ -230,7 +229,7 @@ internal abstract class AdaptiveCompressionStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        // DisposeAsync has already released the buffer; Stream.DisposeAsync calls back into here.
+        // DisposeAsync releases the buffer before Stream.DisposeAsync calls back here.
         if (disposing && !_disposed)
         {
             _disposed = true;
@@ -269,4 +268,25 @@ internal abstract class AdaptiveCompressionStream : Stream
     public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
     public override void SetLength(long value) => throw new NotSupportedException();
+}
+
+internal sealed class AdaptiveBrotliStream(Stream outputStream, AdaptiveCompressionOptions options)
+    : AdaptiveCompressionStream(outputStream, options)
+{
+    protected override Stream CreateCompressionStream(Stream destination, CompressionLevel level)
+        => new BrotliStream(destination, level, leaveOpen: true);
+}
+
+internal sealed class AdaptiveGzipStream(Stream outputStream, AdaptiveCompressionOptions options)
+    : AdaptiveCompressionStream(outputStream, options)
+{
+    protected override Stream CreateCompressionStream(Stream destination, CompressionLevel level)
+        => new GZipStream(destination, level, leaveOpen: true);
+}
+
+internal sealed class AdaptiveZstdStream(Stream outputStream, AdaptiveCompressionOptions options)
+    : AdaptiveCompressionStream(outputStream, options)
+{
+    protected override Stream CreateCompressionStream(Stream destination, CompressionLevel level)
+        => ZstdCodec.CreateCompressionStream(destination, level);
 }

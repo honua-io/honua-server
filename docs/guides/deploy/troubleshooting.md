@@ -142,15 +142,12 @@ Connectivity check: `psql -h db.example.com -U honua -d honua -c "SELECT 1;"` an
 
 Rate limiting belongs at the edge (WAF, API gateway, ingress, or load balancer) for the default MVP posture. Honua also has an opt-in application limiter (`RateLimiting__Enabled=true`), but it is off by default and supplements rather than replaces edge enforcement. The `HonuaRateLimitViolationsHigh` example alert is currently **inert** because Honua does not yet emit `honua_rate_limit_violations_total`; if a deployment supplies that metric, investigate it at the component that emits it.
 
-When the application limiter is enabled and a Redis counter fails, Honua enforces
-its in-process fixed-window counters for both the shared subject limit and any
-endpoint-specific limit. Excess requests still receive `429` and `Retry-After`.
-After a Redis counter fails, remaining counters in that request use the local store without waiting for another Redis timeout.
-The process keeps at most 10,000 active subject/endpoint counters. At capacity, new counter keys receive `429` until an existing window expires; active counters retain their budgets.
-These fallback budgets are per server process, start independently of Redis's
-sliding-window counters, and are not synchronized between replicas. Redis metering
-resumes when counter operations succeed; keep edge enforcement for a fleet-wide
-ceiling across outages and recovery.
+The application limiter counts requests in a fixed window per server node, for both
+the shared subject limit and any endpoint-specific limit. Counters are not shared
+between replicas: a limit of N admits up to N requests per window on each node, so
+with T tasks behind a load balancer a client can reach N×T. Excess requests on a node
+receive `429` and `Retry-After`. Each process keeps at most 10,000 active
+subject/endpoint counters. Keep edge enforcement for a fleet-wide ceiling.
 
 When violations spike:
 

@@ -1959,6 +1959,23 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-admin-coordinate-systems",
+      "route": "/api/v1/admin/coordinate-systems",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.CoordinateSystems_CodeOrName_ReturnsSupportedEpsgEntry",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.CoordinateSystems_InvalidBounds_ReturnsBadRequest",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.CoordinateSystems_RegistryFailure_ReturnsSafeUnavailableResponse",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.CoordinateSystems_Unauthenticated_ReturnsUnauthorized"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-admin-deploy-operations",
       "route": "/api/v1/admin/deploy/operations",
       "method": "GET",
@@ -2928,21 +2945,6 @@
         "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetLicenseStatus_WithCustomExpiryWarningDays_UsesConfiguredThreshold",
         "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetLicenseStatus_WithSignedStartupLicense_ReturnsLicenseIdentityAndEntitlements",
         "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetLicenseStatus_WithoutAuth_ReturnsUnauthorized",
-        "Honua.Server.Tests.Features.Licensing.DisabledLicenseIntegrationTests.Production_DisabledWithoutLicense_StartsWithActiveEntitlementsAndTruthfulAdminResponses"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "get-api-v1-admin-license-capacity",
-      "route": "/api/v1/admin/license/capacity",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetCapacity_WithAdminAuth_ReturnsMeterState",
         "Honua.Server.Tests.Features.Licensing.DisabledLicenseIntegrationTests.Production_DisabledWithoutLicense_StartsWithActiveEntitlementsAndTruthfulAdminResponses"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -4855,20 +4857,6 @@
       "capability": "admin.multi-tenancy"
     },
     {
-      "id": "get-api-v1-admin-tile-operations-cache-inventory",
-      "route": "/api/v1/admin/tile-operations/cache/inventory",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.CacheInventory_WhenNoIndex_ReturnsEmptyInventory"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "get-api-v1-admin-tile-operations-jobs",
       "route": "/api/v1/admin/tile-operations/jobs",
       "method": "GET",
@@ -6472,6 +6460,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GetVersion_ContentHashInput_RecomputesToContentHashOnVersionAndPublishedReads",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_FollowActiveUrlAfterPublication_ServesActiveVersionThroughRepublishAndRollback",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_PersonalVisibility_RequiresAuthorizedReader_AndRepublishedRouteRetiresOldUrl",
+        "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.RestPublication_WithoutRedis_SurvivesRestartAndRequiresHumanApproval",
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.ConflictingResource_IsRejectedBeforeTheReaderAccessFilter",
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.DefaultRead_StaysUnchanged_AndProjectionDoesNotChangeTheSealedVersion",
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.LegacyAlias_CannotRetargetToTheOnlyLayerVisibleToTheReader",
@@ -17812,6 +17801,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.PreviewFile_Shapefile_ReportsPrjDeclaration",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.PreviewFile_SourceMetadata_ReportsCoordinateProvenance",
         "Honua.Server.Tests.Import.FileGdbAdvancedConstructTests.Preview_WithCodedValueDomain_DetectsDomainWarning",
         "Honua.Server.Tests.Import.FileGdbAdvancedConstructTests.Preview_WithFileGdb_ReportsNoAdvancedConstructWarnings",
         "Honua.Server.Tests.Import.FileGdbAdvancedConstructTests.Preview_WithRangeDomain_DetectsDomainWarning",
@@ -17993,6 +17984,14 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeaturesForSourceTable_WithoutSchema_RebuildsPublishedSnapshot",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.FileUpload_MaliciousFile_ShouldBeRejected",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_CsvMappedCoordinates_ValidatesSelectedGeometryBeforeCreatingTable",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_MalformedSrid_ReturnsBadRequest",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_MixedSourceDeclarations_RejectsBeforeCreatingDestination",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_NonSeekableLateGeoJsonCrs_KeepsSource",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_SourceOverride_PreservesDetectionAndStoresOverride",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_TargetChoice_StoresRequestedCoordinateSystem",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_UndeclaredSourceWithOverride_StoresOverride",
+        "Honua.Server.Tests.Import.DirectImportCrsContractTests.ImportFile_UnknownSourceWithoutOverride_RefusesEvenWithTarget",
         "Honua.Server.Tests.Import.ExternalFormatCorpusImportTests.Import_GdalAuthoredCsv_StoresEveryRowWithCorrectOrdinates",
         "Honua.Server.Tests.Import.ExternalFormatCorpusImportTests.Import_GdalAuthoredFlatGeobuf_StoresEveryFeatureWithCorrectOrdinates",
         "Honua.Server.Tests.Import.ExternalFormatCorpusImportTests.Import_GdalAuthoredGeoPackage_StoresEveryFeatureWithCorrectOrdinates",
@@ -18262,20 +18261,6 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.UploadLicense_EmptyData_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.UploadLicense_WhenAdminUploadDisabled_ReturnsBadRequest"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "post-api-v1-admin-license-capacity-surge",
-      "route": "/api/v1/admin/license/capacity/surge",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.SetSurgeMode_WithAdminAuth_ActivatesSurgeAccounting"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -19002,7 +18987,8 @@
         "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.ApproveProposal_DenialAuditUnavailable_ReturnsSafe503WithoutResolving",
         "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.ApproveProposal_IssuerBearingRequesterBearer_RequiresHumanSession",
         "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.ApproveProposal_MissingOrPermissionDenied_DoesNotCreateProposalAuditJoin",
-        "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.ApproveProposal_VerifiedHumanRequesterOrAnotherPerson_Succeeds"
+        "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.ApproveProposal_VerifiedHumanRequesterOrAnotherPerson_Succeeds",
+        "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.RestPublication_WithoutRedis_SurvivesRestartAndRequiresHumanApproval"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -19392,20 +19378,6 @@
       "capability": "admin.multi-tenancy"
     },
     {
-      "id": "post-api-v1-admin-tile-operations-evict",
-      "route": "/api/v1/admin/tile-operations/evict",
-      "method": "POST",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.Evict_WhenEvictionDisabled_ReturnsOkAndReportsDisabled"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "post-api-v1-admin-tile-operations-jobs",
       "route": "/api/v1/admin/tile-operations/jobs",
       "method": "POST",
@@ -19421,8 +19393,6 @@
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PublishArchive_Republish_PreservesLogicalArtifactIdAndObjectKey",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishOperation_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishWithoutLayerId_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WhenDeleteRequestWithoutTarget_Returns400",
-        "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WhenExpireRequest_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WhenInvalidateRequest_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WithInvalidOperation_Returns400"
       ],
@@ -20351,6 +20321,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_FollowActiveUrlAfterPublication_ServesActiveVersionThroughRepublishAndRollback",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_PersonalVisibility_RequiresAuthorizedReader_AndRepublishedRouteRetiresOldUrl",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
+        "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.RestPublication_WithoutRedis_SurvivesRestartAndRequiresHumanApproval",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioLifecycle_WithinOneTenant_IsUnchanged",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioPublishRequest_AnotherTenantsVersion_IsRefusedAndDoesNotPublish"
       ],
@@ -20709,7 +20680,12 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_ReplayProtectionEnabled_BearerContinuesItsSessionAcrossRequestsAndRefresh",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_SameActorWithDifferentAuthorizationCeiling_CannotPostStreamOrDelete",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_SameSubjectAcrossIssuerOrTenant_CannotPostStreamOrDelete",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpConnectionDiscoveryIntegrationTests.AuthenticatedCatalogCalls_EmptyArguments_PreserveBothContentChannels",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpConnectionDiscoveryIntegrationTests.ConnectionDiscovery_AdminAndNonAdminKeys_MatchRestPermissionsAndReturnOnlySafeFields",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpConnectionDiscoveryIntegrationTests.InputRefusals_InvalidJobIdType_NamesFieldAndProducer",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpConnectionDiscoveryIntegrationTests.InputRefusals_MissingArguments_NameFieldsAndValueSources",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpConnectionDiscoveryIntegrationTests.InputRefusals_UnexpectedEvidence_PreservesAuthorityRefusalBeforeInputGuidance",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpConnectionDiscoveryIntegrationTests.StockClientHost_AllViews_StayWithinDescriptorBudgets",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.BatchContainingInitialize_IsRejectedAsInvalidRequest",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.BatchMixedWithNotification_ReturnsOnlyResponseForRequest",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.BatchOfOnlyNotifications_ReturnsAccepted",
