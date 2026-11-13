@@ -56,6 +56,20 @@ public sealed class ConfigurationGenerationMigrationTests(DatabaseFixtureAdapter
         (await GenerationAsync(harness)).Should().Be(initial + 3);
     }
 
+    [IntegrationTest]
+    public async Task ConfigurationMutation_ConcurrentWriters_AdvanceOnlyTheirSchemaGeneration()
+    {
+        await using var harness = await CreateHarnessAsync();
+        await using var otherSchema = await CreateHarnessAsync();
+        var initial = await GenerationAsync(harness);
+        var otherInitial = await GenerationAsync(otherSchema);
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(index => harness.ExecuteAsync(
+            $"INSERT INTO {harness.Table("configuration_documents")} (kind, key, payload) VALUES ('test', '{index}', decode('01', 'hex'))")));
+        (await GenerationAsync(harness)).Should().Be(initial + 8);
+        (await GenerationAsync(otherSchema)).Should().Be(otherInitial);
+        (await otherSchema.ScalarAsync<long>($"SELECT count(*) FROM {otherSchema.Table("configuration_documents")}")).Should().Be(0);
+    }
+
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
         => ControlPlaneStateHarness.CreateAsync(database, nameof(ConfigurationGenerationMigrationTests));
 
