@@ -28,7 +28,13 @@ on:
     branches: [trunk]
     paths:
       - 'README.md'
-      - 'docs/**'
+      # Pages and the data files the checkers read. Other docs/ files are only
+      # link targets; ci.yml's full run still checks every link on trunk.
+      - 'docs/**/*.md'
+      - 'docs/get-started/install-artifacts.json'
+      - 'docs/gis/data/capability-keys.v1.json'
+      - 'docs/gis/data/capability-matrix.v1.json'
+      - 'docs/okf/**'
       - 'skills/**'
       - 'scripts/ci/check-skill-links.py'
       - 'scripts/ci/check-skill-links.test.py'

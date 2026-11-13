@@ -4,30 +4,24 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
+    # The formatter, its fixture test, shared CRS helpers and the package
+    # graph decide the fixture bytes. Shared build, model and host inputs run
+    # it in the twice-daily full CI (ci.yml `GeoArrow interop fixture`).
     paths:
       - '.github/workflows/geoarrow-interop-fixture.yml'
-      - '.github/actions/setup-dotnet-ci/**'
-      - 'Directory.Build.props'
-      - 'Directory.Build.targets'
       - 'Directory.Packages.props'
       - 'NuGet.config'
       - 'global.json'
-      - 'src/Honua.Core/Abstractions/**'
-      - 'src/Honua.Core/Core/Honua.Core.csproj'
-      - 'src/Honua.Core/Core/Configuration/**'
-      - 'src/Honua.Core/Core/Features/FeatureStore/Domain/**'
-      - 'src/Honua.Protocols/GeoServices/FeatureServer/Services/GeoArrowQueryFormatter.cs'
+      - '**/*GeoArrow*'
       - 'src/Honua.Protocols/GeoServices/FeatureServer/Services/GeoParquetQueryFormatter.cs'
       - 'src/Honua.Core/Core/Features/Infrastructure/Crs/GeoParquetProjJsonCatalog.cs'
       - 'src/Honua.Core/Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json'
-      - 'src/Honua.Core/Core/Features/Shared/Models/**'
-      - 'src/Honua.Hosting/Honua.Hosting.csproj'
-      - 'src/Honua.Hosting/Features/**'
-      - 'src/Honua.Protocols/GeoServices/Honua.Protocols.GeoServices.csproj'
       - 'src/Honua.Protocols/GeoServices/GeoServicesObjectIdFieldResolver.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj'
-      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoArrowQueryFormatterTests.cs'
   workflow_dispatch:
+  # The twice-daily full CI run calls this workflow, so shared inputs that
+  # the narrow PR paths no longer admit still execute it on trunk.
+  workflow_call:
 
 permissions:
   contents: read
