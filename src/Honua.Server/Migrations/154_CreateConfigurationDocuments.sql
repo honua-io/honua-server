@@ -22,10 +22,10 @@ BEGIN
     RETURN NULL;
 END;
 $$;
-CREATE TRIGGER configuration_documents_generation AFTER INSERT OR UPDATE OR DELETE
+CREATE OR REPLACE TRIGGER configuration_documents_generation AFTER INSERT OR UPDATE OR DELETE
     ON $HonuaSchema$.configuration_documents FOR EACH ROW
     EXECUTE FUNCTION $HonuaSchema$.advance_configuration_generation();
 
-CREATE TRIGGER metadata_current_generation AFTER INSERT OR UPDATE OR DELETE
+CREATE OR REPLACE TRIGGER metadata_current_generation AFTER INSERT OR UPDATE OR DELETE
     ON $HonuaSchema$.metadata_v2_current FOR EACH ROW
     EXECUTE FUNCTION $HonuaSchema$.advance_configuration_generation();
