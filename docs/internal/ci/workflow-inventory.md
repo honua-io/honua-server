@@ -47,6 +47,20 @@ repository, and every entry in `/code-scanning/analyses` carries
 GitHub **Code Quality**, a different product that publishes no security
 analysis.
 
+## Workflow syntax and expression validation
+
+The architecture member of PR Gate's fast matrix runs actionlint 1.7.12 before
+.NET setup, including for docs-only and generated-only changes. It checks all
+`.github/workflows/*.yml`, adds no jobs, and fails the existing Fast result on
+invalid syntax or expression contexts (including job-level `runner.temp`). The
+binary is pinned by version and SHA-256; shellcheck and pyflakes remain separate
+checks. `.github/actionlint.yaml` permits GitHub's `concurrency.queue` key and
+records two exact property-reference baseline exceptions only in generated gh-aw
+v1.0.1 doctor locks. Other syntax/context errors in those locks remain fatal.
+Generated locks are preserved; their compiler must resolve those known references.
+The obsolete `optimize-disk` local action input is removed from Portal discovery.
+No runner-count or runtime saving is claimed; the new check uses an existing job.
+
 ## Draft PR admission and superseded work
 
 CodeQL, Compose Release Lifecycle, GeoArrow/GeoParquet interop, OGC API
@@ -54,7 +68,9 @@ building-block conformance, and serving/GDAL image verification defer heavy jobs
 until the PR is ready. They subscribe to `ready_for_review` and ready-head
 `synchronize` events; conversion back to draft cancels the active verification run.
 Drafts run Format, Clean code, and Repository hygiene. The `PR Gate` aggregate
-rejects their skipped heavy dependencies. Ready PRs run the complete gate, waking
+accepts intentionally skipped heavy dependencies only for a draft event, requires
+Format success, and rejects failures, cancellations or missing results. Ready PRs
+require every heavy dependency to succeed and run the complete gate, waking
 the trusted Claude observer after exact-head verification completes.
 
 Verification workflows cancel superseded admission per PR; automation helpers
@@ -791,6 +807,13 @@ changed merge method. Required checks and repository rulesets decide when a PR
 merges; review admission applies only where configured as a required check. The
 helper checks out no contributor code and queues without cancellation.
 
+Admission requires both the triggering event and the live PR to be non-draft and
+free of `hold`, `train:hold` and `train:escalated`. A queued held/draft event cannot
+re-arm admission after its live state changes. Ineligible events may only revoke
+an existing request; draft-conversion and label events retain that cleanup path.
+Manually disabling auto-merge alone is not a durable hold: apply a hold label or
+keep the PR as a draft to prevent a later eligible event from enabling it again.
+
 The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
 
 Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
@@ -830,3 +853,23 @@ a 10 GiB user-slice budget with runner services; the OOM task dump contained
 runner. CPU quota alone did not bound those processes. No host resource limit
 changes are required. The changed action takes effect on the next PR Gate;
 that run supplies the after-change timing and memory evidence.
+
+### Full-CI producer routing
+
+Only `Build & Format Check` consumes the hosted `CI producer / Runner select`
+output. Its opt-in `HONUA_CI_PRODUCER_RUNNER=honua-build` requires the separate
+read-only OIDC role `HONUA_CI_PRODUCER_READ_ROLE_ARN`, current-instance heartbeat
+age <=90 seconds, and at least two idle gate runners. Missing/stale/busy proof or
+setup failure selects `ubuntu-latest`, without wake, wait, polling or retries.
+The existing global heavy selector does not control this producer. Light jobs
+stay hosted. The producer uses a private writable SDK directory, skips sudo
+cleanup off hosted runners and bounds all nested build workers to four.
+See [producer admission and MAIN-owned preflight](gate-model.md#full-ci-producer-admission)
+before enabling the source contract; merging it does not activate any pool.
+
+Both producer and PR Gate selectors use `scripts/ci/gate-runner-heartbeat.sh`
+for the read-only heartbeat proof. It requires exactly one JSON object, the
+current instance, an integer timestamp no older than 90 seconds, and two idle
+gate runners. Heavy-pool readiness remains independent of gate-pool admission.
+The producer takes one snapshot; the existing PR selector retains its bounded
+wake/wait orchestration. Both sparse checkouts include the shared validator.

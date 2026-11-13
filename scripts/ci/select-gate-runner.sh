@@ -14,7 +14,6 @@ readonly BUILD_HOST_GROUP=honua-lane-build-host
 readonly HEARTBEAT_PARAMETER=/honua-lane-build-host/gate-runner/heartbeat
 readonly WAIT_SECONDS="${GATE_RUNNER_WAIT_SECONDS:-180}"
 readonly POLL_SECONDS="${GATE_RUNNER_POLL_SECONDS:-10}"
-readonly HEARTBEAT_MAX_AGE_SECONDS=90
 # Producer admission is independent of the heavy shard pool.
 readonly REQUIRED_IDLE_RUNNERS=2
 
@@ -40,20 +39,7 @@ host_state() {
   local instance heartbeat
   instance="$(group_field "Instances[?LifecycleState=='InService'] | [0].InstanceId")" || return 1
   heartbeat="$(aws ssm get-parameter --name "${HEARTBEAT_PARAMETER}" --query Parameter.Value --output text)" || return 1
-  jq -c --arg instance "${instance}" --argjson now "$(date +%s)" \
-    --argjson max_age "${HEARTBEAT_MAX_AGE_SECONDS}" --argjson required "${REQUIRED_IDLE_RUNNERS}" '
-      def integer: if type == "number" then floor == . else false end;
-      def heavy_available:
-        if (.heavy | type) != "object" then false
-        else .heavy.version == 1 and (.heavy.idle | integer)
-          and .heavy.idle >= 1 and .heavy.idle <= 8 end;
-      if ($instance | startswith("i-") | not) or .instance != $instance
-        or (.at | integer | not) or .at > $now or ($now - .at) > $max_age then
-        {state: "booting", heavy_ready: false}
-      else
-        {state: (if (.idle | integer) and .idle >= $required then "ready" else "busy" end),
-         heavy_ready: heavy_available}
-      end' <<< "${heartbeat}"
+  bash "$(dirname "${BASH_SOURCE[0]}")/gate-runner-heartbeat.sh" "${instance}" <<< "${heartbeat}"
 }
 
 label="${HONUA_PR_GATE_RUNNER:-}"

@@ -59,6 +59,36 @@ public sealed class CorsConfigurationTests
         Assert.Contains("Last-Modified", policy.ExposedHeaders);
     }
 
+    [UnitTest]
+    public async Task ProductionPolicy_AllowsBrowserConsoleMcpSessionAndIdempotencyHeaders()
+    {
+        var policy = await ResolvePolicyAsync(
+            CorsConfiguration.ProductionPolicy,
+            isDevelopment: false,
+            new Dictionary<string, string?>
+            {
+                ["Cors:AllowedOrigins:0"] = "https://console.example.com"
+            });
+
+        Assert.Contains("Mcp-Session-Id", policy.Headers, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("Idempotency-Key", policy.Headers, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("Mcp-Session-Id", policy.ExposedHeaders, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [UnitTest]
+    public async Task DevelopmentPolicy_ExposesMcpSessionHeader()
+    {
+        var policy = await ResolvePolicyAsync(
+            CorsConfiguration.DevelopmentPolicy,
+            isDevelopment: true,
+            new Dictionary<string, string?>
+            {
+                ["Cors:DevelopmentOrigins:0"] = "http://localhost:3000"
+            });
+
+        Assert.Contains("Mcp-Session-Id", policy.ExposedHeaders, StringComparer.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task ProductionPolicy_AllowsConditionalHeadersByDefault()
     {
