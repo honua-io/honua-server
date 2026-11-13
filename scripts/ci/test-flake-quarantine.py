@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -177,6 +178,29 @@ class RetryTests(unittest.TestCase):
                 q.read_cases(path)
 
 
+class ProcessSnapshotTests(unittest.TestCase):
+    def test_snapshot_survives_signal_to_supervisor_group(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory) / 'ps'
+            real_ps = shutil.which('ps')
+            fake.write_text('#!/usr/bin/env python3\n'
+                            'import os, signal, sys\n'
+                            'os.killpg(os.getpgid(os.getppid()), signal.SIGTERM)\n'
+                            f'os.execv({real_ps!r}, [{real_ps!r}, *sys.argv[1:]])\n')
+            fake.chmod(0o755)
+            command = [sys.executable, '-c',
+                       'import os, signal, sys; '
+                       'signal.signal(signal.SIGTERM, lambda *_: None); '
+                       'sys.path.insert(0, sys.argv[1]); '
+                       'from shard_processes import descendant_pids; '
+                       'assert os.getpid() in descendant_pids(os.getpid())',
+                       str(Path(runner.__file__).parent)]
+            with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}'}):
+                result = subprocess.run(command, start_new_session=True, timeout=5,
+                                        capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+
+
 class RunnerTests(unittest.TestCase):
     def test_duplicate_gate_wrapper_cleans_up_term_ignoring_child(self):
         self.assert_timeout_cleanup(foreground=False)
@@ -216,7 +240,9 @@ class RunnerTests(unittest.TestCase):
                                          'HONUA_TEST_QUARANTINE_OBSERVE': 'true',
                                          'HONUA_SERVER_TEST_TIMEOUT_FOREGROUND': str(foreground).lower()}):
                 try:
-                    result = subprocess.run(command, timeout=5, capture_output=True)
+                    # Interpreter start-up on a loaded hosted runner can use most of a few seconds; a
+                    # descendant that escaped the kill would still hold the pipe for its full 30 s sleep.
+                    result = subprocess.run(command, timeout=20, capture_output=True)
                 except BaseException:
                     cleanup()
                     raise

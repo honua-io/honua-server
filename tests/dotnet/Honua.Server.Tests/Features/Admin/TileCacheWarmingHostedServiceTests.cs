@@ -82,7 +82,6 @@ public sealed class TileCacheWarmingHostedServiceTests
         public Task<string> StartAsync(
             TileOperationStartRequest request,
             string? schemaName = null,
-            string? tenantScope = null,
             CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
