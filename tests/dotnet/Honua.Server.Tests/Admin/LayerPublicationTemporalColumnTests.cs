@@ -6,19 +6,17 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Npgsql;
 
 namespace Honua.Server.Tests.Admin;
 
 public sealed partial class LayerPublishingIntegrationTests
 {
-    // honua-server#7434: a publish request can name the temporal column, so the published
-    // layer reports temporal history instead of only the no-history state.
+    // A publish request can name the temporal column, so the published layer reports
+    // temporal history instead of only the no-history state.
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
@@ -55,33 +53,35 @@ public sealed partial class LayerPublishingIntegrationTests
     }
 
     [IntegrationTheory]
-    [InlineData("missing_column")]
-    [InlineData("label")]
+    [InlineData("missing_column", null)]
+    [InlineData("label", null)]
+    [InlineData("opens_at", null)]
+    [InlineData("valid_from", new[] { "id", "name" })]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
-    public async Task PublishWithTemporalColumn_RejectsUnpublishedOrNonTemporalColumn(string temporalColumn)
+    public async Task PublishWithTemporalColumn_RejectsUnpublishedOrNonTemporalColumn(
+        string temporalColumn, string[]? fields)
     {
         await AddTemporalSourceColumnsAsync();
 
-        var response = await PublishWithTemporalColumnAsync(temporalColumn);
+        var response = await PublishWithTemporalColumnAsync(temporalColumn, fields);
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, payload);
         payload.Should().Contain("TemporalColumn");
 
-        _fixture.GetCurrentV2GraphSnapshot().Graph.StorageBindings
-            .Should().NotContain(candidate => candidate.Locator != null && candidate.Locator.Contains(_tableName));
+        // Nothing was committed: the same table publishes once the column is valid.
+        var retry = await PublishWithTemporalColumnAsync("valid_from", fields: null);
+        var retryPayload = await retry.Content.ReadAsStringAsync();
+        retry.StatusCode.Should().Be(HttpStatusCode.Created, retryPayload);
+        _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(retryPayload, _jsonOptions)!.Data!.StorageLayerId;
     }
 
-    private async Task AddTemporalSourceColumnsAsync()
-    {
-        await using var connection = await _fixture.Postgres.GetConnectionAsync();
-        await using var command = new NpgsqlCommand(
-            $"ALTER TABLE public.{_tableName} ADD COLUMN valid_from timestamptz NOT NULL DEFAULT now(), ADD COLUMN label text",
-            connection);
-        await command.ExecuteNonQueryAsync();
-    }
+    private Task AddTemporalSourceColumnsAsync()
+        => _fixture.Postgres.ExecuteDdlUnderLockAsync(
+            $"ALTER TABLE public.{_tableName} ADD COLUMN valid_from timestamptz NOT NULL DEFAULT now(), "
+            + "ADD COLUMN label text, ADD COLUMN opens_at time");
 
-    private Task<HttpResponseMessage> PublishWithTemporalColumnAsync(string temporalColumn)
+    private Task<HttpResponseMessage> PublishWithTemporalColumnAsync(string temporalColumn, string[]? fields = null)
         => _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers",
             JsonContent.Create(new PublishLayerRequest
             {
@@ -93,6 +93,7 @@ public sealed partial class LayerPublishingIntegrationTests
                 Srid = 4326,
                 PrimaryKey = "id",
                 TemporalColumn = temporalColumn,
+                Fields = fields ?? [],
                 ServiceName = _serviceName
             }, options: _jsonOptions));
 }

@@ -434,6 +434,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 "Original source object ID for migration identity mapping; null for newly created features."));
         }
 
+        // Reject a bad temporal column before any rows are copied; the graph projection resolves it again.
+        _ = ResolveTemporalColumnForPublish(request.TemporalColumn, fields);
+
         // Every physical-cursor page must observe the same source snapshot.
         await using var transaction = await connection.BeginTransactionAsync(
             System.Data.IsolationLevel.RepeatableRead, cancellationToken);

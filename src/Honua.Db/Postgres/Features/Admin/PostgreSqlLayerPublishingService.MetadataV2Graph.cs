@@ -3613,7 +3613,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         // The temporal history API reports history only for bindings that name a temporal
-        // column (FeatureStorageMapping.FromMetadata); without it no published layer can (#7434).
+        // column (FeatureStorageMapping.FromMetadata).
         if (temporalColumn is not null)
         {
             options["temporalColumn"] = StringOption(temporalColumn);
