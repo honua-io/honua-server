@@ -42,11 +42,11 @@ public sealed class CollaborationCapabilitySourceTests
         repository.SupportsRestartDurableReplay.Returns(true);
         repository.SupportsRestartDurableCheckpointCursors.Returns(true);
         repository.SupportsRestartDurableCheckpointing.Returns(true);
-        var backplane = Substitute.For<ICollaborationSessionBackplane>();
-        backplane.SupportsCrossReplicaDelivery.Returns(true);
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.Capabilities.Returns(new RealtimeProviderCapabilities(true, false, false));
 
         var capabilities = new CollaborationCapabilitySource(
-            SavedMapCollaborationTopology.ForMultiReplica(true), repository, backplane).Current;
+            SavedMapCollaborationTopology.ForMultiReplica(true), repository, provider).Current;
 
         capabilities.Replay.Should().BeTrue("the operation log is replica-shared");
         capabilities.Checkpoints.Should().BeTrue("the operation log is also restart-durable");
@@ -68,24 +68,22 @@ public sealed class CollaborationCapabilitySourceTests
         var capabilities = new CollaborationCapabilitySource(
             SavedMapCollaborationTopology.ForMultiReplica(false),
             repository,
-            Substitute.For<ICollaborationSessionBackplane>()).Current;
+            Substitute.For<IRealtimeFanoutProvider>()).Current;
 
         capabilities.Replay.Should().BeTrue();
         capabilities.Checkpoints.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Current_MultiReplicaWithCompleteBackplaneGuarantees_AdvertisesLiveFeatures()
+    public void Current_MultiReplicaWithCompleteProviderGuarantees_AdvertisesLiveFeatures()
     {
         var repository = Substitute.For<ISavedMapOperationLogRepository>();
         repository.SupportsReplicaSharedReplay.Returns(true);
-        var backplane = Substitute.For<ICollaborationSessionBackplane>();
-        backplane.SupportsCrossReplicaDelivery.Returns(true);
-        backplane.SupportsOrderedOperationDelivery.Returns(true);
-        backplane.SupportsReplicaWidePresence.Returns(true);
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.Capabilities.Returns(new RealtimeProviderCapabilities(true, true, true));
 
         var capabilities = new CollaborationCapabilitySource(
-            SavedMapCollaborationTopology.ForMultiReplica(true), repository, backplane).Current;
+            SavedMapCollaborationTopology.ForMultiReplica(true), repository, provider).Current;
 
         capabilities.Operations.Should().BeTrue();
         capabilities.Cursors.Should().BeTrue();

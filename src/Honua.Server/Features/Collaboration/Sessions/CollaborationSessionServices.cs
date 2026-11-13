@@ -5,7 +5,8 @@ using System.Linq;
 using Honua.Server.Features.Collaboration.FeatureLocks;
 using Honua.Server.Features.Collaboration.Operations;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using StackExchange.Redis;
+using Honua.Core.Features.Realtime;
+using Npgsql;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
 
@@ -20,20 +21,11 @@ internal static class CollaborationSessionServices
         // owner semantics under the end-user flag). Unresolvable map ids stay fail-closed.
         services.TryAddSingleton<ISavedMapCollaborationAuthorizer, StudioSavedMapCollaborationAuthorizer>();
 
-        // Redis backplane for multi-replica presence/cursor fan-out (#971/#1290). Registered only
-        // when a multiplexer is configured so single-node and Redis-less deployments fall back to
-        // local-only delivery via the default no-op backplane. The same instance is the publish
-        // seam and the hosted subscriber, mirroring the feature-stream cluster-broadcast pattern.
-        if (services.Any(static d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        if (services.Any(static d => d.ServiceType == typeof(IRealtimeFanoutProvider)) &&
+            services.Any(static d => d.ServiceType == typeof(NpgsqlDataSource)))
         {
-            services.TryAddSingleton<RedisCollaborationSessionBackplane>();
-            services.TryAddSingleton<ICollaborationSessionBackplane>(
-                static sp => sp.GetRequiredService<RedisCollaborationSessionBackplane>());
-            services.AddHostedService(static sp => sp.GetRequiredService<RedisCollaborationSessionBackplane>());
-        }
-        else
-        {
-            services.TryAddSingleton<ICollaborationSessionBackplane>(NullCollaborationSessionBackplane.Instance);
+            services.TryAddSingleton<CollaborationRealtimeRelay>();
+            services.AddHostedService(static sp => sp.GetRequiredService<CollaborationRealtimeRelay>());
         }
 
         // Deployment topology drives the collaboration fail-closed rules; it is deliberately an

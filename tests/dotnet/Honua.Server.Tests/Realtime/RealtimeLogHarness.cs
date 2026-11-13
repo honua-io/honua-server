@@ -31,6 +31,8 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
 
     public NpgsqlDataSource DataSource => _jobs.DataSource;
 
+    public string Schema => _jobs.Schema;
+
     public string ConnectionString => _fixture.ConnectionString;
 
     // applyMigration false leaves the schema without the realtime tables, as before migrations run.

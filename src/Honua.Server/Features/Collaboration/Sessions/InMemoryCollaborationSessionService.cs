@@ -4,10 +4,11 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Claims;
+using Honua.Core.Features.Realtime;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
 
-internal sealed class InMemoryCollaborationSessionService
+internal sealed partial class InMemoryCollaborationSessionService
 {
     // Per-participant outbox cap. Outboxes are only drained by the participant's own poll; a
     // participant that never drains (crashed client, no events surface wired) must not grow the
@@ -26,25 +27,28 @@ internal sealed class InMemoryCollaborationSessionService
     private readonly ConcurrentDictionary<Guid, string> _sessionMapIndex = new();
     private readonly ISavedMapCollaborationAuthorizer _authorizer;
     private readonly ICollaborationSessionClock _clock;
-    private readonly ICollaborationSessionBackplane _backplane;
+    private readonly IRealtimeFanoutProvider? _provider;
+    private readonly CollaborationRealtimeRelay? _relay;
     private readonly CollaborationCapabilitySource? _capabilities;
 
     public InMemoryCollaborationSessionService(
         ISavedMapCollaborationAuthorizer authorizer,
         ICollaborationSessionClock clock,
-        ICollaborationSessionBackplane? backplane = null,
-        CollaborationCapabilitySource? capabilities = null)
+        IRealtimeFanoutProvider? provider = null,
+        CollaborationCapabilitySource? capabilities = null,
+        CollaborationRealtimeRelay? relay = null)
     {
         _authorizer = authorizer ?? throw new ArgumentNullException(nameof(authorizer));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
-        _backplane = backplane ?? NullCollaborationSessionBackplane.Instance;
+        _provider = provider;
+        _relay = relay;
         // Advertised capabilities must match what the endpoints will actually accept: when the
         // deployment fails edits closed, the stream must not claim operations are available
         // (honua-server#2999 review).
         _capabilities = capabilities;
     }
 
-    // Read the flags on every access, because this service is constructed before the backplane marks itself active.
+    // Read provider capabilities on access so advertised flags match the active deployment.
     public CollaborationCapabilities Capabilities => _capabilities?.Current ?? CollaborationCapabilities.Default;
 
     public async ValueTask<CollaborationJoinResult> JoinAsync(
@@ -71,6 +75,11 @@ internal sealed class InMemoryCollaborationSessionService
                 Refusal = CollaborationJoinRefusal.InvalidRequest,
                 Detail = validationDetail
             };
+        }
+
+        if (_relay is not null)
+        {
+            await _relay.Ready.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var now = _clock.UtcNow;
@@ -142,7 +151,7 @@ internal sealed class InMemoryCollaborationSessionService
             }
         }
 
-        _backplane.Publish(joined);
+        PublishPresence(joined);
 
         return new CollaborationJoinResult
         {
@@ -167,12 +176,7 @@ internal sealed class InMemoryCollaborationSessionService
         // participant), growing the singleton without bound.
         if (!_channels.TryGetValue(mapId, out var channel))
         {
-            return new CollaborationSnapshot
-            {
-                MapId = mapId,
-                Sequence = 0,
-                Capabilities = Capabilities
-            };
+            return CreateSnapshotLocked(new MapChannel(mapId));
         }
 
         lock (channel.Sync)
@@ -197,6 +201,8 @@ internal sealed class InMemoryCollaborationSessionService
             }
 
             state.Presence = state.Presence with { LastSeenAt = _clock.UtcNow };
+            PublishPresence(CreateEnvelopeLocked(channel, sessionId, state.Presence.ParticipantId,
+                _clock.UtcNow, new CollaborationSessionEvent { Type = "heartbeat" }));
         }
     }
 
@@ -242,7 +248,8 @@ internal sealed class InMemoryCollaborationSessionService
                 throw new KeyNotFoundException($"Collaboration session '{sessionId}' was not found.");
             }
 
-            if (!channel.Participants.TryGetValue(targetSessionId, out var target))
+            if (!channel.Participants.ContainsKey(targetSessionId) &&
+                !HasRemoteParticipant(mapId, targetSessionId))
             {
                 throw new KeyNotFoundException(
                     $"Collaboration follow target '{targetSessionId}' was not found in map '{mapId}'.");
@@ -267,7 +274,7 @@ internal sealed class InMemoryCollaborationSessionService
                     ParticipantId = updatedPresence.ParticipantId,
                     Follow = new CollaborationFollowTarget
                     {
-                        TargetParticipantId = target.Presence.ParticipantId,
+                        TargetParticipantId = targetSessionId.ToString("N"),
                         Following = true,
                         UpdatedAt = now
                     }
@@ -354,7 +361,7 @@ internal sealed class InMemoryCollaborationSessionService
             RemoveChannelIfEmpty(mapId, channel);
         }
 
-        _backplane.Publish(left);
+        PublishPresence(left);
         return true;
     }
 
@@ -411,7 +418,7 @@ internal sealed class InMemoryCollaborationSessionService
 
         foreach (var ev in publishQueue)
         {
-            _backplane.Publish(ev);
+            PublishPresence(ev);
         }
 
         return removed;
@@ -454,7 +461,6 @@ internal sealed class InMemoryCollaborationSessionService
             };
         }
 
-        _backplane.Publish(envelope);
         return envelope;
     }
 
@@ -580,11 +586,7 @@ internal sealed class InMemoryCollaborationSessionService
 
     private CollaborationFanOutResult Publish(CollaborationFanOutResult result)
     {
-        // Cross-node fan-out happens after the local outboxes have been written so a single-node
-        // deployment never pays for the backplane round-trip on its hot path. The backplane is
-        // best-effort: a Redis outage degrades to local-only delivery, mirroring the feature-stream
-        // cluster-broadcast contract.
-        _backplane.Publish(result.Event);
+        PublishPresence(result.Event);
         return result;
     }
 
@@ -702,7 +704,7 @@ internal sealed class InMemoryCollaborationSessionService
             evicted.Event.ResyncRequired == true;
     }
 
-    private static int ClearFollowsTargetingLocked(
+    private int ClearFollowsTargetingLocked(
         MapChannel channel,
         Guid targetSessionId,
         DateTimeOffset now)
@@ -733,6 +735,7 @@ internal sealed class InMemoryCollaborationSessionService
                     Follow = new CollaborationFollowTarget { Following = false, UpdatedAt = now }
                 });
             FanOutLocked(channel, ev, excludeSessionId: Guid.Empty);
+            PublishPresence(ev);
             cleared++;
         }
 
@@ -743,6 +746,7 @@ internal sealed class InMemoryCollaborationSessionService
     {
         var ordered = channel.Participants.Values
             .Select(static state => state.Presence)
+            .Concat(GetRemoteParticipants(channel.MapId))
             .OrderBy(static presence => presence.JoinedAt)
             .ThenBy(static presence => presence.ParticipantId, StringComparer.Ordinal)
             .ToArray();
