@@ -822,3 +822,23 @@ a 10 GiB user-slice budget with runner services; the OOM task dump contained
 runner. CPU quota alone did not bound those processes. No host resource limit
 changes are required. The changed action takes effect on the next PR Gate;
 that run supplies the after-change timing and memory evidence.
+
+### Full-CI producer routing
+
+Only `Build & Format Check` consumes the hosted `CI producer / Runner select`
+output. Its opt-in `HONUA_CI_PRODUCER_RUNNER=honua-build` requires the separate
+read-only OIDC role `HONUA_CI_PRODUCER_READ_ROLE_ARN`, current-instance heartbeat
+age <=90 seconds, and at least two idle gate runners. Missing/stale/busy proof or
+setup failure selects `ubuntu-latest`, without wake, wait, polling or retries.
+The existing global heavy selector does not control this producer. Light jobs
+stay hosted. The producer uses a private writable SDK directory, skips sudo
+cleanup off hosted runners and bounds all nested build workers to four.
+See [producer admission and MAIN-owned preflight](gate-model.md#full-ci-producer-admission)
+before enabling the source contract; merging it does not activate any pool.
+
+Both producer and PR Gate selectors use `scripts/ci/gate-runner-heartbeat.sh`
+for the read-only heartbeat proof. It requires exactly one JSON object, the
+current instance, an integer timestamp no older than 90 seconds, and two idle
+gate runners. Heavy-pool readiness remains independent of gate-pool admission.
+The producer takes one snapshot; the existing PR selector retains its bounded
+wake/wait orchestration. Both sparse checkouts include the shared validator.
