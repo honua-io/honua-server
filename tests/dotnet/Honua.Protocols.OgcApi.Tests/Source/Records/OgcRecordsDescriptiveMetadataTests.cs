@@ -83,4 +83,47 @@ public sealed class OgcRecordsDescriptiveMetadataTests : IAsyncLifetime
         link.GetProperty("href").GetString().Should().Be("https://example.org/contact");
         link.GetProperty("type").GetString().Should().Be("text/html");
     }
+
+    [IntegrationTheory]
+    [InlineData("dataset", "own")]
+    [InlineData("dataset", "environment")]
+    [InlineData("service", "own")]
+    [InlineData("service", "environment")]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
+    public async Task GetRecord_GovernanceLinks_PreservesEffectiveLinks(string kind, string source)
+    {
+        MetadataV2Link[] links =
+        [
+            new() { Rel = "license", Href = "https://example.org/custom-license", Type = "text/html", Title = "Custom license" },
+            new() { Rel = "describedby", Href = "https://example.org/metadata.xml", Type = "application/xml", Hreflang = "en" },
+        ];
+        _fixture.MutateV2Graph(graph => graph with
+        {
+            Metadata = graph.Metadata with { Links = source == "environment" ? links : [], License = null },
+            Services = graph.Services.Select(service => service with
+            {
+                Metadata = service.Metadata with { Links = source == "own" && kind == "service" ? links : [], License = null },
+            }).ToArray(),
+            Resources = graph.Resources.Select(resource => resource with
+            {
+                Metadata = resource.Metadata with { Links = source == "own" && kind == "dataset" ? links : [], License = null },
+            }).ToArray(),
+        });
+        var serviceName = _fixture.GetCurrentV2GraphSnapshot().Graph.Services.First().Metadata.Name;
+        var recordId = Uri.EscapeDataString(kind == "service" ? $"service:{serviceName}" : $"layer:pub-layer-{WebAppFixture.TestLayerId}");
+
+        using var response = await _fixture.Client.GetAsync($"/ogc/records/collections/honua-catalog/items/{recordId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var actual = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
+        var license = actual.Single(link => link.GetProperty("rel").GetString() == "license");
+        license.GetProperty("href").GetString().Should().Be(links[0].Href);
+        license.GetProperty("title").GetString().Should().Be("Custom license");
+        var description = actual.Single(link => link.GetProperty("rel").GetString() == "describedby");
+        description.GetProperty("href").GetString().Should().Be(links[1].Href);
+        description.GetProperty("type").GetString().Should().Be("application/xml");
+        description.GetProperty("hreflang").GetString().Should().Be("en");
+    }
 }

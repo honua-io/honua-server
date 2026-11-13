@@ -454,6 +454,29 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             .Should().Equal("processor");
     }
 
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_BlankContactName_UsesOrganization(string? name)
+    {
+        _fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with
+        {
+            Contacts = [new MetadataV2ResponsibleParty { Role = "processor", Name = name, Organization = "  Imagery organization  " }],
+        });
+
+        using var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var provider = json.RootElement.GetProperty("providers").EnumerateArray()
+            .Single(provider => provider.GetProperty("name").GetString() == "Imagery organization");
+        provider.GetProperty("roles").EnumerateArray().Select(role => role.GetString())
+            .Should().Equal("processor");
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]

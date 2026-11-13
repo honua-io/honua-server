@@ -116,6 +116,41 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
+    [InlineData("1.3.0", "resource")]
+    [InlineData("1.1.1", "resource")]
+    [InlineData("1.3.0", "environment")]
+    [InlineData("1.1.1", "environment")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    public async Task WmsCapabilities_DescribedByLink_UsesEffectiveMetadata(string version, string source)
+    {
+        MetadataV2Link[] links = [new() { Rel = "describedby", Href = "https://example.org/metadata.xml", Type = "application/xml" }];
+        _fixture.MutateV2Graph(graph => graph with
+        {
+            Metadata = graph.Metadata with { Links = source == "environment" ? links : [] },
+            Services = graph.Services.Select(service => service with { Metadata = service.Metadata with { Links = [] } }).ToArray(),
+        });
+        _fixture.MutateV2ResourceObjectMetadata(1, metadata => metadata with
+        {
+            Title = "Described roads",
+            Links = source == "resource" ? links : [],
+        });
+
+        using var response = await _fixture.Client.GetAsync($"/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}");
+
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        var document = XDocument.Parse(text);
+        var layer = document.Descendants().Single(element => element.Name.LocalName == "Layer" &&
+            element.Elements().Any(child => child.Name.LocalName == "Title" && child.Value == "Described roads"));
+        var metadataUrl = layer.Elements().Single(element => element.Name.LocalName == "MetadataURL");
+        metadataUrl.Elements().Single(element => element.Name.LocalName == "Format").Value.Should().Be("application/xml");
+        metadataUrl.Descendants().Single(element => element.Name.LocalName == "OnlineResource")
+            .Attribute(XName.Get("href", "http://www.w3.org/1999/xlink"))!.Value.Should().Be(links[0].Href);
+    }
+
+    [IntegrationTheory]
     [InlineData("1.3.0", 37, -123)]
     [InlineData("1.1.1", -123, 37)]
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
