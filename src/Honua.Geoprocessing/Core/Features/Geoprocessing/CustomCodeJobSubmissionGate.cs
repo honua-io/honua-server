@@ -49,7 +49,8 @@ internal sealed class CustomCodeJobSubmissionGate
         ClaimsPrincipal principal,
         Dictionary<string, string> specParams,
         ExecutionJobDefinition? workload,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        JobSecurityContext securityContext)
     {
         if (_coordinator is null || _customCodeOptions is null)
         {
@@ -113,7 +114,7 @@ internal sealed class CustomCodeJobSubmissionGate
         try
         {
             var result = await _coordinator.ValidateMintAndInjectAsync(
-                jobId, principal, specParams, _customCodeOptions.CurrentValue, cancellationToken).ConfigureAwait(false);
+                jobId, principal, specParams, _customCodeOptions.CurrentValue, cancellationToken, securityContext).ConfigureAwait(false);
             return (result.OwnerScope, result.Token, workload);
         }
         catch (CustomCodeSubmitRejectedException ex)

@@ -816,6 +816,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // incompatible image set can still acknowledge an already-accepted keyed job (#6069).
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey, ownerId, resolvedSecurityContext.TenantId);
+        var legacyTenantJobId = resolvedKey is not null && !resumingApproved
+            && !inheritsSubmitterSecurityContext && resolvedSecurityContext.TenantId is not null
+            && _authorizer.CaptureReadScope(principal, _rbacOptions).IncludesLegacy
+                ? CreateJobId(resolvedKey, ownerId, null) : null;
         var requestFingerprint = CreateRequestFingerprint(plan);
         var workload = await _dispatcher.ResolveWorkloadAsync(
             isCustomCode,
@@ -831,6 +835,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         async Task<bool> ConfirmKeyedReplayAsync(CancellationToken replayToken)
         {
             if (await jobStore.GetAsync(jobId, replayToken).ConfigureAwait(false) != null)
+            {
+                return true;
+            }
+
+            if (legacyTenantJobId is not null
+                && await jobStore.GetAsync(legacyTenantJobId, replayToken).ConfigureAwait(false) is not null)
             {
                 return true;
             }
@@ -863,6 +873,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 return existingByKey;
             }
 
+            if (legacyTenantJobId is not null
+                && await jobStore.GetAsync(legacyTenantJobId, cancellationToken).ConfigureAwait(false) is { } legacyTenantJob)
+            {
+                EnsureMatchingIdempotentRequest(
+                    legacyTenantJob, requestFingerprint, ownerId, null, effectiveProtocolMetadata);
+                EnsureGPServerReplayBinding(legacyTenantJob, gpExecution, principal);
+                legacyTenantJob = await _dispatcher.RepairLocalDispatchAsync(legacyTenantJob, jobStore, cancellationToken)
+                    .ConfigureAwait(false);
+                EnsureSubmissionDidNotRollback(legacyTenantJob);
+                return legacyTenantJob;
+            }
+
             // A keyed job written before ids were scoped by tenant and owner lives under the
             // key-only id. Replay it to its own submitter and refuse the key to anyone else, so a
             // retry that crosses that change does not execute the same request twice. Only a live
@@ -878,7 +900,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     ownedByCaller: !resumingApproved
                         && !inheritsSubmitterSecurityContext
                         && JobOwnershipSecurity.MatchesPriorFormatSubmitter(
-                            priorFormat.Audit, principal, resolvedSecurityContext.TenantId),
+                            priorFormat.Audit, principal, legacyTenantJobId is not null
+                                && priorFormat.Audit.SubmitterSecurityContext?.TenantId is null
+                                    ? null : resolvedSecurityContext.TenantId),
                     effectiveProtocolMetadata);
                 EnsureGPServerReplayBinding(priorFormat, gpExecution, principal);
                 priorFormat = await _dispatcher.RepairLocalDispatchAsync(priorFormat, jobStore, cancellationToken)
@@ -918,7 +942,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         if (isCustomCode)
         {
             (ownerScope, mintedCustomCodeToken, workload) = await _customCodeGate.ValidateMintAndInjectAsync(
-                jobId, principal, specParams, workload, cancellationToken).ConfigureAwait(false);
+                jobId, principal, specParams, workload, cancellationToken, resolvedSecurityContext).ConfigureAwait(false);
         }
         else
         {

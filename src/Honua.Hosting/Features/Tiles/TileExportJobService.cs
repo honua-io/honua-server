@@ -118,6 +118,18 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                 return replay;
             }
 
+            if (submitter.TenantId is not null && TenantReadScope.For(_tenantContext).IncludesLegacy)
+            {
+                var legacyTenantId = JobOwnershipSecurity.CreateJobId("te", resolvedKey, principalId, null);
+                var legacyTenantJob = await jobStore.GetAsync(legacyTenantId, cancellationToken).ConfigureAwait(false);
+                if (legacyTenantJob is not null)
+                {
+                    EnsureMatchingIdempotentRequest(legacyTenantJob, requestFingerprint, principalId, null);
+                    EnsureSubmissionDidNotRollback(legacyTenantJob);
+                    return legacyTenantJob;
+                }
+            }
+
             // A keyed job written before ids were scoped by tenant and owner lives under the
             // key-only id: replay it to its own submitter and refuse the key to anyone else, so a
             // retry that crosses that change does not export twice.
@@ -129,7 +141,9 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                 EnsureMatchingIdempotentRequest(
                     priorFormat,
                     requestFingerprint,
-                    JobOwnershipSecurity.MatchesPriorFormatSubmitter(priorFormat.Audit, principal, submitter.TenantId));
+                    JobOwnershipSecurity.MatchesPriorFormatSubmitter(priorFormat.Audit, principal,
+                        TenantReadScope.For(_tenantContext).IncludesLegacy
+                            && priorFormat.Audit.SubmitterSecurityContext?.TenantId is null ? null : submitter.TenantId));
                 EnsureSubmissionDidNotRollback(priorFormat);
                 Log.SubmittedIdempotent(_logger, priorFormat.OperationId);
                 return priorFormat;
