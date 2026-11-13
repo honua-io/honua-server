@@ -103,7 +103,9 @@ internal sealed partial class PostgresClientCertificateTrustStore(
         {
             if (_seeded) { return; }
             var unreadable = (await _store.ReadAsync(cancellationToken).ConfigureAwait(false)).UnreadableKeys;
-            var previous = (await _manifest.ReadAsync(cancellationToken).ConfigureAwait(false)).Documents
+            var manifest = await _manifest.ReadAsync(cancellationToken).ConfigureAwait(false);
+            var manifestReadable = !manifest.UnreadableKeys.Contains(ManifestKey, StringComparer.Ordinal);
+            var previous = manifest.Documents
                 .FirstOrDefault(document => document.Key == ManifestKey)?.Value.Profiles ?? new Dictionary<string, string[]>(StringComparer.Ordinal);
             var next = new ConfiguredTrustManifest();
             foreach (var configured in options?.Value.TrustProfiles.Select(ClientCertificateTrustProfile.FromOptions) ?? [])
@@ -119,6 +121,13 @@ internal sealed partial class PostgresClientCertificateTrustStore(
                 var formerlyConfigured = previous.GetValueOrDefault(key) ?? [];
                 await _store.MutateAsync(key,
                     current => current is null ? configured : ApplyConfigured(current, configured, formerlyConfigured), cancellationToken).ConfigureAwait(false);
+            }
+            if (!manifestReadable)
+            {
+                // Without the manifest, removed entries cannot be told apart from administrator entries; they stay as stored.
+                ConfiguredManifestUnreadable(_logger);
+                _seeded = true;
+                return;
             }
             // A profile removed from configuration is disabled, not deleted, so its revocations and audit history remain.
             foreach (var removed in previous.Keys.Where(key => !next.Profiles.ContainsKey(key) && !unreadable.Contains(key, StringComparer.Ordinal)))
@@ -180,6 +189,9 @@ internal sealed partial class PostgresClientCertificateTrustStore(
         X509RevocationMode.Offline => 1,
         _ => 0
     };
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The configured client-certificate trust manifest is unreadable; entries removed from configuration are not disabled until it is repaired.")]
+    private static partial void ConfiguredManifestUnreadable(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Configured client-certificate trust profile {ProfileId} has an unreadable stored copy; it is not trusted until repaired.")]
     private static partial void ConfiguredProfileUnreadable(ILogger logger, string profileId);
