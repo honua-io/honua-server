@@ -1,0 +1,13 @@
+# GitHub supports concurrency.queue; actionlint 1.7.12 does not model it yet.
+# Match this one diagnostic, never all syntax errors or expression contexts.
+paths:
+  .github/workflows/*.yml:
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'
+  # gh-aw v1.0.1 compiler output has two known reference diagnostics. Keep these
+  # baseline exceptions confined to generated doctor workflows; do not edit
+  # generated locks or suppress other expression/context errors in them.
+  .github/workflows/*doctor*.lock.yml:
+    ignore:
+      - '^property "workflow_ref" is not defined in object type '
+      - '^property "safe-outputs-app-token" is not defined in object type '

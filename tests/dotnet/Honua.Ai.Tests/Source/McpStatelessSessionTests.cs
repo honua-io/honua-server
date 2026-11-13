@@ -6,8 +6,6 @@ using Honua.Ai.Protocols.Mcp;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -303,8 +301,9 @@ public sealed class McpStatelessSessionTests
     {
         Compose(new() { ["Mcp:SessionMode"] = "Stateless" }).Mode.Should().Be(McpSessionMode.Stateless);
         Compose(new() { ["Mcp:SessionMode"] = "InMemory" }).Mode.Should().Be(McpSessionMode.InMemory);
-        Compose(new() { ["Mcp:SessionMode"] = "Stateless" }, services => services.AddSingleton(Substitute.For<IConnectionMultiplexer>()))
-            .Mode.Should().Be(McpSessionMode.Shared, "a connected Redis always shares sessions");
+        Compose(new() { ["Mcp:SessionMode"] = "Stateless" }, services => services.AddSingleton<IMcpSessionStore>(
+                new McpSessionSharedStoreTests.FakeSharedSessionStore(TimeProvider.System)))
+            .Mode.Should().Be(McpSessionMode.Shared, "a shared session store always shares sessions");
         Compose(new() { ["Mcp:SessionMode"] = "Stateless", ["ConnectionStrings:DefaultConnection"] = null })
             .Mode.Should().Be(McpSessionMode.InMemory, "without a signing secret no stateless id can be minted");
     }

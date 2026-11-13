@@ -144,6 +144,7 @@ if (Honua.Server.Hosting.ComposeExecutor.ComposeExecutorMode.Resolve(builder.Con
     return;
 }
 
+DataStoreBuildPolicy.Validate(builder.Configuration);
 Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute
@@ -478,11 +479,9 @@ if (registerProviderInfrastructure)
     InfrastructureCompositionRoot.RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
 
-// Provider-aware admin connection testing: register every engine's connection driver + the registry so the
-// connection create/test endpoints build and probe MySQL / SQL Server / Oracle / PostgreSQL with the correct
-// ADO.NET provider instead of always speaking Npgsql. Registered unconditionally — independent of the primary
-// data-source provider — because any of these engines can be an external secured connection.
+// Connection administration can target installed providers beyond the configured primary store.
 Honua.Db.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtensions.AddPostgresConnectionDriver(builder.Services);
+#if !HONUA_POSTGIS_ONLY
 Honua.Db.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
 Honua.Db.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
 Honua.Db.Redshift.Features.Security.RedshiftConnectionDriverServiceCollectionExtensions.AddRedshiftConnectionDriver(builder.Services);
@@ -502,6 +501,7 @@ Honua.Db.Snowflake.Features.Security.SnowflakeConnectionDriverServiceCollectionE
 // registered beside Redshift and Snowflake so admin connection tests resolve the provider
 // even when the experimental feature gate has not enabled the read-through provider.
 Honua.Db.Databricks.Features.Security.DatabricksConnectionDriverServiceCollectionExtensions.AddDatabricksConnectionDriver(builder.Services);
+#endif
 builder.Services.AddSingleton<Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry, Honua.Core.Features.Security.Abstractions.ConnectionDriverRegistry>();
 
 // IGeometryService is a pure NTS-backed compute service (its only dependency is
@@ -1797,6 +1797,21 @@ catch (InvalidOperationException ex) when (Honua.Server.Hosting.GatedBootShutdow
     return;
 }
 
+#if HONUA_POSTGIS_ONLY
+try
+{
+    await using var startupScope = app.Services.CreateAsyncScope();
+    await DataStoreBuildPolicy.ValidatePostgisConnectionsAsync(
+        startupScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
+        startupScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>());
+}
+catch (Honua.Core.Features.FeatureStore.Domain.DataStoreProviderUnavailableException ex)
+{
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+    return;
+}
+#endif
+
 // Configure health endpoints
 app.MapHealthEndpoints();
 app.MapPrometheusEndpoint(endpoint =>
@@ -1950,6 +1965,7 @@ app.MapConsoleOpenDataEndpoints();
 app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapStudioPublishedRouteEndpoints();
+app.MapStudioSessionEndpoints();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
 Honua.Server.Features.Studio.Ai.StudioAiProxyEndpoints.MapStudioAiProxyEndpoints(app);

@@ -2,10 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -29,7 +29,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 /// <summary>
 /// Reads a provider-bound PostGIS table directly from the storage mapping persisted in Metadata v2.
 /// </summary>
-internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReader, IDistinctFeatureReader, IPagedFeatureReader, IStreamingFeatureStore
+internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReader, IDistinctFeatureReader, IPagedFeatureReader, IStreamingFeatureStore, IObjectIdStreamingReader
 {
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported for source-backed PostGIS layers.";
@@ -227,6 +227,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        var objectIds = await StreamObjectIdsAsync(layerId, query, cancellationToken).ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return [.. objectIds];
+    }
+
+    public async IAsyncEnumerable<long> StreamObjectIdsAsync(
+        int layerId,
+        FeatureQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         var sql = new SqlBuilder();
         var objectIdExpression = query.ReturnPublicObjectIds && !string.IsNullOrWhiteSpace(query.PublicIdAttributeName)
@@ -237,17 +246,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         AppendOrderBy(sql, query);
         AppendPagination(sql, query);
 
-        var objectIds = ImmutableArray.CreateBuilder<long>();
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateReadCommand(connection, sql);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            objectIds.Add(reader.GetInt64(0));
+            yield return reader.GetInt64(0);
         }
-
-        return objectIds.ToImmutable();
     }
 
     public async Task<long> CountAsync(
@@ -480,9 +486,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         await using var session = await OpenFeatureReadSessionAsync(
             query, probeLimit: false, allowSerialPlan: false, cancellationToken).ConfigureAwait(false);
         var reader = session.Reader!;
+        var attributesReader = new FeatureAttributeReadContext();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes);
+            yield return ReadFeature(reader, session.NativeAttributes, attributesReader);
         }
     }
 
@@ -525,9 +532,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         await using var session = await OpenFeatureReadSessionAsync(
             query, probeLimit, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
         var reader = session.Reader!;
+        var attributesReader = new FeatureAttributeReadContext();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            features.Add(ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes));
+            features.Add(ReadFeature(reader, session.NativeAttributes, attributesReader));
         }
 
         return features.ToImmutable();
@@ -1594,7 +1602,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 : throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'."));
     }
 
-    private Feature ReadFeature(NpgsqlDataReader reader, bool textAttributes, NativeAttributeDecoder? nativeAttributes)
+    private Feature ReadFeature(
+        NpgsqlDataReader reader,
+        NativeAttributeDecoder? nativeAttributes,
+        FeatureAttributeReadContext attributesReader)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
@@ -1604,15 +1615,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         {
             if (!reader.IsDBNull(2) && (nativeAttributes is null || nativeAttributes.HasJsonFallback))
             {
-                if (textAttributes)
-                {
-                    FeatureAttributeJsonReader.ReadInto(reader.GetString(2), attributesDictionary);
-                }
-                else
-                {
-                    using var document = reader.GetFieldValue<JsonDocument>(2);
-                    FeatureAttributeJsonReader.ReadInto(document.RootElement, attributesDictionary);
-                }
+                attributesReader.ReadInto(reader, 2, attributesDictionary);
             }
 
             nativeAttributes?.ReadInto(reader, attributesDictionary);

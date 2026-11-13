@@ -38,7 +38,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]
-public sealed class McpBearerAuthenticationTests : IAsyncLifetime
+public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
 {
     private const string JsonMediaType = "application/json";
     private const string PublicBaseUrl = "https://mcp.example.com";
@@ -437,11 +437,16 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
     {
         // Tenant middleware rejects before MCP dispatch. This is a JSON-RPC authorization
         // error, not a tool result, and must retain the shared tenant-denial contract.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
         response.Headers.WwwAuthenticate.Should().Contain(challenge =>
             challenge.Scheme == "Bearer" &&
             challenge.Parameter == "resource_metadata=\"" + PublicBaseUrl + "/.well-known/oauth-protected-resource/mcp\"");
+        await AssertTenantDenialRpcErrorAsync(response);
+    }
+
+    private static async Task AssertTenantDenialRpcErrorAsync(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
         using var document = await ReadJsonAsync(response);
         var root = document.RootElement;
         root.GetProperty("jsonrpc").GetString().Should().Be("2.0");
@@ -1279,8 +1284,10 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
     private static string CreateOperatorToken(
         string signingKey = OperatorSigningKey,
-        int expiresInMinutes = 10)
+        int expiresInMinutes = 10,
+        string? tenantId = "tenant-a")
     {
+        Claim[] tenantClaims = tenantId is null ? [] : [new Claim("tid", tenantId)];
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
             SecurityAlgorithms.HmacSha256);
@@ -1290,7 +1297,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
             claims:
             [
                 new Claim("sub", "operator-1"),
-                new Claim("tid", "tenant-a"),
+                .. tenantClaims,
                 new Claim("roles", "admin"),
                 new Claim("scope", "honua.mcp.full"),
             ],
