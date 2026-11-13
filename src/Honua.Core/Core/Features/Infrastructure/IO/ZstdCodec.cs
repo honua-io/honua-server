@@ -32,6 +32,11 @@ public static class ZstdCodec
     public static byte[] Decompress(ReadOnlySpan<byte> compressed, int maxDecompressedBytes)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maxDecompressedBytes);
+        if (compressed.IsEmpty)
+        {
+            return [];
+        }
+
         var bound = GetDecompressedBound(compressed);
 
         // An inflated header is a decompression-bomb vector: check the bound before allocating.
