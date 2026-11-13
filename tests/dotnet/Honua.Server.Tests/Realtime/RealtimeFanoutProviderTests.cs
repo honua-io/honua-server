@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Threading.Channels;
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Realtime;
 using Honua.Db.Postgres.Features.Infrastructure;
