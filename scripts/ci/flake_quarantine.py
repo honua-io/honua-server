@@ -106,14 +106,15 @@ def validate_run_summary(tree, totals):
 
 def retry_replacements(first, retry):
     original, retried = read_cases(first), read_cases(retry)
-    # Truncated theory display names can collide. Refuse ambiguous evidence
-    # rather than letting a passing sibling stand in for a missing failure.
-    for cases in (original, retried):
+    failed = [c for c in original if c[2] == 'Failed']
+    methods = {c[0] for c in failed}
+    # Truncated theory names must be unambiguous within selected methods,
+    # including passing siblings, and throughout the retry evidence.
+    selected = [c for c in original if c[0] in methods]
+    for cases in (selected, retried):
         identities = Counter((c[0], c[1]) for c in cases)
         if any(count > 1 for count in identities.values()):
             raise ValueError('Retry evidence has ambiguous test-case identities')
-    failed = [c for c in original if c[2] == 'Failed']
-    methods = {c[0] for c in failed}
     if not failed or any(c[0] not in methods or c[2] != 'Passed' for c in retried):
         raise ValueError('Retry must pass every selected method')
     required = Counter((c[0], c[1]) for c in failed)
