@@ -128,7 +128,7 @@ lower occupancy establishes a causal speedup. The successful samples ran
 routing and summary jobs but skipped the managed producer, foundation tests,
 server tests and runtime proofs. They do not demonstrate faster test CI.
 The 24.50-minute sample also illustrates that low per-job queue time does not
-exclude delay between jobs; it had only 4.48 minutes of summed execution.
+exclude delay before job creation; it had only 4.48 minutes of summed execution.
 
 Full fallback retains complete coverage under the affected cap; scheduled full
 runs retain their separate concurrency budget. Existing selector guards determine
