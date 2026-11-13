@@ -136,7 +136,8 @@ shared lean gate was 18m09s, split roughly:
 
 The build is now separated from test execution. Pristine outputs are packaged
 once before tests or coverage can modify them. Downstream consumers verify the
-same-run source, SDK, platform and build-property identity, then compile only
+same-run source, SDK, platform and build-property identity, relocate staged MVC
+and static-asset content roots to their own checkout, then compile only
 missing projects as one scoped fallback graph. Both architecture suites run
 after projection regeneration; the full collector remains intact. Full CI also
 uses a managed producer and an independent, required full-solution format job.
@@ -158,7 +159,7 @@ MSBuild resolves each listed project's `<ProjectReference>` graph itself, so
 forward dependencies are built without being enumerated. A filter is used rather
 than a project list because `dotnet build a.csproj b.csproj` is rejected outright
 (MSB1008); the filter also keeps the build to a single MSBuild invocation with
-full cross-project parallelism.
+cross-project parallelism bounded to four MSBuild workers.
 
 The current build floor is the forward dependency closure of that explicit
 producer plan, rather than a fixed count of test projects. Isolated unit projects
@@ -311,7 +312,7 @@ is one runner label, such as a GitHub-hosted larger-runner name; it is not a JSO
 label array. Main owns configuring the variable after the runner is available
 to this repository and the combined batch has passed build-host preflight.
 
-The switch covers build, format, foundation-family tests, server shards, MCP
+The switch covers format, foundation-family tests, server shards, MCP
 certification and LLM smoke, PostgreSQL and core-package compatibility, AOT,
 Docker build, and Console quickstart smoke. Admission, routing, receipt
 aggregation and final verdict jobs remain on standard hosted runners so a
@@ -329,6 +330,54 @@ Main checks the chosen pool on the first ordinary combined batch using it;
 no separate branch full run is needed. Clear the variable to restore the hosted
 default for new runs. Treat existing runs as assigned to their original pool;
 main handles their completion or cancellation.
+
+## Full-CI producer admission
+
+`Build & Format Check` has separate, producer-only admission. The hosted
+`CI producer / Runner select` job defaults to `ubuntu-latest`. MAIN can enable
+`HONUA_CI_PRODUCER_RUNNER=honua-build` only after compatible-pool preflight.
+Same-repository events can assume `HONUA_CI_PRODUCER_READ_ROLE_ARN` via OIDC,
+using `HONUA_PR_GATE_RUNNER_REGION`. That role needs only
+`autoscaling:DescribeAutoScalingGroups` and `ssm:GetParameter` for
+`/honua-lane-build-host/gate-runner/heartbeat`; its trust must cover the intended
+trunk schedule/dispatch events. It must have no wake or host-mutation rights.
+Fork events never request credentials or self-hosted admission.
+
+The selector makes one current InService instance read and one heartbeat read.
+It requires the same instance, an integer timestamp no more than 90 seconds old
+and not in the future, and integer gate `idle >= 2`. Heavy-pool idle counts do
+not qualify. Missing configuration, credentials, checkout, API access, malformed
+proof, stale proof, or busy/stopped capacity falls back hosted. There is no
+wake, wait, polling or retry loop. A snapshot is admission evidence, not a
+capacity reservation; a later queue remains possible.
+
+The producer skips hosted sudo cleanup on self-hosted runners and installs its
+SDK into `${{ runner.temp }}/honua-ci-producer-sdk`. Every producer restore,
+build and nested MSBuild evaluation uses at most four workers; job-wide
+`DOTNET_PROCESSOR_COUNT=4`, disabled MSBuild servers and disabled node reuse
+also apply to child tooling. Required checks, warning/analyzer policy, artifact
+selection and consumers remain unchanged. Other compute jobs retain their
+existing switch; this change does not activate the global heavy-runner variable.
+
+Source merge does not install or activate a runner. MAIN owns configuration
+and a runner-context preflight on the actual gate accounts: verify the private
+SDK host/runtime and native dependencies, writable SDK/tool/cache/temp paths,
+setup action compatibility without sudo, and the bounded full producer graph
+within the parent slice's 10 GiB/6 CPU limits. Preserve active workers; use the
+next authorized ordinary run for build evidence, without a new full-CI dispatch
+or rerun. Record producer/restore/build minutes and memory evidence separately
+from the earlier PR producer; no full-trunk speedup is established by that PR.
+Keep the variable unset until these prerequisites pass. A current-instance
+heartbeat with two idle gate runners is still required for each later admission.
+Clear the producer variable to restore hosted selection for new runs. Existing
+jobs keep their assigned runner.
+
+Both producer and PR Gate selectors use `scripts/ci/gate-runner-heartbeat.sh`
+for the read-only heartbeat proof. It requires exactly one JSON object, the
+current instance, an integer timestamp no older than 90 seconds, and two idle
+gate runners. Heavy-pool readiness remains independent of gate-pool admission.
+The producer takes one snapshot; the existing PR selector retains its bounded
+wake/wait orchestration. Both sparse checkouts include the shared validator.
 
 ## PR Gate compute runner selection
 
@@ -758,7 +807,7 @@ future gate skip. Local receipts do not currently skip hosted tests. Compiled
 output caching remains opt-in; no cross-phase promotion is authorized by the
 observational sample.
 
-Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
+Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. Managed consumers also install the target framework’s .NET and ASP.NET shared runtimes into that private SDK root using the supported runtime bootstrap. The target channel comes from `HonuaTargetFramework`; non-versioned host files are preserved and exact producer SDK identity is verified afterward. This allows a newer producer SDK to execute older target artifacts without major runtime roll-forward or artifact changes. It adds no jobs and changes no required checks. The 12 November baseline aborted net10.0 tests and projection regeneration before execution when only the SDK 11 runtimes were present; recovery timing awaits a fresh eligible gate. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
 
 ### Test analyzer compilation roots
 
@@ -787,6 +836,151 @@ client compatibility receipts instead of every test language, and GIS data
 instead of GIS prose. Runtime source, generator scripts, CITE status and all
 existing build/setup inputs remain covered. Its producer/consumer security
 boundary and deterministic replay are unchanged.
+
+## Server test fixture lifetimes
+
+Class-scoped test applications and database infrastructure that shorten server
+test shards without changing what they run.
+
+### WFS 2.0 endpoint fixture lifetime
+
+Wfs20EndpointsTests shares one seeded Community-licensed WFS 2.0 application for
+the lifetime of the sequential test class, used by every read-only case:
+capabilities, DescribeFeatureType, GetFeature, GetPropertyValue, stored-query
+listing and description, and error-report checks. Cases that send a WFS
+Transaction, create or drop stored queries, or write features or resource
+metadata through the fixture start their own application within the case.
+Managed stored queries are held process-wide rather than per application, so a
+stored query created by one case stays visible to later cases; no case asserts
+an exact stored-query count. Cases with custom metadata providers, licenses, or
+service replacements also keep their own per-case applications.
+All cases and assertions remain in the WFS Endpoints shard on selected PR runs
+and twice-daily full trunk runs. This changes no runner count, required check
+name, required aggregate dependency, workflow, or shard definition.
+
+### Cross-protocol permission matrix fixture lifetime
+
+CrossProtocolPermissionMatrixTests starts one application for the whole class,
+configured with the wildcard query grant, and shares it across the ten
+read-denial cases for FeatureServer, OData, OData batch, OGC API Features and
+OGC API Tiles. Each of those cases creates its own HttpClient with its own user
+and role headers, so no login state or cookies are shared between cases. Every
+write case, every ApplyEdits parity case (FeatureServer and gRPC-write), and the
+layer-scoped grant cases still start their own application, because their grants
+or edits differ per test. The shared application is disposed when the class
+finishes, or when a shard finishes its share of the class.
+All cases and assertions remain in the Security and Authorization 1 and Security
+and Authorization 7 shards on selected PR runs and twice-daily full trunk runs.
+This changes no runner count, required check name, required aggregate
+dependency, workflow, or shard definition.
+
+### FeatureServer endpoint fixture lifetime
+
+FeatureServerEndpointTests starts one seeded, Pro-licensed application per test
+class, through an xUnit class fixture, and every read-only metadata and query
+case reuses it with the same schema and editing capabilities. Any case that
+edits features, adds data or changes metadata calls
+`UseIsolatedApplicationAsync()` first and gets its own application and schema,
+which is disposed when the case ends. The shared application is never written
+to, so the read-only cases do not depend on order. The class still runs one case
+at a time in the `Database.CoreEndpoints` collection, and method names are
+unchanged, so the Core Endpoints shard filter is unaffected.
+All cases and assertions remain in the Core Endpoints, Core Endpoint Queries,
+and Core Endpoint Mutations shards on selected PR runs and twice-daily full
+trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow, or shard definition.
+
+### Feature stream default application lifetime
+
+FeatureStreamEndpointsTests creates the shared default application per case but
+starts it lazily: only cases that call `StartDefaultApplicationAsync()` start
+it, and only those cases dispose it. Cases that need a custom configuration
+build, start and dispose their own application inside the case, so they no
+longer pay for a default application they never use. Each case still gets its
+own isolated event store, sessions and credentials.
+All cases and assertions remain in the Server Features Streaming Transports and
+Server Features Streaming Endpoints 1, 2, and 4 shards on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow, or shard definition.
+
+### FeatureServer RBAC denial fixture lifetime
+
+FeatureServerServiceRbacTests uses one application per class, built once through
+xUnit's class fixture, for cases where authorization must reject a request
+before any write. Each case still creates its own HTTP client with its own role
+headers, so no authentication state is shared between cases. Cases that write
+successfully, or that create a replica as setup, still build their own
+application and discard it when the case ends.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### Routing async web tool database lifetime
+
+`RoutingAsyncWebToolTests` holds a class-level `PostgresFixture`, which keeps
+the shared, reference-counted PostgreSQL container and data source alive for the
+whole class instead of rebuilding them for each case. Each case still creates
+its own no-Redis `WebAppFixture` host with an isolated schema, cleared job
+tables, its own substitute routing provider and its own durable worker.
+All cases and assertions remain in the GeoServices GPServer and NAServer shard
+on selected PR runs and twice-daily full trunk runs. This changes no runner
+count, required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### Capability manifest endpoint fixture lifetime
+
+`CapabilityManifestEndpointTests` starts its default manifest application once
+per class through an `IClassFixture` and disposes it when the class finishes.
+Each case still makes its own anonymous and admin `HttpClient` against that
+host, and only cases that read without writing use it. Cases that need a
+different license, configuration or set of services build, start and dispose
+their own `WebAppFixture` inside the test, so configured applications stay
+isolated from each other and from the shared one.
+All cases and assertions remain in the Server Features Capabilities shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### ImageServer raw pixel export database lifetime
+
+`ImageServerRawPixelExportTests` holds an `IClassFixture<PostgresFixture>`
+reference, so the shared PostgreSQL infrastructure starts once per class and
+stays up across its integration cases instead of restarting for each one. Each
+case still creates its own `WebAppFixture` host and isolated schema, and seeds
+the raster under the schema-mutation lock. The pure LERC/BIP encoder unit tests
+live in `ImageServerPixelBlockEncoderTests`, which has no fixture, so running
+only unit tests never starts a database.
+All cases and assertions remain in the GeoServices ImageServer Raster Rendering
+and GeoServices ImageServer Rendering and Support shards on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow, or shard definition.
+
+### ImageServer mosaic integration database lifetime
+
+`ImageServerMosaicIntegrationTests` takes a class-scoped `PostgresFixture`,
+which holds a reference to the shared, reference-counted PostgreSQL/PostGIS
+infrastructure from the first case to the last instead of letting it be torn
+down and rebuilt between cases. Each case still builds a fresh `WebAppFixture`
+host with its own isolated application schema, raster seed and license
+entitlement configuration.
+All cases and assertions remain in the GeoServices ImageServer Raster Rendering
+shard on selected PR runs and twice-daily full trunk runs. This changes no
+runner count, required check name, required aggregate dependency, workflow, or
+shard definition.
+
+### GPServer endpoint application lifetime
+
+`GPServerEndpointTests` holds a `PostgresFixture` class fixture, so the
+reference-counted PostgreSQL infrastructure starts once and stays alive until
+the last case in the class has run. The default `WebAppFixture` application
+starts only in cases that use the shared client, fixture or job store, and is
+disposed only if it was started. Every case still builds its own hosts, isolated
+schemas, in-memory job store and service replacements.
+All cases and assertions remain in the GeoServices GPServer Endpoints shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
 
 ## OGC release-candidate qualification
 
@@ -836,6 +1030,13 @@ the bot App to enable GitHub auto-merge. Repository rulesets and required checks
 The workflow does not override protections. Exact-head review admission must be
 configured as a required check to be enforced by GitHub auto-merge.
 
+Admission requires both the triggering event and the live PR to be non-draft and
+free of `hold`, `train:hold` and `train:escalated`. A queued held/draft event cannot
+re-arm admission after its live state changes. Ineligible events may only revoke
+an existing request; draft-conversion and label events retain that cleanup path.
+Manually disabling auto-merge alone is not a durable hold: apply a hold label or
+keep the PR as a draft to prevent a later eligible event from enabling it again.
+
 The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
 
 Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
@@ -853,3 +1054,100 @@ are unchanged. Children inherit the parent's conservative 21.7-minute dispatch
 rank, including existing PR budget deferral, until scheduled trunk CI measures
 them. The coverage guard proves exact ownership of the former selection.
 See [the capacity evidence and qualification requirement](shard-timeout-budgets.md#admin-authentication-capacity-split-12-november-2026).
+
+### Managed producer memory budget
+
+The shared lean gate bounds restore and build to four MSBuild workers and sets
+`DOTNET_PROCESSOR_COUNT=4` for each child runtime. These steps disable the
+persistent MSBuild server and node reuse so restore workers cannot accumulate
+alongside the graph build. Both full and filtered builds retain their complete
+project graphs, warnings-as-errors and existing timeouts.
+
+This corrects the 12 November PR #7457 producer cancellation: its runner shared
+a 10 GiB user-slice budget with runner services; the OOM task dump contained
+25 MSBuild processes and 16 compiler processes before systemd restarted the
+runner. CPU quota alone did not bound those processes. No host resource limit
+changes are required. The changed action takes effect on the next PR Gate;
+that run supplies the after-change timing and memory evidence.
+
+### OData RBAC denial fixture lifetime
+
+`ODataServiceRbacTests` shares one authorization-denial application for the
+lifetime of the sequential test class. Only cases that expect a request to be
+rejected before any write use it, and each creates its own HTTP client with its
+own role headers. Successful edits and cases with custom policies still build
+and dispose their own application within the case.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### GeoServices geocode catalog fixture lifetime
+
+`GeoservicesCatalogGeocodeServerTests` shares one seeded catalog host with
+restricted features for the lifetime of the sequential test class, used by the
+read-only mount-prefix cases. Public-service collision graphs are built once per
+distinct configuration and kept apart from the unmodified catalog. Cases with
+other locator or authorization settings still create their own application
+within the case.
+All cases and assertions remain in the GeoServices Catalog and ImageServer
+Support shard on selected PR runs and twice-daily full trunk runs. This changes
+no runner count, required check name, required aggregate dependency, workflow,
+or shard definition.
+
+### Secure connection default application lifetime
+
+`SecureConnectionEndpointsTests` starts its default application lazily: only
+cases that call `InitializeDefaultApplicationAsync()` start it, and only those
+cases dispose it. Cases that build a custom host no longer pay for an unused
+default application.
+All cases and assertions remain in the Server Features Admin Platform and
+Connections shard on selected PR runs and twice-daily full trunk runs. This
+changes no runner count, required check name, required aggregate dependency,
+workflow, or shard definition.
+
+### Feature stream snapshot and conformance application lifetime
+
+`FeatureStreamSnapshotEndpointsTests` and
+`FeatureStreamConformanceEndpointsTests` start their default application lazily:
+only cases that call `StartDefaultApplicationAsync()` start it, and only those
+cases dispose it. Cases that need a custom configuration build, start and
+dispose their own application, and each case keeps its own isolated event store,
+sessions and credentials.
+All cases and assertions remain in the Server Features Streaming Snapshot and
+Conformance shard on selected PR runs and twice-daily full trunk runs. This
+changes no runner count, required check name, required aggregate dependency,
+workflow, or shard definition.
+
+### WCS endpoint fixture lifetime
+
+`Wcs10EndpointsTests` and `Wcs20EndpointsTests` each share one application with
+a substituted raster store for the lifetime of the sequential test class,
+through `SubstitutedRasterStoreApplication`. Cases that rebind the metadata
+graph or need other services still create their own application, so no rebinding
+leaks into the shared host.
+All cases and assertions remain in the WFS 3, WFS 8, and WFS 9 shards on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### Advanced spatial query fixture lifetime
+
+`AdvancedSpatialQueryTests` shares one seeded `WebAppFixture` for the lifetime
+of the sequential test class; every case is a read-only spatial query.
+All cases and assertions remain in the Core Spatial Query and Streaming shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### Input validation fixture lifetime
+
+`InputValidationIntegrationTests` shares one Pro-licensed production-mode
+application for the lifetime of the sequential test class. Edit cases add
+features to the shared host, but every assertion on edited data filters by a
+name unique to that case and no case counts all rows, so results do not depend
+on case order. A new case must keep to that rule or use its own application.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
