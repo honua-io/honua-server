@@ -19,6 +19,31 @@ public sealed class MigrationReaderCompatibilityTests
     private const int Reader = 135;
 
     [UnitTheory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
+    public void Verify_CommentsSplitAcrossDynamicLiterals_RefusesContract(string delimiter)
+    {
+        var sql = $"DO $body$ BEGIN EXECUTE {delimiter}ALTER /{delimiter} || {delimiter}* comment *{delimiter} || {delimiter}/TABLE honua.layers DROP COLUMN legacy_name{delimiter}; END $body$;";
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("'", "/**/TABLE honua.layers DROP COLUMN legacy_name")]
+    [InlineData("$sql$", "/* outer /* nested */ comment */TABLE honua.layers RENAME TO archived_layers")]
+    [InlineData("'", "-- comment\nTABLE honua.layers ALTER COLUMN name TYPE integer")]
+    public void Verify_ConcatenatedDynamicSqlAcrossComments_RefusesContract(string delimiter, string fragment)
+    {
+        var sql = $"DO $body$ BEGIN EXECUTE {delimiter}ALTER {delimiter} || {delimiter}{fragment}{delimiter}; END $body$;";
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTheory]
     [InlineData("'", "--\"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
     [InlineData("$sql$", "--\"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
     [InlineData("'", "/*\"; DROP/* outer /* nested */ comment */TABLE honua.evidence; SELECT 1 AS \"")]

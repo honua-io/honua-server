@@ -298,6 +298,7 @@ public static class MigrationSafetyClassifier
         var length = sql.Length;
         var statementStart = result.Length;
         var dynamicSql = new StringBuilder();
+        var dynamicFragments = new List<string>();
 
         while (i < length)
         {
@@ -345,6 +346,7 @@ public static class MigrationSafetyClassifier
                 {
                     AppendExecutionScope(dynamicSql, ExtractDynamicSql(contents,
                         result.ToString(statementStart, result.Length - statementStart), sql.AsSpan(i)));
+                    dynamicFragments.Add(contents);
                 }
 
                 result.Append(' ');
@@ -371,6 +373,7 @@ public static class MigrationSafetyClassifier
                 {
                     AppendExecutionScope(dynamicSql, ExtractDynamicSql(contents,
                         result.ToString(statementStart, result.Length - statementStart), sql.AsSpan(i)));
+                    dynamicFragments.Add(contents);
                 }
 
                 result.Append(' ');
@@ -385,8 +388,10 @@ public static class MigrationSafetyClassifier
                 if (dynamicSql.Length > 0)
                 {
                     AppendExecutionScope(result, dynamicSql);
+                    AppendDynamicFragments(result, dynamicFragments);
                     result.Append(';');
                     dynamicSql.Clear();
+                    dynamicFragments.Clear();
                 }
 
                 statementStart = result.Length;
@@ -396,7 +401,30 @@ public static class MigrationSafetyClassifier
         if (dynamicSql.Length > 0)
         {
             AppendExecutionScope(result, dynamicSql);
+            AppendDynamicFragments(result, dynamicFragments);
         }
+    }
+
+    private static void AppendDynamicFragments(StringBuilder result, List<string> fragments)
+    {
+        if (fragments.Count < 2)
+        {
+            return;
+        }
+
+        // Keep adjacent literal fragments contiguous even when their independent lexical
+        // views differ. Computed expressions cannot establish a trusted trigger header.
+        result.Append(ExecutionScopeBoundary);
+        result.Append(UntrustedDynamicScope);
+        result.Append(MigrationSqlComments.NormalizeFragment(string.Concat(fragments)));
+        result.Append(ExecutionScopeBoundary);
+        result.Append(UntrustedDynamicScope);
+        foreach (var fragment in fragments)
+        {
+            result.Append(MigrationSqlComments.NormalizeFragment(fragment));
+        }
+
+        result.Append(ExecutionScopeBoundary);
     }
 
     private static StringBuilder ExtractDynamicSql(string contents, string prefix, ReadOnlySpan<char> suffix)

@@ -329,6 +329,27 @@ public sealed class MigrationSafetyClassifierTests
     }
 
     [Theory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
+    public void DetectBreakingRules_FlagsCommentsSplitAcrossDynamicLiterals(string delimiter)
+    {
+        var sql = $"DO $body$ BEGIN EXECUTE {delimiter}ALTER /{delimiter} || {delimiter}* comment *{delimiter} || {delimiter}/TABLE honua.layers DROP COLUMN legacy_name{delimiter}; END $body$;";
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-column");
+    }
+
+    [Theory]
+    [InlineData("'", "/**/TABLE honua.layers DROP COLUMN legacy_name", "drop-column")]
+    [InlineData("$sql$", "/* outer /* nested */ comment */TABLE honua.layers RENAME TO archived_layers", "rename-table")]
+    [InlineData("'", "-- comment\nTABLE honua.layers ALTER COLUMN name TYPE integer", "alter-column-type")]
+    public void DetectBreakingRules_FlagsConcatenatedDynamicSqlAcrossComments(string delimiter, string fragment, string expectedRule)
+    {
+        var sql = $"DO $body$ BEGIN EXECUTE {delimiter}ALTER {delimiter} || {delimiter}{fragment}{delimiter}; END $body$;";
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain(expectedRule);
+    }
+
+    [Theory]
     [InlineData("SELECT 'DROP TABLE honua.layers';")]
     [InlineData("SELECT $$ALTER TABLE honua.layers DROP COLUMN legacy_name$$;")]
     [InlineData("DO $$ BEGIN message := 'DROP TABLE honua.layers'; END $$;")]
