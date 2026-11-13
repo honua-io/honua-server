@@ -1069,3 +1069,85 @@ a 10 GiB user-slice budget with runner services; the OOM task dump contained
 runner. CPU quota alone did not bound those processes. No host resource limit
 changes are required. The changed action takes effect on the next PR Gate;
 that run supplies the after-change timing and memory evidence.
+
+### OData RBAC denial fixture lifetime
+
+`ODataServiceRbacTests` shares one authorization-denial application for the
+lifetime of the sequential test class. Only cases that expect a request to be
+rejected before any write use it, and each creates its own HTTP client with its
+own role headers. Successful edits and cases with custom policies still build
+and dispose their own application within the case.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### GeoServices geocode catalog fixture lifetime
+
+`GeoservicesCatalogGeocodeServerTests` shares one seeded catalog host with
+restricted features for the lifetime of the sequential test class, used by the
+read-only mount-prefix cases. Public-service collision graphs are built once per
+distinct configuration and kept apart from the unmodified catalog. Cases with
+other locator or authorization settings still create their own application
+within the case.
+All cases and assertions remain in the GeoServices Catalog and ImageServer
+Support shard on selected PR runs and twice-daily full trunk runs. This changes
+no runner count, required check name, required aggregate dependency, workflow,
+or shard definition.
+
+### Secure connection default application lifetime
+
+`SecureConnectionEndpointsTests` starts its default application lazily: only
+cases that call `InitializeDefaultApplicationAsync()` start it, and only those
+cases dispose it. Cases that build a custom host no longer pay for an unused
+default application.
+All cases and assertions remain in the Server Features Admin Platform and
+Connections shard on selected PR runs and twice-daily full trunk runs. This
+changes no runner count, required check name, required aggregate dependency,
+workflow, or shard definition.
+
+### Feature stream snapshot and conformance application lifetime
+
+`FeatureStreamSnapshotEndpointsTests` and
+`FeatureStreamConformanceEndpointsTests` start their default application lazily:
+only cases that call `StartDefaultApplicationAsync()` start it, and only those
+cases dispose it. Cases that need a custom configuration build, start and
+dispose their own application, and each case keeps its own isolated event store,
+sessions and credentials.
+All cases and assertions remain in the Server Features Streaming Snapshot and
+Conformance shard on selected PR runs and twice-daily full trunk runs. This
+changes no runner count, required check name, required aggregate dependency,
+workflow, or shard definition.
+
+### WCS endpoint fixture lifetime
+
+`Wcs10EndpointsTests` and `Wcs20EndpointsTests` each share one application with
+a substituted raster store for the lifetime of the sequential test class,
+through `SubstitutedRasterStoreApplication`. Cases that rebind the metadata
+graph or need other services still create their own application, so no rebinding
+leaks into the shared host.
+All cases and assertions remain in the WFS 3, WFS 8, and WFS 9 shards on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### Advanced spatial query fixture lifetime
+
+`AdvancedSpatialQueryTests` shares one seeded `WebAppFixture` for the lifetime
+of the sequential test class; every case is a read-only spatial query.
+All cases and assertions remain in the Core Spatial Query and Streaming shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### Input validation fixture lifetime
+
+`InputValidationIntegrationTests` shares one Pro-licensed production-mode
+application for the lifetime of the sequential test class. Edit cases add
+features to the shared host, but every assertion on edited data filters by a
+name unique to that case and no case counts all rows, so results do not depend
+on case order. A new case must keep to that rule or use its own application.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
