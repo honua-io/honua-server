@@ -325,7 +325,7 @@ internal static class JobEndpoints
             return ProcessEndpoints.FormatOgcAuthError(authDecision);
         }
 
-        if (!OgcProcessesConversionHelpers.IsTerminal(job.Status))
+        if (!job.Status.IsTerminal())
         {
             OgcProcessesLog.JobResultsNotAvailable(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(job.Status));
             return Results.Json(
