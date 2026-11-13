@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
@@ -12,6 +13,8 @@ public static class MetadataV2GraphValidator
         ArgumentNullException.ThrowIfNull(graph);
 
         var errors = new List<string>(MetadataV2FolderValidation.Validate(graph));
+        errors.AddRange(graph.Connections.Where(DataStoreProviderPolicy.IsDataStoreConnection)
+            .Select(connection => DataStoreProviderPolicy.StoreProfileRefusalFor(connection.Provider)).OfType<string>());
         var entityIds = new HashSet<string>(StringComparer.Ordinal);
 
         AddEntityIds(errors, entityIds, "folder", graph.Folders.Select(folder => folder.Metadata.Id));

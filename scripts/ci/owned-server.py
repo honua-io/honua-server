@@ -39,12 +39,7 @@ def container_state(container):
 
 def container_owns_listener(container, port):
     # Read descriptors as the container user; host users need not share its UID.
-    script = '''ls /proc/1/fd >/dev/null 2>&1 || exit 2
-for descriptor in /proc/[0-9]*/fd/*; do
-    handle="$(readlink "$descriptor" 2>/dev/null)" || continue
-    case "$handle" in socket:\\[*\\]) printf '%s\\n' "$handle" ;; esac
-done'''
-    result = subprocess.run(["docker", "exec", container, "/bin/sh", "-c", script],
+    result = subprocess.run(["docker", "exec", container, "/app/honua-healthcheck", "--socket-handles"],
                             text=True, capture_output=True, timeout=5)
     if result.returncode:
         raise RuntimeError("container listener ownership cannot be inspected")

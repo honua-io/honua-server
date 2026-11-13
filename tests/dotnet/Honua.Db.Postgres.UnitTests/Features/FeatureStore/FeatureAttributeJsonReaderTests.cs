@@ -168,4 +168,85 @@ public sealed class FeatureAttributeJsonReaderTests(ITestOutputHelper output)
         var read = () => FeatureAttributeJsonReader.ReadInto(json, new Dictionary<string, object?>());
         read.Should().Throw<JsonException>();
     }
+
+    [Fact]
+    public void ReadInto_NameCache_ReusesNameStringsAcrossRows()
+    {
+        var names = new FeatureAttributeNameCache();
+        var first = new Dictionary<string, object?>();
+        var second = new Dictionary<string, object?>();
+
+        FeatureAttributeJsonReader.ReadInto("""{"name":"a","category":"x","population":1}""", first, names);
+        FeatureAttributeJsonReader.ReadInto("""{"name":"b","category":"y","population":2}""", second, names);
+
+        second.Should().Equal(new Dictionary<string, object?> { ["name"] = "b", ["category"] = "y", ["population"] = 2L });
+        foreach (var key in second.Keys)
+        {
+            ReferenceEquals(key, first.Keys.Single(k => k == key)).Should().BeTrue($"'{key}' should come from the cache");
+        }
+    }
+
+    [Theory]
+    [InlineData("""{"name":"a","category":"x"}""", """{"category":"y","name":"b"}""")]
+    [InlineData("""{"name":"a","category":"x"}""", """{"name":"b"}""")]
+    [InlineData("""{"name":"a"}""", """{"name":"b","category":"y","extra":true}""")]
+    [InlineData("""{"Name":"a"}""", """{"na\u006de":"b","NAME":"c"}""")]
+    [InlineData("""{"name":"a","category":"x"}""", "{}")]
+    public void ReadInto_NameCache_ShiftedOrChangedNames_MatchUncachedRead(string firstRow, string secondRow)
+    {
+        var names = new FeatureAttributeNameCache();
+        var warmup = new Dictionary<string, object?>();
+        FeatureAttributeJsonReader.ReadInto(firstRow, warmup, names);
+
+        var cached = new Dictionary<string, object?>();
+        var uncached = new Dictionary<string, object?>();
+        FeatureAttributeJsonReader.ReadInto(secondRow, cached, names);
+        FeatureAttributeJsonReader.ReadInto(secondRow, uncached);
+
+        cached.Should().Equal(uncached);
+    }
+
+    [Fact]
+    public void ReadInto_NameCache_MoreThanInitialCapacity_GrowsAndMatchesUncachedRead()
+    {
+        var json = "{" + string.Join(",", Enumerable.Range(0, 40).Select(i => $"\"field_{i:D2}\":{i}")) + "}";
+        var names = new FeatureAttributeNameCache();
+        var cached = new Dictionary<string, object?>();
+        var uncached = new Dictionary<string, object?>();
+
+        FeatureAttributeJsonReader.ReadInto(json, new Dictionary<string, object?>(), names);
+        FeatureAttributeJsonReader.ReadInto(json, cached, names);
+        FeatureAttributeJsonReader.ReadInto(json, uncached);
+
+        cached.Should().HaveCount(40).And.Equal(uncached);
+    }
+
+    [Fact]
+    public void ReadInto_NameCache_AllocatesLessPerRowThanUncachedRead()
+    {
+        const string json = """{"id":12345,"feature_name":"Point 12345","category":"A","temperature":23.5,"humidity":64.2,"elevation":125.5,"population":1000,"active":true,"status":"open","region":"west","timestamp":"2026-09-26T00:00:00Z"}""";
+        using var document = JsonDocument.Parse(json);
+        var destination = new Dictionary<string, object?>();
+
+        long Measure(FeatureAttributeNameCache? names)
+        {
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var iteration = 0; iteration < 1000; iteration++)
+            {
+                FeatureAttributeJsonReader.ReadInto(document.RootElement, destination, names);
+                destination.Clear();
+            }
+
+            return (GC.GetAllocatedBytesForCurrentThread() - before) / 1000;
+        }
+
+        var cache = new FeatureAttributeNameCache();
+        _ = Measure(null);
+        _ = Measure(cache);
+        var uncachedBytes = Measure(null);
+        var cachedBytes = Measure(cache);
+
+        output.WriteLine($"Allocated bytes per 11-field row (names only differ): uncached={uncachedBytes}, cached={cachedBytes}");
+        cachedBytes.Should().BeLessThan(uncachedBytes * 8 / 10, "cached rows should not allocate a string per attribute name");
+    }
 }

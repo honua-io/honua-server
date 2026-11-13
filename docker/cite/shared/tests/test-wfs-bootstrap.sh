@@ -33,12 +33,13 @@ for suite in wfs10 wfs11 wfs20; do
   exit_code="$(docker wait "$seed_id")"
   "${compose[@]}" logs seed
   [[ "$exit_code" == 0 ]]
-  timeout 15 "${compose[@]}" exec -T honua-server bash -s -- "http://localhost:8080/healthz/ready" < "$repo_root/scripts/docker/container-http-get.sh"
+  "${compose[@]}" exec -T honua-server /app/honua-healthcheck --ready
+  endpoint="$("${compose[@]}" port honua-server 8080)"
   expected=14
   [[ "$suite" == wfs20 ]] && expected=2
   actual="$("${compose[@]}" exec -T postgres psql -U postgres -d honua_cite -Atc 'SELECT count(*) FROM honua.layers')"
   [[ "$actual" == "$expected" ]]
-  timeout 15 "${compose[@]}" exec -T honua-server bash -s -- 'http://localhost:8080/wfs?service=WFS&version=2.0.0&request=GetCapabilities' < "$repo_root/scripts/docker/container-http-get.sh" > /tmp/"$project"-capabilities.xml
+  curl --fail --silent --show-error --max-time 15 "http://localhost:${endpoint##*:}/wfs?service=WFS&version=2.0.0&request=GetCapabilities" > /tmp/"$project"-capabilities.xml
   grep -q 'admin_boundaries' /tmp/"$project"-capabilities.xml
   rm /tmp/"$project"-capabilities.xml
   if [[ "$suite" == wfs20 ]]; then
@@ -47,7 +48,7 @@ for suite in wfs10 wfs11 wfs20; do
     query='service=WFS&version=2.0.0&request=DropStoredQuery&storedquery_id=urn:honua:cite:absent'
     status="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${endpoint##*:}/wfs?$query")"
     [[ "$status" == 401 ]]
-    if response="$(timeout 15 "${compose[@]}" exec -T honua-server bash -s -- "http://cite-auth-proxy:8080/wfs?$query" < "$repo_root/scripts/docker/container-http-get.sh")"; then
+    if response="$(docker run --rm --network "$(docker inspect "$("${compose[@]}" ps -q honua-server)" --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}')" curlimages/curl:8.14.1 --fail-with-body --silent --show-error --max-time 15 "http://cite-auth-proxy:8080/wfs?$query")"; then
       echo 'ERROR: dropping a nonexistent stored query unexpectedly succeeded' >&2
       exit 1
     fi

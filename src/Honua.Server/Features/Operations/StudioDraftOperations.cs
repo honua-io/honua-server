@@ -20,14 +20,14 @@ namespace Honua.Server.Features.Operations;
 
 internal static class StudioDraftOperations
 {
-    public const string Create = "studio.draft.create";
-    public const string Update = "studio.draft.update";
-    public const string Delete = "studio.draft.delete";
-    public const string Validate = "studio.draft.validate";
-    public const string PreviewPlan = "studio.draft.preview-plan";
-    public const string SaveVersion = "studio.draft.save-version";
+    public const string Create = StudioDraftMutationContext.CreateOperationId;
+    public const string Update = StudioDraftMutationContext.UpdateOperationId;
+    public const string Delete = StudioDraftMutationContext.DeleteOperationId;
+    public const string Validate = StudioDraftMutationContext.ValidateOperationId;
+    public const string PreviewPlan = StudioDraftMutationContext.PreviewPlanOperationId;
+    public const string SaveVersion = StudioDraftMutationContext.SaveVersionOperationId;
     public const string CreatePublicationRequest = StudioDraftMutationContext.PublicationOperationId;
-    public const string ReopenVersion = "studio.content.reopen-version";
+    public const string ReopenVersion = StudioDraftMutationContext.ReopenVersionOperationId;
     public const string Rollback = "studio.content.rollback";
     public const string PayloadParameter = "payload";
     public const string ResultParameter = "payload";
@@ -639,7 +639,8 @@ internal sealed class StudioRollbackExecutor(IStudioPackageLifecycleService life
 
 internal sealed class StudioDraftMutationRuntime(
     IOperationInvoker invoker,
-    IOperationInstanceStore instanceStore) : IStudioDraftMutationRuntime
+    IOperationInstanceStore instanceStore,
+    IStudioPackageStore? draftStore = null) : IStudioDraftMutationRuntime
 {
     public Task<StudioDraftMutationReceipt<StudioPackageDraft>> CreateAsync(
         CreateStudioPackageDraftCommand command,
@@ -811,8 +812,10 @@ internal sealed class StudioDraftMutationRuntime(
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, string>? pendingResourceIds = null)
     {
+        var storedOwnerId = await ResolveStoredOwnerAsync(payload, cancellationToken).ConfigureAwait(false);
         var request = new OperationRequest
         {
+            VerifiedStudioDraftOwnerId = storedOwnerId,
             OperationId = operationId,
             Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -873,6 +876,19 @@ internal sealed class StudioDraftMutationRuntime(
         }
 
         return new StudioDraftMutationReceipt<TResult> { Operation = durable, Value = value };
+    }
+
+    private async Task<string?> ResolveStoredOwnerAsync<TPayload>(TPayload payload, CancellationToken cancellationToken)
+    {
+        Guid? draftId = payload switch
+        {
+            StudioDraftUpdatePayload update => update.DraftId,
+            StudioDraftDeletePayload delete => delete.DraftId,
+            _ => null,
+        };
+        return draftStore is not null && draftId.HasValue
+            ? (await draftStore.GetDraftAsync(draftId.Value, cancellationToken).ConfigureAwait(false))?.OwnerId
+            : null;
     }
 
     private static Guid PublicationRequestId(StudioDraftMutationContext context)

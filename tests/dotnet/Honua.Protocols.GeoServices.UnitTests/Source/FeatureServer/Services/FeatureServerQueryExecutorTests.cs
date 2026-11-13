@@ -29,7 +29,7 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-public sealed class FeatureServerQueryExecutorTests
+public sealed partial class FeatureServerQueryExecutorTests
 {
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]

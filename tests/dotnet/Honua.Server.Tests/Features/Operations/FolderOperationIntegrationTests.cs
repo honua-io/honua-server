@@ -44,7 +44,7 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
 
     public async Task InitializeAsync()
     {
-        HumanApprovalHttpClient.Configure(_fixture, _identity).UseKestrel().ConfigureWebHost(builder =>
+        HumanApprovalHttpClient.ConfigureKestrel(_fixture, _identity).ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);

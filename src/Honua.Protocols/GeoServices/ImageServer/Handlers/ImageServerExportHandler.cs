@@ -24,6 +24,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite.Geometries;
+using Honua.Infrastructure.Rendering;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
@@ -341,7 +342,7 @@ internal sealed class ImageServerExportHandler
             {
                 ImageServerLog.ExportImageCompleted(_logger, layerId, result.Data.Length);
                 scope.SetSuccess(1);
-                return Results.File(result.Data, result.ContentType);
+                return EncodedRasterResults.File(result.Data, result.ContentType);
             }
 
             var imageUrl = await _temporaryFileService.StoreTemporaryFileAsync(

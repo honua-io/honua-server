@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
 using Microsoft.AspNetCore.Http.HttpResults;
 using NetTopologySuite.Geometries;
+using Honua.Infrastructure.Rendering;
 
 namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
@@ -499,7 +500,7 @@ internal sealed partial class Wcs20Handler
 
         Wcs20Log.CoverageReturned(_logger, identifier.Raw, result.Data.Length, result.ContentType);
 
-        return Results.File(result.Data, result.ContentType);
+        return EncodedRasterResults.File(result.Data, result.ContentType);
     }
 
     private static bool TryResolveWcs10Bands(

@@ -43,6 +43,7 @@ class PostGISFixture:
     JOB_STORE_MIGRATIONS = (
         "147_CreateJobSubstrate.sql",
         "150_CreateOAuthClientsAndOperationProgress.sql",
+        "154_CreatePackageDraftsAndMcpSessions.sql",
     )
     USERNAME = "test"
     PASSWORD = "test"

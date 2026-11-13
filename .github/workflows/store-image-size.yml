@@ -1,0 +1,180 @@
+name: Store Image Size
+
+on:
+  pull_request:
+    branches: [trunk]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - 'Dockerfile'
+      - 'docker/Dockerfile.aot'
+      - 'docker/runtime/**'
+      - 'eng/Honua.BuildProfiles.props'
+      - 'src/**/*.csproj'
+      - 'Directory.*.props'
+      - 'Directory.*.targets'
+      - 'src/Honua.Server/Startup/DataStoreBuildPolicy.cs'
+      - 'scripts/ci/*measure-serving-image.py'
+      - 'scripts/ci/test-health-probe.py'
+      - 'scripts/ci/test-runtime-native.py'
+      - 'scripts/ci/test-runtime-packages.py'
+      - 'scripts/ci/smoke-serving-formats.sh'
+      - 'scripts/ci/verify-serving-formats.py'
+      - 'scripts/ci/test-serving-formats.py'
+      - 'scripts/ci/requirements-image-smoke.txt'
+      - '.github/workflows/store-image-size.yml'
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: store-image-size-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    name: Measure ${{ matrix.profile }} (${{ matrix.compilation }})
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 120
+    # AOT promotion needs separate full/live parity proof; its old size target must
+    # not hold the approved JIT fallback. Evidence is still uploaded on failure.
+    continue-on-error: ${{ matrix.compilation == 'aot' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: postgis
+            compilation: jit
+            dockerfile: Dockerfile
+            baseline: ghcr.io/honua-io/honua-server@sha256:e150fc0b7990cff9e161bfca3a4cf3231f3a8680c0d9622c3eb4ef6633c5278d
+          - profile: full
+            compilation: jit
+            dockerfile: Dockerfile
+            baseline: ghcr.io/honua-io/honua-server@sha256:e150fc0b7990cff9e161bfca3a4cf3231f3a8680c0d9622c3eb4ef6633c5278d
+          - profile: postgis
+            compilation: aot
+            dockerfile: docker/Dockerfile.aot
+            baseline: ghcr.io/honua-io/honua-server@sha256:1320e634c1f3b304043f4423780ab76202136c07c5d4bde26c178c457f3796b5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test measurement and health probe
+        run: |
+          python3 scripts/ci/test-measure-serving-image.py
+          python3 scripts/ci/test-health-probe.py
+          sudo python3 scripts/ci/test-runtime-native.py
+          python3 scripts/ci/test-runtime-packages.py
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build serving image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          load: true
+          tags: honua-store-measure:current
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.profile }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-${{ matrix.compilation }}-amd64
+      - name: Export compressed image size evidence
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          outputs: type=oci,dest=artifacts/image.oci.tar,compression=gzip,force-compression=true
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.profile }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+      - name: Export compiler and restore evidence
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: store-evidence
+          platforms: linux/amd64
+          outputs: type=local,dest=artifacts/build-evidence
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.profile }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+      - name: Record image size and verify store and format files
+        env:
+          BASELINE: ${{ matrix.baseline }}
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          docker pull --platform linux/amd64 "$BASELINE"
+          test "$(docker image inspect honua-store-measure:current --format '{{ index .Config.Labels "honua.store.profile" }}')" = "$PROFILE"
+          python3 scripts/ci/measure-serving-image.py honua-store-measure:current \
+            --profile "$PROFILE" --baseline "$BASELINE" --output artifacts/image-size.json \
+            --compilation "${{ matrix.compilation }}" --evidence-directory artifacts/build-evidence \
+            --oci-archive artifacts/image.oci.tar
+      - name: Verify native packages remain visible to scanners
+        run: |
+          container=$(docker create honua-store-measure:current)
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/var/lib/dpkg/status" artifacts/runtime-dpkg-status
+          if [ '${{ matrix.compilation }}' = aot ]; then
+            grep -Fx 'Package: libatomic1' artifacts/runtime-dpkg-status
+          fi
+          grep -Fx 'Package: libgssapi-krb5-2' artifacts/runtime-dpkg-status
+          grep -Fx 'Package: fonts-dejavu-core' artifacts/runtime-dpkg-status
+      - name: Refuse excluded providers at startup
+        if: matrix.profile == 'postgis'
+        run: |
+          mkdir -p artifacts
+          for provider in duckdb mysql mssql oracle redshift snowflake dbsql featureserver; do
+            if timeout 30 docker run --rm --env "DataSource__Provider=$provider" \
+              honua-store-measure:current > "artifacts/startup-$provider.log" 2>&1; then
+              echo "::error::Excluded provider was accepted"
+              exit 1
+            fi
+            grep -F -- '-full' "artifacts/startup-$provider.log"
+          done
+      - name: Smoke import format support and rendering
+        run: bash scripts/ci/smoke-serving-formats.sh honua-store-measure:current artifacts/formats
+      - name: Compare vulnerability findings
+        env:
+          BASELINE: ${{ matrix.baseline }}
+        run: |
+          for version in before after; do
+            image="$BASELINE"
+            if [ "$version" = after ]; then image=honua-store-measure:current; fi
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/.trivyignore:/config/ignore:ro" aquasec/trivy:0.68.1 \
+              image --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /config/ignore \
+              --format json "$image" > "artifacts/trivy-$version.json"
+          done
+          python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          for version in ('before', 'after'):
+              report = json.loads(Path(f'artifacts/trivy-{version}.json').read_text())
+              findings = [v for r in report.get('Results', []) for v in r.get('Vulnerabilities', [])]
+              counts = {s: sum(v['Severity'] == s for v in findings) for s in ('HIGH', 'CRITICAL')}
+              print(f'{version}: {counts}')
+              if version == 'after' and findings:
+                  raise SystemExit('Current serving image has fixable HIGH/CRITICAL findings')
+          PYTHON
+      - name: Upload measurement evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: store-image-${{ matrix.profile }}-${{ matrix.compilation }}
+          path: |
+            artifacts/
+            !artifacts/image.oci.tar
+          if-no-files-found: error

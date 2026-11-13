@@ -73,6 +73,15 @@ class NativeImageImpactTests(unittest.TestCase):
         self.assertTrue(result["candidate"]["risk_classes"]["server_aot_compile"])
         self.assertTrue(result["candidate"]["risk_classes"]["worker_managed_graph"])
 
+    def test_default_dockerfile_selects_and_invalidates_generic_image(self) -> None:
+        result = report("Dockerfile")
+        for detector in ("candidate", "legacy"):
+            self.assertEqual(result[detector]["serving_variants"],
+                             {"generic": True, "lambda": False, "functions": False})
+        self.assertIn("Dockerfile", SELECTION["serving_generic"])
+        self.assertNotIn("Dockerfile", SELECTION["serving_lambda"])
+        self.assertNotIn("Dockerfile", SELECTION["serving_functions"])
+
     def test_variant_dockerfiles_remain_independent(self) -> None:
         generic = report("docker/Dockerfile.aot")
         self.assertEqual(

@@ -13,6 +13,9 @@ OpenSSL 3, and a Bash terminal. The configuration runs the same Production image
 clients and two-feature journey as the [Windows install](windows-packages.md).
 No source checkout, build or GitHub login is needed. This pre-cut profile
 selects `linux/amd64`; use an amd64 host for this rehearsal.
+On a virtual machine, check its CPU model first: releases from 2027.1 need x86-64-v2.
+`grep -m1 -ow -e sse4_2 -e popcnt /proc/cpuinfo` must print both words; see
+[CPU baseline](../guides/deploy/troubleshooting.md#cpu-baseline-x86-64-v2) for the full check and the VM fix.
 
 Use the 2026.1 release channel `ghcr.io/honua-io/honua-server:2026.1-rc`
 (`ghcr.io/honua-io/honua-server:2026.1` at GA), matching the
@@ -155,7 +158,7 @@ block in the same terminal.
 ```bash
 python3 -m venv --without-pip .venv
 Python="$Install/.venv/bin/python"
-python3 -m pip --python "$Python" install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.12' 'honua-sdk==0.1.19' 'mcp==2.1.1'
+python3 -m pip --python "$Python" install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.3.1' 'honua-sdk==0.3.1' 'mcp==2.1.1'
 python3 -m pip --python "$Python" freeze > installed-packages.txt
 set -a
 source .env

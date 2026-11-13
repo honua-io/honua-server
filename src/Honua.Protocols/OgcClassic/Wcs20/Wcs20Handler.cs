@@ -24,6 +24,7 @@ using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using Honua.Infrastructure.Rendering;
 
 namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
@@ -433,7 +434,7 @@ internal sealed partial class Wcs20Handler
             result.Data.Length,
             result.ContentType);
 
-        return Results.File(result.Data, result.ContentType);
+        return EncodedRasterResults.File(result.Data, result.ContentType);
     }
 
     private async Task<IResult> HandleZarrGetCoverageAsync(
@@ -541,7 +542,7 @@ internal sealed partial class Wcs20Handler
             .WithTag("honua.result.content_type", raster.ContentType);
         telemetry.SetSuccess(1);
         Wcs20Log.CoverageReturned(_logger, coverageId.Raw, raster.Data.Length, raster.ContentType);
-        return Results.File(raster.Data, raster.ContentType);
+        return EncodedRasterResults.File(raster.Data, raster.ContentType);
     }
 
     private async Task<CoverageListResult> ResolveCoverageListAsync(

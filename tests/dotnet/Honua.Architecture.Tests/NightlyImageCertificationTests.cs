@@ -206,15 +206,32 @@ public sealed partial class NightlyImageCertificationTests
     }
 
     [ArchitectureTest]
-    public void NightlyBuild_ShouldPublishTheTagsTheReleaseResolverLooksUp()
+    public void NightlyBuild_ShouldPublishDefaultTagsFromJit()
     {
         var nightly = Read(NightlyPath);
 
-        // nightly-<sha7> and its nightly-aot-<sha7> compatibility alias.
-        Job(nightly, "build-aot").Should().Contain($"type=raw,value=nightly-{CandidateSha7}");
+        // JIT owns the default tags; AOT remains an explicit alternative.
+        var jitManifest = Job(nightly, "manifest-jit");
+        foreach (var tag in new[]
+                 {
+                     "type=raw,value=nightly${{ matrix.store_suffix }}",
+                     "type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}",
+                     $"type=raw,value=nightly-{CandidateSha7}${{{{ matrix.store_suffix }}}}",
+                     $"type=raw,value=nightly-jit-{CandidateSha7}${{{{ matrix.store_suffix }}}}",
+                 })
+        {
+            jitManifest.Should().Contain(tag);
+        }
+    }
+
+    [ArchitectureTest]
+    public void NightlyBuild_ShouldPublishTheTagsTheReleaseResolverLooksUp()
+    {
+        var nightly = Read(NightlyPath);
+        Job(nightly, "build-aot").Should().Contain($"type=raw,value=nightly-aot-{CandidateSha7}");
         var aotManifest = Job(nightly, "manifest-aot");
-        aotManifest.Should().Contain($"type=raw,value=nightly-{CandidateSha7}");
-        aotManifest.Should().Contain("compatibility_tag=\"${repository}:nightly-aot-${tag_name#nightly-}\"");
+        aotManifest.Should().Contain($"type=raw,value=nightly-aot-{CandidateSha7}");
+        aotManifest.Should().NotContain($"type=raw,value=nightly-{CandidateSha7}");
 
         // nightly-lambda-aot-<sha7>-<arch>, read by the resolver for amd64.
         var lambda = Job(nightly, "build-lambda-aot");
@@ -230,7 +247,7 @@ public sealed partial class NightlyImageCertificationTests
                      "type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}",
                      "type=raw,value=nightly-lambda-aot-${{ needs.mirror-base-images.outputs.build_date }}",
                      "type=raw,value=nightly-jit-${{ needs.mirror-base-images.outputs.build_date }}",
-                     "type=raw,value=nightly\n",
+                     "type=raw,value=nightly-aot\n",
                      "type=raw,value=nightly-lambda-aot\n",
                      $"type=raw,value=nightly-jit-{CandidateSha7}",
                      $"type=raw,value=nightly-functions-aot-{CandidateSha7}",

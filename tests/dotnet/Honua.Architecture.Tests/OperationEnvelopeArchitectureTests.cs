@@ -199,7 +199,7 @@ public sealed class OperationEnvelopeArchitectureTests
             Options.Create(new OperationPolicyOptions { Enabled = false }));
         services.AddSingleton<IOperationPolicyDecisionPoint>(provider =>
             new CanonicalOperationPolicyDecisionPoint(
-                provider.GetRequiredService<IOptions<OperationPolicyOptions>>(),
+                new CanonicalOperationPolicyConfiguration(provider.GetRequiredService<IOptions<OperationPolicyOptions>>()),
                 new BlockingGuardrailLadder()));
         await using var provider = services.BuildServiceProvider();
         var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
@@ -226,7 +226,7 @@ public sealed class OperationEnvelopeArchitectureTests
             }));
         services.AddSingleton<IOperationPolicyDecisionPoint>(provider =>
             new CanonicalOperationPolicyDecisionPoint(
-                provider.GetRequiredService<IOptions<OperationPolicyOptions>>(),
+                new CanonicalOperationPolicyConfiguration(provider.GetRequiredService<IOptions<OperationPolicyOptions>>()),
                 new BlockingGuardrailLadder()));
         await using var provider = services.BuildServiceProvider();
         var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
@@ -256,9 +256,8 @@ public sealed class OperationEnvelopeArchitectureTests
             services.AddSingleton<IOptions<OperationPolicyOptions>>(Options.Create(options));
             services.AddSingleton<IOperationPolicyDecisionPoint>(provider =>
                 new CanonicalOperationPolicyDecisionPoint(
-                    provider.GetRequiredService<IOptions<OperationPolicyOptions>>(),
-                    new BlockingGuardrailLadder(),
-                    productionEnvironment: true));
+                    new CanonicalOperationPolicyConfiguration(provider.GetRequiredService<IOptions<OperationPolicyOptions>>(), ProductionEnvironment: true),
+                    new BlockingGuardrailLadder()));
             await using var provider = services.BuildServiceProvider();
             var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
 

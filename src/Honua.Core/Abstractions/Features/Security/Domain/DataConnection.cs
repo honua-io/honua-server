@@ -292,6 +292,8 @@ public class DataConnection
 
     public bool Validate()
     {
+        DataStoreProviderPolicy.EnsureStoreProfileIncludes(Provider);
+
         // Basic validation checks
         if (string.IsNullOrWhiteSpace(Name))
             return false;

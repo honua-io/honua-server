@@ -19,16 +19,16 @@ internal sealed class WarehouseProviderDecisions
     public WarehouseProviderDecisions(IConfiguration configuration)
     {
         Redshift = Resolve(configuration, "provider.redshift", DataProviderNames.Redshift, "Redshift",
-            "Experimental:Features:RedshiftProvider", supported: true);
+            "Experimental:Features:RedshiftProvider", supported: DataStoreBuildPolicy.AdditionalStoresIncluded);
 #if HONUA_SKIP_SNOWFLAKE
         Snowflake = Resolve(configuration, "provider.snowflake", DataProviderNames.Snowflake, "Snowflake",
             "Experimental:Features:SnowflakeProvider", supported: false);
 #else
         Snowflake = Resolve(configuration, "provider.snowflake", DataProviderNames.Snowflake, "Snowflake",
-            "Experimental:Features:SnowflakeProvider", supported: true);
+            "Experimental:Features:SnowflakeProvider", supported: DataStoreBuildPolicy.AdditionalStoresIncluded);
 #endif
         Databricks = Resolve(configuration, "provider.databricks", DataProviderNames.Databricks, "Databricks",
-            "Experimental:Features:DatabricksProvider", supported: true);
+            "Experimental:Features:DatabricksProvider", supported: DataStoreBuildPolicy.AdditionalStoresIncluded);
         All = [Redshift, Snowflake, Databricks];
     }
 

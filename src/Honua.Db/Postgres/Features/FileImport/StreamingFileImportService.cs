@@ -70,13 +70,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             ".shp", ".dbf", ".shx", ".prj", ".cpg"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
-    // Safe: the second Path.Combine argument in each of these is a compile-time relative literal,
-    // never caller-supplied input, so it cannot silently discard Path.GetTempPath().
-    private static readonly string _shapefileScratchRoot = Path.Join(Path.GetTempPath(), "honua-shapefile");
-    private static readonly string _geoPackageScratchRoot = Path.Join(Path.GetTempPath(), "honua-geopackage");
-    private static readonly string _kmzScratchRoot = Path.Join(Path.GetTempPath(), "honua-kmz");
-    private static readonly string _fileGdbScratchRoot = Path.Join(Path.GetTempPath(), "honua-filegdb");
-    private static readonly string _geoParquetScratchRoot = Path.Join(Path.GetTempPath(), "honua-geoparquet");
     private static readonly CompositeFormat _partialImportWarningFormat =
         CompositeFormat.Parse("{0} row(s) failed while continue-on-error was enabled; previously imported rows were retained.");
     private static readonly CompositeFormat _csvUnparseableGeometryWarningFormat =

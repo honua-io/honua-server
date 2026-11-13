@@ -1086,7 +1086,9 @@ internal sealed class StreamingQueryFormatter
 
             if (++featuresSinceFlush >= FlushInterval)
             {
+                // Utf8JsonWriter only advances the pipe; flushing the pipe is what sends the bytes.
                 await writer.FlushAsync(cancellationToken);
+                await outputStream.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
 
@@ -1186,7 +1188,9 @@ internal sealed class StreamingQueryFormatter
 
             if (++featuresSinceFlush >= FlushInterval)
             {
+                // Utf8JsonWriter only advances the pipe; flushing the pipe is what sends the bytes.
                 await writer.FlushAsync(cancellationToken);
+                await outputStream.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
 

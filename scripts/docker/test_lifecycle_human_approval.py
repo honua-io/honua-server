@@ -4,7 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, MagicMock
 
 from lifecycle_human_approval import HumanApprovalClient
 from lifecycle_identity_provider import IdentityProvider, base64url, prepare_identity_files
@@ -24,10 +24,33 @@ class InteractiveApprovalTests(unittest.TestCase):
         client = HumanApprovalClient("https://localhost:8443", Mock())
         client.request = Mock(side_effect=[{
             "proposal": {"proposalId": "wanted", "version": 2, "planHash": "plan"},
-            "review": {"proposalId": "wanted", "proposalVersion": 2, "planHash": "plan", "capability": "private"}}, {}])
+            "review": {"proposalId": "wanted", "proposalVersion": 2, "planHash": "plan", "capability": "private"}},
+            {"requestToken": "csrf"}, {}])
         client.approve("wanted")
         self.assertEqual(("/api/v1/admin/proposals/wanted/approve", {}), client.request.call_args.args)
-        self.assertEqual({"X-Honua-Approval-Capability": "private"}, client.request.call_args.kwargs["headers"])
+        self.assertEqual({"X-Honua-Approval-Capability": "private", "X-Honua-CSRF": "csrf"},
+                         client.request.call_args.kwargs["headers"])
+
+    def test_approval_sends_csrf_token_from_same_session(self):
+        opener = Mock()
+        responses = [{
+            "proposal": {"proposalId": "wanted", "version": 2, "planHash": "plan"},
+            "review": {"proposalId": "wanted", "proposalVersion": 2, "planHash": "plan", "capability": "private"}},
+            {"requestToken": "session-csrf"}, {}]
+
+        def respond(request, **_):
+            if request.get_method() == "POST":
+                self.assertEqual("session-csrf", request.get_header("X-honua-csrf"))
+                self.assertEqual("private", request.get_header("X-honua-approval-capability"))
+            response = MagicMock()
+            response.__enter__.return_value.read.return_value = json.dumps(responses.pop(0)).encode()
+            return response
+
+        opener.open.side_effect = respond
+        HumanApprovalClient("https://localhost:8443", opener).approve("wanted")
+        self.assertEqual(["/api/v1/admin/proposals/wanted/approval-review", "/api/v1/admin/auth/csrf",
+                          "/api/v1/admin/proposals/wanted/approve"],
+                         [call.args[0].selector for call in opener.open.call_args_list])
 
 
 class IdentityProviderTests(unittest.TestCase):

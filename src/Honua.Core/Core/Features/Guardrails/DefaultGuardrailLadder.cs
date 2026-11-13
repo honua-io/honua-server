@@ -11,6 +11,8 @@ namespace Honua.Core.Features.Guardrails;
 
 public sealed class DefaultGuardrailLadder : IGuardrailLadder
 {
+    public const string DefaultPolicySource = "default-policy";
+
     private readonly ILicenseEntitlementService _entitlements;
     private readonly GuardrailLadderOptions _options;
     private readonly IOpsActionGuardrailCatalog? _actionCatalog;
@@ -109,7 +111,7 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
                 GuardrailTier.DirectExecute, operationClass, edition, "licensing-disabled-studio-composition");
         }
 
-        return new GuardrailDecision(ResolveDefaultTier(edition), operationClass, edition, "default-policy");
+        return new GuardrailDecision(ResolveDefaultTier(edition), operationClass, edition, DefaultPolicySource);
     }
 
     private static GuardrailTier ResolveDefaultTier(HonuaEdition edition) => edition switch

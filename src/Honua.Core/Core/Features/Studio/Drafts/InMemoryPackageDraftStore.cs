@@ -5,26 +5,9 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Studio.Drafts;
 
-/// <summary>
-/// Single-process <see cref="IPackageDraftStore"/> (ADR-0076, honua-server#3312).
-/// </summary>
-/// <remarks>
-/// <para>
-/// This is the registration used when no shared backing is composed. Each instance
-/// owns a private <see cref="MemoryPackageDraftBacking"/>, so two processes — two
-/// replicas, or a Lambda cold start — do not see each other's drafts. That is
-/// intentional: an in-memory store must not be described as shared. A host that
-/// has registered a Redis connection uses <c>RedisPackageDraftStore</c> instead,
-/// and two of those instances read what the other wrote.
-/// </para>
-/// <para>
-/// Tests that need the replica contract pass one <see cref="IPackageDraftBacking"/>
-/// into both instances. Retention stays the bounds in
-/// <see cref="PackageDraftRetentionOptions"/>: default 24 hours, 500 drafts per
-/// kind, oldest write evicted first. An expired draft and a draft owned by
-/// someone else both read as not found.
-/// </para>
-/// </remarks>
+// Single-process package draft store for a host with no system database: each instance owns a
+// private backing, so two processes do not see each other's drafts. Tests that need the replica
+// contract pass one backing into both instances.
 public sealed class InMemoryPackageDraftStore : IPackageDraftStore
 {
     private readonly PackageDraftLedger _ledger;

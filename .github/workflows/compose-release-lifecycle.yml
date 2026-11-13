@@ -14,9 +14,14 @@ on:
       - 'docs/guides/connect/working-with-ai-agents.md'
       - 'docs/guides/connect/operating-skills.md'
       - 'tests/integration/test_compose_release_lifecycle.py'
+      - 'tests/integration/test_compose_manual_rc1_rollback.py'
+      - 'scripts/docker/build-lifecycle-prior.sh'
+      - 'scripts/docker/prepare_lifecycle_prior.py'
+      - 'scripts/docker/test_lifecycle_prior.py'
       - '.github/workflows/compose-release-lifecycle.yml'
       - '.github/workflows/nightly-container-build.yml'
-      - 'docker/Dockerfile.aot'
+      - 'Dockerfile'
+      - 'docker/runtime/**'
       - 'docker/Dockerfile.compose-executor'
       - 'scripts/docker/*quickstart*.py'
       - 'scripts/docker/test_compose_release_lifecycle_polling.py'
@@ -34,7 +39,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  published-rc1-lifecycle:
+  compose-release-lifecycle:
     if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     timeout-minutes: 150
@@ -67,21 +72,27 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      # Reuses the restore and base layers of the nightly and serving-image AOT builds.
+      # Reuses the restore and base layers of the nightly and serving-image JIT builds.
       - name: Build production candidate image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           builder: ${{ steps.buildx.outputs.name }}
           context: .
-          file: docker/Dockerfile.aot
+          file: Dockerfile
           load: true
           tags: honua-lifecycle:candidate
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-amd64
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-amd64
           provenance: false
           sbom: false
+      - name: Build private schema-140 prior fixture (never published)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m unittest discover -s scripts/docker -p 'test_lifecycle_prior.py' -v
+          bash scripts/docker/build-lifecycle-prior.sh
       - name: Build the dedicated customer executor image
         run: |
           docker build --file docker/Dockerfile.compose-executor --tag honua-lifecycle:executor \
@@ -90,11 +101,22 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
         run: python3 -m unittest discover -s scripts/docker -p 'test_compose_quickstart.py' -v
-      - name: Run published-image MCP and restore journey
+      - name: Check out trusted rollback configuration catalog
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: honua-io/honua-release
+          ref: 2f9c3da901dc2e39f684b511e3243615e2631a22
+          path: artifacts/deployment-configurations
+          persist-credentials: false
+      - name: Run immutable-image manual and MCP restore journeys
+        env:
+          HONUA_DEPLOYMENT_CONFIGURATION_ROOT: ${{ github.workspace }}/artifacts/deployment-configurations
         run: |
           export TMPDIR="${RUNNER_TEMP}"
           python3 -m venv "${RUNNER_TEMP}/honua-lifecycle-venv"
-          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pip" install pytest
+          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pip" install pytest jsonschema
+          export HONUA_LIFECYCLE_PRIOR_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:prior)"
           export HONUA_LIFECYCLE_EXECUTOR_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:executor)"
           export HONUA_LIFECYCLE_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:candidate)"
+          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pytest" -q --tb=short --no-showlocals tests/integration/test_compose_manual_rc1_rollback.py
           "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pytest" -q --tb=short --no-showlocals tests/integration/test_compose_release_lifecycle.py

@@ -471,87 +471,37 @@ internal sealed partial class FeatureServerQueryExecutor
         HttpContext context,
         CancellationToken cancellationToken)
     {
+        if (_featureReader is IObjectIdStreamingReader streamingReader)
+        {
+            await StreamObjectIdsWithValidationAsync(
+                streamingReader,
+                new ObjectIdStreamRequest(layerId, query, new ObjectIdResponse(objectIdFieldName, context, cancellationToken))).ConfigureAwait(false);
+            return;
+        }
+
         var objectIds = await QueryObjectIdsWithValidationAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         await WriteObjectIdsAsync(objectIds, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task WriteObjectIdsAsync(
+    private static Task WriteObjectIdsAsync(
         ImmutableArray<long> objectIds,
         string objectIdFieldName,
         HttpContext context,
         CancellationToken cancellationToken)
-    {
-        context.Response.ContentType = "application/json";
-        context.Response.StatusCode = StatusCodes.Status200OK;
+        => WriteObjectIdsAsync(
+            objectIds.IsDefault ? [] : objectIds,
+            remainingIds: null,
+            new ObjectIdResponse(objectIdFieldName, context, cancellationToken));
 
-        await using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
-        {
-            Indented = false,
-            SkipValidation = false
-        });
-
-        writer.WriteStartObject();
-        writer.WriteString("objectIdFieldName", objectIdFieldName);
-        writer.WriteStartArray("objectIds");
-
-        var idsSinceFlush = 0;
-        if (!objectIds.IsDefault)
-        {
-            foreach (var objectId in objectIds)
-            {
-                writer.WriteNumberValue(objectId);
-                if (++idsSinceFlush >= FlushInterval)
-                {
-                    await writer.FlushAsync(cancellationToken);
-                    idsSinceFlush = 0;
-                }
-            }
-        }
-
-        writer.WriteEndArray();
-        writer.WriteEndObject();
-
-        await writer.FlushAsync(cancellationToken);
-        await context.Response.CompleteAsync();
-    }
-
-    private static async Task WriteObjectIdsAsync(
+    private static Task WriteObjectIdsAsync(
         BoundedObjectIds objectIds,
         string objectIdFieldName,
         HttpContext context,
         CancellationToken cancellationToken)
-    {
-        context.Response.ContentType = "application/json";
-        context.Response.StatusCode = StatusCodes.Status200OK;
-
-        await using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
-        {
-            Indented = false,
-            SkipValidation = false
-        });
-
-        writer.WriteStartObject();
-        writer.WriteString("objectIdFieldName", objectIdFieldName);
-        writer.WriteStartArray("objectIds");
-
-        var idsSinceFlush = 0;
-        foreach (var objectId in objectIds.ObjectIds)
-        {
-            writer.WriteNumberValue(objectId);
-            if (++idsSinceFlush >= FlushInterval)
-            {
-                await writer.FlushAsync(cancellationToken);
-                idsSinceFlush = 0;
-            }
-        }
-
-        writer.WriteEndArray();
-        writer.WriteBoolean("exceededTransferLimit", objectIds.ExceededTransferLimit);
-        writer.WriteEndObject();
-
-        await writer.FlushAsync(cancellationToken);
-        await context.Response.CompleteAsync();
-    }
+        => WriteObjectIdsAsync(
+            objectIds.ObjectIds.IsDefault ? [] : objectIds.ObjectIds,
+            remainingIds: null,
+            new ObjectIdResponse(objectIdFieldName, context, cancellationToken, objectIds.ExceededTransferLimit));
 
     private static bool ShouldUsePagedQuery(FeatureQuery query)
         => query.Limit is > 0 and < int.MaxValue;

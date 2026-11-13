@@ -851,7 +851,7 @@ internal sealed class OgcMapsRenderingHandler
             AppendLinkHeaders(context, result.ContentType);
         }
 
-        return Results.File(result.Data, result.ContentType);
+        return EncodedRasterResults.File(result.Data, result.ContentType);
     }
 
     /// <summary>

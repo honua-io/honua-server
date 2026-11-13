@@ -12,6 +12,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -37,12 +38,16 @@ public sealed class McpStatelessSessionAcrossInstancesTests : IAsyncLifetime
     {
         foreach (var instance in new[] { _instanceA, _instanceB })
         {
+            // A host without a system database has no shared session store.
             instance.ConfigureServices(services =>
+            {
+                services.RemoveAll<IMcpSessionStore>();
                 services.PostConfigure<McpOptions>(options =>
                 {
                     options.SessionMode = McpSessionModeSetting.Stateless;
                     options.SessionSigningKey = SharedSigningKey;
-                }));
+                });
+            });
             await instance.InitializeAsync();
         }
     }

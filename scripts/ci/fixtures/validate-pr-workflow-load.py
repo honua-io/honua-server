@@ -148,7 +148,7 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertEqual(jobs["required"]["if"], "always()")
         self.assertIn("!github.event.pull_request.draft", jobs["runner-select"].get("if", ""))
 
-    def test_required_aggregate_rejects_draft_and_missing_heavy_results(self):
+    def test_required_aggregate_admits_drafts_and_fails_closed_for_ready_prs(self):
         jobs = workflow("pr-gate.yml")["jobs"]
         required = jobs["required"]
         dependencies = {"pr-gate", "fast-tests", "format", "ci-router-validation", "affected-shards"}
@@ -157,9 +157,12 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertEqual(set(required["needs"]), dependencies)
         verdict = next(step for step in required["steps"] if "run" in step)
 
-        def run_verdict(results):
-            environment = dict(os.environ, GITHUB_EVENT_NAME="pull_request")
+        def run_verdict(results, event_environment):
+            environment = dict(os.environ, **event_environment)
+            self.assertEqual(verdict["env"]["PR_IS_DRAFT"], "${{ github.event.pull_request.draft }}")
             for name, expression in verdict["env"].items():
+                if name == "PR_IS_DRAFT":
+                    continue
                 dependency = expression.removeprefix("${{ needs.").removesuffix(".result }}")
                 self.assertIn(dependency, required["needs"])
                 environment[name] = results[dependency]
@@ -168,15 +171,37 @@ class PullRequestLoadTests(unittest.TestCase):
                 text=True, capture_output=True, timeout=10,
             ).returncode
 
+        def run_ready_verdict(results):
+            return run_verdict(results, {"GITHUB_EVENT_NAME": "pull_request", "PR_IS_DRAFT": "false"})
+
+        def run_draft_verdict(results, event="pull_request"):
+            return run_verdict(results, {"GITHUB_EVENT_NAME": event, "PR_IS_DRAFT": "true"})
+
         ready = dict.fromkeys(required["needs"], "success")
-        self.assertEqual(run_verdict(ready), 0)
+        self.assertEqual(run_ready_verdict(ready), 0)
         draft = dict.fromkeys(required["needs"], "skipped")
         draft["format"] = "success"
-        self.assertNotEqual(run_verdict(draft), 0)
+        self.assertEqual(run_draft_verdict(draft), 0)
+        self.assertNotEqual(run_ready_verdict(draft), 0)
+        self.assertNotEqual(run_draft_verdict(draft, event="workflow_dispatch"), 0)
         for dependency in required["needs"]:
-            for result in ("skipped", "failure", "cancelled"):
+            for result in ("skipped", "failure", "cancelled", ""):
+                if dependency != "format" and result == "skipped":
+                    self.assertEqual(run_draft_verdict(dict(draft, **{dependency: result})), 0)
+                else:
+                    self.assertNotEqual(run_draft_verdict(dict(draft, **{dependency: result})), 0)
                 with self.subTest(dependency=dependency, result=result):
-                    self.assertNotEqual(run_verdict(dict(ready, **{dependency: result})), 0)
+                    self.assertNotEqual(run_ready_verdict(dict(ready, **{dependency: result})), 0)
+
+    def test_workflow_lint_runs_once_before_fast_build_and_diff_skips(self):
+        steps = workflow("pr-gate.yml")["jobs"]["fast-tests"]["steps"]
+        lint = next(step for step in steps if step.get("name") == "Lint workflow syntax and expressions")
+        self.assertEqual(lint["run"], "bash scripts/ci/validate-workflows.sh")
+        self.assertNotIn("continue-on-error", lint)
+        self.assertLess(steps.index(lint), next(i for i, step in enumerate(steps) if step.get("id") == "docs-only"))
+        self.assertIn("matrix.test-group == 'architecture'", lint["if"])
+        self.assertNotIn("docs-only", lint["if"])
+        self.assertNotIn("generated-only", lint["if"])
 
     def test_format_runs_for_drafts_despite_skipped_runner_selection(self):
         condition = workflow("pr-gate.yml")["jobs"]["format"]["if"]

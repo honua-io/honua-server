@@ -159,7 +159,7 @@ publishes on `http://localhost:18080`. Export its admin password as
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
-pip install 'honua-sdk==0.1.19'
+pip install 'honua-sdk==0.3.1'
 ```
 
 ```python

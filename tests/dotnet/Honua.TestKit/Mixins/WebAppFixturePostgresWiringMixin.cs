@@ -42,6 +42,9 @@ namespace Honua.TestKit.Mixins;
 internal static class WebAppFixturePostgresWiringMixin
 {
     private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
+    private static readonly Lazy<string> _temporaryFilesDirectory =
+        new(() => Directory.CreateTempSubdirectory("honua-test-temp-files-").FullName);
+
     // Keep material stable for this test process, including host restart proofs, but
     // do not feed shipped example credentials to fixtures running as Production.
     private static readonly string _testEncryptionMasterKey =
@@ -88,6 +91,9 @@ internal static class WebAppFixturePostgresWiringMixin
             ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
             ["Limits:Connections:RequestTimeout"] = "00:05:00",
             ["Limits:Query:QueryTimeout"] = "00:02:00",
+            // The shipped default is the fixed /tmp/honua-temp, which another OS user on a shared
+            // CI host can own; each test process keeps temporary downloads in its own directory.
+            ["TemporaryFiles:StorageDirectory"] = _temporaryFilesDirectory.Value,
             ["FileStorage:Provider"] = "Local",
             ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
             ["Security:ConnectionEncryption:MasterKey"] = _testEncryptionMasterKey,

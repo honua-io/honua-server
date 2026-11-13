@@ -172,7 +172,7 @@ public sealed class WfsWmsStorageBoundReadTests : IAsyncLifetime
                 accessPolicy: new AccessPolicy { AllowAnonymous = true },
                 protocols: [MetadataV2ServiceProtocols.Wfs20, MetadataV2ServiceProtocols.Wms])
             .AddPublication(
-                "pub-source-places",
+                TypeName,
                 serviceId,
                 resourceId,
                 layerIndex: 1,

@@ -153,13 +153,13 @@ These settings bind from the `Mcp` section. See [Harden the MCP endpoint](../../
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `Mcp__SessionIdleTimeout` | `00:30:00` | Sliding idle TTL for an MCP session. With Redis connected, this is also the TTL of the shared session record. |
+| `Mcp__SessionIdleTimeout` | `00:30:00` | Sliding idle TTL for an MCP session. With a system database, this is also the life of the shared session record. |
 | `Mcp__StatelessSessionFallback` | `true` in Development, `false` elsewhere | Development convenience. Serves a well-formed but unknown `Mcp-Session-Id` without a session instead of returning `404`. |
-| `Mcp__SessionMode` | `Auto` | Session mode when Redis is not connected: `Auto` (stateless on a multi-instance host such as Lambda, in-memory otherwise), `InMemory`, or `Stateless`. |
+| `Mcp__SessionMode` | `Auto` | Session mode on a host without a system database: `Auto` (stateless on a multi-instance host such as Lambda, in-memory otherwise), `InMemory`, or `Stateless`. |
 | `Mcp__SessionSigningKey` | — | Secret, shared by every instance, that keys stateless session ids. When unset, `ConnectionStrings__DefaultConnection` is used. |
 | `Mcp__StatelessSessionLifetime` | `08:00:00` | Absolute lifetime of a stateless session id, counted from `initialize`. |
 
-When `ConnectionStrings__Redis` is set, MCP session records are shared through Redis (`mcp:session:<id>`). A session negotiated on any instance is then honoured by every instance. Without Redis, a single instance keeps sessions in memory, and a multi-instance host (AWS Lambda, `Deployment__Mode=MultiNode`) issues signed stateless session ids that any instance can validate. The `initialize` result reports the mode in `_meta["honua.io/session-mode"]`.
+With a system database, MCP session records are shared through the `mcp_sessions` table. A session negotiated on any instance is then honoured by every instance. Without one, a single instance keeps sessions in memory, and a multi-instance host (AWS Lambda, `Deployment__Mode=MultiNode`) issues signed stateless session ids that any instance can validate. The `initialize` result reports the mode in `_meta["honua.io/session-mode"]`.
 
 ## File storage
 

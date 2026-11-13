@@ -139,7 +139,9 @@ public sealed class VerticalSliceIsolationTests
             "Http",
             "Licensing",
             "Logging",
-            "Models",           // Lives in Honua.Hosting under the preserved namespace.
+            "McpSessions",      // PostgreSQL store for MCP sessions and requests shared by every
+                                // node; the MCP endpoints stay in Honua.Ai.
+            "Models",          // Lives in Honua.Hosting under the preserved namespace.
             "MultiTenancy",
             "Parsing",
             "Progress",

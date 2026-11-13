@@ -52,46 +52,48 @@ internal sealed partial class McpSessionManager
             return (null, McpRequestState.Capacity);
         }
 
-        var generation = Guid.NewGuid().ToString("N");
+        var request = new McpActiveRequest(sessionId, principalKey, requestKey, Guid.NewGuid().ToString("N"));
         try
         {
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             budget.CancelAfter(TimeSpan.FromSeconds(2));
-            var state = await UpdateAsync(McpRequestOperation.Register, budget.Token).WaitAsync(budget.Token).ConfigureAwait(false);
+            var state = await UpdateAsync(request, McpRequestOperation.Register, budget.Token).ConfigureAwait(false);
             if (state != McpRequestState.Active)
             {
                 Interlocked.Decrement(ref _activeRequestCount);
                 return (null, state);
             }
 
-            return (new McpRequestLease(this, sessionId, principalKey, requestKey, generation,
-                cancellationToken, GetLifetimeToken(sessionId)), state);
+            return (new McpRequestLease(this, request, cancellationToken), state);
         }
         catch
         {
             Interlocked.Decrement(ref _activeRequestCount);
-            // A timed-out registration may have reached Redis even if its reply
-            // did not. Remove only our known generation; expiry remains a fallback.
-            try
-            {
-                using var cleanupBudget = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                await UpdateAsync(McpRequestOperation.Finish, cleanupBudget.Token)
-                    .WaitAsync(cleanupBudget.Token).ConfigureAwait(false);
-            }
-            catch (Exception cleanupError) when (IsStoreFailure(cleanupError) || cleanupError is OperationCanceledException)
-            {
-                if (cleanupError is not OperationCanceledException)
-                {
-                    LogStoreFailure(cleanupError, "request-register-cleanup");
-                }
-            }
-
+            await ForgetFailedRegistrationAsync(request).ConfigureAwait(false);
             throw;
         }
-
-        Task<McpRequestState> UpdateAsync(McpRequestOperation operation, CancellationToken token) =>
-            RequestStore.UpdateRequestAsync(sessionId, principalKey, requestKey, generation, operation, token);
     }
+
+    // A timed-out registration may have reached the store even if its reply did not. Remove only
+    // this generation; expiry remains a fallback.
+    private async Task ForgetFailedRegistrationAsync(McpActiveRequest request)
+    {
+        try
+        {
+            using var cleanupBudget = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await UpdateAsync(request, McpRequestOperation.Finish, cleanupBudget.Token).ConfigureAwait(false);
+        }
+        catch (Exception cleanupError) when (IsStoreFailure(cleanupError) || cleanupError is OperationCanceledException)
+        {
+            if (cleanupError is not OperationCanceledException)
+            {
+                LogStoreFailure(cleanupError, "request-register-cleanup");
+            }
+        }
+    }
+
+    private Task<McpRequestState> UpdateAsync(McpActiveRequest request, McpRequestOperation operation, CancellationToken cancellationToken)
+        => RequestStore.UpdateRequestAsync(request, operation, cancellationToken).WaitAsync(cancellationToken);
 
     internal async Task CancelRequestAsync(
         string sessionId, string principalKey, JsonElement id, CancellationToken cancellationToken)
@@ -103,7 +105,7 @@ internal sealed partial class McpSessionManager
 
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         budget.CancelAfter(TimeSpan.FromSeconds(2));
-        await RequestStore.UpdateRequestAsync(sessionId, principalKey, key, string.Empty,
+        await RequestStore.UpdateRequestAsync(new McpActiveRequest(sessionId, principalKey, key, string.Empty),
             McpRequestOperation.Cancel, budget.Token).WaitAsync(budget.Token).ConfigureAwait(false);
     }
 
@@ -131,111 +133,84 @@ internal sealed partial class McpSessionManager
         return true;
     }
 
+    // A request this node runs. The node's poll stops it when it is cancelled or its session ends
+    // anywhere; completing it removes the store entry.
     internal sealed class McpRequestLease : IAsyncDisposable
     {
         private readonly McpSessionManager _owner;
-        private readonly string _session;
-        private readonly string _principal;
-        private readonly string _key;
-        private readonly string _generation;
         private readonly CancellationTokenSource _work;
-        private readonly CancellationTokenSource _stop = new();
-        private readonly Task _monitor;
-        private bool _finished;
+        private const int Stopped = 1;
+        private const int Finishing = 2;
+        private int _completionState;
 
-        internal McpRequestLease(McpSessionManager owner, string session, string principal, string key,
-            string generation, CancellationToken requestToken, CancellationToken sessionToken)
+        internal McpRequestLease(McpSessionManager owner, McpActiveRequest request, CancellationToken requestToken)
         {
             _owner = owner;
-            _session = session;
-            _principal = principal;
-            _key = key;
-            _generation = generation;
-            _work = CancellationTokenSource.CreateLinkedTokenSource(requestToken, sessionToken);
+            Request = request;
+            _work = CancellationTokenSource.CreateLinkedTokenSource(requestToken, owner.SessionLifetimeOf(request.SessionId));
             _work.CancelAfter(McpRequestBounds.Lifetime);
-            _monitor = MonitorAsync();
+            owner.WatchRequest(this);
         }
+
+        internal McpActiveRequest Request { get; }
 
         internal CancellationToken Token => _work.Token;
 
-        private async Task<McpRequestState> UpdateAsync(McpRequestOperation operation)
+        internal void Stop()
         {
-            // Every store observation/cleanup has its own bounded network budget.
-            // A broken shared store must end running work, never silently disable
-            // cancellation or hold disposal indefinitely.
-            using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            return await _owner.RequestStore.UpdateRequestAsync(_session, _principal, _key, _generation,
-                operation, budget.Token).WaitAsync(budget.Token).ConfigureAwait(false);
-        }
+            if (Interlocked.CompareExchange(ref _completionState, Stopped, 0) != 0)
+            {
+                return;
+            }
 
-        private async Task MonitorAsync()
-        {
             try
             {
-                while (!_work.IsCancellationRequested)
-                {
-                    await Task.Delay(McpRequestBounds.PollInterval, _owner._timeProvider, _stop.Token).ConfigureAwait(false);
-                    if (await UpdateAsync(McpRequestOperation.Read).ConfigureAwait(false) != McpRequestState.Active)
-                    {
-                        await _work.CancelAsync().ConfigureAwait(false);
-                    }
-                }
+                _work.Cancel();
             }
-            catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
+            catch (AggregateException ex)
             {
-                _owner.LogStoreFailure(ex, "request-observe");
-                await _work.CancelAsync().ConfigureAwait(false);
+                // A provider cancellation callback threw after the token was cancelled.
+                _owner.LogStoreFailure(ex, "request-cancel-callback");
+            }
+            catch (ObjectDisposedException)
+            {
+                // Completed between the poll and this stop.
             }
         }
 
         internal async Task<bool> CompleteAsync()
         {
-            if (_finished)
+            var previous = Interlocked.Exchange(ref _completionState, Finishing);
+            if (previous == Finishing)
             {
                 return false;
             }
-
-            _finished = true;
+            _owner.UnwatchRequest(this);
             var healthy = true;
             var state = McpRequestState.Missing;
             try
             {
-                await _stop.CancelAsync().ConfigureAwait(false);
-                await _monitor.ConfigureAwait(false);
+                using var budget = new CancellationTokenSource(PollBudget);
+                state = await _owner.UpdateAsync(Request, McpRequestOperation.Finish, budget.Token).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                // A provider cancellation callback may throw after its token
-                // was cancelled. It cannot skip owned cleanup or the local cap.
-                _owner.LogStoreFailure(ex, "request-monitor-complete");
+                _owner.LogStoreFailure(ex, "request-finish");
                 healthy = false;
             }
             finally
             {
-                try
-                {
-                    state = await UpdateAsync(McpRequestOperation.Finish).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                    _owner.LogStoreFailure(ex, "request-finish");
-                    healthy = false;
-                }
-                finally
-                {
-                    Interlocked.Decrement(ref _owner._activeRequestCount);
-                }
+                Interlocked.Decrement(ref _owner._activeRequestCount);
             }
 
-            return healthy && state == McpRequestState.Active && !_work.IsCancellationRequested;
+            return healthy && previous != Stopped && state == McpRequestState.Active && !_work.IsCancellationRequested;
         }
 
         public async ValueTask DisposeAsync()
         {
             try
             {
-                if (!_finished)
+                if (Volatile.Read(ref _completionState) != Finishing)
                 {
                     await CompleteAsync().ConfigureAwait(false);
                 }
@@ -243,7 +218,6 @@ internal sealed partial class McpSessionManager
             finally
             {
                 _work.Dispose();
-                _stop.Dispose();
             }
         }
     }

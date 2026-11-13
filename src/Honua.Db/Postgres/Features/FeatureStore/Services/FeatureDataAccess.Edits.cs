@@ -685,7 +685,7 @@ internal sealed partial class FeatureDataAccess
                 return null;
             }
 
-            return await ReadFeatureAsync(reader, cancellationToken).ConfigureAwait(false);
+            return ReadFeature(reader);
         }
     }
 
@@ -1589,7 +1589,7 @@ internal sealed partial class FeatureDataAccess
                 throw new InvalidOperationException("Failed to create feature: no result returned");
             }
 
-            return await ReadFeatureAsync(reader, cancellationToken);
+            return ReadFeature(reader);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -1690,7 +1690,7 @@ internal sealed partial class FeatureDataAccess
             throw new ResourceNotFoundException($"Feature with ID {feature.Id} not found in layer {layerId}");
         }
 
-        return await ReadFeatureAsync(reader, cancellationToken);
+        return ReadFeature(reader);
     }
 
     private async Task<DeleteOutcome> DeleteWithConnectionAsync(
@@ -1737,7 +1737,7 @@ internal sealed partial class FeatureDataAccess
                 return new DeleteOutcome(false, null);
             }
 
-            var snapshot = await ReadFeatureAsync(reader, cancellationToken).ConfigureAwait(false);
+            var snapshot = ReadFeature(reader);
             return new DeleteOutcome(true, snapshot);
         }
 

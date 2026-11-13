@@ -34,10 +34,12 @@
     ".github/workflows/release-bundle.yml",
     ".github/workflows/deploy.yml",
     ".github/workflows/deploy-platform-images.yml",
-    ".github/workflows/nightly-container-build.yml"
+    ".github/workflows/nightly-container-build.yml",
+    "docker/runtime/**"
   ],
   "serving_variant_patterns": {
     "generic": [
+      "Dockerfile",
       "docker/Dockerfile.aot"
     ],
     "lambda": [
@@ -66,6 +68,7 @@
     "serving_workflow": ".github/workflows/serving-image-boundary.yml",
     "serving_common_patterns": [
       ".dockerignore",
+      "docker/runtime/**",
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
       "scripts/ci/serving-image-reuse.py",
@@ -76,6 +79,7 @@
     ],
     "serving_variant_patterns": {
       "generic": [
+        "Dockerfile",
         "docker/Dockerfile.aot"
       ],
       "lambda": [
@@ -88,6 +92,8 @@
     },
     "serving_patterns": [
       ".dockerignore",
+      "docker/runtime/**",
+      "Dockerfile",
       "docker/Dockerfile.aot",
       "docker/Dockerfile.lambda.aot",
       "docker/Dockerfile.functions.aot",

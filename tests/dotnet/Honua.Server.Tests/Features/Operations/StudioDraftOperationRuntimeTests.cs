@@ -400,7 +400,7 @@ public sealed class StudioDraftOperationRuntimeTests
             SnapshotVersion: 1,
             KeyId: null));
         var policy = new CanonicalOperationPolicyDecisionPoint(
-            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new CanonicalOperationPolicyConfiguration(Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions())),
             new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
                 entitlements,
                 Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
@@ -460,7 +460,7 @@ public sealed class StudioDraftOperationRuntimeTests
         var lifecycle = BuildLifecycle(store);
         var saved = await SaveFirstVersionAsync(lifecycle);
         var policy = new CanonicalOperationPolicyDecisionPoint(
-            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new CanonicalOperationPolicyConfiguration(Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions())),
             new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
                 new Honua.Infrastructure.Licensing.DisabledLicenseService(),
                 Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
@@ -535,23 +535,8 @@ public sealed class StudioDraftOperationRuntimeTests
         var store = new InMemoryStudioPackageStore();
         var lifecycle = BuildLifecycle(store);
         var saved = await SaveFirstVersionAsync(lifecycle);
-        var policy = new CanonicalOperationPolicyDecisionPoint(
-            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
-            new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
-                new Honua.Infrastructure.Licensing.DisabledLicenseService(),
-                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
         var bridge = new DurableApprovalBridge();
-        var instances = new VolatileOperationInstanceStore();
-        var runtime = new StudioDraftMutationRuntime(
-            new OperationDispatcher(
-                new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
-                [PublicationExecutor(lifecycle)],
-                policy,
-                TimeProvider.System,
-                approvalBridge: bridge,
-                instanceStore: instances,
-                auditLog: new VolatileOperationAuditLog()),
-            instances);
+        var runtime = BuildPublicationRuntime(lifecycle, bridge);
         var intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" };
 
         var published = await runtime.CreatePublicationRequestAsync(
@@ -581,23 +566,8 @@ public sealed class StudioDraftOperationRuntimeTests
         var store = new InMemoryStudioPackageStore();
         var lifecycle = BuildLifecycle(store);
         var saved = await SaveFirstVersionAsync(lifecycle);
-        var policy = new CanonicalOperationPolicyDecisionPoint(
-            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
-            new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
-                new Honua.Infrastructure.Licensing.DisabledLicenseService(),
-                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
         var bridge = new DurableApprovalBridge();
-        var instances = new VolatileOperationInstanceStore();
-        var runtime = new StudioDraftMutationRuntime(
-            new OperationDispatcher(
-                new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
-                [PublicationExecutor(lifecycle)],
-                policy,
-                TimeProvider.System,
-                approvalBridge: bridge,
-                instanceStore: instances,
-                auditLog: new VolatileOperationAuditLog()),
-            instances);
+        var runtime = BuildPublicationRuntime(lifecycle, bridge);
         var intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" };
         var context = new StudioDraftMutationContext
         {
@@ -649,6 +619,27 @@ public sealed class StudioDraftOperationRuntimeTests
             context with { IdempotencyKey = "publish-other", CorrelationId = "corr-publish-other" });
         other.Operation.ResourceIds["requestId"].Should().NotBe(advertised);
         bridge.ProposalCount.Should().Be(2);
+    }
+
+    private static StudioDraftMutationRuntime BuildPublicationRuntime(
+        IStudioPackageLifecycleService lifecycle, DurableApprovalBridge bridge)
+    {
+        var policy = new CanonicalOperationPolicyDecisionPoint(
+            new CanonicalOperationPolicyConfiguration(Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions())),
+            new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
+                new Honua.Infrastructure.Licensing.DisabledLicenseService(),
+                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
+        var instances = new VolatileOperationInstanceStore();
+        return new StudioDraftMutationRuntime(
+            new OperationDispatcher(
+                new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+                [PublicationExecutor(lifecycle)],
+                policy,
+                TimeProvider.System,
+                approvalBridge: bridge,
+                instanceStore: instances,
+                auditLog: new VolatileOperationAuditLog()),
+            instances);
     }
 
     private static string InvalidIntentPayload(StudioContentVersion version) => JsonSerializer.Serialize(

@@ -10,6 +10,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <RootNamespace>Honua.Core</RootNamespace>
+    <DefineConstants Condition="'$(HonuaStoreProfile)' == 'postgis'">$(DefineConstants);HONUA_POSTGIS_ONLY</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

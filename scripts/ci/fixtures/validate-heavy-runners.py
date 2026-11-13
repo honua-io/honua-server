@@ -23,6 +23,7 @@ HOSTED_JOBS = {
     "producer-runner", "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
     "merge-queue-gate", "ci-gate", "doctor-notify",
 }
+REUSABLE_JOBS = {"store-image-proofs": "./.github/workflows/store-image-size.yml"}
 PINNED_JOBS = {
     "worker-gdal-tests", "python-integration-tests", "js-integration-tests",
     "esri-leaflet-browser-tests", "maplibre-compat",
@@ -66,6 +67,55 @@ class ShardRunnerRoutingTests(unittest.TestCase):
                 self.assertIn("job.services.postgres.ports['5432']", urls[0])
 
 
+class ServicePortIsolationTests(unittest.TestCase):
+    def workflow_postgres_jobs(self, workflow):
+        jobs = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"]
+        for name, job in jobs.items():
+            if "postgres" in job.get("services", {}):
+                yield workflow, name, job
+
+    def postgres_jobs(self):
+        for workflow in SHARD_JOBS:
+            yield from self.workflow_postgres_jobs(workflow)
+
+    def assert_assigned_port(self, workflow, name, job):
+        self.assertEqual(job["services"]["postgres"]["ports"], [5432])
+        if name == SHARD_JOBS[workflow][0]:
+            return  # The shard-specific connection contract is checked above.
+        steps = job["steps"]
+        configure = [step for step in steps
+                     if step.get("uses") == "./.github/actions/configure-postgres-connection"]
+        self.assertEqual(len(configure), 1)
+        self.assertEqual(configure[0]["with"]["port"], "${{ job.services.postgres.ports['5432'] }}")
+        checkout = next(step for step in steps if step.get("uses", "").startswith("actions/checkout@"))
+        self.assertLess(steps.index(checkout), steps.index(configure[0]))
+        for step in steps:
+            self.assertNotIn("HONUA_TEST_DB_URL", step.get("env", {}))
+
+    def test_every_postgres_service_uses_an_assigned_host_port(self):
+        for workflow, name, job in self.postgres_jobs():
+            with self.subTest(workflow=workflow, job=name):
+                self.assert_assigned_port(workflow, name, job)
+
+    def test_connection_action_exports_both_consumers(self):
+        action = yaml.safe_load((ROOT / ".github/actions/configure-postgres-connection/action.yml").read_text())
+        step, = action["runs"]["steps"]
+        self.assertEqual(step["env"]["PGPORT"], "${{ inputs.port }}")
+        self.assertIn('PGPORT=$PGPORT', step["run"])
+        self.assertIn('HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;', step["run"])
+
+    def test_integration_server_and_docker_smoke_receive_the_assigned_port(self):
+        action = yaml.safe_load((ROOT / ".github/actions/setup-honua-server/action.yml").read_text())
+        connections = [step["env"]["ConnectionStrings__DefaultConnection"]
+                       for step in action["runs"]["steps"]
+                       if "ConnectionStrings__DefaultConnection" in step.get("env", {})]
+        self.assertEqual(len(connections), 1)
+        self.assertIn("Port=${{ env.PGPORT || '5432' }};", connections[0])
+        jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
+        smoke = next(step for step in jobs["docker-build"]["steps"] if step.get("name") == "Run Docker container")
+        self.assertIn('Port=${PGPORT};', smoke["run"])
+
+
 class HeavyRunnerContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -87,8 +137,14 @@ class HeavyRunnerContractTests(unittest.TestCase):
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], "ubuntu-24.04")
 
+    def test_reusable_jobs_delegate_runner_selection(self):
+        for name, workflow in REUSABLE_JOBS.items():
+            with self.subTest(job=name):
+                self.assertEqual(self.jobs[name]["uses"], workflow)
+                self.assertNotIn("runs-on", self.jobs[name])
+
     def test_every_ci_job_has_a_runner_class(self):
-        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | {"build", SHARD_JOBS["ci.yml"][0]})
+        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | set(REUSABLE_JOBS) | {"build", SHARD_JOBS["ci.yml"][0]})
 
 
 PR_GATE_SELECTED_JOBS = {"pr-gate", "server-test-producer"}

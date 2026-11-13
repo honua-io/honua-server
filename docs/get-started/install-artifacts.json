@@ -1,9 +1,9 @@
 {
   "serverImage": "ghcr.io/honua-io/honua-server:2026.1-rc",
-  "serverImageProof": "ghcr.io/honua-io/honua-server:nightly-0e03bdd",
+  "serverImageProof": "ghcr.io/honua-io/honua-server@sha256:e5c72b9d88d8484fe11ae04b76efbf38bddd642282c69363e965a17a7cda7278",
   "packages": {
-    "honua-admin": "0.1.12",
-    "honua-sdk": "0.1.19",
+    "honua-admin": "0.3.1",
+    "honua-sdk": "0.3.1",
     "mcp": "2.1.1",
     "@honua/sdk-js": "0.2.10",
     "create-honua-app": "0.1.9",

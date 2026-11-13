@@ -7,7 +7,7 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-public sealed class McpRequestCancellationTests
+public sealed partial class McpRequestCancellationTests
 {
     private const string Alice = "actor:alice|tenant:a";
     private const string Bob = "actor:bob|tenant:a";
@@ -28,6 +28,70 @@ public sealed class McpRequestCancellationTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stopped.WaitAsync(TimeSpan.FromSeconds(4)));
         Assert.False(await request.CompleteAsync());
+    }
+
+    [UnitTest]
+    public async Task Poll_WithoutWatchedSessionsOrRunningRequests_DoesNotQueryTheStore()
+    {
+        var store = new McpSessionSharedStoreTests.FakeSharedSessionStore(TimeProvider.System);
+        var manager = new McpSessionManager(store: store);
+        var session = (await manager.TryCreateSessionAsync(Alice, false, null, CancellationToken.None))!;
+
+        await manager.PollOnceAsync(CancellationToken.None);
+        Assert.Equal(0, store.Polls);
+
+        using var watch = manager.AcquireSessionWatch(session);
+        await manager.PollOnceAsync(CancellationToken.None);
+        Assert.True(store.Polls >= 1);
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Shutdown_DuringPoll_CancelsAndJoinsPollingAndStopsLocalWork(bool dispose)
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new McpSessionSharedStoreTests.FakeSharedSessionStore(TimeProvider.System)
+        {
+            BeforePoll = async token =>
+            {
+                entered.SetResult();
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, token);
+                }
+                finally
+                {
+                    exited.SetResult();
+                }
+            }
+        };
+        var manager = new McpSessionManager(store: store);
+        var session = (await manager.TryCreateSessionAsync(Alice, false, null, CancellationToken.None))!;
+        var (lease, _) = await manager.StartRequestAsync(session, Alice, Id("7"), CancellationToken.None);
+        await using var request = Assert.IsType<McpSessionManager.McpRequestLease>(lease);
+        var lifetime = manager.GetLifetimeToken(session);
+        Assert.True(manager.TryGetReader(session, out var reader));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(4));
+
+        if (dispose)
+        {
+            await manager.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(4));
+            await manager.DisposeAsync();
+        }
+        else
+        {
+            await manager.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(4));
+            await manager.DisposeAsync();
+        }
+
+        Assert.True(exited.Task.IsCompletedSuccessfully);
+        Assert.True(request.Token.IsCancellationRequested);
+        Assert.True(store.Contains(session));
+        Assert.True(lifetime.IsCancellationRequested);
+        await reader.Completion.WaitAsync(TimeSpan.FromSeconds(4));
+        Assert.False(manager.TryCreateSession(Alice, out _));
     }
 
     [UnitTheory]
@@ -96,7 +160,7 @@ public sealed class McpRequestCancellationTests
     {
         var store = new McpMemoryRequestStore((_, _) => true, TimeProvider.System);
         Task<McpRequestState> Update(string session, string principal, string id, McpRequestOperation operation) =>
-            store.UpdateRequestAsync(session, principal, id, "generation", operation, CancellationToken.None);
+            store.UpdateRequestAsync(new McpActiveRequest(session, principal, id, "generation"), operation, CancellationToken.None);
         for (var i = 0; i < McpRequestBounds.PerPrincipal; i++)
         {
             Assert.Equal(McpRequestState.Active,
@@ -116,7 +180,7 @@ public sealed class McpRequestCancellationTests
         var time = new MutableTimeProvider();
         var store = new McpMemoryRequestStore((_, _) => true, time);
         Task<McpRequestState> Update(McpRequestOperation operation) =>
-            store.UpdateRequestAsync("session", Alice, "id", "generation", operation, CancellationToken.None);
+            store.UpdateRequestAsync(new McpActiveRequest("session", Alice, "id", "generation"), operation, CancellationToken.None);
         Assert.Equal(McpRequestState.Active, await Update(McpRequestOperation.Register));
         time.Advance(McpRequestBounds.Lifetime - TimeSpan.FromSeconds(1));
         Assert.Equal(McpRequestState.Active, await Update(McpRequestOperation.Read));
@@ -132,7 +196,7 @@ public sealed class McpRequestCancellationTests
     {
         var store = new McpMemoryRequestStore((s, p) => s == "session" && p == Alice, TimeProvider.System);
         async Task<McpRequestState> Update(string generation, McpRequestOperation operation) =>
-            await store.UpdateRequestAsync("session", Alice, "typed-id", generation, operation, CancellationToken.None);
+            await store.UpdateRequestAsync(new McpActiveRequest("session", Alice, "typed-id", generation), operation, CancellationToken.None);
 
         Assert.Equal(McpRequestState.Active, await Update("old", McpRequestOperation.Register));
         Assert.Equal(McpRequestState.Active, await Update("old", McpRequestOperation.Finish));
@@ -140,7 +204,7 @@ public sealed class McpRequestCancellationTests
         Assert.Equal(McpRequestState.Missing, await Update("old", McpRequestOperation.Finish));
         Assert.Equal(McpRequestState.Missing, await Update("old", McpRequestOperation.Read));
         Assert.Equal(McpRequestState.Active, await Update("new", McpRequestOperation.Read));
-        Assert.Equal(McpRequestState.Missing, await store.UpdateRequestAsync("session", Bob, "typed-id", "new",
+        Assert.Equal(McpRequestState.Missing, await store.UpdateRequestAsync(new McpActiveRequest("session", Bob, "typed-id", "new"),
             McpRequestOperation.Finish, CancellationToken.None));
         Assert.Equal(McpRequestState.Active, await Update("new", McpRequestOperation.Read));
     }
@@ -157,7 +221,7 @@ public sealed class McpRequestCancellationTests
         store.Fail = true;
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stopped.WaitAsync(TimeSpan.FromSeconds(4)));
         Assert.False(await request.CompleteAsync());
-        await Assert.ThrowsAsync<StackExchange.Redis.RedisConnectionException>(async () =>
+        await Assert.ThrowsAsync<McpSessionSharedStoreTests.SimulatedStoreOutageException>(async () =>
             await manager.StartRequestAsync(session, Alice, Id("2"), CancellationToken.None));
     }
 
@@ -195,7 +259,7 @@ public sealed class McpRequestCancellationTests
     }
 
     [UnitTest]
-    public async Task MissedRemovalBroadcast_EndsWorkWhenAuthoritativeSessionDisappears()
+    public async Task SessionRemovedElsewhere_EndsWorkOnTheNextPoll()
     {
         var store = new McpSessionSharedStoreTests.FakeSharedSessionStore(TimeProvider.System);
         var manager = new McpSessionManager(store: store);

@@ -7,7 +7,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 namespace Honua.Core.Features.Studio.Drafts;
 
 /// <summary>Which package family a draft record belongs to. The two kinds never share a key space.</summary>
-internal enum PackageDraftKind
+public enum PackageDraftKind
 {
     /// <summary>A <see cref="MapPackage"/> draft.</summary>
     Map,
@@ -21,7 +21,7 @@ internal enum PackageDraftKind
 /// <param name="WrittenAt">Utc instant of the write that started the TTL.</param>
 /// <param name="Map">Map package when <see cref="PackageDraftKind.Map"/>; otherwise null.</param>
 /// <param name="App">App package when <see cref="PackageDraftKind.App"/>; otherwise null.</param>
-internal sealed record PackageDraftRecord(
+public sealed record PackageDraftRecord(
     string OwnerId,
     DateTimeOffset WrittenAt,
     MapPackage? Map,
@@ -30,21 +30,17 @@ internal sealed record PackageDraftRecord(
 /// <summary>Identifier and write time of a draft the backing still considers live.</summary>
 /// <param name="Id">Minted package identifier.</param>
 /// <param name="WrittenAt">Utc instant of the write that started the TTL.</param>
-internal readonly record struct PackageDraftLiveEntry(string Id, DateTimeOffset WrittenAt);
+public readonly record struct PackageDraftLiveEntry(string Id, DateTimeOffset WrittenAt);
+
+public sealed record PackageDraftWrite(PackageDraftKind Kind, string Id, PackageDraftRecord Record, TimeSpan Ttl);
 
 /// <summary>
 /// Persistence for <see cref="PackageDraftLedger"/>. A memory instance is private to
 /// one process. A shared instance is what makes two store objects agree.
 /// </summary>
-internal interface IPackageDraftBacking
+public interface IPackageDraftBacking
 {
-    /// <summary>Inserts or replaces the record and starts its TTL from <paramref name="record"/>'s write time.</summary>
-    Task UpsertAsync(
-        PackageDraftKind kind,
-        string id,
-        PackageDraftRecord record,
-        TimeSpan ttl,
-        CancellationToken cancellationToken);
+    Task UpsertAsync(PackageDraftWrite write, CancellationToken cancellationToken);
 
     /// <summary>Returns the record, or null when it is missing or already expired. Expired records are dropped.</summary>
     Task<PackageDraftRecord?> TryGetAsync(
@@ -81,17 +77,12 @@ internal sealed class MemoryPackageDraftBacking : IPackageDraftBacking
         _timeProvider = timeProvider;
     }
 
-    /// <inheritdoc />
-    public Task UpsertAsync(
-        PackageDraftKind kind,
-        string id,
-        PackageDraftRecord record,
-        TimeSpan ttl,
-        CancellationToken cancellationToken)
+    public Task UpsertAsync(PackageDraftWrite write, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ArgumentNullException.ThrowIfNull(record);
-        Store(kind)[id] = record;
+        ArgumentNullException.ThrowIfNull(write);
+        ArgumentNullException.ThrowIfNull(write.Record);
+        Store(write.Kind)[write.Id] = write.Record;
         return Task.CompletedTask;
     }
 

@@ -32,7 +32,7 @@ class ArtifactTests(unittest.TestCase):
     def test_unpublished_release_channel_pulls_the_qualified_preview(self):
         manifest = json.loads((artifacts.ROOT / artifacts.MANIFEST).read_text())
         self.assertEqual("ghcr.io/honua-io/honua-server:2026.1-rc", manifest["serverImage"])
-        self.assertEqual("ghcr.io/honua-io/honua-server:nightly-0e03bdd", artifacts.image_to_pull(manifest))
+        self.assertEqual("ghcr.io/honua-io/honua-server@sha256:e5c72b9d88d8484fe11ae04b76efbf38bddd642282c69363e965a17a7cda7278", artifacts.image_to_pull(manifest))
         manifest["serverImage"] = "ghcr.io/honua-io/honua-server:already-published"
         self.assertEqual(manifest["serverImage"], artifacts.image_to_pull(manifest))
 

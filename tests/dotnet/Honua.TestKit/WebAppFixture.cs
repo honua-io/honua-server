@@ -22,7 +22,10 @@ using Honua.Core.Queries.Filters;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Seeding;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,6 +62,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     private bool _hasSharedReference;
     private int _disposeState;
     private bool _useKestrel;
+    private Action<KestrelServerOptions>? _configureKestrelListeners;
     private string? _seedPath;
     private string? _seedProfile;
     private IServiceScope? _serviceScope;
@@ -244,7 +248,14 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         if (_useKestrel)
         {
-            _factory.UseKestrel(0);
+            if (_configureKestrelListeners is null)
+            {
+                _factory.UseKestrel(0);
+            }
+            else
+            {
+                _factory.UseKestrel(_configureKestrelListeners);
+            }
         }
 
         Client = CreateClient();
@@ -582,7 +593,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// <summary>
     /// Uses a real loopback Kestrel server for HTTP transport tests. Call before initialization.
     /// </summary>
-    public WebAppFixture UseKestrel()
+    public WebAppFixture UseKestrel(Action<KestrelServerOptions>? configureListeners = null)
     {
         if (_factory is not null || _useSharedServer)
         {
@@ -590,6 +601,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         }
 
         _useKestrel = true;
+        _configureKestrelListeners = configureListeners;
         return this;
     }
 
@@ -872,6 +884,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     public HttpClient CreateClient(Action<HttpClient>? configure = null)
     {
         var client = ActiveFactory.CreateClient();
+        UseHttpListener(client);
         client.Timeout = _defaultTestClientTimeout;
         ApplyCurrentSchemaHeader(client);
         configure?.Invoke(client);
@@ -890,6 +903,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         {
             AllowAutoRedirect = allowAutoRedirect,
         });
+        UseHttpListener(client);
         client.Timeout = _defaultTestClientTimeout;
         ApplyCurrentSchemaHeader(client);
 
@@ -920,6 +934,20 @@ public sealed class WebAppFixture : IAsyncLifetime
         var client = CreateClient();
 
         return client;
+    }
+
+    // Custom listeners must include one plain HTTP listener; the fixture's clients always use it.
+    private void UseHttpListener(HttpClient client)
+    {
+        if (_configureKestrelListeners is null)
+        {
+            return;
+        }
+
+        var addresses = Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses
+            ?? throw new InvalidOperationException("The Kestrel test server did not report its listener addresses.");
+        var httpAddress = addresses.First(address => address.StartsWith(Uri.UriSchemeHttp + "://", StringComparison.Ordinal));
+        client.BaseAddress = new Uri(httpAddress);
     }
 
     private void ApplyCurrentSchemaHeader(HttpClient client)

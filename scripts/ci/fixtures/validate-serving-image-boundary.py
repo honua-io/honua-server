@@ -86,6 +86,32 @@ assert_rejected(base | {"/usr/lib/libgeos_c.so.1": b"fixture"}, "native GDAL/PRO
 assert_rejected(base | {"/app/Honua.Server.dll": b"fixture"}, "managed server entrypoint")
 assert_rejected(base | {"/opt/Honua.Server.dll": b"fixture"}, "managed server entrypoint")
 
+# JIT must carry the managed server while retaining the same native-library ban.
+jit_base = base | {"/app/Honua.Server.dll": b"managed server"}
+assert not MODULE.scan_rootfs(rootfs(jit_base), "/app/Honua.Server", "jit")
+assert "JIT managed server assembly is missing" in MODULE.scan_rootfs(rootfs(base), "/app/Honua.Server", "jit")
+assert any("native GDAL/PROJ/GEOS library" in violation for violation in MODULE.scan_rootfs(
+    rootfs(jit_base | {"/usr/lib/libgdal.so.36": b"fixture"}), "/app/Honua.Server", "jit"))
+
+# Verify actual Docker metadata as well as rootfs contents. JIT launches the
+# managed assembly; NativeAOT must continue to reject that launch command.
+def image_metadata_violations(compilation: str, files: dict[str, bytes], launch: list[str]) -> list[str]:
+    import json
+    from types import SimpleNamespace
+
+    config = {"Labels": {"honua.runtime.profile": "web", "honua.runtime.compilation": compilation,
+                         "honua.runtime.entrypoint": "/app/Honua.Server"}, "Entrypoint": launch}
+    def docker(*args: str, **kwargs: object) -> CompletedProcess[str]:
+        output = json.dumps([{"Config": config}]) if args[:2] == ("image", "inspect") else "fixture-container"
+        return CompletedProcess(args, 0, stdout=output, stderr="")
+    process = SimpleNamespace(stdout=rootfs(files), wait=lambda: 0, returncode=0)
+    with patch.object(MODULE, "_docker", side_effect=docker), patch.object(MODULE.subprocess, "Popen", return_value=process):
+        return MODULE.verify_serving_image("fixture:image", compilation)
+
+assert not image_metadata_violations("jit", jit_base, ["dotnet", "Honua.Server.dll"])
+assert any("configured launch command uses managed" in issue for issue in
+           image_metadata_violations("native-aot", base, ["dotnet", "Honua.Server.dll"]))
+
 # The positive worker smoke must exercise the image's configured ENTRYPOINT. A
 # command-only probe with --entrypoint can pass even when the managed worker host
 # is absent or crashes before joining the durable Redis-backed execution loop.
