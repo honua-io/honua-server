@@ -75,6 +75,7 @@ public sealed class CollaborationRealtimeTriggerTests(DatabaseFixtureAdapter dat
     {
         var harness = await RealtimeLogHarness.CreateAsync(database);
         await harness.ApplyMigrationAsync("Honua.Server.Migrations.092_CreateSavedMapOperationLog.sql");
+        await harness.ApplyMigrationAsync("Honua.Server.Migrations.159_PublishSavedMapOperationsToRealtime.sql");
         return harness;
     }
 
