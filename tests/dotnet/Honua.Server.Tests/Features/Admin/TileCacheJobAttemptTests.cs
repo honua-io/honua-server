@@ -12,6 +12,8 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using NSubstitute;
 
+using Honua.Infrastructure.Progress;
+
 namespace Honua.Server.Tests.Features.Admin;
 
 public sealed partial class TileCacheJobExecutorPublishTests
@@ -77,8 +79,11 @@ public sealed partial class TileCacheJobExecutorPublishTests
         finally
         {
             resume.TrySetResult();
-            try { await retired; }
-            catch (OperationCanceledException) { }
+            var cleanupError = await Record.ExceptionAsync(async () => await retired);
+            if (cleanupError is not null)
+            {
+                cleanupError.Should().BeAssignableTo<OperationCanceledException>();
+            }
         }
 
         async Task PauseCompletionAsync(IOperationProgress snapshot)

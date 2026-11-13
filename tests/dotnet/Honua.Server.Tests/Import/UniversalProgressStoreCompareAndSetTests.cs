@@ -57,11 +57,12 @@ public sealed class UniversalProgressStoreCompareAndSetTests
                 for (var read = 0; read < 64; read++)
                 {
                     var current = await store.GetProgressAsync(id);
+                    var isVisible = current is not null;
                     if (observed)
                     {
-                        current.Should().NotBeNull("a published entry must remain visible for its entire TTL");
+                        isVisible.Should().BeTrue("a published entry must remain visible for its entire TTL");
                     }
-                    observed |= current is not null;
+                    observed |= isVisible;
                     await Task.Yield();
                 }
             })).ToArray();

@@ -17,7 +17,10 @@ internal enum ExecutionJobCancellationState
 
 internal readonly record struct ExecutionJobCancellationResult(
     ExecutionJobCancellationState State,
-    ExecutionJobRecord? Job);
+    ExecutionJobRecord? Job)
+{
+    public ExecutionJobRecord? TerminalTransition { get; init; }
+}
 
 internal enum PreSubmissionCancelOutcome
 {
@@ -164,7 +167,7 @@ internal static class ExecutionJobCancellationHelper
                 if (await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
                     ControlPlaneTelemetry.RecordExecutionTransition(current, cancelled);
-                    return new(ExecutionJobCancellationState.Cancelled, cancelled);
+                    return new(ExecutionJobCancellationState.Cancelled, cancelled) { TerminalTransition = cancelled };
                 }
             }
 

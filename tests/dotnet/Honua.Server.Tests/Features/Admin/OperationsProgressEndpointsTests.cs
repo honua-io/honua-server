@@ -1315,7 +1315,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         };
         await _fixture.GetService<IExecutionJobStore>().TryCreateAsync(job);
         await _progressStore.SetProgressAsync(operationId,
-            Honua.Core.Features.Tiles.TileOperationProgress.CreateInitial(operationId, operation, null, null, null));
+            TileOperationProgress.CreateInitial(operationId, operation, null, null, null));
         _operationIds.Add(operationId);
         Honua.Server.Features.Admin.TileOperations.TileOperationMetrics.RecordJobQueued(job);
 

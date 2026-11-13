@@ -31,8 +31,6 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
     private readonly IOptionsMonitor<TileCacheBatchOptions> _batchOptions;
     private readonly ILogger<TileCacheJobExecutor> _logger;
 
-    private static readonly TimeSpan ProgressRetention = TimeSpan.FromHours(24);
-
     public TileCacheJobExecutor(
         IUniversalProgressStore progressStore,
         IServiceScopeFactory serviceScopeFactory,
@@ -78,10 +76,11 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
             { GenerationId = job.OperationId };
         }
 
-        var run = new TileCacheRun(job, request, schemaName);
+        var run = new TileCacheRun(job, request, schemaName)
+        { Progress = new TileCacheAttemptProgress(_progressStore, context) };
         var started = await StartAsync(run, context, cancellationToken).ConfigureAwait(false);
         var finalProgress = await RunAsync(run, started, cancellationToken).ConfigureAwait(false);
-        await _progressStore.SetProgressAsync(job.OperationId, finalProgress, ProgressRetention, cancellationToken)
+        await run.Progress.WriteAsync(finalProgress, cancellationToken)
             .ConfigureAwait(false);
         await ReportAsync(finalProgress, context, cancellationToken).ConfigureAwait(false);
 
@@ -111,7 +110,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
             Status = OperationStatus.Processing,
             CurrentPhase = $"Running {request.Operation} operation"
         };
-        await _progressStore.SetProgressAsync(run.Job.OperationId, started, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await run.Progress.StartAsync(started, cancellationToken).ConfigureAwait(false);
         return started;
     }
 
@@ -126,7 +125,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
         {
             finalProgress = await RunCoreAsync(run, started, cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
             throw;
         }
@@ -175,7 +174,8 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 _limitsOptions,
                 _logger,
                 MaxTilesFor(run.Job),
-                scope.ServiceProvider.GetService<ITileCacheGenerationCheckpointStore>());
+                scope.ServiceProvider.GetService<ITileCacheGenerationCheckpointStore>())
+            { ProgressWriter = run.Progress.WriteAsync };
             return await core.ExecuteAsync(started, run.Request, scope.ServiceProvider, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -204,14 +204,20 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
         var artifact = string.IsNullOrWhiteSpace(accessUrl) ? finalProgress.DownloadUrl : accessUrl;
         if (!string.IsNullOrWhiteSpace(artifact))
         {
-            await context.PublishArtifactAsync(artifact, cancellationToken).ConfigureAwait(false);
+            if (!await context.TryPublishArtifactAsync(artifact, cancellationToken).ConfigureAwait(false))
+            {
+                throw new OperationCanceledException("The tile execution attempt no longer owns publication.", cancellationToken);
+            }
         }
     }
 
     private sealed record TileCacheRun(
         ExecutionJobRecord Job,
         TileOperationStartRequest Request,
-        string? SchemaName);
+        string? SchemaName)
+    {
+        public required TileCacheAttemptProgress Progress { get; init; }
+    }
 
     private static partial class Log
     {

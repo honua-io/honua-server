@@ -61,8 +61,11 @@ public sealed partial class ExportJobTests
         {
             resumeOldCas.TrySetResult();
             resumeSuccessor.TrySetResult();
-            try { await oldAttempt; }
-            catch (OperationCanceledException) { }
+            var cleanupError = await Record.ExceptionAsync(async () => await oldAttempt);
+            if (cleanupError is not null)
+            {
+                cleanupError.Should().BeAssignableTo<OperationCanceledException>();
+            }
             if (successor is not null)
             {
                 await successor;

@@ -27,6 +27,8 @@ using Honua.Infrastructure.Progress;
 using Honua.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 
+using Honua.Server.Features.Admin.TileOperations;
+
 namespace Honua.Server.Features.Admin;
 
 internal static partial class OperationsProgressEndpoints
@@ -330,6 +332,11 @@ internal static partial class OperationsProgressEndpoints
         switch (cancelOutcome.State)
         {
             case ExecutionJobCancellationState.Cancelled:
+                if (cancelOutcome.TerminalTransition is { Spec.Kind: ExecutionJobKind.TileCache } cancelledTileJob)
+                {
+                    TileOperationMetrics.RecordJobEnded(cancelledTileJob);
+                }
+
                 await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                 return null;
             case ExecutionJobCancellationState.CancellationRequested:

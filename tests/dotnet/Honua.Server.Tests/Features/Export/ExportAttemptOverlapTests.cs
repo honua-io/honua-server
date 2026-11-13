@@ -76,8 +76,11 @@ public sealed partial class ExportJobTests
         {
             resumeAdmission.TrySetResult();
             resumeUpload.TrySetResult();
-            try { await staleAttempt; }
-            catch (OperationCanceledException) { }
+            var cleanupError = await Record.ExceptionAsync(async () => await staleAttempt);
+            if (cleanupError is not null)
+            {
+                cleanupError.Should().BeAssignableTo<OperationCanceledException>();
+            }
             if (replacementAttempt is not null)
             {
                 (await replacementAttempt).Status.Should().Be(ExecutionJobStatus.Succeeded);
@@ -133,8 +136,11 @@ public sealed partial class ExportJobTests
         {
             resumeAdmission.TrySetResult();
             resumeUpload.TrySetResult();
-            try { await staleAttempt; }
-            catch (OperationCanceledException) { }
+            var cleanupError = await Record.ExceptionAsync(async () => await staleAttempt);
+            if (cleanupError is not null)
+            {
+                cleanupError.Should().BeAssignableTo<OperationCanceledException>();
+            }
             if (replacementAttempt is not null)
             {
                 (await replacementAttempt).Status.Should().Be(ExecutionJobStatus.Succeeded);
@@ -192,8 +198,11 @@ public sealed partial class ExportJobTests
         {
             retireFirst.TrySetResult();
             finishReplacement.TrySetResult();
-            try { await firstAttempt; }
-            catch (OperationCanceledException) { }
+            var cleanupError = await Record.ExceptionAsync(async () => await firstAttempt);
+            if (cleanupError is not null)
+            {
+                cleanupError.Should().BeAssignableTo<OperationCanceledException>();
+            }
             if (replacementAttempt is not null)
             {
                 await replacementAttempt;

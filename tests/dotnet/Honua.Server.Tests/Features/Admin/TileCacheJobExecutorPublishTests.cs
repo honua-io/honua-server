@@ -758,7 +758,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         predicatesPerTile.Clear();
 
         var jobStore = new Honua.TestKit.Helpers.InMemoryExecutionJobStore();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new Honua.TestKit.Helpers.ComparingInMemoryProgressStore();
         var service = CreateJobService(jobStore, progressStore, serviceProvider);
         var jobId = await service.SubmitAsync(new TileOperationSubmission(request, TileCacheJobService.SchedulerIdentityName));
         var claimed = (await jobStore.GetAsync(jobId))! with { Status = ExecutionJobStatus.Running, AttemptCount = 1 };
@@ -766,7 +766,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         using (JobSecurityScope.Begin(claimed.Audit.SubmitterSecurityContext))
         {
             await CreateExecutor(progressStore, serviceProvider)
-                .ExecuteAsync(claimed, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+                .ExecuteAsync(claimed, PublishingContext(), CancellationToken.None);
         }
 
         inProcessReads.Should().Equal(0);
@@ -833,6 +833,13 @@ public sealed partial class TileCacheJobExecutorPublishTests
 
     // Runs a tile operation the way the job worker does: the request travels as TileCache job
     // parameters on the local backend and TileCacheJobExecutor executes it.
+    private static IJobExecutionContext PublishingContext()
+    {
+        var context = Substitute.For<IJobExecutionContext>();
+        context.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        return context;
+    }
+
     internal sealed class TileCacheJobRunner(ServiceProvider serviceProvider)
     {
         private readonly Honua.TestKit.Helpers.ComparingInMemoryProgressStore _progressStore = new();
@@ -856,7 +863,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
 
         public Task ProcessQueuedJobAsync(string jobId)
             => CreateExecutor(_progressStore, serviceProvider)
-                .ExecuteAsync(_jobs[jobId], Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+                .ExecuteAsync(_jobs[jobId], PublishingContext(), CancellationToken.None);
 
         public Task<TileOperationProgress?> GetAsync(string jobId)
             => _progressStore.GetProgressAsync<TileOperationProgress>(jobId);
