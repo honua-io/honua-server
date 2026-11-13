@@ -24,6 +24,30 @@ public sealed class OgcRecordsDescriptiveMetadataTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
+    public async Task GetRecords_PublicationTitleOverride_IsSearchable()
+    {
+        _fixture.MutateV2Graph(graph => graph with
+        {
+            Publications = graph.Publications.Select(publication => publication with
+            {
+                Metadata = publication.Metadata with { Title = "DistinctivePublicationTitle", Description = "DistinctivePublicationDescription" },
+            }).ToArray(),
+        });
+
+        foreach (var query in new[] { "DistinctivePublicationTitle", "DistinctivePublicationDescription" })
+        {
+            var response = await _fixture.Client.GetAsync($"/ogc/records/collections/honua-catalog/items?q={query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("features").EnumerateArray().Should()
+                .Contain(feature => feature.GetProperty("properties").GetProperty("title").GetString() == "DistinctivePublicationTitle");
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
     public async Task GetRecord_EditedDescriptiveMetadata_AppearsInRecordProperties()

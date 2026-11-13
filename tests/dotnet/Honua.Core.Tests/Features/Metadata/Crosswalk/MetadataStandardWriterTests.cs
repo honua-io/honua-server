@@ -22,6 +22,47 @@ public sealed class MetadataStandardWriterTests
 
     [UnitTheory]
     [Operation(Operations.Metadata)]
+    [InlineData("bn-BD", "ben", "BEN")]
+    [InlineData("ben", "ben", "BEN")]
+    [InlineData("sq", "alb", "SQI")]
+    [InlineData("sqi", "alb", "SQI")]
+    [InlineData("alb", "alb", "SQI")]
+    [InlineData("fil", "fil", "FIL")]
+    [InlineData("zz", "und", null)]
+    public void LanguageCodes_RegisteredLanguages_PreserveBibliographicAndTerminologyCodes(string language, string iso, string? eu)
+    {
+        MetadataCrosswalk.IsoLanguage(language).Should().Be(iso);
+        MetadataCrosswalk.EuLanguageCode(language).Should().Be(eu);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Write_CustomLicenseLink_PreservesLicenseAcrossIsoAndDcat()
+    {
+        const string licenseUrl = "https://example.org/license";
+        var graph = CrosswalkFixtures.Graph(resource: CrosswalkFixtures.FullDataset with
+        {
+            License = null,
+            Links = [new MetadataV2Link { Rel = "license", Href = licenseUrl }],
+        }, service: new MetadataV2ObjectMetadata { Id = "service.parks", Name = "parks", License = "MIT" });
+        var metadata = DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0])) with
+        {
+            Distributions = CrosswalkFixtures.FullRecord().Distributions,
+        };
+
+        metadata.License.Should().BeNull();
+        metadata.LicenseUrl.Should().Be(licenseUrl);
+        foreach (var document in new[] { Iso19139Writer.Write(metadata), Iso19115Part3Writer.Write(metadata) })
+        {
+            document.Descendants().Where(element => element.Name.LocalName == "otherConstraints")
+                .Select(element => element.Value).Should().Contain(licenseUrl);
+        }
+        DcatApWriter.Write(metadata, ItemUrl)["dcat:distribution"]![0]!["dct:license"]!["@id"]!
+            .GetValue<string>().Should().Be(licenseUrl);
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Metadata)]
     [InlineData(MetadataStandard.Iso19139)]
     [InlineData(MetadataStandard.Iso19115Part3)]
     public void Write_FullyPopulatedDataset_EmitsEveryCrosswalkTarget(MetadataStandard standard)
