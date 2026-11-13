@@ -39,14 +39,18 @@ public sealed class AdminLiveEndpointTests
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("features:1")]
+    [InlineData("admin:-1")]
+    [InlineData("admin:9223372036854775808")]
+    [InlineData("admin:abc")]
     [Endpoint("GET /api/v1/admin/live")]
-    public async Task GetLive_WrongFamilyCursor_ReturnsBadRequest()
+    public async Task GetLive_InvalidCursor_ReturnsBadRequest(string cursor)
     {
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
-        client.DefaultRequestHeaders.Add("Last-Event-ID", "features:1");
+        client.DefaultRequestHeaders.Add("Last-Event-ID", cursor);
         using var response = await client.GetAsync("/api/v1/admin/live?topics=proposals");
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }

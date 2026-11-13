@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 
 namespace Honua.Server.Features.Admin;
 
@@ -28,6 +29,7 @@ internal static class AdminLiveEndpoints
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
+            .AddEndpointFilter<LiveStreamAuthorizationFilter>()
             .RequireAdminAuthorization();
 
     private static Task HandleAsync(HttpContext context, AdminLiveStream stream) => stream.HandleAsync(context);

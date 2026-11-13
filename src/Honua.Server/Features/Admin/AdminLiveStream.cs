@@ -5,8 +5,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.Realtime;
-using Honua.Infrastructure.Authentication;
-using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.Admin;
