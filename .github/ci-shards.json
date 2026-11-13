@@ -413,14 +413,16 @@
       ]
     },
     {
-      "name": "GPServer and NAServer capacity partition",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer",
+      "name": "GPServer NAServer Tiles and Replica capacity partition",
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer)|((FullyQualifiedName~MvtTile|FullyQualifiedName~Replica)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests)",
       "children": [
         "GeoServices GPServer and NAServer",
-        "GeoServices GPServer SOAP",
+        "GeoServices SOAP and MVT",
         "GeoServices GPServer SOAP Progress",
         "GeoServices GPServer Durable and Aliases",
-        "GeoServices GPServer Endpoints"
+        "GeoServices GPServer Endpoints",
+        "FeatureServer Replica"
       ],
       "granularity": "method"
     },
@@ -439,15 +441,6 @@
       "children": [
         "OGC API Maps Basic and Conformance",
         "OGC API Maps Rendering and Records"
-      ]
-    },
-    {
-      "name": "FeatureServer Tiles and Replica capacity partition",
-      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
-      "filter": "(FullyQualifiedName~MvtTile|FullyQualifiedName~Replica)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
-      "children": [
-        "FeatureServer MVT Tiles",
-        "FeatureServer Replica"
       ]
     },
     {
@@ -1050,27 +1043,33 @@
       ]
     },
     {
-      "name": "FeatureServer MVT Tiles",
-      "shard_name": "FeatureServer MVT Tiles",
+      "name": "GeoServices SOAP and MVT",
+      "shard_name": "GeoServices SOAP and MVT",
       "dispatch_rank": 4.5,
-      "artifact_suffix": "featureserver-mvt-tiles",
-      "log_name": "server-tests-featureserver-mvt-tiles",
+      "artifact_suffix": "geoservices-soap-mvt",
+      "log_name": "server-tests-geoservices-soap-mvt",
       "timeout_minutes": 32,
       "test_timeout_minutes": 22,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Capacity split of FeatureServer Tiles and Replica along the MvtTile | Replica filter boundary. Measured on the passing retry of run 37435142851 (TRX class spans): MVT classes occupy 2.8m of the 20.2m whole. Budgets unchanged. The MVT and Replica filters exclude each other, so a name containing both substrings matches neither child and must be assigned explicitly. Coverage currently finds no such class.",
-      "filter": "FullyQualifiedName~MvtTile&FullyQualifiedName!~Replica&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
+      "_comment": "Measured combined selection passed 103 cases in 672 seconds, using 50.9% of the unchanged 22-minute test budget. One process and setup replaces two; the job budget remains 32 minutes.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetJobStatus_)|(FullyQualifiedName~MvtTile&FullyQualifiedName!~Replica&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests)",
+      "_paths_comment": "Union of both former affected-path sets; SOAP progress and Replica remain separate siblings. Exact method-level conservation across both former parent partitions is checked together because the packed shard spans their two families.",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/",
         "src/Honua.Protocols/GeoServices/FeatureServer/",
+        "src/Honua.Protocols/GeoServices/GPServer/",
+        "src/Honua.Protocols/GeoServices/NAServer/",
+        "src/Honua.Routing/Features/Routing/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileCacheTtlTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileDecodeTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileEndpointTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileErrorHandlingTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileTemporalEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
         "tests/dotnet/RedisCollection.cs",
         "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
         "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
@@ -2192,36 +2191,6 @@
       "upload_odata_evidence": false,
       "_comment": "Capacity split after run 38189222963 exhausted 22 minutes while producing output. The identical prior selection passed 265 cases in 1296 of 1320 seconds. SOAP progress, other SOAP cases, and durable/alias cases now have separate siblings. Test bodies, tier predicates and 22m/32m budgets remain unchanged; the method-level parent partition proves exact original coverage.",
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests",
-      "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
-      "paths": [
-        "src/Honua.Core/Core/Features/Validation/",
-        "src/Honua.Protocols/GeoServices/GPServer/",
-        "src/Honua.Protocols/GeoServices/NAServer/",
-        "src/Honua.Routing/Features/Routing/",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
-        "tests/dotnet/RedisCollection.cs",
-        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
-        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
-        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
-        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
-        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
-      ],
-      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
-    },
-    {
-      "name": "GeoServices GPServer SOAP",
-      "shard_name": "GeoServices GPServer SOAP",
-      "dispatch_rank": 5.5,
-      "artifact_suffix": "geoservices-gpserver-soap",
-      "log_name": "server-tests-geoservices-gpserver-soap",
-      "timeout_minutes": 32,
-      "test_timeout_minutes": 22,
-      "max_cpu_count": "",
-      "upload_operator_eval_report": false,
-      "upload_odata_evidence": false,
-      "_comment": "Prior passing TRX: 64 cases, 800.3 seconds summed test duration. Excludes only the GetJobStatus progress methods, whose 13 cases run in the progress sibling. Original test and job budgets, tier selection, CPU and affected paths are unchanged.",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetJobStatus_",
       "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",

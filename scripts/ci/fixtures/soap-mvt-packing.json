@@ -1,0 +1,82 @@
+{
+  "base": "478292ce1b500b5f05d82e40ce53423f09cbbc66",
+  "members": [
+    {
+      "name": "GeoServices GPServer SOAP",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetJobStatus_",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/GeoServices/GPServer/",
+        "src/Honua.Protocols/GeoServices/NAServer/",
+        "src/Honua.Routing/Features/Routing/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+      "max_cpu_count": "",
+      "test_timeout_minutes": 22,
+      "timeout_minutes": 32,
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false
+    },
+    {
+      "name": "FeatureServer MVT Tiles",
+      "filter": "FullyQualifiedName~MvtTile&FullyQualifiedName!~Replica&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/",
+        "src/Honua.Protocols/GeoServices/FeatureServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileCacheTtlTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileDecodeTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileErrorHandlingTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileTemporalEndpointTests.cs",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+      "max_cpu_count": "",
+      "test_timeout_minutes": 22,
+      "timeout_minutes": 32,
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false
+    }
+  ],
+  "partitions": [
+    {
+      "name": "GPServer and NAServer capacity partition",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer",
+      "children": [
+        "GeoServices GPServer and NAServer",
+        "GeoServices GPServer SOAP",
+        "GeoServices GPServer SOAP Progress",
+        "GeoServices GPServer Durable and Aliases",
+        "GeoServices GPServer Endpoints"
+      ],
+      "granularity": "method"
+    },
+    {
+      "name": "FeatureServer Tiles and Replica capacity partition",
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+      "filter": "(FullyQualifiedName~MvtTile|FullyQualifiedName~Replica)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
+      "children": [
+        "FeatureServer MVT Tiles",
+        "FeatureServer Replica"
+      ]
+    }
+  ],
+  "replica_budgets": {
+    "test_timeout_minutes": 28,
+    "timeout_minutes": 38
+  }
+}

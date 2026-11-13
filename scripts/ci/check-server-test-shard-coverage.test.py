@@ -654,7 +654,7 @@ public class Tests
 def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
     config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
     partition = next(p for p in config["shard_partitions"]
-                     if p["name"] == "GPServer and NAServer capacity partition")
+                     if p["name"] == "GPServer NAServer Tiles and Replica capacity partition")
     assert partition["granularity"] == "method"
     shards = {s["name"]: s for s in config["shards"]}
     parsed = {name: MODULE._FilterParser(s["filter"]).parse() for name, s in shards.items()}
@@ -674,11 +674,13 @@ def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
     for method, expected in (("GetJobStatus_InvalidProgressHint_ReturnsSoapFaultBeforeJobLookup",
                              "GeoServices GPServer SOAP Progress"),
                             ("SoapSubmitJob_PublishedName_UsesCanonicalPlanAndBinding",
-                             "GeoServices GPServer SOAP")):
+                             "GeoServices SOAP and MVT")):
         assert method in classes[f"{shards[partition['children'][0]]['csproj']}::{soap}"]["methods"]
         assert [name for name in partition["children"]
                 if MODULE._eval(parsed[name], soap + "." + method)] == [expected]
     for name in partition["children"]:
+        if name == "FeatureServer Replica":
+            continue  # Its original independent budget is unchanged by packing.
         assert shards[name]["test_timeout_minutes"] == 22
         assert shards[name]["timeout_minutes"] == 32
 
@@ -686,6 +688,39 @@ def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
 test_method_partition_rejects_holes_duplicates_and_leaks()
 test_method_partition_rejects_unresolved_runnable_methods()
 test_gp_nas_partition_preserves_every_runnable_method_and_budget()
+
+
+def test_soap_mvt_pack_conserves_selection_triggers_and_partition_contracts() -> None:
+    fixture = json.loads((REPOSITORY_ROOT / "scripts/ci/fixtures/soap-mvt-packing.json").read_text())
+    config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
+    members = fixture["members"]
+    names = {s["name"] for s in members}
+    shards = {s["name"]: s for s in config["shards"]}
+    assert names.isdisjoint(shards), "Former jobs must be removed, not duplicated"
+    packed = shards["GeoServices SOAP and MVT"]
+    # Exact expression equality also conserves future matching methods.
+    assert packed["filter"] == "|".join("(" + s["filter"] + ")" for s in members)
+    assert set(packed["paths"]) == {p for s in members for p in s["paths"]}
+    for key in ("csproj", "max_cpu_count", "test_timeout_minutes", "timeout_minutes",
+                "upload_operator_eval_report", "upload_odata_evidence"):
+        assert all(packed[key] == s[key] for s in members), key
+    for override in config["targeted_override_prefixes"]:
+        assert names.isdisjoint(override["shards"]), "Stale override references removed job"
+    for key, value in fixture["replica_budgets"].items():
+        assert shards["FeatureServer Replica"][key] == value
+    parents = fixture["partitions"]
+    partition = next(p for p in config["shard_partitions"]
+                     if p["name"] == "GPServer NAServer Tiles and Replica capacity partition")
+    assert partition["filter"] == "|".join("(" + p["filter"] + ")" for p in parents)
+    assert partition["granularity"] == "method"
+    assert set(partition["children"]) == {
+        packed["name"] if child in names else child
+        for parent in parents for child in parent["children"]}
+    # The ordinary partition guard checks every discovered runnable method for
+    # holes, duplicate owners and foreign methods across the combined family.
+
+
+test_soap_mvt_pack_conserves_selection_triggers_and_partition_contracts()
 
 
 
