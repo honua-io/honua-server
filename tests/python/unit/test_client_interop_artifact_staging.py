@@ -74,10 +74,17 @@ class ClientInteropArtifactStagingTests(unittest.TestCase):
 
         honua = compose.split("\n  honua:\n", 1)[1].split("\n  gdal-worker:\n", 1)[0]
         healthcheck = honua.split("\n    healthcheck:\n", 1)[1]
-        self.assertIn("/dev/tcp/127.0.0.1/5000", healthcheck)
-        self.assertIn("GET /healthz/ready HTTP/1.0", healthcheck)
-        self.assertIn(" 200 ", healthcheck)
-        self.assertNotIn("HEAD /healthz/ready", healthcheck)
+        # The shell-free image has no /dev/tcp; its compiled probe must reach
+        # the port Kestrel listens on in this fixture.
+        self.assertIn('["CMD", "/app/honua-healthcheck", "--ready"]', healthcheck)
+        self.assertIn("ASPNETCORE_URLS: http://+:5000", honua)
+        self.assertIn('HONUA_HEALTH_PORT: "5000"', honua)
+
+        probe = (ROOT / "docker/runtime/health-probe.c").read_text(encoding="utf-8")
+        self.assertIn('"GET %s HTTP/1.1', probe)
+        self.assertNotIn('"HEAD ', probe)
+        self.assertIn("status == 200 ? 0 : 1", probe)
+        self.assertIn('"/healthz/ready"', probe)
 
     def test_stages_envelopes_from_isolated_v4_artifact_directories(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

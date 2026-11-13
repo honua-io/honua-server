@@ -238,7 +238,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
             cursors.Add(cursor).Should().BeTrue($"{view} must not repeat a pagination cursor");
         }
 
-        cursor.Should().BeNull($"{view} discovery must finish within 100 pages");
+        Assert.Fail($"{view} discovery must finish within 100 pages");
         return names;
     }
 

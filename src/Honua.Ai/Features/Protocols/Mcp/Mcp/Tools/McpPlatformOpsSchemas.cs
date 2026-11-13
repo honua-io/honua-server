@@ -108,7 +108,7 @@ internal static class McpPlatformOpsSchemas
 
     public static readonly JsonElement ProposeFindingInputSchema = Parse(
         """
-        {"type":"object","required":["findingId","candidateId"],"properties":{"findingId":{"type":"string","minLength":1,"maxLength":256,"description":"Finding id from honua_ops_findings."},"candidateId":{"type":"string","minLength":1,"maxLength":256,"description":"subject.targetId from honua_ops_findings; caller-selected when the finding has no subject target."}},"additionalProperties":false}
+        {"type":"object","required":["findingId","candidateId"],"properties":{"findingId":{"type":"string","minLength":1,"maxLength":256,"description":"Finding id from honua_ops_findings."},"candidateId":{"type":"string","minLength":1,"maxLength":256,"description":"subject.targetId from honua_ops_findings (e.g. compose-local). Findings without a target (alert redrive, channel pause, DB admission) don't bind it to an action target."}},"additionalProperties":false}
         """);
 
     public static readonly JsonElement DeployMutationInputSchema = Parse(

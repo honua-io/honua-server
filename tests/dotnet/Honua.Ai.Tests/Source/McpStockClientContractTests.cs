@@ -133,9 +133,8 @@ public sealed partial class McpWorkflowViewTests
         {
             var projection = McpWorkflowViewProjector.Project(view, catalog);
             _output.WriteLine($"{view.Name}: {projection.Members.Count} tools, {projection.AggregateCanonicalBytes} descriptor bytes");
-            foreach (var member in projection.Members)
+            foreach (var descriptor in projection.Members.Select(member => member.Descriptor))
             {
-                var descriptor = member.Descriptor;
                 FindUndocumentedRequiredInputs(descriptor.InputSchema, $"{view.Name}/{descriptor.Name}", missing);
             }
         }
@@ -148,6 +147,13 @@ public sealed partial class McpWorkflowViewTests
         missing.Should().BeEmpty("every required input in a shipped workflow view must explain its value to stock clients");
     }
 
+    private static bool HasDescription(JsonElement schema, string name) =>
+        schema.TryGetProperty("properties", out var properties)
+        && properties.TryGetProperty(name, out var property)
+        && property.TryGetProperty("description", out var description)
+        && description.ValueKind == JsonValueKind.String
+        && !string.IsNullOrWhiteSpace(description.GetString());
+
     private static void FindUndocumentedRequiredInputs(JsonElement schema, string path, ISet<string> missing)
     {
         if (schema.ValueKind != JsonValueKind.Object)
@@ -157,17 +163,12 @@ public sealed partial class McpWorkflowViewTests
 
         if (schema.TryGetProperty("required", out var required))
         {
-            foreach (var field in required.EnumerateArray())
+            var undocumented = required.EnumerateArray()
+                .Select(field => field.GetString()!)
+                .Where(name => !HasDescription(schema, name));
+            foreach (var name in undocumented)
             {
-                var name = field.GetString()!;
-                if (!schema.TryGetProperty("properties", out var properties)
-                    || !properties.TryGetProperty(name, out var property)
-                    || !property.TryGetProperty("description", out var description)
-                    || description.ValueKind != JsonValueKind.String
-                    || string.IsNullOrWhiteSpace(description.GetString()))
-                {
-                    missing.Add($"{path}.{name}");
-                }
+                missing.Add($"{path}.{name}");
             }
         }
 
