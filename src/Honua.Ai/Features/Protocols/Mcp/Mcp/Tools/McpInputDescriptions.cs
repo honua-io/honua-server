@@ -48,7 +48,8 @@ internal static class McpInputDescriptions
         {
             "connectionId" => "honua_admin_connections_list",
             "serviceName" or "service" => PublishedOperationTool.ProjectName("admin.services.list"),
-            "layerId" when operationId == "admin.layer.set-enabled" => "honua_admin_connection_layers_list (storage layerId)",
+            "storageLayerId" => "honua_admin_connection_layers_list (storage layerId)",
+            "serviceLayerIndex" => "honua_list_layers (publication layerId)",
             "layerId" => "honua_list_layers (publication layerId)",
             "layer" => "honua_list_layers (or caller-selected policy wildcard)",
             "role" or "roles" => "honua_admin_role_list",

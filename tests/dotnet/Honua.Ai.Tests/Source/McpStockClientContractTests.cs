@@ -39,8 +39,12 @@ public sealed partial class McpWorkflowViewTests
         source.Should().NotBeNull("native layer writes consume storage ids, distinct from publication indexes");
         source!.Annotations!.ReadOnlyHint.Should().BeTrue();
         catalog.Single(entry => entry.Descriptor.Name == "honua_admin_layer_set_enabled").Descriptor
-            .InputSchema.GetProperty("properties").GetProperty("layerId").GetProperty("description").GetString()
+            .InputSchema.GetProperty("properties").GetProperty("storageLayerId").GetProperty("description").GetString()
             .Should().Contain("honua_admin_connection_layers_list");
+        var publication = catalog.Single(entry => entry.Descriptor.Name ==
+            PublishedOperationTool.ProjectName("admin.services.layer-metadata.set")).Descriptor;
+        publication.InputSchema.GetProperty("properties").GetProperty("serviceLayerIndex")
+            .GetProperty("description").GetString().Should().Contain("honua_list_layers");
         foreach (var view in McpWorkflowViewCatalog.All.Values)
         {
             var members = McpWorkflowViewProjector.Project(view, catalog).Members;

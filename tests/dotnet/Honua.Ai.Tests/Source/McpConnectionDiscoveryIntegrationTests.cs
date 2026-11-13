@@ -125,7 +125,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
         var publishedJson = await published.Content.ReadAsStringAsync();
         published.StatusCode.Should().Be(HttpStatusCode.Created, publishedJson);
         using var body = JsonDocument.Parse(publishedJson);
-        return body.RootElement.GetProperty("data").GetProperty("layerId").GetInt32();
+        return body.RootElement.GetProperty("data").GetProperty("storageLayerId").GetInt32();
     }
 
     private static async Task AssertDiscoveryGrantAsync(DiscoveryContext context, DiscoveryGrant grant)
