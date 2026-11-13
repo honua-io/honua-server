@@ -46,7 +46,7 @@ public sealed partial class OutputCacheInvalidationServiceTests
     {
         using var request = new CancellationTokenSource();
         var outputCache = Substitute.For<IOutputCacheStore>();
-        outputCache.EvictByTagAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        await outputCache.EvictByTagAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(call => call.Arg<CancellationToken>().CanBeCanceled
                 ? ValueTask.FromException(new OperationCanceledException(request.Token))
                 : ValueTask.CompletedTask);
