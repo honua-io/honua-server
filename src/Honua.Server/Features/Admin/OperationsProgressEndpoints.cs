@@ -855,11 +855,12 @@ internal static partial class OperationsProgressEndpoints
     }
 
     internal static async Task<IResult> HandleListActiveOperations(
-        [FromServices] IUniversalProgressStore progressStore,
+        HttpContext httpContext,
         string? type = null,
-        [FromServices] IExecutionJobStore? jobStore = null,
         CancellationToken cancellationToken = default)
     {
+        var progressStore = httpContext.RequestServices.GetRequiredService<IUniversalProgressStore>();
+        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
         OperationType? operationType = null;
 
         if (!string.IsNullOrEmpty(type))
@@ -900,10 +901,11 @@ internal static partial class OperationsProgressEndpoints
 
     internal static async Task<IResult> HandleGetOperationsByType(
         string operationType,
-        [FromServices] IUniversalProgressStore progressStore,
-        CancellationToken cancellationToken,
-        [FromServices] IExecutionJobStore? jobStore = null)
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
     {
+        var progressStore = httpContext.RequestServices.GetRequiredService<IUniversalProgressStore>();
+        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
         if (!Enum.TryParse<OperationType>(operationType, true, out var parsedType))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
