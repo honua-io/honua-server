@@ -16,6 +16,27 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class PostgresWorkflowOperationStoreTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
+    public async Task TryCreateAsync_RealtimeAppendFails_RollsBackAuthoritativeWrite()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateWorkflowOperationStore(new RejectingRealtimeWriter());
+        var operation = Deploy(NewTargetId(), DateTimeOffset.UtcNow);
+
+        var create = () => store.TryCreateAsync(operation);
+        await create.Should().ThrowAsync<InvalidOperationException>();
+        (await store.GetAsync(operation.OperationId)).Should().BeNull();
+    }
+
+    private sealed class RejectingRealtimeWriter : IControlPlaneRealtimeWriter
+    {
+        public Task AppendTransitionAsync(WorkflowOperationTransition transition, ControlPlaneWriteContext context)
+            => throw new InvalidOperationException("Simulated realtime append failure");
+
+        public Task AppendProposalAsync(OperationProposal proposal, ControlPlaneWriteContext context)
+            => throw new InvalidOperationException("Simulated realtime append failure");
+    }
+
+    [IntegrationTest]
     public async Task TryCreateAsync_SameIdOnEightStores_ExactlyOneWinsAtVersionOne()
     {
         await using var harness = await CreateHarnessAsync();
