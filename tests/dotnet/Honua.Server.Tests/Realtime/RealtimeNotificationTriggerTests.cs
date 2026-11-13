@@ -101,6 +101,8 @@ public sealed class RealtimeNotificationTriggerTests(DatabaseFixtureAdapter data
         var harness = await RealtimeLogHarness.CreateAsync(database);
         await harness.ApplyMigrationAsync("Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql");
         await harness.ApplyMigrationAsync("Honua.Server.Migrations.159_CreateRealtimeJobCatalogTriggers.sql");
+        // Reapplying the additive DDL preserves the triggers without duplicating delivery.
+        await harness.ApplyMigrationAsync("Honua.Server.Migrations.159_CreateRealtimeJobCatalogTriggers.sql");
         return harness;
     }
 

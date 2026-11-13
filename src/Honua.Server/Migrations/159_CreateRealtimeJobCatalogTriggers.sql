@@ -63,20 +63,35 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS realtime_job_insert ON $HonuaSchema$.execution_jobs;
-CREATE TRIGGER realtime_job_insert AFTER INSERT ON $HonuaSchema$.execution_jobs
-    REFERENCING NEW TABLE AS new_jobs
-    FOR EACH STATEMENT EXECUTE FUNCTION $HonuaSchema$.realtime_job_status_changed();
-DROP TRIGGER IF EXISTS realtime_job_update ON $HonuaSchema$.execution_jobs;
-CREATE TRIGGER realtime_job_update AFTER UPDATE ON $HonuaSchema$.execution_jobs
-    REFERENCING OLD TABLE AS old_jobs NEW TABLE AS new_jobs
-    FOR EACH STATEMENT EXECUTE FUNCTION $HonuaSchema$.realtime_job_status_changed();
-
-DROP TRIGGER IF EXISTS realtime_catalog_insert ON $HonuaSchema$.metadata_v2_current;
-CREATE TRIGGER realtime_catalog_insert AFTER INSERT ON $HonuaSchema$.metadata_v2_current
-    REFERENCING NEW TABLE AS new_catalog
-    FOR EACH STATEMENT EXECUTE FUNCTION $HonuaSchema$.realtime_catalog_changed();
-DROP TRIGGER IF EXISTS realtime_catalog_update ON $HonuaSchema$.metadata_v2_current;
-CREATE TRIGGER realtime_catalog_update AFTER UPDATE ON $HonuaSchema$.metadata_v2_current
-    REFERENCING OLD TABLE AS old_catalog NEW TABLE AS new_catalog
-    FOR EACH STATEMENT EXECUTE FUNCTION $HonuaSchema$.realtime_catalog_changed();
+DO $triggers$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger
+        WHERE tgrelid = '$HonuaSchema$.execution_jobs'::pg_catalog.regclass
+            AND tgname = 'realtime_job_insert') THEN
+        CREATE TRIGGER realtime_job_insert AFTER INSERT ON $HonuaSchema$.execution_jobs
+            REFERENCING NEW TABLE AS new_jobs
+            FOR EACH STATEMENT EXECUTE FUNCTION $HonuaSchema$.realtime_job_status_changed();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger
+        WHERE tgrelid = '$HonuaSchema$.execution_jobs'::pg_catalog.regclass
+            AND tgname = 'realtime_job_update') THEN
+        CREATE TRIGGER realtime_job_update AFTER UPDATE ON $HonuaSchema$.execution_jobs
+            REFERENCING OLD TABLE AS old_jobs NEW TABLE AS new_jobs
+            FOR EACH STATEMENT EXECUTE FUNCTION $HonuaSchema$.realtime_job_status_changed();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger
+        WHERE tgrelid = '$HonuaSchema$.metadata_v2_current'::pg_catalog.regclass
+            AND tgname = 'realtime_catalog_insert') THEN
+        CREATE TRIGGER realtime_catalog_insert AFTER INSERT ON $HonuaSchema$.metadata_v2_current
+            REFERENCING NEW TABLE AS new_catalog
+            FOR EACH STATEMENT EXECUTE FUNCTION $HonuaSchema$.realtime_catalog_changed();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger
+        WHERE tgrelid = '$HonuaSchema$.metadata_v2_current'::pg_catalog.regclass
+            AND tgname = 'realtime_catalog_update') THEN
+        CREATE TRIGGER realtime_catalog_update AFTER UPDATE ON $HonuaSchema$.metadata_v2_current
+            REFERENCING OLD TABLE AS old_catalog NEW TABLE AS new_catalog
+            FOR EACH STATEMENT EXECUTE FUNCTION $HonuaSchema$.realtime_catalog_changed();
+    END IF;
+END;
+$triggers$;
