@@ -1070,30 +1070,3 @@ All cases and assertions remain in the Security and Authorization 5 shard on
 selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
 definition.
-
-## OGC release-candidate qualification
-
-External OGC conformance runs through individual manual dispatchers and, after the
-RC image build of a promotable candidate, through `ogc-rc-conformance.yml`. The RC
-manifest waits for success; non-candidate rc dispatches skip it because they produce no manifest.
-Optional integration flags do not bypass it. See the [workflow inventory](workflow-inventory.md#ogc-cite--conformance)
-for the complete dispatchers, source/image binding and separate certification policy.
-
-## Trailing affected CI selection
-
-Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
-so queued dispatches do not retain an obsolete range. Dispatch and execution use the same completed-run selector; execution never regresses behind the dispatched base. Selections above 30 shards
-fall back to the newest merge; the summary records the older range deferred to
-the twice-daily full run. A broad newest merge retains every selected shard.
-Affected shard concurrency is six, or twelve when more than 30 shards remain
-selected (`scripts/ci/trailing_selection.py` owns both numbers and the
-threshold), including full-coverage routing fallbacks; manual and scheduled
-full runs run 16 at once. On 12 Nov (03:30-04:00 UTC) a full run at 24 held
-28 of the org's 60 hosted runners while other pull request workflows held
-20-35, and PR Gate jobs waited a median 7.3 minutes (3 seconds before and after).
-Sixteen gives PR Gate eight more runners; the 1,272 shard-minutes of a full
-matrix then take about 79 minutes instead of 53. A
-134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
-at a two-second median; twelve halves that so a broad run finishes before the
-next full run. Required PR gates
-and shard definitions are unchanged.
