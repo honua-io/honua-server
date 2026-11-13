@@ -346,6 +346,40 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         (await restarted.ListProfilesAsync()).Select(profile => profile.ProfileId).Should().Equal("other");
     }
 
+    [IntegrationTest]
+    public async Task ConfiguredMappingRemoved_OnRestartedTask_DisablesItButKeepsAdminMappings()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
+        await taskA.UpsertMappingAsync("partner", new ClientCertificatePrincipalMapping
+        {
+            MappingId = "admin-added", MatchType = ClientCertificateIdentityType.SanUri, MatchValue = "spiffe://honua/production/ops",
+            PrincipalId = "ops", DisplayName = "Ops"
+        });
+        var withoutMapping = TrustOptions(mappingEnabled: true);
+        withoutMapping.Value.TrustProfiles[0].PrincipalMappings = [];
+
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), withoutMapping).ListProfilesAsync();
+
+        var mappings = (await taskA.GetProfileAsync("partner"))!.PrincipalMappings;
+        mappings.Single(mapping => mapping.MappingId == "partner-reader").Enabled.Should().BeFalse();
+        mappings.Single(mapping => mapping.MappingId == "admin-added").Enabled.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    public async Task ConfiguredProfileRemoved_OnRestartedTask_DisablesItButKeepsAdminProfiles()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), TrustOptions(mappingEnabled: true));
+        await taskA.UpsertProfileAsync(new ClientCertificateTrustProfile { ProfileId = "admin-profile", EnvironmentId = "production", DisplayName = "Admin" });
+
+        await new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), Options.Create(new ClientCertificateAuthenticationOptions()))
+            .ListProfilesAsync();
+
+        (await taskA.GetProfileAsync("partner"))!.Enabled.Should().BeFalse();
+        (await taskA.GetProfileAsync("admin-profile"))!.Enabled.Should().BeTrue();
+    }
+
     private static IOptions<ClientCertificateAuthenticationOptions> TrustOptions(bool mappingEnabled) => Options.Create(new ClientCertificateAuthenticationOptions
     {
         TrustProfiles =

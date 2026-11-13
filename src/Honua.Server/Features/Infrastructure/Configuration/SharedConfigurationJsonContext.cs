@@ -11,4 +11,11 @@ namespace Honua.Server.Features.Infrastructure.Configuration;
 [JsonSerializable(typeof(OidcProviderConfiguration))]
 [JsonSerializable(typeof(RateLimitPolicy))]
 [JsonSerializable(typeof(ClientCertificateTrustProfile))]
+[JsonSerializable(typeof(ConfiguredTrustManifest))]
 internal sealed partial class SharedConfigurationJsonContext : JsonSerializerContext;
+
+// Records which trust profiles and mappings were imported from configuration, so removing them from configuration revokes them.
+internal sealed record ConfiguredTrustManifest
+{
+    public Dictionary<string, string[]> Profiles { get; init; } = new(StringComparer.Ordinal);
+}
