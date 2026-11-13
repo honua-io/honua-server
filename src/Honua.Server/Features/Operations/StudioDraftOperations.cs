@@ -114,6 +114,7 @@ internal sealed record StudioDraftCreatePayload
 internal sealed record StudioDraftUpdatePayload
 {
     public required Guid DraftId { get; init; }
+    public long? ExpectedGeneration { get; init; }
     public required UpdateStudioPackageDraftCommand Command { get; init; }
     public string? TenantId { get; init; }
     public string? SchemaName { get; init; }
@@ -336,10 +337,17 @@ internal sealed class StudioDraftUpdateExecutor(IStudioPackageLifecycleService l
 
     protected override async Task<StudioPackageDraft> ActuateAsync(
         StudioDraftUpdatePayload payload,
-        CancellationToken cancellationToken) => await Lifecycle
-            .UpdateDraftAsync(payload.DraftId, payload.Command, cancellationToken)
+        CancellationToken cancellationToken)
+    {
+        if (payload.ExpectedGeneration is { } expected && payload.Command.Generation != expected)
+        {
+            throw new InvalidOperationException("Stale draft generation; refresh and retry.");
+        }
+
+        return await Lifecycle.UpdateDraftAsync(payload.DraftId, payload.Command, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Studio draft '{payload.DraftId:D}' was not found.");
+    }
 
     protected override IReadOnlyDictionary<string, string> ResourceIds(StudioPackageDraft result) =>
         new Dictionary<string, string>(StringComparer.Ordinal) { ["draftId"] = result.DraftId.ToString("D") };
@@ -902,9 +910,11 @@ internal sealed class StudioDraftMutationRuntime(
     {
         object bound = payload switch
         {
-            StudioDraftUpdatePayload update when update.Command.Generation is { } requested && requested != generation
-                => throw new InvalidOperationException("Stale draft generation; refresh and retry."),
-            StudioDraftUpdatePayload update => update with { Command = update.Command with { Generation = generation } },
+            StudioDraftUpdatePayload update => update with
+            {
+                ExpectedGeneration = generation,
+                Command = update.Command with { Generation = update.Command.Generation ?? generation },
+            },
             StudioDraftDeletePayload delete => delete with { ExpectedGeneration = generation },
             _ => payload!,
         };
