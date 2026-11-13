@@ -30,8 +30,9 @@ public sealed class GeoServicesCloudTileCacheTests
             CancellationToken.None);
 
         result.Should().NotBeNull();
-        result!.Value.Data.Should().Equal(1, 2, 3);
-        result.Value.ContentType.Should().Be("image/png");
+        var cached = result.GetValueOrDefault();
+        cached.Data.Should().Equal(1, 2, 3);
+        cached.ContentType.Should().Be("image/png");
     }
 
     [UnitTest]
