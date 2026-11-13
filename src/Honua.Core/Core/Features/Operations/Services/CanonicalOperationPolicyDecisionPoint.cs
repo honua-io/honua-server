@@ -45,7 +45,16 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
 
         if (AgentApprovalRule.Applies(request.OperationId, context.Roles))
         {
-            return Task.FromResult(AgentApprovalRule.Decision);
+            var agentGuardrail = gatewayRequest.ActionDiscriminator is null
+                ? _legacyGuardrails.Resolve(gatewayRequest.Kind)
+                : _legacyGuardrails.Resolve(gatewayRequest.Kind, gatewayRequest.ActionDiscriminator);
+            return Task.FromResult(agentGuardrail.Tier == GuardrailTier.Blocked
+                ? new PolicyDecision
+                {
+                    Kind = PolicyDecisionKind.Deny,
+                    Reason = agentGuardrail.Source,
+                }
+                : AgentApprovalRule.Decision);
         }
 
         // Autonomous actions have already passed the registered autonomy evaluator.

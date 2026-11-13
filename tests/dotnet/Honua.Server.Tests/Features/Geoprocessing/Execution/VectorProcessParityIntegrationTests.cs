@@ -24,6 +24,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -63,7 +64,9 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     {
         await database.DataSource.ClearJobSubstrateAsync();
         using var identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
-        var fixture = HumanApprovalHttpClient.Configure(BuildWorkflowFixture(), identityProvider);
+        // Use the issued managed key as the proposer, including after the host restart.
+        var fixture = HumanApprovalHttpClient.Configure(BuildWorkflowFixture(), identityProvider)
+            .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
         await fixture.InitializeAsync();
         await McpPublicationFixtureSetup.InstallPromotionStoresAsync(fixture);
         var table = $"gp_result_{Guid.NewGuid():N}";
