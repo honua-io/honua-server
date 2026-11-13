@@ -96,12 +96,17 @@ public sealed class ReviewBaselineSuppressorTests
         Assert.Single(await AnalyzeAsync(new Scenario("CA2000", source, "src/C.cs") { Baseline = baseline }));
     }
 
-    [Fact]
-    public async Task ExistingFinding_InItsRecordedMethod_RemainsSuppressed()
+    [Theory]
+    [InlineData("class C { void Old() {", "C/Old()")]
+    [InlineData("class C { static C() {", "C/static C()")]
+    [InlineData("class C { C() {", "C/C()")]
+    [InlineData("class C { event System.Action Old { add {", "C/Old/add")]
+    [InlineData("class C { event System.Action I.Old { add {", "C/I.Old/add")]
+    public async Task ExistingFinding_InItsRecordedMember_RemainsSuppressed(string opening, string scope)
     {
-        const string source = "class C { void Old() {\nthrow null!;\n} }";
+        var source = opening + "\nthrow null!;\n";
         var hash = Convert.ToHexStringLower(SHA256.HashData(
-            Encoding.UTF8.GetBytes("Existing finding\nC/Old()\nthrow null!;")));
+            Encoding.UTF8.GetBytes("Existing finding\n" + scope + "\nthrow null!;")));
         var baseline = "CA2000\tsrc/C.cs\t" + hash + "\t1\n";
         Assert.Empty(await AnalyzeAsync(new Scenario("CA2000", source, "src/C.cs") { Baseline = baseline }));
     }
