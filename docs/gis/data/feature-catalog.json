@@ -18777,7 +18777,8 @@
         "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.Providers_ConcurrentFirstCreatesAtPro_StillAdmitOnlyOneProvider",
         "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.Providers_WithEnterpriseEntitlement_AllowsMultipleProviders",
         "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.Providers_WithProEntitlement_AllowsSingleProviderButBlocksSecond",
-        "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.TestProvider_WithTrailingSlash_IsNotBlockedByMultiProviderGate"
+        "Honua.Server.Tests.Features.Identity.OidcEntitlementGateTests.TestProvider_WithTrailingSlash_IsNotBlockedByMultiProviderGate",
+        "Honua.Server.Tests.Features.Infrastructure.ControlPlane.PostgresOidcProviderAdmissionTests.CreateProvider_UnreadableExistingProvider_ReturnsMultiProviderEntitlementBeforeValidation"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
