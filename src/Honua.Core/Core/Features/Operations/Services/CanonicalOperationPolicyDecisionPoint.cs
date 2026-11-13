@@ -47,6 +47,18 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             return PolicyDecision.Allowed;
         }
 
+        if (AgentApprovalRule.Applies(request.OperationId, context.Roles))
+        {
+            var agentGuardrail = ResolveGuardrail(gatewayRequest);
+            return agentGuardrail.Tier == GuardrailTier.Blocked
+                ? new PolicyDecision
+                {
+                    Kind = PolicyDecisionKind.Deny,
+                    Reason = agentGuardrail.Source,
+                }
+                : AgentApprovalRule.Decision;
+        }
+
         // Autonomous actions have already passed the registered autonomy evaluator.
         // Carry that decision into this single PDP instead of masquerading it as an
         // approved proposal (proposal identity must only identify a real proposal).
@@ -55,19 +67,15 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             return PolicyDecision.Allowed;
         }
 
-        // An admin Studio publication executes before the proposal guardrail. The
-        // outcome is scoped to that one operation so it cannot loosen any other class.
-        // It is not an approved proposal: the same principal must not be sent through
-        // the approve route (honua-server#5207).
+        // Human administrators may publish directly; agents use the approval floor above.
         if (string.Equals(context.AuthorizationOutcome, StudioDraftMutationContext.AdminDirectPublicationOutcome, StringComparison.Ordinal)
-            && string.Equals(request.OperationId, StudioDraftMutationContext.PublicationOperationId, StringComparison.Ordinal))
+            && string.Equals(request.OperationId, StudioDraftMutationContext.PublicationOperationId, StringComparison.Ordinal)
+            && !AgentApprovalRule.IsAgent(context.Roles))
         {
             return PolicyDecision.Allowed;
         }
 
-        var guardrail = gatewayRequest.ActionDiscriminator is null
-            ? _legacyGuardrails.Resolve(gatewayRequest.Kind)
-            : _legacyGuardrails.Resolve(gatewayRequest.Kind, gatewayRequest.ActionDiscriminator);
+        var guardrail = ResolveGuardrail(gatewayRequest);
         if (IsDefaultPrivateDraftApproval(guardrail, gatewayRequest, descriptor.OperationId)
             && IsOwnedDraftMutation(request, context)
             && await IsInteractiveHumanAsync(cancellationToken).ConfigureAwait(false))
@@ -75,7 +83,16 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             return PolicyDecision.Allowed;
         }
 
-        return guardrail.Tier switch
+        return EvaluateGuardrail(guardrail);
+    }
+
+    private GuardrailDecision ResolveGuardrail(OperationGatewayRequest request) =>
+        request.ActionDiscriminator is null
+            ? _legacyGuardrails.Resolve(request.Kind)
+            : _legacyGuardrails.Resolve(request.Kind, request.ActionDiscriminator);
+
+    private static PolicyDecision EvaluateGuardrail(GuardrailDecision guardrail) =>
+        guardrail.Tier switch
         {
             GuardrailTier.DirectExecute => PolicyDecision.Allowed,
             GuardrailTier.RequiresApproval => new PolicyDecision
@@ -90,7 +107,6 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
                 Reason = guardrail.Source,
             },
         };
-    }
 
     private static bool IsOwnedDraftMutation(OperationRequest request, OperationPolicyContext context) =>
         request.OperationId is not (StudioDraftMutationContext.UpdateOperationId or StudioDraftMutationContext.DeleteOperationId)
