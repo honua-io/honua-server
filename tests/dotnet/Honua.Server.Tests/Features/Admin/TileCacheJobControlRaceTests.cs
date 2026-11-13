@@ -20,6 +20,7 @@ using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -95,9 +96,11 @@ public sealed partial class TileCacheJobExecutorPublishTests
         listener.Start();
         if (path == "tile")
         {
+            var options = Substitute.For<IOptionsMonitor<TileCacheBatchOptions>>();
+            options.CurrentValue.Returns(new TileCacheBatchOptions());
             var service = new TileCacheJobService(store, new ComparingInMemoryProgressStore(),
                 [new LocalBatchComputeBackend(new ComparingInMemoryProgressStore(), [])],
-                new StaticOptionsMonitor<TileCacheBatchOptions>(new TileCacheBatchOptions()),
+                options,
                 controls.GetRequiredService<IServiceScopeFactory>(), NullLogger<TileCacheJobService>.Instance,
                 controls.GetRequiredService<IJobQueue>());
             (await Task.WhenAll(service.CancelAsync(initial.OperationId), service.CancelAsync(initial.OperationId)))
