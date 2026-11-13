@@ -28,13 +28,17 @@ on:
     branches: [trunk]
     paths:
       - 'README.md'
-      # Pages and the data files the checkers read. Other docs/ files are only
-      # link targets; ci.yml's full run still checks every link on trunk.
+      # Pages and every docs/ file the checkers read. Other docs/ files are only
+      # link targets; ci.yml's trunk runs still check every link.
       - 'docs/**/*.md'
       - 'docs/get-started/install-artifacts.json'
       - 'docs/gis/data/capability-keys.v1.json'
       - 'docs/gis/data/capability-matrix.v1.json'
       - 'docs/okf/**'
+      - 'docs/llms.txt'
+      - 'docs/.gitbook.yaml'
+      # Shipped config the anchor manifest sweeps for runtime docs URLs.
+      - 'docs/guides/deploy/examples/**'
       - 'skills/**'
       - 'scripts/ci/check-skill-links.py'
       - 'scripts/ci/check-skill-links.test.py'

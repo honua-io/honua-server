@@ -4,8 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
-    # Parquet-named sources and tests, the Python readers and the package
-    # graph decide this result. Shared build, host and protocol inputs run it
+    # Parquet-named sources and tests, the format dispatch/detection/import
+    # entry points, the Python readers and the package graph. Shared build, host and protocol inputs run it
     # in the twice-daily full CI (ci.yml `GeoParquet interop evidence`).
     paths:
       - '.github/workflows/geoparquet-interop.yml'
@@ -24,6 +24,11 @@ on:
       - '**/*geoparquet*'
       - 'tests/dotnet/Honua.Server.Tests/TestData/GeoParquet/**'
       - 'tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/Services/QueryFormatterTests.cs'
+      # Format dispatch, PAR1 detection, streaming import and limits wiring.
+      - 'src/Honua.Protocols/GeoServices/FeatureServer/Services/QueryFormatters.cs'
+      - 'src/Honua.Core/Core/Features/FileImport/Services/FileFormatDetectionService.cs'
+      - 'src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService*'
+      - 'src/Honua.Core/Core/Configuration/LimitsOptions.cs'
   workflow_dispatch:
   # The twice-daily full CI run calls this workflow, so shared inputs that
   # the narrow PR paths no longer admit still execute it on trunk.
@@ -34,7 +39,7 @@ permissions:
   packages: read
 
 concurrency:
-  group: geoparquet-interop-${{ github.event.pull_request.number || github.ref }}
+  group: geoparquet-interop-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:

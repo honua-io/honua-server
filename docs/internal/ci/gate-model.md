@@ -834,18 +834,22 @@ filters.
 
 GeoArrow and GeoParquet interop run on pull requests only for files whose names
 contain GeoArrow or Parquet (sources, tests, CRS resources, test data), the few
-shared helpers GeoArrow names, the Python readers and seed data, and the package
+shared helpers GeoArrow names, GeoParquet's format dispatch, PAR1 detection,
+streaming import and limits files, the Python readers and seed data, and the package
 graph (Directory.Packages.props, global.json, NuGet.config). Shared build, model,
 host, protocol and TestKit edits run them in the twice-daily full CI instead:
 ci.yml calls both through `workflow_call`, exactly like the store image proofs,
-and `CI Gate` requires their success on scheduled and `full_ci=true` runs. Their
+and `CI Gate` requires their success on scheduled and `full_ci=true` runs. A
+called run's concurrency group falls back to the run id, so a standalone trunk
+dispatch never cancels it. Their
 .NET formatter and import cells also run in the PR Gate affected shards.
 Measured on the 120 PRs merged since 9 Nov: GeoArrow 30 to 6 PR runs (4.4 runner
-minutes each), GeoParquet 34 to 13 (10.2 minutes each), about 320 runner minutes.
+minutes each), GeoParquet 34 to 15 (10.2 minutes each), about 300 runner minutes.
 
 Docs Link Gate retains its complete PR suite for documentation pages, skills,
-checker and manifest edits, and for the docs data files its checkers read
-(capability keys and matrix, install artifacts, the OKF graph). Other non-page
+checker and manifest edits, and for every docs file its checkers read
+(capability keys and matrix, install artifacts, the OKF graph, llms.txt, the
+GitBook redirect map, and the deploy examples the anchor manifest sweeps). Other non-page
 files under docs/ are only link targets; the trunk link check covers them. Source/docker/eng-only edits instead run the link checker and
 its adversarial fixtures in the existing ci.yml CI Router Validation job on affected trunk
 runs and twice-daily full runs. That job already participates in CI Gate; no

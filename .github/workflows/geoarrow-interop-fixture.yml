@@ -30,7 +30,7 @@ permissions:
   packages: read
 
 concurrency:
-  group: geoarrow-interop-fixture-${{ github.event.pull_request.number || github.ref }}
+  group: geoarrow-interop-fixture-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:

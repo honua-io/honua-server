@@ -107,7 +107,11 @@ class OptionalInputTests(unittest.TestCase):
                  "src/Honua.Core/Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json",
                  "tests/dotnet/Honua.TestKit.Core/GeoParquetTestFactory.cs",
                  "tests/dotnet/Honua.Server.Tests/TestData/GeoParquet/README.md",
-                 "tests/python/feature_server/test_geoparquet_interop.py", "tests/seed/example.sql"),
+                 "tests/python/feature_server/test_geoparquet_interop.py", "tests/seed/example.sql",
+                 "src/Honua.Protocols/GeoServices/FeatureServer/Services/QueryFormatters.cs",
+                 "src/Honua.Core/Core/Features/FileImport/Services/FileFormatDetectionService.cs",
+                 "src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.Readers.cs",
+                 "src/Honua.Core/Core/Configuration/LimitsOptions.cs"),
                 ("tests/dotnet/Honua.TestKit/Fixture.cs", "src/Honua.Protocols/OData/Features/Other.cs",
                  ".github/actions/setup-dotnet-ci/action.yml", "Directory.Build.props")),
             "geoarrow-interop-fixture.yml": (
@@ -131,6 +135,10 @@ class OptionalInputTests(unittest.TestCase):
             self.assertEqual(ci["jobs"][job]["uses"], f"./.github/workflows/{name}")
             self.assertEqual(ci["jobs"][job]["if"], full)
             self.assertIn(job, ci["jobs"]["ci-gate"]["needs"])
+            # A called run must never share a cancel-in-progress group with a
+            # standalone trunk dispatch of the same workflow.
+            group = workflow(name)["concurrency"]["group"]
+            self.assertTrue(group.endswith("${{ github.event.pull_request.number || github.run_id }}"), group)
         gate = ci["jobs"]["ci-gate"]["steps"][0]
         self.assertIn('"${GEOPARQUET_RESULT}" != success', gate["run"])
         self.assertIn('"${GEOARROW_RESULT}" != success', gate["run"])
@@ -139,7 +147,9 @@ class OptionalInputTests(unittest.TestCase):
         name = "docs-link-gate.yml"
         for path in ("docs/index.md", "docs/gis/new-guide.md", "docs/internal/ci/gate-model.md",
                      "docs/gis/data/capability-matrix.v1.json", "docs/gis/data/capability-keys.v1.json",
-                     "docs/get-started/install-artifacts.json", "docs/okf/domain-graph.v1.json"):
+                     "docs/get-started/install-artifacts.json", "docs/okf/domain-graph.v1.json",
+                     "docs/llms.txt", "docs/.gitbook.yaml",
+                     "docs/guides/deploy/examples/prometheus-alerts.yml"):
             self.assertTrue(admitted(name, path), path)
         for path in ("docs/gis/data/feature-catalog.json", "docs/gis/data/geoservices-rest-parity.json"):
             self.assertFalse(admitted(name, path), path)
