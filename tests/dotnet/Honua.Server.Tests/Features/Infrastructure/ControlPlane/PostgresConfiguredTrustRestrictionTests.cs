@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Server.Tests.Infrastructure;
+using Honua.Server.Tests.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Options;
@@ -49,12 +50,22 @@ public sealed class PostgresConfiguredTrustRestrictionTests(DatabaseFixtureAdapt
     public async Task Bootstrap_IncompatibleChainRestrictions_DoesNotFallBackToBroaderTrust(bool disjointAnchors)
     {
         await using var harness = await CreateHarnessAsync();
+        using var certificate = ClientCertificateValidationTests.CreateCertificate("CN=Partner", "spiffe://partner");
         var original = TrustOptions();
         original.Value.TrustProfiles[0].CustomTrustAnchorCertificates = ["anchor-a"];
+        original.Value.TrustProfiles[0].AcceptedIssuerSubjects = [certificate.Issuer];
         var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), original);
         await taskA.ListProfilesAsync();
+        var monitor = new ClientCertificateValidationTests.TestOptionsMonitor<ClientCertificateAuthenticationOptions>(new()
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "production"
+        });
+        var validator = new ClientCertificateValidator(monitor, taskA);
+        (await validator.ValidateAsync(certificate)).Succeeded.Should().BeTrue();
         var changed = TrustOptions();
         changed.Value.TrustProfilesRevision = 2;
+        changed.Value.TrustProfiles[0].AcceptedIssuerSubjects = [certificate.Issuer];
         if (disjointAnchors)
         {
             changed.Value.TrustProfiles[0].CustomTrustAnchorCertificates = ["anchor-b"];
@@ -70,6 +81,9 @@ public sealed class PostgresConfiguredTrustRestrictionTests(DatabaseFixtureAdapt
         var seen = (await taskA.GetProfileAsync("partner"))!;
         seen.AcceptedIssuerThumbprints.Should().BeEmpty();
         seen.CustomTrustAnchorCertificates.Should().BeEmpty();
+        seen.AcceptedIssuerSubjects.Should().Equal(certificate.Issuer);
+        (await validator.ValidateAsync(certificate)).Succeeded.Should().BeFalse();
+        seen.Enabled.Should().BeFalse();
     }
 
     [IntegrationTheory]
