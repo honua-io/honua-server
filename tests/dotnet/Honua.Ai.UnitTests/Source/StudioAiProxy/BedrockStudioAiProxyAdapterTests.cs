@@ -149,9 +149,7 @@ public sealed class BedrockStudioAiProxyAdapterTests
         var events = await CollectAsync(adapter, options, ToolFreeRequest());
         stopwatch.Stop();
 
-        // The stall is bounded by the configured provider deadline, not by the stream. The stub
-        // never completes on its own, so any finite bound proves the deadline; 15s leaves room
-        // for shared-runner load (3.07s and 3.40s were observed against the old 3s bound).
+        // The stub never completes on its own; allow scheduling delay while bounding the deadline.
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15));
         events.Select(e => e.Type).Should().Equal(
             StudioAiChatEventType.MessageStart,
