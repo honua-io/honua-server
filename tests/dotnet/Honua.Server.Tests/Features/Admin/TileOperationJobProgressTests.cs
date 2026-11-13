@@ -18,6 +18,33 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed partial class TileOperationJobTests
 {
     [Theory]
+    [InlineData(ExecutionJobStatus.Queued, OperationStatus.Queued)]
+    [InlineData(ExecutionJobStatus.Running, OperationStatus.Processing)]
+    [InlineData(ExecutionJobStatus.Cancelled, OperationStatus.Cancelled)]
+    public async Task Get_AfterProgressExpires_ProjectsRetainedJobWithoutRecreatingSnapshot(
+        ExecutionJobStatus jobStatus, OperationStatus expectedStatus)
+    {
+        var jobs = new InMemoryExecutionJobStore();
+        var progress = new ComparingInMemoryProgressStore();
+        var backend = new LocalBatchComputeBackend(progress, [Substitute.For<IJobCancellationNotifier>()]);
+        var service = CreateService(jobs, progress, [backend], new TileCacheBatchOptions());
+        var request = SeedRequest();
+        var jobId = await service.SubmitAsync(new TileOperationSubmission(request, Admin));
+        var record = (await jobs.GetAsync(jobId))!;
+        await jobs.SetAsync(record with { Status = jobStatus });
+        await progress.DeleteProgressAsync(jobId);
+
+        var response = await service.GetAsync(jobId);
+
+        response!.Status.Should().Be(expectedStatus);
+        response.Operation.Should().Be(request.Operation);
+        response.TileMatrixSetId.Should().Be(request.TileMatrixSetId);
+        response.DownloadUrl.Should().BeNull();
+        response.PublishedArtifact.Should().BeNull();
+        (await progress.GetProgressAsync(jobId)).Should().BeNull();
+    }
+
+    [Theory]
     [InlineData(ExecutionJobStatus.Cancelled)]
     [InlineData(ExecutionJobStatus.Queued)]
     public void Get_NonSuccessfulDurableJob_HidesPublishedArtifact(ExecutionJobStatus status)

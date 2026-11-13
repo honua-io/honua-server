@@ -26,6 +26,33 @@ namespace Honua.Server.Tests.Features.Export;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class ExportJobServiceTests
 {
+    [Theory]
+    [InlineData(ExecutionJobStatus.Queued, OperationStatus.Queued)]
+    [InlineData(ExecutionJobStatus.Running, OperationStatus.Processing)]
+    [InlineData(ExecutionJobStatus.Cancelled, OperationStatus.Cancelled)]
+    public async Task Read_AfterProgressExpires_ProjectsRetainedJobWithoutRecreatingSnapshot(
+        ExecutionJobStatus jobStatus, OperationStatus expectedStatus)
+    {
+        var jobs = new InMemoryExecutionJobStore();
+        var progress = new ComparingInMemoryProgressStore();
+        var request = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+        await CreateService(progress, jobs, Substitute.For<IJobQueue>()).StartAsync(request);
+        var record = (await jobs.GetAsync(request.JobId))!;
+        await jobs.SetAsync(record with { Status = jobStatus });
+        await progress.DeleteProgressAsync(request.JobId);
+
+        var response = (ExportProgress)(await new ExecutionJobProgressReader(progress, jobs)
+            .ReadAsync(request.JobId, CancellationToken.None))!;
+
+        response.Status.Should().Be(expectedStatus);
+        response.Format.Should().Be(request.Format);
+        response.ServiceName.Should().Be(request.ServiceName);
+        response.ServiceLayerIndex.Should().Be(request.ServiceLayerIndex);
+        response.TotalFeatures.Should().Be(request.TotalFeatures);
+        response.DownloadUrl.Should().BeNull();
+        (await progress.GetProgressAsync(request.JobId)).Should().BeNull();
+    }
+
     [UnitTest]
     [Operation(Operations.Export)]
     public async Task Start_CreatesAQueuedExportJobCarryingTheRequestAndSubmitter()

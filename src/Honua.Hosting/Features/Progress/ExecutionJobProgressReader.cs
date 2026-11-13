@@ -5,15 +5,36 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Migration;
 
 namespace Honua.Infrastructure.Progress;
 
 internal sealed class ExecutionJobProgressReader(IUniversalProgressStore progressStore, IExecutionJobStore? jobStore)
 {
+    internal const string InitialProgressParameter = "honua.progress.initial";
+
     public async Task<IOperationProgress?> ReadAsync(string operationId, CancellationToken cancellationToken)
     {
         var progress = await progressStore.GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
-        return progress is null ? null : await RepairAsync(progress, cancellationToken).ConfigureAwait(false);
+        if (progress is not null)
+        {
+            return await RepairAsync(progress, cancellationToken).ConfigureAwait(false);
+        }
+
+        var job = jobStore is null ? null : await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        if (job is null || !job.Spec.Parameters.TryGetValue(InitialProgressParameter, out var initial))
+        {
+            return null;
+        }
+
+        // Retained jobs outlive the progress TTL. Rebuild the response without recreating a stale
+        // writable snapshot that could compete with a worker or operator retry.
+        var seed = OperationProgressSerializer.Deserialize(initial);
+        return seed is not null && string.Equals(seed.OperationId, operationId, StringComparison.Ordinal)
+            && (seed is ExportProgress && job.Spec.Kind == ExecutionJobKind.Export
+                || seed is TileOperationProgress && job.Spec.Kind == ExecutionJobKind.TileCache)
+            ? Project(seed, job)
+            : null;
     }
 
     public async Task<IOperationProgress> RepairAsync(IOperationProgress progress, CancellationToken cancellationToken)

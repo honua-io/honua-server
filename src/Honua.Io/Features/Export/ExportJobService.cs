@@ -7,6 +7,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Progress;
+using Honua.Migration;
 
 namespace Honua.Io.Export;
 
@@ -56,7 +57,7 @@ internal sealed class ExportJobService(
         bool created;
         try
         {
-            created = await store.TryCreateWithinCapacityAsync(CreateRecord(job), MaxOutstandingExports, cancellationToken).ConfigureAwait(false);
+            created = await store.TryCreateWithinCapacityAsync(CreateRecord(job, progress), MaxOutstandingExports, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -105,7 +106,7 @@ internal sealed class ExportJobService(
         return job is not null && string.Equals(job.JobId, record.OperationId, StringComparison.Ordinal);
     }
 
-    private static ExecutionJobRecord CreateRecord(ExportJob job)
+    private static ExecutionJobRecord CreateRecord(ExportJob job, ExportProgress progress)
     {
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
@@ -132,7 +133,8 @@ internal sealed class ExportJobService(
                 WorkloadName = $"export:{job.Format}:{job.ServiceName}:{job.ServiceLayerIndex}",
                 Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    [RequestParameter] = JsonSerializer.Serialize(job with { Submitter = null }, ExportJsonContext.Default.ExportJob)
+                    [RequestParameter] = JsonSerializer.Serialize(job with { Submitter = null }, ExportJsonContext.Default.ExportJob),
+                    [ExecutionJobProgressReader.InitialProgressParameter] = OperationProgressSerializer.Serialize(progress)
                 }
             }
         };

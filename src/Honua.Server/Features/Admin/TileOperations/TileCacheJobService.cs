@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Progress;
+using Honua.Migration;
 using Honua.ControlPlane;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -164,6 +165,15 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
 
         var targetLayerIds = await ResolveTargetLayerIdsAsync(request, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
+        var spec = TileCacheExecutionSpecBuilder.Build(request, submission.SchemaName, submission.TenantScope, _options.CurrentValue);
+        spec = spec with
+        {
+            Parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal)
+            {
+                [ExecutionJobProgressReader.InitialProgressParameter] = OperationProgressSerializer.Serialize(
+                    TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId))
+            }
+        };
         return new ExecutionJobRecord
         {
             OperationId = jobId,
@@ -179,7 +189,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
                 PartitionKey = TileCacheExecutionSpecBuilder.BuildPartitionKey(request, targetLayerIds),
                 RequiresExclusiveLease = true
             },
-            Spec = TileCacheExecutionSpecBuilder.Build(request, submission.SchemaName, submission.TenantScope, _options.CurrentValue)
+            Spec = spec
         };
     }
 
