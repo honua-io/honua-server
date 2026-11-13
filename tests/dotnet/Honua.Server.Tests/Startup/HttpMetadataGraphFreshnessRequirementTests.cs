@@ -17,6 +17,8 @@ namespace Honua.Server.Tests.Startup;
 // revision on every request; writes and admin requests still read the current revision.
 public sealed class HttpMetadataGraphFreshnessRequirementTests
 {
+    private static readonly EndpointMetadataCollection ReadOnlyEndpointMetadata = new(ReadOnlyRequestMetadata.Instance);
+
     private static readonly string[] ReadOnlyPostRoutes =
     [
         "/rest/services/{serviceId}/FeatureServer/{layerId:int}/query",
@@ -43,25 +45,25 @@ public sealed class HttpMetadataGraphFreshnessRequirementTests
 
     [UnitTest]
     public void ReadOnlyPost_UsesRecentSnapshot()
-        => Requirement(Request(HttpMethods.Post, "/rest/services/parcels/FeatureServer/0/query", readOnly: true))
+        => Requirement(Request(HttpMethods.Post, "/rest/services/parcels/FeatureServer/0/query", ReadOnlyEndpointMetadata))
             .RequireCurrentRevision.Should().BeFalse();
 
     [UnitTest]
     public void ReadOnlyMarker_DoesNotRelaxOtherWriteMethods()
-        => Requirement(Request(HttpMethods.Put, "/rest/services/parcels/FeatureServer/0/query", readOnly: true))
+        => Requirement(Request(HttpMethods.Put, "/rest/services/parcels/FeatureServer/0/query", ReadOnlyEndpointMetadata))
             .RequireCurrentRevision.Should().BeTrue();
 
     [UnitTest]
     public void ReadOnlyPostOnAdminPath_RequiresCurrentRevision()
-        => Requirement(Request(HttpMethods.Post, "/api/admin/services/query", readOnly: true))
+        => Requirement(Request(HttpMethods.Post, "/api/admin/services/query", ReadOnlyEndpointMetadata))
             .RequireCurrentRevision.Should().BeTrue();
 
     // Read-only POST queries share one catalog revision probe per revalidation interval on each node.
     [UnitTest]
     public async Task HundredPostQueries_WithinOneInterval_ProbeTheCatalogOnce()
     {
-        (await ProbesFor(readOnly: false)).Should().Be(100, "an unmarked POST still reads the current revision");
-        (await ProbesFor(readOnly: true)).Should().Be(1);
+        (await ProbesFor(EndpointMetadataCollection.Empty)).Should().Be(100, "an unmarked POST still reads the current revision");
+        (await ProbesFor(ReadOnlyEndpointMetadata)).Should().Be(1);
     }
 
     [UnitTest]
@@ -88,13 +90,13 @@ public sealed class HttpMetadataGraphFreshnessRequirementTests
         markedPatterns.Should().NotContain(pattern => pattern.Contains("admin", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static async Task<int> ProbesFor(bool readOnly)
+    private static async Task<int> ProbesFor(EndpointMetadataCollection metadata)
     {
         var counting = new CountingRevisionProbe();
         var schedule = new MetadataV2GraphRevisionProbeSchedule(TimeProvider.System);
         for (var i = 0; i < 100; i++)
         {
-            var requirement = Requirement(Request(HttpMethods.Post, "/rest/services/parcels/FeatureServer/0/query", readOnly));
+            var requirement = Requirement(Request(HttpMethods.Post, "/rest/services/parcels/FeatureServer/0/query", metadata));
             var probe = new IntervalMetadataV2GraphRevisionProbe(counting, schedule,
                 new MetadataV2GraphRevalidation(TimeSpan.FromSeconds(2), requirement.RequireCurrentRevision));
             await probe.GetCurrentEtagAsync();
@@ -117,13 +119,12 @@ public sealed class HttpMetadataGraphFreshnessRequirementTests
     private static HttpMetadataGraphFreshnessRequirement Requirement(HttpContext? context)
         => new(new HttpContextAccessor { HttpContext = context });
 
-    private static DefaultHttpContext Request(string method, string path, bool readOnly = false)
+    private static DefaultHttpContext Request(string method, string path, EndpointMetadataCollection? metadata = null)
     {
         var context = new DefaultHttpContext();
         context.Request.Method = method;
         context.Request.Path = path;
-        var metadata = readOnly ? new EndpointMetadataCollection(ReadOnlyRequestMetadata.Instance) : EndpointMetadataCollection.Empty;
-        context.SetEndpoint(new Endpoint(_ => Task.CompletedTask, metadata, "test"));
+        context.SetEndpoint(new Endpoint(_ => Task.CompletedTask, metadata ?? EndpointMetadataCollection.Empty, "test"));
         return context;
     }
 }
