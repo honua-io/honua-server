@@ -27,7 +27,7 @@ python3 -m venv .venv
 python -m pip install -r ../honua-samples/samples/gp-local-dev/requirements.txt
 ```
 
-The .NET 10 SDK is also needed when running the devkit from source.
+The .NET 11 SDK is also needed when running the devkit from source.
 
 ## 1. Start the server
 

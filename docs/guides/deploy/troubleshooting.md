@@ -68,7 +68,8 @@ To fix a VM, present the host CPU or an x86-64-v2 model to the guest, then resta
 | QEMU | `-cpu host`, or `-cpu Nehalem` or newer (not `qemu64` / `kvm64`) |
 
 Host passthrough can limit live migration between hosts with different CPUs; a named model
-keeps migration working. On physical hardware without x86-64-v2, stay on 2026.x.
+keeps migration working. Physical hardware without x86-64-v2 cannot run 2026.1 or later; move
+the server to a newer host or an arm64 host.
 
 ## License failure mode
 
