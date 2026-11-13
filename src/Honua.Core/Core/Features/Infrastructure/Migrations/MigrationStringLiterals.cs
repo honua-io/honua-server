@@ -65,7 +65,12 @@ internal static class MigrationStringLiterals
         {
             var character = escaped switch
             {
-                'b' => '\b', 'f' => '\f', 'n' => '\n', 'r' => '\r', 't' => '\t', _ => escaped
+                'b' => '\b',
+                'f' => '\f',
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                _ => escaped
             };
             return (character.ToString(), index);
         }
