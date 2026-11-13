@@ -497,13 +497,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             if (!sourceSrid.HasValue)
             {
                 errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
-                var validationErrors = new[]
-                {
-                    ImportValidationIssue.Create(
-                        ImportValidationErrorCodes.SourceSridRequired,
-                        errorMessage,
-                        field: nameof(request.SourceSrid))
-                };
+                var validationErrors = SourceSridRequiredIssues(errorMessage);
                 result = ImportResult.CreateFailure(
                     request.TableName,
                     format.Value,
@@ -572,20 +566,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             ImportValidationIssue[] preflightWarnings = [];
             if (format.Value == SupportedFileFormat.GeoJson)
             {
-                if (!fileStream.CanSeek)
-                {
-                    var seekableStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
-                    if (shouldDisposeStream)
-                    {
-                        await fileStream.DisposeAsync();
-                    }
-
-                    fileStream = seekableStream;
-                    shouldDisposeStream = true;
-                    totalBytes = seekableStream.Length;
-                    ImportLog.SpilledToTempFile(_logger, totalBytes.Value);
-                }
-
                 var geoJsonValidation = await _geoJsonReader.ValidateAsync(fileStream, cancellationToken);
                 if (!geoJsonValidation.IsValid)
                 {

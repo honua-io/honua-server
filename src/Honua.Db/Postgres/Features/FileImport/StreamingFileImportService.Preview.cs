@@ -77,10 +77,7 @@ internal sealed partial class StreamingFileImportService
 
                 shapefileScratch = await PrepareShapefileScratchAsync(fileStream, fileName, cancellationToken);
                 detectedSrid = await _crsDetectionService.DetectFromShapefilePrjAsync(shapefileScratch.ShpPath, cancellationToken);
-                var prjDeclared = Directory.EnumerateFiles(Path.GetDirectoryName(shapefileScratch.ShpPath)!)
-                    .Any(path => Path.GetExtension(path).Equals(".prj", StringComparison.OrdinalIgnoreCase));
-                coordinateSystem = ImportCoordinateSystem.FromDetection(
-                    detectedSrid, prjDeclared ? ImportCrsProvenance.FileMetadata : ImportCrsProvenance.Unknown);
+                coordinateSystem = GetShapefileCoordinateSystem(shapefileScratch.ShpPath, detectedSrid);
             }
             else if (format.Value == SupportedFileFormat.Kml && IsKmzFileName(fileName))
             {
@@ -173,15 +170,7 @@ internal sealed partial class StreamingFileImportService
             // FlatGeobuf embeds the total feature count in its binary header.
             // Read it before enumeration so the preview can report the true total
             // even when the file exceeds the sample cap.
-            int? headerFeatureCount = null;
-            if (format.Value == SupportedFileFormat.FlatGeobuf && fileStream.CanSeek)
-            {
-                // CRS detection may have advanced position past the header;
-                // reset so ReadHeaderFeatureCount reads from the magic bytes.
-                fileStream.Position = 0;
-                headerFeatureCount = FlatGeobufFormatReader.ReadHeaderFeatureCount(fileStream);
-                fileStream.Position = 0;
-            }
+            var headerFeatureCount = ReadPreviewHeaderFeatureCount(fileStream, format.Value);
 
             // Stream features but only collect up to the limit
             var features = new List<IFeature>();
@@ -235,18 +224,6 @@ internal sealed partial class StreamingFileImportService
             }
 
             coordinateSystem ??= FromDetectedSrid(format.Value, detectedSrid);
-            var sampleProperties = new Dictionary<string, object?>();
-            var firstFeature = features.FirstOrDefault();
-            if (firstFeature?.Attributes is not null)
-            {
-                var names = firstFeature.Attributes.GetNames();
-                var values = firstFeature.Attributes.GetValues();
-                sampleProperties = names.Zip(values).ToDictionary(
-                    pair => pair.First,
-                    pair => pair.Second is byte[] bytes
-                        ? (object?)Convert.ToBase64String(bytes)
-                        : pair.Second);
-            }
 
             return new FilePreview
             {
@@ -256,7 +233,7 @@ internal sealed partial class StreamingFileImportService
                     : headerFeatureCount ?? (needsFullCount ? totalStreamedCount : features.Count),
                 DetectedSrid = detectedSrid,
                 CoordinateSystem = coordinateSystem,
-                SampleProperties = sampleProperties,
+                SampleProperties = GetPreviewSampleProperties(features.FirstOrDefault()),
                 AvailableLayers = availableLayers,
                 Warnings = warnings
             };
@@ -279,5 +256,33 @@ internal sealed partial class StreamingFileImportService
             CleanupFileGdbScratch(fileGdbScratch);
             CleanupGeoParquetScratch(geoParquetScratch);
         }
+    }
+
+    private static int? ReadPreviewHeaderFeatureCount(Stream stream, SupportedFileFormat format)
+    {
+        if (format != SupportedFileFormat.FlatGeobuf || !stream.CanSeek)
+        {
+            return null;
+        }
+        stream.Position = 0;
+        var count = FlatGeobufFormatReader.ReadHeaderFeatureCount(stream);
+        stream.Position = 0;
+        return count;
+    }
+
+    private static Dictionary<string, object?> GetPreviewSampleProperties(IFeature? firstFeature)
+    {
+        var sampleProperties = new Dictionary<string, object?>();
+        if (firstFeature?.Attributes is not null)
+        {
+            var names = firstFeature.Attributes.GetNames();
+            var values = firstFeature.Attributes.GetValues();
+            sampleProperties = names.Zip(values).ToDictionary(
+                pair => pair.First,
+                pair => pair.Second is byte[] bytes
+                    ? (object?)Convert.ToBase64String(bytes)
+                    : pair.Second);
+        }
+        return sampleProperties;
     }
 }

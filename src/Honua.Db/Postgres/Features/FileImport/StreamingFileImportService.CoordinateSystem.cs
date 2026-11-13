@@ -79,4 +79,17 @@ internal sealed partial class StreamingFileImportService
             if (stream.CanSeek) stream.Position = 0;
         }
     }
+    private static ImportValidationIssue[] SourceSridRequiredIssues(string message) =>
+        [ImportValidationIssue.Create(
+            ImportValidationErrorCodes.SourceSridRequired,
+            message,
+            field: nameof(ImportRequest.SourceSrid))];
+
+    private static ImportCoordinateSystem GetShapefileCoordinateSystem(string shpPath, int? detectedSrid)
+    {
+        var prjDeclared = Directory.EnumerateFiles(Path.GetDirectoryName(shpPath)!)
+            .Any(path => Path.GetExtension(path).Equals(".prj", StringComparison.OrdinalIgnoreCase));
+        return ImportCoordinateSystem.FromDetection(
+            detectedSrid, prjDeclared ? ImportCrsProvenance.FileMetadata : ImportCrsProvenance.Unknown);
+    }
 }
