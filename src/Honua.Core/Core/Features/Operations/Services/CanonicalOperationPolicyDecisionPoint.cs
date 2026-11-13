@@ -52,13 +52,13 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             var agentGuardrail = gatewayRequest.ActionDiscriminator is null
                 ? _legacyGuardrails.Resolve(gatewayRequest.Kind)
                 : _legacyGuardrails.Resolve(gatewayRequest.Kind, gatewayRequest.ActionDiscriminator);
-            return Task.FromResult(agentGuardrail.Tier == GuardrailTier.Blocked
+            return agentGuardrail.Tier == GuardrailTier.Blocked
                 ? new PolicyDecision
                 {
                     Kind = PolicyDecisionKind.Deny,
                     Reason = agentGuardrail.Source,
                 }
-                : AgentApprovalRule.Decision);
+                : AgentApprovalRule.Decision;
         }
 
         // Autonomous actions have already passed the registered autonomy evaluator.
