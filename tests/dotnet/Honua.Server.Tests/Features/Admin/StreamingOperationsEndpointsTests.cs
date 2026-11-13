@@ -22,6 +22,12 @@ public sealed class StreamingOperationsEndpointsTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        const string migrationResource = "Honua.Server.Migrations.158_CreateRealtimeEventLog.sql";
+        await using var stream = typeof(Program).Assembly.GetManifestResourceStream(migrationResource)
+            ?? throw new InvalidOperationException($"Embedded migration '{migrationResource}' was not found.");
+        using var reader = new StreamReader(stream);
+        var migration = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", "\"honua\"", StringComparison.Ordinal);
+        await _fixture.Postgres.ExecuteDdlUnderLockAsync(migration);
         _client = _fixture.CreateAdminClient();
     }
 
