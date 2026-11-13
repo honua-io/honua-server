@@ -67,6 +67,8 @@ internal static class CdnCacheTags
                 .Select(service => InvalidationPrefix + ServicesScope(service)),
         ];
 
+    internal static string[] InvalidationsForOgcSurface => [InvalidationPrefix + OgcScope];
+
     internal static bool IsTagInvalidation(string item) => item.StartsWith(InvalidationPrefix, StringComparison.Ordinal);
 
     private const string OgcScope = Prefix + "scope:ogc";

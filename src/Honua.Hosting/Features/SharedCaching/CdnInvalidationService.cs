@@ -32,7 +32,7 @@ internal sealed partial class CdnInvalidationService(
     // Above this many wildcard paths one invalidation of everything is cheaper for the CDN than naming them.
     internal const int MaxWildcardPathsPerInvalidation = 6;
 
-    // Tags are not wildcards, but a request names at most 3000 items; well before that, everything is cheaper.
+    // Bound tag requests below the provider limit without widening a scoped purge to every object.
     internal const int MaxTagsPerInvalidation = 1000;
 
     // A lease ends this much before the window does, so the task's own timer, started a database round trip earlier, finds it expired.
@@ -236,18 +236,45 @@ internal sealed partial class CdnInvalidationService(
         CancellationToken cancellationToken)
     {
         var distinctPaths = paths.Distinct(StringComparer.Ordinal).ToArray();
-        // A tag is not a wildcard: it does not count toward the wildcard paths the CDN allows in progress.
-        var tags = distinctPaths.Count(CdnCacheTags.IsTagInvalidation);
-        var withinBudget = distinctPaths.Length - tags > MaxWildcardPathsPerInvalidation || tags > MaxTagsPerInvalidation
-            ? CdnPaths.Everything
-            : distinctPaths;
-        var result = await SendWithRetriesAsync(withinBudget, cancellationToken).ConfigureAwait(false);
+        var tags = distinctPaths.Where(CdnCacheTags.IsTagInvalidation).ToArray();
+        var wildcardPaths = distinctPaths.Where(path => !CdnCacheTags.IsTagInvalidation(path)).ToArray();
+        if (wildcardPaths.Length > MaxWildcardPathsPerInvalidation)
+        {
+            return await SendAndRecordAsync(CdnPaths.Everything, cause, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (tags.Length <= MaxTagsPerInvalidation)
+        {
+            return await SendAndRecordAsync(distinctPaths, cause, cancellationToken).ConfigureAwait(false);
+        }
+
+        var combined = CdnInvalidationResult.NotConfigured;
+        foreach (var batch in tags.Chunk(MaxTagsPerInvalidation))
+        {
+            var result = await SendAndRecordAsync(batch, cause, cancellationToken).ConfigureAwait(false);
+            combined = combined.Failed ? combined : result;
+        }
+
+        if (wildcardPaths.Length > 0)
+        {
+            var result = await SendAndRecordAsync(wildcardPaths, cause, cancellationToken).ConfigureAwait(false);
+            combined = combined.Failed ? combined : result;
+        }
+
+        return combined;
+    }
+
+    private async Task<CdnInvalidationResult> SendAndRecordAsync(
+        IReadOnlyCollection<string> paths,
+        CdnPurgeCause cause,
+        CancellationToken cancellationToken)
+    {
+        var result = await SendWithRetriesAsync(paths, cancellationToken).ConfigureAwait(false);
         if (result.Outcome is not CdnInvalidationOutcome.NotConfigured)
         {
-            var outcome = result.Outcome.ToString();
-            var purgedPaths = string.Join(' ', withinBudget);
             Log.PurgeRecorded(
-                logger, cause.Reason, cause.ChangeId, Environment.MachineName, outcome, result.Detail ?? string.Empty, purgedPaths);
+                logger, cause.Reason, cause.ChangeId, Environment.MachineName, result.Outcome.ToString(),
+                result.Detail ?? string.Empty, string.Join(' ', paths));
         }
 
         return result;

@@ -16,7 +16,7 @@ using ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols
 
 namespace Honua.Hosting.UnitTests.Features.SharedCaching;
 
-public sealed class CdnCacheTagTests
+public sealed partial class CdnCacheTagTests
 {
     private const string TagHeader = "x-amz-meta-cache-tag";
 
@@ -243,13 +243,17 @@ public sealed class CdnCacheTagTests
     }
 
     [UnitTest]
-    public async Task InvalidateNowAsync_MoreTagsThanOneRequestShouldName_InvalidatesEverything()
+    public async Task InvalidateNowAsync_MoreTagsThanOneRequestShouldName_PurgesEveryTagInBoundedRequests()
     {
-        var tags = Enumerable.Range(0, CdnInvalidationService.MaxTagsPerInvalidation + 1).Select(index => $"#honua-scope:tiles/{index}");
+        var tags = Enumerable.Range(0, CdnInvalidationService.MaxTagsPerInvalidation * 2 + 1)
+            .Select(index => $"#honua-scope:tiles/{index}").ToArray();
 
-        await Service(new SharedLeases(_time)).InvalidateNowAsync(tags, CancellationToken.None);
+        await Service(new SharedLeases(_time)).InvalidateNowAsync(tags.Concat(tags), CancellationToken.None);
 
-        _cloudFront.Accepted.Should().ContainSingle().Which.Should().Equal("/*");
+        _cloudFront.Accepted.Should().HaveCount(3).And.AllSatisfy(batch =>
+            batch.Count.Should().BeLessThanOrEqualTo(CdnInvalidationService.MaxTagsPerInvalidation));
+        _cloudFront.Accepted.SelectMany(batch => batch).Should().BeEquivalentTo(tags);
+        _cloudFront.WildcardPathsInProgress.Should().Be(0);
     }
 
     [UnitTest]

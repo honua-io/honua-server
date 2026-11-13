@@ -43,19 +43,53 @@ internal sealed partial class OutputCacheInvalidationService
     public async Task InvalidateEditedStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
     {
         await EvictStorageLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
-        await InvalidateCdnAfterEditAsync(CdnPaths.Everything, cancellationToken).ConfigureAwait(false);
+        var paths = await CdnPathsForEditedStorageLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnAfterEditAsync(paths, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task InvalidateEditedCollectionAsync(string collectionId, CancellationToken cancellationToken)
     {
         await EvictCollectionAsync(collectionId, cancellationToken).ConfigureAwait(false);
-        await InvalidateCdnAfterEditAsync(CdnPaths.EveryOgcSurface, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnAfterEditAsync(CdnPathsForEditedOgcSurface(), cancellationToken).ConfigureAwait(false);
     }
 
     public async Task InvalidateEditedOgcMetadataAsync(CancellationToken cancellationToken)
     {
         await EvictOgcMetadataAsync(cancellationToken).ConfigureAwait(false);
-        await InvalidateCdnAfterEditAsync(CdnPaths.EveryOgcSurface, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnAfterEditAsync(CdnPathsForEditedOgcSurface(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private string[] CdnPathsForEditedOgcSurface()
+        => _cdnInvalidation is { TagsEnabled: true }
+            ? CdnCacheTags.InvalidationsForOgcSurface
+            : CdnPaths.EveryOgcSurface;
+
+    private async Task<string[]> CdnPathsForEditedStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
+    {
+        if (_cdnInvalidation is not { TagsEnabled: true })
+        {
+            return CdnPaths.Everything;
+        }
+
+        var snapshot = await ReadStorageInvalidationSnapshotAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            return CdnPaths.Everything;
+        }
+
+        var paths = new HashSet<string>(CdnCacheTags.InvalidationsForEditedLayer(storageLayerId, []), StringComparer.Ordinal);
+        foreach (var publication in snapshot.PublicationsForStorageLayer(storageLayerId))
+        {
+            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+            {
+                return CdnPaths.Everything;
+            }
+
+            paths.UnionWith(CdnCacheTags.InvalidationsForEditedLayer(
+                publication.LayerIndex ?? storageLayerId, [service.Metadata.Name, service.EffectivePublicName]));
+        }
+
+        return [.. paths];
     }
 
     private Task InvalidateCdnAfterEditAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken)
