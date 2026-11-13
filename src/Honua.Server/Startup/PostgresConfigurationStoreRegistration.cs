@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
@@ -18,7 +19,10 @@ internal static class PostgresConfigurationStoreRegistration
 {
     public static IServiceCollection AddPostgresConfigurationStores(this IServiceCollection services)
     {
-        services.TryAddSingleton<PostgresConfigurationDocuments>();
+        services.TryAddSingleton(provider => new PostgresConfigurationDocuments(
+            provider.GetRequiredService<JobStoreDatabase>(),
+            provider.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(),
+            provider.GetService<ILogger<PostgresConfigurationDocuments>>()));
         services.AddHttpContextAccessor();
         services.TryAddScoped<RequestConfigurationGeneration>();
         services.TryAddScoped<IConfigurationGenerationSource>(provider => HasDatabase(provider)
