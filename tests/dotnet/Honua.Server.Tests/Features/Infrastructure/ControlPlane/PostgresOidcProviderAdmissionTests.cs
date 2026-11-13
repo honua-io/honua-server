@@ -21,9 +21,13 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.IdentityManagement)]
 public sealed class PostgresOidcProviderAdmissionTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("Pro", "Second")]
+    [InlineData("Pro", "")]
+    [InlineData("Community", "Second")]
+    [InlineData("Community", "")]
     [Endpoint("POST /api/v1/admin/oidc/providers")]
-    public async Task CreateProvider_UnreadableExistingProviderAtPro_ReturnsPaymentRequired()
+    public async Task CreateProvider_UnreadableExistingProvider_ReturnsMultiProviderEntitlementBeforeValidation(string edition, string name)
     {
         await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(PostgresOidcProviderAdmissionTests));
         var foreign = new PostgresOidcProviderStore(harness.CreateConfigurationDocuments(new EphemeralDataProtectionProvider()));
@@ -34,7 +38,7 @@ public sealed class PostgresOidcProviderAdmissionTests(DatabaseFixtureAdapter da
         var fixture = new WebAppFixture().UseSeed("tests/seed/server.yaml").ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
-            builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+            builder.UseSetting("Licensing:DevGrantEdition", edition);
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IOidcProviderStore>();
@@ -47,7 +51,7 @@ public sealed class PostgresOidcProviderAdmissionTests(DatabaseFixtureAdapter da
             using var client = fixture.CreateAdminClient();
             using var response = await client.PostAsJsonAsync("/api/v1/admin/oidc/providers", new
             {
-                name = "Second", providerType = "Generic", authority = "https://idp.example.com", clientId = "second"
+                name, providerType = "Generic", authority = "https://idp.example.com", clientId = "second"
             });
 
             Assert.Equal(HttpStatusCode.PaymentRequired, response.StatusCode);
