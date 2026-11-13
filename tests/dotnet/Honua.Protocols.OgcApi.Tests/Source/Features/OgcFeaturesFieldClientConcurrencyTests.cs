@@ -42,7 +42,7 @@ public sealed class OgcFeaturesFieldClientConcurrencyTests : IClassFixture<OgcFe
         original.Headers.ETag.Should().NotBeNull();
         var staleTag = original.Headers.ETag!.ToString();
 
-        using var onlineEdit = BuildMutation("PATCH", itemPath);
+        using var onlineEdit = BuildMutation("PATCH", itemPath, "Online observation");
         onlineEdit.Headers.TryAddWithoutValidation("If-Match", staleTag);
         using var onlineResult = await _fixture.Client.SendAsync(onlineEdit);
         onlineResult.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -53,7 +53,7 @@ public sealed class OgcFeaturesFieldClientConcurrencyTests : IClassFixture<OgcFe
         winner.Headers.ETag!.ToString().Should().NotBe(staleTag);
         var winningBody = await winner.Content.ReadAsStringAsync();
 
-        using var offlineEdit = BuildMutation(method, itemPath);
+        using var offlineEdit = BuildMutation(method, itemPath, "Offline observation");
         offlineEdit.Headers.TryAddWithoutValidation("If-Match", staleTag);
         using var rejected = await _fixture.Client.SendAsync(offlineEdit);
         rejected.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
@@ -67,19 +67,19 @@ public sealed class OgcFeaturesFieldClientConcurrencyTests : IClassFixture<OgcFe
         currentBody.Should().Be(winningBody);
     }
 
-    private static HttpRequestMessage BuildMutation(string method, string itemPath)
+    private static HttpRequestMessage BuildMutation(string method, string itemPath, string name)
     {
         var request = new HttpRequestMessage(new HttpMethod(method), itemPath);
         if (method == "PATCH")
         {
             request.Content = new StringContent(
-                """{"properties":{"name":"Online observation"}}""",
+                $$"""{"properties":{"name":"{{name}}"}}""",
                 Encoding.UTF8, "application/merge-patch+json");
         }
         else if (method == "PUT")
         {
             request.Content = new StringContent(
-                """{"type":"Feature","geometry":null,"properties":{"name":"Offline observation"}}""",
+                $$"""{"type":"Feature","geometry":null,"properties":{"name":"{{name}}"}}""",
                 Encoding.UTF8, "application/geo+json");
         }
 

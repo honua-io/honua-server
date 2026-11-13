@@ -23,6 +23,15 @@ For OGC API Features, retain each item's `ETag` when reading and send it as `If-
 
 WFS transaction responses have their own success and failure structure. Do not assume OGC API Features ETags protect WFS edits. Verify the client's supported locking or conditional-update strategy separately, and inspect transaction counts, returned IDs, and exceptions. See [WFS transaction receipts](../wfs-transaction-receipts.md). After a timeout or an unknown commit outcome, read back the affected records before retrying a create or transaction.
 
+## Verify an edit from an empty project
+
+1. Open an empty project in the desktop client. Create the service connection described above using a test identity, discover collections, and add the disposable layer. Save the project without embedding credentials.
+2. Identify a known feature and record its server ID, geometry, attributes, and base version. Start an edit session, change one attribute to a unique test value, and save through the service connection. Check the client's transaction result before continuing.
+3. Open Honua Console against the same deployment with an authorized identity. Open the same published layer and feature ID, refresh its data, and confirm the unique value. Independently refresh the desktop layer to verify the persisted result rather than its local edit buffer.
+4. Repeat with a new feature and a deletion, recording returned IDs and confirming both results in Console. Restore or remove the disposable test data through the API-backed client when finished.
+
+Online writes require connectivity. An offline project or GeoPackage needs the explicit return workflow below before its edits become server data.
+
 ## Take a GeoPackage offline
 
 A local GeoPackage is an editable copy, not an automatic synchronization contract. Before disconnecting:
