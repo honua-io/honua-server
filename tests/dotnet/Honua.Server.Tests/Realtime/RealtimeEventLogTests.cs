@@ -312,6 +312,24 @@ public sealed class RealtimeEventLogTests(DatabaseFixtureAdapter database) : ICl
     }
 
     [UnitTest]
+    public void Registration_EventHandler_KeepsLogWithoutBackgroundRetentionWrite()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["HONUA_CONTROL_PLANE_LAMBDA_HANDLER"] = "execution-dispatch"
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddRealtimeEventLog(configuration);
+
+        services.Should().ContainSingle(descriptor => descriptor.ServiceType == typeof(PostgresRealtimeEventLog));
+        services.Should().ContainSingle(descriptor => descriptor.ServiceType == typeof(IExpiredRowSweep));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IHostedService));
+    }
+
+    [UnitTest]
     public void Registration_CalledTwice_RegistersOneSweepAndOneStartupWrite()
     {
         var configuration = new ConfigurationBuilder().Build();
