@@ -82,7 +82,7 @@ public sealed class PostgresConfiguredTrustRestrictionTests(DatabaseFixtureAdapt
         var seen = (await taskA.GetProfileAsync("partner"))!;
         seen.AcceptedIssuerThumbprints.Should().BeEmpty();
         seen.CustomTrustAnchorCertificates.Should().BeEmpty();
-        seen.AcceptedIssuerSubjects.Should().Equal(certificate.Issuer);
+        seen.AcceptedIssuerSubjects.Should().Equal(ClientCertificateNormalization.NormalizeThumbprintOrName(certificate.Issuer));
         (await validator.ValidateAsync(certificate)).Succeeded.Should().BeFalse();
         seen.Enabled.Should().BeFalse();
     }
