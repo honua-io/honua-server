@@ -51,18 +51,24 @@ public sealed partial class ExportJobTests
             }
             return ExportJobTestData.Uploaded("export-file", "text/csv");
         });
-        var context = PublishingContext();
-        var staleAttempt = nodes.CreateExecutor(pausedStore).ExecuteAsync(record, context, CancellationToken.None);
+        var staleContext = PublishingContext();
+        var leaseLost = false;
+        staleContext.ThrowIfExecutionLeaseLostAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            leaseLost ? Task.FromException(new OperationCanceledException("Attempt replaced")) : Task.CompletedTask);
+        staleContext.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        var staleAttempt = nodes.CreateExecutor(pausedStore).ExecuteAsync(record, staleContext, CancellationToken.None);
         Task<JobExecutionResult>? replacementAttempt = null;
         try
         {
             await read.Task.WaitAsync(TimeSpan.FromSeconds(30));
-            replacementAttempt = nodes.CreateExecutor().ExecuteAsync(record, context, CancellationToken.None);
+            leaseLost = true;
+            replacementAttempt = nodes.CreateExecutor().ExecuteAsync(record, PublishingContext(), CancellationToken.None);
             await upload.Task.WaitAsync(TimeSpan.FromSeconds(30));
             var replacement = await progress.GetProgressAsync<ExportProgress>(job.JobId);
 
             resumeAdmission.TrySetResult();
-            (await staleAttempt).Status.Should().Be(ExecutionJobStatus.Failed);
+            Func<Task> retire = async () => await staleAttempt;
+            await retire.Should().ThrowAsync<OperationCanceledException>();
             (await progress.GetProgressAsync<ExportProgress>(job.JobId)).Should().Be(replacement,
                 "a delayed admission must compare the snapshot it actually read");
         }
@@ -70,7 +76,8 @@ public sealed partial class ExportJobTests
         {
             resumeAdmission.TrySetResult();
             resumeUpload.TrySetResult();
-            await staleAttempt;
+            try { await staleAttempt; }
+            catch (OperationCanceledException) { }
             if (replacementAttempt is not null)
             {
                 (await replacementAttempt).Status.Should().Be(ExecutionJobStatus.Succeeded);
