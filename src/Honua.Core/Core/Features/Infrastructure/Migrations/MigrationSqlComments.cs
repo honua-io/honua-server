@@ -9,11 +9,24 @@ internal static class MigrationSqlComments
 {
     // The caller decides whether quotes establish a known context. Uncertain dynamic
     // fragments deliberately use this operation at every character, including inside quotes.
-    internal static string NormalizeFragment(string sql)
+    internal static string NormalizeFragment(string sql) => Normalize(sql, 0, sql.Length);
+
+    internal static string NormalizeStatement(string sql, int start)
     {
-        var result = new StringBuilder(sql.Length);
-        var index = 0;
-        while (index < sql.Length)
+        var end = start;
+        while (end < sql.Length && sql[end] != ';')
+        {
+            var commentEnd = FindEnd(sql, end);
+            end = commentEnd > end ? commentEnd : end + 1;
+        }
+
+        return Normalize(sql, start, end);
+    }
+
+    private static string Normalize(string sql, int index, int end)
+    {
+        var result = new StringBuilder(end - index);
+        while (index < end)
         {
             var commentEnd = FindEnd(sql, index);
             if (commentEnd > index)

@@ -423,6 +423,14 @@ public static class MigrationSafetyClassifier
             fragmentSql.Append(ExecutionScopeBoundary);
             fragmentSql.Append(UntrustedDynamicScope);
             AppendExecutableSql(contents, fragmentSql, insideRoutineBody: false);
+            // A preceding delimiter may be identifier text supplied by another expression.
+            // Start each candidate independently so that delimiter cannot erase later DDL.
+            foreach (Match candidate in BreakingStatementStart.Matches(contents))
+            {
+                fragmentSql.Append(ExecutionScopeBoundary);
+                fragmentSql.Append(UntrustedDynamicScope);
+                fragmentSql.Append(MigrationSqlComments.NormalizeStatement(contents, candidate.Index));
+            }
         }
 
         return fragmentSql;
@@ -468,6 +476,10 @@ public static class MigrationSafetyClassifier
 
     private static readonly Regex RoutineBodyPrefix = new(
         @"(?:\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[^;]*\bAS\s*|\bDO(?:\s+LANGUAGE\s+[A-Za-z_][A-Za-z0-9_$]*)?\s*)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex BreakingStatementStart = new(
+        @"\b(?:ALTER|DROP|TRUNCATE)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static readonly Regex DirectDynamicExecutePrefix = new(

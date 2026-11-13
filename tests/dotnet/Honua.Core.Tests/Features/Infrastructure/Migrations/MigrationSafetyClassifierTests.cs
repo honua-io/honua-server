@@ -9,6 +9,25 @@ namespace Honua.Core.Tests.Features.Infrastructure.Migrations;
 public sealed class MigrationSafetyClassifierTests
 {
     [Theory]
+    [InlineData("'", "--\"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("$sql$", "--\"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("'", "/*\"; DROP/* outer /* nested */ comment */TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("$sql$", "/*\"; DROP/* outer /* nested */ comment */TABLE honua.evidence; SELECT 1 AS \"")]
+    public void DetectBreakingRules_ComputedCommentContext_DetectsDrop(string delimiter, string fragment)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}SELECT 1 AS {{delimiter}} || chr(34) ||
+                    {{delimiter}}{{fragment}}{{delimiter}} || chr(34);
+            END;
+            $body$;
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-table");
+    }
+
+    [Theory]
     [InlineData("'", "DROP/**/TABLE honua.evidence")]
     [InlineData("$sql$", "DROP/**/TABLE honua.evidence")]
     [InlineData("'", "DROP/* outer /* nested */ comment */TABLE honua.evidence")]
