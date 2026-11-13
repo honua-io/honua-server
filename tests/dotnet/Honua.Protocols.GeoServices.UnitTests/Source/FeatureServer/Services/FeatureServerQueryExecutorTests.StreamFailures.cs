@@ -57,18 +57,4 @@ public sealed partial class FeatureServerQueryExecutorTests
 
         throw new TimeoutException("statement timeout");
     }
-
-    private sealed class StartedOnFirstWriteResponseFeature(MemoryStream body) : HttpResponseFeature
-    {
-        public override bool HasStarted => body.Length > 0;
-    }
-
-    private sealed class RecordingLifetimeFeature : IHttpRequestLifetimeFeature
-    {
-        public bool Aborted { get; private set; }
-
-        public CancellationToken RequestAborted { get; set; }
-
-        public void Abort() => Aborted = true;
-    }
 }

@@ -144,20 +144,6 @@ public sealed class FeatureServerObjectIdStreamingTests
 
     private static long FailStatement() => throw new TimeoutException("statement timeout");
 
-    private sealed class StartedOnFirstWriteResponseFeature(MemoryStream body) : HttpResponseFeature
-    {
-        public override bool HasStarted => body.Length > 0;
-    }
-
-    private sealed class RecordingLifetimeFeature : IHttpRequestLifetimeFeature
-    {
-        public bool Aborted { get; private set; }
-
-        public CancellationToken RequestAborted { get; set; }
-
-        public void Abort() => Aborted = true;
-    }
-
     private sealed class BodyWatchingIdSource(MemoryStream body)
     {
         private const int YieldEvery = 4_096;
