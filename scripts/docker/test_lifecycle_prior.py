@@ -1,8 +1,8 @@
-"""The private prior changes only the embedded application migration boundary."""
+"""The private prior retains restore coverage and visible advisory warnings."""
 from pathlib import Path
 import tempfile
 import unittest
-from prepare_lifecycle_prior import cap_schema
+from prepare_lifecycle_prior import cap_schema, apply_advisory_policy
 
 
 class LifecyclePriorTests(unittest.TestCase):
@@ -21,6 +21,24 @@ class LifecyclePriorTests(unittest.TestCase):
                              sorted(path.name for path in migrations.iterdir()))
             self.assertEqual('140_Expand.sql', (migrations / '140_Expand.sql').read_text())
             self.assertEqual('launcher source', entrypoint.read_text())
+
+    def test_advisories_remain_visible_without_failing_the_fixture_build(self):
+        import xml.etree.ElementTree as ET
+        with tempfile.TemporaryDirectory() as directory:
+            props = Path(directory) / 'Directory.Build.props'
+            props.write_text('<Project><PropertyGroup>'
+                             '<TreatWarningsAsErrors>true</TreatWarningsAsErrors>'
+                             '<WarningsNotAsErrors>CS1234</WarningsNotAsErrors>'
+                             '</PropertyGroup></Project>')
+            apply_advisory_policy(directory)
+            root = ET.parse(props).getroot()
+            self.assertEqual('true', root.findtext('.//TreatWarningsAsErrors'))
+            warnings = root.findall('.//WarningsNotAsErrors')
+            self.assertEqual('CS1234', warnings[0].text)
+            self.assertEqual('$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904',
+                             warnings[-1].text)
+            self.assertIsNone(root.find('.//NoWarn'))
+            self.assertIsNone(root.find('.//NuGetAudit'))
 
     def test_rejects_wrong_source_before_modifying_files(self):
         with tempfile.TemporaryDirectory() as directory:
