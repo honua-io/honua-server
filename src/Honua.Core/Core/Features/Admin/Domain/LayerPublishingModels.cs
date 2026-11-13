@@ -44,6 +44,9 @@ public sealed class LayerPublishRequest
 
     public string? GlobalIdField { get; init; }
 
+    // A published date or date-time column; when set, the layer reports temporal history (honua-server#7434).
+    public string? TemporalColumn { get; init; }
+
     public bool SupportsAttachments { get; init; }
 
     public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();

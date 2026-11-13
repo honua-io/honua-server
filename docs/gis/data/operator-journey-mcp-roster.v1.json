@@ -119,7 +119,8 @@
         "storageMode",
         "subtypes",
         "supportsAttachments",
-        "table"
+        "table",
+        "temporalColumn"
       ]
     },
     {

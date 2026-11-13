@@ -170,6 +170,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             layerId,
             resource.Metadata.Id,
             storage,
+            ResolveTemporalColumnForPublish(request.TemporalColumn, fields),
             now);
         var featurePublication = BuildPublishedPublication(
             service,
@@ -3430,6 +3431,26 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
+    // Accepts only a published date or date-time column and returns its canonical name.
+    private static string? ResolveTemporalColumnForPublish(
+        string? requested, IReadOnlyList<LayerFieldInsert> fields)
+    {
+        if (string.IsNullOrWhiteSpace(requested))
+        {
+            return null;
+        }
+
+        var field = fields.FirstOrDefault(candidate =>
+            candidate.Name.Equals(requested.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (field?.Type is not (MetadataV2FieldType.Date or MetadataV2FieldType.DateTime))
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
+                "TemporalColumn must reference a published date or date-time column.");
+        }
+
+        return field.Name;
+    }
+
     private static MetadataV2ResourceEditing? ResolveEditingForPublish(
         LayerPublishRequest request, IReadOnlyList<LayerFieldInsert> fields)
     {
@@ -3531,6 +3552,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         int layerId,
         string resourceId,
         PublishedLayerStorage storage,
+        string? temporalColumn,
         DateTimeOffset now)
     {
         var schema = storage.Schema;
@@ -3588,6 +3610,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             options["attributesColumn"] = StringOption("attributes");
             options["layerDiscriminatorColumn"] = StringOption(DatabaseSchema.LayerIdColumn);
+        }
+
+        // The temporal history API reports history only for bindings that name a temporal
+        // column (FeatureStorageMapping.FromMetadata); without it no published layer can (#7434).
+        if (temporalColumn is not null)
+        {
+            options["temporalColumn"] = StringOption(temporalColumn);
         }
 
         return new MetadataV2StorageBinding

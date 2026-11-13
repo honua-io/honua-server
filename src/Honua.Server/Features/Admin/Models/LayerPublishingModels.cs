@@ -125,6 +125,10 @@ public sealed class PublishLayerRequest
     [StringLength(63)]
     public string? GlobalIdField { get; init; }
 
+    /// <summary>Published date or date-time column that marks the layer as history-capable for the temporal API.</summary>
+    [StringLength(63)]
+    public string? TemporalColumn { get; init; }
+
     /// <summary>Expose the configured attachment store for this resource; independent of copy fidelity and edit grants.</summary>
     public bool SupportsAttachments { get; init; }
 
