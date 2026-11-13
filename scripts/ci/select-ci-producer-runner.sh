@@ -22,13 +22,9 @@ instance="$(aws autoscaling describe-auto-scaling-groups \
 heartbeat="$(aws ssm get-parameter --name /honua-lane-build-host/gate-runner/heartbeat \
   --query Parameter.Value --output text --cli-connect-timeout 5 --cli-read-timeout 10)" ||
   select_runner ubuntu-latest "heartbeat unreadable"
-if jq -se --arg instance "${instance}" --argjson now "$(date +%s)" '
-  def integer: if type == "number" then floor == . else false end;
-  if length != 1 then false else .[0] |
-  if type != "object" then false else
-    .instance == $instance and (.at | integer) and .at <= $now and ($now - .at) <= 90
-    and (.idle | integer) and .idle >= 2
-  end end' <<< "${heartbeat}" >/dev/null 2>&1; then
+proof="$(bash "$(dirname "${BASH_SOURCE[0]}")/gate-runner-heartbeat.sh" "${instance}" <<< "${heartbeat}")" ||
+  select_runner ubuntu-latest "heartbeat invalid"
+if jq -e '.state == "ready"' <<< "${proof}" >/dev/null 2>&1; then
   select_runner honua-build "current heartbeat has two idle gate runners"
 fi
 select_runner ubuntu-latest "heartbeat stale, invalid, or pool busy"

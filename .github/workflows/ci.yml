@@ -742,7 +742,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 1
         with:
-          sparse-checkout: scripts/ci/select-ci-producer-runner.sh
+          sparse-checkout: |
+            scripts/ci/select-ci-producer-runner.sh
+            scripts/ci/gate-runner-heartbeat.sh
           sparse-checkout-cone-mode: false
       - name: Assume producer readiness read role
         if: vars.HONUA_CI_PRODUCER_RUNNER == 'honua-build' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)

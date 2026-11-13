@@ -236,6 +236,12 @@ def heartbeat(idle, instance="i-current", age=0):
 
 
 class GateRunnerSelectionTests(unittest.TestCase):
+    def test_sparse_selector_checkouts_include_shared_heartbeat_validator(self):
+        for workflow, job in (("ci.yml", "producer-runner"), ("pr-gate.yml", "runner-select")):
+            jobs = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"]
+            checkout = next(step for step in jobs[job]["steps"] if "sparse-checkout" in step.get("with", {}))
+            self.assertIn("scripts/ci/gate-runner-heartbeat.sh", checkout["with"]["sparse-checkout"].splitlines())
+
     def run_selection_details(self, scenario, environment):
         """Runs the selector against a stubbed aws CLI; returns its output and the aws calls."""
         with tempfile.TemporaryDirectory() as scratch:
@@ -299,6 +305,15 @@ class GateRunnerSelectionTests(unittest.TestCase):
         for invalid in ["{", "null", "[]", "{}"]:
             with self.subTest(invalid=invalid):
                 fields, _ = self.run_selection_details(HostScenario(heartbeat=invalid), WAKE_CREDENTIALS)
+                self.assertEqual(fields, {"runner": "ubuntu-latest", "heavy_ready": "false"})
+
+    def test_multiple_heartbeat_documents_never_admit_either_pool(self):
+        fresh = json.loads(heartbeat(idle=2))
+        fresh["heavy"] = {"version": 1, "idle": 2}
+        proof = json.dumps(fresh)
+        for payload in ("{}\n" + proof, proof + "\n{}", proof + "\n" + proof, ""):
+            with self.subTest(payload=payload):
+                fields, _ = self.run_selection_details(HostScenario(heartbeat=payload), WAKE_CREDENTIALS)
                 self.assertEqual(fields, {"runner": "ubuntu-latest", "heavy_ready": "false"})
 
     def test_unset_label_selects_hosted_without_touching_aws(self):
