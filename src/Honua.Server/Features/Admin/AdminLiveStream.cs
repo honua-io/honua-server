@@ -9,7 +9,7 @@ using Honua.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.Admin;
 
-internal sealed class AdminLiveStream(IRealtimeFanoutProvider provider, IHostEnvironment environment,
+internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironment environment,
     MigrationState migrationState)
 {
     private const int SubscriberCapacity = 256;
@@ -24,6 +24,7 @@ internal sealed class AdminLiveStream(IRealtimeFanoutProvider provider, IHostEnv
             return;
         }
 
+        var provider = services.GetRequiredService<IRealtimeFanoutProvider>();
         // Seal the live boundary before returning status so the first client-triggered edit is replayable.
         after ??= (await provider.GetWindowAsync(RealtimeFamily.Admin, context.RequestAborted).ConfigureAwait(false)).Head;
         var channel = Channel.CreateBounded<RealtimeDelivery>(new BoundedChannelOptions(SubscriberCapacity)
