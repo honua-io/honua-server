@@ -40,11 +40,17 @@ internal sealed partial class StreamingFileImportService
         FileGdb.FileGdbReader.FileGdbLayerInfo? previewFileGdbLayer = null;
         GeoParquetScratch? geoParquetScratch = null;
         long? geoParquetTotalRows = null;
-        FileStream? fgbTempStream = null;
+        FileStream? seekablePreviewStream = null;
         string[] warnings = [];
         Stream? kmzStream = null;
         try
         {
+            if (!fileStream.CanSeek && format.Value is SupportedFileFormat.GeoJson or SupportedFileFormat.GeoServicesJson)
+            {
+                seekablePreviewStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
+                fileStream = seekablePreviewStream;
+            }
+            ImportCoordinateSystem? coordinateSystem = null;
             int? detectedSrid;
             string[] availableLayers = [];
 
@@ -60,6 +66,7 @@ internal sealed partial class StreamingFileImportService
                 availableLayers = layers.Select(layer => layer.TableName).ToArray();
                 previewGeoPackageLayer = layers[0];
                 detectedSrid = layers[0].Srid;
+                coordinateSystem = ImportCoordinateSystem.FromDetection(detectedSrid, ImportCrsProvenance.FileMetadata);
             }
             else if (format.Value == SupportedFileFormat.Shapefile)
             {
@@ -70,6 +77,7 @@ internal sealed partial class StreamingFileImportService
 
                 shapefileScratch = await PrepareShapefileScratchAsync(fileStream, fileName, cancellationToken);
                 detectedSrid = await _crsDetectionService.DetectFromShapefilePrjAsync(shapefileScratch.ShpPath, cancellationToken);
+                coordinateSystem = GetShapefileCoordinateSystem(shapefileScratch.ShpPath, detectedSrid);
             }
             else if (format.Value == SupportedFileFormat.Kml && IsKmzFileName(fileName))
             {
@@ -92,6 +100,11 @@ internal sealed partial class StreamingFileImportService
                 availableLayers = layers.Select(layer => layer.Name).ToArray();
                 previewFileGdbLayer = layers.Length > 0 ? layers[0] : null;
                 detectedSrid = await ResolveFileGdbSridAsync(layers, cancellationToken);
+                coordinateSystem = ImportCoordinateSystem.FromDetection(
+                    detectedSrid,
+                    detectedSrid.HasValue || !string.IsNullOrWhiteSpace(previewFileGdbLayer?.SpatialReferenceWkt)
+                        ? ImportCrsProvenance.FileMetadata
+                        : ImportCrsProvenance.Unknown);
 
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
                 if (layers.Length > 1)
@@ -107,6 +120,9 @@ internal sealed partial class StreamingFileImportService
                 var scratchStream = geoParquetScratch.Stream;
                 var parquetMeta = await GeoParquetReader.ExtractMetadataAsync(scratchStream, cancellationToken);
                 detectedSrid = parquetMeta.Srid;
+                coordinateSystem = ImportCoordinateSystem.FromDetection(
+                    detectedSrid,
+                    parquetMeta.Crs84Implied ? ImportCrsProvenance.FormatDefined : ImportCrsProvenance.FileMetadata);
                 warnings = parquetMeta.Warnings;
                 geoParquetTotalRows = parquetMeta.TotalRowCount;
 
@@ -124,10 +140,11 @@ internal sealed partial class StreamingFileImportService
                 // FlatGeobuf binary headers can exceed the 8 KB CRS-detection buffer when
                 // the schema has many columns. Spill to a seekable temp file so full-header
                 // CRS detection and the library's Deserialize (which requires seeking) work.
-                fgbTempStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
-                fileStream = fgbTempStream;
-                ImportLog.SpilledToTempFile(_logger, fgbTempStream.Length);
-                detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
+                seekablePreviewStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
+                fileStream = seekablePreviewStream;
+                ImportLog.SpilledToTempFile(_logger, seekablePreviewStream.Length);
+                coordinateSystem = await InspectSourceCoordinateSystemAsync(fileStream, format.Value, cancellationToken);
+                detectedSrid = coordinateSystem.DetectedSrid;
             }
             else
             {
@@ -145,22 +162,15 @@ internal sealed partial class StreamingFileImportService
                 else
                 {
                     // Detect CRS using streaming
-                    detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
+                    coordinateSystem = await InspectSourceCoordinateSystemAsync(fileStream, format.Value, cancellationToken);
+                    detectedSrid = coordinateSystem.DetectedSrid;
                 }
             }
 
             // FlatGeobuf embeds the total feature count in its binary header.
             // Read it before enumeration so the preview can report the true total
             // even when the file exceeds the sample cap.
-            int? headerFeatureCount = null;
-            if (format.Value == SupportedFileFormat.FlatGeobuf && fileStream.CanSeek)
-            {
-                // CRS detection may have advanced position past the header;
-                // reset so ReadHeaderFeatureCount reads from the magic bytes.
-                fileStream.Position = 0;
-                headerFeatureCount = FlatGeobufFormatReader.ReadHeaderFeatureCount(fileStream);
-                fileStream.Position = 0;
-            }
+            var headerFeatureCount = ReadPreviewHeaderFeatureCount(fileStream, format.Value);
 
             // Stream features but only collect up to the limit
             var features = new List<IFeature>();
@@ -213,18 +223,7 @@ internal sealed partial class StreamingFileImportService
                 }
             }
 
-            var sampleProperties = new Dictionary<string, object?>();
-            var firstFeature = features.FirstOrDefault();
-            if (firstFeature?.Attributes is not null)
-            {
-                var names = firstFeature.Attributes.GetNames();
-                var values = firstFeature.Attributes.GetValues();
-                sampleProperties = names.Zip(values).ToDictionary(
-                    pair => pair.First,
-                    pair => pair.Second is byte[] bytes
-                        ? (object?)Convert.ToBase64String(bytes)
-                        : pair.Second);
-            }
+            coordinateSystem ??= FromDetectedSrid(format.Value, detectedSrid);
 
             return new FilePreview
             {
@@ -233,7 +232,8 @@ internal sealed partial class StreamingFileImportService
                     ? (int)Math.Min(geoParquetTotalRows.Value, int.MaxValue)
                     : headerFeatureCount ?? (needsFullCount ? totalStreamedCount : features.Count),
                 DetectedSrid = detectedSrid,
-                SampleProperties = sampleProperties,
+                CoordinateSystem = coordinateSystem,
+                SampleProperties = GetPreviewSampleProperties(features.FirstOrDefault()),
                 AvailableLayers = availableLayers,
                 Warnings = warnings
             };
@@ -245,9 +245,9 @@ internal sealed partial class StreamingFileImportService
                 await kmzStream.DisposeAsync();
             }
 
-            if (fgbTempStream != null)
+            if (seekablePreviewStream != null)
             {
-                await fgbTempStream.DisposeAsync();
+                await seekablePreviewStream.DisposeAsync();
             }
 
             CleanupShapefileScratch(shapefileScratch);
@@ -256,5 +256,33 @@ internal sealed partial class StreamingFileImportService
             CleanupFileGdbScratch(fileGdbScratch);
             CleanupGeoParquetScratch(geoParquetScratch);
         }
+    }
+
+    private static int? ReadPreviewHeaderFeatureCount(Stream stream, SupportedFileFormat format)
+    {
+        if (format != SupportedFileFormat.FlatGeobuf || !stream.CanSeek)
+        {
+            return null;
+        }
+        stream.Position = 0;
+        var count = FlatGeobufFormatReader.ReadHeaderFeatureCount(stream);
+        stream.Position = 0;
+        return count;
+    }
+
+    private static Dictionary<string, object?> GetPreviewSampleProperties(IFeature? firstFeature)
+    {
+        var sampleProperties = new Dictionary<string, object?>();
+        if (firstFeature?.Attributes is not null)
+        {
+            var names = firstFeature.Attributes.GetNames();
+            var values = firstFeature.Attributes.GetValues();
+            sampleProperties = names.Zip(values).ToDictionary(
+                pair => pair.First,
+                pair => pair.Second is byte[] bytes
+                    ? (object?)Convert.ToBase64String(bytes)
+                    : pair.Second);
+        }
+        return sampleProperties;
     }
 }
