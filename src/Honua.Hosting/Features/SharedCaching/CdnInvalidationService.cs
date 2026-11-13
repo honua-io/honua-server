@@ -44,7 +44,7 @@ internal sealed partial class CdnInvalidationService(
     private readonly Lock _gate = new();
     private readonly HashSet<string> _pendingEditPaths = new(StringComparer.Ordinal);
     private DateTimeOffset _lastEditInvalidation = DateTimeOffset.MinValue;
-    private bool _windowCloseScheduled;
+    private DateTimeOffset? _windowClosesAt;
 
     // The same owner cannot take a lease it still holds, so a second purge of an address from this task also waits for the window.
     private readonly string _leaseOwner = $"{Environment.MachineName}/{Guid.NewGuid():N}";
@@ -73,30 +73,31 @@ internal sealed partial class CdnInvalidationService(
             return Task.CompletedTask;
         }
 
-        var window = CurrentCoalescingWindow();
-        TimeSpan untilWindowCloses;
+        DateTimeOffset? schedule = null;
         lock (_gate)
         {
-            untilWindowCloses = _lastEditInvalidation + window - timeProvider.GetUtcNow();
-            if (_windowCloseScheduled || untilWindowCloses > TimeSpan.Zero)
+            var now = timeProvider.GetUtcNow();
+            var due = _lastEditInvalidation + CurrentCoalescingWindow();
+            if (_windowClosesAt.HasValue || due > now)
             {
                 _pendingEditPaths.UnionWith(paths);
-                if (_windowCloseScheduled)
+                due = due > now ? due : now;
+                if (_windowClosesAt is { } scheduled && scheduled <= due)
                 {
                     return Task.CompletedTask;
                 }
 
-                _windowCloseScheduled = true;
+                _windowClosesAt = schedule = due;
             }
             else
             {
-                _lastEditInvalidation = timeProvider.GetUtcNow();
+                _lastEditInvalidation = now;
             }
         }
 
-        if (untilWindowCloses > TimeSpan.Zero)
+        if (schedule is { } windowClosesAt)
         {
-            _ = InvalidatePendingWhenWindowClosesAsync(untilWindowCloses);
+            _ = InvalidatePendingWhenWindowClosesAsync(windowClosesAt);
             return Task.CompletedTask;
         }
 
@@ -112,15 +113,25 @@ internal sealed partial class CdnInvalidationService(
         }
     }
 
-    private async Task InvalidatePendingWhenWindowClosesAsync(TimeSpan untilWindowCloses)
+    private async Task InvalidatePendingWhenWindowClosesAsync(DateTimeOffset windowClosesAt)
     {
-        await Task.Delay(untilWindowCloses, timeProvider).ConfigureAwait(false);
+        var delay = windowClosesAt - timeProvider.GetUtcNow();
+        if (delay > TimeSpan.Zero)
+        {
+            await Task.Delay(delay, timeProvider).ConfigureAwait(false);
+        }
+
         string[] paths;
         lock (_gate)
         {
+            if (_windowClosesAt != windowClosesAt)
+            {
+                return;
+            }
+
             paths = [.. _pendingEditPaths];
             _pendingEditPaths.Clear();
-            _windowCloseScheduled = false;
+            _windowClosesAt = null;
             _lastEditInvalidation = timeProvider.GetUtcNow();
         }
 
@@ -172,19 +183,20 @@ internal sealed partial class CdnInvalidationService(
 
     private void DeferToNextWindow(IEnumerable<string> paths, TimeSpan delay)
     {
+        var due = timeProvider.GetUtcNow() + delay;
         lock (_gate)
         {
             _pendingEditPaths.UnionWith(paths);
-            if (_windowCloseScheduled)
+            if (_windowClosesAt is { } scheduled && scheduled <= due)
             {
                 return;
             }
 
-            _windowCloseScheduled = true;
+            _windowClosesAt = due;
             _lastEditInvalidation = timeProvider.GetUtcNow();
         }
 
-        _ = InvalidatePendingWhenWindowClosesAsync(delay);
+        _ = InvalidatePendingWhenWindowClosesAsync(due);
     }
 
     // One lease per address in the shared database: whichever task takes it sends the purge, and nobody else does until it expires.
@@ -212,7 +224,9 @@ internal sealed partial class CdnInvalidationService(
     {
         try
         {
-            return await leaseStore!.TryAcquireAsync(new LeaseClaim(LeaseKeyPrefix + path, _leaseOwner), lease, cancellationToken)
+            // A normal-window lease must not delay an emergency purge; emergency tasks still coalesce together.
+            var prefix = lease == EmergencyCoalescingWindow - LeaseMargin ? LeaseKeyPrefix + "emergency:" : LeaseKeyPrefix;
+            return await leaseStore!.TryAcquireAsync(new LeaseClaim(prefix + path, _leaseOwner), lease, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)

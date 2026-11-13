@@ -26,6 +26,7 @@ namespace Honua.Server.Features.Studio.Models;
 [JsonSerializable(typeof(ApiResponse<StudioDeliverableExportResponse>))]
 [JsonSerializable(typeof(ApiResponse<StudioPublishedArtifact>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
+[JsonSerializable(typeof(ApiResponse<StudioSessionBootstrap>))]
 [JsonSerializable(typeof(ApiResponse<OperationHandle>))]
 [JsonSerializable(typeof(CreateStudioPackageDraftRequest))]
 [JsonSerializable(typeof(UpdateStudioPackageDraftRequest))]
@@ -47,6 +48,7 @@ namespace Honua.Server.Features.Studio.Models;
 [JsonSerializable(typeof(StudioPublicationRequest))]
 [JsonSerializable(typeof(StudioRollbackRequest))]
 [JsonSerializable(typeof(StudioDeliverableExportResponse))]
+[JsonSerializable(typeof(StudioSessionBootstrap))]
 internal sealed partial class StudioApiJsonContext : JsonSerializerContext
 {
 }
