@@ -34,6 +34,27 @@ public sealed partial class CdnCacheTagTests
         _cloudFront.WildcardPathsInProgress.Should().Be(0);
     }
 
+    [UnitTheory]
+    [InlineData("/stac/collections")]
+    [InlineData("/stac/collections/parcels")]
+    [InlineData("/STAC/collections/parcels")]
+    [InlineData("/ogc/collections/parcels/items")]
+    public async Task InvalidateEditedStorageLayerAsync_PublicCollectionResponse_CarriesATagTheEditPurges(string path)
+    {
+        var context = SharedCacheTestContexts.GrantedTile(new SharedCacheOptions { CacheTagHeader = TagHeader });
+        context.Request.Path = path;
+        SharedCacheResponse.Apply(context);
+        SharedCacheGuard.Apply(context);
+        var tags = context.Response.Headers[TagHeader].ToString().Split(',');
+        tags.Should().ContainSingle();
+        var invalidation = Invalidation(Service(new SharedLeases(_time)), PublishedStorageLayers());
+
+        await invalidation.InvalidateEditedStorageLayerAsync(741, CancellationToken.None);
+
+        _cloudFront.Accepted.SelectMany(paths => paths).Should().Contain(CdnCacheTags.InvalidationPrefix + tags.Single());
+        _cloudFront.WildcardPathsInProgress.Should().Be(0);
+    }
+
     [UnitTest]
     public async Task InvalidateEditedStorageLayerAsync_StorageHandleDiffersFromPublishedIndices_PurgesBoundServicesAndAliases()
     {
@@ -42,7 +63,7 @@ public sealed partial class CdnCacheTagTests
         await invalidation.InvalidateEditedStorageLayerAsync(741, CancellationToken.None);
 
         _cloudFront.Accepted.Should().ContainSingle().Which.Should().BeEquivalentTo(
-            "#honua-scope:ogc", "#honua-scope:tiles/741", "#honua-scope:tiles/3", "#honua-scope:tiles/9",
+            "#honua-scope:ogc", "#honua-scope:stac", "#honua-scope:tiles/741", "#honua-scope:tiles/3", "#honua-scope:tiles/9",
             "#honua-scope:rest/services/parcels", "#honua-scope:rest/services/parcels-public",
             "#honua-scope:rest/services/zoning");
         _cloudFront.WildcardPathsInProgress.Should().Be(0);
@@ -57,7 +78,7 @@ public sealed partial class CdnCacheTagTests
         await invalidation.InvalidateEditedStorageLayerAsync(3, CancellationToken.None);
 
         _cloudFront.Accepted.Should().ContainSingle().Which.Should().BeEquivalentTo(
-            "#honua-scope:ogc", "#honua-scope:tiles/3",
+            "#honua-scope:ogc", "#honua-scope:stac", "#honua-scope:tiles/3",
             "#honua-scope:rest/services/parcels", "#honua-scope:rest/services/parcels-public");
     }
 
@@ -74,7 +95,7 @@ public sealed partial class CdnCacheTagTests
         _time.Advance(CdnInvalidationService.CoalescingWindow);
         await _cloudFront.AcceptedCountReaches(1);
         _cloudFront.Accepted.SelectMany(paths => paths).Should().BeEquivalentTo(
-            "#honua-scope:ogc", "#honua-scope:tiles/3",
+            "#honua-scope:ogc", "#honua-scope:stac", "#honua-scope:tiles/3",
             "#honua-scope:rest/services/parcels", "#honua-scope:rest/services/parcels-public");
     }
 

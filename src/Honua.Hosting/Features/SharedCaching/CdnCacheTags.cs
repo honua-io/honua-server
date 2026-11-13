@@ -67,9 +67,15 @@ internal static class CdnCacheTags
                 .Select(service => InvalidationPrefix + ServicesScope(service)),
         ];
 
+    // Storage edits also change the temporal extents in STAC collection documents.
+    internal static string[] InvalidationsForEditedStorageLayer(int layerId)
+        => [.. InvalidationsForEditedLayer(layerId, []), InvalidationPrefix + StacScope];
+
     internal static string[] InvalidationsForOgcSurface => [InvalidationPrefix + OgcScope];
 
     internal static bool IsTagInvalidation(string item) => item.StartsWith(InvalidationPrefix, StringComparison.Ordinal);
+
+    private const string StacScope = Prefix + "scope:stac";
 
     private const string OgcScope = Prefix + "scope:ogc";
 
@@ -90,6 +96,7 @@ internal static class CdnCacheTags
 
         return segments switch
         {
+            [var first, ..] when first.Equals("stac", StringComparison.OrdinalIgnoreCase) => StacScope,
             [var first, ..] when first.Equals("ogc", StringComparison.OrdinalIgnoreCase) => OgcScope,
             [var first, var layer, ..] when first.Equals("tiles", StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(layer, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)

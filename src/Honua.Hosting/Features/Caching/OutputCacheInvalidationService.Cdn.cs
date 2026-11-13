@@ -52,7 +52,7 @@ internal sealed partial class OutputCacheInvalidationService
         {
             // Storage edits have already committed. Resolve published names without the expired request.
             _cdnInvalidation.InvalidateWithNextWindow(_cdnInvalidation.TagsEnabled
-                ? CdnCacheTags.InvalidationsForEditedLayer(storageLayerId, [])
+                ? CdnCacheTags.InvalidationsForEditedStorageLayer(storageLayerId)
                 : CdnPaths.Everything);
             _ = InvalidateResolvedStorageWithNextWindowAsync(_cdnInvalidation, storageLayerId);
             throw;
@@ -95,7 +95,7 @@ internal sealed partial class OutputCacheInvalidationService
             return CdnPaths.Everything;
         }
 
-        var paths = new HashSet<string>(CdnCacheTags.InvalidationsForEditedLayer(storageLayerId, []), StringComparer.Ordinal);
+        var paths = new HashSet<string>(CdnCacheTags.InvalidationsForEditedStorageLayer(storageLayerId), StringComparer.Ordinal);
         foreach (var publication in snapshot.Graph.Publications.Where(publication =>
             snapshot.IsRoutable(publication)
             && snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication)) == storageLayerId))
