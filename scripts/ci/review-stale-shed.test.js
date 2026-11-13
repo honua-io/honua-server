@@ -211,15 +211,36 @@ test('the bridge admits a live review on the current head', async () => {
   assert.equal(result.failure, null);
 });
 
-test('review helpers and trusted attestation serialize without cancelling queued runs', () => {
+test('review helpers cancel superseded events per PR and skip draft payloads', () => {
   const gate = fs.readFileSync(path.join(WORKFLOWS, 'review-gate.yml'), 'utf8');
   const bridge = fs.readFileSync(path.join(WORKFLOWS, 'review-event-bridge.yml'), 'utf8');
-  // Superseded work reaches its neutral staleness check after queueing.
-  assert.match(gate, /group: review-resolve-pr-\$\{\{[\s\S]*?\n\s*cancel-in-progress: false\n\s*queue: max/);
-  assert.match(bridge, /group: review-event-bridge-pr-\$\{\{[^\n]*\n\s*cancel-in-progress: false\n\s*queue: max/);
-  // The trusted attestation must stay serialized and uncancellable: it is
-  // interrupted between accepting a rerun and recording the result otherwise.
-  assert.match(gate, /group: review-gate-\$\{\{ needs\.resolve\.outputs\.pr \}\}[\s\S]*?\n\s*cancel-in-progress: false/);
+  assert.match(gate, /group: review-resolve-pr-\$\{\{[^\n]*\n\s*cancel-in-progress: true/);
+  assert.match(bridge, /group: review-event-bridge-pr-\$\{\{[^\n]*\n\s*cancel-in-progress: true/);
+  assert.match(gate, /group: review-gate-\$\{\{ needs\.resolve\.outputs\.pr \}\}[^\n]*[\s\S]*?\n\s*cancel-in-progress: true/);
+  assert.doesNotMatch(gate + bridge, /queue: max/);
+  assert.match(gate, /!github\.event\.pull_request \|\| !github\.event\.pull_request\.draft/);
+  assert.match(bridge, /if: .*&& !github\.event\.pull_request\.draft/);
+  // CodeQL already implements the same admission policy, including ready events.
+  const codeql = fs.readFileSync(path.join(WORKFLOWS, 'codeql.yml'), 'utf8');
+  assert.match(codeql, /types: \[.*ready_for_review.*\]/);
+  assert.match(codeql, /group: codeql-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n\s*cancel-in-progress: true/);
+  assert.match(codeql, /github\.event_name != 'pull_request' \|\| !github\.event\.pull_request\.draft/);
+});
+
+test('review helpers shed live drafts even for payloads without a draft flag', async () => {
+  for (const [script, payload, env] of [
+    [GATE_SHED, { issue: { number: 42 } }, {}],
+    [GATE_SHED, { workflow_run: { head_sha: 'a'.repeat(40), pull_requests: [] } }, {}],
+    [BRIDGE_SHED, { pull_request: { number: 42 }, review: { commit_id: 'a'.repeat(40) } }, {}],
+    [ATTEST_SHED, {}, { PR: '42' }],
+  ]) {
+    const result = await runShed(script, {
+      payload, env, pull: { ...OPEN_PR, draft: true }, associated: [OPEN_PR],
+    });
+    assert.equal(result.superseded, true);
+    assert.equal(result.failure, null);
+    assert.match(result.notices.join('\n'), /PR #42 is a draft/);
+  }
 });
 
 // -- The second staleness window: `attest` queues, and the subject moves. ----
