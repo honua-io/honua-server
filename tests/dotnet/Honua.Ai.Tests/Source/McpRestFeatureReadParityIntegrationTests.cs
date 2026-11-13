@@ -347,7 +347,7 @@ public sealed class McpRestFeatureReadParityIntegrationTests : IAsyncLifetime
             ? string.Empty
             : $",\"where\":{JsonSerializer.Serialize(where)}";
         var arguments = "{\"serviceId\":\"" + ServiceId
-            + "\",\"layerId\":" + layerId.ToString(CultureInfo.InvariantCulture)
+            + "\",\"serviceLayerIndex\":" + layerId.ToString(CultureInfo.InvariantCulture)
             + ",\"limit\":1000,\"returnCountOnly\":" + (returnCountOnly ? "true" : "false")
             + whereArgument + "}";
         var body = "{\"jsonrpc\":\"2.0\",\"id\":\"feature-read-parity\",\"method\":\"tools/call\","
