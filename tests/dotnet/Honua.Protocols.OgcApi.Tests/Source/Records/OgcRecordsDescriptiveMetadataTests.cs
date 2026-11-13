@@ -110,7 +110,7 @@ public sealed class OgcRecordsDescriptiveMetadataTests : IAsyncLifetime
                 Metadata = resource.Metadata with { Links = source == "own" && kind == "dataset" ? links : [], License = null },
             }).ToArray(),
         });
-        var serviceName = _fixture.GetCurrentV2GraphSnapshot().Graph.Services.First().Metadata.Name;
+        var serviceName = _fixture.GetCurrentV2GraphSnapshot().Graph.Services[0].Metadata.Name;
         var recordId = Uri.EscapeDataString(kind == "service" ? $"service:{serviceName}" : $"layer:pub-layer-{WebAppFixture.TestLayerId}");
 
         using var response = await _fixture.Client.GetAsync($"/ogc/records/collections/honua-catalog/items/{recordId}");

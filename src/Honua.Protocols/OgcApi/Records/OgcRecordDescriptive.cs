@@ -22,6 +22,19 @@ internal static class OgcRecordDescriptive
         Contacts = Contacts(metadata),
     };
 
+    public static IEnumerable<Link> GovernanceLinks(DescriptiveMetadata metadata)
+        => metadata.Links.Where(link =>
+                string.Equals(link.Rel, RelationTypes.License, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(link.Rel, RelationTypes.DescribedBy, StringComparison.OrdinalIgnoreCase))
+            .Select(link => new Link
+            {
+                Href = link.Href,
+                Rel = link.Rel,
+                Type = link.Type,
+                Title = link.Title,
+                HrefLang = link.Hreflang
+            });
+
     private static ImmutableArray<OgcRecordContact>? Contacts(DescriptiveMetadata metadata)
     {
         var contacts = metadata.Contacts.Select(contact => new OgcRecordContact

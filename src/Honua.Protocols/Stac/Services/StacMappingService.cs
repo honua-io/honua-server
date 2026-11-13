@@ -156,7 +156,9 @@ internal sealed class StacMappingService
         }
         foreach (var contact in metadata.Contacts)
         {
-            var name = contact.Name ?? contact.Organization ?? ResolveContactProviderName(contact.Url, contact.Email);
+            var name = !string.IsNullOrWhiteSpace(contact.Name) ? contact.Name.Trim()
+                : !string.IsNullOrWhiteSpace(contact.Organization) ? contact.Organization.Trim()
+                : ResolveContactProviderName(contact.Url, contact.Email);
             if (string.IsNullOrWhiteSpace(name))
             {
                 continue;

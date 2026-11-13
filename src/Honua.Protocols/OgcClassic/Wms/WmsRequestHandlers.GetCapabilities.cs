@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -515,8 +516,9 @@ internal static partial class WmsRequestHandlers
             AppendWmsCiteDimensions(sb, layer, "        ", isWms111);
             AppendWmsTemporalDimension(sb, layer, "        ", isWms111, prepared.TemporalRanges);
 
-            var metadataLink = layer.Resource.Metadata.Links.FirstOrDefault(link =>
-                string.Equals(link.Rel, "metadata", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(link.Href));
+            var governance = DescriptiveMetadataResolver.GovernanceFor(layer.Snapshot.Graph, layer.Resource, service);
+            var metadataLink = governance.Links.FirstOrDefault(link =>
+                string.Equals(link.Rel, "describedby", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(link.Href));
             if (metadataLink is not null)
             {
                 sb.AppendLine("        <MetadataURL type=\"TC211\">");

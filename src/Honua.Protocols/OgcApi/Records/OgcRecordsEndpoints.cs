@@ -507,13 +507,15 @@ internal static class OgcRecordsEndpoints
             .Order(StringComparer.Ordinal)
             .ToImmutableArray();
 
+        var descriptive = DescriptiveMetadataResolver.ForService(snapshot.Graph, service);
+        links.AddRange(OgcRecordDescriptive.GovernanceLinks(descriptive));
         var properties = OgcRecordDescriptive.Apply(new OgcRecordProperties
         {
             Type = "service",
             ResourceType = "Service",
             ExternalIds = ImmutableArray.Create(serviceMetadata.Name),
             LayerIds = layerIds
-        }, DescriptiveMetadataResolver.ForService(snapshot.Graph, service));
+        }, descriptive);
 
         return new CatalogRecord(
             new OgcRecordFeature
@@ -567,13 +569,15 @@ internal static class OgcRecordsEndpoints
             links.Add(Link.Create($"{baseUrl}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, featureServerService)}/FeatureServer/{serviceLayerIndex}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
         }
 
+        var descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, service, publication));
+        links.AddRange(OgcRecordDescriptive.GovernanceLinks(descriptive));
         var properties = OgcRecordDescriptive.Apply(new OgcRecordProperties
         {
             Type = "dataset",
             ResourceType = "Layer",
             GeometryType = resource.ReadGeometryType().ToString(),
             ExternalIds = ImmutableArray.Create(publicationId, resource.Metadata.Name)
-        }, DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, service, publication)));
+        }, descriptive);
 
         return new CatalogRecord(
             new OgcRecordFeature
