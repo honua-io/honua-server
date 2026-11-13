@@ -21,9 +21,11 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 /// <summary>Exercises routing GP aliases through the real durable worker and canonical provider.</summary>
+// The class fixture keeps the reference-counted PostgreSQL infrastructure alive between cases;
+// each case owns its host, schema, provider, and worker.
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
-public sealed class RoutingAsyncWebToolTests
+public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
 {
     private const string ServiceId = WebAppFixture.TestServiceId;
     private const string FirstPoint = """
