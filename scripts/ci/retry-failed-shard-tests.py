@@ -15,38 +15,49 @@ from flake_quarantine import exclude_filter, load_snapshot, merge_retry, read_ca
 from shard_processes import descendant_pids
 
 
-def call_test(command):
-    # Keep the inherited group so the shared shard deadline can kill every test.
-    with subprocess.Popen(command) as child:
-        cancellation_signal = None
+def terminate_test(child, signum):
+    if os.name != 'posix':
+        if child.poll() is None:
+            child.send_signal(signum)
+        return
+    # Descendants can leave the timeout group. Snapshot them before TERM
+    # so reparented grandchildren remain in the cleanup set.
+    descendants = descendant_pids(child.pid)
+    for pid in descendants:
+        with suppress(ProcessLookupError):
+            os.kill(pid, signum)
+    with suppress(subprocess.TimeoutExpired):
+        child.wait(timeout=0.5)
+    for pid in descendants:
+        with suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
 
-        def forward(signum, _frame):
-            nonlocal cancellation_signal
-            if cancellation_signal is not None:
-                return
+
+def call_test(command):
+    child = None
+    cancellation_signal = None
+    cleanup_started = False
+
+    def forward(signum, _frame):
+        nonlocal cancellation_signal, cleanup_started
+        if cancellation_signal is None:
             cancellation_signal = signum
-            if os.name != 'posix':
-                if child.poll() is None:
-                    child.send_signal(signum)
-                return
-            # Descendants can leave the timeout group. Snapshot them before TERM
-            # so reparented grandchildren remain in the cleanup set.
-            descendants = descendant_pids(child.pid)
-            for pid in descendants:
-                with suppress(ProcessLookupError):
-                    os.kill(pid, signum)
-            with suppress(subprocess.TimeoutExpired):
-                child.wait(timeout=0.5)
-            for pid in descendants:
-                with suppress(ProcessLookupError):
-                    os.kill(pid, signal.SIGKILL)
-        previous = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
-        try:
+        if child is None or cleanup_started:
+            return
+        cleanup_started = True
+        terminate_test(child, cancellation_signal)
+
+    previous = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
+    try:
+        # Keep the inherited group and capture cancellation even while Popen is starting.
+        with subprocess.Popen(command) as child:
+            if cancellation_signal is not None:
+                forward(cancellation_signal, None)
             code = child.wait()
             return -cancellation_signal if cancellation_signal is not None else code
-        finally:
-            for sig, handler in previous.items():
-                signal.signal(sig, handler)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
 
 
 def replace_option(command, option, value):

@@ -1,0 +1,3 @@
+export const CLIENT_SOURCE = '372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4';
+export const SDK_VERSION = '1.32.1';
+export const CLIENT_LOCK_SHA256 = '5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f';
