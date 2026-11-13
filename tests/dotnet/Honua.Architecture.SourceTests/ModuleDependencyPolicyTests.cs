@@ -6,54 +6,9 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces the canonical Module Dependency Policy
-/// (<c>docs/internal/contributor/adr/0047-module-dependency-policy.md</c>): every
-/// <c>&lt;ProjectReference&gt;</c> declared by a runtime csproj must point at a
-/// provider that the consumer's matrix row permits.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The matrix in ADR-0047 is the single source of truth for module placement.
-/// This test parses every <c>.csproj</c> under <c>src/</c>, <c>tests/</c>,
-/// and <c>benchmarks/</c>, classifies it into one of the
-/// matrix roles by name pattern, and then walks every <c>ProjectReference</c>
-/// to verify the <c>(consumer-role, provider-role)</c> cell is allowed.
-/// </para>
-///
-/// <para>
-/// Unclassified csprojs (benchmarks, tests, the test-kit) fall
-/// through to a default policy that permits any reference. Tooling assemblies
-/// are not part of the runtime topology and are governed by their own
-/// hygiene tests; this test only guards the runtime matrix.
-/// </para>
-///
-/// <para>
-/// Pre-existing matrix violations are tolerated through the
-/// <see cref="_techDebtAllowances"/> ratchet, identical in shape to the
-/// cross-protocol ratchet in <see cref="CrossProtocolIsolationTests"/>: each
-/// entry pins a <c>(consumer-role, provider-role, MaxCount)</c> triple and may
-/// only shrink. When a violation is paid down, decrement the cap (or delete
-/// the entry); the test fails if the cap is loose.
-/// </para>
-///
-/// <para>
-/// <strong>Editing protocol:</strong> the matrix in ADR-0047 and the
-/// <see cref="_allowedCells"/> set in this file must be edited together. A PR
-/// that touches only the test silently drifts from policy; a PR that touches
-/// only the ADR will fail this test. The two artefacts are linked in writing,
-/// in code, and in the diff.
-/// </para>
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class ModuleDependencyPolicyTests
 {
-    /// <summary>
-    /// Canonical module roles from ADR-0047. <see cref="ModuleRole.Unclassified"/>
-    /// is the catch-all for tooling (benchmarks, tests, test-kit). The
-    /// default-policy branch treats <see cref="ModuleRole.Unclassified"/> consumers
-    /// as permitted to reference anything.
-    /// </summary>
     private enum ModuleRole
     {
         Unclassified,
