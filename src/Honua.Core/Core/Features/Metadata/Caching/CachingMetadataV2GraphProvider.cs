@@ -15,6 +15,7 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
     private readonly Func<CancellationToken, ValueTask<MetadataV2GraphSnapshot>> _loadCurrent;
     private readonly IMetadataV2GraphRevisionProbe? _revisionProbe;
     private MetadataV2GraphSnapshot? _validated;
+    private readonly IConfigurationGenerationSource? _generationSource;
 
     public CachingMetadataV2GraphProvider(
         IMetadataV2GraphProvider inner,
@@ -55,9 +56,11 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
         string environment,
         IServiceScopeFactory loadScopeFactory,
         Func<IServiceProvider, IMetadataV2GraphProvider> resolveLoader,
-        IMetadataV2GraphRevisionProbe? revisionProbe)
+        IMetadataV2GraphRevisionProbe? revisionProbe,
+        IConfigurationGenerationSource? generationSource = null)
         : this(inner, cache, environment, loadScopeFactory, resolveLoader)
     {
+        _generationSource = generationSource;
         _revisionProbe = revisionProbe;
     }
 
@@ -71,23 +74,27 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
         _revisionProbe = revisionProbe;
     }
 
-    public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-        => _revisionProbe is null || !_cache.IsEnabled
-            ? _cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken)
-            : GetRevalidatedAsync(_revisionProbe, cancellationToken);
+    public async ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+    {
+        var cache = _generationSource is null ? _cache : _cache.ForGeneration(_environment,
+            await _generationSource.GetGenerationAsync(cancellationToken).ConfigureAwait(false));
+        return _revisionProbe is null || !cache.IsEnabled
+            ? await cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken).ConfigureAwait(false)
+            : await GetRevalidatedAsync(cache, _revisionProbe, cancellationToken).ConfigureAwait(false);
+    }
 
     // The probe, not the snapshot lifetime, decides when the catalog is read again: a probe that finds the cached
     // revision still current renews it, so the document is reloaded and parsed only after a revision change.
     private async ValueTask<MetadataV2GraphSnapshot> GetRevalidatedAsync(
-        IMetadataV2GraphRevisionProbe probe,
+        MetadataV2GraphSnapshotCache cache, IMetadataV2GraphRevisionProbe probe,
         CancellationToken cancellationToken)
     {
-        if (_cache.TryGetExpired(_environment, out var expired))
+        if (cache.TryGetExpired(_environment, out var expired))
         {
-            await RenewIfCurrentAsync(probe, expired, cancellationToken).ConfigureAwait(false);
+            await RenewIfCurrentAsync(cache, probe, expired, cancellationToken).ConfigureAwait(false);
         }
 
-        var snapshot = await _cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken).ConfigureAwait(false);
+        var snapshot = await cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken).ConfigureAwait(false);
 
         // One probe per request scope: repeat reads in the same request reuse the validated
         // snapshot. A same-scope write invalidates the cache and the next read returns a different
@@ -102,12 +109,12 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
         {
             // Another instance activated a newer revision. Drop the superseded snapshot (only if
             // it is still the cached one) and reload once; a concurrent reload is shared.
-            _cache.InvalidateIfCurrent(_environment, snapshot.Etag);
-            snapshot = await _cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken).ConfigureAwait(false);
+            cache.InvalidateIfCurrent(_environment, snapshot.Etag);
+            snapshot = await cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken).ConfigureAwait(false);
         }
         else if (currentEtag is not null)
         {
-            _cache.Renew(_environment, currentEtag);
+            cache.Renew(_environment, currentEtag);
         }
 
         _validated = snapshot;
@@ -117,14 +124,14 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
     // A probe that is not due, or a catalog with no activated revision, answers null: the expired snapshot is then
     // reloaded as before.
     private async ValueTask RenewIfCurrentAsync(
-        IMetadataV2GraphRevisionProbe probe,
+        MetadataV2GraphSnapshotCache cache, IMetadataV2GraphRevisionProbe probe,
         MetadataV2GraphSnapshot expired,
         CancellationToken cancellationToken)
     {
         var currentEtag = await probe.GetCurrentEtagAsync(cancellationToken).ConfigureAwait(false);
         if (currentEtag is not null && string.Equals(currentEtag, expired.Etag, StringComparison.Ordinal))
         {
-            _cache.Renew(_environment, currentEtag);
+            cache.Renew(_environment, currentEtag);
             _validated = expired;
         }
     }

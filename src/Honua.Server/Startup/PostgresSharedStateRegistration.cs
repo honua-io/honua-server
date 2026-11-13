@@ -31,6 +31,7 @@ internal static class PostgresSharedStateRegistration
             .Bind(configuration.GetSection(ControlPlaneRetentionOptions.SectionName))
             .ValidateDataAnnotations();
         services.AddOptions<JobStoreOptions>();
+        services.AddPostgresConfigurationStores();
         services.TryAddSingleton(provider => new JobStoreDatabase(
             provider.GetRequiredService<NpgsqlDataSource>(),
             configuration[SystemSchemaKey]));

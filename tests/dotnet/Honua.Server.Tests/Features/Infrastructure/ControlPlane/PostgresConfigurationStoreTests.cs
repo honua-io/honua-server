@@ -2,16 +2,16 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Identity.Abstractions;
+using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Core.Features.Identity.Domain;
-using Honua.Core.Features.RateLimiting.Abstractions;
+
 using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Infrastructure.Authentication.ClientCertificates;
-using Honua.Server.Features.Admin.Services;
+using Honua.Infrastructure.Authentication;
+using Npgsql;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -76,13 +76,77 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         (await CreateRateStore(harness).GetPolicyAsync(policy.PolicyId))!.RequestsPerWindow.Should().Be(1);
     }
 
+    [IntegrationTest]
+    public async Task RefreshAsync_OnTaskB_AppliesTaskAIdentityChangesBeforeAuthentication()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var registry = new OidcRuntimeProviderRegistry();
+        var refresh = new ConfigurationRuntimeRefresh(harness.CreateConfigurationDocuments(), registry);
+        var provider = Provider(true);
+        await harness.CreateOidcStore().CreateProviderAsync(provider);
+        await refresh.RefreshAsync(CancellationToken.None);
+        registry.Current.Should().ContainSingle().Which.Enabled.Should().BeTrue();
+
+        await harness.CreateOidcStore().UpdateProviderAsync(Provider(false, provider.ProviderId));
+        await refresh.RefreshAsync(CancellationToken.None);
+
+        registry.Current.Should().ContainSingle().Which.Enabled.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    public async Task ConcurrentRevocations_FromDifferentTasks_PreserveEveryMutation()
+    {
+        await using var harness = await CreateHarnessAsync();
+        await harness.CreateTrustStore().UpsertProfileAsync(new ClientCertificateTrustProfile
+        {
+            ProfileId = "concurrent", EnvironmentId = "production", DisplayName = "Concurrent"
+        });
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(index => harness.CreateTrustStore().AddRevocationAsync("concurrent", new()
+        {
+            RevocationId = $"key-{index}", Reason = "Rotated", Actor = "operator", FingerprintSha256 = $"fingerprint-{index}"
+        })));
+        (await harness.CreateTrustStore().GetProfileAsync("concurrent"))!.Revocations.Should().HaveCount(8);
+    }
+
+    [IntegrationTest]
+    public async Task ConfigurationWrites_AdvanceOneGeneration_AndProtectClientSecrets()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var documents = harness.CreateConfigurationDocuments();
+        var initial = await documents.GetGenerationAsync(CancellationToken.None);
+        var provider = Provider(true);
+        await harness.CreateOidcStore().CreateProviderAsync(provider);
+        (await documents.GetGenerationAsync(CancellationToken.None)).Should().Be(initial + 1);
+        await harness.CreateRateStore().CreatePolicyAsync(Policy(10));
+        (await documents.GetGenerationAsync(CancellationToken.None)).Should().Be(initial + 2);
+        var payload = await harness.ScalarAsync<byte[]>($"SELECT payload FROM {harness.Table("configuration_documents")} WHERE kind = 'oidc-provider'");
+        System.Text.Encoding.UTF8.GetString(payload!).Should().NotContain(provider.ClientSecret!);
+    }
+
+    [IntegrationTest]
+    public async Task RolledBackMutation_DoesNotAdvanceGenerationOrPersistPolicy()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var initial = await harness.CreateConfigurationDocuments().GetGenerationAsync(CancellationToken.None);
+        await using var connection = await harness.DataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using (var command = new NpgsqlCommand($"INSERT INTO {harness.Table("configuration_documents")} (kind, key, payload) VALUES ('test', 'rollback', @payload)", connection, transaction))
+        {
+            command.Parameters.AddWithValue("payload", new byte[] { 1, 2, 3 });
+            await command.ExecuteNonQueryAsync();
+        }
+        await transaction.RollbackAsync();
+        (await harness.CreateConfigurationDocuments().GetGenerationAsync(CancellationToken.None)).Should().Be(initial);
+        (await harness.ScalarAsync<long>($"SELECT count(*) FROM {harness.Table("configuration_documents")}")).Should().Be(0);
+    }
+
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
         => ControlPlaneStateHarness.CreateAsync(database, nameof(PostgresConfigurationStoreTests));
 
-    private static IOidcProviderStore CreateOidcStore(ControlPlaneStateHarness harness) => new InMemoryOidcProviderStore();
-    private static IRateLimitPolicyStore CreateRateStore(ControlPlaneStateHarness harness) => new InMemoryRateLimitPolicyStore();
-    private static IClientCertificateTrustStore CreateTrustStore(ControlPlaneStateHarness harness)
-        => new InMemoryClientCertificateTrustStore(Options.Create(new ClientCertificateAuthenticationOptions()));
+    private static PostgresOidcProviderStore CreateOidcStore(ControlPlaneStateHarness harness) => harness.CreateOidcStore();
+    private static PostgresRateLimitPolicyStore CreateRateStore(ControlPlaneStateHarness harness) => harness.CreateRateStore();
+    private static PostgresClientCertificateTrustStore CreateTrustStore(ControlPlaneStateHarness harness)
+        => harness.CreateTrustStore();
 
     private static OidcProviderConfiguration Provider(bool enabled, Guid? id = null) => new()
     {

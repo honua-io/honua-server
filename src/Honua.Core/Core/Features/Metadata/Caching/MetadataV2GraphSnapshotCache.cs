@@ -13,12 +13,29 @@ public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalida
 {
     private readonly ConcurrentDictionary<string, CacheSlot> _slots = new(StringComparer.Ordinal);
     private readonly IOptions<CacheOptions> _options;
+    private readonly object _generationGate = new();
+    private readonly Dictionary<string, GenerationPartition> _generations = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
 
     public MetadataV2GraphSnapshotCache(IOptions<CacheOptions> options, TimeProvider? timeProvider = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    // Only the newest partition remains reachable; in-flight readers may finish with their captured generation.
+    // A delayed probe cannot move a process back to an older generation or grow the cache without bound.
+    public MetadataV2GraphSnapshotCache ForGeneration(string environment, long generation)
+    {
+        lock (_generationGate)
+        {
+            if (!_generations.TryGetValue(environment, out var partition) || generation > partition.Generation)
+            {
+                partition = new GenerationPartition(generation, new MetadataV2GraphSnapshotCache(_options, _timeProvider));
+                _generations[environment] = partition;
+            }
+            return partition.Cache;
+        }
     }
 
     public async ValueTask<MetadataV2GraphSnapshot> GetOrLoadAsync(
@@ -70,9 +87,17 @@ public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalida
     {
         ArgumentNullException.ThrowIfNull(environment);
         _slots.TryRemove(environment, out _);
+        lock (_generationGate)
+        {
+            if (_generations.TryGetValue(environment, out var partition)) { partition.Cache.Invalidate(environment); }
+        }
     }
 
-    public void InvalidateAll() => _slots.Clear();
+    public void InvalidateAll()
+    {
+        _slots.Clear();
+        lock (_generationGate) { _generations.Clear(); }
+    }
 
     public bool IsEnabled
     {
@@ -178,6 +203,8 @@ public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalida
             throw;
         }
     }
+
+    private sealed record GenerationPartition(long Generation, MetadataV2GraphSnapshotCache Cache);
 
     private sealed class CacheSlot
     {

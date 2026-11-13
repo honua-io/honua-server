@@ -414,7 +414,8 @@ internal static class ServiceCollectionExtensions
                 metadataEnvironment,
                 serviceProvider.GetRequiredService<IServiceScopeFactory>(),
                 static loadScope => loadScope.GetRequiredService<IMetadataV2GraphStore>(),
-                revisionProbe);
+                revisionProbe,
+                serviceProvider.GetService<IConfigurationGenerationSource>());
         });
         // Legacy V1 catalog -> Metadata v2 graph projector (honua-server#2081). Lets compat
         // seeding paths (cloud-demo reset/startup) project freshly-seeded legacy services

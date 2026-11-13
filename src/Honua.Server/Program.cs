@@ -1628,6 +1628,9 @@ app.UseLimitsEnforcement();
 // Validate query, form, and selected header inputs before authentication and endpoint execution.
 app.UseInputValidation();
 
+// Refresh shared identity configuration before any authentication or cached response can run.
+Honua.Server.Features.Infrastructure.Configuration.ConfigurationRuntimeMiddleware.UseSharedConfiguration(app);
+
 // Validate optional/required client certificates before the regular auth stack so
 // required mTLS surfaces can return machine-readable errors instead of TLS handshakes.
 app.UseHonuaClientCertificateAuthentication();

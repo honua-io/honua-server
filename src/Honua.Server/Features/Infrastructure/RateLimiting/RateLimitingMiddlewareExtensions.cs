@@ -4,6 +4,7 @@
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Server.Features.Admin.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -21,7 +22,7 @@ public static class RateLimitingMiddlewareExtensions
             configuration.GetSection(RateLimitingOptions.SectionName));
 
         // Register rate limit policy store
-        services.AddSingleton<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>();
+        services.TryAddSingleton<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>();
 
         // Validate options at startup
         services.AddSingleton<IValidateOptions<RateLimitingOptions>>(
