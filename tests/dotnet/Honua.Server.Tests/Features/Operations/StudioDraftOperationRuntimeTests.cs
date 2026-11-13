@@ -23,6 +23,67 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 
 public sealed class StudioDraftOperationRuntimeTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task OwnedDraftMutation_OwnershipChangesAfterSubmission_Conflicts(bool delete, bool transferBeforeActuation)
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var draft = await lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "owned-draft-race",
+            OwnerId = "studio-author",
+            Envelope = PublicationEnvelope("1=1"),
+        });
+        var instances = new VolatileOperationInstanceStore();
+        var invoker = Substitute.For<IOperationInvoker>();
+        invoker.SubmitAsync(Arg.Any<OperationRequest>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var request = call.Arg<OperationRequest>();
+                request.VerifiedStudioDraftOwnerId.Should().Be("studio-author");
+                if (transferBeforeActuation)
+                {
+                    await store.UpdateDraftAsync(draft with { OwnerId = "new-owner" });
+                }
+
+                IOperationExecutor executor = delete
+                    ? new StudioDraftDeleteExecutor(lifecycle, TimeProvider.System)
+                    : new StudioDraftUpdateExecutor(lifecycle, TimeProvider.System);
+                var handle = await executor.SubmitAsync(request, Context("owner-race"));
+                await instances.SetAsync(handle);
+                return handle;
+            });
+        var runtime = new StudioDraftMutationRuntime(invoker, instances, store);
+        var context = new StudioDraftMutationContext { PrincipalId = "studio-author" };
+
+        var handle = delete
+            ? (await runtime.DeleteAsync(draft.DraftId, context)).Operation
+            : (await runtime.UpdateAsync(draft.DraftId, new UpdateStudioPackageDraftCommand
+            {
+                PackageKey = draft.PackageKey,
+                Envelope = PublicationEnvelope("changed"),
+            }, context)).Operation;
+
+        if (transferBeforeActuation)
+        {
+            handle.Status.Should().Be(OperationHandleStatus.Failed);
+            handle.Result!.Details["errorKind"].Should().Be("conflict");
+            var preserved = await store.GetDraftAsync(draft.DraftId);
+            preserved.Should().NotBeNull();
+            preserved!.OwnerId.Should().Be("new-owner");
+            preserved.Envelope.Should().BeEquivalentTo(draft.Envelope);
+        }
+        else
+        {
+            handle.Status.Should().Be(OperationHandleStatus.Completed);
+            (await store.GetDraftAsync(draft.DraftId) is null).Should().Be(delete);
+        }
+    }
+
     [Fact]
     public void PublicationRequest_UsesStudioApprovalLane()
     {
