@@ -176,6 +176,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
             ("groups", groupId));
         (await ReadAsync<SharingPayload>(shared)).Sharing!.Groups.Should().Equal(groupId);
         var originalGroup = (await groups.GetAsync(groupId, CancellationToken.None))!;
+        (await ReadSharedGroupIdsAsync("svc-rivers", originalGroup.TenantId)).Should().Equal(groupId);
 
         var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
         var credential = await issuer.IssueAsync(new PortalTokenIssueRequest(
@@ -206,8 +207,8 @@ public sealed class SharingCommunityTests : IAsyncLifetime
             body.Should().Contain("ask a person").And.Contain("Console");
             (await groups.GetAsync(groupId, CancellationToken.None)).Should().BeEquivalentTo(originalGroup);
             (await groups.ListAsync(CancellationToken.None)).Should().ContainSingle();
-            (await ReadSharedGroupIdsAsync("svc-owned")).Should().BeEmpty();
-            (await ReadSharedGroupIdsAsync("svc-rivers")).Should().Equal(groupId);
+            (await ReadSharedGroupIdsAsync("svc-owned", originalGroup.TenantId)).Should().BeEmpty();
+            (await ReadSharedGroupIdsAsync("svc-rivers", originalGroup.TenantId)).Should().Equal(groupId);
         }
     }
 
@@ -562,11 +563,12 @@ public sealed class SharingCommunityTests : IAsyncLifetime
             .Select(item => item.GetProperty("id").GetString()).Should().Equal("content-b");
     }
 
-    private async Task<string[]> ReadSharedGroupIdsAsync(string itemId)
+    private async Task<string[]> ReadSharedGroupIdsAsync(string itemId, string? tenantId)
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
         await using var command = new NpgsqlCommand(
-            "SELECT group_ids FROM portal_item_shares WHERE tenant_key = '' AND item_id = @item", connection);
+            "SELECT group_ids FROM portal_item_shares WHERE tenant_key = @tenant AND item_id = @item", connection);
+        command.Parameters.AddWithValue("tenant", tenantId ?? string.Empty);
         command.Parameters.AddWithValue("item", itemId);
         return await command.ExecuteScalarAsync() as string[] ?? [];
     }

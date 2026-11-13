@@ -105,7 +105,7 @@ public sealed class AgentApprovalRuleTests
     {
         var operationId = StudioDraftMutationContext.PublicationOperationId;
         var pdp = new CanonicalOperationPolicyDecisionPoint(
-            Options.Create(new OperationPolicyOptions { Enabled = false }), new DirectLadder());
+            new CanonicalOperationPolicyConfiguration(Options.Create(new OperationPolicyOptions { Enabled = false })), new DirectLadder());
         var request = new OperationRequest
         {
             OperationId = operationId,
@@ -132,7 +132,7 @@ public sealed class AgentApprovalRuleTests
     {
         const string operationId = "studio.content.rollback";
         var pdp = new CanonicalOperationPolicyDecisionPoint(
-            Options.Create(new OperationPolicyOptions { Enabled = false }), new DirectLadder());
+            new CanonicalOperationPolicyConfiguration(Options.Create(new OperationPolicyOptions { Enabled = false })), new DirectLadder());
         var request = new OperationRequest
         {
             OperationId = operationId,
@@ -156,7 +156,7 @@ public sealed class AgentApprovalRuleTests
         string operationId, string action)
     {
         var pdp = new CanonicalOperationPolicyDecisionPoint(
-            Options.Create(new OperationPolicyOptions { Enabled = false }), new DirectLadder(GuardrailTier.Blocked));
+            new CanonicalOperationPolicyConfiguration(Options.Create(new OperationPolicyOptions { Enabled = false })), new DirectLadder(GuardrailTier.Blocked));
         var request = new OperationRequest
         {
             OperationId = operationId,
