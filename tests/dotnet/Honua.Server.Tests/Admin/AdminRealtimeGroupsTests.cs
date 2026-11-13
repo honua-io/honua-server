@@ -31,6 +31,34 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/live")]
+    public async Task Live_StatusOnlyConnection_ReplaysEventsAfterDisconnect()
+    {
+        await using var log = await RealtimeLogHarness.CreateAsync(database);
+        var dispatcher = log.CreateDispatcher();
+        using var tail = log.CreateTail(dispatcher, null, new RealtimeOptions());
+        await tail.StartAsync(default);
+        using var host = CreateFactory(log, dispatcher);
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+        using var initial = await client.GetAsync("/api/v1/admin/live?topics=ops-health", HttpCompletionOption.ResponseHeadersRead);
+        using var initialReader = new StreamReader(await initial.Content.ReadAsStreamAsync());
+        var status = await ReadFrameAsync(initialReader);
+        status.Id.Should().NotBeNullOrWhiteSpace("even a quiet stream must expose its replay boundary");
+        initial.Dispose();
+
+        await host.Services.GetRequiredService<AdminRealtimePublisher>().PublishAsync(
+            new AdminRealtimeMessage(AdminRealtimeContract.OpsHealthTopic, "OpsHealthSnapshot",
+                JsonSerializer.SerializeToElement(new { overallStatus = "Degraded" })), default);
+        client.DefaultRequestHeaders.Add("Last-Event-ID", status.Id);
+        using var resumed = await client.GetAsync("/api/v1/admin/live?topics=ops-health", HttpCompletionOption.ResponseHeadersRead);
+        using var resumedReader = new StreamReader(await resumed.Content.ReadAsStreamAsync());
+        (await ReadFrameAsync(resumedReader)).Kind.Should().Be("status");
+        (await ReadFrameAsync(resumedReader)).Payload.GetProperty("overallStatus").GetString().Should().Be("Degraded");
+        await tail.StopAsync(default);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/live")]
     public async Task Live_AnotherTaskPublishes_ReceivesHealthAndResumesTransitionsOnReplacementTask()
     {
         await using var log = await RealtimeLogHarness.CreateAsync(database);
