@@ -140,6 +140,34 @@ public sealed partial class CdnCacheTagTests
         _cloudFront.Accepted.Should().ContainSingle().Which.Should().Equal("/*");
     }
 
+    [UnitTest]
+    public async Task InvalidateNowAsync_BusyBatchThenPermanentFailure_ReportsPermanentFailure()
+    {
+        var service = new CdnInvalidationService(new BusyThenFailedBatches(), new RecordingLogger(),
+            new CdnPurgeCoordination { TimeProvider = _time });
+        var paths = Enumerable.Range(0, CdnInvalidationService.MaxTagsPerInvalidation + 1)
+            .Select(index => $"#honua-scope:tiles/{index}").ToArray();
+
+        var pending = service.InvalidateNowAsync(paths, CancellationToken.None);
+        foreach (var delay in CdnInvalidationService.BusyRetryDelays)
+        {
+            await _time.TimerIsWaiting();
+            _time.Advance(delay);
+        }
+
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        result.Outcome.Should().Be(CdnInvalidationOutcome.Failed);
+        result.Detail.Should().Be("permanent failure");
+    }
+
+    private sealed class BusyThenFailedBatches : ICdnInvalidator
+    {
+        public Task<CdnInvalidationResult> InvalidateAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken = default)
+            => Task.FromResult(paths.Count == CdnInvalidationService.MaxTagsPerInvalidation
+                ? new CdnInvalidationResult(CdnInvalidationOutcome.Busy, "busy")
+                : new CdnInvalidationResult(CdnInvalidationOutcome.Failed, "permanent failure"));
+    }
+
     private sealed class FailingTagBatch(int failedBatch) : ICdnInvalidator
     {
         internal List<IReadOnlyCollection<string>> Requests { get; } = [];
