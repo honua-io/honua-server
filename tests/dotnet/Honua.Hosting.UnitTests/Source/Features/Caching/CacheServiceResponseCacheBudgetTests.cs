@@ -15,7 +15,7 @@ using Xunit;
 namespace Honua.Server.Tests.Features.Caching;
 
 [Protocol(TestProtocols.TestQuality)]
-public sealed class CacheServiceResponseCacheBudgetTests
+public sealed partial class CacheServiceResponseCacheBudgetTests
 {
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(5);
 
@@ -56,7 +56,7 @@ public sealed class CacheServiceResponseCacheBudgetTests
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.Cache)]
-    public async Task RemoveByPatternAsync_NamespaceChanges_RetainsBudgetForStoredPayloads(bool bindKeys)
+    public async Task RemoveByPatternAsync_NamespaceChanges_ReclaimsOnlyEvictedPayloads(bool bindKeys)
     {
         var backend = new RecordingCache();
         var cache = ResponseCache(backend, maxBytes: 21_000);
@@ -73,9 +73,10 @@ public sealed class CacheServiceResponseCacheBudgetTests
         await cache.RemoveByPatternAsync("query:featureserver:service:alpha:layer:1:*");
         await cache.SetAsync(bindKeys ? await cache.BindKeyAsync(nextAlpha) : nextAlpha, payload, Lifetime);
 
-        Assert.Equal(2, backend.ResponseWrites);
+        Assert.Equal(3, backend.ResponseWrites);
         Assert.Equal(2, backend.Responses.Count);
-        Assert.Null(await cache.GetAsync<CachedResponse>(nextAlpha));
+        Assert.Same(payload, await cache.GetAsync<CachedResponse>(nextAlpha));
+        Assert.Null(await cache.GetAsync<CachedResponse>(first));
         Assert.Same(payload, await cache.GetAsync<CachedResponse>(second));
     }
 
@@ -256,6 +257,8 @@ public sealed class CacheServiceResponseCacheBudgetTests
         public ConcurrentDictionary<string, CachedResponse> Responses { get; } = new(StringComparer.Ordinal);
         public Func<string, Task>? BeforeResponseWrite { get; set; }
         public Func<string, Task>? AfterVersionWrite { get; set; }
+        public Func<string, Task>? BeforeResponseRemove { get; set; }
+        public Func<string, Task>? AfterResponseRemove { get; set; }
         public int ResponseWrites => Volatile.Read(ref _responseWrites);
 
         private static string ScopedKey(string key) => SchemaContext.AmbientCurrentSchema is { } schema
@@ -292,10 +295,18 @@ public sealed class CacheServiceResponseCacheBudgetTests
                     Responses[key] = call.ArgAt<CachedResponse>(1);
                     Interlocked.Increment(ref _responseWrites);
                 });
-            Service.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(call =>
+            Service.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(async call =>
             {
-                Responses.TryRemove(ScopedKey(call.ArgAt<string>(0)), out _);
-                return Task.CompletedTask;
+                var key = ScopedKey(call.ArgAt<string>(0));
+                if (BeforeResponseRemove is { } beforeRemove)
+                {
+                    await beforeRemove(key);
+                }
+                Responses.TryRemove(key, out _);
+                if (AfterResponseRemove is { } afterRemove)
+                {
+                    await afterRemove(key);
+                }
             });
         }
     }
