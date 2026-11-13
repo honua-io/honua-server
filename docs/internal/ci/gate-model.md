@@ -16,7 +16,7 @@
 
 ## Governing Rules
 
-Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and fails on skipped heavy dependencies, so a draft run cannot supply mergeable verification. PR Gate and native-image impact observers exclude this intentional draft failure only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
+Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and accepts skipped heavy dependencies only on draft PR events after Format succeeds. Failure, cancellation and missing results still fail; ready PRs require all dependencies to succeed. GitHub draft protection prevents merging, and `ready_for_review` starts the complete verification. PR Gate and native-image impact observers exclude intentional draft admission only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
 
 NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory.Build.props` lists them in `WarningsNotAsErrors` (projects append to that list), so a newly published advisory shows as a restore warning and `scripts/ci/dotnet-restore-retry.sh` treats any remaining restore failure as a retryable feed error. Advisories stay tracked by the NuGet vulnerability scan in `security-nightly.yml`, which annotates High/Critical findings and opens a tracking issue without failing the job (an unreadable report still fails); bumps are ordinary dependency work.
 
@@ -995,3 +995,16 @@ a 10 GiB user-slice budget with runner services; the OOM task dump contained
 runner. CPU quota alone did not bound those processes. No host resource limit
 changes are required. The changed action takes effect on the next PR Gate;
 that run supplies the after-change timing and memory evidence.
+
+### Workflow loader validation in the fast stage
+
+PR Gate's architecture matrix member runs pinned, checksum-verified actionlint
+before setup/build and before any docs/generated-only skip. All workflow YAML
+files receive syntax and expression checks; a job-level `runner.temp` expression
+is rejected before landing. Compatibility exceptions allow only the unsupported
+`concurrency.queue` diagnostic and two pre-existing property-reference messages
+in generated gh-aw doctor locks. No other syntax/context diagnostic is ignored.
+Regression fixtures prove queue acceptance and failure for invalid contexts,
+unknown keys and missing dependencies. Required names and `required.needs` stay
+unchanged, and the check adds zero jobs per PR. Timing evidence will come from
+the first completed run; no measured saving is claimed.
