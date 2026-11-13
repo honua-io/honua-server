@@ -237,8 +237,11 @@ public sealed class ImportObjectStoreCoordinatorTests
         json.Should().NotContain("session");
     }
 
-    [UnitTest]
-    public void JobParameters_RoundTripThePinnedObjectWithoutACloudFile()
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData(4326)]
+    [InlineData(2193)]
+    public void JobParameters_RoundTripThePinnedObjectWithoutACloudFile(int? targetSrid)
     {
         var request = new ImportRequest
         {
@@ -250,7 +253,7 @@ public sealed class ImportObjectStoreCoordinatorTests
             ObjectStoreETag = "\"pin\"",
             ObjectStoreRoleArn = RoleArn,
             ObjectStoreContentType = "application/geo+json",
-            TargetSrid = 4326,
+            TargetSrid = targetSrid,
         };
 
         var parameters = FileImportJobParameters.Build(request, 42);

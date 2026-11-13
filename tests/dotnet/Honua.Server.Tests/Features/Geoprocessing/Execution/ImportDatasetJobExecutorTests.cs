@@ -189,6 +189,70 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
             }
         };
 
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/processes/{processId}/execution")]
+    public async Task ExecuteAsync_ProjectedSourceWithoutTarget_KeepsSourceCoordinateSystem()
+    {
+        await WriteProjectedSourceAsync();
+        var parameters = BuildBaseParameters();
+        parameters.Remove($"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.targetSrid");
+
+        var executor = _fixture.Services.GetRequiredService<ImportDatasetJobExecutor>();
+        var result = await executor.ExecuteAsync(BuildJobRecord(parameters), new RecordingJobExecutionContext("projected-import-kept"), CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        var stored = await ReadPublishedGeometryAsync();
+        stored.LayerSrid.Should().Be(2193, "an import without a target keeps the source coordinate system");
+        stored.GeometrySrid.Should().Be(2193);
+        stored.X.Should().BeApproximately(1740000, 0.001, "keeping the source system must not transform coordinates");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/processes/{processId}/execution")]
+    public async Task ExecuteAsync_ProjectedSourceWithExplicitTarget_ReprojectsCoordinates()
+    {
+        await WriteProjectedSourceAsync();
+
+        var executor = _fixture.Services.GetRequiredService<ImportDatasetJobExecutor>();
+        var result = await executor.ExecuteAsync(BuildJobRecord(), new RecordingJobExecutionContext("projected-import-reprojected"), CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        var stored = await ReadPublishedGeometryAsync();
+        stored.LayerSrid.Should().Be(4326, "an explicit target reprojects the import");
+        stored.GeometrySrid.Should().Be(4326);
+        stored.X.Should().BeInRange(166, 179, "the coordinates must be transformed to longitude, not only relabelled");
+    }
+
+    private Task WriteProjectedSourceAsync() => File.WriteAllTextAsync(_stagedFilePath,
+        "{\"type\":\"FeatureCollection\",\"crs\":{\"type\":\"name\",\"properties\":{\"name\":\"EPSG:2193\"}},\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[1740000,5420000]},\"properties\":{\"name\":\"Projected\"}}]}");
+
+    private async Task<(int LayerSrid, int GeometrySrid, double X)> ReadPublishedGeometryAsync()
+    {
+        var layerId = await ReadPublishedLayerIdAsync();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        string schema;
+        string table;
+        int layerSrid;
+        await using (var layerCommand = new NpgsqlCommand("SELECT table_schema, table_name, srid FROM honua.layers WHERE layer_id = @layerId", connection))
+        {
+            layerCommand.Parameters.AddWithValue("layerId", layerId);
+            await using var reader = await layerCommand.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue("the import must publish a layer");
+            schema = reader.GetString(0);
+            table = reader.GetString(1);
+            layerSrid = reader.GetInt32(2);
+        }
+
+        using var builder = new NpgsqlCommandBuilder();
+        var quoted = $"{builder.QuoteIdentifier(schema)}.{builder.QuoteIdentifier(table)}";
+        await using var geometryCommand = new NpgsqlCommand($"SELECT ST_SRID(geometry), ST_X(geometry) FROM {quoted} LIMIT 1", connection);
+        await using var geometryReader = await geometryCommand.ExecuteReaderAsync();
+        (await geometryReader.ReadAsync()).Should().BeTrue("the imported table must hold the source feature");
+        return (layerSrid, geometryReader.GetInt32(0), geometryReader.GetDouble(1));
+    }
+
     private Dictionary<string, string> BuildBaseParameters()
     {
         var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
