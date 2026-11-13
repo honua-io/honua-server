@@ -837,6 +837,77 @@ instead of GIS prose. Runtime source, generator scripts, CITE status and all
 existing build/setup inputs remain covered. Its producer/consumer security
 boundary and deterministic replay are unchanged.
 
+## Server test fixture lifetimes
+
+Class-scoped test applications and database infrastructure that shorten server
+test shards without changing what they run.
+
+### Routing async web tool database lifetime
+
+`RoutingAsyncWebToolTests` holds a class-level `PostgresFixture`, which keeps
+the shared, reference-counted PostgreSQL container and data source alive for the
+whole class instead of rebuilding them for each case. Each case still creates
+its own no-Redis `WebAppFixture` host with an isolated schema, cleared job
+tables, its own substitute routing provider and its own durable worker.
+All cases and assertions remain in the GeoServices GPServer and NAServer shard
+on selected PR runs and twice-daily full trunk runs. This changes no runner
+count, required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### Capability manifest endpoint fixture lifetime
+
+`CapabilityManifestEndpointTests` starts its default manifest application once
+per class through an `IClassFixture` and disposes it when the class finishes.
+Each case still makes its own anonymous and admin `HttpClient` against that
+host, and only cases that read without writing use it. Cases that need a
+different license, configuration or set of services build, start and dispose
+their own `WebAppFixture` inside the test, so configured applications stay
+isolated from each other and from the shared one.
+All cases and assertions remain in the Server Features Capabilities shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### ImageServer raw pixel export database lifetime
+
+`ImageServerRawPixelExportTests` holds an `IClassFixture<PostgresFixture>`
+reference, so the shared PostgreSQL infrastructure starts once per class and
+stays up across its integration cases instead of restarting for each one. Each
+case still creates its own `WebAppFixture` host and isolated schema, and seeds
+the raster under the schema-mutation lock. The pure LERC/BIP encoder unit tests
+live in `ImageServerPixelBlockEncoderTests`, which has no fixture, so running
+only unit tests never starts a database.
+All cases and assertions remain in the GeoServices ImageServer Raster Rendering
+and GeoServices ImageServer Rendering and Support shards on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow, or shard definition.
+
+### ImageServer mosaic integration database lifetime
+
+`ImageServerMosaicIntegrationTests` takes a class-scoped `PostgresFixture`,
+which holds a reference to the shared, reference-counted PostgreSQL/PostGIS
+infrastructure from the first case to the last instead of letting it be torn
+down and rebuilt between cases. Each case still builds a fresh `WebAppFixture`
+host with its own isolated application schema, raster seed and license
+entitlement configuration.
+All cases and assertions remain in the GeoServices ImageServer Raster Rendering
+shard on selected PR runs and twice-daily full trunk runs. This changes no
+runner count, required check name, required aggregate dependency, workflow, or
+shard definition.
+
+### GPServer endpoint application lifetime
+
+`GPServerEndpointTests` holds a `PostgresFixture` class fixture, so the
+reference-counted PostgreSQL infrastructure starts once and stays alive until
+the last case in the class has run. The default `WebAppFixture` application
+starts only in cases that use the shared client, fixture or job store, and is
+disposed only if it was started. Every case still builds its own hosts, isolated
+schemas, in-memory job store and service replacements.
+All cases and assertions remain in the GeoServices GPServer Endpoints shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
 ## OGC release-candidate qualification
 
 External OGC conformance runs through individual manual dispatchers and, after the
