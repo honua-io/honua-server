@@ -23,15 +23,15 @@ drift.
 <!-- BEGIN GENERATED DOTNET BASE IMAGE INVENTORY -->
 | Dockerfile | Build argument | Image reference |
 | --- | --- | --- |
-| `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
-| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:bfd912c83295ce66d4b706ebb8541b9f14259b0e76fbb88b2751f58ce2399d2e` |
-| `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
-| `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:9cab4d7d886226d47b5489ef9abf0544e2f109fde11a8acc190217610af26c00` |
-| `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
-| `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
-| `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:9cab4d7d886226d47b5489ef9abf0544e2f109fde11a8acc190217610af26c00` |
-| `docker/worker-customcode-dotnet/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
-| `docker/worker-gdal/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
+| `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea` |
+| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:11.0.0-resolute@sha256:bc0d6653979efba491ab3d6f589d691f96c309c3c3ef81325efa6978e7b7f242` |
+| `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea` |
+| `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute@sha256:6d3e208d8f5ba599ad9e80c615b5c1a2e355fd903f585cb07342dde29441675a` |
+| `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute@sha256:6d3e208d8f5ba599ad9e80c615b5c1a2e355fd903f585cb07342dde29441675a` |
+| `docker/worker-customcode-dotnet/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0.404-resolute@sha256:f685dd6b5a970778b53cead9a11cf54206c4b4fc3c97e4424a59b8bff9aa43d7` |
+| `docker/worker-gdal/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea` |
 <!-- END GENERATED DOTNET BASE IMAGE INVENTORY -->
 
 ### Other pinned serving bases
