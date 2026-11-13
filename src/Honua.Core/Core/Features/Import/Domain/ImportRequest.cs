@@ -65,7 +65,7 @@ public sealed record ImportRequest
 
     public int? SourceSrid { get; init; }
 
-    public int TargetSrid { get; init; } = 4326;
+    public int? TargetSrid { get; init; }
 
     // When the mode is left at its default, overwrite selects replace and otherwise the load appends, so an existing target is not silently destroyed.
     public bool OverwriteExisting { get; init; }
