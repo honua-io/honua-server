@@ -9,6 +9,8 @@ using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Infrastructure.SecurityState;
+using Honua.Server.Features.Infrastructure.McpSessions;
+using Honua.Server.Features.Studio.Drafts;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Microsoft.AspNetCore.DataProtection;
@@ -28,7 +30,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.148_CreateControlPlaneState.sql",
         "Honua.Server.Migrations.149_CreateSecurityState.sql",
         "Honua.Server.Migrations.150_CreateOAuthClientsAndOperationProgress.sql",
-        "Honua.Server.Migrations.154_CreateConfigurationDocuments.sql"
+        "Honua.Server.Migrations.154_CreatePackageDraftsAndMcpSessions.sql",
+        "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql"
     ];
 
     private readonly PostgresJobSubstrateHarness _jobs;
@@ -60,7 +63,7 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     }
 
     public Task ReplayConfigurationMigrationAsync()
-        => ExecuteAsync(ReadMigration("Honua.Server.Migrations.154_CreateConfigurationDocuments.sql")
+        => ExecuteAsync(ReadMigration("Honua.Server.Migrations.156_CreateConfigurationDocuments.sql")
             .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
 
     public string Table(string tableName) => _jobs.Database.Table(tableName);
@@ -101,6 +104,10 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public PostgresOAuthClientStore CreateOAuthClientStore() => new(_jobs.Database);
 
     public PostgresUniversalProgressStore CreateProgressStore() => new(_jobs.Database);
+
+    public PostgresPackageDraftBacking CreatePackageDraftBacking() => new(_jobs.Database);
+
+    public PostgresMcpSessionStore CreateMcpSessionStore() => new(_jobs.Database);
 
     // Every stored column of the approval tables as text, so a leak through any field is seen.
     public async Task<StoredTextScan> ScanApprovalTablesForAsync(string text)
