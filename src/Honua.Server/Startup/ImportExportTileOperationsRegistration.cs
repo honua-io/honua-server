@@ -56,7 +56,7 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetService<IDistributedCache>(),
                 sp.GetRequiredService<ILogger<RedisImportJobManager>>(),
                 sp.GetRequiredService<IHostEnvironment>(),
-                sp.GetService<IConnectionMultiplexer>()));
+                new ImportCoordinationStores(sp.GetService<IConnectionMultiplexer>(), sp.SharedLeaseStore())));
         // Event-handler Lambdas (pool cap 2, frozen between invocations) do not poll.
         // The API Lambda still does. honua-server#6515.
         var hostPollingLoops = ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration);
@@ -80,7 +80,7 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetService<IDistributedCache>(),
                 sp.GetRequiredService<ILogger<GeoServerImportJobManager>>(),
                 sp.GetRequiredService<IHostEnvironment>(),
-                sp.GetService<IConnectionMultiplexer>()));
+                new ImportCoordinationStores(sp.GetService<IConnectionMultiplexer>(), sp.SharedLeaseStore())));
         if (hostPollingLoops)
         {
             services.AddHostedService<GeoServerImportBackgroundService>();

@@ -84,6 +84,8 @@ Run `POST /api/v1/admin/tile-operations/jobs` with this body:
 }
 ```
 
+Both operations accept an optional `tileCompression`: `none` (default) or `gzip`. Gzip tiles are typically about half the size of uncompressed MVT tiles and suit archives served by HTTP range requests, where transport compression does not apply. PMTiles clients read the compression from the archive header and decode gzip tiles natively. The job status reports the value written as `TileCompression`.
+
 The completed job status carries `publishedArtifact` with `accessUrl`, `bounds`, `minZoom`/`maxZoom`, and storage details — everything a client needs for a `pmtiles://{accessUrl}` MapLibre source. Re-publishing the same `(serviceId, layerId, tileMatrixSetId)` overwrites the artifact.
 
 How clients reach the artifact is set by `FileStorage:PMTilesPublish:UrlStrategy`:

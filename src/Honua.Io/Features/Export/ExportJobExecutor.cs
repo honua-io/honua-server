@@ -97,7 +97,7 @@ internal sealed class ExportJobExecutor(
     };
 
     private static ExportProgress Fresh(ExportJob request)
-        => ExportProgress.CreateInitial(request.JobId, request.Format, request.ServiceName, request.LayerId, request.TotalFeatures)
+        => ExportProgress.CreateInitial(request.JobId, request.Format, request.ServiceName, request.ServiceLayerIndex, request.TotalFeatures)
             with { Status = OperationStatus.Processing, CurrentPhase = ExportingPhase };
 
     private async Task<JobExecutionResult> ExportAsync(ExportRun run, CancellationToken cancellationToken)
@@ -137,7 +137,7 @@ internal sealed class ExportJobExecutor(
     {
         var request = run.Request;
         var features = services.GetRequiredService<IStreamingFeatureStore>()
-            .StreamFeaturesAsync(request.LayerId, request.Query, cancellationToken);
+            .StreamFeaturesAsync(request.StorageLayerId, request.Query, cancellationToken);
         var output = await WriteToFileAsync(run, features, services.GetRequiredService<ICrsRegistry>(), cancellationToken)
             .ConfigureAwait(false);
         var downloadUrl = await UploadAsync(run, output, services.GetRequiredService<ICloudFileStorage>(), cancellationToken)
@@ -223,7 +223,7 @@ internal sealed class ExportJobExecutor(
         activity?.SetTag("export.job_id", request.JobId);
         activity?.SetTag("export.format", request.Format);
         activity?.SetTag("export.service_name", request.ServiceName);
-        activity?.SetTag("export.layer_id", request.LayerId);
+        activity?.SetTag("export.storage_layer_id", request.StorageLayerId);
         activity?.SetTag("export.total_features", request.TotalFeatures);
         return activity;
     }

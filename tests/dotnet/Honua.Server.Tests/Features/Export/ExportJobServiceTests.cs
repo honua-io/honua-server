@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -48,6 +49,28 @@ public sealed class ExportJobServiceTests
         request!.Should().BeEquivalentTo(job with { Submitter = null });
         await jobQueue.Received(1).EnqueueAsync(job.JobId, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
         (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!.Status.Should().Be(OperationStatus.Queued);
+    }
+
+    [UnitTheory]
+    [InlineData("{invalid-json")]
+    [InlineData("{\"jobId\":\"legacy-request\",\"layerId\":3}")]
+    [Operation(Operations.Export)]
+    public async Task TryReadRequest_InvalidOrLegacyPayload_IsRejected(string payload)
+    {
+        var store = new InMemoryExecutionJobStore();
+        await CreateService(new ComparingInMemoryProgressStore(), store, Substitute.For<IJobQueue>())
+            .StartAsync(ExportJobTestData.CreateJob("legacy-request"));
+        var record = (await store.GetAsync("legacy-request"))!;
+        record = record with
+        {
+            Spec = record.Spec with
+            {
+                Parameters = new Dictionary<string, string> { [ExportJobService.RequestParameter] = payload }
+            }
+        };
+
+        ExportJobService.TryReadRequest(record, out var request).Should().BeFalse();
+        request.Should().BeNull();
     }
 
     [UnitTest]
@@ -164,6 +187,12 @@ public sealed class ExportJobServiceTests
         coordinate.M.Should().Be(7.25);
         var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
         progress!.Status.Should().Be(OperationStatus.Completed);
+        progress.ServiceLayerIndex.Should().Be(job.ServiceLayerIndex);
+        var wire = JsonSerializer.SerializeToElement(progress, ExportJsonContext.Default.ExportProgress);
+        wire.GetProperty("serviceLayerIndex").GetInt32().Should().Be(3);
+        wire.TryGetProperty("layerId", out _).Should().BeFalse();
+        wire.TryGetProperty("storageLayerId", out _).Should().BeFalse();
+        store.Received(1).StreamFeaturesAsync(job.StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         progress.ProcessedFeatures.Should().Be(2, "the receipt counts rows actually exported, not the estimated 99");
         progress.DownloadUrl.Should().Be("https://example.test/proof.csv");
         progress.Warnings.Should().BeEmpty();
@@ -477,7 +506,10 @@ internal static class ExportJobTestData
             4326,
             1,
             ExportGeometryType.None,
-            new JobSecurityContext("subject-a", "tenant-a", [new JobSecurityClaim("role", "reader")]));
+            new JobSecurityContext("subject-a", "tenant-a", [new JobSecurityClaim("role", "reader")]))
+        {
+            ServiceLayerIndex = 3
+        };
 
     public static async IAsyncEnumerable<Feature> CreateFeatures()
     {

@@ -463,7 +463,7 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
             try
             {
-                return JsonDocument.Parse(json).RootElement;
+                return JsonElement.Parse(json);
             }
             catch (JsonException)
             {

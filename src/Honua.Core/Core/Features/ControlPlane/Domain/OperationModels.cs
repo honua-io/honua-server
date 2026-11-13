@@ -1462,6 +1462,10 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
     /// parameters, preserving their existing accounting.
     /// </summary>
     public double? AdmissionCostWeight { get; init; }
+
+    // The admission rate principal charged for this submission; the per-principal rate window counts
+    // the jobs that carry it.
+    public string? AdmissionRatePrincipal { get; init; }
 }
 
 /// <summary>

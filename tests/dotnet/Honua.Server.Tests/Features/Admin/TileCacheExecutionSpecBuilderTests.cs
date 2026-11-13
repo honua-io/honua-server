@@ -356,4 +356,47 @@ public sealed class TileCacheExecutionSpecBuilderTests
         parsed.Should().BeFalse();
         error.Should().Contain("layer_id");
     }
+
+    [UnitTest]
+    public void BuildThenTryParse_RoundTrips_TileCompression()
+    {
+        var request = new TileOperationStartRequest
+        {
+            Operation = "archive",
+            LayerId = 3,
+            TileCompression = " Gzip "
+        };
+
+        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, new TileCacheBatchOptions());
+        spec.Parameters[TileCacheJobParameterKeys.Compression].Should().Be("gzip");
+
+        TileCacheExecutionSpecBuilder.TryParse(spec.Parameters, out var decoded, out _, out var error)
+            .Should().BeTrue(error);
+        decoded.TileCompression.Should().Be("gzip");
+    }
+
+    [UnitTest]
+    public void Build_WithoutTileCompression_OmitsParameter()
+    {
+        var spec = TileCacheExecutionSpecBuilder.Build(
+            new TileOperationStartRequest { Operation = "archive", LayerId = 3 },
+            schemaName: null,
+            new TileCacheBatchOptions());
+
+        spec.Parameters.Should().NotContainKey(TileCacheJobParameterKeys.Compression);
+    }
+
+    [UnitTest]
+    public void TryParse_UnsupportedTileCompression_Fails()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TileCacheJobParameterKeys.Operation] = "archive",
+            [TileCacheJobParameterKeys.LayerId] = "3",
+            [TileCacheJobParameterKeys.Compression] = "zstd"
+        };
+
+        TileCacheExecutionSpecBuilder.TryParse(parameters, out _, out _, out var error).Should().BeFalse();
+        error.Should().Contain("compression");
+    }
 }

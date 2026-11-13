@@ -62,7 +62,7 @@ internal sealed class ExportJobService(
     // The queued progress is written first, so a job never exists without the progress its status URL reads.
     private async Task CreateJobAsync(IExecutionJobStore store, ExportJob job, CancellationToken cancellationToken)
     {
-        var progress = ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures);
+        var progress = ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures);
         await progressStore.SetProgressAsync(job.JobId, progress, Retention, cancellationToken).ConfigureAwait(false);
 
         bool created;
@@ -141,7 +141,7 @@ internal sealed class ExportJobService(
                 Kind = ExecutionJobKind.Export,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 Backend = LocalBackend,
-                WorkloadName = $"export:{job.Format}:{job.ServiceName}:{job.LayerId}",
+                WorkloadName = $"export:{job.Format}:{job.ServiceName}:{job.ServiceLayerIndex}",
                 Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     [RequestParameter] = JsonSerializer.Serialize(job with { Submitter = null }, ExportJsonContext.Default.ExportJob)

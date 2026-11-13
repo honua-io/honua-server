@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Tiles;
@@ -52,6 +53,18 @@ public sealed class ImportExportTileOperationsRegistrationTests
 
         var descriptor = services.Last(service => service.ServiceType == typeof(ITileCacheKeyIndex));
         descriptor.ImplementationInstance.Should().BeSameAs(NullTileCacheKeyIndex.Instance);
+    }
+
+    [UnitTest]
+    public void AddTileOperations_WithoutSystemDatabase_ComposesNoSharedLeaseStore()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddHonuaImportExportAndTileOperations(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetService<ILeaseStore>().Should().BeNull();
     }
 
     [UnitTheory]

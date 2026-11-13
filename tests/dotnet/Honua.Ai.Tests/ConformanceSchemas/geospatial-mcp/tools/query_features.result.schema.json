@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/query_features.result.schema.json",
+  "title": "query_features result payload",
+  "x-honua-reference-shape": true,
+  "description": "Feature-query result identity. Other result fields describe the selected features and pagination.",
+  "allOf": [
+    {
+      "$ref": "../common/service-layer-reference.schema.json"
+    }
+  ],
+  "type": "object"
+}

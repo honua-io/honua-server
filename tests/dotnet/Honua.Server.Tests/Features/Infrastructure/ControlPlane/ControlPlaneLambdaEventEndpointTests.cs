@@ -203,40 +203,17 @@ public sealed class ControlPlaneLambdaEventEndpointTests
         // honua-release run 38242272260 (aws-serverless, Redis-off): these answered 500.
         var targets = new RecordingTargets
         {
-            Failure = new ControlPlaneEventDependencyUnavailableException(CapabilityUnavailableCodes.RedisDependency, subject),
+            Failure = new ControlPlaneEventDependencyUnavailableException(CapabilityUnavailableCodes.SystemDatabaseDependency, subject),
         };
 
         var (status, body, contentType) = await InvokeWithContentTypeAsync(selector, payload, targets);
 
         status.Should().Be(StatusCodes.Status503ServiceUnavailable);
         contentType.Should().StartWith("application/problem+json");
-        body.Should().Contain("\"missingDependency\":\"redis\"")
+        body.Should().Contain("\"missingDependency\":\"system-database\"")
             .And.Contain($"\"code\":\"{CapabilityUnavailableCodes.ErrorCode}\"")
             .And.Contain(CapabilityUnavailableCodes.ProblemType)
             .And.Contain(CapabilityUnavailableCodes.DurableJobsCapability);
-    }
-
-    [UnitTest]
-    public async Task WorkNeedingTheDurableStore_WithRedisPresentButUnentitled_ReportsTheLicence()
-    {
-        var services = new ServiceCollection().AddLogging();
-        services.Configure<DurableJobSubstrateOptions>(options =>
-        {
-            options.RedisConfigured = true;
-            options.RedisEntitled = false;
-        });
-        var targets = new RecordingTargets
-        {
-            Failure = new ControlPlaneEventDependencyUnavailableException(CapabilityUnavailableCodes.RedisDependency, null),
-        };
-
-        var (status, body, _) = await InvokeWithContentTypeAsync(
-            "backstop", "{}", targets, requestServices: services.BuildServiceProvider());
-
-        status.Should().Be(StatusCodes.Status503ServiceUnavailable);
-        body.Should().Contain($"\"code\":\"{CapabilityUnavailableCodes.EntitlementErrorCode}\"")
-            .And.Contain(CapabilityUnavailableCodes.RedisCacheEntitlement)
-            .And.NotContain("\"missingDependency\":\"redis\"");
     }
 
     [UnitTest]
@@ -246,7 +223,7 @@ public sealed class ControlPlaneLambdaEventEndpointTests
         var latch = new ColdStartWarningLatch();
         var targets = new RecordingTargets
         {
-            Failure = new ControlPlaneEventDependencyUnavailableException(CapabilityUnavailableCodes.RedisDependency, null),
+            Failure = new ControlPlaneEventDependencyUnavailableException(CapabilityUnavailableCodes.SystemDatabaseDependency, null),
         };
 
         for (var i = 0; i < 3; i++)
@@ -256,7 +233,7 @@ public sealed class ControlPlaneLambdaEventEndpointTests
         }
 
         logger.Entries.Where(entry => entry.Level == LogLevel.Warning).Should().ContainSingle()
-            .Which.Message.Should().Contain("redis");
+            .Which.Message.Should().Contain(CapabilityUnavailableCodes.SystemDatabaseDependency);
         logger.Entries.Should().NotContain(entry => entry.Level >= LogLevel.Error);
     }
 

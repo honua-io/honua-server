@@ -2,10 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Capabilities;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Npgsql;
 using Honua.Core.Features.Infrastructure.Monitoring;
@@ -243,18 +241,15 @@ internal sealed class RedisHealthCheck : IHealthCheck
     private readonly IConnectionMultiplexer? _redis;
     private readonly IDistributedCache _distributedCache;
     private readonly ILogger<RedisHealthCheck> _logger;
-    private readonly DurableJobSubstrateOptions _durableJobSubstrate;
 
     public RedisHealthCheck(
         IConnectionMultiplexer? redis,
         IDistributedCache distributedCache,
-        ILogger<RedisHealthCheck> logger,
-        IOptions<DurableJobSubstrateOptions>? durableJobSubstrate = null)
+        ILogger<RedisHealthCheck> logger)
     {
         _redis = redis;
         _distributedCache = distributedCache;
         _logger = logger;
-        _durableJobSubstrate = durableJobSubstrate?.Value ?? new DurableJobSubstrateOptions();
     }
 
     public async Task<HealthCheckResult> CheckHealthAsync(
@@ -297,15 +292,6 @@ internal sealed class RedisHealthCheck : IHealthCheck
                 ["cacheOperationSuccess"] = retrievedValue == testValue
             };
 
-            if (_durableJobSubstrate.RedisDurabilityAttestation is { } attestation)
-            {
-                data["durabilityEndpoint"] = attestation.Endpoint;
-                data["persistenceMode"] = attestation.PersistenceMode;
-                data["acknowledgedWritePolicy"] = attestation.AcknowledgedWritePolicy;
-                data["evictionPolicy"] = attestation.EvictionPolicy;
-                data["durabilityObservedAt"] = attestation.ObservedAt;
-            }
-
             // Determine health status
             if (pingLatency.TotalMilliseconds > 1000 || !_redis.IsConnected)
             {
@@ -319,34 +305,6 @@ internal sealed class RedisHealthCheck : IHealthCheck
                 return HealthCheckResult.Degraded(
                     "Redis cache operations are failing",
                     data: data);
-            }
-
-            // Redis durability is INFORMATION (owner ruling 2026-10-10), reported as data on a
-            // Healthy result — not Degraded. A connected Redis serves the governed control plane
-            // and the durable job runner whatever the attestation said; managed Redis that blocks
-            // CONFIG (AWS ElastiCache, MemoryDB) would otherwise read Degraded forever.
-            //
-            // Evaluated AFTER the ping and the cache write/read/delete probes, and after the
-            // latency and cache-failure verdicts above, so a Redis that later goes unreachable or
-            // read-only reports the actual outage instead of being masked by the startup-time
-            // durability outcome.
-            if (_durableJobSubstrate.RedisDurabilityStatus is { } durabilityStatus)
-            {
-                data["durability"] = durabilityStatus;
-                data["durabilityAttested"] = _durableJobSubstrate.RedisDurabilityAttestation is not null;
-                if (_durableJobSubstrate.RedisDurabilityAttestation is null
-                    && _durableJobSubstrate.RedisDurabilityFailure is { } durabilityCause)
-                {
-                    // The description is what the ops-health snapshot (honua://ops/health)
-                    // projects per entry, so it carries the outcome and its guidance.
-                    data["cause"] = durabilityCause.ToString();
-                    data["consequence"] = DurableJobSubstrateRemediation.NonDurableConsequence;
-                    data["remediation"] = DurableJobSubstrateRemediation.For(durabilityCause);
-                    return HealthCheckResult.Healthy(
-                        $"Redis is healthy; durability {durabilityStatus} ({durabilityCause}). "
-                            + DurableJobSubstrateRemediation.NonDurableConsequence,
-                        data);
-                }
             }
 
             return HealthCheckResult.Healthy("Redis is healthy", data);

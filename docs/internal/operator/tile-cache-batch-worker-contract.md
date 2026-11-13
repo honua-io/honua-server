@@ -98,7 +98,7 @@ worker image must honour:
 | `honua.tilecache.bbox` | `minLon,minLat,maxLon,maxLat` |
 | `honua.tilecache.max_tiles` | Caller-requested tile ceiling |
 | `honua.tilecache.schema_name` | Multi-tenant schema captured at submission |
-| `honua.tilecache.compression` | Reserved (managed writer emits uncompressed) |
+| `honua.tilecache.compression` | Archive/publish tile payload compression: `none` or `gzip`; absent means `none` |
 
 The target artifact location for `archive` / `publish` is resolved on the worker
 from the existing `CloudStorage` / `PMTilesPublish` configuration (`ICloudFileStorage`)

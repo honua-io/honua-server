@@ -15,7 +15,6 @@ internal static class GeoServicesServiceRoutes
         StringComparer.OrdinalIgnoreCase);
 
     internal sealed record ServiceRoute(string Root, string ServiceType, string ServiceParameter);
-    internal sealed record CatalogRoute;
     internal sealed record IncomingPath(PathString PublicPath, PathString RoutingPath, string FolderName, string PublicName);
 
     public static IncomingPath? FromRequest(HttpContext context)
