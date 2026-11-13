@@ -93,7 +93,7 @@ internal static class StudioMcpSchemas
           "additionalProperties": false,
           "properties": {
             "id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Unique composition layer id." },
-            "sourceId": { "type": "string", "maxLength": {{StudioCatalogSourceIdentity.MaxLength}}, "description": "Catalog source: studioSourceId from honua_list_layers or honua_describe_layer, distinct from layer.id. Portable bindings and metadata.honua.source overrides are separate." },
+            "sourceId": { "type": "string", "maxLength": {{StudioCatalogSourceIdentity.MaxLength}}, "description": "studioSourceId from honua_list_layers or honua_describe_layer; not layer.id. Portable bindings and metadata.honua.source overrides are separate." },
             "type": { "type": "string", "maxLength": 100, "description": "Layer type: fill, circle, line, raster, etc." },
             "title": { "type": "string", "maxLength": 200, "description": "Display title." },
             "visible": { "type": "boolean", "default": true, "description": "Layer visibility." },
@@ -151,13 +151,13 @@ internal static class StudioMcpSchemas
           "required": ["id", "on", "do"],
           "additionalProperties": false,
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxInteractionIdLength}}, "pattern": "\\S", "description": "Unique composition interaction id; existing id replaces the binding." },
+            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxInteractionIdLength}}, "pattern": "\\S", "description": "Unique interaction id; existing id replaces binding." },
             "on": {
               "type": "object",
               "required": ["ref", "event"],
               "additionalProperties": false,
               "properties": {
-                "ref": { "type": "string", "pattern": "{{ComponentRefPattern}}", "description": "Component in this document: map, layer:{id}, widget:{id} or control:{id} (controls collection)." },
+                "ref": { "type": "string", "pattern": "{{ComponentRefPattern}}", "description": "Document component: map, layer:{id}, widget:{id} or control:{id} (controls collection)." },
                 "event": { "type": "string", "enum": {{EventNameEnumJson}}, "description": "Gesture: featureSelect/featureHover (layer), selection (widget), change (control), viewportChange (map)." }
               },
               "description": "Gesture source; max {{StudioInteractionVocabulary.MaxInteractionsPerEventSource}} interactions per (ref, event)."
@@ -215,10 +215,10 @@ internal static class StudioMcpSchemas
           "required": ["id", "kind"],
           "additionalProperties": false,
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Unique controls-block id; existing id replaces the control. Referenced by control:{id}." },
-            "kind": { "type": "string", "enum": {{ControlKindEnumJson}}, "description": "Closed enum. Data controls timeSlider, filterSelect, filterSlider, filterDateRange and opacity emit change; others are map affordances. No feature-editing kind." },
+            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Unique control id; existing id replaces control. Referenced by control:{id}." },
+            "kind": { "type": "string", "enum": {{ControlKindEnumJson}}, "description": "Data controls timeSlider, filterSelect, filterSlider, filterDateRange and opacity emit change; others are map affordances. No feature-editing kind." },
             "title": { "type": "string", "maxLength": {{StudioInteractionVocabulary.MaxControlTitleLength}}, "description": "Host label; defaults per kind." },
-            "sourceId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlSourceIdLength}}, "description": "Domain source: layer id or its bound sourceId in this document; invalid references fail. Normally set for data controls, omitted for presentation controls." },
+            "sourceId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlSourceIdLength}}, "description": "Document layer id or bound sourceId; invalid references fail. Usually set for data controls, omitted for presentation controls." },
             "config": { "type": "object", "description": "Per-kind host configuration: data only, no expressions or additional capabilities." }
           }
         }
