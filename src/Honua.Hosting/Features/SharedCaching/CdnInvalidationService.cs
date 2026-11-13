@@ -10,12 +10,14 @@ namespace Honua.Infrastructure.SharedCaching;
 
 internal sealed partial class CdnInvalidationService(
     ICdnInvalidator invalidator,
-    TimeProvider timeProvider,
     ILogger<CdnInvalidationService> logger,
-    IHttpContextAccessor? httpContextAccessor = null,
-    IOptionsMonitor<SharedCacheOptions>? options = null,
-    ILeaseStore? leaseStore = null)
+    CdnPurgeCoordination? coordination = null)
 {
+    private readonly TimeProvider _timeProvider = coordination?.TimeProvider ?? TimeProvider.System;
+    private readonly IHttpContextAccessor? _httpContextAccessor = coordination?.HttpContextAccessor;
+    private readonly IOptionsMonitor<SharedCacheOptions>? _options = coordination?.Options;
+    private readonly ILeaseStore? _leaseStore = coordination?.LeaseStore;
+
     internal const string ResultHeader = "Honua-Cdn-Invalidation";
 
     internal const string LeaseKeyPrefix = "cdn-purge:";
@@ -49,7 +51,7 @@ internal sealed partial class CdnInvalidationService(
     // The same owner cannot take a lease it still holds, so a second purge of an address from this task also waits for the window.
     private readonly string _leaseOwner = $"{Environment.MachineName}/{Guid.NewGuid():N}";
 
-    internal bool TagsEnabled => options?.CurrentValue.CacheTagsEnabled == true;
+    internal bool TagsEnabled => _options?.CurrentValue.CacheTagsEnabled == true;
 
     // Without a CDN an edit has nothing to coalesce, and must not cost a lease row.
     private bool CdnConfigured => invalidator is not NoCdnInvalidator;
@@ -76,7 +78,7 @@ internal sealed partial class CdnInvalidationService(
         DateTimeOffset? schedule = null;
         lock (_gate)
         {
-            var now = timeProvider.GetUtcNow();
+            var now = _timeProvider.GetUtcNow();
             var due = _lastEditInvalidation + CurrentCoalescingWindow();
             if (_windowClosesAt.HasValue || due > now)
             {
@@ -115,10 +117,10 @@ internal sealed partial class CdnInvalidationService(
 
     private async Task InvalidatePendingWhenWindowClosesAsync(DateTimeOffset windowClosesAt)
     {
-        var delay = windowClosesAt - timeProvider.GetUtcNow();
+        var delay = windowClosesAt - _timeProvider.GetUtcNow();
         if (delay > TimeSpan.Zero)
         {
-            await Task.Delay(delay, timeProvider).ConfigureAwait(false);
+            await Task.Delay(delay, _timeProvider).ConfigureAwait(false);
         }
 
         string[] paths;
@@ -132,7 +134,7 @@ internal sealed partial class CdnInvalidationService(
             paths = [.. _pendingEditPaths];
             _pendingEditPaths.Clear();
             _windowClosesAt = null;
-            _lastEditInvalidation = timeProvider.GetUtcNow();
+            _lastEditInvalidation = _timeProvider.GetUtcNow();
         }
 
         var result = await SendAfterEditAsync(paths, CdnPurgeCause.Edit(CdnPurgeCause.CoalescedEdits), CancellationToken.None)
@@ -183,7 +185,7 @@ internal sealed partial class CdnInvalidationService(
 
     private void DeferToNextWindow(IEnumerable<string> paths, TimeSpan delay)
     {
-        var due = timeProvider.GetUtcNow() + delay;
+        var due = _timeProvider.GetUtcNow() + delay;
         lock (_gate)
         {
             _pendingEditPaths.UnionWith(paths);
@@ -193,7 +195,7 @@ internal sealed partial class CdnInvalidationService(
             }
 
             _windowClosesAt = due;
-            _lastEditInvalidation = timeProvider.GetUtcNow();
+            _lastEditInvalidation = _timeProvider.GetUtcNow();
         }
 
         _ = InvalidatePendingWhenWindowClosesAsync(due);
@@ -203,7 +205,7 @@ internal sealed partial class CdnInvalidationService(
     // A host without that database is one task, and its own window is enough.
     private async Task<string[]> ClaimAcrossTasksAsync(string[] paths, CancellationToken cancellationToken)
     {
-        if (leaseStore is null || paths.Length == 0)
+        if (_leaseStore is null || paths.Length == 0)
         {
             return paths;
         }
@@ -226,7 +228,7 @@ internal sealed partial class CdnInvalidationService(
         {
             // A normal-window lease must not delay an emergency purge; emergency tasks still coalesce together.
             var prefix = lease == EmergencyCoalescingWindow - LeaseMargin ? LeaseKeyPrefix + "emergency:" : LeaseKeyPrefix;
-            return await leaseStore!.TryAcquireAsync(new LeaseClaim(prefix + path, _leaseOwner), lease, cancellationToken)
+            return await _leaseStore!.TryAcquireAsync(new LeaseClaim(prefix + path, _leaseOwner), lease, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -240,7 +242,7 @@ internal sealed partial class CdnInvalidationService(
     private TimeSpan HeldLeaseRetryDelay() => CurrentCoalescingWindow() / 6;
 
     private TimeSpan CurrentCoalescingWindow()
-        => options?.CurrentValue.Emergency is { } emergency && (emergency.AllPublicLayers || emergency.Layers.Count > 0)
+        => _options?.CurrentValue.Emergency is { } emergency && (emergency.AllPublicLayers || emergency.Layers.Count > 0)
             ? EmergencyCoalescingWindow
             : CoalescingWindow;
 
@@ -277,7 +279,7 @@ internal sealed partial class CdnInvalidationService(
                 break;
             }
 
-            await Task.Delay(delay, timeProvider, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(delay, _timeProvider, cancellationToken).ConfigureAwait(false);
             result = await invalidator.InvalidateAsync(withinBudget, cancellationToken).ConfigureAwait(false);
         }
 
@@ -285,14 +287,14 @@ internal sealed partial class CdnInvalidationService(
     }
 
     private CdnPurgeCause CauseOfCurrentRequest()
-        => httpContextAccessor?.HttpContext is { } context
+        => _httpContextAccessor?.HttpContext is { } context
             ? CdnPurgeCause.Admin(AuditContextResolver.ResolveCorrelationId(context))
             : CdnPurgeCause.Admin(CdnPurgeCause.NoRequest);
 
     private void ReportOnCurrentResponse(CdnInvalidationResult result)
     {
         if (result.Outcome is CdnInvalidationOutcome.NotConfigured
-            || httpContextAccessor?.HttpContext?.Response is not { HasStarted: false } response)
+            || _httpContextAccessor?.HttpContext?.Response is not { HasStarted: false } response)
         {
             return;
         }

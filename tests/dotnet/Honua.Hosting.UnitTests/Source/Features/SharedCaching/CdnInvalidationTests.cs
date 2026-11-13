@@ -178,7 +178,7 @@ public sealed class CdnInvalidationTests
         var context = new DefaultHttpContext();
         context.Response.Headers["X-Correlation-ID"] = "change-42";
         var logger = new RecordingLogger();
-        var service = new CdnInvalidationService(_cloudFront, _time, logger, new HttpContextAccessor { HttpContext = context });
+        var service = new CdnInvalidationService(_cloudFront, logger, new CdnPurgeCoordination { TimeProvider = _time, HttpContextAccessor = new HttpContextAccessor { HttpContext = context } });
 
         await service.InvalidateNowAsync(CdnPaths.Everything, CancellationToken.None);
 
@@ -190,7 +190,7 @@ public sealed class CdnInvalidationTests
     public async Task InvalidateNowAsync_ReleaseCause_RecordsTheRelease()
     {
         var logger = new RecordingLogger();
-        var service = new CdnInvalidationService(_cloudFront, _time, logger);
+        var service = new CdnInvalidationService(_cloudFront, logger, new CdnPurgeCoordination { TimeProvider = _time });
 
         await service.InvalidateNowAsync(CdnPaths.Everything, CancellationToken.None, CdnPurgeCause.Release("sha256:abc"));
 
@@ -201,7 +201,7 @@ public sealed class CdnInvalidationTests
     public async Task InvalidateNowAsync_NoCdnConfigured_RecordsNothing()
     {
         var logger = new RecordingLogger();
-        var service = new CdnInvalidationService(new NoCdnInvalidator(), _time, logger);
+        var service = new CdnInvalidationService(new NoCdnInvalidator(), logger, new CdnPurgeCoordination { TimeProvider = _time });
 
         await service.InvalidateNowAsync(CdnPaths.Everything, CancellationToken.None);
 
@@ -209,5 +209,5 @@ public sealed class CdnInvalidationTests
     }
 
     private CdnInvalidationService Service(IHttpContextAccessor? accessor = null)
-        => new(_cloudFront, _time, NullLogger<CdnInvalidationService>.Instance, accessor);
+        => new(_cloudFront, NullLogger<CdnInvalidationService>.Instance, new CdnPurgeCoordination { TimeProvider = _time, HttpContextAccessor = accessor });
 }
