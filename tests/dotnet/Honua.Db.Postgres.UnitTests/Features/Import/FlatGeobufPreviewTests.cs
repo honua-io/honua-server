@@ -133,6 +133,19 @@ public sealed class FlatGeobufPreviewTests
     }
 
     [Fact]
+    public async Task PreviewFileAsync_FlatGeobuf_UnknownAuthority_ReportsDeclaredSourceNeedingOverride()
+    {
+        await using var stream = CreateFlatGeobufStreamWithAuthorityCrs("CUSTOM", "MYCRS");
+
+        var preview = await CreateService().PreviewFileAsync(stream, "unknown_authority.fgb");
+
+        preview.CoordinateSystem!.DetectedSrid.Should().BeNull();
+        preview.CoordinateSystem.SourceCrsDeclared.Should().BeTrue();
+        preview.CoordinateSystem.DetectionMethod.Should().Be("file-metadata");
+        preview.CoordinateSystem.RequiresSourceOverride.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task PreviewFileAsync_FlatGeobuf_DeclaredUnresolvableWkt_ReportsDeclaredSourceNeedingOverride()
     {
         await using var stream = CreateFlatGeobufStreamWithWktCrs("LOCAL_CS[\"site grid\"]");
@@ -236,9 +249,10 @@ public sealed class FlatGeobufPreviewTests
     public void ReadCrsInfo_NumericCode_ReturnsSridWithoutWkt()
     {
         using var stream = CreateFlatGeobufStreamWithCrs(4326);
-        var (srid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfo(stream);
+        var (srid, crsWkt, declared) = FlatGeobufFormatReader.ReadCrsInfo(stream);
         srid.Should().Be(4326);
         crsWkt.Should().BeNull();
+        declared.Should().BeTrue();
     }
 
     [Fact]
@@ -246,9 +260,10 @@ public sealed class FlatGeobufPreviewTests
     {
         var wkt = "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\"],AUTHORITY[\"EPSG\",\"4326\"]]";
         using var stream = CreateFlatGeobufStreamWithWktCrs(wkt);
-        var (srid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfo(stream);
+        var (srid, crsWkt, declared) = FlatGeobufFormatReader.ReadCrsInfo(stream);
         srid.Should().BeNull();
         crsWkt.Should().Be(wkt);
+        declared.Should().BeTrue();
     }
 
     [Fact]

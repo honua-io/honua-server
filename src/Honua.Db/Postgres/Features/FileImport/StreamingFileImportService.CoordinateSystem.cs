@@ -22,14 +22,15 @@ internal sealed partial class StreamingFileImportService
     private async Task<ImportCoordinateSystem> InspectFlatGeobufCoordinateSystemAsync(
         Stream stream, CancellationToken cancellationToken)
     {
-        var (headerSrid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfo(stream);
+        var (headerSrid, crsWkt, declared) = FlatGeobufFormatReader.ReadCrsInfo(stream);
         if (headerSrid.HasValue)
         {
             return ImportCoordinateSystem.FromDetection(headerSrid, ImportCrsProvenance.FileMetadata);
         }
         if (string.IsNullOrEmpty(crsWkt))
         {
-            return ImportCoordinateSystem.FromDetection(null, ImportCrsProvenance.Unknown);
+            return ImportCoordinateSystem.FromDetection(
+                null, declared ? ImportCrsProvenance.FileMetadata : ImportCrsProvenance.Unknown);
         }
         return ImportCoordinateSystem.FromDetection(
             await ResolveDeclaredWktSridAsync(crsWkt, SupportedFileFormat.FlatGeobuf, cancellationToken),
