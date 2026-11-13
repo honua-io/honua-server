@@ -33,7 +33,10 @@ public sealed class PostgresOidcProviderAdmissionTests(DatabaseFixtureAdapter da
         var foreign = new PostgresOidcProviderStore(harness.CreateConfigurationDocuments(new EphemeralDataProtectionProvider()));
         await foreign.CreateProviderAsync(new OidcProviderConfiguration
         {
-            Name = "Existing", ProviderType = "Generic", Authority = "https://idp.example.com", ClientId = "existing"
+            Name = "Existing",
+            ProviderType = "Generic",
+            Authority = "https://idp.example.com",
+            ClientId = "existing"
         });
         var fixture = new WebAppFixture().UseSeed("tests/seed/server.yaml").ConfigureWebHost(builder =>
         {
@@ -51,7 +54,10 @@ public sealed class PostgresOidcProviderAdmissionTests(DatabaseFixtureAdapter da
             using var client = fixture.CreateAdminClient();
             using var response = await client.PostAsJsonAsync("/api/v1/admin/oidc/providers", new
             {
-                name, providerType = "Generic", authority = "https://idp.example.com", clientId = "second"
+                name,
+                providerType = "Generic",
+                authority = "https://idp.example.com",
+                clientId = "second"
             });
 
             Assert.Equal(HttpStatusCode.PaymentRequired, response.StatusCode);
