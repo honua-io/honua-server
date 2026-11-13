@@ -116,44 +116,11 @@ public class TilesetTtlResolverTests
         TilesetTtlResolver.Resolve(options, key).Should().Be(120);
     }
 
-    // ---------------------------------------------------------------------
-    // Formerly-deferred seams (#1794) now implemented in #1837. The dedicated
-    // behavior is covered by TileCacheQuotaPolicyTests (size-quota / LRU
-    // eviction) and MetatileGroupingTests (metatiling); scheduled invalidation
-    // is covered by TileCacheExpiryHostedServiceTests. These guards keep the
-    // resolver / options seam wired so a future refactor cannot silently drop
-    // the eviction / metatiling configuration.
-    // ---------------------------------------------------------------------
-
     [Trait("Tier", "Fast")]
     [Fact]
-    public void TileOptions_ExposesEvictionAndMetatilingSeams()
+    public void TileOptions_MetatilingDefaultsOffAndIsConfigurable()
     {
-        var options = new TileOptions
-        {
-            MetatileFactor = 4,
-            Eviction = new TileCacheEvictionOptions
-            {
-                Enabled = true,
-                MaxEntries = 1000,
-                MaxBytes = 50_000_000
-            }
-        };
-
-        options.MetatileFactor.Should().Be(4);
-        options.Eviction.Enabled.Should().BeTrue();
-        options.Eviction.MaxEntries.Should().Be(1000);
-        options.Eviction.MaxBytes.Should().Be(50_000_000);
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public void TileOptions_DefaultEvictionDisabled_AndMetatilingOff()
-    {
-        var options = new TileOptions();
-
-        options.MetatileFactor.Should().Be(1);
-        options.Eviction.Should().NotBeNull();
-        options.Eviction.Enabled.Should().BeFalse();
+        new TileOptions().MetatileFactor.Should().Be(1);
+        new TileOptions { MetatileFactor = 4 }.MetatileFactor.Should().Be(4);
     }
 }

@@ -216,7 +216,7 @@
     },
     {
       "name": "Tile Operations",
-      "description": "Asynchronous tile cache seed/warm/invalidate/purge/archive/publish jobs and on-demand eviction sweeps. Response payloads on this surface use PascalCase property names."
+      "description": "Asynchronous tile cache seed/warm/invalidate/purge/archive/publish jobs. Response payloads on this surface use PascalCase property names."
     },
     {
       "name": "Field Mask Policies",
@@ -20368,92 +20368,6 @@
         }
       }
     },
-    "/tile-operations/evict": {
-      "post": {
-        "tags": [
-          "Tile Operations"
-        ],
-        "summary": "Evict Tile Cache",
-        "description": "Runs a synchronous size-quota / LRU eviction sweep over the live Redis tile-key index, dropping least-recently-used tiles above the configured `TileOptions:Eviction` quota. When eviction is disabled or no live tile-key index is available the sweep is a no-op that returns 200 with `Enabled=false` and zero counts. No request body is required.",
-        "operationId": "evictTileCache",
-        "responses": {
-          "200": {
-            "description": "Eviction sweep outcome.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TileCacheEvictionResult"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/tile-operations/cache/inventory": {
-      "get": {
-        "tags": [
-          "Tile Operations"
-        ],
-        "summary": "Inventory Generated Tile Cache",
-        "description": "Returns tracked generated-tile counts, bytes, and per-zoom coverage. Optional service and gridset filters bound the inventory without scanning object storage.",
-        "operationId": "getTileCacheInventory",
-        "parameters": [
-          {
-            "name": "serviceId",
-            "in": "query",
-            "required": false,
-            "description": "Service whose published layers scope the inventory.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "gridset",
-            "in": "query",
-            "required": false,
-            "description": "Tile matrix set identifier used to scope the inventory.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Generated tile-cache inventory.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TileCacheInventoryResult"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "503": {
-            "description": "The generated tile-cache index is unavailable.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/connections/{id}/tables/validate": {
       "post": {
         "tags": [
@@ -21136,75 +21050,6 @@
           },
           "503": {
             "description": "The geocoder reference store is unavailable or incompatible; the import was not applied."
-          }
-        }
-      }
-    },
-    "/license/capacity": {
-      "get": {
-        "tags": [
-          "License"
-        ],
-        "summary": "Get License Capacity State",
-        "description": "Returns the current license capacity meter state: band state, licensed capacity terms, current and rolling p95 serving units, burst ceiling and multiplier, sustained-growth grace clock, enforcement/Redis-coordination flags, local instance role and topology, live/production/excluded instance counts, surge state, warning thresholds, and operator-facing messages.",
-        "operationId": "getLicenseCapacityState",
-        "responses": {
-          "200": {
-            "description": "Current license capacity meter state.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseLicenseCapacitySnapshot"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/license/capacity/surge": {
-      "post": {
-        "tags": [
-          "License"
-        ],
-        "summary": "Set License Surge Mode",
-        "description": "Declares or clears operator surge mode on the license capacity meter and returns the recomputed capacity state. While surge mode is active, p95 samples are masked and surge days are drawn from the annual allowance. A missing request body returns 400.",
-        "operationId": "setLicenseCapacitySurgeMode",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LicenseSurgeModeUpdateRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Capacity state after applying the surge declaration.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseLicenseCapacitySnapshot"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -30565,7 +30410,7 @@
               "enabled",
               "disabled"
             ],
-            "description": "Runtime licensing mode. Disabled grants all catalog entitlements without license validation, expiry or capacity metering."
+            "description": "Runtime licensing mode. Disabled grants all catalog entitlements without license validation or expiry."
           }
         }
       },
@@ -48527,7 +48372,7 @@
         "properties": {
           "operation": {
             "type": "string",
-            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `expire`, `delete`."
+            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`."
           },
           "serviceId": {
             "type": "string",
@@ -48572,11 +48417,6 @@
             "type": "string",
             "nullable": true,
             "description": "Optional generated-tile style window. Defaults to `default`."
-          },
-          "format": {
-            "type": "string",
-            "nullable": true,
-            "description": "Optional generated-tile format window. ImageServer aliases such as `jpeg`, `tiff`, and `cog` map to their canonical cache extensions."
           },
           "tileCompression": {
             "type": "string",
@@ -48827,93 +48667,6 @@
           "ServiceId": {
             "type": "string",
             "nullable": true
-          }
-        }
-      },
-      "TileCacheEvictionResult": {
-        "type": "object",
-        "description": "Response property names are PascalCase.",
-        "properties": {
-          "Enabled": {
-            "type": "boolean",
-            "description": "Whether eviction was enabled and a live tile-key index was available."
-          },
-          "Scanned": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Tracked tile entries scanned at the start of the sweep."
-          },
-          "Evicted": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Least-recently-used tiles evicted from the cache store and index."
-          },
-          "Message": {
-            "type": "string"
-          }
-        }
-      },
-      "TileCacheInventoryResult": {
-        "type": "object",
-        "description": "Response property names are PascalCase.",
-        "required": [
-          "Enabled",
-          "EntryCount",
-          "TotalBytes",
-          "PerZoom"
-        ],
-        "properties": {
-          "Enabled": {
-            "type": "boolean",
-            "description": "Whether a live tile-key index was available."
-          },
-          "ServiceId": {
-            "type": "string",
-            "nullable": true
-          },
-          "Gridset": {
-            "type": "string",
-            "nullable": true
-          },
-          "EntryCount": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "TotalBytes": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "PerZoom": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TileCacheZoomCoverage"
-            }
-          }
-        }
-      },
-      "TileCacheZoomCoverage": {
-        "type": "object",
-        "required": [
-          "Zoom",
-          "Count",
-          "Bytes"
-        ],
-        "properties": {
-          "Zoom": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "Count": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "Bytes": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
           }
         }
       },
@@ -49748,226 +49501,6 @@
           },
           "data": {
             "$ref": "#/components/schemas/GeocoderReferenceImportResult"
-          },
-          "message": {
-            "type": "string",
-            "nullable": true
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "LicenseSurgeModeUpdateRequest": {
-        "type": "object",
-        "required": [
-          "enabled"
-        ],
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "description": "Whether surge mode should be active."
-          },
-          "reason": {
-            "type": "string",
-            "nullable": true,
-            "description": "Optional operator-facing reason for the surge declaration."
-          }
-        }
-      },
-      "LicenseCapacitySnapshot": {
-        "type": "object",
-        "properties": {
-          "state": {
-            "type": "integer",
-            "format": "int32",
-            "enum": [
-              0,
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8,
-              9
-            ],
-            "description": "Numeric LicenseCapacityBandState: 0 NotConfigured, 1 Excluded, 2 Normal, 3 ApproachingBand, 4 Burst, 5 Grace, 6 GraceExpired, 7 Surge, 8 MeteringGap, 9 Disabled."
-          },
-          "terms": {
-            "$ref": "#/components/schemas/LicenseCapacityTermsView"
-          },
-          "currentServingUnits": {
-            "type": "number",
-            "format": "double"
-          },
-          "p95ServingUnits": {
-            "type": "number",
-            "format": "double"
-          },
-          "burstCeilingServingUnits": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "burstMultiplier": {
-            "type": "number",
-            "format": "double"
-          },
-          "gracePeriodDays": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "graceStartedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "graceExpiresAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "registrationEnforced": {
-            "type": "boolean"
-          },
-          "redisConfigured": {
-            "type": "boolean"
-          },
-          "redisCoordinated": {
-            "type": "boolean"
-          },
-          "meteringGap": {
-            "type": "boolean",
-            "description": "True when enforcement is suspended because the coordinated meter is unavailable."
-          },
-          "localDeploymentRole": {
-            "type": "integer",
-            "format": "int32",
-            "enum": [
-              0,
-              1,
-              2,
-              3,
-              4
-            ],
-            "description": "Numeric LicenseDeploymentRole: 0 Production, 1 Development, 2 Test, 3 Staging, 4 ColdDr."
-          },
-          "localTopology": {
-            "type": "integer",
-            "format": "int32",
-            "enum": [
-              0,
-              1,
-              2,
-              3
-            ],
-            "description": "Numeric LicenseServingTopology: 0 SingleNode, 1 VirtualMachine, 2 ReplicaSet, 3 Serverless."
-          },
-          "localServingUnits": {
-            "type": "number",
-            "format": "double"
-          },
-          "localRoleExcluded": {
-            "type": "boolean"
-          },
-          "liveInstanceCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "productionInstanceCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "excludedInstanceCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "surge": {
-            "$ref": "#/components/schemas/LicenseSurgeState"
-          },
-          "warning80Percent": {
-            "type": "boolean"
-          },
-          "warning100Percent": {
-            "type": "boolean"
-          },
-          "messages": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Safe operator-facing state messages."
-          },
-          "meteringEnabled": {
-            "type": "boolean",
-            "description": "False in Disabled licensing mode; no registrations, usage samples, surge state or capacity enforcement are active."
-          }
-        }
-      },
-      "LicenseCapacityTermsView": {
-        "type": "object",
-        "nullable": true,
-        "description": "Capacity terms encoded in the active license; omitted when the license declares none.",
-        "properties": {
-          "maxSustainedServingUnits": {
-            "type": "number",
-            "format": "double"
-          },
-          "annualSurgeDays": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true,
-            "description": "Null means unlimited."
-          },
-          "surgeAllowance": {
-            "type": "string",
-            "description": "Human-readable surge allowance tier."
-          }
-        }
-      },
-      "LicenseSurgeState": {
-        "type": "object",
-        "properties": {
-          "isActive": {
-            "type": "boolean"
-          },
-          "activatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "reason": {
-            "type": "string",
-            "nullable": true
-          },
-          "annualAllowanceDays": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true,
-            "description": "Null means unlimited."
-          },
-          "usedDaysThisYear": {
-            "type": "number",
-            "format": "double"
-          },
-          "remainingDaysThisYear": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          }
-        }
-      },
-      "ApiResponseLicenseCapacitySnapshot": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/LicenseCapacitySnapshot"
           },
           "message": {
             "type": "string",
