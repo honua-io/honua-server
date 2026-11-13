@@ -22220,6 +22220,7 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_Post_ReturnsLocationsArray",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_Post_WithEsriAddressesParameter_ReturnsLocationsArray",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_Post_WithEsriJsonOutSr_AcceptsSpatialReferenceObject",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_ResultIdEchoesRecordObjectId_FallingBackToOneBasedPosition",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_ReturnsBadRequest_WhenExplicitProviderDoesNotSupportBatch",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_Post_WithoutEntitlement_Returns402WithEntitlementDetail"
       ],

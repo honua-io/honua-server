@@ -77,7 +77,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 1
         with:
-          sparse-checkout: scripts/ci/select-gate-runner.sh
+          sparse-checkout: |
+            scripts/ci/select-gate-runner.sh
+            scripts/ci/gate-runner-heartbeat.sh
           sparse-checkout-cone-mode: false
 
       - name: Assume the build-host wake role
