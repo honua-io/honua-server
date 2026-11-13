@@ -66,9 +66,11 @@ internal static class RealtimeServiceCollectionExtensions
 
         if (crossNode)
         {
+            var listenerConnectionString = configuration.GetConnectionString(RealtimeOptions.ListenerConnectionStringName);
             services.TryAddSingleton(provider => RealtimeListener.Create(
-                configuration.GetConnectionString(RealtimeOptions.ListenerConnectionStringName),
-                provider.GetService<NpgsqlDataSource>()?.ConnectionString,
+                string.IsNullOrWhiteSpace(listenerConnectionString)
+                    ? provider.GetService<NpgsqlDataSource>()?.ConnectionString
+                    : listenerConnectionString,
                 provider.GetRequiredService<IOptions<RealtimeOptions>>(),
                 provider.GetRequiredService<ILogger<RealtimeListener>>()));
         }

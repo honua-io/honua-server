@@ -379,7 +379,7 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
             var log = _dispatcher.Log;
             var family = _request.Family.Name;
             var window = await log.ReadWindowAsync(family, cancellationToken).ConfigureAwait(false);
-            var position = StartPosition(window, options, out var reset);
+            var (position, reset) = StartPosition(window, options);
             if (reset is not null)
             {
                 await _request.Writer.WriteAsync(reset, cancellationToken).ConfigureAwait(false);
@@ -444,27 +444,24 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
     }
 
     // Where replay starts, and the reset to send first when the requested position is unusable.
-    private long StartPosition(RealtimeLogWindow window, RealtimeOptions options, out RealtimeDelivery.Reset? reset)
+    private (long Position, RealtimeDelivery.Reset? Reset) StartPosition(RealtimeLogWindow window, RealtimeOptions options)
     {
-        reset = null;
         if (_request.After is not { } after)
         {
-            return window.Head;
+            return (window.Head, null);
         }
 
         if (after < window.Oldest - 1 || after > window.Head)
         {
-            reset = new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, window.Head);
-            return window.Head;
+            return (window.Head, new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, window.Head));
         }
 
         if (window.Head - after > options.ResumeMaxEvents)
         {
-            reset = new RealtimeDelivery.Reset(RealtimeResetReasons.TooFarBehind, window.Head);
-            return window.Head;
+            return (window.Head, new RealtimeDelivery.Reset(RealtimeResetReasons.TooFarBehind, window.Head));
         }
 
-        return after;
+        return (after, null);
     }
 
     // Hands off to live delivery. Returns true instead when held events overflowed, so the replay

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Threading.Channels;
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Realtime;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Server.Features.Realtime;
@@ -517,10 +518,37 @@ public sealed class RealtimeFanoutProviderTests(DatabaseFixtureAdapter database)
         provider.GetRequiredService<RealtimeListener>().PollOnlyReason.Should().BeNull();
     }
 
+    [IntegrationTest]
+    public async Task Registration_ResolvedPasswordFromProductionDataSource_ListenerAuthenticates()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Deployment:Mode"] = "MultiNode",
+            ["ConnectionStrings:DefaultConnection"] = "secret-reference:honua/db"
+        }).Build();
+        await using var dataSource = PostgresDataSourceFactory.Create(
+            database.ConnectionString, schemaHeadersEnabled: false, new ConnectionLimits());
+        new NpgsqlConnectionStringBuilder(dataSource.ConnectionString).Password.Should().NotBeNullOrEmpty();
+        var services = new ServiceCollection().AddLogging().AddSingleton(dataSource);
+        services.AddRealtimeFanout(configuration, hostsDatabasePollingLoops: true);
+        await using var provider = services.BuildServiceProvider();
+        var listener = provider.GetRequiredService<RealtimeListener>();
+        using var stopping = new CancellationTokenSource();
+        var running = listener.RunAsync(() => { }, stopping.Token);
+        try
+        {
+            await WaitForAsync(() => listener.IsConnected, "the production data source preserves resolved authentication for LISTEN");
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+            await running;
+        }
+    }
+
     private static RealtimeListener CreateListener(string? listenerConnectionString, string? systemConnectionString)
         => RealtimeListener.Create(
-            listenerConnectionString,
-            systemConnectionString,
+            string.IsNullOrWhiteSpace(listenerConnectionString) ? systemConnectionString : listenerConnectionString,
             Microsoft.Extensions.Options.Options.Create(new RealtimeOptions()),
             NullLogger<RealtimeListener>.Instance);
 
