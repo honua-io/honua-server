@@ -123,11 +123,9 @@ internal sealed class ExportJobExecutor(
         CancellationToken cancellationToken)
     {
         var request = run.Request;
-        var features = services.GetRequiredService<IStreamingFeatureStore>()
-            .StreamFeaturesAsync(request.StorageLayerId, request.Query, cancellationToken);
-        var output = await WriteToFileAsync(run, features, services.GetRequiredService<ICrsRegistry>(), cancellationToken)
+        var output = await WriteToFileAsync(run, services, cancellationToken)
             .ConfigureAwait(false);
-        var downloadUrl = await UploadAsync(run, output, services.GetRequiredService<ICloudFileStorage>(), cancellationToken)
+        var downloadUrl = await UploadAsync(new ExportUpload(run, output), services.GetRequiredService<ICloudFileStorage>(), cancellationToken)
             .ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -168,11 +166,11 @@ internal sealed class ExportJobExecutor(
     }
 
     private static async Task<string?> UploadAsync(
-        ExportRun run,
-        ExportFileResult output,
+        ExportUpload upload,
         ICloudFileStorage cloudStorage,
         CancellationToken cancellationToken)
     {
+        var (run, output) = upload;
         await using (var fileStream = File.OpenRead(output.Path))
         {
             var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
@@ -227,11 +225,13 @@ internal sealed class ExportJobExecutor(
 
     private async Task<ExportFileResult> WriteToFileAsync(
         ExportRun run,
-        IAsyncEnumerable<Feature> features,
-        ICrsRegistry crsRegistry,
+        IServiceProvider services,
         CancellationToken cancellationToken)
     {
         var job = run.Request;
+        var features = services.GetRequiredService<IStreamingFeatureStore>()
+            .StreamFeaturesAsync(job.StorageLayerId, job.Query, cancellationToken);
+        var crsRegistry = services.GetRequiredService<ICrsRegistry>();
         var crs = await crsRegistry.ResolveBySridAsync(job.OutputSrid, cancellationToken).ConfigureAwait(false);
         var srsName = crs.HasValue ? $"EPSG:{job.OutputSrid}" : null;
         var srsWkt = crs?.Wkt;
@@ -294,6 +294,8 @@ internal sealed class ExportJobExecutor(
 
     // One export attempt: the request, its Processing progress, its scratch directory, and the upload
     // it may have to retract.
+    private sealed record ExportUpload(ExportRun Run, ExportFileResult Output);
+
     private sealed class ExportRun(ExportJob request, ExportProgress processing, IJobExecutionContext context)
     {
         public IJobExecutionContext Context { get; } = context;

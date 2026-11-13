@@ -69,10 +69,11 @@ internal static partial class OperationsProgressEndpoints
 
     private static async Task<IResult> HandleGetOperationStatus(
         string operationId,
-        [FromServices] IUniversalProgressStore progressStore,
-        CancellationToken cancellationToken,
-        [FromServices] IExecutionJobStore? jobStore = null)
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
     {
+        var progressStore = httpContext.RequestServices.GetRequiredService<IUniversalProgressStore>();
+        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
         if (string.IsNullOrEmpty(operationId))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -731,6 +732,16 @@ internal static partial class OperationsProgressEndpoints
                     {
                         case ExecutionJobCancellationState.Cancelled:
                             await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+                            if (executionJob.Spec.Kind is ExecutionJobKind.Export or ExecutionJobKind.TileCache)
+                            {
+                                var cancelled = new CancelOperationResponse
+                                {
+                                    OperationId = operationId,
+                                    Message = "Operation cancellation requested",
+                                    Type = progress.Type
+                                };
+                                return Results.Json(cancelled, OperationsProgressJsonContext.Default.CancelOperationResponse);
+                            }
                             break;
                         case ExecutionJobCancellationState.CancellationRequested:
                             var delegated = new CancelOperationResponse
