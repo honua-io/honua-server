@@ -242,6 +242,7 @@ GATE_INPUTS = (
     # affected-shard families.
     "src",
     "tests/dotnet",
+    "eng/ci/fixtures",
     "Directory.Build.props",
     "Directory.Build.targets",
     "Directory.Packages.props",

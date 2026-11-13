@@ -8,7 +8,9 @@ import subprocess
 
 def forbidden(path: str) -> bool:
     parts = PurePosixPath(path).parts
-    return any(part.casefold() == "evidence" for part in parts) or ".log" in parts[-1].casefold()
+    return any(part.casefold() == "evidence" for part in parts) or parts[-1].casefold().endswith(
+        (".log", ".log.gz", ".log.bz2", ".log.xz", ".log.zip", ".log.zst")
+    )
 
 
 def main() -> int:

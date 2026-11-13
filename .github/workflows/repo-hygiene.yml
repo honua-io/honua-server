@@ -24,5 +24,16 @@ jobs:
       - run: python3 scripts/ci/check-evidence-paths.py --base "$BASE_SHA"
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-  repo-hygiene:
+  shared-hygiene:
     uses: honua-io/.github/.github/workflows/repo-hygiene.yml@7e93a67a13dc498cc4e5032f00cd9e93171afb95 # light runner switch
+  repo-hygiene:
+    name: repo-hygiene / Repository hygiene
+    if: ${{ always() }}
+    needs: [evidence-paths, shared-hygiene]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both hygiene checks
+        env:
+          EVIDENCE_RESULT: ${{ needs.evidence-paths.result }}
+          SHARED_RESULT: ${{ needs.shared-hygiene.result }}
+        run: test "$EVIDENCE_RESULT" = success && test "$SHARED_RESULT" = success

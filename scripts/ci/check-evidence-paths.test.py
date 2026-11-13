@@ -18,7 +18,7 @@ class EvidencePathsTests(unittest.TestCase):
         for path in ["docs/evidence/run.json", "tests/EVIDENCE/helper.py", "tests/server.log.gz", "build.LOG"]:
             with self.subTest(path=path):
                 self.assertTrue(MODULE.forbidden(path))
-        for path in ["eng/ci/fixtures/shard-capacity/wms.json", "scripts/ci/check-evidence-paths.py", "docs/evidence-posture.md"]:
+        for path in ["eng/ci/fixtures/shard-capacity/wms.json", "scripts/ci/check-evidence-paths.py", "docs/evidence-posture.md", "src/Server.Logging.cs", "docs/logging.md", "tests/catalog.logical.json"]:
             with self.subTest(path=path):
                 self.assertFalse(MODULE.forbidden(path))
 

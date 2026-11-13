@@ -165,10 +165,7 @@ edit_runtime_consumed_manifest() {
   edit_install_manifest
 }
 edit_docs_yaml() { write docs/guides/config.yaml 'key: value'; }
-edit_new_report_schema() {
-  write docs/ci/historical-report.json '{"contract":"unreviewed/v1","input":"docs/guides/intro.md"}'
-  write eng/ci/fixtures/shard-promotion/reconciliation.json '{"contract":"unreviewed/v1","input":"docs/guides/intro.md"}'
-}
+
 rename_docs_to_src() { g mv docs/guides/intro.md src/Lib/intro.md; }
 rename_within_docs() { g mv docs/guides/intro.md docs/guides/renamed.md; }
 no_change() { :; }
@@ -232,15 +229,24 @@ commit_pr "change runtime-consumed manifest"
 merge_onto "${CONSUMER}"
 expect "docs data with a runtime consumer still requires runtime CI" false
 
-start_pr
-edit_new_report_schema
-commit_pr "different JSON contracts still govern referenced documents"
-REPORT_BASE="$(g rev-parse HEAD)"
-g checkout -q -B pr "${REPORT_BASE}"
-edit_docs
-commit_pr "edit JSON-governed docs"
-merge_onto "${REPORT_BASE}"
-expect "unknown report schemas retain conservative reference scanning" false
+for report in docs/ci/historical-report.json eng/ci/fixtures/shard-promotion/reconciliation.json; do
+  for schema in known unknown malformed; do
+    start_pr
+    case "$schema" in
+      known) body='{"contract":"honua.affected-shards-reconciliation/v1","input":"docs/guides/intro.md"}'; expected=true ;;
+      unknown) body='{"contract":"unreviewed/v1","input":"docs/guides/intro.md"}'; expected=false ;;
+      malformed) body='{"input":"docs/guides/intro.md"'; expected=false ;;
+    esac
+    write "$report" "$body"
+    commit_pr "report schema $schema"
+    REPORT_BASE="$(g rev-parse HEAD)"
+    g checkout -q -B pr "${REPORT_BASE}"
+    edit_docs
+    commit_pr "edit JSON-governed docs"
+    merge_onto "${REPORT_BASE}"
+    expect "$report $schema schema reference scanning" "$expected"
+  done
+done
 
 echo "== Refusing to answer without a pull-request merge base"
 start_pr
