@@ -23,9 +23,11 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 {
     private static readonly string[] _migrationResourceNames =
     [
+        "Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql",
         "Honua.Server.Migrations.148_CreateControlPlaneState.sql",
         "Honua.Server.Migrations.149_CreateSecurityState.sql",
-        "Honua.Server.Migrations.150_CreateOAuthClientsAndOperationProgress.sql"
+        "Honua.Server.Migrations.150_CreateOAuthClientsAndOperationProgress.sql",
+        "Honua.Server.Migrations.154_CreateConfigurationDocuments.sql"
     ];
 
     private readonly PostgresJobSubstrateHarness _jobs;
