@@ -114,6 +114,8 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
         var proposal = new OperationProposal
         {
             ProposalId = "live-proposal",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Kind = default,
             Status = OperationProposalStatus.AwaitingApproval,
             Plan = new OperationProposalPlan { ExecutionPayload = "private-execution-payload" }
