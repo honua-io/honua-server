@@ -167,7 +167,6 @@
          backplane pulls transitively (transitive pinning is not enabled repo-wide). See #2554. -->
     <PackageReference Include="MessagePack" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
-    <PackageReference Include="Polly" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Enrichers.Environment" />
     <PackageReference Include="Serilog.Enrichers.Thread" />
