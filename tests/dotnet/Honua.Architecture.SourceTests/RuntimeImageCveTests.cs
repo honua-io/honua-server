@@ -66,7 +66,7 @@ public sealed class RuntimeImageCveTests
         runtimeStage.Should().Contain("apt-get upgrade -y");
         runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' zlib1g");
         runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' apt");
-        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' libapt-pkg6.0t64");
+        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' libapt-pkg7.0");
         runtimeStage.Should().NotContain("dpkg-query -W -f '$${Version}'");
         runtimeStage.Should().NotContain("wget");
     }
