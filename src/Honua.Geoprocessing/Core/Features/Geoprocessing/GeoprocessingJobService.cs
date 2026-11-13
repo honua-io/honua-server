@@ -942,7 +942,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         if (isCustomCode)
         {
             (ownerScope, mintedCustomCodeToken, workload) = await _customCodeGate.ValidateMintAndInjectAsync(
-                jobId, principal, specParams, workload, cancellationToken, resolvedSecurityContext).ConfigureAwait(false);
+                jobId, principal, specParams, workload, resolvedSecurityContext, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -1171,6 +1171,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         return await GetJobForTerminalAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
     }
+
+    public ClaimsPrincipal CaptureOrphanCleanupPrincipal(string jobId, ClaimsPrincipal principal)
+        => new(principal.Identities.Select(identity => new ClaimsIdentity(identity)));
 
     public async Task<ExecutionJobRecord> GetJobForTerminalAsync(
         string jobId,

@@ -57,4 +57,33 @@ public sealed partial class GeoprocessingJobServiceTests
         await denied.Should().ThrowAsync<GeoprocessingNotFoundException>();
         job.Audit.SubmitterSecurityContext!.TenantId.Should().BeNull();
     }
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task CaptureOrphanCleanupPrincipal_LegacyJob_RetainsOnlyDispatchedJobScope()
+    {
+        var tenant = new RequestTenantContext();
+        await using var services = new ServiceCollection().AddSingleton<ITenantContext>(tenant).BuildServiceProvider();
+        var principal = CreatePrincipal();
+        var sut = CreateTenantJobService(services, principal);
+        var job = CreateTenantJobRecord("legacy-cleanup", null);
+        var other = CreateTenantJobRecord("other-legacy", null);
+        _jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
+        _jobStore.GetAsync(other.OperationId, Arg.Any<CancellationToken>()).Returns(other);
+        var context = new HttpContextAccessor().HttpContext!;
+        await new TenantContextMiddleware(_ => Task.CompletedTask, Options.Create(new TenantContextOptions()),
+            NullLogger<TenantContextMiddleware>.Instance).InvokeAsync(context);
+        (await sut.GetJobForTerminalAsync(job.OperationId, principal)).Should().BeSameAs(job);
+
+        var cleanup = sut.CaptureOrphanCleanupPrincipal(job.OperationId, principal);
+        new HttpContextAccessor().HttpContext = null;
+
+        (await sut.GetJobForTerminalAsync(job.OperationId, cleanup)).Should().BeSameAs(job);
+        var denied = () => sut.GetJobForTerminalAsync(other.OperationId, cleanup);
+        await denied.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        denied = () => sut.GetJobForTerminalAsync(job.OperationId, principal);
+        await denied.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        job.Audit.SubmitterSecurityContext!.TenantId.Should().BeNull();
+    }
+
 }

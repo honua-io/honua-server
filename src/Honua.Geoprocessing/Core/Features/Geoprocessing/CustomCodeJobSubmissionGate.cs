@@ -49,8 +49,8 @@ internal sealed class CustomCodeJobSubmissionGate
         ClaimsPrincipal principal,
         Dictionary<string, string> specParams,
         ExecutionJobDefinition? workload,
-        CancellationToken cancellationToken,
-        JobSecurityContext securityContext)
+        JobSecurityContext securityContext,
+        CancellationToken cancellationToken)
     {
         if (_coordinator is null || _customCodeOptions is null)
         {
