@@ -46,26 +46,33 @@ internal sealed partial class PostgresVersionJobStore(JobStoreDatabase database,
                 parameters.Add(new NpgsqlParameter("retention", NpgsqlDbType.Interval) { Value = _retention });
                 if (await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 0)
                 {
-                    await using var read = new NpgsqlCommand(
-                        $"SELECT record::text FROM {_jobs} WHERE job_id = @job_id FOR UPDATE",
-                        connection, transaction);
-                    read.Parameters.AddWithValue("job_id", job.JobId);
-                    var record = await read.ExecuteScalarAsync(token).ConfigureAwait(false) as string;
-                    var current = Deserialize(job.JobId, record);
-                    if (current is not null && HasSameIdentity(current, job) && Stage(current.Status) < Stage(job.Status))
-                    {
-                        command.CommandText = $"""
-                            UPDATE {_jobs} SET stage = @stage, record = @record, expires_at = now() + @retention
-                            WHERE job_id = @job_id
-                            """;
-                        await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
-                    }
+                    await AdvanceAsync(command, job, token).ConfigureAwait(false);
                 }
 
                 await transaction.CommitAsync(token).ConfigureAwait(false);
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken);
+    }
+
+    private async Task AdvanceAsync(NpgsqlCommand command, VersionJob job, CancellationToken token)
+    {
+        await using var read = new NpgsqlCommand(
+            $"SELECT record::text FROM {_jobs} WHERE job_id = @job_id FOR UPDATE",
+            command.Connection, command.Transaction);
+        read.Parameters.AddWithValue("job_id", job.JobId);
+        var record = await read.ExecuteScalarAsync(token).ConfigureAwait(false) as string;
+        var current = Deserialize(job.JobId, record);
+        if (current is null || !HasSameIdentity(current, job) || Stage(current.Status) >= Stage(job.Status))
+        {
+            return;
+        }
+
+        command.CommandText = $"""
+            UPDATE {_jobs} SET stage = @stage, record = @record, expires_at = now() + @retention
+            WHERE job_id = @job_id
+            """;
+        await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
     }
 
     // An unreadable record is reported and treated as an unknown job; the row is kept.
