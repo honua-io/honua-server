@@ -149,14 +149,39 @@ public sealed class AgentApprovalRuleTests
         decision.Kind.Should().Be(PolicyDecisionKind.RequireApproval);
     }
 
-    private sealed class DirectLadder : IGuardrailLadder
+    [UnitTheory]
+    [InlineData("service.publish", BuiltInGuardrailActions.StudioPublicationRequest)]
+    [InlineData("studio.content.rollback", BuiltInGuardrailActions.StudioRollback)]
+    public async Task CanonicalPdp_AgentOperation_BlockedGuardrail_DeniesInsteadOfProposing(
+        string operationId, string action)
+    {
+        var pdp = new CanonicalOperationPolicyDecisionPoint(
+            Options.Create(new OperationPolicyOptions { Enabled = false }), new DirectLadder(GuardrailTier.Blocked));
+        var request = new OperationRequest
+        {
+            OperationId = operationId,
+            GatewayRequest = new OperationGatewayRequest
+            {
+                Kind = OperationClass.StudioDraftMutation,
+                ActionDiscriminator = action,
+            },
+        };
+
+        var decision = await pdp.EvaluateAsync(BuildDescriptor(operationId), request,
+            new OperationPolicyContext { Roles = ["admin", "agent"], AuthorizationOutcome = "autonomy-authorized" });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.Deny);
+        decision.Reason.Should().Be("test: direct edition");
+    }
+
+    private sealed class DirectLadder(GuardrailTier tier = GuardrailTier.DirectExecute) : IGuardrailLadder
     {
         public GuardrailDecision Resolve(OperationClass kind) => Direct();
         public GuardrailDecision Resolve(OperationClass kind, HonuaEdition edition) => Direct();
         public GuardrailDecision Resolve(OperationClass kind, string? action) => Direct();
         public GuardrailDecision Resolve(OperationClass kind, string? action, HonuaEdition edition) => Direct();
-        private static GuardrailDecision Direct() => new(
-            GuardrailTier.DirectExecute, OperationClass.StudioDraftMutation, HonuaEdition.Community, "test: direct edition");
+        private GuardrailDecision Direct() => new(
+            tier, OperationClass.StudioDraftMutation, HonuaEdition.Community, "test: direct edition");
     }
 
     private static OperationPolicyOptions ProductionOptions() => new()
