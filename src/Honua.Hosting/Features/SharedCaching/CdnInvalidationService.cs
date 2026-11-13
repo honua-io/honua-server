@@ -32,8 +32,9 @@ internal sealed partial class CdnInvalidationService(
     // While the emergency setting is on, edits reach the CDN sooner.
     internal static readonly TimeSpan EmergencyCoalescingWindow = TimeSpan.FromSeconds(5);
 
-    // Above this many wildcard paths one invalidation of everything is cheaper for the CDN than naming them.
-    internal const int MaxWildcardPathsPerInvalidation = 6;
+    // Above this many wildcard paths one invalidation of everything is cheaper for the CDN than naming them. Two edits of
+    // different layers of one service fit, and two such requests stay within the CDN's 15 wildcard paths in progress.
+    internal const int MaxWildcardPathsPerInvalidation = 7;
 
     // Bound tag requests below the provider limit without widening a scoped purge to every object.
     internal const int MaxTagsPerInvalidation = 1000;
@@ -140,7 +141,8 @@ internal sealed partial class CdnInvalidationService(
 
         var result = await SendAfterEditAsync(paths, CdnPurgeCause.Edit(CdnPurgeCause.CoalescedEdits), CancellationToken.None)
             .ConfigureAwait(false);
-        if (result is { Failed: true })
+        // A busy CDN has already been handed the paths again for the next window.
+        if (result is { Outcome: CdnInvalidationOutcome.Failed })
         {
             Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
         }
