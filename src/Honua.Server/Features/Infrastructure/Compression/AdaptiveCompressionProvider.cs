@@ -72,15 +72,37 @@ internal static class AdaptiveCompressionLevelSelector
     }
 }
 
-internal sealed class AdaptiveBrotliStream : Stream
+internal sealed class AdaptiveBrotliStream : AdaptiveCompressionStream
+{
+    public AdaptiveBrotliStream(Stream outputStream, AdaptiveCompressionOptions options)
+        : base(outputStream, options)
+    {
+    }
+
+    protected override Stream CreateCompressionStream(Stream outputStream, CompressionLevel level)
+        => new BrotliStream(outputStream, level, leaveOpen: true);
+}
+
+internal sealed class AdaptiveGzipStream : AdaptiveCompressionStream
+{
+    public AdaptiveGzipStream(Stream outputStream, AdaptiveCompressionOptions options)
+        : base(outputStream, options)
+    {
+    }
+
+    protected override Stream CreateCompressionStream(Stream outputStream, CompressionLevel level)
+        => new GZipStream(outputStream, level, leaveOpen: true);
+}
+
+internal abstract class AdaptiveCompressionStream : Stream
 {
     private readonly Stream _outputStream;
     private bool _disposed;
     private readonly AdaptiveCompressionOptions _options;
     private readonly MemoryStream _buffer;
-    private BrotliStream? _compressionStream;
+    private Stream? _compressionStream;
 
-    public AdaptiveBrotliStream(Stream outputStream, AdaptiveCompressionOptions options)
+    protected AdaptiveCompressionStream(Stream outputStream, AdaptiveCompressionOptions options)
     {
         _outputStream = outputStream;
         _options = options;
@@ -101,185 +123,6 @@ internal sealed class AdaptiveBrotliStream : Stream
             _buffer.Write(buffer, offset, count);
 
             // Once we have enough data or reach a threshold, choose compression level
-            if (_buffer.Length >= _options.FastCompressionThreshold || ShouldFlush())
-            {
-                InitializeCompressionStream();
-            }
-        }
-        else
-        {
-            _compressionStream.Write(buffer, offset, count);
-        }
-    }
-
-    public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-    {
-        if (_compressionStream == null)
-        {
-            await _buffer.WriteAsync(buffer.AsMemory(offset, count), cancellationToken);
-
-            if (_buffer.Length >= _options.FastCompressionThreshold || ShouldFlush())
-            {
-                await InitializeCompressionStreamAsync(cancellationToken);
-            }
-        }
-        else
-        {
-            await _compressionStream.WriteAsync(buffer.AsMemory(offset, count), cancellationToken);
-        }
-    }
-
-    public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
-    {
-        if (_compressionStream == null)
-        {
-            await _buffer.WriteAsync(buffer, cancellationToken);
-
-            if (_buffer.Length >= _options.FastCompressionThreshold || ShouldFlush())
-            {
-                await InitializeCompressionStreamAsync(cancellationToken);
-            }
-        }
-        else
-        {
-            await _compressionStream.WriteAsync(buffer, cancellationToken);
-        }
-    }
-
-    private void InitializeCompressionStream()
-    {
-        var level = DetermineCompressionLevel(_buffer.Length);
-        _compressionStream = new BrotliStream(_outputStream, level, leaveOpen: true);
-
-        // Write buffered data to compression stream directly from the MemoryStream's
-        // internal buffer instead of copying it out via ToArray().
-        if (_buffer.Length > 0)
-        {
-            _compressionStream.Write(_buffer.GetBuffer(), 0, (int)_buffer.Length);
-            _buffer.SetLength(0);
-        }
-    }
-
-    private async Task InitializeCompressionStreamAsync(CancellationToken cancellationToken)
-    {
-        if (_compressionStream != null)
-        {
-            return;
-        }
-
-        var level = DetermineCompressionLevel(_buffer.Length);
-        _compressionStream = new BrotliStream(_outputStream, level, leaveOpen: true);
-
-        if (_buffer.Length > 0)
-        {
-            // Write directly from the MemoryStream's internal buffer instead of copying
-            // it out via ToArray().
-            await _compressionStream.WriteAsync(
-                _buffer.GetBuffer().AsMemory(0, (int)_buffer.Length), cancellationToken);
-            _buffer.SetLength(0);
-        }
-    }
-
-    private CompressionLevel DetermineCompressionLevel(long contentSize)
-        => AdaptiveCompressionLevelSelector.Select(contentSize, _options);
-
-    private static bool ShouldFlush()
-    {
-        // Force initialization if we're about to flush/close without reaching threshold
-        return false; // Simple implementation for now
-    }
-
-    public override void Flush()
-    {
-        if (_compressionStream == null && _buffer.Length > 0)
-        {
-            InitializeCompressionStream();
-        }
-        _compressionStream?.Flush();
-    }
-
-    public override async Task FlushAsync(CancellationToken cancellationToken)
-    {
-        if (_compressionStream == null && _buffer.Length > 0)
-        {
-            await InitializeCompressionStreamAsync(cancellationToken);
-        }
-        if (_compressionStream != null)
-        {
-            await _compressionStream.FlushAsync(cancellationToken);
-        }
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        // DisposeAsync has already released the buffer; Stream.DisposeAsync calls back into here.
-        if (disposing && !_disposed)
-        {
-            _disposed = true;
-            if (_compressionStream == null && _buffer.Length > 0)
-            {
-                InitializeCompressionStream();
-            }
-            _compressionStream?.Dispose();
-            _buffer.Dispose();
-        }
-        base.Dispose(disposing);
-    }
-
-    public override async ValueTask DisposeAsync()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        if (_compressionStream == null && _buffer.Length > 0)
-        {
-            await InitializeCompressionStreamAsync(CancellationToken.None);
-        }
-
-        if (_compressionStream != null)
-        {
-            await _compressionStream.DisposeAsync();
-        }
-
-        await _buffer.DisposeAsync();
-        _disposed = true;
-        await base.DisposeAsync();
-    }
-
-    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-    public override void SetLength(long value) => throw new NotSupportedException();
-}
-
-internal sealed class AdaptiveGzipStream : Stream
-{
-    private readonly Stream _outputStream;
-    private bool _disposed;
-    private readonly AdaptiveCompressionOptions _options;
-    private readonly MemoryStream _buffer;
-    private GZipStream? _compressionStream;
-
-    public AdaptiveGzipStream(Stream outputStream, AdaptiveCompressionOptions options)
-    {
-        _outputStream = outputStream;
-        _options = options;
-        _buffer = new MemoryStream();
-    }
-
-    public override bool CanRead => false;
-    public override bool CanSeek => false;
-    public override bool CanWrite => true;
-    public override long Length => throw new NotSupportedException();
-    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
-
-    public override void Write(byte[] buffer, int offset, int count)
-    {
-        if (_compressionStream == null)
-        {
-            _buffer.Write(buffer, offset, count);
-
             if (_buffer.Length >= _options.FastCompressionThreshold)
             {
                 InitializeCompressionStream();
@@ -328,7 +171,7 @@ internal sealed class AdaptiveGzipStream : Stream
     private void InitializeCompressionStream()
     {
         var level = DetermineCompressionLevel(_buffer.Length);
-        _compressionStream = new GZipStream(_outputStream, level, leaveOpen: true);
+        _compressionStream = CreateCompressionStream(_outputStream, level);
 
         // Write buffered data to compression stream directly from the MemoryStream's
         // internal buffer instead of copying it out via ToArray().
@@ -347,7 +190,7 @@ internal sealed class AdaptiveGzipStream : Stream
         }
 
         var level = DetermineCompressionLevel(_buffer.Length);
-        _compressionStream = new GZipStream(_outputStream, level, leaveOpen: true);
+        _compressionStream = CreateCompressionStream(_outputStream, level);
 
         if (_buffer.Length > 0)
         {
@@ -361,6 +204,8 @@ internal sealed class AdaptiveGzipStream : Stream
 
     private CompressionLevel DetermineCompressionLevel(long contentSize)
         => AdaptiveCompressionLevelSelector.Select(contentSize, _options);
+
+    protected abstract Stream CreateCompressionStream(Stream outputStream, CompressionLevel level);
 
     public override void Flush()
     {
@@ -377,7 +222,6 @@ internal sealed class AdaptiveGzipStream : Stream
         {
             await InitializeCompressionStreamAsync(cancellationToken);
         }
-
         if (_compressionStream != null)
         {
             await _compressionStream.FlushAsync(cancellationToken);
