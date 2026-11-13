@@ -21,6 +21,7 @@ internal sealed class ExportJobExecutor(
 {
     internal const string ExportFailureMessage = "Export failed.";
     private const string ExportingPhase = "Exporting features";
+    private static readonly TimeSpan AdmissionRetryDelay = TimeSpan.FromMilliseconds(10);
 
     public ExecutionJobKind Kind => ExecutionJobKind.Export;
 
@@ -53,29 +54,36 @@ internal sealed class ExportJobExecutor(
     private async Task<ExportStart> StartProcessingAsync(ExportAdmission attempt, CancellationToken cancellationToken)
     {
         var (job, request, context) = attempt;
-        var existing = await progressStore.GetProgressAsync<ExportProgress>(request.JobId, cancellationToken).ConfigureAwait(false);
-        await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
-        if (existing?.Status == OperationStatus.Cancelled && job.CancellationRequestedAt.HasValue)
+        while (true)
         {
-            throw new OperationCanceledException("The export was cancelled before it started.");
+            cancellationToken.ThrowIfCancellationRequested();
+            var existing = await progressStore.GetProgressAsync<ExportProgress>(request.JobId, cancellationToken).ConfigureAwait(false);
+            await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
+            if (existing?.Status == OperationStatus.Cancelled && job.CancellationRequestedAt.HasValue)
+            {
+                throw new OperationCanceledException("The export was cancelled before it started.");
+            }
+
+            var processing = Fresh(request);
+            var admission = await progressStore.TryReplaceProgressAsync(
+                    new OperationProgressWrite(request.JobId, processing, ExportJobService.Retention),
+                    existing,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (admission.Outcome == ProgressCompareAndSetOutcome.Updated)
+            {
+                return new ExportStart(processing);
+            }
+
+            if (admission.CurrentProgress?.Status == OperationStatus.Cancelled)
+            {
+                throw new OperationCanceledException("The export was cancelled before it started.");
+            }
+
+            // A retired attempt may write after its lease check; the current owner retries admission.
+            await Task.Delay(AdmissionRetryDelay, cancellationToken).ConfigureAwait(false);
         }
-
-        var processing = Fresh(request);
-        var admission = await progressStore.TryReplaceProgressAsync(
-                new OperationProgressWrite(request.JobId, processing, ExportJobService.Retention),
-                existing,
-                cancellationToken)
-            .ConfigureAwait(false);
-        return admission.Outcome == ProgressCompareAndSetOutcome.Updated
-            ? new ExportStart(processing)
-            : Lost(admission.CurrentProgress as ExportProgress);
     }
-
-    private static ExportStart Lost(ExportProgress? current) => current?.Status switch
-    {
-        OperationStatus.Cancelled => throw new OperationCanceledException("The export was cancelled before it started."),
-        _ => new ExportStart(null)
-    };
 
     private static ExportProgress Fresh(ExportJob request)
         => ExportProgress.CreateInitial(request.JobId, request.Format, request.ServiceName, request.ServiceLayerIndex, request.TotalFeatures)
