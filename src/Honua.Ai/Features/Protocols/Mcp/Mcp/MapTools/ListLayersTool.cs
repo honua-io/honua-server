@@ -33,7 +33,7 @@ internal sealed class ListLayersTool : IMcpTool
     {
         Name = ToolName,
         Title = "List layers",
-        Description = "List the published services and layers available to query or render, with geometry type, extent, and a short description. Use the returned serviceId/layerId with honua_query_features and honua_render_map. "
+        Description = "List the published services and layers available to query or render, with geometry type, extent, and a short description. Use the returned serviceId/serviceLayerIndex with honua_query_features and honua_render_map. "
             + "For a catalog-backed Studio draft copy studioSourceId into layer.sourceId; layer.id is a separate composition identity.",
         InputSchema = MapToolSchemas.ListLayersArgumentSchema,
         OutputSchema = McpToolOutputSchemas.ListLayersOutputSchema,
@@ -86,7 +86,7 @@ internal sealed class ListLayersTool : IMcpTool
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var layers = new List<McpLayerSummary>();
-        var identities = new Dictionary<(string ServiceId, int LayerId),
+        var identities = new Dictionary<(string ServiceId, int ServiceLayerIndex),
             (string ResourceId, string? BindingId, McpLayerSummary Summary)>();
         foreach (var service in snapshot.Graph.Services)
         {
@@ -148,7 +148,7 @@ internal sealed class ListLayersTool : IMcpTool
             }
 
             var byServiceId = string.CompareOrdinal(a.ServiceId, b.ServiceId);
-            return byServiceId != 0 ? byServiceId : a.LayerId.CompareTo(b.LayerId);
+            return byServiceId != 0 ? byServiceId : a.ServiceLayerIndex.CompareTo(b.ServiceLayerIndex);
         });
 
         var totalCount = layers.Count;
@@ -188,7 +188,7 @@ internal sealed class ListLayersTool : IMcpTool
         {
             ServiceId = service.Metadata.Id,
             ServiceName = service.Metadata.Name,
-            LayerId = layerIndex,
+            ServiceLayerIndex = layerIndex,
             Name = name,
             Type = resource.Type.ToString(),
             GeometryType = (spatial?.GeometryType ?? MetadataV2GeometryType.None).ToString(),

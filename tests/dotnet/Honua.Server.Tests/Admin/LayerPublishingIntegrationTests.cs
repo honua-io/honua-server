@@ -127,7 +127,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         api!.Success.Should().BeTrue();
         api.Data.Should().NotBeNull();
         var layer = api.Data!;
-        _layerId = layer.LayerId;
+        _layerId = layer.StorageLayerId;
 
         layer.Enabled.Should().Be(expectedEnabled);
         layer.ServiceName.Should().Be(_serviceName);
@@ -135,12 +135,12 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         if (expectedEnabled)
         {
             // The expected row and geometry come from our independent database seed.
-            await AssertPublishedCollectionServesSeedRowOnlyAsync(layer.LayerId);
+            await AssertPublishedCollectionServesSeedRowOnlyAsync(layer.StorageLayerId);
         }
         else
         {
             using var itemsResponse = await _client.GetAsync(
-                $"/ogc/features/collections/{layer.LayerId}/items?f=json&limit=10");
+                $"/ogc/features/collections/{layer.StorageLayerId}/items?f=json&limit=10");
             itemsResponse.StatusCode.Should().Be(HttpStatusCode.NotFound,
                 await itemsResponse.Content.ReadAsStringAsync());
         }
@@ -152,7 +152,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Operation(Operations.Create)]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled")]
     [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers/extents/refresh")]
     public async Task QualifiedLayerMutations_ThroughConnectionRoute_PreserveEffectiveStorageOwnership(bool managed)
@@ -172,14 +172,14 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             StorageMode = managed ? "managed" : "source",
             Enabled = true
         });
-        _layerId = layer.LayerId;
+        _layerId = layer.StorageLayerId;
         var expectedConnection = managed ? null : _connectionId.ToString("D");
         var before = _fixture.GetCurrentV2GraphSnapshot();
         var binding = before.Graph.StorageBindings.Single(item =>
-            item.StorageLayerId == layer.LayerId && item.ConnectionId == expectedConnection);
+            item.StorageLayerId == layer.StorageLayerId && item.ConnectionId == expectedConnection);
         var route = $"/api/v1/admin/connections/{_connectionId}/layers";
 
-        using var disabled = await _client.PutAsync($"{route}/{layer.LayerId}/enabled?serviceName={_serviceName}",
+        using var disabled = await _client.PutAsync($"{route}/{layer.StorageLayerId}/enabled?serviceName={_serviceName}",
             JsonContent.Create(new LayerEnabledRequest { Enabled = false }, options: _jsonOptions));
         disabled.StatusCode.Should().Be(HttpStatusCode.OK, await disabled.Content.ReadAsStringAsync());
         var retired = _fixture.GetCurrentV2GraphSnapshot();
@@ -278,7 +278,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             ServiceName = _serviceName,
             Enabled = true
         }, _connectionName);
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
 
         var queryResponse = await _client.GetAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true");
@@ -296,7 +296,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Operation(Operations.Create)]
     [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled")]
     public async Task PublishLayer_ListAndToggle_ReturnsExpectedResults()
     {
         var publishRequest = new PublishLayerRequest
@@ -327,7 +327,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         publishApi.Data.Should().NotBeNull();
 
         var publishedLayer = publishApi.Data!;
-        _layerId = publishedLayer.LayerId;
+        _layerId = publishedLayer.StorageLayerId;
 
         publishedLayer.Schema.Should().Be(_schema);
         publishedLayer.Table.Should().Be(_tableName);
@@ -350,7 +350,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         listApi.Data.Should().NotBeNull();
 
         AdminListContractAssertions.MatchesPublishedSchema("/connections/{id}/layers", listPayload);
-        var listedLayer = listApi.Data!.Items.Single(layer => layer.LayerId == _layerId);
+        var listedLayer = listApi.Data!.Items.Single(layer => layer.StorageLayerId == _layerId);
         listedLayer.Enabled.Should().BeTrue();
 
         var toggleRequest = new LayerEnabledRequest { Enabled = false };
@@ -391,7 +391,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             ServiceName = _serviceName,
             License = license,
         });
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
 
         published.License.Should().Be(license);
         published.LicenseUrl.Should().Be(expectedLicenseUrl);
@@ -402,7 +402,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerPage>>(
             await listResponse.Content.ReadAsStringAsync(),
             _jsonOptions);
-        listApi!.Data!.Items.Single(layer => layer.LayerId == published.LayerId).LicenseUrl
+        listApi!.Data!.Items.Single(layer => layer.StorageLayerId == published.StorageLayerId).LicenseUrl
             .Should().Be(expectedLicenseUrl);
     }
 
@@ -412,7 +412,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer, TestProtocols.MapServer, TestProtocols.OgcApiFeatures, TestProtocols.Stac)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled")]
     [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
     [Endpoint("GET /openapi.json")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
@@ -443,7 +443,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             LicenseUrl = licenseUrl,
             SourceUrl = sourceUrl
         });
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
 
         published.License.Should().Be(license);
         published.Attribution.Should().Be(attribution);
@@ -451,7 +451,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         published.LicenseUrl.Should().Be(licenseUrl);
         published.SourceUrl.Should().Be(sourceUrl);
 
-        var layerId = published.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var layerId = published.StorageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var featureServer = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{layerId}?f=json");
         var mapServer = await _client.GetAsync($"/rest/services/{_serviceName}/MapServer/{layerId}?f=json");
         var ogcCollection = await _client.GetAsync($"/ogc/features/collections/{layerId}?f=json");
@@ -518,7 +518,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             await listResponse.Content.ReadAsStringAsync(),
             _jsonOptions);
         AssertSummaryGovernance(
-            listApi!.Data!.Items.Single(layer => layer.LayerId == published.LayerId),
+            listApi!.Data!.Items.Single(layer => layer.StorageLayerId == published.StorageLayerId),
             license,
             attribution,
             publisher,
@@ -526,7 +526,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             sourceUrl);
 
         var toggleResponse = await _client.PutAsync(
-            $"/api/v1/admin/connections/{_connectionId}/layers/{published.LayerId}/enabled?serviceName={_serviceName}",
+            $"/api/v1/admin/connections/{_connectionId}/layers/{published.StorageLayerId}/enabled?serviceName={_serviceName}",
             JsonContent.Create(new LayerEnabledRequest { Enabled = false }, options: _jsonOptions));
         toggleResponse.Be200Ok();
         var toggleApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(
@@ -542,7 +542,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             await bulkResponse.Content.ReadAsStringAsync(),
             _jsonOptions);
         AssertSummaryGovernance(
-            bulkApi!.Data!.Single(layer => layer.LayerId == published.LayerId),
+            bulkApi!.Data!.Single(layer => layer.StorageLayerId == published.StorageLayerId),
             license,
             attribution,
             publisher,
@@ -577,11 +577,11 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             Fields = _idNamePopulationFields,
             ServiceName = _serviceName,
         });
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
 
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resourceId = snapshot.Graph.Publications.Single(publication =>
-            publication.LayerIndex == published.LayerId &&
+            publication.LayerIndex == published.StorageLayerId &&
             publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer).ResourceId;
         var publishingServiceIds = snapshot.Graph.Publications
             .Where(publication => string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal))
@@ -627,7 +627,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         persistedService.Metadata.Attribution.Should().Be(attribution);
         persistedService.Metadata.Publisher.Should().Be(publisher);
 
-        var layerId = published.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var layerId = published.StorageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var featureServer = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{layerId}?f=json");
         var mapServer = await _client.GetAsync($"/rest/services/{_serviceName}/MapServer/{layerId}?f=json");
         var ogcCollection = await _client.GetAsync($"/ogc/features/collections/{layerId}?f=json");
@@ -709,7 +709,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
         publishApi.Should().NotBeNull();
         publishApi!.Data.Should().NotBeNull();
-        _layerId = publishApi.Data!.LayerId;
+        _layerId = publishApi.Data!.StorageLayerId;
         var collectionId = _layerId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var storageLayerId = checked(_layerId.Value + 1_000_000);
 
@@ -870,7 +870,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         var nonCanonicalPublishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(
             nonCanonicalPublishPayload,
             _jsonOptions);
-        var nonCanonicalCollectionId = nonCanonicalPublishApi!.Data!.LayerId
+        var nonCanonicalCollectionId = nonCanonicalPublishApi!.Data!.StorageLayerId
             .ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         var nonCanonicalIdSearchResponse = await _client.GetAsync(
@@ -897,31 +897,10 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task PublishLayer_FeatureServerQuery_ReadsSourceBackedPostGisTable()
     {
-        var publishRequest = new PublishLayerRequest
-        {
-            Schema = _schema,
-            Table = _tableName,
-            LayerName = $"Layer {_tableName}",
-            Description = "Layer publish FeatureServer query integration test",
-            GeometryColumn = "geom",
-            GeometryType = "Point",
-            Srid = 4326,
-            PrimaryKey = "id",
-            Fields = new[] { "id", "name", "population" },
-            ServiceName = _serviceName,
-            Enabled = true
-        };
+        var publishRequest = SourceTablePublishRequest("Layer publish FeatureServer query integration test");
 
-        var publishResponse = await _client.PostAsync(
-            $"/api/v1/admin/connections/{_connectionId}/layers",
-            JsonContent.Create(publishRequest, options: _jsonOptions));
-
-        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
-        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
-        publishApi.Should().NotBeNull();
-        publishApi!.Data.Should().NotBeNull();
-        _layerId = publishApi.Data!.LayerId;
+        var publishedLayer = await PublishLayerAsync(publishRequest);
+        _layerId = publishedLayer.StorageLayerId;
 
         var metadataResponse = await _client.GetAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
@@ -1011,7 +990,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
         publishApi.Should().NotBeNull();
         publishApi!.Data.Should().NotBeNull();
-        _layerId = publishApi.Data!.LayerId;
+        _layerId = publishApi.Data!.StorageLayerId;
 
         await InsertPostGisFeatureAsync("Name Routed Feature", 200, 2d, 2d);
 
@@ -1040,31 +1019,10 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         await InsertPostGisFeatureAsync("Near Feature", 200, 1.01d, 1.01d);
         await InsertPostGisFeatureAsync("Far Feature", 300, 10d, 10d);
 
-        var publishRequest = new PublishLayerRequest
-        {
-            Schema = _schema,
-            Table = _tableName,
-            LayerName = $"Layer {_tableName}",
-            Description = "Layer publish nearest-neighbor integration test",
-            GeometryColumn = "geom",
-            GeometryType = "Point",
-            Srid = 4326,
-            PrimaryKey = "id",
-            Fields = new[] { "id", "name", "population" },
-            ServiceName = _serviceName,
-            Enabled = true
-        };
+        var publishRequest = SourceTablePublishRequest("Layer publish nearest-neighbor integration test");
 
-        var publishResponse = await _client.PostAsync(
-            $"/api/v1/admin/connections/{_connectionId}/layers",
-            JsonContent.Create(publishRequest, options: _jsonOptions));
-
-        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
-        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
-        publishApi.Should().NotBeNull();
-        publishApi!.Data.Should().NotBeNull();
-        _layerId = publishApi.Data!.LayerId;
+        var publishedLayer = await PublishLayerAsync(publishRequest);
+        _layerId = publishedLayer.StorageLayerId;
 
         var pointGeometry = Uri.EscapeDataString(@"{""x"":1,""y"":1}");
         var queryResponse = await _client.GetAsync(
@@ -1116,7 +1074,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         publishApi!.Success.Should().BeTrue();
         publishApi.Data.Should().NotBeNull();
 
-        _layerId = publishApi.Data!.LayerId;
+        _layerId = publishApi.Data!.StorageLayerId;
 
         var bulkRequest = new LayerEnabledRequest { Enabled = false };
 
@@ -1133,7 +1091,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         bulkApi!.Success.Should().BeTrue();
         bulkApi.Data.Should().NotBeNull();
 
-        bulkApi.Data!.Single(layer => layer.LayerId == _layerId).Enabled.Should().BeFalse();
+        bulkApi.Data!.Single(layer => layer.StorageLayerId == _layerId).Enabled.Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -1144,32 +1102,10 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task PublishLayer_MaterializesFeaturesAndExtentForFeatureServer()
     {
-        var publishRequest = new PublishLayerRequest
-        {
-            Schema = _schema,
-            Table = _tableName,
-            LayerName = $"Layer {_tableName}",
-            Description = "Layer publish materialization integration test",
-            GeometryColumn = "geom",
-            GeometryType = "Point",
-            Srid = 4326,
-            PrimaryKey = "id",
-            Fields = new[] { "id", "name", "population" },
-            ServiceName = _serviceName,
-            Enabled = true
-        };
+        var publishRequest = SourceTablePublishRequest("Layer publish materialization integration test");
 
-        var publishResponse = await _client.PostAsync(
-            $"/api/v1/admin/connections/{_connectionId}/layers",
-            JsonContent.Create(publishRequest, options: _jsonOptions));
-
-        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
-        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
-        publishApi.Should().NotBeNull();
-        publishApi!.Success.Should().BeTrue();
-        publishApi.Data.Should().NotBeNull();
-        _layerId = publishApi.Data!.LayerId;
+        var publishedLayer = await PublishLayerAsync(publishRequest);
+        _layerId = publishedLayer.StorageLayerId;
 
         await using (var connection = await _fixture.Postgres.GetConnectionAsync())
         await using (var command = connection.CreateCommand())
@@ -1239,7 +1175,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Operation(Operations.Update)]
     [Operation(Operations.Query)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{layerId}/features/refresh")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{storageLayerId}/features/refresh")]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
     public async Task RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads()
@@ -1262,7 +1198,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = publishedLayer.LayerId;
+        _layerId = publishedLayer.StorageLayerId;
 
         // The publish-time snapshot has exactly one row (the seeded "Test Feature").
         (await GetCanonicalSnapshotCountAsync(_layerId.Value)).Should().Be(1);
@@ -1304,7 +1240,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         refreshApi.Should().NotBeNull();
         refreshApi!.Success.Should().BeTrue();
         refreshApi.Data.Should().NotBeNull();
-        refreshApi.Data!.LayerId.Should().Be(_layerId.Value);
+        refreshApi.Data!.StorageLayerId.Should().Be(_layerId.Value);
         refreshApi.Data.MaterializedFeatureCount.Should().Be(2);
 
         // The canonical snapshot the MVT path reads now reflects the updated source.
@@ -1355,7 +1291,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             ServiceName = _serviceName,
             Enabled = true
         });
-        var layerId = publishedLayer.LayerId;
+        var layerId = publishedLayer.StorageLayerId;
         _layerId = layerId;
 
         await InsertPostGisFeatureAsync("Reimported Feature", 250, 1.001d, 1.001d);
@@ -1368,10 +1304,10 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             schema: null,
             _tableName);
 
-        nonSpatial.LayerId.Should().BeLessThan(layerId);
-        refreshed.Should().NotContain(result => result.LayerId == nonSpatial.LayerId);
+        nonSpatial.StorageLayerId.Should().BeLessThan(layerId);
+        refreshed.Should().NotContain(result => result.StorageLayerId == nonSpatial.StorageLayerId);
         refreshed.Should().ContainSingle(result =>
-            result.LayerId == layerId && result.MaterializedFeatureCount == 2);
+            result.StorageLayerId == layerId && result.MaterializedFeatureCount == 2);
         (await GetCanonicalSnapshotCountAsync(layerId)).Should().Be(2);
     }
 
@@ -1403,7 +1339,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = publishedLayer.LayerId;
+        _layerId = publishedLayer.StorageLayerId;
 
         // Expected state computed from the fixture's own seed, not from a response snapshot:
         // CreatePostGisTableAsync inserts exactly one row, ('Test Feature', 100, POINT(1 1)).
@@ -1468,7 +1404,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = publishedLayer.LayerId;
+        _layerId = publishedLayer.StorageLayerId;
 
         _fixture.EnableV2ServiceEditingCapabilities(
             _serviceName,
@@ -1532,7 +1468,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             StorageMode = "managed",
             Capabilities = ["query", "Create", "Update", "Delete"]
         });
-        _layerId = publishedLayer.LayerId;
+        _layerId = publishedLayer.StorageLayerId;
 
         publishedLayer.StorageMode.Should().Be("managed");
         publishedLayer.Capabilities.Should().Equal("Query", "Create", "Update", "Delete");
@@ -1640,14 +1576,14 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             StorageMode = "managed",
             Capabilities = ["Query", "Create", "Update", "Delete"]
         });
-        _layerId = publishedLayer.LayerId;
+        _layerId = publishedLayer.StorageLayerId;
 
-        await _publishingFixture.SimulateMissingCatalogSridAsync(publishedLayer.LayerId);
+        await _publishingFixture.SimulateMissingCatalogSridAsync(publishedLayer.StorageLayerId);
         using (var scope = _fixture.Services.CreateScope())
         {
             var cache = scope.ServiceProvider.GetRequiredService<IFeatureCacheManager>();
-            cache.InvalidateLayerCache(publishedLayer.LayerId);
-            (await cache.GetLayerSridAsync(publishedLayer.LayerId, CancellationToken.None)).Should().BeNull();
+            cache.InvalidateLayerCache(publishedLayer.StorageLayerId);
+            (await cache.GetLayerSridAsync(publishedLayer.StorageLayerId, CancellationToken.None)).Should().BeNull();
         }
 
         var queryPath = $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
@@ -1759,7 +1695,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{layerId}/features/refresh")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{storageLayerId}/features/refresh")]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task RefreshMaterializedFeatures_OnManagedStoreLayer_IsRefusedAndKeepsEdits()
     {
@@ -1782,7 +1718,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             StorageMode = "managed",
             Capabilities = ["Query", "Create"]
         });
-        _layerId = publishedLayer.LayerId;
+        _layerId = publishedLayer.StorageLayerId;
 
         const string insertBody = """
             {
@@ -1867,7 +1803,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             Fields = _idNamePopulationFields,
             ServiceName = _serviceName
         });
-        _layerId = sourceLayer.LayerId;
+        _layerId = sourceLayer.StorageLayerId;
 
         // ...and managed copies of the same table still publish, without selecting the source
         // key: the managed store assigns the identity.
@@ -1896,7 +1832,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             """;
         using var farContent = new StringContent(farInsert, Encoding.UTF8, "application/geo+json");
         var farResponse = await _client.PostAsync(
-            $"/ogc/features/collections/{first.LayerId}/items",
+            $"/ogc/features/collections/{first.StorageLayerId}/items",
             farContent);
         farResponse.StatusCode.Should().Be(
             HttpStatusCode.Created,
@@ -1918,7 +1854,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
 
         // Both managed layers share the features table. The second layer's extent covers only
         // its own copied row at (1, 1), not the first layer's (50, 40) edit.
-        await AssertLayerExtentAsync(second.LayerId, 1d, 1d, 1d, 1d);
+        await AssertLayerExtentAsync(second.StorageLayerId, 1d, 1d, 1d, 1d);
 
         var refreshResponse = await _client.PostAsync(
             $"/api/v1/admin/connections/{_connectionId}/layers/extents/refresh?serviceName={_serviceName}",
@@ -1926,8 +1862,8 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         var refreshPayload = await refreshResponse.Content.ReadAsStringAsync();
         refreshResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {refreshPayload}");
 
-        await AssertLayerExtentAsync(first.LayerId, 1d, 1d, 50d, 40d);
-        await AssertLayerExtentAsync(second.LayerId, 1d, 1d, 1d, 1d);
+        await AssertLayerExtentAsync(first.StorageLayerId, 1d, 1d, 50d, 40d);
+        await AssertLayerExtentAsync(second.StorageLayerId, 1d, 1d, 1d, 1d);
     }
 
     private async Task AssertLayerExtentAsync(int layerId, double xmin, double ymin, double xmax, double ymax)
@@ -2081,7 +2017,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             };
 
             var publishedLayer = await PublishLayerAsync(publishRequest);
-            _layerId = publishedLayer.LayerId;
+            _layerId = publishedLayer.StorageLayerId;
 
             // #2020: route global honua.layers/honua.services UPDATEs through the schema-mutation
             // advisory lock (combined statement also seeds the per-test public table).
@@ -2178,7 +2114,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
                 ServiceName = _serviceName,
                 Enabled = true
             });
-            _layerId = nonEmptyLayer.LayerId;
+            _layerId = nonEmptyLayer.StorageLayerId;
 
             var emptyLayer = await PublishLayerAsync(new PublishLayerRequest
             {
@@ -2212,7 +2148,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
 
             var publishedGraph = _fixture.GetCurrentV2GraphSnapshot();
             var disabledBinding = publishedGraph.Graph.StorageBindings.Single(binding =>
-                binding.StorageLayerId == disabledLayer.LayerId);
+                binding.StorageLayerId == disabledLayer.StorageLayerId);
             var disabledResource = publishedGraph.Index.ResourcesById[disabledBinding.ResourceId];
             var disabledPublications = publishedGraph.Index.PublicationsByResource[disabledResource.Metadata.Id];
             disabledBinding.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Retired);
@@ -2227,7 +2163,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
 
                 UPDATE honua.layers
                 SET extent = ST_MakeEnvelope(10, 10, 10, 10, 4326)
-                WHERE layer_id = {emptyLayer.LayerId};
+                WHERE layer_id = {emptyLayer.StorageLayerId};
 
                 UPDATE honua.services
                 SET service_extent = ST_MakeEnvelope(20, 20, 20, 20, 4326)
@@ -2252,20 +2188,20 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             refreshApi.Data.LayersWithoutExtent.Should().Be(1);
             refreshApi.Data.ServiceExtentUpdated.Should().BeTrue();
 
-            var emptyLayerResult = refreshApi.Data.Layers.Single(layer => layer.LayerId == emptyLayer.LayerId);
+            var emptyLayerResult = refreshApi.Data.Layers.Single(layer => layer.StorageLayerId == emptyLayer.StorageLayerId);
             emptyLayerResult.HasExtent.Should().BeFalse();
             emptyLayerResult.ExtentSrid.Should().BeNull();
 
-            var nonEmptyLayerResult = refreshApi.Data.Layers.Single(layer => layer.LayerId == nonEmptyLayer.LayerId);
+            var nonEmptyLayerResult = refreshApi.Data.Layers.Single(layer => layer.StorageLayerId == nonEmptyLayer.StorageLayerId);
             nonEmptyLayerResult.HasExtent.Should().BeTrue();
             nonEmptyLayerResult.ExtentSrid.Should().Be(4326);
 
-            var disabledLayerResult = refreshApi.Data.Layers.Single(layer => layer.LayerId == disabledLayer.LayerId);
+            var disabledLayerResult = refreshApi.Data.Layers.Single(layer => layer.StorageLayerId == disabledLayer.StorageLayerId);
             disabledLayerResult.HasExtent.Should().BeTrue();
             disabledLayerResult.ExtentSrid.Should().Be(4326);
 
-            await AssertLayerExtentIsNullAsync(emptyLayer.LayerId);
-            await AssertPersistedLayerAndServiceExtentAsync(nonEmptyLayer.LayerId, 1, 1, 1, 1, 0);
+            await AssertLayerExtentIsNullAsync(emptyLayer.StorageLayerId);
+            await AssertPersistedLayerAndServiceExtentAsync(nonEmptyLayer.StorageLayerId, 1, 1, 1, 1, 0);
         }
         finally
         {
@@ -2686,34 +2622,10 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     {
         await ResetPublishedMetadataAsync();
 
-        var publishRequest = new PublishLayerRequest
-        {
-            Schema = _schema,
-            Table = _tableName,
-            LayerName = $"Layer {_tableName}",
-            Description = "Layer publish sequence bootstrap integration test",
-            GeometryColumn = "geom",
-            GeometryType = "Point",
-            Srid = 4326,
-            PrimaryKey = "id",
-            Fields = new[] { "id", "name", "population" },
-            ServiceName = _serviceName,
-            Enabled = true
-        };
+        var publishRequest = SourceTablePublishRequest("Layer publish sequence bootstrap integration test");
 
-        var publishResponse = await _client.PostAsync(
-            $"/api/v1/admin/connections/{_connectionId}/layers",
-            JsonContent.Create(publishRequest, options: _jsonOptions));
-
-        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
-        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
-
-        publishApi.Should().NotBeNull();
-        publishApi!.Success.Should().BeTrue();
-        publishApi.Data.Should().NotBeNull();
-
-        _layerId = publishApi.Data!.LayerId;
+        var publishedLayer = await PublishLayerAsync(publishRequest);
+        _layerId = publishedLayer.StorageLayerId;
         _layerId.Value.Should().BeGreaterThan(0);
     }
 
@@ -2783,6 +2695,21 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         api.Data.Should().NotBeNull();
         return api.Data!;
     }
+
+    private PublishLayerRequest SourceTablePublishRequest(string description) => new()
+    {
+        Schema = _schema,
+        Table = _tableName,
+        LayerName = $"Layer {_tableName}",
+        Description = description,
+        GeometryColumn = "geom",
+        GeometryType = "Point",
+        Srid = 4326,
+        PrimaryKey = "id",
+        Fields = ["id", "name", "population"],
+        ServiceName = _serviceName,
+        Enabled = true
+    };
 
     private async Task<PublishedLayerSummary> PublishLayerAsync(
         PublishLayerRequest request,
@@ -3541,7 +3468,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         var firstPayload = await firstResponse.Content.ReadAsStringAsync();
         firstResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"first publish response: {firstPayload}");
         var firstApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(firstPayload, _jsonOptions);
-        _layerId = firstApi?.Data?.LayerId;
+        _layerId = firstApi?.Data?.StorageLayerId;
 
         // Second publish of same table should fail
         var secondResponse = await _client.PostAsync(
@@ -3553,7 +3480,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
 
     [IntegrationTest]
     [Operation(Operations.Update)]
-    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled")]
     public async Task SetLayerEnabled_NonexistentLayer_Returns404()
     {
         var toggleRequest = new LayerEnabledRequest { Enabled = false };

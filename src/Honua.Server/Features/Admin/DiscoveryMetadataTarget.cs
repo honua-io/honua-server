@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin;
@@ -13,24 +14,28 @@ internal sealed record DiscoveryMetadataTarget(
     IReadOnlySet<string> ServiceIds,
     IReadOnlyList<DiscoveryPublicationImpact> Publications)
 {
-    public static DiscoveryMetadataTarget? ForLayer(MetadataV2GraphSnapshot snapshot, int layerId)
+    public static ResourceValidationResult<DiscoveryMetadataTarget> ForLayer(MetadataV2GraphSnapshot snapshot, int storageLayerId)
     {
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
-            return null;
+        var resolution = snapshot.ResolveStorageResource(storageLayerId);
+        if (resolution.IsAmbiguous)
+            return ResourceValidationResult.AmbiguousIdentifier<DiscoveryMetadataTarget>(resolution.ConflictDetail!);
+        var resource = resolution.Resource;
+        if (resource is null)
+            return ResourceValidationResult.NotFound<DiscoveryMetadataTarget>("Metadata target not found.");
         var resourceIds = new HashSet<string>(StringComparer.Ordinal) { resource.Metadata.Id };
-        return new(resource.Metadata, resourceIds, new HashSet<string>(), Impact(snapshot,
-            snapshot.Graph.Publications.Where(publication => resourceIds.Contains(publication.ResourceId))));
+        return ResourceValidationResult.Success(new DiscoveryMetadataTarget(resource.Metadata, resourceIds, new HashSet<string>(), Impact(snapshot,
+            snapshot.Graph.Publications.Where(publication => resourceIds.Contains(publication.ResourceId)))));
     }
 
-    public static DiscoveryMetadataTarget? ForService(MetadataV2GraphSnapshot snapshot, string serviceName)
+    public static ResourceValidationResult<DiscoveryMetadataTarget> ForService(MetadataV2GraphSnapshot snapshot, string serviceName)
     {
         var services = snapshot.Graph.Services.Where(service =>
             string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (services.Length == 0)
-            return null;
+            return ResourceValidationResult.NotFound<DiscoveryMetadataTarget>("Metadata target not found.");
         var serviceIds = services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
-        return new(services[0].Metadata, new HashSet<string>(), serviceIds, Impact(snapshot,
-            snapshot.Graph.Publications.Where(publication => serviceIds.Contains(publication.ServiceId))));
+        return ResourceValidationResult.Success(new DiscoveryMetadataTarget(services[0].Metadata, new HashSet<string>(), serviceIds, Impact(snapshot,
+            snapshot.Graph.Publications.Where(publication => serviceIds.Contains(publication.ServiceId)))));
     }
 
     public MetadataV2Graph Apply(MetadataV2Graph graph, DiscoveryMetadataUpdateRequest request) => graph with

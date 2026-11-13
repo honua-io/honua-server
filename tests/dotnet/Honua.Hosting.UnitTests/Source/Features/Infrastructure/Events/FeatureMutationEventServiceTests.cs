@@ -177,7 +177,7 @@ public sealed class FeatureMutationEventServiceTests
     }
 
     [UnitTest]
-    public async Task InvalidatePublishedLayerAsync_EvictsStorageLayerAndPublicationId()
+    public async Task InvalidatePublishedLayerAsync_WithoutMetadata_EvictsQuerySurfacesAndPublicationId()
     {
         var responseCache = Substitute.For<IResponseCache>();
         var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
@@ -201,7 +201,13 @@ public sealed class FeatureMutationEventServiceTests
             "response:query:ogc:collection:parcels:*",
             CancellationToken.None);
         await responseCache.Received().RemoveByPatternAsync(
-            "response:query:ogc:collection:42:*",
+            "response:query:ogc:collection:*",
+            CancellationToken.None);
+        await responseCache.Received().RemoveByPatternAsync(
+            "response:query:featureserver:service:*",
+            CancellationToken.None);
+        await responseCache.Received().RemoveByPatternAsync(
+            "response:query:odata:layer:*",
             CancellationToken.None);
     }
 }

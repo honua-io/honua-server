@@ -51,7 +51,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/validation")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/validation")]
     public async Task GetLayerValidation_WithAttributeOnlyStorage_ReturnsValid()
     {
         await using (var connection = await _fixture.Postgres.GetConnectionAsync())
@@ -88,7 +88,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/validation")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/validation")]
     public async Task GetLayerValidation_WithMatchingStorage_ReturnsValid()
     {
         var response = await _client.GetAsync($"/api/v1/admin/metadata/layers/{_layerId}/validation");
@@ -107,7 +107,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/validation")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/validation")]
     public async Task GetLayerValidation_WhenDeclaredColumnIsDropped_ReturnsInvalid()
     {
         await DropPopulationColumnAsync();
@@ -130,7 +130,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/validation")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/validation")]
     public async Task GetLayerValidation_WithInvalidSavedPermanentFilter_ReturnsInvalid()
     {
         await SetLayerPermanentFilterMetadataAsync("missing_field = 'test'", "arcgis-sql");

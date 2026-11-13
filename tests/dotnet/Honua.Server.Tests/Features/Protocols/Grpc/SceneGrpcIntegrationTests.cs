@@ -1627,8 +1627,6 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
         {
             _headers.Add("X-Honua-Test-Schema", _fixture.CurrentSchema);
         }
-
-        await SeedFullWorldRasterAsync(100.0);
     }
 
     public async Task DisposeAsync()
@@ -1692,6 +1690,8 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
     [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
     public async Task GetElevation_PublicLayer_WithoutAuth_Succeeds()
     {
+        await using var heldRasters = await HoldFullWorldRasterAsync(100.0);
+
         // Control: with anonymous access allowed the same query is NOT gated by the
         // RBAC guard and reaches the canonical elevation service, returning a
         // structured result rather than an auth denial.
@@ -1719,6 +1719,8 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ElevationService/GetElevationProfile")]
     public async Task GetElevationProfile_PublicLayer_ReturnsOrderedSamplesAndSourceMetadata()
     {
+        await using var heldRasters = await HoldFullWorldRasterAsync(100.0);
+
         // Happy path: a public layer over the seeded full-world raster returns an
         // ordered profile with a positive line length, the echoed mosaic rule, and
         // populated source metadata (mirrors GetElevation_PublicLayer happy path).
@@ -1782,7 +1784,7 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             accessPolicy: new AccessPolicy { AllowAnonymous = true });
-        await SeedMixedResolutionMosaicAsync();
+        await using var heldRasters = await HoldMixedResolutionMosaicAsync();
 
         var line = new Proto.PolylineGeometry();
         var path = new Proto.CoordinateSequence();
@@ -1811,6 +1813,8 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ElevationService/GetElevation")]
     public async Task GetElevation_PublicLayer_EchoesPointAndReturnsSourceMetadata()
     {
+        await using var heldRasters = await HoldFullWorldRasterAsync(100.0);
+
         // #7: pin the POINT happy-path contract. The proto GetElevationResponse
         // echoes x/y and carries mosaic_rule + source metadata, but the existing
         // point happy-path only asserted HasElevation. Mirror the profile
@@ -1870,7 +1874,7 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
             accessPolicy: new AccessPolicy { AllowAnonymous = true });
 
         // Remove every raster for the layer so source resolution fails.
-        await RasterIntegrationTestData.ReplaceLayerRastersAsync(_fixture, WebAppFixture.TestLayerId);
+        await using var heldRasters = await RasterIntegrationTestData.HoldLayerRastersAsync(_fixture, WebAppFixture.TestLayerId);
 
         var request = new Proto.GetElevationRequest
         {
@@ -1886,8 +1890,8 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
                 "a missing raster source maps to NotFound, mirroring the HTTP 404 mapping.");
     }
 
-    private Task SeedFullWorldRasterAsync(double elevationMeters)
-        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+    private Task<IAsyncDisposable> HoldFullWorldRasterAsync(double elevationMeters)
+        => RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -1903,8 +1907,8 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
                 CreatedAt: RasterIntegrationTestData.WestAcquisition,
                 Srid: 3857));
 
-    private Task SeedMixedResolutionMosaicAsync()
-        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+    private Task<IAsyncDisposable> HoldMixedResolutionMosaicAsync()
+        => RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(

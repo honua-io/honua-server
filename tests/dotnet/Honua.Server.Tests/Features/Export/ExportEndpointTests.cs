@@ -61,7 +61,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
     [InlineData("geoservicesjson")]
     [InlineData("wkb")]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_DeclaredWriterGap_RejectsBeforeLayerLookup(string format)
     {
         var registry = new CapabilityRegistry();
@@ -78,7 +78,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_CsvFormat_ReturnsValidCsvWithWktGeometry()
     {
         var response = await _client.GetAsync(
@@ -103,7 +103,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_ShapefileFormat_ReturnsValidZipWithComponents()
     {
         var response = await _client.GetAsync(
@@ -138,7 +138,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_GeoPackageFormat_ReturnsValidGpkg()
     {
         var response = await _client.GetAsync(
@@ -206,7 +206,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_WithWhereClause_ReturnsFilteredFeatures()
     {
         var response = await _client.GetAsync(
@@ -226,7 +226,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_WithBbox_ReturnsSpatiallyFilteredFeatures()
     {
         // Bbox covering the test data area around San Francisco
@@ -244,7 +244,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [Trait("Category", "Integration")]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     [Theory]
     [InlineData("not-a-bbox")]
     [InlineData("-123,37,-122")]
@@ -263,7 +263,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_WithOutFields_ReturnsSelectedAttributes()
     {
         var response = await _client.GetAsync(
@@ -284,7 +284,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_WithOutFields_PushesProjectionIntoStreamingQuery()
     {
         var featureReader = Substitute.For<IFeatureReader>();
@@ -330,7 +330,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_WithOutSR_ReprojectsCoordinates()
     {
         // Request output in Web Mercator (3857) — default data is in 4326
@@ -352,7 +352,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_InvalidFormat_Returns400()
     {
         var response = await _client.GetAsync(
@@ -363,7 +363,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_NonExistentLayer_Returns404()
     {
         var response = await _client.GetAsync(
@@ -374,7 +374,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_AsyncProgressPersistenceFails_DoesNotQueueHeadlessBackgroundJob()
     {
         var featureReader = Substitute.For<IFeatureReader>();
@@ -427,7 +427,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_AsyncSubmission_CapturesResolvedTenantAndProjection()
     {
         var reader = Substitute.For<IFeatureReader>();

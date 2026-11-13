@@ -16,34 +16,34 @@ internal static partial class AdminLayerAuthoringEndpoints
         public string Detail { get; } = detail;
     }
 
-    private static Task<IResult> HandleGetDisplay(int layerId, HttpContext context) =>
-        ReadLayerConfigurationAsync(layerId, context, resource => DisplayResponse(layerId, resource));
+    private static Task<IResult> HandleGetDisplay(int storageLayerId, HttpContext context) =>
+        ReadLayerConfigurationAsync(storageLayerId, context, resource => DisplayResponse(storageLayerId, resource));
 
-    private static async Task<IResult> HandleSetDisplay(int layerId, LayerDisplayUpdateRequest request, HttpContext context)
+    private static async Task<IResult> HandleSetDisplay(int storageLayerId, LayerDisplayUpdateRequest request, HttpContext context)
     {
-        var problem = await WriteLayerConfigurationAsync(layerId, context, resource => ApplyDisplay(resource, request)).ConfigureAwait(false);
-        return problem ?? await ReadLayerConfigurationAsync(layerId, context, resource => DisplayResponse(layerId, resource)).ConfigureAwait(false);
+        var problem = await WriteLayerConfigurationAsync(storageLayerId, context, resource => ApplyDisplay(resource, request)).ConfigureAwait(false);
+        return problem ?? await ReadLayerConfigurationAsync(storageLayerId, context, resource => DisplayResponse(storageLayerId, resource)).ConfigureAwait(false);
     }
 
-    private static Task<IResult> HandleGetSpatial(int layerId, HttpContext context) =>
-        ReadLayerConfigurationAsync(layerId, context, resource => SpatialResponse(layerId, resource));
+    private static Task<IResult> HandleGetSpatial(int storageLayerId, HttpContext context) =>
+        ReadLayerConfigurationAsync(storageLayerId, context, resource => SpatialResponse(storageLayerId, resource));
 
-    private static async Task<IResult> HandleSetSpatial(int layerId, LayerSpatialUpdateRequest request, HttpContext context)
+    private static async Task<IResult> HandleSetSpatial(int storageLayerId, LayerSpatialUpdateRequest request, HttpContext context)
     {
-        var problem = await WriteLayerConfigurationAsync(layerId, context, resource => ApplySpatial(resource, request)).ConfigureAwait(false);
-        return problem ?? await ReadLayerConfigurationAsync(layerId, context, resource => SpatialResponse(layerId, resource)).ConfigureAwait(false);
+        var problem = await WriteLayerConfigurationAsync(storageLayerId, context, resource => ApplySpatial(resource, request)).ConfigureAwait(false);
+        return problem ?? await ReadLayerConfigurationAsync(storageLayerId, context, resource => SpatialResponse(storageLayerId, resource)).ConfigureAwait(false);
     }
 
-    private static async Task<IResult> ReadLayerConfigurationAsync(int layerId, HttpContext context,
+    private static async Task<IResult> ReadLayerConfigurationAsync(int storageLayerId, HttpContext context,
         Func<MetadataV2Object, IResult> respond)
     {
         var store = context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
         var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-        var target = AdminLayerConfigurationTargets.Resolve(snapshot, layerId);
+        var target = AdminLayerConfigurationTargets.Resolve(snapshot, storageLayerId);
         return TargetProblem(context, target) ?? respond(target.Resource!);
     }
 
-    private static IResult? TargetProblem(HttpContext context, AdminLayerConfigurationTargets.AdminLayerConfigurationTarget target)
+    private static IResult? TargetProblem(HttpContext context, MetadataV2StorageResourceResolution target)
     {
         if (target.IsAmbiguous)
             return ProblemDetailsHelpers.CreateAdminProblem(context, 409, target.ConflictDetail!);
@@ -52,14 +52,14 @@ internal static partial class AdminLayerAuthoringEndpoints
             : null;
     }
 
-    private static async Task<IResult?> WriteLayerConfigurationAsync(int layerId, HttpContext context,
+    private static async Task<IResult?> WriteLayerConfigurationAsync(int storageLayerId, HttpContext context,
         Func<MetadataV2Object, MetadataV2Object> mutate)
     {
         var store = context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
-        AdminLayerConfigurationTargets.AdminLayerConfigurationTarget target;
+        MetadataV2StorageResourceResolution target;
         try
         {
-            target = await AdminLayerConfigurationTargets.WriteAsync(store, layerId, mutate, context.RequestAborted)
+            target = await AdminLayerConfigurationTargets.WriteAsync(store, storageLayerId, mutate, context.RequestAborted)
                 .ConfigureAwait(false);
         }
         catch (LayerConfigurationValidationException exception)
@@ -132,12 +132,12 @@ internal static partial class AdminLayerAuthoringEndpoints
         return resource with { Spatial = spatial };
     }
 
-    private static IResult DisplayResponse(int layerId, MetadataV2Object resource)
+    private static IResult DisplayResponse(int storageLayerId, MetadataV2Object resource)
     {
         var display = resource.Display ?? new();
         return Results.Json(ApiResponse<LayerDisplayResponse>.CreateSuccess(new()
         {
-            LayerId = layerId,
+            StorageLayerId = storageLayerId,
             MinScale = display.MinScale,
             MaxScale = display.MaxScale,
             DefaultVisibility = display.DefaultVisibility,
@@ -148,12 +148,12 @@ internal static partial class AdminLayerAuthoringEndpoints
         }), LayerDisplaySpatialJsonContext.Default.ApiResponseLayerDisplayResponse);
     }
 
-    private static IResult SpatialResponse(int layerId, MetadataV2Object resource)
+    private static IResult SpatialResponse(int storageLayerId, MetadataV2Object resource)
     {
         var spatial = resource.Spatial ?? new();
         return Results.Json(ApiResponse<LayerSpatialResponse>.CreateSuccess(new()
         {
-            LayerId = layerId,
+            StorageLayerId = storageLayerId,
             SpatialReference = spatial.SpatialReference,
             GeometryType = spatial.GeometryType,
             SupportedCrs = spatial.SupportedCrs,

@@ -102,7 +102,7 @@ public sealed class OgcStylesAuthorizationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/suggest-style")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style")]
     public async Task SuggestStyle_WithoutApiKey_Returns401()
     {
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");

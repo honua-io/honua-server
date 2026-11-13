@@ -127,7 +127,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
         features.Select(feature => feature.GetProperty("id").GetString())
             .Should()
-            .Contain(["service:test", $"layer:{WebAppFixture.TestLayerId}"]);
+            .Contain(["service:test", $"layer:pub-layer-{WebAppFixture.TestLayerId}"]);
 
         var serviceRecord = features.Single(feature => feature.GetProperty("id").GetString() == "service:test");
         serviceRecord.GetProperty("properties").GetProperty("type").GetString().Should().Be("service");
@@ -225,28 +225,28 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
     [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
     public async Task GetItems_WithFilters_ReturnsDeterministicSubsets()
     {
-        var idFiltered = await GetRecordIdsAsync($"ids={Uri.EscapeDataString($"layer:{WebAppFixture.TestLayerId}")}");
-        idFiltered.Should().Equal($"layer:{WebAppFixture.TestLayerId}");
+        var idFiltered = await GetRecordIdsAsync($"ids={Uri.EscapeDataString($"layer:pub-layer-{WebAppFixture.TestLayerId}")}");
+        idFiltered.Should().Equal($"layer:pub-layer-{WebAppFixture.TestLayerId}");
 
         var typeFiltered = await GetRecordIdsAsync("type=service");
         typeFiltered.Should().Equal("service:test");
 
         var externalIdFiltered = await GetRecordIdsAsync("externalIds=Test%20Layer");
-        externalIdFiltered.Should().Contain($"layer:{WebAppFixture.TestLayerId}");
+        externalIdFiltered.Should().Contain($"layer:pub-layer-{WebAppFixture.TestLayerId}");
         externalIdFiltered.Should().NotContain("service:test");
 
         var qFiltered = await GetRecordIdsAsync("q=Related");
-        qFiltered.Should().Contain(["layer:1", "layer:2"]);
-        qFiltered.Should().NotContain($"layer:{WebAppFixture.TestLayerId}");
+        qFiltered.Should().Contain(["layer:pub-layer-1", "layer:pub-layer-2"]);
+        qFiltered.Should().NotContain($"layer:pub-layer-{WebAppFixture.TestLayerId}");
 
         // OGC API - Records defines q as a comma-separated OR list. Before #4152,
         // the implementation split on whitespace and treated the whole value as one
         // term, so a client-generated comma list returned no records.
         var qOrFiltered = await GetRecordIdsAsync("q=Related,Test");
         qOrFiltered.Should().Contain([
-            "layer:1",
-            "layer:2",
-            $"layer:{WebAppFixture.TestLayerId}"]);
+            "layer:pub-layer-1",
+            "layer:pub-layer-2",
+            $"layer:pub-layer-{WebAppFixture.TestLayerId}"]);
     }
 
     [IntegrationTest]
@@ -255,7 +255,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
     public async Task GetItems_WithBboxFilter_ReturnsIntersectingRecords()
     {
         var intersecting = await GetRecordIdsAsync("bbox=-123,37,-122,38");
-        intersecting.Should().Contain(["service:test", $"layer:{WebAppFixture.TestLayerId}"]);
+        intersecting.Should().Contain(["service:test", $"layer:pub-layer-{WebAppFixture.TestLayerId}"]);
 
         var outside = await GetRecordIdsAsync("bbox=200,80,210,85");
         outside.Should().BeEmpty();
@@ -322,7 +322,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         try
         {
             provider.SetGraph(graph, schema: _fixture.CurrentSchema);
-            foreach (var id in new[] { $"layer:{WebAppFixture.TestLayerId}", "service:test" })
+            foreach (var id in new[] { $"layer:pub-layer-{WebAppFixture.TestLayerId}", "service:test" })
             {
                 var response = await _fixture.Client.GetAsync(
                     $"/ogc/records/collections/{CatalogId}/items/{Uri.EscapeDataString(id)}");
@@ -346,7 +346,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
             var filtered = await GetRecordIdsAsync("bbox=15,25,16,26");
             if (srid == 3857)
             {
-                filtered.Should().Contain(["service:test", $"layer:{WebAppFixture.TestLayerId}"]);
+                filtered.Should().Contain(["service:test", $"layer:pub-layer-{WebAppFixture.TestLayerId}"]);
             }
             else
             {
@@ -381,7 +381,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
 
         using var secondPage = await ReadJsonAsync(secondResponse);
         secondPage.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(1);
-        secondPage.RootElement.GetProperty("features")[0].GetProperty("id").GetString().Should().Be($"layer:{WebAppFixture.TestLayerId}");
+        secondPage.RootElement.GetProperty("features")[0].GetProperty("id").GetString().Should().Be("layer:pub-image-test");
         secondPage.RootElement.GetProperty("links").EnumerateArray()
             .Should()
             .Contain(link => HasRel(link, "prev") && HrefContains(link, "offset=0"));
@@ -392,7 +392,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
     [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
     public async Task GetItem_WithLayerRecordId_ReturnsRecordLinks()
     {
-        var recordId = Uri.EscapeDataString($"layer:{WebAppFixture.TestLayerId}");
+        var recordId = Uri.EscapeDataString($"layer:pub-layer-{WebAppFixture.TestLayerId}");
         var response = await _fixture.Client.GetAsync($"/ogc/records/collections/{CatalogId}/items/{recordId}");
 
         await AssertOkAsync(response);
@@ -400,12 +400,12 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
 
         using var json = await ReadJsonAsync(response);
         json.RootElement.GetProperty("type").GetString().Should().Be("Feature");
-        json.RootElement.GetProperty("id").GetString().Should().Be($"layer:{WebAppFixture.TestLayerId}");
+        json.RootElement.GetProperty("id").GetString().Should().Be($"layer:pub-layer-{WebAppFixture.TestLayerId}");
         json.RootElement.GetProperty("properties").GetProperty("type").GetString().Should().Be("dataset");
         json.RootElement.GetProperty("properties").GetProperty("geometryType").GetString().Should().Be("Point");
 
         var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
-        links.Should().Contain(link => HasRel(link, "self") && HrefContains(link, "layer%3A0"));
+        links.Should().Contain(link => HasRel(link, "self") && HrefContains(link, recordId));
         links.Should().Contain(link => HrefEndsWith(link, $"/ogc/features/collections/{WebAppFixture.TestLayerId}"));
         links.Should().Contain(link => HrefEndsWith(link, $"/ogc/features/collections/{WebAppFixture.TestLayerId}/items"));
         links.Should().Contain(link => HrefEndsWith(link, $"/stac/collections/{WebAppFixture.TestLayerId}"));
