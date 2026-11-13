@@ -142,9 +142,8 @@ public sealed class OperationPolicyBuiltInRulesTests
     public async Task CanonicalPdp_TypedOperation_UsesBuiltInsInProduction()
     {
         var pdp = new CanonicalOperationPolicyDecisionPoint(
-            Options.Create(ProductionBaseline()),
-            new DenyingLadder(),
-            productionEnvironment: true);
+            new CanonicalOperationPolicyConfiguration(Options.Create(ProductionBaseline()), ProductionEnvironment: true),
+            new DenyingLadder());
 
         pdp.TypedPolicy.BuiltInRules.Should().BeTrue();
         var admin = await pdp.EvaluateAsync(
