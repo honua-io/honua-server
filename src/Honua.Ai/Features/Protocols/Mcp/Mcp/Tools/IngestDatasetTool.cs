@@ -58,11 +58,11 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         Title = "Ingest dataset",
         Description = "Load inline GeoJSON or CSV (up to 4 MB) into a database table for honua_publish_service. "
             + "GeoJSON must be a FeatureCollection with WGS84 (EPSG:4326) lon/lat coordinates per RFC 7946. "
-            + "CSV needs a header and longitude/latitude columns (auto-detected: lon/lng/long/longitude/x and lat/latitude/y; "
+            + "CSV needs a header row and longitude/latitude columns (auto-detected: lon/lng/long/longitude/x and lat/latitude/y; "
             + "override with longitudeColumn/latitudeColumn), or a WKT column named wkt/geom/geometry/shape. "
             + "Undeclared CRS requires sourceSrid. Omit targetSrid to keep the source CRS. "
             + "For address-only CSV, first use honua_geocode_addresses, or set addressColumn for server-side geocoding "
-            + "(up to 100 rows; requires Enterprise 'geocoding.batch'; Community and Pro must use coordinates or GeoJSON). "
+            + "(up to 100 rows; addressColumn requires the Enterprise edition and 'geocoding.batch'; Community and Pro must use coordinates or GeoJSON). "
             + "Returns row count, per-row errors, and connectionId/schema/table/geometryColumn/primaryKey for honua_publish_service. "
             + "Re-ingesting the same datasetName replaces it. Above 4 MB, use POST /api/v1/admin/import/upload.",
         InputSchema = McpToolSchemas.IngestDatasetArgumentSchema,
