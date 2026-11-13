@@ -1313,7 +1313,8 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         var operations = GetOperationsArray(json.RootElement);
         operations.GetArrayLength().Should().BeGreaterOrEqualTo(1);
 
-        var op = operations[0];
+        var op = operations.EnumerateArray().Single(operation =>
+            GetPropertyCaseInsensitive(operation, "operationId").GetString() == operationId);
         GetPropertyCaseInsensitive(op, "operationId").GetString().Should().Be(operationId);
         GetPropertyCaseInsensitive(op, "workflowStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
         GetPropertyCaseInsensitive(op, "currentStage").ValueKind.Should().NotBe(JsonValueKind.Undefined);
@@ -1345,7 +1346,8 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         var operations = GetOperationsArray(json.RootElement);
         operations.GetArrayLength().Should().BeGreaterOrEqualTo(1);
 
-        var op = operations[0];
+        var op = operations.EnumerateArray().Single(operation =>
+            GetPropertyCaseInsensitive(operation, "operationId").GetString() == operationId);
         GetPropertyCaseInsensitive(op, "operationId").GetString().Should().Be(operationId);
         GetPropertyCaseInsensitive(op, "intentId").GetString().Should().Be(intentId);
         GetPropertyCaseInsensitive(op, "serviceId").GetString().Should().Be(progress.ServiceId);
