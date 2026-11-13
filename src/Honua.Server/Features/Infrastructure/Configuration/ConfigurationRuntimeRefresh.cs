@@ -19,7 +19,7 @@ internal sealed class ConfigurationRuntimeRefresh(PostgresConfigurationDocuments
         try
         {
             var snapshot = await documents.ReadAsync(new ConfigurationCollection<Honua.Core.Features.Identity.Domain.OidcProviderConfiguration>(
-                "oidc-provider", ConfigurationJsonContext.Default.OidcProviderConfiguration), cancellationToken).ConfigureAwait(false);
+                "oidc-provider", SharedConfigurationJsonContext.Default.OidcProviderConfiguration), cancellationToken).ConfigureAwait(false);
             registry.Replace(snapshot.Documents.Select(document => new OidcRuntimeProvider(
                 document.Value.ProviderId.ToString("D"), document.Value.ProviderType, document.Value.Name,
                 document.Value.Authority, document.Value.ClientId, document.Value.Enabled, document.Value.ClientSecret)).ToArray());

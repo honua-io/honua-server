@@ -9,7 +9,7 @@ namespace Honua.Server.Features.Infrastructure.Configuration;
 internal sealed class PostgresOidcProviderStore(PostgresConfigurationDocuments documents, IHttpClientFactory? httpClientFactory = null) : IOidcProviderStore
 {
     private readonly ConfigurationCollectionStore<OidcProviderConfiguration> _store = new(documents,
-        new("oidc-provider", ConfigurationJsonContext.Default.OidcProviderConfiguration));
+        new("oidc-provider", SharedConfigurationJsonContext.Default.OidcProviderConfiguration));
 
     public async Task<IReadOnlyList<OidcProviderConfiguration>> ListProvidersAsync(CancellationToken cancellationToken = default)
         => (await _store.ReadAsync(cancellationToken).ConfigureAwait(false)).Documents.Select(document => document.Value).ToArray();

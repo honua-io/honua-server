@@ -9,6 +9,7 @@ using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Authentication;
 using Npgsql;
+using Microsoft.Extensions.Options;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -138,6 +139,20 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         await transaction.RollbackAsync();
         (await harness.CreateConfigurationDocuments().GetGenerationAsync(CancellationToken.None)).Should().Be(initial);
         (await harness.ScalarAsync<long>($"SELECT count(*) FROM {harness.Table("configuration_documents")}")).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    public async Task DisableProfileAsync_BeforeFirstRead_PreservesDisableAcrossBootstrapRestarts()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var options = Options.Create(new ClientCertificateAuthenticationOptions
+        {
+            TrustProfiles = [new() { ProfileId = "bootstrap", EnvironmentId = "production", DisplayName = "Bootstrap" }]
+        });
+        var taskA = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), options);
+        (await taskA.DisableProfileAsync("BOOTSTRAP"))!.Enabled.Should().BeFalse();
+        var taskB = new PostgresClientCertificateTrustStore(harness.CreateConfigurationDocuments(), options);
+        (await taskB.GetProfileAsync("bootstrap"))!.Enabled.Should().BeFalse();
     }
 
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()

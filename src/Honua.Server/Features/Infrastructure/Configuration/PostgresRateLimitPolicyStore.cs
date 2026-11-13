@@ -9,7 +9,7 @@ namespace Honua.Server.Features.Infrastructure.Configuration;
 internal sealed class PostgresRateLimitPolicyStore(PostgresConfigurationDocuments documents) : IRateLimitPolicyStore
 {
     private readonly ConfigurationCollectionStore<RateLimitPolicy> _store = new(documents,
-        new("rate-limit-policy", ConfigurationJsonContext.Default.RateLimitPolicy));
+        new("rate-limit-policy", SharedConfigurationJsonContext.Default.RateLimitPolicy));
 
     public async Task<IReadOnlyList<RateLimitPolicy>> ListPoliciesAsync(CancellationToken cancellationToken = default)
         => (await _store.ReadAsync(cancellationToken).ConfigureAwait(false)).Documents.Select(document => document.Value).ToArray();

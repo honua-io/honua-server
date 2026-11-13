@@ -32,7 +32,13 @@ internal static class OidcProviderDiscoveryProbe
             return Unreachable($"Authority URL validation failed: {ssrfCheck.ErrorMessage}");
         }
 
-        var discoveryUrl = $"{provider.Authority.TrimEnd('/')}/.well-known/openid-configuration";
+        return await FetchAsync(provider.Authority, httpClientFactory, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<OidcProviderTestResult> FetchAsync(
+        string authority, IHttpClientFactory httpClientFactory, CancellationToken cancellationToken)
+    {
+        var discoveryUrl = $"{authority.TrimEnd('/')}/.well-known/openid-configuration";
         try
         {
             using var client = httpClientFactory.CreateClient(IdentityTestHttpClient);

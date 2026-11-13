@@ -91,7 +91,7 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
     {
         if (cache.TryGetExpired(_environment, out var expired))
         {
-            await RenewIfCurrentAsync(cache, probe, expired, cancellationToken).ConfigureAwait(false);
+            await RenewIfCurrentAsync(cache, expired, cancellationToken).ConfigureAwait(false);
         }
 
         var snapshot = await cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken).ConfigureAwait(false);
@@ -124,11 +124,10 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
     // A probe that is not due, or a catalog with no activated revision, answers null: the expired snapshot is then
     // reloaded as before.
     private async ValueTask RenewIfCurrentAsync(
-        MetadataV2GraphSnapshotCache cache, IMetadataV2GraphRevisionProbe probe,
-        MetadataV2GraphSnapshot expired,
+        MetadataV2GraphSnapshotCache cache, MetadataV2GraphSnapshot expired,
         CancellationToken cancellationToken)
     {
-        var currentEtag = await probe.GetCurrentEtagAsync(cancellationToken).ConfigureAwait(false);
+        var currentEtag = await _revisionProbe!.GetCurrentEtagAsync(cancellationToken).ConfigureAwait(false);
         if (currentEtag is not null && string.Equals(currentEtag, expired.Etag, StringComparison.Ordinal))
         {
             cache.Renew(_environment, currentEtag);

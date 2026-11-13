@@ -9,7 +9,7 @@ namespace Honua.Server.Features.Infrastructure.Configuration;
 internal sealed class PostgresClientCertificateTrustStore(PostgresConfigurationDocuments documents, IOptions<ClientCertificateAuthenticationOptions>? options = null) : IClientCertificateTrustStore
 {
     private readonly ConfigurationCollectionStore<ClientCertificateTrustProfile> _store = new(documents,
-        new("client-certificate-trust", ConfigurationJsonContext.Default.ClientCertificateTrustProfile));
+        new("client-certificate-trust", SharedConfigurationJsonContext.Default.ClientCertificateTrustProfile));
 
     private readonly SemaphoreSlim _seedGate = new(1, 1);
     private bool _seeded;
@@ -28,26 +28,35 @@ internal sealed class PostgresClientCertificateTrustStore(PostgresConfigurationD
             .FirstOrDefault(profile => string.Equals(profile.ProfileId, profileId, StringComparison.OrdinalIgnoreCase));
 
     public async Task<ClientCertificateTrustProfile> UpsertProfileAsync(ClientCertificateTrustProfile profile, CancellationToken cancellationToken = default)
-        => (await _store.MutateAsync(Key(profile.ProfileId), current => ClientCertificateTrustMutations.Upsert(current, profile), cancellationToken)
+    {
+        await SeedProfilesAsync(cancellationToken).ConfigureAwait(false);
+        return (await _store.MutateAsync(Key(profile.ProfileId), current => ClientCertificateTrustMutations.Upsert(current, profile), cancellationToken)
             .ConfigureAwait(false))!;
+    }
 
-    public Task<ClientCertificateTrustProfile?> DisableProfileAsync(string profileId, CancellationToken cancellationToken = default)
-        => _store.MutateAsync(Key(profileId), current => current is null ? null : current with { Enabled = false, Revision = current.Revision + 1 }, cancellationToken);
+    public async Task<ClientCertificateTrustProfile?> DisableProfileAsync(string profileId, CancellationToken cancellationToken = default)
+    {
+        await SeedProfilesAsync(cancellationToken).ConfigureAwait(false);
+        return await _store.MutateAsync(Key(profileId), current => current is null ? null : current with { Enabled = false, Revision = current.Revision + 1 }, cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<ClientCertificatePrincipalMapping?> UpsertMappingAsync(string profileId, ClientCertificatePrincipalMapping mapping, CancellationToken cancellationToken = default)
     {
+        await SeedProfilesAsync(cancellationToken).ConfigureAwait(false);
         var result = await _store.MutateAsync(Key(profileId), current => current is null ? null : ClientCertificateTrustMutations.UpsertMapping(current, mapping), cancellationToken).ConfigureAwait(false);
         return result?.PrincipalMappings.First(candidate => Equal(candidate.MappingId, mapping.MappingId));
     }
 
     public async Task<ClientCertificatePrincipalMapping?> DisableMappingAsync(string profileId, string mappingId, CancellationToken cancellationToken = default)
     {
+        await SeedProfilesAsync(cancellationToken).ConfigureAwait(false);
         var result = await _store.MutateAsync(Key(profileId), current => current is null ? null : ClientCertificateTrustMutations.DisableMapping(current, mappingId), cancellationToken).ConfigureAwait(false);
         return result?.PrincipalMappings.FirstOrDefault(candidate => Equal(candidate.MappingId, mappingId));
     }
 
     public async Task<ClientCertificateRevocationEntry?> AddRevocationAsync(string profileId, ClientCertificateRevocationEntry revocation, CancellationToken cancellationToken = default)
     {
+        await SeedProfilesAsync(cancellationToken).ConfigureAwait(false);
         var result = await _store.MutateAsync(Key(profileId), current => current is null ? null : current with
         {
             Revision = current.Revision + 1,
@@ -58,6 +67,7 @@ internal sealed class PostgresClientCertificateTrustStore(PostgresConfigurationD
 
     public async Task<bool> RemoveRevocationAsync(string profileId, string revocationId, CancellationToken cancellationToken = default)
     {
+        await SeedProfilesAsync(cancellationToken).ConfigureAwait(false);
         var removed = false;
         await _store.MutateAsync(Key(profileId), current =>
         {
@@ -81,7 +91,7 @@ internal sealed class PostgresClientCertificateTrustStore(PostgresConfigurationD
             foreach (var profile in options?.Value.TrustProfiles.Select(ClientCertificateTrustProfile.FromOptions) ?? [])
             {
                 await documents.WriteAsync(new ConfigurationCollection<ClientCertificateTrustProfile>(
-                    "client-certificate-trust", ConfigurationJsonContext.Default.ClientCertificateTrustProfile),
+                    "client-certificate-trust", SharedConfigurationJsonContext.Default.ClientCertificateTrustProfile),
                     new(Key(profile.ProfileId), 0, profile), cancellationToken).ConfigureAwait(false);
             }
             _seeded = true;

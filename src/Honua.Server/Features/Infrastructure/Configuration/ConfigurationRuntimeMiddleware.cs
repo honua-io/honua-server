@@ -14,6 +14,11 @@ internal static class ConfigurationRuntimeMiddleware
         var logger = app.ApplicationServices.GetRequiredService<ILogger<ConfigurationRuntimeRefresh>>();
         return app.Use(async (context, next) =>
         {
+            if (context.Request.Path.Equals("/healthz/live", StringComparison.OrdinalIgnoreCase))
+            {
+                await next(context).ConfigureAwait(false);
+                return;
+            }
             try
             {
                 context.Items[RequestConfigurationGeneration.ContextKey] =

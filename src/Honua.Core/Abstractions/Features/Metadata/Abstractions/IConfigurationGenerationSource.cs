@@ -3,7 +3,6 @@
 
 namespace Honua.Core.Features.Metadata.Abstractions;
 
-/// <summary>The committed, deployment-wide configuration generation. Reads must fail when freshness cannot be established.</summary>
 public interface IConfigurationGenerationSource
 {
     Task<long> GetGenerationAsync(CancellationToken cancellationToken);

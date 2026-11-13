@@ -11,4 +11,4 @@ namespace Honua.Server.Features.Infrastructure.Configuration;
 [JsonSerializable(typeof(OidcProviderConfiguration))]
 [JsonSerializable(typeof(RateLimitPolicy))]
 [JsonSerializable(typeof(ClientCertificateTrustProfile))]
-internal sealed partial class ConfigurationJsonContext : JsonSerializerContext;
+internal sealed partial class SharedConfigurationJsonContext : JsonSerializerContext;
