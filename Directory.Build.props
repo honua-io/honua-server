@@ -38,7 +38,7 @@
 
   <!--
     Libraries that plug-in and custom-code authors compile against also build for
-    .NET 10 LTS, so an author on .NET 10 is not cut off (#7387). The server itself
+    .NET 10 LTS, so an author on .NET 10 is not cut off. The server itself
     runs only on HonuaTargetFramework. Projects say
     <TargetFrameworks>$(HonuaPluginTargetFrameworks)</TargetFrameworks>.
   -->
