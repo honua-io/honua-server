@@ -59,9 +59,6 @@ public sealed class GdalWorkerLicensingTests(PostgresFixture postgres) : IClassF
             var snapshot = host.Services.GetRequiredService<ILicenseEntitlementService>().GetSnapshot();
             snapshot.Mode.Should().Be(LicenseMode.Disabled);
             snapshot.Entitlements.Should().HaveCount(FeatureCatalog.All.Count).And.OnlyContain(entitlement => entitlement.IsActive);
-            var capacity = await host.Services.GetRequiredService<ILicenseCapacityMeter>().GetCapacityStateAsync();
-            capacity.MeteringEnabled.Should().BeFalse();
-            capacity.LiveInstanceCount.Should().Be(0);
         }
         finally
         {

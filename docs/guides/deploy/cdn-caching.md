@@ -34,9 +34,11 @@ A request counts as credentialed when it carries any of: the `Authorization`, `X
 | A layer, service or scene is published, unpublished, enabled, disabled, secured or made public | Everything | Before the admin request returns |
 | A style or a read policy changes | Everything | Before the admin request returns |
 | An operator invalidates the cache | Everything | Before the admin request returns |
-| Data is edited through Honua | That layer's tiles and queries, and the OGC API surfaces | At once for the first edit, then at most once every 30 seconds |
+| Data is edited through Honua | That layer's tiles, the OGC API surfaces, and the GeoServices responses of its service | At once for the first edit, then at most once every 30 seconds across all tasks (5 seconds while an emergency setting is on) |
 
 If you edit a table outside Honua, with a desktop GIS or a load script, the server does not see the change. Tiles and queries refresh after the layer's cache lifetime, or immediately when you invalidate the layer's cache.
+
+On several tasks, the tasks share one lease per invalidated tag or path in the database, so whichever task edits first sends the invalidation; an edit on another task during that window is sent shortly after the window ends instead of at once.
 
 CloudFront limits how many invalidations may be in progress. When it is busy the service retries for up to 17 seconds; when many layers are edited in the same 30 seconds it invalidates everything once instead of naming each layer.
 
@@ -97,11 +99,20 @@ SharedCache__Emergency__Layers__0=parcels/3
 SharedCache__Emergency__Layers__1=roads/1
 ```
 
+5. Invalidate edits by cache tag. Name the same header here and in the distribution's cache-tag configuration (CloudFront reads `x-amz-meta-cache-tag` from objects in S3, so one name serves both). Public responses then carry tags such as `honua-service:parcels`, `honua-layer:parcels/3` and `honua-scope:rest/services/parcels`, and an edit invalidates the scope tags instead of wildcard paths: the same responses, whatever the spelling of the address, without counting toward CloudFront's limit of 15 wildcard paths in progress.
+
+Responses the CDN stored before tags were turned on carry none, and edits no longer reach them by path. After every task runs with the setting, invalidate everything once (the operator cache purge does this).
+
+```bash
+SharedCache__CacheTagHeader=x-amz-meta-cache-tag
+```
+
 ## Verify
 
 - Request a public tile without credentials and check that `Cache-Control` starts with `public, max-age=60, s-maxage=300`.
 - Request the same tile with an API key and check that `Cache-Control` is `private, no-store`.
 - Secure a layer, then request it anonymously through the CDN: the request is refused.
+- With cache tags on, check that a public tile carries the tag header and that a request with an API key does not.
 - Request a public tile twice from the same task and check that `Cache-Status` goes from `Honua; fwd=miss` to `Honua; hit`.
 
 ## Troubleshoot

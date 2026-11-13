@@ -7,6 +7,7 @@ using Honua.Db.Postgres.Features.Migration;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
@@ -165,8 +166,30 @@ public sealed class PostgresMigrationBatchRunCatalogTests(PostgresFixture fixtur
         (await catalog.GetAsync(batchId))!.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
     }
 
+    [IntegrationTest]
+    public async Task GetActiveBatchIdsAsync_WhenConfiguredPoolIsFull_WaitsForCapacity()
+    {
+        await EnsureBatchTablesAsync();
+        var settings = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+        {
+            MaxPoolSize = 1,
+            ApplicationName = $"catalog-pool-{Guid.NewGuid():N}"
+        };
+        await using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
+        var catalog = new PostgresMigrationBatchRunCatalog(dataSource,
+            NullLogger<PostgresMigrationBatchRunCatalog>.Instance);
+        await using (var heldConnection = await dataSource.OpenConnectionAsync())
+        {
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+            Func<Task> read = async () => await catalog.GetActiveBatchIdsAsync(cancellation.Token);
+            await read.Should().ThrowAsync<OperationCanceledException>();
+        }
+        using var available = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await catalog.GetActiveBatchIdsAsync(available.Token);
+    }
+
     private PostgresMigrationBatchRunCatalog CreateCatalog()
-        => new(Task.FromResult(fixture.ConnectionString), NullLogger<PostgresMigrationBatchRunCatalog>.Instance);
+        => new(fixture.DataSource, NullLogger<PostgresMigrationBatchRunCatalog>.Instance);
 
     private static MigrationBatchRunRecord NewBatch(string batchId, int total) => new()
     {

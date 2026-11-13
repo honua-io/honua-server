@@ -28,16 +28,14 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
     private const int MaxPageLimit = 100;
     private const int DefaultPageLimit = 25;
 
-    // Resolved once from PostgresConnectionStringCache (PA-077): awaiting an already-completed
-    // Task<string> is effectively free and avoids blocking the thread pool on secret calls.
-    private readonly Task<string> _connectionStringTask;
+    private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<PostgresMigrationRunCatalog> _logger;
 
     public PostgresMigrationRunCatalog(
-        Task<string> connectionStringTask,
+        NpgsqlDataSource dataSource,
         ILogger<PostgresMigrationRunCatalog> logger)
     {
-        _connectionStringTask = connectionStringTask ?? throw new ArgumentNullException(nameof(connectionStringTask));
+        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -49,8 +47,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
         ArgumentException.ThrowIfNullOrWhiteSpace(record.RunId);
         ArgumentException.ThrowIfNullOrWhiteSpace(record.SourceKind);
 
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         // ON CONFLICT DO NOTHING keeps re-recording the same run id a no-op
         // so apply services can retry safely. The follow-up SELECT returns
@@ -124,8 +121,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
             throw new ArgumentException("RecordCompletedAsync requires a terminal status.", nameof(status));
         }
 
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         // Terminal state is sticky: the WHERE clause refuses to overwrite an
         // already-terminal row so a late success notification cannot silently
@@ -172,8 +168,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
 
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         const string sql = """
             UPDATE honua.migration_runs
@@ -207,8 +202,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
 
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         return await GetInternalAsync(connection, runId, cancellationToken).ConfigureAwait(false);
     }
 
@@ -223,8 +217,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
         var sourceKindFilter = string.IsNullOrWhiteSpace(query.SourceKind) ? null : query.SourceKind!.Trim().ToLowerInvariant();
         var statusFilter = query.Status.HasValue ? StatusToText(query.Status.Value) : null;
 
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         const string countSql = """
             SELECT COUNT(*) FROM honua.migration_runs
@@ -295,8 +288,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
 
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         const string sql = """
             SELECT evidence_pack_body::text
@@ -327,8 +319,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
         ArgumentException.ThrowIfNullOrWhiteSpace(scorecardFingerprint);
         ArgumentException.ThrowIfNullOrWhiteSpace(scorecardBody);
 
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         const string updateSql = """
             UPDATE honua.migration_runs
@@ -356,8 +347,7 @@ internal sealed partial class PostgresMigrationRunCatalog : IMigrationRunCatalog
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
 
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         const string sql = """
             SELECT reconciliation_scorecard_body::text

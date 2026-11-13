@@ -6,7 +6,6 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
@@ -43,7 +42,6 @@ internal sealed partial class RateLimitingMiddleware
 
     private readonly RequestDelegate _next;
     private readonly IRateLimitPolicyStore _policyStore;
-    private readonly IConnectionMultiplexer? _redis;
     private readonly RateLimitingOptions _options;
     private readonly ILogger<RateLimitingMiddleware> _logger;
     private readonly TimeProvider _timeProvider;
@@ -53,12 +51,10 @@ internal sealed partial class RateLimitingMiddleware
         IRateLimitPolicyStore policyStore,
         IOptions<RateLimitingOptions> options,
         ILogger<RateLimitingMiddleware> logger,
-        IConnectionMultiplexer? redis,
         TimeProvider? timeProvider = null)
     {
         _next = next;
         _policyStore = policyStore;
-        _redis = redis;
         _options = options.Value;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -141,7 +137,7 @@ internal sealed partial class RateLimitingMiddleware
         // bucket from raw, unauthenticated credentials (Authorization header or
         // ?api_key=): an attacker could mint a fresh bucket per request by sending
         // a random token, bypassing the IP-based limit entirely, and the raw secret
-        // would be persisted verbatim into the cache/Redis key space.
+        // would be kept verbatim in the counter key space.
         var principal = context.User;
         if (principal?.Identity?.IsAuthenticated == true)
         {
@@ -202,10 +198,10 @@ internal sealed partial class RateLimitingMiddleware
         {
             // Always meter the subject's shared tier/global counter: the ceiling that bounds total
             // traffic for the subject across every endpoint. Tier resolution (api-key > tenant >
-            // plan, else global default) feeds the same unscoped counter so the limit is enforced
-            // consistently across instances.
+            // plan, else global default) feeds the same unscoped counter. Counters are per node,
+            // so a limit of N admits up to N per window on each node.
             var subjectLimit = await ResolveSubjectLimitAsync(context);
-            var subjectResult = await CheckCounterAsync(rateLimitKey, subjectLimit);
+            var subjectResult = CheckRateLimitMemory(rateLimitKey, subjectLimit);
 
             // When an endpoint declares an explicit per-endpoint limit, additionally meter a
             // counter partitioned by the endpoint's policy scope (issue #2779) so that limit meters
@@ -216,16 +212,16 @@ internal sealed partial class RateLimitingMiddleware
             var endpointLimit = ResolveEndpointLimit(context);
             if (endpointLimit is null)
             {
-                return subjectResult.Result;
+                return subjectResult;
             }
 
             var scopedKey = $"{rateLimitKey}|policy:{endpointLimit.Value.Scope}";
-            var endpointResult = await CheckCounterAsync(scopedKey, endpointLimit.Value, useRedis: !subjectResult.UsedMemory);
+            var endpointResult = CheckRateLimitMemory(scopedKey, endpointLimit.Value);
 
-            return CombineResults(subjectResult.Result, endpointResult.Result);
+            return CombineResults(subjectResult, endpointResult);
         }
         // Intentional catch-all: this is the request-handling boundary for the rate-limit
-        // check (Redis/counter faults, etc.); allow the request through on failure rather
+        // check (policy-store faults, etc.); allow the request through on failure rather
         // than blocking legitimate traffic.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -239,25 +235,6 @@ internal sealed partial class RateLimitingMiddleware
                 WindowReset = _timeProvider.GetUtcNow().AddMinutes(1)
             };
         }
-    }
-
-    private async Task<(RateLimitResult Result, bool UsedMemory)> CheckCounterAsync(
-        string counterKey, ResolvedRateLimit resolved, bool useRedis = true)
-    {
-        if (useRedis && _redis != null)
-        {
-            try
-            {
-                return (await CheckRateLimitRedisAsync(counterKey, resolved), false);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                var (keyFamily, keyHash) = SplitRateLimitKey(counterKey);
-                RateLimitingLog.RedisCounterFallback(_logger, keyFamily, keyHash, ex);
-            }
-        }
-
-        return (CheckRateLimitMemory(counterKey, resolved), true);
     }
 
     private static RateLimitResult CombineResults(RateLimitResult subject, RateLimitResult endpoint)
@@ -276,57 +253,6 @@ internal sealed partial class RateLimitingMiddleware
         return subject.IsAllowed ? endpoint : subject;
     }
 
-    private async Task<RateLimitResult> CheckRateLimitRedisAsync(string counterKey, ResolvedRateLimit resolved)
-    {
-        var database = _redis!.GetDatabase();
-        var now = _timeProvider.GetUtcNow();
-        var window = resolved.Window;
-        var windowStart = now - window;
-
-        var cacheKey = $"rate_limit:{counterKey}";
-        var windowKey = $"{cacheKey}:window";
-
-        // Use Redis sorted set for sliding window
-        var pipeline = database.CreateTransaction();
-
-        // Every mutation must succeed before the count can authorize a request.
-        var trimTask = pipeline.SortedSetRemoveRangeByScoreAsync(
-            windowKey,
-            0,
-            windowStart.ToUnixTimeMilliseconds());
-
-        // Add current request
-        var addTask = pipeline.SortedSetAddAsync(
-            windowKey,
-            Guid.NewGuid().ToString(),
-            now.ToUnixTimeMilliseconds());
-
-        // Count requests in window
-        var countTask = pipeline.SortedSetLengthAsync(windowKey);
-
-        // Set expiration to twice the window so stale entries self-evict.
-        var expireTask = pipeline.KeyExpireAsync(windowKey, window + window);
-
-        var executeTask = pipeline.ExecuteAsync();
-        await Task.WhenAll(executeTask, trimTask, addTask, countTask, expireTask);
-        if (!await executeTask)
-        {
-            throw new InvalidOperationException("The Redis rate-limit transaction was not committed.");
-        }
-
-        var requestCount = await countTask;
-        var limit = resolved.Limit;
-
-        return new RateLimitResult
-        {
-            IsAllowed = requestCount <= limit,
-            RequestsRemaining = Math.Max(0, limit - (int)requestCount),
-            WindowReset = now + window,
-            RequestCount = (int)requestCount,
-            Limit = limit
-        };
-    }
-
     // Admission, expiry, and increments share a lock so concurrent requests cannot exceed the cap or reset a live counter.
     private RateLimitResult CheckRateLimitMemory(string counterKey, ResolvedRateLimit resolved)
     {
@@ -334,8 +260,7 @@ internal sealed partial class RateLimitingMiddleware
         var window = resolved.Window;
 
         // Align the fixed window to epoch-anchored buckets so an arbitrary policy window
-        // (not just one minute) is deterministic and shared across instances backed by the
-        // same store.
+        // (not just one minute) is deterministic.
         var windowTicks = Math.Max(TimeSpan.TicksPerSecond, window.Ticks);
         var bucketStartTicks = now.UtcTicks / windowTicks * windowTicks;
         var windowStart = new DateTimeOffset(bucketStartTicks, TimeSpan.Zero);

@@ -265,7 +265,7 @@ shared infrastructure.
   - Apply the ad hoc spatial response-cache guard after the protocol parameters have been
     translated into the canonical `FeatureQuery`.
   - Cache tile-matrix and cache-hinted paths instead. Those requests snap to finite
-    gridset/tile/style/format keys and can be seeded, metatiled, expired and quota-managed like
+    gridset/tile/style/format keys and can be seeded, metatiled and invalidated like
     GeoWebCache.
   - For small-node and serverless profiles, control pressure with bounded DB admission and pool
     sizing rather than with exact spatial response caches.

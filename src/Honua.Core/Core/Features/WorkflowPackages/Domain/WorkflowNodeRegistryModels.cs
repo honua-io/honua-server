@@ -89,6 +89,8 @@ public sealed record WorkflowSchemaDefinition
 {
     public required WorkflowSchemaValueType Type { get; init; }
 
+    public string? Description { get; init; }
+
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool AllowsNull { get; init; }
 

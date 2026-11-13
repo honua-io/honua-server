@@ -35,8 +35,6 @@ Cache lifecycle: tile responses carry a `Cache-Control: max-age=N` header. The T
 
 Metatiling: the seed/render path renders tiles in aligned N×N metatile blocks per pass, controlled by `TileOptions:MetatileFactor` (default `1`, which keeps the per-tile behavior). Larger factors group neighbouring tiles so the provider amortizes per-tile setup.
 
-Size-quota / LRU eviction: `TileOptions:Eviction` (`Enabled`, `MaxEntries`, `MaxBytes`) declares when least-recently-used cached tiles are dropped. The decision policy is built in; for the Redis-backed tile cache, operators can alternatively rely on the infrastructure `maxmemory-policy allkeys-lru`. Disabled by default (TTL-only).
-
 Scheduled invalidation: `TileCacheExpiry` (`Enabled`, `IntervalSeconds`, `Targets[]` of `serviceId`/`layerId`/`tileMatrixSetId`) periodically dispatches an `invalidate` tile operation per target — the time-based complement to the per-tileset TTL. Disabled by default; the sweep interval is clamped to a 60s minimum.
 
 ## PMTiles range proxy

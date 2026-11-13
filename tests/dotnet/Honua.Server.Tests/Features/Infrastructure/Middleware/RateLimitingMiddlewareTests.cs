@@ -274,11 +274,10 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
-    public async Task InvokeAsync_AcrossTwoInstancesSharingTheCounterStore_EnforcesASingleLimit()
+    public async Task InvokeAsync_AcrossTwoInstancesInOneProcess_EnforcesASingleLimit()
     {
-        // Two distinct middleware instances stand in for two server nodes coordinating through a
-        // shared counter store (the process-global counter table here; Redis in production). A
-        // client must not exceed its limit by hopping between instances (issue #2158).
+        // Counters are per node: every middleware instance in a process shares the process-local
+        // table, so a client cannot exceed its limit by hopping between pipelines on one node.
         var nodeA = CreateMiddleware(limit: 2);
         var nodeB = CreateMiddleware(limit: 2);
         const string clientIp = "198.51.100.111";
@@ -293,7 +292,7 @@ public sealed class RateLimitingMiddlewareTests
         first.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         second.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         third.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests,
-            "the shared counter must aggregate requests across instances so a third request trips the limit of 2");
+            "the node counter must aggregate requests across instances so a third request trips the limit of 2");
     }
 
     [UnitTest]
@@ -494,166 +493,6 @@ public sealed class RateLimitingMiddlewareTests
             "the endpoint scope includes the HTTP verb, so POST has its own counter");
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    [Trait("Tier", "Fast")]
-    public async Task InvokeAsync_RedisOutage_EnforcesLocalSubjectAndEndpointLimits(bool endpointPolicy)
-    {
-        var redis = Substitute.For<StackExchange.Redis.IConnectionMultiplexer>();
-        var database = Substitute.For<StackExchange.Redis.IDatabase>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        var unavailable = true;
-        var transaction = Substitute.For<StackExchange.Redis.ITransaction>();
-        var redisCounts = new Dictionary<string, long>();
-        transaction.ExecuteAsync().Returns(true);
-        transaction.SortedSetLengthAsync(Arg.Any<StackExchange.Redis.RedisKey>()).Returns(call =>
-        {
-            var key = call.ArgAt<StackExchange.Redis.RedisKey>(0).ToString();
-            redisCounts.TryGetValue(key, out var count);
-            redisCounts[key] = ++count;
-            return Task.FromResult(count);
-        });
-        database.CreateTransaction(Arg.Any<object>()).Returns(_ => unavailable
-            ? throw new StackExchange.Redis.RedisConnectionException(
-                StackExchange.Redis.ConnectionFailureType.UnableToConnect, "Redis unavailable")
-            : transaction);
-        var middleware = CreateMiddleware(limit: endpointPolicy ? 100 : 2, redis: redis);
-        var subject = Guid.NewGuid().ToString("N");
-
-        for (var request = 1; request <= 10; request++)
-        {
-            var context = CreateContext("198.51.100.90", subject: subject,
-                endpointName: endpointPolicy ? "outage-endpoint" : null, endpointLimit: 2);
-            await middleware.InvokeAsync(context);
-            context.Response.StatusCode.Should().Be(request <= 2
-                ? StatusCodes.Status200OK
-                : StatusCodes.Status429TooManyRequests);
-            if (request > 2)
-            {
-                context.Response.Headers.RetryAfter.Should().NotBeEmpty();
-                context.Response.Headers["X-RateLimit-Remaining"].ToString().Should().Be("0");
-            }
-        }
-
-        // Another subject retains its own allowance during the same outage.
-        var otherSubject = CreateContext("198.51.100.91", subject: Guid.NewGuid().ToString("N"),
-            endpointName: endpointPolicy ? "outage-endpoint" : null, endpointLimit: 2);
-        await middleware.InvokeAsync(otherSubject);
-        otherSubject.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
-
-        // Once Redis recovers, its sliding-window budget takes over again.
-        unavailable = false;
-        for (var request = 1; request <= 3; request++)
-        {
-            var context = CreateContext("198.51.100.90", subject: subject,
-                endpointName: endpointPolicy ? "outage-endpoint" : null, endpointLimit: 2);
-            await middleware.InvokeAsync(context);
-            context.Response.StatusCode.Should().Be(request <= 2
-                ? StatusCodes.Status200OK
-                : StatusCodes.Status429TooManyRequests);
-        }
-    }
-
-    [Theory]
-    [Trait("Tier", "Fast")]
-    [InlineData("trim", false)]
-    [InlineData("add", false)]
-    [InlineData("expire", false)]
-    [InlineData("trim", true)]
-    [InlineData("add", true)]
-    [InlineData("expire", true)]
-    public async Task InvokeAsync_RedisMutationFailure_EnforcesLocalLimits(string failedCommand, bool endpointPolicy)
-    {
-        var redis = Substitute.For<StackExchange.Redis.IConnectionMultiplexer>();
-        var database = Substitute.For<StackExchange.Redis.IDatabase>();
-        var transaction = Substitute.For<StackExchange.Redis.ITransaction>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        database.CreateTransaction(Arg.Any<object>()).Returns(transaction);
-        transaction.ExecuteAsync().Returns(true);
-        transaction.SortedSetLengthAsync(Arg.Any<StackExchange.Redis.RedisKey>()).Returns(0L);
-        var failure = new StackExchange.Redis.RedisServerException("Redis mutation unavailable");
-        transaction.SortedSetRemoveRangeByScoreAsync(Arg.Any<StackExchange.Redis.RedisKey>(),
-                Arg.Any<double>(), Arg.Any<double>())
-            .Returns(_ => failedCommand == "trim" ? Task.FromException<long>(failure) : Task.FromResult(0L));
-        transaction.SortedSetAddAsync(Arg.Any<StackExchange.Redis.RedisKey>(),
-                Arg.Any<StackExchange.Redis.RedisValue>(), Arg.Any<double>())
-            .Returns(_ => failedCommand == "add" ? Task.FromException<bool>(failure) : Task.FromResult(true));
-        transaction.KeyExpireAsync(Arg.Any<StackExchange.Redis.RedisKey>(), Arg.Any<TimeSpan?>())
-            .Returns(_ => failedCommand == "expire" ? Task.FromException<bool>(failure) : Task.FromResult(true));
-        var middleware = CreateMiddleware(limit: endpointPolicy ? 100 : 2, redis: redis);
-        var subject = Guid.NewGuid().ToString("N");
-
-        for (var request = 1; request <= 3; request++)
-        {
-            var context = CreateContext("198.51.100.92", subject: subject,
-                endpointName: endpointPolicy ? "partial-failure-endpoint" : null, endpointLimit: 2);
-            await middleware.InvokeAsync(context);
-            context.Response.StatusCode.Should().Be(request <= 2
-                ? StatusCodes.Status200OK
-                : StatusCodes.Status429TooManyRequests);
-            if (request == 3)
-            {
-                context.Response.Headers.RetryAfter.Should().NotBeEmpty();
-                context.Response.Headers["X-RateLimit-Remaining"].ToString().Should().Be("0");
-            }
-        }
-    }
-
-    [UnitTest]
-    public async Task InvokeAsync_RedisCounterTimeout_DoesNotRetryRedisForEndpointCounter()
-    {
-        var redis = Substitute.For<StackExchange.Redis.IConnectionMultiplexer>();
-        var database = Substitute.For<StackExchange.Redis.IDatabase>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        var firstExecution = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var secondExecution = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var secondAttempt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var first = Substitute.For<StackExchange.Redis.ITransaction>();
-        var second = Substitute.For<StackExchange.Redis.ITransaction>();
-        first.ExecuteAsync().Returns(firstExecution.Task);
-        second.ExecuteAsync().Returns(secondExecution.Task);
-        var attempts = 0;
-        database.CreateTransaction(Arg.Any<object>()).Returns(_ =>
-        {
-            if (Interlocked.Increment(ref attempts) == 1)
-            {
-                return first;
-            }
-            secondAttempt.TrySetResult();
-            return second;
-        });
-        var middleware = CreateMiddleware(limit: 100, redis: redis);
-        var context = CreateContext("198.51.100.98", subject: Guid.NewGuid().ToString("N"),
-            endpointName: "timeout-endpoint", endpointLimit: 2);
-        var request = middleware.InvokeAsync(context);
-        Assert.False(request.IsCompleted);
-        firstExecution.SetException(new StackExchange.Redis.RedisTimeoutException(
-            "Redis command timed out", StackExchange.Redis.CommandStatus.Sent));
-        try
-        {
-            var completed = await Task.WhenAny(request, secondAttempt.Task).WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Same(request, completed);
-            await request;
-            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
-            Assert.Equal("1", context.Response.Headers["X-RateLimit-Remaining"].ToString());
-            Assert.Equal(1, attempts);
-        }
-        finally
-        {
-            if (secondAttempt.Task.IsCompleted)
-            {
-                secondExecution.TrySetException(new StackExchange.Redis.RedisTimeoutException(
-                    "Second Redis command timed out", StackExchange.Redis.CommandStatus.Sent));
-            }
-            else
-            {
-                secondExecution.TrySetResult(true);
-            }
-            await request;
-        }
-    }
-
     [UnitTest]
     public async Task InvokeAsync_AnonymousIpv6_SharesASlash64AndLeavesIpv4Distinct()
     {
@@ -693,7 +532,7 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
-    public async Task InvokeAsync_RedisOutage_HardBoundsLocalCountersWithoutResettingExistingBudgets()
+    public async Task InvokeAsync_AtCapacity_HardBoundsLocalCountersWithoutResettingExistingBudgets()
     {
         // This collection runs alone because the process-local store is shared.
         var field = typeof(RateLimitingMiddleware).GetField("_memoryCounters",
@@ -704,10 +543,6 @@ public sealed class RateLimitingMiddlewareTests
         counters.Clear();
         try
         {
-            var redis = Substitute.For<StackExchange.Redis.IConnectionMultiplexer>();
-            redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(_ =>
-                throw new StackExchange.Redis.RedisConnectionException(
-                    StackExchange.Redis.ConnectionFailureType.UnableToConnect, "Redis unavailable"));
             var policies = Substitute.For<IRateLimitPolicyStore>();
             policies.ListPoliciesAsync(Arg.Any<CancellationToken>()).Returns(
                 Task.FromResult<IReadOnlyList<RateLimitPolicy>>([new RateLimitPolicy
@@ -715,7 +550,7 @@ public sealed class RateLimitingMiddlewareTests
                     Name = "capacity", Scope = "tenant", Key = "capacity-test",
                     RequestsPerWindow = 1, WindowDuration = TimeSpan.FromDays(3650)
                 }]));
-            var middleware = CreateMiddleware(policyStore: policies, redis: redis);
+            var middleware = CreateMiddleware(policyStore: policies);
             async Task<int> RequestAsync(string subject)
             {
                 var context = CreateContext("198.51.100.99", subject: subject, tenantId: "capacity-test");
@@ -757,8 +592,7 @@ public sealed class RateLimitingMiddlewareTests
     private static RateLimitingMiddleware CreateMiddleware(
         bool enabled = true,
         int limit = 1,
-        IRateLimitPolicyStore? policyStore = null,
-        StackExchange.Redis.IConnectionMultiplexer? redis = null)
+        IRateLimitPolicyStore? policyStore = null)
     {
         policyStore ??= Substitute.For<IRateLimitPolicyStore>();
 
@@ -774,8 +608,7 @@ public sealed class RateLimitingMiddlewareTests
                 Enabled = enabled,
                 GlobalRequestsPerMinute = limit
             }),
-            NullLogger<RateLimitingMiddleware>.Instance,
-            redis: redis);
+            NullLogger<RateLimitingMiddleware>.Instance);
     }
 
     private static DefaultHttpContext CreateContext(

@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Infrastructure.Licensing;
 
@@ -33,8 +32,6 @@ internal sealed class SignedLicensePayload
 
     public string[]? Entitlements { get; init; }
 
-    public LicenseCapacityTerms? Capacity { get; init; }
-
     public Dictionary<string, string>? Metadata { get; init; }
 }
 
@@ -63,7 +60,6 @@ internal sealed class LicenseHealthSummary
     WriteIndented = false)]
 [JsonSerializable(typeof(SignedLicenseEnvelope))]
 [JsonSerializable(typeof(SignedLicensePayload))]
-[JsonSerializable(typeof(LicenseCapacityTerms))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(LicenseHealthSummary))]

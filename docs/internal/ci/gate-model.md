@@ -16,7 +16,7 @@
 
 ## Governing Rules
 
-Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and accepts skipped heavy dependencies only on draft PR events after Format succeeds. Failure, cancellation and missing results still fail; ready PRs require all dependencies to succeed. GitHub draft protection prevents merging, and `ready_for_review` starts the complete verification. PR Gate and native-image impact observers exclude intentional draft admission only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
+Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and accepts skipped heavy dependencies only on draft PR events after Format succeeds. Failure, cancellation and missing results still fail; ready PRs require all dependencies to succeed. A draft run names its aggregates `PR Gate (draft)` and `PR Gate / Affected shards (draft)`, so the required contexts stay expected until a ready run reports them; GitHub creates the ready run's aggregate checks only after their needs finish, and a draft success under the required name let a just-readied PR merge in that window. `ready_for_review` starts the complete verification. Observers classify a run with only the draft aggregate as `source-run-draft-admission`. PR Gate and native-image impact observers exclude intentional draft admission only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
 
 NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory.Build.props` lists them in `WarningsNotAsErrors` (projects append to that list), so a newly published advisory shows as a restore warning and `scripts/ci/dotnet-restore-retry.sh` treats any remaining restore failure as a retryable feed error. Advisories stay tracked by the NuGet vulnerability scan in `security-nightly.yml`, which annotates High/Critical findings and opens a tracking issue without failing the job (an unreadable report still fails); bumps are ordinary dependency work.
 
@@ -117,7 +117,7 @@ These workflows are merge-blocking for all PRs to trunk:
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
 | `control-plane-sdk-governance.yml` | Control plane SDK governance | SDK/control-plane paths |
 | `import-fidelity-scorecard-governance.yml` | Import-fidelity baseline stability + perf-parity gate smoke test (pass/fail fixtures) | Parity/baseline/perf-budget asset paths |
-| `docs-link-gate.yml` | Relative links **and** `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). A URL served only through a `.gitbook.yaml` redirect warns; a `docs.honua.io` URL is an error (that host is dark until 2026.2), and a phase-A URL that lacks the trailing slash or is not listed in the manifest is an error; a `pendingPr` entry is warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot lives in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Stdlib Python, ~15s, no external dependencies. | `docs/**`, `scripts/ci/check-doc-links.py`, `scripts/ci/check-doc-links.test.py`, the workflow itself |
+| `docs-link-gate.yml` | Relative links **and** `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). A URL served only through a `.gitbook.yaml` redirect warns; a `docs.honua.io` URL is an error (that host is dark until 2026.2), and a phase-A URL that lacks the trailing slash or is not listed in the manifest is an error; a `pendingPr` entry is warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot lives in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Stdlib Python, ~15s, no external dependencies. | `docs/**/*.md`, the docs data files the checkers read, `scripts/ci/check-doc-links.py`, `scripts/ci/check-doc-links.test.py`, the workflow itself |
 
 ### Affected-scope gate build
 
@@ -830,11 +830,27 @@ map and the selector/report tools. Unrelated prose and workflow edits no longer
 start it. It is currently disabled in repository settings; this filter makes
 re-enabling it safe. Capability Matrix Aggregation and OpenAPI Contract
 Governance already enumerate their generator/contract inputs and retain those
-filters. GeoArrow now also watches global.json and NuGet.config; GeoParquet
-retains its existing serializer/query/import/build-input boundary.
+filters.
 
-Docs Link Gate retains its complete PR suite for documentation, skills, checker
-and manifest edits. Source/docker/eng-only edits instead run the link checker and
+GeoArrow and GeoParquet interop run on pull requests only for files whose names
+contain GeoArrow or Parquet (sources, tests, CRS resources, test data), the few
+shared helpers GeoArrow names, GeoParquet's format dispatch, PAR1 detection,
+streaming import and limits files, the Python readers and seed data, and the package
+graph (Directory.Packages.props, global.json, NuGet.config). Shared build, model,
+host, protocol and TestKit edits run them in the twice-daily full CI instead:
+ci.yml calls both through `workflow_call`, exactly like the store image proofs,
+and `CI Gate` requires their success on scheduled and `full_ci=true` runs. A
+called run's concurrency group falls back to the run id, so a standalone trunk
+dispatch never cancels it. Their
+.NET formatter and import cells also run in the PR Gate affected shards.
+Measured on the 120 PRs merged since 9 Nov: GeoArrow 30 to 6 PR runs (4.4 runner
+minutes each), GeoParquet 34 to 15 (10.2 minutes each), about 300 runner minutes.
+
+Docs Link Gate retains its complete PR suite for documentation pages, skills,
+checker and manifest edits, and for every docs file its checkers read
+(capability keys and matrix, install artifacts, the OKF graph, llms.txt, the
+GitBook redirect map, and the deploy examples the anchor manifest sweeps). Other non-page
+files under docs/ are only link targets; the trunk link check covers them. Source/docker/eng-only edits instead run the link checker and
 its adversarial fixtures in the existing ci.yml CI Router Validation job on affected trunk
 runs and twice-daily full runs. That job already participates in CI Gate; no
 required check name or aggregate dependency changes. The runtime URL scan still

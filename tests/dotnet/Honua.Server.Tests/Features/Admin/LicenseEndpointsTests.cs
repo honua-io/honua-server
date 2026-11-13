@@ -83,12 +83,7 @@ public class LicenseEndpointsTests : IAsyncLifetime
             HonuaEdition.Pro,
             expiresAt: DateTimeOffset.UtcNow.AddDays(30),
             entitlements: ["analytics.clustering", "staticmap.high-dpi"],
-            capacity: new LicenseCapacityTerms
-            {
-                MaxSustainedServingUnits = 4m,
-                AnnualSurgeDays = 14,
-                SurgeAllowance = LicenseCapacitySurgeAllowances.Standard
-            });
+            capacity: new { maxSustainedServingUnits = 4m, annualSurgeDays = 14, surgeAllowance = "standard" });
         await File.WriteAllBytesAsync(licensePath, license.LicenseData);
 
         var fixture = new WebAppFixture()
@@ -129,10 +124,9 @@ public class LicenseEndpointsTests : IAsyncLifetime
                 entitlement.Key == "analytics.clustering" && entitlement.IsActive);
             Assert.Contains(result.Data.Entitlements, entitlement =>
                 entitlement.Key == "analytics.spatial-join" && !entitlement.IsActive);
-            Assert.NotNull(result.Data.Capacity);
-            Assert.Equal(4m, result.Data.Capacity.Terms?.MaxSustainedServingUnits);
-            Assert.Equal(1m, result.Data.Capacity.CurrentServingUnits);
-            Assert.Equal(LicenseCapacityBandState.Normal, result.Data.Capacity.State);
+            using var document = JsonDocument.Parse(json);
+            Assert.False(document.RootElement.GetProperty("data").TryGetProperty("capacity", out _),
+                "capacity terms in a signed license are accepted and ignored");
         }
         finally
         {
@@ -248,44 +242,5 @@ public class LicenseEndpointsTests : IAsyncLifetime
         Assert.True(result.Success);
         Assert.NotNull(result.Data);
         Assert.NotEmpty(result.Data);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/license/capacity")]
-    public async Task GetCapacity_WithAdminAuth_ReturnsMeterState()
-    {
-        var response = await _client.GetAsync("/api/v1/admin/license/capacity");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var json = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<ApiResponse<LicenseCapacityState>>(json, _jsonOptions);
-
-        Assert.NotNull(result);
-        Assert.True(result.Success);
-        Assert.NotNull(result.Data);
-        Assert.Equal(LicenseCapacityBandState.NotConfigured, result.Data.State);
-        Assert.Equal(1m, result.Data.CurrentServingUnits);
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/license/capacity/surge")]
-    public async Task SetSurgeMode_WithAdminAuth_ActivatesSurgeAccounting()
-    {
-        using var body = new StringContent(
-            """{"enabled":true,"reason":"incident response"}""",
-            Encoding.UTF8,
-            "application/json");
-
-        var response = await _client.PostAsync("/api/v1/admin/license/capacity/surge", body);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var json = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<ApiResponse<LicenseCapacityState>>(json, _jsonOptions);
-
-        Assert.NotNull(result);
-        Assert.True(result.Success);
-        Assert.NotNull(result.Data);
-        Assert.True(result.Data.Surge.IsActive);
-        Assert.Equal("incident response", result.Data.Surge.Reason);
     }
 }

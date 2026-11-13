@@ -99,6 +99,13 @@ class StoreProfileWorkflowTests(unittest.TestCase):
                 process = self.run_gate('true', result)
                 self.assertNotEqual(process.returncode, 0, process.stdout)
 
+    def test_selected_full_runs_require_both_interop_proofs(self):
+        for name in ('GEOPARQUET_RESULT', 'GEOARROW_RESULT'):
+            for result in ('failure', 'cancelled', 'skipped', ''):
+                with self.subTest(name=name, result=result):
+                    process = self.run_gate('true', 'success', **{name: result})
+                    self.assertNotEqual(process.returncode, 0, process.stdout)
+
     def test_successful_or_unselected_image_proofs_leave_other_gates_intact(self):
         for required, result in (('true', 'success'), ('false', 'skipped')):
             with self.subTest(required=required, result=result):
@@ -172,11 +179,13 @@ class StoreProfileWorkflowTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout, 'ghcr.io/honua/server:' + source)
 
-    def run_gate(self, required, result):
+    def run_gate(self, required, result, **overrides):
         script = workflow('ci.yml')['jobs']['ci-gate']['steps'][0]['run']
         script = re.sub(r'\$\{\{.*?\}\}', 'false', script)
+        # The full-run interop proofs share the store images' selection.
         environment = {**os.environ, 'REQUIRE_MANAGED_BUILD': 'false', 'REQUIRE_FORMAT': 'false',
-                       'REQUIRE_STORE_IMAGES': required, 'STORE_IMAGE_RESULT': result}
+                       'REQUIRE_STORE_IMAGES': required, 'STORE_IMAGE_RESULT': result,
+                       'GEOPARQUET_RESULT': result, 'GEOARROW_RESULT': result, **overrides}
         return subprocess.run(['bash'], input=script, env=environment, text=True, capture_output=True)
 
 

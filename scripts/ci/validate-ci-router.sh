@@ -1475,7 +1475,7 @@ assert_descriptor \
   "Server Features Admin Platform and Connections"
 assert_descriptor \
   "tile-cache-source-owns-service-tests" \
-  "src/Honua.Server/Features/Admin/TileOperations/TileCacheEvictionService.cs" \
+  "src/Honua.Server/Features/Admin/TileOperations/TileCacheJobService.cs" \
   "targeted" \
   "false" \
   "Server Features Admin Integrations and Automation"
@@ -1964,7 +1964,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Platform and Connections" \
   --assert-owner \
-    "Honua.Server.Tests.Features.Admin.TileCacheEvictionServiceTests" \
+    "Honua.Server.Tests.Features.Admin.TileCacheJobServiceTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Integrations and Automation 4" \
   --assert-owner \
