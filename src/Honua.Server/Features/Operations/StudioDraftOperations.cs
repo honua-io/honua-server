@@ -812,15 +812,7 @@ internal sealed class StudioDraftMutationRuntime(
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, string>? pendingResourceIds = null)
     {
-        Guid? draftId = payload switch
-        {
-            StudioDraftUpdatePayload update => update.DraftId,
-            StudioDraftDeletePayload delete => delete.DraftId,
-            _ => null,
-        };
-        var storedOwnerId = draftStore is not null && draftId.HasValue
-            ? (await draftStore.GetDraftAsync(draftId.Value, cancellationToken).ConfigureAwait(false))?.OwnerId
-            : null;
+        var storedOwnerId = await ResolveStoredOwnerAsync(payload, cancellationToken).ConfigureAwait(false);
         var request = new OperationRequest
         {
             VerifiedStudioDraftOwnerId = storedOwnerId,
@@ -884,6 +876,19 @@ internal sealed class StudioDraftMutationRuntime(
         }
 
         return new StudioDraftMutationReceipt<TResult> { Operation = durable, Value = value };
+    }
+
+    private async Task<string?> ResolveStoredOwnerAsync<TPayload>(TPayload payload, CancellationToken cancellationToken)
+    {
+        Guid? draftId = payload switch
+        {
+            StudioDraftUpdatePayload update => update.DraftId,
+            StudioDraftDeletePayload delete => delete.DraftId,
+            _ => null,
+        };
+        return draftStore is not null && draftId.HasValue
+            ? (await draftStore.GetDraftAsync(draftId.Value, cancellationToken).ConfigureAwait(false))?.OwnerId
+            : null;
     }
 
     private static Guid PublicationRequestId(StudioDraftMutationContext context)
