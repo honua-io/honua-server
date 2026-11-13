@@ -565,7 +565,9 @@ internal static partial class WmsRequestHandlers
     private static string[] GetWmsCapabilitiesCrs(IReadOnlyList<MetadataV2SpatialReference>? supportedCrs, string version)
     {
         var crsNames = Wms130CapabilitiesCrs(supportedCrs);
-        return IsWms111Version(version) ? crsNames.Where(crs => crs != "CRS:84").ToArray() : crsNames;
+        return IsWms111Version(version)
+            ? crsNames.Select(crs => crs == "CRS:84" ? "EPSG:4326" : crs).Distinct(StringComparer.Ordinal).ToArray()
+            : crsNames;
     }
 
     private static string[] Wms130CapabilitiesCrs(IReadOnlyList<MetadataV2SpatialReference>? supportedCrs)
