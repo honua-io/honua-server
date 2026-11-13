@@ -4,6 +4,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -14,8 +15,11 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Studio.Abstractions;
-using Honua.Core.Features.Studio.Services;
-using Honua.TestKit.Extensions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Db.Postgres.Features.Studio;
+using Honua.ControlPlane;
+using Honua.Core.Features.Publishing.Content.Abstractions;
+using Honua.Db.Postgres.Features.Publishing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -38,19 +42,17 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
     private const string Tenant = "tenant-a";
     private const string HumanSessionRequired = "Human approval requires";
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
+    private readonly WebAppFixture _fixture = NoRedisJobHost.Create();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
-    private readonly RedisFixture _redis = new();
     private string _denialAuditMode = "ok";
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         HumanApprovalHttpClient.Configure(_fixture, _identityProvider)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
+                builder.UseSetting("ConnectionStrings:redis", "");
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 // Authentication must be decided by the presented credential only: the dev-auth
                 // bypass would hand the proposer and the approver the same identity.
@@ -82,19 +84,29 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
                         ?? ActivatorUtilities.CreateInstance(provider, originalAudit.ImplementationType!)),
                     () => _denialAuditMode));
                 services.RemoveAll<IStudioPackageStore>();
-                services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+                services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
+                    provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                    _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.")));
+                services.RemoveAll<IContentPublicationStore>();
+                services.AddScoped<IContentPublicationStore>(provider => new PostgresContentPublicationStore(
+                    provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                    _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.")));
                 // The independent operator gate remains admitted while the human channel is verified.
                 services.RemoveAll<IOperatorAuthorizationEvaluator>();
                 services.AddSingleton<IOperatorAuthorizationEvaluator, AllowAllOperatorAuthorizationEvaluator>();
             });
         await _fixture.InitializeAsync();
-
+        await StudioPostgresTestSchema.ApplyAsync(_fixture);
+        NoRedisJobHost.AssertJobsRunWithoutRedis(_fixture);
+        using var scope = _fixture.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IOperationProposalStore>()
+            .Should().BeOfType<PostgresOperationProposalStore>();
     }
 
     public async Task DisposeAsync()
     {
         try { await _fixture.DisposeAsync(); }
-        finally { await _redis.DisposeAsync(); _identityProvider.Dispose(); }
+        finally { _identityProvider.Dispose(); }
     }
 
     [IntegrationTest]
@@ -196,7 +208,76 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         audits.Items.Should().ContainSingle(item => item.Action == "operation.approval_denied");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ApprovalManagement)]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Endpoint("GET /api/v1/studio/published/{*route}")]
+    public async Task RestPublication_WithoutRedis_SurvivesRestartAndRequiresHumanApproval()
+    {
+        using var proposer = CreateBearerClient(CreateToken("postgres-publication-author"));
+        var (version, packageKey) = await SaveVersionAsync(proposer);
+        var itemId = version.GetProperty("itemId").GetGuid();
+        var versionId = version.GetProperty("versionId").GetGuid();
+        var route = $"/studio/{packageKey}";
+        var requestUri = $"/api/v1/studio/content-items/{itemId:D}/versions/{versionId:D}/publish-requests";
+        using var request = await proposer.PostAsJsonAsync(requestUri,
+            new { intent = new { route, visibility = "public" } });
+        var body = await request.Content.ReadAsStringAsync();
+        request.StatusCode.Should().Be(HttpStatusCode.Accepted, body);
+        using var document = JsonDocument.Parse(body);
+        var proposalId = document.RootElement.GetProperty("data").GetProperty("proposalId").GetString()!;
+
+        using (var anonymous = _fixture.CreateClient())
+        {
+            using var pending = await anonymous.GetAsync($"/api/v1/studio/published{route}");
+            pending.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            using var approve = await anonymous.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
+            approve.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            using var mutate = await anonymous.PostAsJsonAsync(requestUri,
+                new { intent = new { route, visibility = "public" } });
+            mutate.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        await _fixture.RestartHostAsync();
+        NoRedisJobHost.AssertJobsRunWithoutRedis(_fixture);
+        using var admin = CreateBearerClient(CreateToken("postgres-publication-admin", administrator: true));
+        (await GetProposalAsync(admin, proposalId)).GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "postgres-publication-approver", Tenant);
+        using var approval = await approver.ApproveAsync(proposalId);
+        var approvalBody = await approval.Content.ReadAsStringAsync();
+        approval.StatusCode.Should().Be(HttpStatusCode.OK, approvalBody);
+        using var approved = JsonDocument.Parse(approvalBody);
+        approved.RootElement.GetProperty("status").GetString().Should().Be("Succeeded");
+
+        await _fixture.RestartHostAsync();
+        NoRedisJobHost.AssertJobsRunWithoutRedis(_fixture);
+        using var reader = _fixture.CreateClient();
+        using var publication = await reader.GetAsync($"/api/v1/studio/published{route}?includeSources=true");
+        var publicationBody = await publication.Content.ReadAsStringAsync();
+        publication.StatusCode.Should().Be(HttpStatusCode.OK, publicationBody);
+        using var published = JsonDocument.Parse(publicationBody);
+        var data = published.RootElement.GetProperty("data");
+        data.GetProperty("sourceCatalog").ValueKind.Should().Be(JsonValueKind.Array);
+        data.GetProperty("itemId").GetGuid().Should().Be(itemId);
+        data.GetProperty("versionId").GetGuid().Should().Be(versionId);
+        data.GetProperty("contentHash").GetString().Should().Be(version.GetProperty("contentHash").GetString());
+    }
+
     private static async Task<string> ProposeAsync(HttpClient client)
+    {
+        var (version, packageKey) = await SaveVersionAsync(client);
+
+        var proposed = await CallToolAsync(client, "honua_studio_propose_publication",
+            $$"""{"itemId":"{{version.GetProperty("itemId").GetGuid():D}}","versionId":"{{version.GetProperty("versionId").GetGuid():D}}","contentHash":"{{version.GetProperty("contentHash").GetString()}}","route":"/studio/{{packageKey}}","visibility":"personal"}""");
+        proposed.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        var proposalId = proposed.GetProperty("proposalId").GetString();
+        proposalId.Should().NotBeNullOrWhiteSpace();
+        return proposalId!;
+    }
+
+    private static async Task<(JsonElement Version, string PackageKey)> SaveVersionAsync(HttpClient client)
     {
         var packageKey = $"self-approval-{Guid.NewGuid():N}";
         var created = await CallToolAsync(client, "honua_studio_create_draft",
@@ -211,14 +292,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
 
         var saved = await CallToolAsync(client, "honua_studio_save_version",
             $$"""{"draftId":"{{draftId:D}}","generation":{{generation}}}""");
-        var version = saved.GetProperty("version");
-
-        var proposed = await CallToolAsync(client, "honua_studio_propose_publication",
-            $$"""{"itemId":"{{version.GetProperty("itemId").GetGuid():D}}","versionId":"{{version.GetProperty("versionId").GetGuid():D}}","contentHash":"{{version.GetProperty("contentHash").GetString()}}","route":"/studio/{{packageKey}}","visibility":"personal"}""");
-        proposed.GetProperty("status").GetString().Should().Be("AwaitingApproval");
-        var proposalId = proposed.GetProperty("proposalId").GetString();
-        proposalId.Should().NotBeNullOrWhiteSpace();
-        return proposalId!;
+        return (saved.GetProperty("version"), packageKey);
     }
 
     private static async Task<JsonElement> GetProposalAsync(HttpClient client, string proposalId)
