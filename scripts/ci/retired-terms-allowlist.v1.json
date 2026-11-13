@@ -940,13 +940,13 @@
     {
       "path": "src/Honua.Core/Core/Features/Metadata/Crosswalk/DescriptiveMetadataResolver.cs",
       "rule": "graph-resource",
-      "line": "        MetadataV2Graph graph, MetadataV2Resource resource, MetadataV2Service? service, MetadataV2Publication? layer = null)",
+      "line": "        MetadataV2Resource Resource, MetadataV2Service? Service, MetadataV2Publication? Layer = null);",
       "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
     },
     {
       "path": "src/Honua.Core/Core/Features/Metadata/Crosswalk/DescriptiveMetadataResolver.cs",
       "rule": "graph-publication",
-      "line": "        MetadataV2Graph graph, MetadataV2Resource resource, MetadataV2Service? service, MetadataV2Publication? layer = null)",
+      "line": "        MetadataV2Resource Resource, MetadataV2Service? Service, MetadataV2Publication? Layer = null);",
       "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
     },
     {
@@ -1007,6 +1007,12 @@
       "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Crosswalk/CrosswalkFixtures.cs",
       "rule": "graph-resource",
       "line": "                    Temporal = new MetadataV2ResourceTemporal",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.Stac.UnitTests/Source/StacTemporalMappingTests.cs",
+      "rule": "graph-publication",
+      "line": "        var publication = new MetadataV2Publication { LayerIndex = 0 };",
       "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
     }
   ]

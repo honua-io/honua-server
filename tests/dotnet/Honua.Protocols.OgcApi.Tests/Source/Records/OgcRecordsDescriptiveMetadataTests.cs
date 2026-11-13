@@ -61,7 +61,7 @@ public sealed class OgcRecordsDescriptiveMetadataTests : IAsyncLifetime
             Language = "en",
             License = "CC-BY-4.0",
             AccessConstraints = "Public, no restrictions.",
-            Contacts = [new MetadataV2ResponsibleParty { Role = "pointOfContact", Name = "Ana Ruiz", Email = "gis@example.org" }],
+            Contacts = [new MetadataV2ResponsibleParty { Role = "pointOfContact", Name = "Ana Ruiz", Email = "gis@example.org", Url = "https://example.org/contact" }],
         });
 
         var recordId = Uri.EscapeDataString($"layer:pub-layer-{WebAppFixture.TestLayerId}");
@@ -79,5 +79,8 @@ public sealed class OgcRecordsDescriptiveMetadataTests : IAsyncLifetime
         var contact = properties.GetProperty("contacts")[0];
         contact.GetProperty("emails")[0].GetProperty("value").GetString().Should().Be("gis@example.org");
         contact.GetProperty("roles")[0].GetString().Should().Be("pointOfContact");
+        var link = contact.GetProperty("links")[0];
+        link.GetProperty("href").GetString().Should().Be("https://example.org/contact");
+        link.GetProperty("type").GetString().Should().Be("text/html");
     }
 }

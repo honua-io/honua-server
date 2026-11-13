@@ -254,6 +254,21 @@ public sealed class MetadataStandardWriterTests
 
     [UnitTheory]
     [Operation(Operations.Metadata)]
+    [InlineData(null)]
+    [InlineData(" \t")]
+    public void GraphValidation_ResponsibleParty_RequiresIdentity(string? identity)
+    {
+        var graph = CrosswalkFixtures.Graph(resource: CrosswalkFixtures.FullDataset with
+        {
+            Contacts = [new MetadataV2ResponsibleParty { Name = identity, Organization = identity }],
+        });
+
+        MetadataV2GraphValidator.Validate(graph).Errors
+            .Any(error => error.Contains("metadata.contacts")).Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Metadata)]
     [InlineData(MetadataStandard.Iso19139)]
     [InlineData(MetadataStandard.Iso19115Part3)]
     public void IsoWriters_NearZeroCoordinates_UseXmlSchemaDecimal(MetadataStandard standard)

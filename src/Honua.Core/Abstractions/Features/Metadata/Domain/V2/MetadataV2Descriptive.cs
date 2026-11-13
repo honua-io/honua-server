@@ -97,6 +97,11 @@ internal static class MetadataV2DescriptiveValidation
         errors.AddRange(CodeErrors($"{ownerLabel} metadata.contacts[].role", contacts.Select(contact => contact.Role).ToArray(), MetadataV2DescriptiveCodes.Roles));
         foreach (var contact in contacts)
         {
+            if (string.IsNullOrWhiteSpace(contact.Name) && string.IsNullOrWhiteSpace(contact.Organization) &&
+                string.IsNullOrWhiteSpace(contact.Email) && string.IsNullOrWhiteSpace(contact.Url))
+            {
+                errors.Add($"{ownerLabel} metadata.contacts must identify a responsible party by name, organization, email or URL.");
+            }
             RequireStatement(errors, $"{ownerLabel} metadata.contacts[].name", contact.Name);
             RequireStatement(errors, $"{ownerLabel} metadata.contacts[].organization", contact.Organization);
             RequireStatement(errors, $"{ownerLabel} metadata.contacts[].email", contact.Email);

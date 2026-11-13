@@ -29,7 +29,7 @@ internal static class OgcRecordDescriptive
             Name = contact.Name ?? (contact.Organization is null ? contact.Email ?? contact.Url : null),
             Organization = contact.Organization,
             Emails = contact.Email is null ? null : [new OgcRecordContactEmail { Value = contact.Email }],
-            Links = contact.Url is null ? null : [Link.Create(contact.Url, "about")],
+            Links = contact.Url is null ? null : [Link.Create(contact.Url, "about", "text/html")],
             Roles = [contact.Role],
         }).ToList();
         if (metadata.Publisher is { } publisher && !metadata.Contacts.Any(contact => contact.Role == "publisher"))

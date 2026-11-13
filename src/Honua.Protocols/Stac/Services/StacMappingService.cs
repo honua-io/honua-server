@@ -161,9 +161,12 @@ internal sealed class StacMappingService
             {
                 continue;
             }
-            var role = contact.Role == MetadataV2DescriptiveCodes.PublisherRole
-                ? StacConstants.ProviderRoles.Producer
-                : StacConstants.ProviderRoles.Host;
+            var role = contact.Role switch
+            {
+                MetadataV2DescriptiveCodes.PublisherRole => StacConstants.ProviderRoles.Producer,
+                "processor" => StacConstants.ProviderRoles.Processor,
+                _ => StacConstants.ProviderRoles.Host,
+            };
             var existing = providers.FindIndex(provider => string.Equals(provider.Name, name, StringComparison.OrdinalIgnoreCase));
             if (existing >= 0)
             {
