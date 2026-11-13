@@ -1183,7 +1183,7 @@
           "path": "tests/dotnet/Honua.Server.Tests/FeatureServerEndpointTests.cs",
           "test": "DeleteFeatures_WithWhereClauseInBody_DeletesMatchingFeatures",
           "assertion": "Real PostGIS execution returns the exact deleted id and a follow-up query proves zero matching rows.",
-          "bodyDigest": "sha256:d44ec62ca8ede1d16fba2dad84637cd3483b532f5bc337dea5430aa3d63f75e0"
+          "bodyDigest": "sha256:a245401d76f0ace7477f47532575fd7b8c964420add8eb5e23ae6f9f7f06e0cb"
         }
       ]
     },

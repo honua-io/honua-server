@@ -16,6 +16,10 @@ approved proposals after one authorized human reviews the exact plan in a verifi
 interactive session. The requester may approve their own proposal.
 The serving container has no Docker access.
 
+The default serving image includes only the PostGIS data store and retains file-format
+import and export support. Keep the install's default image for PostGIS. Additional
+stores require the [full JIT image variant](../ops/nightly-images.md#data-store-variants).
+
 ## Install the customer package
 
 Use `honua-compose-quickstart.tar.gz` from your release's install assets. The nightly
@@ -144,8 +148,8 @@ Step 2 sets `HONUA_IMAGE` to the channel tag. The public image and the pinned
 clients below can be used without registry credentials.
 
 The clients are pinned:
-[honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/) and
-[honua-sdk 0.1.19](https://pypi.org/project/honua-sdk/0.1.19/).
+[honua-admin 0.3.1](https://pypi.org/project/honua-admin/0.3.1/) and
+[honua-sdk 0.3.1](https://pypi.org/project/honua-sdk/0.3.1/).
 
 For a certified rc.2 production deployment, continue to
 [ECS Fargate](../guides/deploy/cloud-deployments.md#pick-a-pattern). For a locked-down
@@ -162,32 +166,10 @@ Make a directory and put this in it as `compose.yaml`:
 # Secrets are files under ./secrets, mounted at /run/secrets. None is a Compose variable,
 # so `docker compose config` never prints one. This entrypoint loads each file named by a
 # HONUA_SECRET_FILE__<setting> variable into <setting>, then starts the server.
-x-load-secrets: &load-secrets
-  - bash
-  - +x
-  - -euc
-  - |
-    { set +x; } 2>/dev/null
-    # Tracing stays off through exec: inherited xtrace (SHELLOPTS, BASH_ENV) would echo every loaded value.
-    # BASH_XTRACEFD is left alone; unsetting it would close the descriptor it names.
-    for ref in $${!HONUA_SECRET_FILE__@}; do
-      value=$$(< "$${!ref}")
-      [ -n "$$value" ] || { echo "empty secret file for $${ref#HONUA_SECRET_FILE__}" >&2; exit 1; }
-      export "$${ref#HONUA_SECRET_FILE__}=$$value"
-      unset "$$ref"
-    done
-    if [ -n "$${HONUA_DATABASE_PASSWORD_FILE:-}" ]; then
-      value=$$(< "$$HONUA_DATABASE_PASSWORD_FILE")
-      [ -n "$$value" ] || { echo "empty database password file" >&2; exit 1; }
-      export ConnectionStrings__DefaultConnection="$$ConnectionStrings__DefaultConnection;Password=$$value"
-      unset HONUA_DATABASE_PASSWORD_FILE
-    fi
-    unset value ref
-    exec "$$@"
-  - load-secrets
+x-load-secrets: &load-secrets ["/app/honua-entrypoint"]
 services:
   keyring-init:
-    image: redis:7.4-alpine
+    image: redis:7.4-alpine@sha256:a58a2b51fdb121a55861f2586cbde33f174c0f33d5a277b182d52dce45ed9cd4
     user: "0:0"
     entrypoint: ["sh", "-c"]
     # The servers run as gid 1001. Secret files stay yours; only their group changes.
@@ -419,7 +401,7 @@ Install the two public clients, ideally in a virtual environment:
 <!-- docs-validation:install.clients mode=run -->
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.19'
+pip install 'honua-admin==0.3.1' 'honua-sdk==0.3.1'
 ```
 
 Save this as `quickstart.py`. It registers that database as a connection,
@@ -450,10 +432,10 @@ with HonuaAdminClient(base, api_key=key) as admin:
         primary_key="id", fields_list=["id", "name"]))
 
 with HonuaClient(base, api_key=key) as client:
-    result = client.query_features("quickstart", layer.layer_id,
+    result = client.query_features("quickstart", layer.storage_layer_id,
                                    out_fields=["id", "name"], return_geometry=True)
 
-print(f"published service quickstart layer {layer.layer_id}")
+print(f"published service quickstart layer {layer.storage_layer_id}")
 print(json.dumps(result["features"], indent=2))
 ```
 

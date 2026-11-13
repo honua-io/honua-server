@@ -52,7 +52,7 @@ internal static class CanonicalOperationGatewayTestComposition
             [new ServerOperationDescriptorProvider(actuatorArray)],
             TimeProvider.System);
         var policy = new CanonicalOperationPolicyDecisionPoint(
-            Options.Create(new OperationPolicyOptions()),
+            new CanonicalOperationPolicyConfiguration(Options.Create(new OperationPolicyOptions())),
             ladder);
         services.AddSingleton<IOperationInvoker>(provider => new OperationDispatcher(
             catalog,
