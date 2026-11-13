@@ -79,6 +79,63 @@ public sealed partial class ExportJobTests
     }
 
     [IntegrationTest]
+    public async Task Export_AdmissionOvertakenBeforeReadingProgress_PreservesReplacementSnapshot()
+    {
+        await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(ExportJobTests));
+        var progress = new ComparingInMemoryProgressStore();
+        using var nodes = new ExportNodes(progress);
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+        await nodes.SubmitAsync(harness, job);
+        var record = (await harness.JobStore.GetAsync(job.JobId))!;
+        var reading = NewSignal();
+        var resumeAdmission = NewSignal();
+        var uploading = NewSignal();
+        var resumeUpload = NewSignal();
+        var pausedStore = PauseProgressRead(progress, job.JobId, (reading, resumeAdmission), ProgressReadPause.BeforeSnapshot);
+        var staleContext = PublishingContext();
+        var leaseLost = false;
+        staleContext.ThrowIfExecutionLeaseLostAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            leaseLost ? Task.FromException(new OperationCanceledException("Attempt replaced")) : Task.CompletedTask);
+        staleContext.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        var uploads = 0;
+        nodes.Storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            if (Interlocked.Increment(ref uploads) == 1)
+            {
+                uploading.TrySetResult();
+                await resumeUpload.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            }
+            return ExportJobTestData.Uploaded("export-file", "text/csv");
+        });
+        var staleAttempt = nodes.CreateExecutor(pausedStore).ExecuteAsync(record, staleContext, CancellationToken.None);
+        Task<JobExecutionResult>? replacementAttempt = null;
+        try
+        {
+            await reading.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            leaseLost = true;
+            replacementAttempt = nodes.CreateExecutor().ExecuteAsync(record, PublishingContext(), CancellationToken.None);
+            await uploading.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            var replacement = await progress.GetProgressAsync<ExportProgress>(job.JobId);
+            resumeAdmission.TrySetResult();
+            Func<Task> retire = async () => await staleAttempt;
+            await retire.Should().ThrowAsync<OperationCanceledException>();
+            (await progress.GetProgressAsync<ExportProgress>(job.JobId)).Should().Be(replacement,
+                "a retired attempt must not replace progress it first reads after losing its lease");
+        }
+        finally
+        {
+            resumeAdmission.TrySetResult();
+            resumeUpload.TrySetResult();
+            try { await staleAttempt; }
+            catch (OperationCanceledException) { }
+            if (replacementAttempt is not null)
+            {
+                (await replacementAttempt).Status.Should().Be(ExecutionJobStatus.Succeeded);
+            }
+        }
+    }
+
+    [IntegrationTest]
     public async Task Export_OverlappingAttemptCleanup_PreservesReplacementScratchFile()
     {
         await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(ExportJobTests));
@@ -140,11 +197,18 @@ public sealed partial class ExportJobTests
     private static IUniversalProgressStore PauseProgressRead(
         ComparingInMemoryProgressStore progress,
         string jobId,
-        (TaskCompletionSource Read, TaskCompletionSource Resume) signals)
+        (TaskCompletionSource Read, TaskCompletionSource Resume) signals,
+        ProgressReadPause pause = ProgressReadPause.AfterSnapshot)
     {
         var store = Substitute.For<IUniversalProgressStore>();
         store.GetProgressAsync<ExportProgress>(jobId, Arg.Any<CancellationToken>()).Returns(async _ =>
         {
+            if (pause == ProgressReadPause.BeforeSnapshot)
+            {
+                signals.Read.TrySetResult();
+                await signals.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                return await progress.GetProgressAsync<ExportProgress>(jobId);
+            }
             var snapshot = await progress.GetProgressAsync<ExportProgress>(jobId);
             signals.Read.TrySetResult();
             await signals.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
@@ -165,6 +229,8 @@ public sealed partial class ExportJobTests
         context.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
         return context;
     }
+
+    private enum ProgressReadPause { BeforeSnapshot, AfterSnapshot }
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 }
