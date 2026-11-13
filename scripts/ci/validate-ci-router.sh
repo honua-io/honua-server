@@ -486,7 +486,7 @@ assert_exact_shards \
 assert_exact_shards \
   "headroom-split-odata-errors" \
   "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataErrorHandlingTests.cs" \
-  '["OData Core","OData Errors and Conformance"]'
+  '["OData Core","OData Core Endpoints","OData Errors and Conformance"]'
 assert_exact_shards \
   "headroom-split-mcp-auth" \
   "tests/dotnet/Honua.Ai.Tests/Source/McpBearerAuthenticationTests.cs" \
@@ -1916,7 +1916,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests" \
     "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
-    "OData Core" \
+    "OData Core Endpoints" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.OData.ODataFilterFunctionTests" \
     "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \

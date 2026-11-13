@@ -9,7 +9,6 @@ once, including future methods. This addresses a 29-minute pre-PR capacity
 exhaustion with active output at termination; it does not extend timeouts.
 
 
-
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
 > Last updated: 2026-11-12
 

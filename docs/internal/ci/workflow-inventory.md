@@ -8,7 +8,6 @@ job budgets. Targeted overrides select both children; the coverage validator and
 once, including future methods. This addresses a 29-minute pre-PR capacity
 exhaustion with active output at termination; it does not extend timeouts.
 
-
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
 > repository (123 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
