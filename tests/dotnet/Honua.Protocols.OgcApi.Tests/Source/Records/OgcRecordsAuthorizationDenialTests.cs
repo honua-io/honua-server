@@ -43,8 +43,8 @@ public sealed class OgcRecordsAuthorizationDenialTests
     /// <summary>The resource restricted by this test; layer 0 stays open as the control.</summary>
     private const int RestrictedLayerId = 1;
 
-    private static readonly string RestrictedRecordId = $"layer:{RestrictedLayerId}";
-    private static readonly string OpenRecordId = $"layer:{WebAppFixture.TestLayerId}";
+    private static readonly string RestrictedRecordId = $"layer:pub-layer-{RestrictedLayerId}";
+    private static readonly string OpenRecordId = $"layer:pub-layer-{WebAppFixture.TestLayerId}";
 
     /// <summary>
     /// OGC API Records is GA and is the catalog surface. A record whose resource the caller may

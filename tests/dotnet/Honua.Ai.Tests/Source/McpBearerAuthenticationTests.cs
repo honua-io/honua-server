@@ -783,7 +783,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
     [Endpoint("POST /mcp")]
     public async Task Post_WithExpiredBearer_Returns401()
     {
-        var token = CreateToken(subject: "operator-123", expiresInMinutes: -30);
+        var token = CreateToken(subject: "operator-123", lifetime: TimeSpan.FromMinutes(-30));
 
         using var request = BuildInitialize(bearer: token);
         var response = await _client.SendAsync(request);
@@ -1241,7 +1241,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         string issuer = Issuer,
         string audience = Audience,
         string signingKey = SigningKey,
-        int expiresInMinutes = 60,
+        TimeSpan? lifetime = null,
         IReadOnlyList<Claim>? additionalClaims = null,
         string? tokenId = null)
     {
@@ -1271,7 +1271,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
             issuer: issuer,
             audience: audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(expiresInMinutes),
+            expires: DateTime.UtcNow.Add(lifetime ?? TimeSpan.FromHours(1)),
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);

@@ -41,14 +41,23 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture = CreateFixture(maxConcurrentRuns: 2);
     private HttpClient _client = null!;
+    private bool _defaultApplicationStarted;
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task StartDefaultApplicationAsync()
     {
+        if (_defaultApplicationStarted)
+        {
+            return;
+        }
+
+        _defaultApplicationStarted = true;
         await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync() => _defaultApplicationStarted ? _fixture.DisposeAsync() : Task.CompletedTask;
 
     // ── REQ-005: lease, correlate, mutate, clean up ─────────────────────────────
 
@@ -56,6 +65,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/streaming/conformance/runs")]
     public async Task LeaseRun_BindsTheRunToTheDeploymentRevisionAndTheConfiguredSource()
     {
+        await StartDefaultApplicationAsync();
         using var content = new StringContent("""{"clientLabel":"conformance-test"}""", Encoding.UTF8, "application/json");
         using var response = await _client.PostAsync(
             "/api/v1/streaming/conformance/runs",
@@ -78,6 +88,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/streaming/conformance/runs/{runId}/mutations")]
     public async Task Mutate_InsertUpdateTouchDelete_AreAcceptedAndBounded()
     {
+        await StartDefaultApplicationAsync();
         var run = await LeaseRunAsync();
 
         using var insertContent = new StringContent(
@@ -152,6 +163,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("DELETE /api/v1/streaming/conformance/runs/{runId}")]
     public async Task CleanupRun_DeletesEveryOwnedRecordAndRestoresTheBaselineDigest()
     {
+        await StartDefaultApplicationAsync();
         var run = await LeaseRunAsync();
 
         await MutateAsync(run, """{"operation":"insert","label":"first"}""");
@@ -207,6 +219,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/streaming/conformance/runs/{runId}/mutations")]
     public async Task Mutate_WithoutTheRunToken_Returns404()
     {
+        await StartDefaultApplicationAsync();
         var run = await LeaseRunAsync();
 
         using var content = new StringContent("""{"operation":"insert"}""", Encoding.UTF8, "application/json");
@@ -238,6 +251,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/streaming/conformance/runs")]
     public async Task LeaseRun_WithAnotherDeploymentsRevision_Returns409()
     {
+        await StartDefaultApplicationAsync();
         using var content = new StringContent(
             """{"expectedDeploymentRevision":"ffffffffffffffffffffffffffffffffffffffff"}""",
             Encoding.UTF8,
@@ -253,6 +267,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/streaming/conformance/runs")]
     public async Task LeaseRun_WithAnotherSourceIdentity_Returns409()
     {
+        await StartDefaultApplicationAsync();
         using var content = new StringContent(
             """{"expectedServiceId":"maui-inspections"}""",
             Encoding.UTF8,
@@ -314,6 +329,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/streaming/conformance/reset")]
     public async Task Reset_DropsEveryLeaseAndDeletesEveryControlledRecord()
     {
+        await StartDefaultApplicationAsync();
         var run = await LeaseRunAsync();
         await MutateAsync(run, """{"operation":"insert"}""");
 
@@ -336,6 +352,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features/capabilities")]
     public async Task Capabilities_AdvertiseTheConformanceContractAndTheImmutableRevision()
     {
+        await StartDefaultApplicationAsync();
         using var response = await _client.GetAsync("/api/v1/streaming/features/capabilities", CancellationToken.None);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -366,6 +383,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task Manifest_PublishesTheImmutableRevisionUnderBothNames()
     {
+        await StartDefaultApplicationAsync();
         using var response = await _client.GetAsync("/api/v1/capabilities/manifest", CancellationToken.None);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -382,6 +400,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task ControlledMutation_IsObservedOnTheStreamAfterTheBaseline()
     {
+        await StartDefaultApplicationAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features?layers=0&mode=snapshot-then-delta");
@@ -537,6 +556,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
 
     private async Task<HttpResponseMessage> PostLeaseAsync(string? label = null, int? ttlSeconds = null)
     {
+        await StartDefaultApplicationAsync();
         var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
         {
             ["clientLabel"] = label ?? "conformance-test",
@@ -548,6 +568,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
 
     private async Task<HttpResponseMessage> MutateAsync(LeasedRun run, string payload)
     {
+        await StartDefaultApplicationAsync();
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{RunsPath}/{run.RunId}/mutations")
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
@@ -558,6 +579,7 @@ public sealed class FeatureStreamConformanceEndpointsTests : IAsyncLifetime
 
     private async Task<HttpResponseMessage> CleanupAsync(LeasedRun run)
     {
+        await StartDefaultApplicationAsync();
         using var request = new HttpRequestMessage(HttpMethod.Delete, $"{RunsPath}/{run.RunId}");
         request.Headers.Add(RunTokenHeader, run.RunToken);
         return await _client.SendAsync(request, CancellationToken.None);
