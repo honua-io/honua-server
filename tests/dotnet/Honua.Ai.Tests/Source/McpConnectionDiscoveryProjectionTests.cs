@@ -22,7 +22,7 @@ public sealed class McpConnectionDiscoveryProjectionTests
     [InlineData(McpConnectionDiscoveryProjection.TablesOperationId,
         """{"tables":[{"schema":"public","table":"parcels","geometryColumn":null,"geometryType":null,"estimatedRows":null,"columns":[{"name":"private-upstream-value"}],"password":"private-upstream-value","connectionString":"private-upstream-value"}],"secret":"private-upstream-value"}""")]
     [InlineData("admin.connections.layers.list",
-        """{"data":{"items":[{"layerId":47,"layerName":"parcels","schema":"public","table":"parcels","serviceName":"catalog","enabled":true,"password":"private-upstream-value","connectionString":"private-upstream-value","extra":{"secret":"private-upstream-value"}}],"page":1,"pageSize":50,"total":1},"message":"private-upstream-value"}""")]
+        """{"data":{"items":[{"storageLayerId":47,"layerName":"parcels","schema":"public","table":"parcels","serviceName":"catalog","enabled":true,"password":"private-upstream-value","connectionString":"private-upstream-value","extra":{"secret":"private-upstream-value"}}],"page":1,"pageSize":50,"total":1},"message":"private-upstream-value"}""")]
     public void CreateResult_UpstreamAddsSensitiveFields_SerializesOnlyTheAllowlist(string operationId, string response)
     {
         var result = McpConnectionDiscoveryProjection.CreateResult(operationId, Handle(operationId, response));
