@@ -379,16 +379,3 @@ dotnet_diagnostic.CS8618.severity = suggestion
 [*.cs]
 dotnet_diagnostic.CTJ001.severity = suggestion
 dotnet_diagnostic.CTJ002.severity = suggestion
-
-# Review prevention: warnings fail the build through TreatWarningsAsErrors.
-# Existing diagnostic occurrences are recorded in scripts/ci/analyzer-baseline/AnalyzerBaseline.tsv.
-[*.cs]
-dotnet_diagnostic.IDE0063.severity = warning
-dotnet_diagnostic.CA2000.severity = warning
-dotnet_diagnostic.CA1508.severity = warning
-dotnet_diagnostic.CA1851.severity = warning
-dotnet_diagnostic.RS0030.severity = warning
-dotnet_diagnostic.S1244.severity = warning
-dotnet_diagnostic.S2486.severity = warning
-dotnet_diagnostic.S108.severity = warning
-dotnet_banned_api_analyzer.exclude_generated_code = true

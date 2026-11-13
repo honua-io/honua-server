@@ -43,21 +43,29 @@ static string Capture(string root, string reportsDirectory)
 
 static IEnumerable<JsonElement> Results(JsonDocument document)
 {
-    string[] rules = ["CA2000", "IDE0063", "RS0030", "S1244", "S2486", "S108", "CA1508", "CA1851"];
     foreach (var run in document.RootElement.GetProperty("runs").EnumerateArray())
     {
-        if (!run.TryGetProperty("results", out var results))
+        foreach (var result in RunResults(run))
         {
-            continue;
+            yield return result;
         }
+    }
+}
 
-        foreach (var result in results.EnumerateArray())
+static IEnumerable<JsonElement> RunResults(JsonElement run)
+{
+    string[] rules = ["CA2000", "IDE0063", "RS0030", "S1244", "S2486", "S108", "CA1508", "CA1851"];
+    if (!run.TryGetProperty("results", out var results))
+    {
+        yield break;
+    }
+
+    foreach (var result in results.EnumerateArray())
+    {
+        if (rules.Contains(result.GetProperty("ruleId").GetString()) &&
+            (!result.TryGetProperty("suppressions", out var suppressions) || suppressions.GetArrayLength() == 0))
         {
-            if (rules.Contains(result.GetProperty("ruleId").GetString()) &&
-                (!result.TryGetProperty("suppressions", out var suppressions) || suppressions.GetArrayLength() == 0))
-            {
-                yield return result;
-            }
+            yield return result;
         }
     }
 }

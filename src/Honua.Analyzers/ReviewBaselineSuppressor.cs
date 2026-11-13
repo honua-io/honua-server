@@ -63,15 +63,17 @@ public sealed class ReviewBaselineSuppressor : DiagnosticSuppressor
         foreach (var line in text.Split('\n'))
         {
             var fields = line.TrimEnd('\r').Split('\t');
-            if (fields.Length == 4 && int.TryParse(fields[3], NumberStyles.None, CultureInfo.InvariantCulture, out var count) && count > 0)
+            if (fields.Length != 4 || !int.TryParse(fields[3], NumberStyles.None, CultureInfo.InvariantCulture, out var count) || count <= 0)
             {
-                var key = fields[0] + "\t" + fields[1] + "\t" + fields[2];
-                if (result.ContainsKey(key))
-                {
-                    return new Dictionary<string, int>(StringComparer.Ordinal);
-                }
-                result.Add(key, count);
+                continue;
             }
+
+            var key = fields[0] + "\t" + fields[1] + "\t" + fields[2];
+            if (result.ContainsKey(key))
+            {
+                return new Dictionary<string, int>(StringComparer.Ordinal);
+            }
+            result.Add(key, count);
         }
         return result;
     }

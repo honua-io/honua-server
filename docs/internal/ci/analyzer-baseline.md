@@ -3,8 +3,12 @@
 Release and CI builds treat CA2000, IDE0063, RS0030, S1244, S2486, S108,
 CA1508 and CA1851 as build errors. RS0030 bans the Path.Combine overloads;
 use Path.Join. The pinned Sonar analyzer enables only the three requested
-Sonar rules through `.editorconfig`; `scripts/ci/analyzer-baseline/sonar.globalconfig`
-disables its other rules. Regenerate that rule inventory from the matching
+Sonar rules through `scripts/ci/analyzer-baseline/sonar.globalconfig`, which also
+enables the other requested rules and disables the remaining Sonar rules.
+Root `Directory.Build.props` imports this policy alongside the baseline and
+suppressor. Independent harnesses with their own build props retain their
+separate analyzer policy; the root editor configuration does not enable
+unbaselined rules in those builds. Regenerate that rule inventory from the matching
 Sonar release's `analyzers/rspec/cs/S*.json` files when upgrading the package.
 The analyzer dependencies are private build assets.
 

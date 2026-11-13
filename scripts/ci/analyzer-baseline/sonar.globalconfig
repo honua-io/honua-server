@@ -1,6 +1,6 @@
 # Scope the new Sonar package to the three approved rules.
 # IDs from SonarSource/sonar-dotnet tag 10.36.0.15337 analyzers/rspec/cs.
-# On package upgrades regenerate this list; .editorconfig enables S108/S1244/S2486.
+# On package upgrades regenerate this list; keep the approved rules enabled below.
 is_global = true
 
 dotnet_diagnostic.S100.severity = none
@@ -15,7 +15,7 @@ dotnet_diagnostic.S1066.severity = none
 dotnet_diagnostic.S1067.severity = none
 dotnet_diagnostic.S107.severity = none
 dotnet_diagnostic.S1075.severity = none
-dotnet_diagnostic.S108.severity = none
+dotnet_diagnostic.S108.severity = warning
 dotnet_diagnostic.S109.severity = none
 dotnet_diagnostic.S110.severity = none
 dotnet_diagnostic.S1104.severity = none
@@ -52,7 +52,7 @@ dotnet_diagnostic.S1215.severity = none
 dotnet_diagnostic.S122.severity = none
 dotnet_diagnostic.S1226.severity = none
 dotnet_diagnostic.S1227.severity = none
-dotnet_diagnostic.S1244.severity = none
+dotnet_diagnostic.S1244.severity = warning
 dotnet_diagnostic.S125.severity = none
 dotnet_diagnostic.S126.severity = none
 dotnet_diagnostic.S1264.severity = none
@@ -151,7 +151,7 @@ dotnet_diagnostic.S2436.severity = none
 dotnet_diagnostic.S2437.severity = none
 dotnet_diagnostic.S2445.severity = none
 dotnet_diagnostic.S2479.severity = none
-dotnet_diagnostic.S2486.severity = none
+dotnet_diagnostic.S2486.severity = warning
 dotnet_diagnostic.S2551.severity = none
 dotnet_diagnostic.S2583.severity = none
 dotnet_diagnostic.S2589.severity = none
@@ -487,3 +487,12 @@ dotnet_diagnostic.S927.severity = none
 dotnet_diagnostic.S9414.severity = none
 dotnet_diagnostic.S9415.severity = none
 dotnet_diagnostic.S9422.severity = none
+
+# Imported with the baseline suppressor by the root Directory.Build.props.
+# Independent harnesses keep their separate analyzer policy.
+dotnet_diagnostic.CA2000.severity = warning
+dotnet_diagnostic.IDE0063.severity = warning
+dotnet_diagnostic.CA1508.severity = warning
+dotnet_diagnostic.CA1851.severity = warning
+dotnet_diagnostic.RS0030.severity = warning
+dotnet_banned_api_analyzer.exclude_generated_code = true
