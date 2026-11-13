@@ -45,11 +45,7 @@ public sealed partial class OutputCacheInvalidationServiceTests
     public async Task CommittedEdit_OriginEvictionCanceled_CompletesOriginEvictionWithoutRequestToken(bool storageEdit)
     {
         using var request = new CancellationTokenSource();
-        var outputCache = Substitute.For<IOutputCacheStore>();
-        SubstituteExtensions.Returns(outputCache.EvictByTagAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()),
-            call => call.Arg<CancellationToken>().CanBeCanceled
-                ? ValueTask.FromException(new OperationCanceledException(request.Token))
-                : ValueTask.CompletedTask);
+        var outputCache = new CancellationSensitiveOutputCacheStore();
         var responseCache = Substitute.For<IResponseCache>();
         var invalidator = new OutputCacheInvalidationService(outputCache, responseCache, null,
             CreateScopeFactory(CreateFeatureServerGraph(("alpha", [3]))), null,
@@ -60,8 +56,30 @@ public sealed partial class OutputCacheInvalidationServiceTests
             : invalidator.InvalidateEditedLayerAsync("alpha", 3, request.Token);
 
         await edit.Should().ThrowAsync<OperationCanceledException>();
-        await outputCache.Received().EvictByTagAsync("collection:pub-alpha-3", CancellationToken.None);
+        outputCache.EvictedTags.Should().Contain("collection:pub-alpha-3");
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:alpha:layer:3:*", CancellationToken.None);
+    }
+
+    private sealed class CancellationSensitiveOutputCacheStore : IOutputCacheStore
+    {
+        public List<string> EvictedTags { get; } = [];
+
+        public ValueTask<byte[]?> GetAsync(string key, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask SetAsync(string key, byte[] value, string[] tags, TimeSpan validFor, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask EvictByTagAsync(string tag, CancellationToken cancellationToken)
+        {
+            if (cancellationToken.CanBeCanceled)
+            {
+                return ValueTask.FromException(new OperationCanceledException(cancellationToken));
+            }
+
+            EvictedTags.Add(tag);
+            return ValueTask.CompletedTask;
+        }
     }
 
     [UnitTheory]
