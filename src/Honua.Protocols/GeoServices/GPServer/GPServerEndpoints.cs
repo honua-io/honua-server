@@ -2340,11 +2340,6 @@ internal static partial class GPServerEndpoints
             details.Add($"missingDependency: {exception.MissingDependency}");
         }
 
-        if (exception.MissingEntitlement is not null)
-        {
-            details.Add($"missingEntitlement: {exception.MissingEntitlement}");
-        }
-
         details.Add($"capability: {exception.CapabilityId}");
         details.Add($"remediation: {exception.Remediation}");
         details.Add($"remediationRef: {exception.RemediationRef}");

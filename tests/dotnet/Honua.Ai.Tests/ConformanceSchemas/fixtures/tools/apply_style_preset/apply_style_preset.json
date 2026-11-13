@@ -4,7 +4,7 @@
   "validates": "inputs",
   "inputs": {
     "serviceId": "county_parcels",
-    "layerId": 0,
+    "serviceLayerIndex": 0,
     "styleId": "style_flood_depth"
   },
   "expected": "tool_result",
