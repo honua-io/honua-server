@@ -38,13 +38,16 @@ internal static class ReviewFindingIdentity
         BaseTypeDeclarationSyntax declaration => declaration.Identifier.ValueText,
         MethodDeclarationSyntax declaration => declaration.ExplicitInterfaceSpecifier + declaration.Identifier.ValueText +
             Arity(declaration.TypeParameterList) + declaration.ParameterList,
-        ConstructorDeclarationSyntax declaration => declaration.Identifier.ValueText + declaration.ParameterList,
+        ConstructorDeclarationSyntax declaration =>
+            (declaration.Modifiers.Any(token => token.ValueText == "static") ? "static " : string.Empty) +
+            declaration.Identifier.ValueText + declaration.ParameterList,
         DestructorDeclarationSyntax declaration => "~" + declaration.Identifier.ValueText,
         OperatorDeclarationSyntax declaration => declaration.ExplicitInterfaceSpecifier + "operator" + declaration.OperatorToken + declaration.ParameterList,
         ConversionOperatorDeclarationSyntax declaration => declaration.ExplicitInterfaceSpecifier + "operator" + declaration.Type + declaration.ParameterList,
         LocalFunctionStatementSyntax declaration => declaration.Identifier.ValueText +
             Arity(declaration.TypeParameterList) + declaration.ParameterList,
         PropertyDeclarationSyntax declaration => declaration.ExplicitInterfaceSpecifier + declaration.Identifier.ValueText,
+        EventDeclarationSyntax declaration => declaration.ExplicitInterfaceSpecifier + declaration.Identifier.ValueText,
         IndexerDeclarationSyntax declaration => declaration.ExplicitInterfaceSpecifier + "this" + declaration.ParameterList,
         AccessorDeclarationSyntax declaration => declaration.Keyword.ValueText,
         VariableDeclaratorSyntax declaration => declaration.Identifier.ValueText,

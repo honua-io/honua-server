@@ -107,6 +107,11 @@ public sealed class ReviewBaselineSuppressorTests
     }
 
     [Theory]
+    [InlineData("class C { static C() {", "C/C()")]
+    [InlineData("class C { C() {", "C/static C()")]
+    [InlineData("class C { event System.Action Fresh { add {", "C/Old/add")]
+    [InlineData("class C { event System.Action I.Old { add {", "C/Old/add")]
+    [InlineData("class C { event System.Action J.Old { add {", "C/I.Old/add")]
     [InlineData("class C { void Old<T>() {", "C/Old()")]
     [InlineData("class C<T> { void Old() {", "C/Old()")]
     [InlineData("class C { void I.Old() {", "C/Old()")]
