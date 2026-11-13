@@ -36,11 +36,11 @@ public class ConsoleBrowserRouteAccessTests : IAsyncLifetime
     private readonly string _expectedSourcePathBase;
 
     public ConsoleBrowserRouteAccessTests()
-        : this(multiTenant: false, configuredSourcePathBase: null)
+        : this(ConfigureSingleTenant, configuredSourcePathBase: null)
     {
     }
 
-    protected ConsoleBrowserRouteAccessTests(bool multiTenant, string? configuredSourcePathBase)
+    protected ConsoleBrowserRouteAccessTests(Action<IWebHostBuilder> configureTenancy, string? configuredSourcePathBase)
     {
         _expectedSourcePathBase = configuredSourcePathBase?.TrimEnd('/') ?? string.Empty;
         _fixture = new WebAppFixture()
@@ -55,15 +55,20 @@ public class ConsoleBrowserRouteAccessTests : IAsyncLifetime
                 builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
                 builder.UseSetting("Authentication:OperatorBearer:SigningKey", OperatorBearerSigningKey);
                 builder.UseSetting("Studio:Session:EnvironmentId", ConsoleEnvironmentId);
-                // Multi-tenant mode takes the tenant middleware's resolution path instead of the
-                // single-tenant early return, so the operator bearer's default-tenant branch runs.
-                builder.UseSetting("MultiTenancy:Enabled", multiTenant ? "true" : "false");
+                configureTenancy(builder);
                 if (configuredSourcePathBase is not null)
                 {
                     builder.UseSetting("Studio:Session:SourcePathBase", configuredSourcePathBase);
                 }
             });
     }
+
+    private static void ConfigureSingleTenant(IWebHostBuilder builder) =>
+        builder.UseSetting("MultiTenancy:Enabled", "false");
+
+    // Exercise tenant resolution and the operator bearer's default-tenant branch.
+    protected static void ConfigureMultiTenant(IWebHostBuilder builder) =>
+        builder.UseSetting("MultiTenancy:Enabled", "true");
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
@@ -249,4 +254,4 @@ public class ConsoleBrowserRouteAccessTests : IAsyncLifetime
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
-public sealed class ConsoleBrowserRouteAccessMultiTenantTests() : ConsoleBrowserRouteAccessTests(multiTenant: true, configuredSourcePathBase: "/gis/api/");
+public sealed class ConsoleBrowserRouteAccessMultiTenantTests() : ConsoleBrowserRouteAccessTests(ConfigureMultiTenant, configuredSourcePathBase: "/gis/api/");

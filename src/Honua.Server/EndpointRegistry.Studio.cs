@@ -11,7 +11,6 @@ public static partial class EndpointRegistry
     [
         // v1 Studio package lifecycle endpoints (#1180)
         new("GET", "/api/v1/studio/package-families"),
-        // Browser Console session bootstrap: principal, environment and API path base (K3).
         new("GET", "/api/v1/studio/session"),
         new("POST", "/api/v1/studio/package-drafts"),
         // v1 Studio content-item and draft enumeration endpoints (#3003)
