@@ -312,7 +312,12 @@ configured default aligned with the deployment's data. Portal authorization uses
 this resolved tenant rather than the provider's directory claim. Existing Studio
 issuer/subject owner keys created with tenancy explicitly disabled retain their
 empty tenant suffix when requests resolve to the deployment default; the issuer
-and subject must still match exactly. Frozen execution credentials retain their
+and subject must still match exactly. Existing jobs without a tenant remain
+accessible to their original owner (including the original issuer), and existing
+Portal groups and group shares remain available in disabled-tenancy mode.
+Unsharing revokes matching grants under both the default and legacy tenant keys.
+This upgrade compatibility does not apply when tenancy is enabled.
+Frozen execution credentials retain their
 recorded tenant binding. Explicitly enabling
 `MultiTenancy:Enabled` opts into claim/header resolution; bearer calls to
 tenant-bound routes then require a valid tenant claim or an authorized override.

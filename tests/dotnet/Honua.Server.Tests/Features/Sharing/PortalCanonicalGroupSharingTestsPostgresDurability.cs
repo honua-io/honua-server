@@ -2,6 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Middleware;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging.Abstractions;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -104,6 +109,53 @@ public sealed class PortalCanonicalGroupSharingTestsPostgresDurability(DatabaseF
         await sharesB.UnshareAsync("service-6366",
             new PortalItemShareRequest(false, false, [secondGroup.Id]), CancellationToken.None);
         await AssertReadAsync(servicesA, accessorA.HttpContext!, audienceA, allowed: false);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task TenantlessShares_SingleTenantUpgradePreservesAudienceAndRevocation()
+    {
+        var tenant = new RequestTenantContext();
+        var groups = new PostgresPortalGroupStore(database.DataSource, TimeProvider.System, _schema);
+        var accessor = new TestHttpContextAccessor();
+        using var services = new ServiceCollection()
+            .AddSingleton<ITenantContext>(tenant)
+            .AddSingleton<IPortalAudienceSnapshotProvider>(new PostgresPortalAudienceSnapshotProvider(database.DataSource, _schema))
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "member")], "test")) };
+        accessor.HttpContext = context;
+        var shares = new PostgresPortalItemSharingStore(database.DataSource, accessor, _schema);
+        var legacy = await groups.CreateAsync(new PortalGroupRegistration("Legacy", null, "private", []), "owner", default);
+        await groups.AddUsersAsync(legacy.Id, ["member"], default);
+        await shares.ShareAsync("legacy-service", "owner", new PortalItemShareRequest(false, false, [legacy.Id]), default);
+
+        await new TenantContextMiddleware(_ => Task.CompletedTask, Options.Create(new TenantContextOptions()),
+            NullLogger<TenantContextMiddleware>.Instance).InvokeAsync(context);
+        PortalResourceReadAuthorizer.IsGroupTenantVisible(context, legacy).Should().BeTrue();
+        (await shares.GetOwnerAsync("legacy-service", default)).Should().Be("owner");
+        (await shares.GetAsync("legacy-service", default)).GroupIds.Should().Contain(legacy.Id);
+        var hydrate = new ApplicationBuilder(services).UsePortalAudienceHydration().Build();
+        await hydrate(context);
+        PortalAudienceSnapshot.HasService(context, "legacy-service").Should().BeTrue();
+        // The same old group can be shared by a newly created default-tenant row.
+        await shares.ShareAsync("new-service", "owner", new PortalItemShareRequest(false, false, [legacy.Id]), default);
+        await hydrate(context);
+        PortalAudienceSnapshot.HasService(context, "new-service").Should().BeTrue();
+        // A default row and the legacy row can coexist. Both must lose a revoked grant.
+        await shares.ShareAsync("legacy-service", "owner", new PortalItemShareRequest(false, false, [legacy.Id]), default);
+        await shares.UnshareAsync("legacy-service", new PortalItemShareRequest(false, false, [legacy.Id]), default);
+        await hydrate(context);
+        PortalAudienceSnapshot.HasService(context, "legacy-service").Should().BeFalse();
+        // A fresh request has no canonical binding from the previous request.
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "member")], "test"));
+        tenant.Set(null, TenantContextSource.Anonymous);
+        (await shares.GetAsync("legacy-service", default)).GroupIds.Should().BeEmpty();
+        tenant.Set("public", TenantContextSource.Claim);
+        PortalResourceReadAuthorizer.IsGroupTenantVisible(context, legacy).Should().BeFalse();
+        await hydrate(context);
+        PortalAudienceSnapshot.HasService(context, "new-service").Should().BeFalse();
     }
 
     private static ServiceProvider Services(

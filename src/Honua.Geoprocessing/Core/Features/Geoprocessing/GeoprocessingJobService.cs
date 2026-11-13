@@ -1254,8 +1254,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     }
 
     private bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
-        => JobOwnershipSecurity.CanAccess(job.Audit,
-            _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId, principal);
+        => _authorizer.CanReadJob(job.Audit, principal, _rbacOptions);
 
     public async Task<AnalysisResultPackage> GetJobResultsAsync(
         string jobId,

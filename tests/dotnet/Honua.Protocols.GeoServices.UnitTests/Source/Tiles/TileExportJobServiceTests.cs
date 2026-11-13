@@ -2,6 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Middleware;
+using Microsoft.AspNetCore.Http;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -529,6 +532,53 @@ public sealed class TileExportJobServiceTests
         {
             await operation.Should().ThrowAsync<TileExportNotFoundException>();
         }
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Export)]
+    public async Task JobAccess_LegacyTenantlessJob_SingleTenantUpgradePreservesOwnership(bool priorFormat)
+    {
+        var tenant = new RequestTenantContext();
+        var store = new InMemoryExecutionJobStore();
+        var service = new TileExportJobService(TimeProvider.System, StorageOptions(),
+            NullLogger<TileExportJobService>.Instance, store, new InMemoryJobQueue(), tenantContext: tenant);
+        var principal = Principal(Owner);
+        principal.Identities.First().AddClaim(new Claim("iss", "https://original.example"));
+        var job = await service.SubmitAsync(CreatePlan(), null, null, principal, default);
+        if (priorFormat)
+        {
+            await store.SetAsync(job with
+            {
+                Audit = job.Audit with
+                {
+                    RequestedBy = Owner,
+                    SubmitterSecurityContext = job.Audit.SubmitterSecurityContext! with { OwnerActorId = null }
+                }
+            });
+        }
+        using var services = new ServiceCollection().AddSingleton<ITenantContext>(tenant).BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services, User = principal };
+        await new TenantContextMiddleware(_ => Task.CompletedTask,
+            Options.Create(new TenantContextOptions()), NullLogger<TenantContextMiddleware>.Instance).InvokeAsync(context);
+        tenant.TenantId.Should().Be("public");
+        (await service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default))
+            .OperationId.Should().Be(job.OperationId);
+        await FluentActions.Awaiting(() => service.GetResultAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default))
+            .Should().ThrowAsync<TileExportPreconditionFailedException>();
+        foreach (var denied in new[] { Principal(Other), Principal(Owner) })
+        {
+            denied.Identities.First().AddClaim(new Claim("iss", "https://other.example"));
+            await FluentActions.Awaiting(() => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), denied, default))
+                .Should().ThrowAsync<TileExportNotFoundException>();
+        }
+        await service.CancelAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default);
+        (await service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default))
+            .Status.Should().Be(ExecutionJobStatus.Cancelled);
+        tenant.Set("public", TenantContextSource.Claim);
+        await FluentActions.Awaiting(() => service.GetStatusAsync(job.OperationId, ScopeFor(CreatePlan()), principal, default))
+            .Should().ThrowAsync<TileExportNotFoundException>();
     }
 
     [UnitTest]

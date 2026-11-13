@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -479,7 +480,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
 
     private bool IsOwnedBy(ExecutionJobRecord job, ClaimsPrincipal principal)
         => JobOwnershipSecurity.CanAccess(job.Audit,
-            JobSecurityContextCapture.Capture(principal, _rbacOptions, _tenantContext).TenantId, principal);
+            TenantReadScope.For(_tenantContext, JobSecurityContextCapture.Capture(principal, _rbacOptions, _tenantContext).TenantId), principal);
 
     private static TileExportPackageFormat ResolvePackageFormat(ExecutionJobRecord job)
         => job.Spec.Parameters.TryGetValue(TileExportJobParameterKeys.PackageFormat, out var raw)
