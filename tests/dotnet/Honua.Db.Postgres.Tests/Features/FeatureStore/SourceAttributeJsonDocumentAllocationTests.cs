@@ -116,14 +116,7 @@ public sealed class SourceAttributeJsonDocumentAllocationTests(PostgresFixture f
             actual.Keys.Should().BeEquivalentTo(expected.Keys);
             foreach (var (name, value) in expected)
             {
-                if (value is JsonElement element)
-                {
-                    actual[name].Should().BeOfType<JsonElement>().Which.GetRawText().Should().Be(element.GetRawText());
-                }
-                else
-                {
-                    actual[name].Should().Be(value);
-                }
+                AssertAttributeValue(actual[name], value);
             }
 
             absent.Should().BeEmpty();
@@ -131,5 +124,17 @@ public sealed class SourceAttributeJsonDocumentAllocationTests(PostgresFixture f
         }
 
         rows.Should().Be(3);
+    }
+
+    private static void AssertAttributeValue(object? actual, object? expected)
+    {
+        if (expected is JsonElement element)
+        {
+            actual.Should().BeOfType<JsonElement>().Which.GetRawText().Should().Be(element.GetRawText());
+        }
+        else
+        {
+            actual.Should().Be(expected);
+        }
     }
 }
