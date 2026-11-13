@@ -375,6 +375,17 @@ internal sealed partial class GeoservicesImportService
 
             await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
 
+            if (request.CommitParticipant is { } participant)
+            {
+                await participant(new ImportCommitScope
+                {
+                    Transaction = transaction,
+                    Schema = targetSchema,
+                    PhysicalTable = request.TableName,
+                    FeatureCount = featuresProcessed
+                }, cancellationToken).ConfigureAwait(false);
+            }
+
             stage = ImportFailureStage.Committing;
             await transaction.CommitSafelyAsync(cancellationToken);
             stage = ImportFailureStage.AfterCommit;
