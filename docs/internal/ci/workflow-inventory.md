@@ -44,6 +44,20 @@ than fixed 5432 bindings. Full-CI jobs export the assigned port to database test
 SQL clients, server setup and Docker smoke; concurrent jobs retain separate
 service containers. Workflow/job counts and required gates are unchanged.
 
+## Workflow syntax and expression validation
+
+The architecture member of PR Gate's fast matrix runs actionlint 1.7.12 before
+.NET setup, including for docs-only and generated-only changes. It checks all
+`.github/workflows/*.yml`, adds no jobs, and fails the existing Fast result on
+invalid syntax or expression contexts (including job-level `runner.temp`). The
+binary is pinned by version and SHA-256; shellcheck and pyflakes remain separate
+checks. `.github/actionlint.yaml` permits GitHub's `concurrency.queue` key and
+records two exact property-reference baseline exceptions only in generated gh-aw
+v1.0.1 doctor locks. Other syntax/context errors in those locks remain fatal.
+Generated locks are preserved; their compiler must resolve those known references.
+The obsolete `optimize-disk` local action input is removed from Portal discovery.
+No runner-count or runtime saving is claimed; the new check uses an existing job.
+
 ## Draft PR admission and superseded work
 
 CodeQL, Compose Release Lifecycle, GeoArrow/GeoParquet interop, OGC API
@@ -51,7 +65,9 @@ building-block conformance, and serving/GDAL image verification defer heavy jobs
 until the PR is ready. They subscribe to `ready_for_review` and ready-head
 `synchronize` events; conversion back to draft cancels the active verification run.
 Drafts run Format, Clean code, and Repository hygiene. The `PR Gate` aggregate
-rejects their skipped heavy dependencies. Ready PRs run the complete gate, waking
+accepts intentionally skipped heavy dependencies only for a draft event, requires
+Format success, and rejects failures, cancellations or missing results. Ready PRs
+require every heavy dependency to succeed and run the complete gate, waking
 the trusted Claude observer after exact-head verification completes.
 
 Verification workflows cancel superseded admission per PR; automation helpers
