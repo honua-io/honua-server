@@ -432,7 +432,8 @@ def scan(tree: str) -> dict[str, dict[str, str]]:
         # This versioned audit format records historical changed_paths; it never
         # reads those documents. A dated report must not make every path it has
         # ever observed into a new runtime dependency. Other JSON stays governed.
-        if source.startswith("docs/ci/") and source.endswith(".json"):
+        if ((source.startswith("docs/ci/") and source.endswith(".json"))
+                or source == "eng/ci/fixtures/shard-promotion/reconciliation.json"):
             try:
                 report = json.loads(body)
                 if isinstance(report, dict) and report.get("contract") == "honua.affected-shards-reconciliation/v1":

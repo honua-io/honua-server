@@ -53,6 +53,7 @@ write docs/gis/data/notes.md 'generated'
 write docs/get-started/install-artifacts.json '{"serverImage":"example"}'
 write docs/llms.txt '# Documentation index'
 write docs/ci/historical-report.json '{"contract":"honua.affected-shards-reconciliation/v1","rows":[{"changed_paths_before_landing":["docs/guides/intro.md","docs/llms.txt"]}]}'
+write eng/ci/fixtures/shard-promotion/reconciliation.json '{"contract":"honua.affected-shards-reconciliation/v1","rows":[{"changed_paths_before_landing":["docs/guides/intro.md","docs/llms.txt"]}]}'
 write src/Lib/Lib.cs 'internal sealed class Lib { }'
 # A packed README only has to exist; an embedded document is build content.
 write src/Lib/Lib.csproj '<Project Sdk="Microsoft.NET.Sdk">
@@ -166,6 +167,7 @@ edit_runtime_consumed_manifest() {
 edit_docs_yaml() { write docs/guides/config.yaml 'key: value'; }
 edit_new_report_schema() {
   write docs/ci/historical-report.json '{"contract":"unreviewed/v1","input":"docs/guides/intro.md"}'
+  write eng/ci/fixtures/shard-promotion/reconciliation.json '{"contract":"unreviewed/v1","input":"docs/guides/intro.md"}'
 }
 rename_docs_to_src() { g mv docs/guides/intro.md src/Lib/intro.md; }
 rename_within_docs() { g mv docs/guides/intro.md docs/guides/renamed.md; }
