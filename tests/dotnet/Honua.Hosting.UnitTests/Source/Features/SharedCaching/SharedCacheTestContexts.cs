@@ -32,6 +32,7 @@ internal static class SharedCacheTestContexts
         {
             configured.Emergency = (options ?? configured).Emergency;
             configured.Layers = (options ?? configured).Layers;
+            configured.CacheTagHeader = (options ?? configured).CacheTagHeader;
         });
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Request.Method = HttpMethods.Get;
