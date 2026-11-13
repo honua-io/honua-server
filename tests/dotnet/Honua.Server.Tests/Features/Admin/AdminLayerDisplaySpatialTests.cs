@@ -31,8 +31,8 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/display")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/display")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task Display_Update_RoundTripsAndChangesProtocolMetadata()
@@ -44,6 +44,8 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var saved = await ReadAsync(client, path);
+        saved.TryGetProperty("layerId", out _).Should().BeFalse();
+        saved.GetProperty("storageLayerId").GetInt32().Should().Be(0);
         saved.GetProperty("minScale").GetDouble().Should().Be(12000);
         saved.GetProperty("maxScale").GetDouble().Should().Be(500);
         saved.GetProperty("displayField").GetString().Should().Be("name");
@@ -71,8 +73,8 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/spatial")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/spatial")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/spatial")]
     public async Task Spatial_Update_RoundTripsAndPreservesOtherResourceFields()
     {
         using var client = _fixture.CreateAdminClient();
@@ -83,6 +85,8 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var saved = await ReadAsync(client, path);
+        saved.TryGetProperty("layerId", out _).Should().BeFalse();
+        saved.GetProperty("storageLayerId").GetInt32().Should().Be(0);
         saved.GetProperty("supportedCrs")[0].GetProperty("srid").GetInt32().Should().Be(26910);
         saved.GetProperty("storageCrsCoordinateEpoch").GetDouble().Should().Be(2020.5);
         saved.GetProperty("storageCrs").GetProperty("srid").GetInt32().Should().Be(4326);
@@ -100,8 +104,8 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task LayerMetadata_Get_ReturnsPreviouslyWrittenGovernance()
     {
         using var client = _fixture.CreateAdminClient();
@@ -122,8 +126,8 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     [InlineData("spatial", "{\"storageCrsCoordinateEpoch\":-1}")]
     [InlineData("display", "{\"displayField\":\"missing-field\"}")]
     [InlineData("spatial", "{\"supportedCrs\":[{\"srid\":-1}]}")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/display")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/spatial")]
     public async Task Update_InvalidValue_RejectsWithoutMutation(string section, string json)
     {
         using var client = _fixture.CreateAdminClient();
@@ -137,9 +141,9 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     [InlineData("/api/v1/admin/metadata/layers/0/display")]
     [InlineData("/api/v1/admin/metadata/layers/0/spatial")]
     [InlineData("/api/v1/admin/services/test/layers/0/metadata")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/spatial")]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/display")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/spatial")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task Get_AnonymousCaller_RequiresAuthentication(string path)
     {
         using var client = _fixture.CreateClient();
@@ -151,9 +155,9 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     [InlineData("/api/v1/admin/metadata/layers/0/display")]
     [InlineData("/api/v1/admin/metadata/layers/0/spatial")]
     [InlineData("/api/v1/admin/services/test/layers/0/metadata")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/spatial")]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/display")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/spatial")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task Metadata_AuthenticatedReader_IsForbidden(string path)
     {
         using var client = await CreateReaderClientAsync();
@@ -164,8 +168,8 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     [IntegrationTheory]
     [InlineData("display")]
     [InlineData("spatial")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/display")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/spatial")]
     public async Task Update_AuthenticatedReader_IsForbidden(string section)
     {
         using var client = await CreateReaderClientAsync();
@@ -176,8 +180,8 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     [IntegrationTheory]
     [InlineData(" NAME ", "name")]
     [InlineData("   ", null)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/display")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/display")]
     public async Task Display_FieldCasingOrWhitespace_PersistsCanonicalNameOrNull(string input, string? expected)
     {
         using var client = _fixture.CreateAdminClient();
@@ -193,11 +197,11 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     [InlineData("GET", "/api/v1/admin/services/test/layers/999999/metadata")]
     [InlineData("PUT", "/api/v1/admin/metadata/layers/999999/display")]
     [InlineData("PUT", "/api/v1/admin/metadata/layers/999999/spatial")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/spatial")]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/display")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/spatial")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/display")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/spatial")]
     public async Task LayerConfiguration_UnpublishedLayer_ReturnsNotFoundWithoutMutation(string method, string path)
     {
         using var client = _fixture.CreateAdminClient();
@@ -213,11 +217,11 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     [InlineData("GET", "/api/v1/admin/services/test/layers/0/metadata")]
     [InlineData("PUT", "/api/v1/admin/metadata/layers/0/display")]
     [InlineData("PUT", "/api/v1/admin/metadata/layers/0/spatial")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/spatial")]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/display")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/spatial")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/display")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/spatial")]
     public async Task LayerConfiguration_AmbiguousLayer_ReturnsConflictWithoutMutation(string method, string path)
     {
         SeedAmbiguousLayer();
@@ -247,7 +251,11 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
         {
             Revision = snapshot.Graph.Revision + 1,
             Services = snapshot.Graph.Services.Append(duplicate).ToArray(),
-            Publications = snapshot.Graph.Publications.Append(competing).ToArray()
+            Publications = snapshot.Graph.Publications.Append(competing).ToArray(),
+            // Storage-layer routes are ambiguous only when two resources share one storage layer id.
+            StorageBindings = snapshot.Graph.StorageBindings.Select(binding => binding.StorageLayerId == 1
+                ? binding with { StorageLayerId = 0 }
+                : binding).ToArray()
         }, schema: _fixture.CurrentSchema);
     }
 

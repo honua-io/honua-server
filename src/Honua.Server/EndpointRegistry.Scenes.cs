@@ -117,7 +117,7 @@ public static partial class EndpointRegistry
         new("POST", "/elevation/{datasetId}/line-of-sight"),
         new("POST", "/elevation/{datasetId}/viewshed"),
 
-        new("GET", "/api/styles/{layerId}.json"),
+        new("GET", "/api/styles/{publicationId}.json"),
 
         // Durable PMTiles publish range proxy (#845).
         new("GET", "/api/v1/tiles/pmtiles/{*artifactId}"),

@@ -127,11 +127,11 @@ To run a pure fail-closed policy instead, set `Operations__Policy__BuiltInProduc
 
 After a successful upload, `<LicensePath>.uploaded` takes precedence at startup. Replacing only `LicensePath` and restarting keeps that override. Renew through the admin upload endpoint, or stop the server, remove the override, and align the configured sources before restart. See [Renew or replace a license](../../concepts/editions-and-licensing.md#renew-or-replace-a-license). Persist and back up the containing license directory.
 
-## Caching (Redis)
+## Caching
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ConnectionStrings__Redis` | — | Redis connection string; unset uses the in-memory fallback only. |
+| `ConnectionStrings__Redis` | — | Redis connection string for job coordination. Caches are per node and do not use it. |
 | `HONUA_REDIS_URL` | — | Docker Compose convenience alias for `ConnectionStrings__Redis`. |
 | `Cache__Enabled` | `true` | Master switch for metadata/response caching. |
 | `Cache__DefaultTtlSeconds` | `300` (shipped config) | Default TTL for cached metadata. |
@@ -140,14 +140,12 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `Cache__QueryTtlSeconds` | `30` | TTL for cached query responses. |
 | `Cache__NegativeTtlSeconds` | `30` (shipped config) | TTL for negative (missing layer/service) entries. |
 | `Cache__JitterPercentage` | `0.2` | TTL jitter to avoid cache stampedes. |
-| `Cache__EnableFallback` | `true` | Use in-memory fallback when Redis is unavailable. |
-| `Cache__FallbackMaxEntries` | `1000` | Max entries in the in-memory fallback cache. |
+| `Cache__MaxEntries` | `10000` | Max entries in each node's in-memory cache. |
 | `Cache__ResponseCachingEnabled` | `false` | Cache exact public, non-spatial protocol responses (FeatureServer query, OGC API Features items, OData) separately from metadata. Off by default. Admission requires an empty principal. Cookies, a connection client certificate, and the forwarded client-certificate header count as credentials. The key includes the license fingerprint. Request or response `Cache-Control: no-cache` or `no-store` skips storage when those headers are already written. Ad hoc spatial reads and any non-default `gdbVersion` stay uncached. |
-| `Cache__ResponseCachingAllowInMemoryFallback` | `false` | Allow exact response caching while the cache is process-local (distributed memory or the in-memory fallback). Off by default. Set this only on a single server instance. |
+| `Cache__ResponseCachingAllowInMemoryFallback` | `false` | Allow exact response caching. The cache is per node, so with several tasks another node can serve a response up to its lifetime after an edit. Off by default. Set this only on a single server instance. |
 | `Cache__ResponseCacheMaxEntryBytes` | `1048576` | Skip storing a query response whose payload is larger than this many bytes. |
 | `Cache__ResponseCacheMaxBytes` | `67108864` | Skip storing a query response that would push this process over this total payload budget. |
-| `Cache__RetryIntervalSeconds` | `30` | Redis reconnect interval after a failure. |
-| `Cache__KeyPrefix` | `honua:` | Key prefix for shared Redis instances. |
+| `Cache__KeyPrefix` | `honua:` | Prefix for cache keys. |
 
 ## MCP sessions
 
@@ -275,6 +273,9 @@ Database connection pool and query admission:
 | `Limits__Connections__MaxConcurrentQueries` | `200` | Ceiling on concurrently executing database queries. |
 | `Limits__Connections__MaxConnectionPoolSize` | `200` | Npgsql pool maximum. |
 | `Limits__Connections__MinConnectionPoolSize` | `20` | Npgsql pool minimum. |
+| `Deployment__MaxTasks` | unset | Most server tasks that run at once against one database (the autoscaling maximum). With a value above 1, or `Deployment__Mode=MultiNode` and no count, each pool is sized from the database limit and admin changes to settings held in one task's memory are refused. |
+| `Database__InstanceClass` | unset | Database instance class, for example `db.t4g.small`. Pool sizing reads the database's connection limit from it. |
+| `Database__MaxConnections` | unset | The database's `max_connections`, when the instance class does not say it. Wins over `Database__InstanceClass`. |
 | `Limits__Connections__ConnectionIdleLifetimeSeconds` | `600` | Idle connection lifetime. |
 | `Limits__Connections__CommandTimeoutSeconds` | `30` | Database command timeout. |
 | `Limits__Connections__RequestTimeout` | `00:01:00` | End-to-end request timeout. |

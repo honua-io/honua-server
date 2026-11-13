@@ -60,7 +60,7 @@ public sealed class GeoservicesImportTenantTests
         using var provider = services.BuildServiceProvider();
         var progressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
         var cache = provider.GetRequiredService<IDistributedCache>();
-        using var jobs = new RedisImportJobManager(progressStore, cache,
+        var jobs = new RedisImportJobManager(progressStore, cache,
             NullLogger<RedisImportJobManager>.Instance, new ImportTestEnvironment());
         var worker = new GeoservicesImportBackgroundService(provider.GetRequiredService<IServiceScopeFactory>(), jobs,
             NullLogger<GeoservicesImportBackgroundService>.Instance);

@@ -16,12 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// The admin layer configuration PUTs (filter, fields, popup-info, drawing-info) address a layer
-/// by its service-local layer id. When two services publish different resources at the same id,
-/// the endpoints must refuse the ambiguous id instead of validating one resource and writing to
-/// every resource that shares the id (honua-server#6111).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
@@ -33,6 +27,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
     private const string TwinBindingId = "bind-twin-6111";
     private const string TwinPublicationId = "pub-twin-6111";
     private const int TwinStorageLayerId = 961110;
+    private const int ServiceLayerIndex = 53;
 
     private readonly WebAppFixture _fixture = new();
 
@@ -40,9 +35,91 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTheory]
+    [InlineData("filter", "{\"permanentFilter\":null}")]
+    [InlineData("fields", "{\"fields\":[{\"name\":\"description\",\"alias\":\"Storage field\"}]}")]
+    [InlineData("popup-info", "{\"title\":\"Storage popup\"}")]
+    [InlineData("drawing-info", "{\"renderer\":{\"type\":\"simple\"}}")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/popup-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/drawing-info")]
+    public async Task UpdateConfiguration_SharedIndexWithDistinctStorageIds_UpdatesOnlyRequestedStorage(
+        string configuration, string payload)
+    {
+        var (before, targetResourceId) = AddTwinAtLayerId(retireTwin: false, twinStorageLayerId: TwinStorageLayerId);
+        using var client = _fixture.CreateAdminClient();
+        using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+
+        using var response = await client.PutAsync($"/api/v1/admin/metadata/layers/{LayerId}/{configuration}", content);
+
+        response.Be200Ok();
+        var after = _fixture.GetCurrentV2GraphSnapshot();
+        after.Index.ResourcesById[TwinResourceId].Should().BeEquivalentTo(before.Index.ResourcesById[TwinResourceId]);
+        AssertStoredConfiguration(after.Index.ResourcesById[targetResourceId], configuration);
+    }
+
+    private static void AssertStoredConfiguration(MetadataV2Resource resource, string configuration)
+    {
+        switch (configuration)
+        {
+            case "filter":
+                resource.PermanentFilter.Should().BeNull();
+                break;
+            case "fields":
+                resource.SchemaFields.Single(field => field.Name == "description").Alias.Should().Be("Storage field");
+                break;
+            case "popup-info":
+                resource.Extensions["geoservices:popupInfo"].GetProperty("title").GetString().Should().Be("Storage popup");
+                break;
+            case "drawing-info":
+                resource.Extensions["geoservices:drawingInfo"].GetProperty("renderer").GetProperty("type").GetString().Should().Be("simple");
+                break;
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("filter")]
+    [InlineData("fields")]
+    [InlineData("popup-info")]
+    [InlineData("drawing-info")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/popup-info")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/drawing-info")]
+    public async Task GetConfiguration_ServiceIndexDiffersFromStorage_UsesStorageId(string configuration)
+    {
+        AddTwinAtLayerId(retireTwin: false, twinStorageLayerId: TwinStorageLayerId);
+        using var client = _fixture.CreateAdminClient();
+
+        using var storageResponse = await client.GetAsync($"/api/v1/admin/metadata/layers/{LayerId}/{configuration}");
+        using var indexResponse = await client.GetAsync($"/api/v1/admin/metadata/layers/{ServiceLayerIndex}/{configuration}");
+
+        storageResponse.Be200Ok();
+        indexResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/filter")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
+    public async Task UpdateStyle_AmbiguousStorageHandle_ReturnsConflictWithoutChangingGraph()
+    {
+        var (before, _) = AddTwinAtLayerId(retireTwin: false);
+        using var client = _fixture.CreateAdminClient();
+        using var response = await client.PutAsJsonAsync($"/api/v1/admin/metadata/layers/{LayerId}/style", new
+        {
+            mapLibreStyle = new { version = 8, sources = new { }, layers = Array.Empty<object>() },
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        _fixture.GetCurrentV2GraphSnapshot().Graph.Resources.Should().BeEquivalentTo(before.Graph.Resources);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
     public async Task UpdateLayerFilter_LayerIdSharedByTwoResources_Returns409AndChangesNeither()
     {
         var request = new LayerFilterConfigurationUpdateRequest { PermanentFilter = null };
@@ -54,7 +131,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/fields")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
     public async Task UpdateLayerFields_LayerIdSharedByTwoResources_Returns409AndChangesNeither()
     {
         var request = new LayerFieldConfigurationUpdateRequest
@@ -69,7 +146,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/popup-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/popup-info")]
     public async Task SetPopupInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither()
     {
         var document = JsonSerializer.Deserialize<JsonElement>("""{ "title": "{name}" }""");
@@ -80,7 +157,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/drawing-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/drawing-info")]
     public async Task SetDrawingInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither()
     {
         var document = JsonSerializer.Deserialize<JsonElement>("""{ "renderer": { "type": "simple" } }""");
@@ -91,7 +168,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/filter")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
     public async Task UpdateLayerFilter_RetiredTwinAtSameLayerId_WritesOnlyTheResolvedResource()
     {
         var (before, targetResourceId) = AddTwinAtLayerId(retireTwin: true);
@@ -113,6 +190,44 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
         var after = _fixture.GetCurrentV2GraphSnapshot();
         after.Index.ResourcesById[targetResourceId].PermanentFilter!.Expression.Should().Be("category = 'test'");
         after.Index.ResourcesById[TwinResourceId].Should().BeEquivalentTo(before.Index.ResourcesById[TwinResourceId]);
+    }
+
+    [IntegrationTheory]
+    [InlineData("discovery")]
+    [InlineData("validation")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/validation")]
+    public async Task GetMetadata_AmbiguousStorageHandle_ReturnsConflict(string endpoint)
+    {
+        var (before, _) = AddTwinAtLayerId(retireTwin: false);
+        using var client = _fixture.CreateAdminClient();
+
+        using var response = await client.GetAsync($"/api/v1/admin/metadata/layers/{LayerId}/{endpoint}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().Contain(TwinServiceName);
+        _fixture.GetCurrentV2GraphSnapshot().Etag.Should().Be(before.Etag);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
+    public async Task UpdateDiscovery_AmbiguousStorageHandle_ReturnsConflictWithoutMutation()
+    {
+        var (before, _) = AddTwinAtLayerId(retireTwin: false);
+        using var client = _fixture.CreateAdminClient();
+        using var content = JsonContent.Create(new DiscoveryMetadataUpdateRequest
+        {
+            Etag = before.Etag,
+            Title = "Changed title",
+        }, DiscoveryMetadataJsonContext.Default.DiscoveryMetadataUpdateRequest);
+
+        using var response = await client.PutAsync($"/api/v1/admin/metadata/layers/{LayerId}/discovery", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().Contain(TwinServiceName);
+        _fixture.GetCurrentV2GraphSnapshot().Graph.Should().BeEquivalentTo(before.Graph);
     }
 
     private async Task AssertAmbiguousPutRejectedAsync(string path, HttpContent content)
@@ -137,7 +252,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
     /// clone of the seeded layer's resource (same schema, so the request validates against both)
     /// carrying its own storage binding and a distinct permanent filter / hidden field.
     /// </summary>
-    private (MetadataV2GraphSnapshot Before, string TargetResourceId) AddTwinAtLayerId(bool retireTwin)
+    private (MetadataV2GraphSnapshot Before, string TargetResourceId) AddTwinAtLayerId(bool retireTwin, int twinStorageLayerId = LayerId)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
@@ -152,7 +267,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
         {
             Metadata = binding.Metadata with { Id = TwinBindingId, Name = TwinBindingId },
             ResourceId = TwinResourceId,
-            StorageLayerId = TwinStorageLayerId,
+            StorageLayerId = twinStorageLayerId,
         };
         var twinResource = resource with
         {
@@ -177,6 +292,8 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
             Metadata = publication.Metadata with { Id = TwinPublicationId, Name = TwinPublicationId },
             ServiceId = TwinServiceId,
             ResourceId = TwinResourceId,
+            LayerIndex = ServiceLayerIndex,
+            Identifier = new MetadataV2PublicationIdentifier { Value = ServiceLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true },
             StorageBindingId = publication.StorageBindingId is null ? null : TwinBindingId,
         };
 
@@ -184,10 +301,14 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
             snapshot.Graph with
             {
                 Revision = snapshot.Graph.Revision + 1,
-                Resources = [.. snapshot.Graph.Resources, twinResource],
+                Resources = [.. snapshot.Graph.Resources.Select(candidate => twinStorageLayerId != LayerId && candidate.Metadata.Id == resource.Metadata.Id
+                    ? candidate with { PermanentFilter = new MetadataV2PermanentFilter { Expression = "category = 'test'", Language = "arcgis-sql" } }
+                    : candidate), twinResource],
                 StorageBindings = [.. snapshot.Graph.StorageBindings, twinBinding],
                 Services = [.. snapshot.Graph.Services, twinService],
-                Publications = [.. snapshot.Graph.Publications, twinPublication],
+                Publications = [.. snapshot.Graph.Publications.Select(candidate => candidate.ResourceId == resource.Metadata.Id
+                    ? candidate with { LayerIndex = ServiceLayerIndex, Identifier = new MetadataV2PublicationIdentifier { Value = ServiceLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true } }
+                    : candidate), twinPublication],
             },
             schema: _fixture.MetadataGraphSchema);
         return (_fixture.GetCurrentV2GraphSnapshot(), resource.Metadata.Id);

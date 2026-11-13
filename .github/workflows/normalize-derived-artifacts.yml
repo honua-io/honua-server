@@ -50,7 +50,9 @@ env:
 jobs:
   generate:
     name: Generate bounded normalization projections
-    if: github.event.action != 'edited' || github.event.changes.base.ref.from != null
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event.action != 'edited' || github.event.changes.base.ref.from != null)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -192,7 +194,7 @@ jobs:
     if: needs.generate.result == 'success' && needs.generate.outputs.superseded != 'true' && needs.generate.outputs.generated_only != 'true'
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       # Packaging is deliberately isolated from the runner that executed PR

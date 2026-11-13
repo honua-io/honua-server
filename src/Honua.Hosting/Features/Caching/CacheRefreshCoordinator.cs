@@ -10,16 +10,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Caching;
 
-[Obsolete("Use DistributedCacheRefreshCoordinator for production deployments to support horizontal scaling")]
 internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICacheRefreshCoordinator
 {
     private const string MetricsCacheType = "background-refresh";
     private readonly Channel<CacheRefreshItem> _channel;
-    // Value semantics: 0 = pending, 1 = invalidated, 2 = write-claimed.
-    // Embedding the state flag in _pendingKeys (instead of a separate dictionary)
-    // eliminates the TOCTOU race that previously existed between ContainsKey and TryAdd
-    // across two dictionaries. TryUpdate is atomic, so NotifyInvalidation either sees
-    // the key and marks it, or the key was already claimed/cleaned up — no stale flag can leak.
+    // Value semantics: 0 = pending, 1 = invalidated, 2 = write-claimed. Keeping the state
+    // beside the pending key makes every transition one atomic TryUpdate, so
+    // NotifyInvalidation either marks a live key or finds it already cleaned up.
     private readonly ConcurrentDictionary<string, byte> _pendingKeys = new(StringComparer.Ordinal);
     private readonly CacheRefreshBackoff _retryBackoff;
     private readonly CacheOptions _options;

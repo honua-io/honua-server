@@ -84,7 +84,7 @@ internal sealed partial class EdrHandler
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var byCollection = await LayerValidationHelpers.ResolveStorageCollectionsWithAccessV2Async(
-            context, snapshot, CoveragesProtocol, cancellationToken: cancellationToken).ConfigureAwait(false);
+            context, snapshot, new(CoveragesProtocol) { CancellationToken = cancellationToken }).ConfigureAwait(false);
 
         var collections = ImmutableArray.CreateBuilder<EdrCollection>();
         foreach (var entry in byCollection.Where(static pair => pair.Value.IsValid).OrderBy(static pair => pair.Key))

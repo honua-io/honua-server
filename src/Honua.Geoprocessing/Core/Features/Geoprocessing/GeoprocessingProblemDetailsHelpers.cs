@@ -20,8 +20,7 @@ internal static class GeoprocessingProblemDetailsHelpers
                 exception.Remediation!,
                 exception.RemediationRef!,
                 exception.CapabilityId,
-                exception.ErrorCode,
-                exception.MissingEntitlement)
+                exception.ErrorCode)
             : ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status503ServiceUnavailable,

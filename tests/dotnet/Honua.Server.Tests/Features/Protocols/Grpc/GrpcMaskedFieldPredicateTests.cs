@@ -77,7 +77,7 @@ public sealed class GrpcMaskedFieldPredicateTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsIdempotencyStore());
+            new GrpcApplyEditsReceipts());
 
         _resourceValidator
             .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())

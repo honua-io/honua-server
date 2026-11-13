@@ -33,6 +33,19 @@ public sealed class OperationSecretKeyRingProtectionTests
     }
 
     [UnitTest]
+    public void Resolve_WithoutCertificatePath_NamesTheDatabaseAsTheReason()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+
+        var action = () => OperationSecretKeyRingProtection.Resolve(configuration);
+
+        action.Should().Throw<InvalidOperationException>()
+            .Which.Message.Should().Contain("ConnectionStrings:DefaultConnection")
+            .And.Contain(OperationSecretKeyRingProtection.CertificateMaterialKey)
+            .And.NotContain("Redis");
+    }
+
+    [UnitTest]
     public void Resolve_WithMissingCertificatePath_FailsClosed()
     {
         var configuration = new ConfigurationBuilder()

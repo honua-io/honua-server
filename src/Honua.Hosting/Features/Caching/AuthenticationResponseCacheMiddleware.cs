@@ -16,6 +16,7 @@ internal sealed class AuthenticationResponseCacheMiddleware(RequestDelegate next
         {
             var context = (HttpContext)state;
             AuthenticationResponseCachePolicy.Apply(context);
+            OutputCacheStatus.Apply(context);
             SharedCacheGuard.Apply(context);
             return Task.CompletedTask;
         }, context);

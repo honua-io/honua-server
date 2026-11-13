@@ -88,6 +88,10 @@ class PrManagedBuildTests(unittest.TestCase):
             for result in ['failure','cancelled','skipped','']:
                 self.assertNotEqual(subprocess.run(['bash','-e','-c',script],env=dict(os.environ,**(success | {key:result})),capture_output=True).returncode,0,(key,result))
 
+        draft = success | {key: 'skipped' for key in keys if key != 'FORMAT_RESULT'}
+        self.assertNotEqual(subprocess.run(['bash', '-e', '-c', script], env=dict(os.environ, **draft),
+                                          capture_output=True).returncode, 0)
+
     def test_fast_architecture_remains_independent_and_required(self):
         fast = job('fast-tests')
         self.assertIn('    needs: runner-select\n', fast)

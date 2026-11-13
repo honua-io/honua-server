@@ -18,7 +18,7 @@ def job(name):
 class ManagedWorkflowTests(unittest.TestCase):
     def test_producer_preserves_affected_union_and_exact_build_properties(self):
         producer = job('build')
-        self.assertIn('needs: [changes, targeted-shards]', producer)
+        self.assertIn('needs: [changes, targeted-shards, producer-runner]', producer)
         self.assertIn('--base-filter "${RUNNER_TEMP}/affected-base.slnf"', producer)
         self.assertIn('--matrix-file "${RUNNER_TEMP}/managed-matrix.json"', producer)
         self.assertIn('target=Honua.sln', producer)

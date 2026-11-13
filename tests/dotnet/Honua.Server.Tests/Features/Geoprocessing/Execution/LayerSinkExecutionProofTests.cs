@@ -71,7 +71,7 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
                 ServiceName = "sinkproof_" + Guid.NewGuid().ToString("N"),
                 Enabled = true
             });
-        _layerId = layer.LayerId;
+        _layerId = layer.StorageLayerId;
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();

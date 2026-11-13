@@ -7,7 +7,6 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Hosting;
-using StackExchange.Redis;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -24,7 +23,7 @@ namespace Honua.Migration;
 /// <summary>
 /// Redis-backed coordination for GeoServer import jobs with in-memory fallback in development and tests.
 /// </summary>
-internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>, IDisposable
+internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>
 {
     private readonly IUniversalProgressStore _universalProgressStore;
     private readonly GeoServerImportProgressStore _progressStore;
@@ -35,19 +34,13 @@ internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoSer
         IDistributedCache? distributedCache,
         ILogger<GeoServerImportJobManager> logger,
         IHostEnvironment hostEnvironment,
-        IConnectionMultiplexer? redis = null)
+        ImportCoordinationStores? stores = null)
     {
         _universalProgressStore = universalProgressStore;
         _progressStore = new GeoServerImportProgressStore(universalProgressStore);
         _state = new ImportJobManagerState<GeoServerImportRequest, GeoServerImportProgress>(
-            universalProgressStore,
-            distributedCache,
-            logger,
-            hostEnvironment,
-            redis,
-            "geoserver:import:queue",
-            "geoserver:import:leader",
-            "geoserver:import:request:",
+            new ImportJobManagerContext(universalProgressStore, distributedCache, logger, hostEnvironment, stores ?? new ImportCoordinationStores()),
+            new ImportJobKeys("geoserver:import:queue", "geoserver:import:leader", "geoserver:import:request:"),
             GeoServerImportApiJsonContext.Default.GeoServerImportRequest);
     }
 
@@ -68,12 +61,4 @@ internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoSer
         string jobId, GeoServerImportProgress progress, OperationStatus expectedStatus,
         CancellationToken cancellationToken)
         => _universalProgressStore.TrySetProgressAsync(new OperationProgressWrite(jobId, progress, TimeSpan.FromHours(24)), expectedStatus, cancellationToken);
-
-    public void Dispose()
-    {
-        if (_state.LeaderElection is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
-    }
 }

@@ -2,8 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Sockets;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Routing;
@@ -578,29 +576,8 @@ internal sealed partial class RateLimitingMiddleware
         // Trust the connection IP only. If forwarded headers are enabled, the
         // ASP.NET Core forwarded-headers middleware will already have rewritten
         // RemoteIpAddress after validating the proxy against the known-proxy list.
-        var remoteIp = context.Connection.RemoteIpAddress;
-        if (remoteIp is null)
-        {
-            return null;
-        }
-
-        if (remoteIp.IsIPv4MappedToIPv6)
-        {
-            remoteIp = remoteIp.MapToIPv4();
-        }
-
-        // Anonymous keys use this string. Aggregate IPv6 to /64 so one host's
-        // interface identifiers cannot fill the process-local table. IPv4,
-        // including an address that arrived IPv4-mapped, stays a single address.
-        // Authenticated keys use the subject and never this value.
-        if (remoteIp.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var bytes = remoteIp.GetAddressBytes();
-            bytes.AsSpan(8).Clear();
-            remoteIp = new IPAddress(bytes);
-        }
-
-        return remoteIp.ToString();
+        // Anonymous keys use this string; authenticated keys use the subject and never this value.
+        return ClientAddressPartition.From(context.Connection.RemoteIpAddress);
     }
 
     // Logs report a family label and a hash, so the tenant, principal, and address do not appear.

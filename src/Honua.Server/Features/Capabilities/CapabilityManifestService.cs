@@ -493,7 +493,7 @@ internal sealed class CapabilityManifestService(
                 configured: alertOptionsValue.Enabled
                     && options.ExperimentalCapabilityFlags.IsExperimentalEnabled("alerts.geofence")),
             // A compute backend is always registered, so `supported` alone over-claims: without
-            // the Redis-backed durable job store nothing can be submitted (honua-release#202).
+            // the durable job store in the system database nothing can be submitted.
             Capability("jobs.runner", "jobs", context, supported: workloadCount > 0 || runtimeInventory.BatchBackends.Count > 0, requiresAuthentication: true, requiresDurableJobStore: true),
             Capability("ai.spec-apply", "ai", context, entitlementKey: FeatureCatalog.AiSpecApplyKey),
             Capability("ai.grounding", "ai", context, entitlementKey: FeatureCatalog.AiGroundingKey),
@@ -617,13 +617,12 @@ internal sealed class CapabilityManifestService(
         [
             Capability("ops.findings", "operate", context, requiresAuthentication: true),
             // The governed proposal/approval control plane (honua_admin_* approval-gated tools,
-            // /api/v1/admin/proposals, Studio drafts) persists in the Redis-backed durable store.
-            // The tools advertise on every topology; this entry is what tells an agent, before it
-            // calls one, that a Redis-off host refuses with the typed capability-unavailable
-            // receipt (dependency-unavailable; license-required when Redis is unentitled).
+            // /api/v1/admin/proposals, Studio drafts) persists in the system database. The tools
+            // advertise on every topology; this entry is what tells an agent, before it calls one,
+            // that a host without the proposal store refuses with a dependency-unavailable receipt.
             Capability(OperationsProposalsCapabilityId, "operate", context,
                 configured: options.ProposalStoreAvailable,
-                unavailableReasonOverride: SubstrateUnavailableReason(options.ProposalStoreUnavailableCause),
+                unavailableReasonOverride: CapabilityReasonCodes.DependencyUnavailable,
                 requiresAuthentication: true),
             Capability("ops.autonomy", "operate", context,
                 configured: operationCapabilities.HasAutonomyPolicyStore,
@@ -742,7 +741,7 @@ internal sealed class CapabilityManifestService(
         => new()
         {
             Configured = options.ProposalStoreAvailable,
-            UnavailableReason = SubstrateUnavailableReason(options.ProposalStoreUnavailableCause),
+            UnavailableReason = CapabilityReasonCodes.DependencyUnavailable,
             RequiresAuthentication = true,
         };
 
@@ -830,15 +829,13 @@ internal sealed class CapabilityManifestService(
             reasonCode = unavailableReasonOverride ?? CapabilityReasonCodes.DisabledByConfiguration;
         }
         // Checked ahead of the caller-scoped gates on purpose: an uncomposed substrate is a
-        // property of the deployment, not of who is asking, so an anonymous probe of a Redis-less
-        // install must read `dependency-unavailable` rather than `insufficient-policy`. The reason
-        // code follows the actual cause: an unentitled-but-present Redis is a licence problem, and
-        // reporting it as a missing dependency would send the operator to a fix that cannot work
-        // (honua-release#202).
+        // property of the deployment, not of who is asking, so an anonymous probe of an install
+        // without the system database must read `dependency-unavailable` rather than
+        // `insufficient-policy`.
         else if (requiresDurableJobStore && !options.DurableJobRuntimeAvailable)
         {
             available = false;
-            reasonCode = SubstrateUnavailableReason(options.DurableJobSubstrateCause);
+            reasonCode = CapabilityReasonCodes.DependencyUnavailable;
         }
         else if (requiresEnvironment && !context.EnvironmentAvailable)
         {
@@ -1079,8 +1076,7 @@ internal sealed class CapabilityManifestService(
                 AvailableBackendCount = batchCapabilities.AvailableBackendCount,
                 SupportsCancellation = batchCapabilities.SupportsCancellation,
                 SupportsProgressPolling = batchCapabilities.SupportsProgressPolling,
-                DurableJobRuntimeAvailable = options.DurableJobRuntimeAvailable,
-                RedisDurability = options.RedisDurability
+                DurableJobRuntimeAvailable = options.DurableJobRuntimeAvailable
             },
             Upload = new CapabilityManifestUploadLimits
             {
@@ -1467,11 +1463,6 @@ internal sealed class CapabilityManifestService(
 
         return context.CallerCapabilities.Contains(capability);
     }
-
-    private static string SubstrateUnavailableReason(DurableJobSubstrateCause cause)
-        => cause == DurableJobSubstrateCause.RedisNotEntitled
-            ? CapabilityReasonCodes.LicenseRequired
-            : CapabilityReasonCodes.DependencyUnavailable;
 
     private static string[] ResolveRequiredEntitlementKeys(string? entitlementKey, string[]? entitlementKeys)
     {

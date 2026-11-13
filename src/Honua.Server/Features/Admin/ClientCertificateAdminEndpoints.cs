@@ -17,6 +17,8 @@ namespace Honua.Server.Features.Admin;
 
 internal static class ClientCertificateAdminEndpoints
 {
+    private const string TrustSettingsName = "Client-certificate trust profiles, mappings and revocations";
+
     internal sealed class ClientCertificateAdminEndpointsLog;
 
     public static void MapClientCertificateAdminEndpoints(this IEndpointRouteBuilder endpoints)
@@ -57,6 +59,7 @@ internal static class ClientCertificateAdminEndpoints
 
         group.MapPost("/profiles", HandleCreateProfile)
             .WithDisplayName("Create Client Certificate Trust Profile")
+            .RefuseWhenProcessLocalOnSeveralTasks<IClientCertificateTrustStore, InMemoryClientCertificateTrustStore>(TrustSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapGet("/profiles/{profileId}", HandleGetProfile)
@@ -65,10 +68,12 @@ internal static class ClientCertificateAdminEndpoints
 
         group.MapPut("/profiles/{profileId}", HandleUpdateProfile)
             .WithDisplayName("Update Client Certificate Trust Profile")
+            .RefuseWhenProcessLocalOnSeveralTasks<IClientCertificateTrustStore, InMemoryClientCertificateTrustStore>(TrustSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
         group.MapDelete("/profiles/{profileId}", HandleDisableProfile)
             .WithDisplayName("Disable Client Certificate Trust Profile")
+            .RefuseWhenProcessLocalOnSeveralTasks<IClientCertificateTrustStore, InMemoryClientCertificateTrustStore>(TrustSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
         group.MapGet("/profiles/{profileId}/mappings", HandleListMappings)
@@ -77,14 +82,17 @@ internal static class ClientCertificateAdminEndpoints
 
         group.MapPost("/profiles/{profileId}/mappings", HandleCreateMapping)
             .WithDisplayName("Create Client Certificate Principal Mapping")
+            .RefuseWhenProcessLocalOnSeveralTasks<IClientCertificateTrustStore, InMemoryClientCertificateTrustStore>(TrustSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapPut("/profiles/{profileId}/mappings/{mappingId}", HandleUpdateMapping)
             .WithDisplayName("Update Client Certificate Principal Mapping")
+            .RefuseWhenProcessLocalOnSeveralTasks<IClientCertificateTrustStore, InMemoryClientCertificateTrustStore>(TrustSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
         group.MapDelete("/profiles/{profileId}/mappings/{mappingId}", HandleDisableMapping)
             .WithDisplayName("Disable Client Certificate Principal Mapping")
+            .RefuseWhenProcessLocalOnSeveralTasks<IClientCertificateTrustStore, InMemoryClientCertificateTrustStore>(TrustSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
         group.MapGet("/profiles/{profileId}/revocations", HandleListRevocations)
@@ -93,10 +101,12 @@ internal static class ClientCertificateAdminEndpoints
 
         group.MapPost("/profiles/{profileId}/revocations", HandleAddRevocation)
             .WithDisplayName("Add Client Certificate Revocation")
+            .RefuseWhenProcessLocalOnSeveralTasks<IClientCertificateTrustStore, InMemoryClientCertificateTrustStore>(TrustSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapDelete("/profiles/{profileId}/revocations/{revocationId}", HandleRemoveRevocation)
             .WithDisplayName("Remove Client Certificate Revocation")
+            .RefuseWhenProcessLocalOnSeveralTasks<IClientCertificateTrustStore, InMemoryClientCertificateTrustStore>(TrustSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
         group.MapPost("/validate", HandleValidateCertificate)

@@ -101,7 +101,6 @@ internal static class FeatureRegistrationExtensions
     public static IServiceCollection AddServerFeatures(
         this IServiceCollection services,
         IConfiguration configuration,
-        bool redisCacheEntitled = false,
         string? hostEnvironmentName = null)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -155,7 +154,7 @@ internal static class FeatureRegistrationExtensions
 #if !HONUA_EXCLUDE_GRPC
         services.AddHonuaGrpc(configuration);
 #endif
-        services.AddObservability(configuration, redisCacheEntitled);
+        services.AddObservability(configuration);
         // Alert health and streaming abstractions are shared by always-on operations
         // surfaces. AlertOptions keeps the workers dormant when alerting is disabled;
         // only the geofence-specific HTTP surfaces are lifecycle-gated below.

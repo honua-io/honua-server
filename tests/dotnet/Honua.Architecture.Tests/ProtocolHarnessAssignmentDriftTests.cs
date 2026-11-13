@@ -54,7 +54,7 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         "serve.wps|wps-2.0.2|POST /wps",
         "serve.wps|wps-2.0.2|GET /wps?request=GetStatus",
         "serve.wps|wps-2.0.2|GET /wps?request=GetResult",
-        "styling.auto-suggest|control-plane-admin|POST /api/v1/admin/metadata/layers/{layerId}/suggest-style",
+        "styling.auto-suggest|control-plane-admin|POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style",
         "temporal.extent-discovery|feature-server|GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent",
         "temporal.filtering|feature-server|GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?time={time}",
         "temporal.histogram|feature-server|GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins",

@@ -7,7 +7,6 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
@@ -454,37 +453,14 @@ internal static class WorkflowPackageEndpoints
         }
     }
 
-    // A present but unentitled Redis is not reported as a missing connection.
     private static IResult WorkflowPublicationUnavailable(HttpContext context)
-    {
-        var substrate = context.RequestServices.GetService<IOptions<DurableJobSubstrateOptions>>()?.Value
-            ?? new DurableJobSubstrateOptions();
-
-        // Only RedisNotConfigured and RedisNotEntitled are reachable here: the definition store is
-        // registered unconditionally wherever the multiplexer is, so there is no store-without-queue
-        // analogue of RuntimeIncomplete for it. Anything that is not the entitlement case therefore
-        // collapses to the dependency receipt, matching ForCause's own default arm.
-        var unentitled = substrate.Classify(jobStorePresent: false, jobQueuePresent: false)
-            == DurableJobSubstrateCause.RedisNotEntitled;
-
-        return unentitled
-            ? ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
-                context,
-                CapabilityUnavailableCodes.UnentitledWorkflowPublicationDetail,
-                missingDependency: null,
-                CapabilityUnavailableCodes.EntitlementRemediation,
-                CapabilityUnavailableCodes.EntitlementRemediationRef,
-                CapabilityUnavailableCodes.DurableJobsCapability,
-                errorCode: CapabilityUnavailableCodes.EntitlementErrorCode,
-                missingEntitlement: CapabilityUnavailableCodes.RedisCacheEntitlement)
-            : ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
-                context,
-                CapabilityUnavailableCodes.DurableWorkflowPublicationDetail,
-                CapabilityUnavailableCodes.RedisDependency,
-                CapabilityUnavailableCodes.RedisRemediation,
-                CapabilityUnavailableCodes.RedisRemediationRef,
-                CapabilityUnavailableCodes.DurableJobsCapability);
-    }
+        => ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+            context,
+            CapabilityUnavailableCodes.DurableWorkflowPublicationDetail,
+            CapabilityUnavailableCodes.WorkflowDefinitionStoreDependency,
+            CapabilityUnavailableCodes.WorkflowDefinitionStoreRemediation,
+            CapabilityUnavailableCodes.WorkflowDefinitionStoreRemediationRef,
+            CapabilityUnavailableCodes.DurableJobsCapability);
 
     private static IResult BadRequest(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateAdminProblem(

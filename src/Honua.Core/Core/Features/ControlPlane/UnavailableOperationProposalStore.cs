@@ -36,9 +36,9 @@ public sealed class UnavailableOperationProposalStore : IOperationProposalStore
     private static CapabilityUnavailableException Unavailable()
         => new(
             CapabilityUnavailableCodes.DurableControlPlaneDetail,
-            CapabilityUnavailableCodes.RedisDependency,
-            CapabilityUnavailableCodes.RedisRemediation,
-            CapabilityUnavailableCodes.RedisRemediationRef,
+            CapabilityUnavailableCodes.SystemDatabaseDependency,
+            CapabilityUnavailableCodes.SystemDatabaseRemediation,
+            CapabilityUnavailableCodes.SystemDatabaseRemediationRef,
             CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
 
     /// <inheritdoc />

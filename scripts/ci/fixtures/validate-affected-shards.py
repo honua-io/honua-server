@@ -19,12 +19,19 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, NamedTuple
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SELECTOR = REPO_ROOT / "scripts/ci/compute-affected-shards.py"
 CONFIG_PATH = REPO_ROOT / ".github/ci-shards.json"
+WPS_TEST_PATH = "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs"
+H3_TEST_PATHS = tuple(
+    f"tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/{name}.cs"
+    for name in ("ProviderRoutedTileAndH3EndpointTests", "FeatureServerH3EntitlementTests")
+)
+TWO_FAMILY_ROUND = 2  # one child of the WPS family plus the H3 owner
+HAZARD_RANK_MARGIN = 0.1  # minutes; ranks the WPS family just above the H3 owner
 
 # The fields ci.yml::server-tests reads off its own matrix entries. An entry
 # missing one of these would fail at run time inside the shard job, not here,
@@ -326,54 +333,93 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
     return len(exclusive)
 
 
+class MixedOwners(NamedTuple):
+    wps: set[str]
+    h3: dict[str, set[str]]
+
+
+def expect_mixed_wps_h3_rejected(control: Callable[[], None], accepted_change: str) -> None:
+    """A negative control must make the WPS/H3 check fail."""
+    try:
+        control()
+    except FixtureError:
+        return
+    raise FixtureError(f"mixed WPS/H3 control accepted {accepted_change}")
+
+
+def interleave_hazard(config: dict[str, Any], owners: MixedOwners) -> dict[str, Any]:
+    """Rank the WPS split family just above the H3 owner; measured ranks and splits move."""
+    hazard = copy.deepcopy(config)
+    h3_owners = set().union(*owners.h3.values())
+    h3_owner_rank = max(shard["dispatch_rank"] for shard in hazard["shards"] if shard["name"] in h3_owners)
+    wps_families = {selector.SPLIT_CHILD_SUFFIX.sub("", name) for name in owners.wps}
+    for shard in hazard["shards"]:
+        if selector.SPLIT_CHILD_SUFFIX.sub("", shard["name"]) in wps_families:
+            shard["dispatch_rank"] = h3_owner_rank + HAZARD_RANK_MARGIN
+    return hazard
+
+
+def hazard_cap(owners: MixedOwners) -> int:
+    """A cap the WPS family can fill on its own when not interleaved."""
+    return max(TWO_FAMILY_ROUND, min(selector.DEFAULT_CAP, len(owners.wps)))
+
+
+class MixedDiffContext(NamedTuple):
+    """The shard config under test, its on-disk copy and the admission cap."""
+
+    candidate: dict[str, Any]
+    path: Path
+    cap: int
+
+
+def selected_for_mixed_diff(context: MixedDiffContext, h3: str) -> set[str]:
+    changed = [WPS_TEST_PATH, h3]
+    candidate = context.candidate
+    uncapped = select_offline(
+        candidate, changed, descriptor=router(candidate, changed, config_path=context.path),
+        cap=len(candidate["shards"]),
+    )
+    budget = selector.time_budget.load_time_budget(candidate)
+    return set(selector.apply_time_budget(uncapped, context.cap, budget)["shards"])
+
+
+def check_mixed_wps_h3(candidate: dict[str, Any], owners: MixedOwners, cap: int = selector.DEFAULT_CAP) -> None:
+    """Every mixed WPS/H3 diff selects an owner of each file."""
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "ci-shards.json"
+        path.write_text(json.dumps(candidate), encoding="utf-8")
+        context = MixedDiffContext(candidate, path, cap)
+        for h3, h3_owners in owners.h3.items():
+            selected = selected_for_mixed_diff(context, h3)
+            if not h3_owners <= selected or not owners.wps & selected:
+                raise FixtureError(f"mixed WPS/H3 diff omitted an owning shard: {sorted(selected)}")
+
+
 def check_wps_and_h3_tests_select_both_owners(config: dict[str, Any]) -> None:
     """A routed WPS file must not hide an unlisted H3 file in the same diff."""
-    wps = "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs"
-    h3_paths = [
-        f"tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/{name}.cs"
-        for name in ("ProviderRoutedTileAndH3EndpointTests", "FeatureServerH3EntitlementTests")
-    ]
-    def owners(changed: str) -> set[str]:
+    def owners_of(changed: str) -> set[str]:
         hits = selector.count_test_class_hits(REPO_ROOT, config, [changed])
         return {name for name, count in hits.items() if count}
 
-    wps_owners = owners(wps)
+    owners = MixedOwners(owners_of(WPS_TEST_PATH), {h3: owners_of(h3) for h3 in H3_TEST_PATHS})
+    check_mixed_wps_h3(config, owners)
 
-    def check(candidate: dict[str, Any], path: Path) -> None:
-        for h3 in h3_paths:
-            changed = [wps, h3]
-            uncapped = select_offline(
-                candidate, changed, descriptor=router(candidate, changed, config_path=path),
-                cap=len(candidate["shards"]),
-            )
-            result = selector.apply_time_budget(uncapped, 6, selector.time_budget.load_time_budget(candidate))
-            selected = set(result["shards"])
-            if not owners(h3) <= selected or not wps_owners & selected:
-                raise FixtureError(f"mixed WPS/H3 diff omitted an owning shard: {result['shards']}")
-
-    check(config, CONFIG_PATH)
+    hazard, cap = interleave_hazard(config, owners), hazard_cap(owners)
+    check_mixed_wps_h3(hazard, owners, cap)
     interleave = selector.interleave_split_families
     selector.interleave_split_families = list
     try:
-        check(config, CONFIG_PATH)
-    except FixtureError:
-        pass
-    else:
-        raise FixtureError("mixed WPS/H3 control accepted a ranking that lets one split family take every slot")
+        expect_mixed_wps_h3_rejected(
+            lambda: check_mixed_wps_h3(hazard, owners, cap),
+            "a ranking that lets one split family take every slot",
+        )
     finally:
         selector.interleave_split_families = interleave
+
     mutated = copy.deepcopy(config)
     for shard in mutated["shards"]:
-        shard["paths"] = [path for path in shard.get("paths", []) if path not in h3_paths]
-    with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / "ci-shards.json"
-        path.write_text(json.dumps(mutated), encoding="utf-8")
-        try:
-            check(mutated, path)
-        except FixtureError:
-            pass
-        else:
-            raise FixtureError("mixed WPS/H3 control accepted removal of the H3 routing paths")
+        shard["paths"] = [path for path in shard.get("paths", []) if path not in H3_TEST_PATHS]
+    expect_mixed_wps_h3_rejected(lambda: check_mixed_wps_h3(mutated, owners), "removal of the H3 routing paths")
 
 
 def check_non_runnable_tiers_are_not_credited(config: dict[str, Any]) -> int:

@@ -70,15 +70,6 @@ internal static partial class FeatureEventsAndStreamingRegistration
                 sp.GetService<IConnectionMultiplexer>(),
                 routabilityGuard: sp.GetRequiredService<FeatureStreamRoutabilityGuard>(),
                 serviceScopeFactory: sp.GetRequiredService<IServiceScopeFactory>()));
-        services.AddSingleton(System.Threading.Channels.Channel.CreateUnbounded<PendingFeatureChangeSignal>());
-        services.AddSingleton<IFeatureChangeRetryQueue>(sp =>
-            new FeatureChangeRetryQueue(
-                sp.GetService<IDistributedCache>(),
-                sp.GetRequiredService<System.Threading.Channels.Channel<PendingFeatureChangeSignal>>(),
-                sp.GetRequiredService<IFeatureChangeEventStore>(),
-                sp.GetRequiredService<FeatureStreamSessionManager>(),
-                sp.GetRequiredService<ILogger<FeatureChangeRetryQueue>>(),
-                sp.GetService<IConnectionMultiplexer>()));
         // Broker-agnostic event-bus sinks (#357). The publish path fans committed
         // feature-change events out to every registered sink through the broadcaster.
         // Sinks are off by default; the no-op sink keeps the fan-out path exercised
@@ -128,11 +119,10 @@ internal static partial class FeatureEventsAndStreamingRegistration
                 sp.GetRequiredService<IFeatureChangeEventStore>(),
                 sp.GetRequiredService<FeatureStreamSessionManager>(),
                 sp.GetRequiredService<ILogger<FeatureStreamPublisher>>(),
-                sp.GetRequiredService<IFeatureChangeRetryQueue>(),
                 sp.GetRequiredService<FeatureChangeEventSinkBroadcaster>()));
         services.AddSingleton<FeatureMutationEventService>();
 
-        // Feature-change transactional outbox (#692). Capability provider, dispatcher, health,
+        // Feature-change transactional outbox: capability provider, dispatcher, health,
         // and metrics. The outbox repository itself is registered by the active provider's
         // service-collection extension (Postgres registers a working repository; SQL Server and
         // DuckDB register only the capability provider since they do not support feature writes).
@@ -151,14 +141,13 @@ internal static partial class FeatureEventsAndStreamingRegistration
         services.AddSingleton<OutboxDispatcherBackgroundService>();
         services.AddSingleton<IOutboxHealth>(sp =>
             sp.GetRequiredService<OutboxDispatcherBackgroundService>());
-        // The dispatcher and retry loops open a database connection on each pass. On a
-        // control-plane event Lambda that exhausts the pool of 2 and pins the connection
-        // across freeze (honua-server#6515). The singleton stays so health can read it.
+        // The dispatcher opens a database connection on each pass. On a control-plane event
+        // Lambda that exhausts the pool of 2 and pins the connection across freeze. The
+        // singleton stays so health can read it.
         if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
         {
             services.AddHostedService(sp =>
                 sp.GetRequiredService<OutboxDispatcherBackgroundService>());
-            services.AddHostedService<FeatureChangeRetryBackgroundService>();
         }
         services.AddScoped<FeatureStreamDependencies>();
         services.AddHostedService<FeatureStreamHeartbeatService>();

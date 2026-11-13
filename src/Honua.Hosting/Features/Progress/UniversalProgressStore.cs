@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -183,7 +184,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             persisted = await RedisClientFault.RetryCompletedReaderAsync(
                 () => _redis!.GetDatabase().HashGetAsync(key, "data"),
                 cancellationToken).ConfigureAwait(false);
-            current = persisted.HasValue ? OperationProgressSerializer.Deserialize(persisted.ToString()) : null;
+            current = persisted.HasValue ? DeserializeProgress(persisted.ToString(), write.OperationId) : null;
         }
         if (current is null)
         {
@@ -329,9 +330,10 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             return null;
         }
 
+        string? json;
         try
         {
-            var json = await RedisClientFault.RetryCompletedReaderAsync(
+            json = await RedisClientFault.RetryCompletedReaderAsync(
                 () => _cache.GetStringAsync(key, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
             if (json == null)
@@ -339,8 +341,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 RemoveFallbackEntry(operationId, key);
                 return null;
             }
-
-            return OperationProgressSerializer.Deserialize(json);
         }
         // Intentional: see the "set progress" catch above — same translate-to-typed-exception
         // pattern for the Redis boundary.
@@ -349,6 +349,33 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             HandleRedisFailure(ex, "get progress");
             throw CreateDistributedStateUnavailableException("get progress", ex);
         }
+
+        return DeserializeProgress(json, operationId);
+    }
+
+    public async Task QuarantineProgressAsync(
+        string operationId,
+        OperationType operationType,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_cache != null && _isUsingFallback)
+        {
+            throw CreateDistributedStateUnavailableException("quarantine progress");
+        }
+        if (CanUseRedisBackplane)
+        {
+            try
+            {
+                await RemoveFromRedisIndexAsync(operationId, operationType).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
+            {
+                HandleRedisFailure(exception, "quarantine progress");
+                throw CreateDistributedStateUnavailableException("quarantine progress", exception);
+            }
+        }
+        RemoveFallbackEntry(operationId, $"{KeyPrefix}{operationId}");
     }
 
     public async Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
@@ -402,16 +429,28 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         var operationIds = await GetActiveOperationIdsAsync(operationType, cancellationToken);
         var operations = new List<TProgress>();
 
-        foreach (var operationId in operationIds)
+        await foreach (var progress in ProgressStoreReader.ReadAvailableAsync(this, operationIds, cancellationToken))
         {
-            var progress = await GetProgressAsync<TProgress>(operationId, cancellationToken);
-            if (progress != null)
+            if (progress is TProgress typedProgress)
             {
-                operations.Add(progress);
+                operations.Add(typedProgress);
             }
         }
 
         return operations;
+    }
+
+    private IOperationProgress? DeserializeProgress(string json, string operationId)
+    {
+        try
+        {
+            return OperationProgressSerializer.Deserialize(json);
+        }
+        catch (InvalidPersistedExportProgressException exception)
+        {
+            Log.InvalidProgressRead(_logger, operationId, exception);
+            throw;
+        }
     }
 
     private static bool IsTerminalStatus(OperationStatus status)
@@ -758,7 +797,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 return null;
             }
 
-            var progress = OperationProgressSerializer.Deserialize(progressValue.ToString());
+            var progress = DeserializeProgress(progressValue.ToString(), operationId);
             return progress?.Type;
         }
         // Intentional: operation-type lookup is a best-effort convenience for index
@@ -801,6 +840,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
     private static partial class Log
     {
+        [LoggerMessage(7655, LogLevel.Warning, "Operation {OperationId} has invalid persisted export progress")]
+        public static partial void InvalidProgressRead(ILogger logger, string operationId, Exception exception);
+
         [LoggerMessage(7650, LogLevel.Warning, "Redis {Operation} failed for progress store")]
         public static partial void RedisFailed(ILogger logger, string operation, Exception exception);
 

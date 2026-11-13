@@ -27,7 +27,8 @@ internal sealed class CdnInvalidationTransitionListener(
             return;
         }
 
-        var result = await invalidation.InvalidateNowAsync(CdnPaths.Everything, cancellationToken).ConfigureAwait(false);
+        var result = await invalidation.InvalidateNowAsync(
+            CdnPaths.Everything, cancellationToken, CdnPurgeCause.Operation(transition.OperationId)).ConfigureAwait(false);
         if (result.Failed)
         {
             await RecordWarningAsync(transition.Operation, result, cancellationToken).ConfigureAwait(false);

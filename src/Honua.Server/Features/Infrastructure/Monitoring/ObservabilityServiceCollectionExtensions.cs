@@ -22,13 +22,12 @@ internal static class ObservabilityServiceCollectionExtensions
 {
     public static IServiceCollection AddObservability(
         this IServiceCollection services,
-        IConfiguration configuration,
-        bool redisCacheEntitled = false)
+        IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        ConfigureOutputCaching(services, configuration, redisCacheEntitled);
+        ConfigureOutputCaching(services, configuration);
         services.AddSingleton<OutputCacheInvalidationService>();
         services.AddSingleton<IQueryResponseCacheInvalidator>(sp =>
             sp.GetRequiredService<OutputCacheInvalidationService>());
@@ -138,14 +137,11 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddScoped<IOperateEventFeed, LocalOperateEventFeed>();
     }
 
-    internal static void ConfigureOutputCaching(IServiceCollection services, IConfiguration configuration, bool redisCacheEntitled = false)
-        => OutputCachingRegistration.ConfigureOutputCaching(services, configuration, redisCacheEntitled);
+    internal static void ConfigureOutputCaching(IServiceCollection services, IConfiguration configuration)
+        => OutputCachingRegistration.ConfigureOutputCaching(services, configuration);
 
-    internal static bool ShouldUseRedisOutputCache(bool redisCacheEntitled, string? redisConnectionString)
-        => OutputCachingRegistration.ShouldUseRedisOutputCache(redisCacheEntitled, redisConnectionString);
-
-    internal static bool HasLiveOutputCacheEntitlements(IServiceProvider services, bool redisOutputCacheConfigured)
-        => OutputCachingRegistration.HasLiveOutputCacheEntitlements(services, redisOutputCacheConfigured);
+    internal static bool HasLiveOutputCacheEntitlements(IServiceProvider services)
+        => OutputCachingRegistration.HasLiveOutputCacheEntitlements(services);
 
     internal static KeyValuePair<string, string> ResolveLicenseOutputCacheKey(HttpContext context)
         => OutputCachingRegistration.ResolveLicenseOutputCacheKey(context);

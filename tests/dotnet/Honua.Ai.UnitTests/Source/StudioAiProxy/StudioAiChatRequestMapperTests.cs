@@ -91,7 +91,7 @@ public sealed class StudioAiChatRequestMapperTests
                         {
                             Id = "call-1",
                             Name = "list_incidents",
-                            Arguments = JsonDocument.Parse("""{"status":"open"}""").RootElement.Clone()
+                            Arguments = JsonElement.Parse("""{"status":"open"}""")
                         }
                     ]
                 },
@@ -103,9 +103,9 @@ public sealed class StudioAiChatRequestMapperTests
                 {
                     Name = "list_incidents",
                     Description = "List open incidents.",
-                    InputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement,
-                    Annotations = JsonDocument.Parse("""{"title":"Incident list","readOnlyHint":true}""").RootElement,
-                    OutputSchema = JsonDocument.Parse("""{"type":"object","required":["incidents"]}""").RootElement
+                    InputSchema = JsonElement.Parse("{\"type\":\"object\"}"),
+                    Annotations = JsonElement.Parse("""{"title":"Incident list","readOnlyHint":true}"""),
+                    OutputSchema = JsonElement.Parse("""{"type":"object","required":["incidents"]}""")
                 }
             ],
             ToolChoice = new StudioAiChatHttpToolChoice { Mode = "specific", ToolName = "list_incidents" },
@@ -234,7 +234,7 @@ public sealed class StudioAiChatRequestMapperTests
                 new StudioAiChatHttpTool
                 {
                     Name = "   ",
-                    InputSchema = JsonDocument.Parse("""{"type":"object"}""").RootElement
+                    InputSchema = JsonElement.Parse("""{"type":"object"}""")
                 }
             ]
         });
@@ -270,7 +270,7 @@ public sealed class StudioAiChatRequestMapperTests
                 new StudioAiChatHttpTool
                 {
                     Name = "list_incidents",
-                    InputSchema = JsonDocument.Parse("""["not", "an", "object"]""").RootElement
+                    InputSchema = JsonElement.Parse("""["not", "an", "object"]""")
                 }
             ]
         });
@@ -301,7 +301,7 @@ public sealed class StudioAiChatRequestMapperTests
             tools.Add(new StudioAiChatHttpTool
             {
                 Name = $"tool-{i}",
-                InputSchema = JsonDocument.Parse("{}").RootElement
+                InputSchema = JsonElement.Parse("{}")
             });
         }
 

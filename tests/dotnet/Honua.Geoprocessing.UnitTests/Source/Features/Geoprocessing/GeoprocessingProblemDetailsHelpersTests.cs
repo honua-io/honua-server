@@ -20,7 +20,7 @@ public sealed class GeoprocessingProblemDetailsHelpersTests
     {
         var context = BuildContext();
         var exception = GeoprocessingStoreUnavailableException.ForCause(
-            DurableJobSubstrateCause.RedisNotEntitled);
+            DurableJobSubstrateCause.RuntimeIncomplete);
 
         await GeoprocessingProblemDetailsHelpers.StoreUnavailable(context, exception)
             .ExecuteAsync(context);
@@ -30,11 +30,11 @@ public sealed class GeoprocessingProblemDetailsHelpersTests
         using var document = await JsonDocument.ParseAsync(context.Response.Body);
         var root = document.RootElement;
         root.GetProperty("type").GetString().Should().Be(CapabilityUnavailableCodes.ProblemType);
-        root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.EntitlementErrorCode);
+        root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
         root.GetProperty("capability").GetString().Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
-        root.GetProperty("missingEntitlement").GetString().Should().Be(CapabilityUnavailableCodes.RedisCacheEntitlement);
-        root.TryGetProperty("missingDependency", out _).Should().BeFalse();
-        root.GetProperty("remediation").GetString().Should().Be(CapabilityUnavailableCodes.EntitlementRemediation);
+        root.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.JobQueueDependency);
+        root.TryGetProperty("missingEntitlement", out _).Should().BeFalse();
+        root.GetProperty("remediation").GetString().Should().Be(CapabilityUnavailableCodes.RuntimeIncompleteRemediation);
     }
 
     [UnitTest]

@@ -1047,7 +1047,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         await CreateRasterTableAsync(schemaName);
 
         // Three 2x2 float rasters with offset extents and distinct acquisition dates, mirroring
-        // the shared SeedIssue522MosaicAsync fixture: west [0,2] value 20 (oldest), overlap-newest
+        // the shared HoldIssue522MosaicAsync fixture: west [0,2] value 20 (oldest), overlap-newest
         // [1,3] value 5 (newest), east [2,4] value 40.
         var west = await InsertConstantRasterAsync(
             schemaName, "west", upperLeftX: 0, value: 20,

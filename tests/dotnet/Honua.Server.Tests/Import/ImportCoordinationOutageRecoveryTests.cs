@@ -29,7 +29,7 @@ public sealed class ImportCoordinationOutageRecoveryTests
     public async Task GeoservicesAdmission_RefusesDuringOutageAndRecoversWithoutDummyWrite()
     {
         var coordination = OutageCoordination.ForGeoservices();
-        using var manager = (RedisImportJobManager)coordination.JobManager;
+        var manager = (RedisImportJobManager)coordination.JobManager;
 
         await AssertOutageAndRecoveryAsync(
             coordination,
@@ -42,7 +42,7 @@ public sealed class ImportCoordinationOutageRecoveryTests
     public async Task GeoServerAdmission_RefusesDuringOutageAndRecoversWithoutDummyWrite()
     {
         var coordination = OutageCoordination.ForGeoServer();
-        using var manager = (GeoServerImportJobManager)coordination.JobManager;
+        var manager = (GeoServerImportJobManager)coordination.JobManager;
 
         await AssertOutageAndRecoveryAsync<GeoServerImportRequest, GeoServerImportProgress>(
             coordination,
@@ -55,7 +55,7 @@ public sealed class ImportCoordinationOutageRecoveryTests
     public async Task GeoservicesWorker_ThroughOutageAndRecovery_ProcessesPostRecoveryJobOnceWithoutRestart()
     {
         var coordination = OutageCoordination.ForGeoservices();
-        using var manager = (RedisImportJobManager)coordination.JobManager;
+        var manager = (RedisImportJobManager)coordination.JobManager;
 
         await AssertWorkerRecoveryAsync(
             coordination,
@@ -70,7 +70,7 @@ public sealed class ImportCoordinationOutageRecoveryTests
     public async Task GeoServerWorker_ThroughOutageAndRecovery_ProcessesPostRecoveryJobOnceWithoutRestart()
     {
         var coordination = OutageCoordination.ForGeoServer();
-        using var manager = (GeoServerImportJobManager)coordination.JobManager;
+        var manager = (GeoServerImportJobManager)coordination.JobManager;
 
         await AssertWorkerRecoveryAsync<GeoServerImportRequest, GeoServerImportProgress>(
             coordination,
@@ -165,7 +165,6 @@ public sealed class ImportCoordinationOutageRecoveryTests
 
         coordination.ElapseRetryThrottles();
         (await TryAdmitAsync(manager)).Should().BeFalse("Redis is still unavailable");
-        (await manager.LeaderElection.TryAcquireLeadershipAsync()).Should().BeFalse("production never takes node-local leadership");
         (await manager.JobQueue.DequeueAsync(TimeSpan.FromMilliseconds(20))).Should().BeNull();
 
         // The Redis connection answers pings again, but request/progress storage does not.
@@ -205,7 +204,6 @@ public sealed class ImportCoordinationOutageRecoveryTests
             .Should().ThrowAsync<InvalidOperationException>();
 
         var processed = new ConcurrentQueue<string>();
-        var notLeaderTicks = 0;
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var worker = ImportBackgroundServiceCoordinator.RunAsync(
             manager,
@@ -222,11 +220,14 @@ public sealed class ImportCoordinationOutageRecoveryTests
             },
             (_, _) => { },
             (_, _) => { },
-            (_, _) => Interlocked.Increment(ref notLeaderTicks),
+            (_, _) => { },
             (_, _) => { },
             stop.Token);
 
-        await WaitUntilAsync(() => Task.FromResult(Volatile.Read(ref notLeaderTicks) >= 3), stop.Token);
+        // Leadership is a lease outside Redis, so the worker leads through the outage and only
+        // admission holds work back. Let it poll for several intervals.
+        await WaitUntilAsync(() => Task.FromResult(manager.LeaderElection.IsLeader), stop.Token);
+        await Task.Delay(TimeSpan.FromMilliseconds(200), stop.Token);
         processed.Should().BeEmpty("no work is processed while durable coordination is unavailable");
 
         coordination.EndOutage();

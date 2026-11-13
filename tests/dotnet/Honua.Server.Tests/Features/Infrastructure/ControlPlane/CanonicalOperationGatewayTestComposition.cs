@@ -71,6 +71,7 @@ internal static class CanonicalOperationGatewayTestComposition
             provider.GetRequiredService<IServiceScopeFactory>(),
             notifier ?? new NullProposalNotifier(),
             NullLogger<OperationGateway>.Instance,
+            proposerKeyAuthority: provider.GetService<OperationProposerApiKeyAuthority>(),
             humanApprovalVerifier: provider.GetRequiredService<IOperationHumanApprovalVerifier>());
         bridge.Gateway = gateway;
         return gateway;

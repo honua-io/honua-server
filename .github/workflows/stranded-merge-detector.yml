@@ -41,6 +41,7 @@ on:
   # test job runs here -- the sweep needs `gh` and files issues, neither of which
   # belongs on a pull request.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - .github/workflows/stranded-merge-detector.yml
       - scripts/ci/detect-stranded-merges.py
@@ -96,6 +97,7 @@ env:
 
 jobs:
   tests:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Validate the detector offline
     runs-on: ubuntu-latest
     timeout-minutes: 10

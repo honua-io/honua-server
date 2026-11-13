@@ -47,8 +47,8 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         // recovered/reclaimed lease can no-op stale workers (#692).
         repository.Dispatched[0].OwnerNodeId.Should().Be(repository.LastClaimNodeId);
         repository.Failed.Should().BeEmpty();
-        // The dispatcher must not fall back to the best-effort publish path; otherwise a
-        // failed durable append would be silently swapped for a retry-queue enqueue.
+        // The dispatcher must not fall back to the best-effort publish path, which drops an
+        // event whose durable append fails.
         await publisher.DidNotReceiveWithAnyArgs().PublishAsync(default!, default);
     }
 

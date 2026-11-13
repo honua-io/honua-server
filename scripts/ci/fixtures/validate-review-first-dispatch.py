@@ -404,7 +404,8 @@ def main() -> None:
             raise AssertionError(
                 f"{path}: actions/github-script@v9 calls must use stable github.request routes"
             )
-    if "github.event.pull_request.head" in review_gate or "github.head_ref" in review_gate:
+    review_gate_without_routing = re.sub(r"(?m)^\s*runs-on:.*$", "", review_gate)
+    if "github.event.pull_request.head" in review_gate_without_routing or "github.head_ref" in review_gate_without_routing:
         raise AssertionError("pull_request_target workflow must never check out the PR head")
     if "secrets." in review_gate:
         raise AssertionError("review-first transition must use its bounded GITHUB_TOKEN permissions")

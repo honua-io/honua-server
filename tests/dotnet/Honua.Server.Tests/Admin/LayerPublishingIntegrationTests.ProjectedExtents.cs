@@ -46,7 +46,7 @@ public sealed partial class LayerPublishingIntegrationTests
                 Fields = _idNameFields,
                 Enabled = true
             });
-            _layerId = layer.LayerId;
+            _layerId = layer.StorageLayerId;
 
             await AssertProjectedMetadataBoundsAsync(100, 200, 300, 400);
             // Catalog caches retain their existing WGS84 contract.

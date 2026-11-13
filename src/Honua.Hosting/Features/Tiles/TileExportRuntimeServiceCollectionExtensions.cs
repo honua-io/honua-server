@@ -12,7 +12,6 @@ using Honua.Infrastructure.Tiles;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -37,10 +36,9 @@ public static class TileExportRuntimeServiceCollectionExtensions
             sp.GetService<ITenantContext>()));
 
         // One coordinator per process, shared with geoprocessing when that module is also
-        // composed (TryAddSingleton). A tiles-only host still gets the shared lease when Redis
-        // and admission options are already registered; otherwise SubmitAsync uses ProcessLocal.
-        if (services.Any(static descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer))
-            && services.Any(static descriptor => descriptor.ServiceType == typeof(IConfigureOptions<ExecutionAdmissionOptions>)))
+        // composed (TryAddSingleton). It takes the shared lease when a lease store is composed;
+        // without admission options SubmitAsync uses ProcessLocal.
+        if (services.Any(static descriptor => descriptor.ServiceType == typeof(IConfigureOptions<ExecutionAdmissionOptions>)))
         {
             services.TryAddSingleton<ExecutionAdmissionCoordinator>();
         }

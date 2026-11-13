@@ -540,7 +540,7 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
             string connectionString, LayerPublishRequest request, CancellationToken cancellationToken = default)
             => Task.FromResult(new PublishedLayerSummary
             {
-                LayerId = publishedLayerId,
+                StorageLayerId = publishedLayerId,
                 LayerName = request.LayerName,
                 Schema = request.Schema,
                 Table = request.Table,

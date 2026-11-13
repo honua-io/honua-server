@@ -189,7 +189,7 @@ public sealed partial class StudioAiProxyServiceTests
                 {
                     Name = "lookup",
                     Description = "tool description that exceeds the request budget",
-                    InputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone()
+                    InputSchema = JsonElement.Parse("{\"type\":\"object\"}")
                 }
             ]
         });
@@ -213,9 +213,9 @@ public sealed partial class StudioAiProxyServiceTests
                 new StudioAiToolDefinition
                 {
                     Name = "lookup",
-                    InputSchema = JsonDocument.Parse("{}").RootElement.Clone(),
-                    Annotations = JsonDocument.Parse("{\"readOnlyHint\":true}").RootElement.Clone(),
-                    OutputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone()
+                    InputSchema = JsonElement.Parse("{}"),
+                    Annotations = JsonElement.Parse("{\"readOnlyHint\":true}"),
+                    OutputSchema = JsonElement.Parse("{\"type\":\"object\"}")
                 }
             ]
         });
@@ -243,7 +243,7 @@ public sealed partial class StudioAiProxyServiceTests
                 new StudioAiToolDefinition
                 {
                     Name = "lookup",
-                    InputSchema = JsonDocument.Parse("{}").RootElement.Clone(),
+                    InputSchema = JsonElement.Parse("{}"),
                     Annotations = useAnnotations ? oversized.RootElement.Clone() : null,
                     OutputSchema = useAnnotations ? null : oversized.RootElement.Clone()
                 }
@@ -268,7 +268,7 @@ public sealed partial class StudioAiProxyServiceTests
                 .Select(index => new StudioAiToolDefinition
                 {
                     Name = $"tool-{index}",
-                    InputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone()
+                    InputSchema = JsonElement.Parse("{\"type\":\"object\"}")
                 })
                 .ToArray()
         });
@@ -461,7 +461,7 @@ public sealed partial class StudioAiProxyServiceTests
         var stop = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.EndTurn };
         var toolStart = new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = "lookup" };
         var toolDelta = new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallDelta, ToolCallId = "call-1", ToolArgumentsDelta = "{" };
-        var toolStop = new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStop, ToolCallId = "call-1", ToolArguments = JsonDocument.Parse("{}").RootElement.Clone() };
+        var toolStop = new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStop, ToolCallId = "call-1", ToolArguments = JsonElement.Parse("{}") };
         var fixtures = new (string Id, StudioAiChatEvent[] Events)[]
         {
             ("missing-message-start", [new() { Type = StudioAiChatEventType.TextDelta, Text = "x" }, stop]),

@@ -118,5 +118,5 @@ public sealed class GeoServicesAttributeRuleParserTests
     }
 
     private static JsonElement ParseLayer(string json)
-        => JsonDocument.Parse(json).RootElement.Clone();
+        => JsonElement.Parse(json);
 }

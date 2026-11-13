@@ -192,9 +192,7 @@ NegativeTtlSeconds = "NegativeTtlSeconds must be between 1 and 3600 (1 hour)";
         public const string         /// <inheritdoc/>
 JitterPercentage = "JitterPercentage must be between 0 and 0.5 (50%)";
         public const string         /// <inheritdoc/>
-FallbackMaxEntries = "FallbackMaxEntries must be between 10 and 100000";
-        public const string         /// <inheritdoc/>
-RetryIntervalSeconds = "RetryIntervalSeconds must be between 5 and 300";
+MaxEntries = "MaxEntries must be between 10 and 500000";
         public const string         /// <inheritdoc/>
 BackgroundRefreshThreshold = "BackgroundRefreshThreshold must be between 0.05 and 0.75";
         public const string         /// <inheritdoc/>

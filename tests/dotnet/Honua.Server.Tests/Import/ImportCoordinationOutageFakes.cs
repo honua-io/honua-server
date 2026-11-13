@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using Honua.Migration;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -23,7 +24,6 @@ internal sealed class OutageRedis
     private readonly object _gate = new();
     private readonly Dictionary<string, LinkedList<string>> _lists = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _sets = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _locks = new(StringComparer.Ordinal);
     private int _pingCount;
 
     public OutageRedis()
@@ -60,24 +60,6 @@ internal sealed class OutageRedis
             .Returns(call => Run(() => (long)List(call.ArgAt<RedisKey>(0)).Count));
         Database.ListRemoveAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<long>(), Arg.Any<CommandFlags>())
             .Returns(call => Run(() => List(call.ArgAt<RedisKey>(0)).Remove(call.ArgAt<RedisValue>(1).ToString()) ? 1L : 0L));
-        Database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(call => Run(() =>
-            {
-                // SET NX semantics: a held lock is never re-taken, even by its owner.
-                return _locks.TryAdd(call.ArgAt<RedisKey>(0).ToString(), call.ArgAt<RedisValue>(1).ToString());
-            }));
-        Database.LockExtendAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(call => Run(() =>
-                _locks.TryGetValue(call.ArgAt<RedisKey>(0).ToString(), out var holder) &&
-                holder == call.ArgAt<RedisValue>(1).ToString()));
-        Database.LockReleaseAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
-            .Returns(call => Run(() =>
-            {
-                var key = call.ArgAt<RedisKey>(0).ToString();
-                return _locks.TryGetValue(key, out var holder) &&
-                    holder == call.ArgAt<RedisValue>(1).ToString() &&
-                    _locks.Remove(key);
-            }));
         Database.SetAddAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
             .Returns(call => Run(() => Set(call.ArgAt<RedisKey>(0)).Add(call.ArgAt<RedisValue>(1).ToString())));
         Database.SetRemoveAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
@@ -321,8 +303,8 @@ internal sealed class OutageCoordination
             cache,
             NullLogger<RedisImportJobManager>.Instance,
             new StaticHostEnvironment("Production"),
-            redis.Multiplexer);
-        return new OutageCoordination(redis, cache, universal, manager, manager.JobQueue, manager.LeaderElection, manager.RequestStore);
+            new ImportCoordinationStores(redis.Multiplexer, new InMemoryLeaseStore()));
+        return new OutageCoordination(redis, cache, universal, manager, manager.JobQueue, manager.RequestStore);
     }
 
     public static OutageCoordination ForGeoServer()
@@ -335,8 +317,8 @@ internal sealed class OutageCoordination
             cache,
             NullLogger<GeoServerImportJobManager>.Instance,
             new StaticHostEnvironment("Production"),
-            redis.Multiplexer);
-        return new OutageCoordination(redis, cache, universal, manager, manager.JobQueue, manager.LeaderElection, manager.RequestStore);
+            new ImportCoordinationStores(redis.Multiplexer, new InMemoryLeaseStore()));
+        return new OutageCoordination(redis, cache, universal, manager, manager.JobQueue, manager.RequestStore);
     }
 
     public void BeginOutage()

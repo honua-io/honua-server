@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>$(HonuaTargetFramework)</TargetFramework>
     <OutputType>Exe</OutputType>
     <RootNamespace>Honua.Geoprocessing.Cli</RootNamespace>
     <AssemblyName>honua-gp</AssemblyName>

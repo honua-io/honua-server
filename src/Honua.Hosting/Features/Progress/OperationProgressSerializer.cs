@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -53,7 +54,7 @@ internal static class OperationProgressSerializer
             nameof(UploadProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.UploadProgress),
             nameof(IngestProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.IngestProgress),
             nameof(TileOperationProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.TileOperationProgress),
-            nameof(ExportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.ExportProgress),
+            nameof(ExportProgress) => DeserializeExportProgress(wrapper.Data),
             nameof(PrintProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.PrintProgress),
             nameof(RasterImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.RasterImportProgress),
             nameof(GeoprocessingProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.GeoprocessingProgress),
@@ -64,6 +65,18 @@ internal static class OperationProgressSerializer
             nameof(LayerPublishJobProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.LayerPublishJobProgress),
             _ => null
         };
+    }
+
+    private static ExportProgress? DeserializeExportProgress(JsonElement data)
+    {
+        try
+        {
+            return data.Deserialize(UniversalProgressJsonContext.Default.ExportProgress);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidPersistedExportProgressException(exception);
+        }
     }
 
     private static JsonElement SerializeData(IOperationProgress progress)

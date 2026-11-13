@@ -395,8 +395,8 @@ internal sealed partial class GeoServerImportService
             return CreateExecutionStepResult(
                 step,
                 "applied",
-                $"Published catalog layer {publishedLayer.LayerId} from target table {publishSchema}.{publishTable}.{copyNote}",
-                publishedLayer.LayerId);
+                $"Published catalog layer {publishedLayer.StorageLayerId} from target table {publishSchema}.{publishTable}.{copyNote}",
+                publishedLayer.StorageLayerId);
         }
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.Conflict)
         {
@@ -473,8 +473,8 @@ internal sealed partial class GeoServerImportService
             return CreateExecutionStepResult(
                 step,
                 "already-applied",
-                $"Catalog layer {linkedLayer.LayerId} already exists for target table {publishRequest.Schema}.{publishRequest.Table} and is linked to target service {linkedLayer.ServiceName}.",
-                linkedLayer.LayerId);
+                $"Catalog layer {linkedLayer.StorageLayerId} already exists for target table {publishRequest.Schema}.{publishRequest.Table} and is linked to target service {linkedLayer.ServiceName}.",
+                linkedLayer.StorageLayerId);
         }
         catch (LayerPublishingException)
         {

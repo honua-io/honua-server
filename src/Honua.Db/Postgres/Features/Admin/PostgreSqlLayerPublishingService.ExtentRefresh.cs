@@ -139,7 +139,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         var publicResult = new LayerExtentRefreshLayerResult
         {
-            LayerId = metadata.LayerId,
+            StorageLayerId = metadata.LayerId,
             LayerName = metadata.LayerName,
             HasExtent = extent != null,
             ExtentSrid = extent?.Srid

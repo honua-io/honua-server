@@ -17,8 +17,8 @@
       <RunAnalyzers>true</RunAnalyzers>
       <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'source' and '$(IsTestProject)' == 'true'">false</RunAnalyzers>
       <RunAnalyzers Condition="('$(HonuaAnalyzerPartition)' == 'tests' or '$(HonuaAnalyzerPartition)' == 'server-tests' or '$(HonuaAnalyzerPartition)' == 'other-tests') and '$(IsTestProject)' != 'true'">false</RunAnalyzers>
-      <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'server-tests' and '$(MSBuildProjectName)' != 'Honua.Server.Tests'">false</RunAnalyzers>
-      <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'other-tests' and '$(MSBuildProjectName)' == 'Honua.Server.Tests'">false</RunAnalyzers>
+      <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'server-tests' and '$(MSBuildProjectName)' != 'Honua.Server.Tests' and '$(MSBuildProjectName)' != 'Honua.Architecture.Tests'">false</RunAnalyzers>
+      <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'other-tests' and ('$(MSBuildProjectName)' == 'Honua.Server.Tests' or '$(MSBuildProjectName)' == 'Honua.Architecture.Tests')">false</RunAnalyzers>
     </PropertyGroup>
   </Target>
 

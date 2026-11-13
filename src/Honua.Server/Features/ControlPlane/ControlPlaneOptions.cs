@@ -230,9 +230,20 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
     // This literal stays in lockstep with the geoprocessing runtime-profile constant so the validator does not reference that internal type.
     private const string CustomCodeRuntimeProfile = "custom-code";
 
+    // The AWS Batch name is a literal so this validator does not reference the optionally excluded Honua.Aws assembly.
+    private static readonly Dictionary<string, BatchComputeTargetKind> BuiltInBatchBackendTargetKinds = new(StringComparer.Ordinal)
+    {
+        [LocalBatchComputeBackend.BackendId] = BatchComputeTargetKind.KubernetesJob,
+        [LocalProcessPoolBatchComputeBackend.AdapterBackendName] = BatchComputeTargetKind.LocalProcess,
+        [KubernetesJobBatchComputeBackend.BackendId] = BatchComputeTargetKind.KubernetesJob,
+        [AzureBatchComputeBackend.BackendIdentifier] = BatchComputeTargetKind.AzureBatch,
+        ["honua-aws-batch"] = BatchComputeTargetKind.AwsBatch,
+    };
+
     protected override void ValidateOptions(ControlPlaneOptions options, List<string> failures)
     {
         ValidateCustomCodeWorkloadsAreBatchOnly(options.ExecutionWorkloads, failures);
+        ValidateWorkloadTargetKindsMatchBackends(options.ExecutionWorkloads, failures);
 
         ValidateKubernetes(options.Kubernetes, failures);
         ValidateKubernetesWorkloadParameters(options.ExecutionWorkloads, failures);
@@ -366,6 +377,33 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
         foreach (var failure in KubernetesJobEnvironmentBuilder.ValidateDefaults(options))
         {
             failures.Add(failure.Message);
+        }
+    }
+
+    // A backend runs exactly one target kind, so a workload pairing it with another kind is silently dropped
+    // and every job routed to it fails. Configuration arrays merge by index, so an entry set from environment
+    // variables inherits any field it omits from the image default at the same index.
+    private static void ValidateWorkloadTargetKindsMatchBackends(
+        List<ExecutionWorkloadOptions> workloads,
+        List<string> failures)
+    {
+        for (var i = 0; i < workloads.Count; i++)
+        {
+            var workload = workloads[i];
+            if (string.IsNullOrWhiteSpace(workload.WorkloadId)
+                || workload.Backend is not { } backend
+                || !BuiltInBatchBackendTargetKinds.TryGetValue(backend.Trim(), out var backendTargetKind)
+                || backendTargetKind == workload.TargetKind)
+            {
+                continue;
+            }
+
+            failures.Add(
+                $"ControlPlane:ExecutionWorkloads:{i} (WorkloadId '{workload.WorkloadId}') uses Backend '{backend.Trim()}', "
+                + $"which runs TargetKind '{backendTargetKind}', but has TargetKind '{workload.TargetKind}'. Workload entries "
+                + "merge by array index across appsettings.json and environment variables, so an entry can inherit "
+                + $"TargetKind from the default at the same index: set ControlPlane__ExecutionWorkloads__{i}__TargetKind "
+                + $"to '{backendTargetKind}'.");
         }
     }
 

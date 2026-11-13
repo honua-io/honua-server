@@ -10,7 +10,6 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Geoprocessing;
 
@@ -20,7 +19,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
 
     public const string PartitionKeyParameterKey = "admission.partitionKey";
 
-    // There is one retry because a Redis command timeout has already spent its deadline, and a second immediate attempt adds none.
+    // There is one retry because a store command timeout has already spent its deadline, and a second immediate attempt adds none.
     private const int ActiveJobReadAttempts = 2;
 
     private const string GlobalPartitionSentinel = "__global__";
@@ -30,7 +29,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
     private readonly IOptionsMonitor<ExecutionAdmissionOptions> _options;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ExecutionAdmissionEvaluator> _logger;
-    private readonly IDatabase? _redis;
+    private readonly IAdmissionSubmissionCounter? _submissions;
 
     private readonly ConcurrentDictionary<string, RateBucket> _rateBuckets = new();
 
@@ -41,13 +40,13 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         TimeProvider timeProvider,
         ILogger<ExecutionAdmissionEvaluator> logger,
         IExecutionJobStore? jobStore = null,
-        IConnectionMultiplexer? multiplexer = null)
+        IAdmissionSubmissionCounter? submissions = null)
     {
         _options = options;
         _timeProvider = timeProvider;
         _logger = logger;
         _jobStore = jobStore;
-        _redis = multiplexer?.GetDatabase();
+        _submissions = submissions;
 
         _evaluatedCounter = HonuaTelemetry.Meter.CreateCounter<long>(
             "execution.admission.evaluated",
@@ -171,7 +170,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         // Claim a slot so concurrent requests from the same principal cannot both pass.
         if (options.MaxSubmissionsPerWindow > 0 && !string.IsNullOrWhiteSpace(request.PrincipalId))
         {
-            var (claimed, postClaimCount, sharedUnavailable) = await TryClaimSubmissionAsync(request, options).ConfigureAwait(false);
+            var (claimed, postClaimCount, sharedUnavailable) = await TryClaimSubmissionAsync(request, options, cancellationToken).ConfigureAwait(false);
             if (sharedUnavailable)
             {
                 // A shared rate limit is never silently replaced by a per-node bucket: each node
@@ -388,32 +387,29 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
     }
 
     private async Task<(bool Claimed, int Count, bool SharedUnavailable)> TryClaimSubmissionAsync(
-        ExecutionAdmissionRequest request, ExecutionAdmissionOptions options)
+        ExecutionAdmissionRequest request, ExecutionAdmissionOptions options, CancellationToken cancellationToken)
     {
-        var key = BuildRateKey(request);
         var now = _timeProvider.GetUtcNow();
         var window = TimeSpan.FromSeconds(options.RateWindowSeconds);
-        if (_redis != null)
+        if (_submissions != null)
         {
             try
             {
-                // Return a negative count when the cap is reached: the boundary value
-                // is otherwise indistinguishable from a successful final claim.
-                const string script = "local cutoff=tonumber(ARGV[1])-tonumber(ARGV[2]); redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',cutoff); local count=redis.call('ZCARD',KEYS[1]); if count >= tonumber(ARGV[3]) then return -count end; redis.call('ZADD',KEYS[1],ARGV[1],ARGV[4]); redis.call('EXPIRE',KEYS[1],math.ceil(tonumber(ARGV[2])/1000)); return count+1";
-                var redisKey = $"honua:execution-admission:rate:{key}";
-                var nowMs = now.ToUnixTimeMilliseconds();
-                var result = (long)await _redis.ScriptEvaluateAsync(script, [new RedisKey(redisKey)],
-                    [nowMs, (long)window.TotalMilliseconds, options.MaxSubmissionsPerWindow, $"{nowMs}:{Guid.NewGuid():N}"]).ConfigureAwait(false);
-                return (result >= 0, (int)Math.Abs(result), false);
+                var charged = await _submissions.CountAsync(
+                    new AdmissionSubmissionWindow(request.JobKind, request.PrincipalId!, window, options.MaxSubmissionsPerWindow),
+                    cancellationToken).ConfigureAwait(false);
+                return charged >= options.MaxSubmissionsPerWindow ? (false, charged, false) : (true, charged + 1, false);
             }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
             {
-                // Fail closed (#3853): the process-local bucket below is only exact on a single
-                // node, so it must never stand in for a configured shared limit.
-                ExecutionAdmissionLog.RedisUnavailable(_logger, ex);
+                // Fail closed: the process-local bucket below is only exact on a single node, so it
+                // must never stand in for a configured shared limit.
+                ExecutionAdmissionLog.SharedRateUnavailable(_logger, ex);
                 return (false, 0, true);
             }
         }
+
+        var key = BuildRateKey(request);
         var bucket = _rateBuckets.GetOrAdd(key, static _ => new RateBucket());
         var claimed = bucket.TryClaim(now, window, options.MaxSubmissionsPerWindow, out var count);
 
@@ -445,7 +441,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
     private static string BuildRateKey(ExecutionAdmissionRequest request)
         => $"{request.PrincipalId ?? AnonymousPrincipalSentinel}:{request.JobKind}";
 
-    // When Redis is composed, an unreachable store fails closed instead of using this in-process window.
+    // When a shared submission counter is composed, an unreachable store fails closed instead of using this in-process window.
     private sealed class RateBucket
     {
         private readonly object _sync = new();

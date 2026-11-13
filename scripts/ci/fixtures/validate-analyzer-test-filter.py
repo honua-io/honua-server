@@ -51,8 +51,19 @@ class PartitionTests(unittest.TestCase):
             scope = Path(directory) / 'scope.slnf'
             scope.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'),
                                                       'projects': [collector]}}))
-            self.assertEqual([filters.SERVER], filters.partition(root, scope, 'server'))
-            self.assertEqual([collector], filters.partition(root, scope, 'other'))
+            self.assertEqual(sorted([filters.SERVER, collector]), filters.partition(root, scope, 'server'))
+            self.assertEqual([], filters.partition(root, scope, 'other'))
+
+    def test_real_solution_keeps_collectors_with_the_server_compile(self):
+        root = SCRIPT.parents[2]
+        members = set(filters.solution_projects(root))
+        server = set(filters.partition(root, None, 'server'))
+        other = set(filters.partition(root, None, 'other'))
+        self.assertEqual(members, server | other)
+        self.assertFalse(server & other)
+        self.assertIn(filters.COLLECTOR, server)
+        for project in other:
+            self.assertNotIn(filters.SERVER, filters.project_closure(root, project), project)
 
     def test_invalid_filter_fails_closed(self):
         root = SCRIPT.parents[2]

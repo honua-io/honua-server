@@ -109,15 +109,24 @@ class NormalizationContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, "App token scope"):
                     run(consumer=consumer)
 
-    def test_declared_enforce_mode_passes(self) -> None:
-        consumer = SOURCES["consumer"].replace(
-            "  NORMALIZATION_MODE: observe", "  NORMALIZATION_MODE: enforce")
-        self.assertEqual(run(consumer=consumer), "enforce")
+    @staticmethod
+    def with_mode(mode: str) -> str:
+        # Independent of the checked-in value, so the tests survive a mode flip.
+        consumer, count = re.subn(
+            r"(?m)^  NORMALIZATION_MODE: \S+$", f"  NORMALIZATION_MODE: {mode}",
+            SOURCES["consumer"], count=1)
+        assert count == 1, "workflow-level NORMALIZATION_MODE line not found"
+        return consumer
+
+    def test_declared_modes_pass(self) -> None:
+        for mode in ("observe", "enforce"):
+            with self.subTest(mode=mode):
+                self.assertEqual(run(consumer=self.with_mode(mode)), mode)
 
     def test_job_level_mode_override_is_rejected(self) -> None:
         # Shadows the workflow value at runtime while the workflow line still
         # reads `observe`.
-        consumer = SOURCES["consumer"].replace(
+        consumer = self.with_mode("observe").replace(
             "    env:\n      NORMALIZATION_CREDENTIAL_PRESENT:",
             "    env:\n      NORMALIZATION_MODE: enforce\n      NORMALIZATION_CREDENTIAL_PRESENT:",
             1,
@@ -135,8 +144,7 @@ class NormalizationContractTests(unittest.TestCase):
             run(consumer=consumer)
 
     def test_unknown_mode_is_rejected(self) -> None:
-        consumer = SOURCES["consumer"].replace(
-            "  NORMALIZATION_MODE: observe", "  NORMALIZATION_MODE: enforce-later")
+        consumer = self.with_mode("enforce-later")
         with self.assertRaisesRegex(AssertionError, "observe or enforce"):
             run(consumer=consumer)
 

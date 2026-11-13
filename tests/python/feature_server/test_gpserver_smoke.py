@@ -128,4 +128,4 @@ class TestGPServerSmoke:
         # changed once already ("durable storage" -> "job store") and red-failed
         # trunk (matrix 2026-08-29) while behavior was correct.
         assert "dependency-unavailable" in details
-        assert "missingDependency: redis" in details
+        assert "missingDependency: system-database" in details

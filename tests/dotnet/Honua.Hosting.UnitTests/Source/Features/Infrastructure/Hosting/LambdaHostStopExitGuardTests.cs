@@ -27,8 +27,7 @@ public sealed class LambdaHostStopExitGuardTests
         // The guard's own StopAsync runs during the very stop it guards and must not disarm it.
         await guard.StopAsync(CancellationToken.None);
 
-        var completed = await Task.WhenAny(exited.Task, Task.Delay(TimeSpan.FromSeconds(10)));
-        completed.Should().BeSameAs(exited.Task, "a stalled stop must end the process");
+        await exited.Should().CompleteWithinAsync(TimeSpan.FromSeconds(10), "a stalled stop must end the process");
         (await exited.Task).Should().Be(LambdaHostStopExitGuard.StalledStopExitCode);
     }
 
@@ -60,7 +59,7 @@ public sealed class LambdaHostStopExitGuardTests
         await guard.StartAsync(CancellationToken.None);
         lifetime.StopApplication();
         lifetime.StopApplication();
-        await Task.WhenAny(exited.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+        await exited.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         await Task.Delay(TimeSpan.FromMilliseconds(100));
 
         exits.Should().Be(1);

@@ -102,7 +102,7 @@ internal static partial class RasterImportEndpoints
         var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
         if (cacheInvalidator != null)
         {
-            await cacheInvalidator.InvalidateLayerAsync(null, layerId.Value, cancellationToken);
+            await cacheInvalidator.InvalidateStorageLayerAsync(layerId.Value, cancellationToken);
         }
 
         return Results.NoContent();
@@ -181,7 +181,7 @@ internal static partial class RasterImportEndpoints
         var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
         if (cacheInvalidator != null)
         {
-            await cacheInvalidator.InvalidateLayerAsync(null, layerId.Value, cancellationToken);
+            await cacheInvalidator.InvalidateStorageLayerAsync(layerId.Value, cancellationToken);
         }
 
         var response = new RasterMetadataResponse
@@ -286,7 +286,7 @@ internal static partial class RasterImportEndpoints
                 var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
                 if (cacheInvalidator != null)
                 {
-                    await cacheInvalidator.InvalidateLayerAsync(null, request.LayerId, cancellationToken);
+                    await cacheInvalidator.InvalidateStorageLayerAsync(request.LayerId, cancellationToken);
                 }
 
                 var response = Results.Json(result, RasterImportJsonContext.Default.RasterImportResult);

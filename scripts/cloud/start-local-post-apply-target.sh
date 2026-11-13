@@ -81,7 +81,7 @@ cleanup_failed_launch() {
 }
 trap cleanup_failed_launch ERR
 
-SERVER_DLL="${HONUA_LOCAL_TARGET_SERVER_DLL:-${REPO_ROOT}/src/Honua.Server/bin/Release/net10.0/Honua.Server.dll}"
+SERVER_DLL="${HONUA_LOCAL_TARGET_SERVER_DLL:-${REPO_ROOT}/src/Honua.Server/bin/Release/$("${REPO_ROOT}/scripts/ci/honua-target-framework.sh" "${REPO_ROOT}")/Honua.Server.dll}"
 
 if [[ -z "${IMAGE}" ]]; then
     echo "::error::Could not resolve the PostGIS image from PostgresFixture.cs." >&2

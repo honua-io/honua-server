@@ -10,8 +10,6 @@ namespace Honua.Infrastructure.Events;
 [JsonSerializable(typeof(FeatureChangeEvent))]
 [JsonSerializable(typeof(FeatureChangeEventRequest))]
 [JsonSerializable(typeof(FeatureChangeEvent[]))]
-[JsonSerializable(typeof(PendingFeatureChangePublish))]
-[JsonSerializable(typeof(PendingFeatureChangeIndex))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(object))]
 [JsonSerializable(typeof(string))]

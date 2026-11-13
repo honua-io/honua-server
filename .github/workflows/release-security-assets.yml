@@ -1,0 +1,200 @@
+name: Release Security Assets
+
+# Run once per published release image, after the release is cut. It produces the
+# security assets that ship beside the release (OpenVEX, SPDX SBOM, Trivy verdict with
+# VEX applied, and the attestation-free manifest reference used for registry copies that
+# must not carry attestation layers), then prepares the change that registers the digest
+# in eng/security/supported-images.json so security-nightly.yml rescans it every night.
+# See docs/internal/security/security-patch-releases.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Release id, e.g. 2026.1-rc.2'
+        required: true
+        type: string
+      image:
+        description: 'Published image by digest: ghcr.io/honua-io/honua-server@sha256:<digest>'
+        required: true
+        type: string
+      platform:
+        description: 'Image platform'
+        type: choice
+        options: [linux/amd64, linux/arm64]
+        default: linux/amd64
+      source_revision:
+        description: 'Full server source SHA the image was built from'
+        required: true
+        type: string
+      register:
+        description: 'Prepare the eng/security/supported-images.json change for this digest'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-security-assets-${{ inputs.release }}-${{ inputs.platform }}
+  cancel-in-progress: false
+
+jobs:
+  assets:
+    name: Build release security assets
+    if: github.ref == 'refs/heads/trunk'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      SCAN_IMAGE: ${{ inputs.image }}
+      SCAN_PLATFORM: ${{ inputs.platform }}
+      SCAN_REVISION: ${{ inputs.source_revision }}
+      RELEASE: ${{ inputs.release }}
+    outputs:
+      asset_name: ${{ steps.names.outputs.asset_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify controls and requested identity
+        id: names
+        run: |
+          set -euo pipefail
+          python3 scripts/security/test-existing-image-scan.py
+          python3 scripts/security/test-release-images.py
+          python3 scripts/security/existing-image-scan.py validate
+          if ! [[ "$RELEASE" =~ ^[0-9]{4}\.[0-9]+(\.[0-9]+)?(-rc\.[0-9]+)?$ ]]; then
+            echo "::error::Release id must look like 2026.1, 2026.1.1 or 2026.1-rc.2"
+            exit 1
+          fi
+          echo "asset_name=honua-server-${RELEASE}-${SCAN_PLATFORM#linux/}" >> "$GITHUB_OUTPUT"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Pull the release image and bind its identity
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
+          docker pull --platform "$SCAN_PLATFORM" "$SCAN_IMAGE"
+          docker image inspect "$SCAN_IMAGE" > existing-image-inspect.json
+          python3 scripts/security/existing-image-scan.py identity
+          : > "$RUNNER_TEMP/release-empty.trivyignore"
+      # Buildx provenance and SBOM attestations live in the image index beside the platform
+      # manifest. Registries that reject attestation layers (the AWS Marketplace registry) get
+      # a copy of the platform manifest alone; its digest is recorded here and the SBOM,
+      # VEX and provenance travel as separate release assets instead.
+      - name: Resolve the attestation-free platform manifest
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect --raw "$SCAN_IMAGE" > source-manifest.json
+          if jq -e '.manifests' source-manifest.json >/dev/null; then
+            digest="$(python3 scripts/security/release_images.py platform-manifest --platform "$SCAN_PLATFORM" < source-manifest.json)"
+          else
+            digest="${SCAN_IMAGE#*@}"
+          fi
+          platform_ref="ghcr.io/honua-io/honua-server@${digest}"
+          docker buildx imagetools inspect --raw "$platform_ref" \
+            | python3 scripts/security/release_images.py assert-single-manifest
+          echo "$platform_ref" > "${{ steps.names.outputs.asset_name }}.attestation-free-ref.txt"
+          echo "PLATFORM_REF=$platform_ref" >> "$GITHUB_ENV"
+      - name: Generate the release OpenVEX document
+        run: |
+          set -euo pipefail
+          images=(--image "$SCAN_IMAGE")
+          if [ "$PLATFORM_REF" != "$SCAN_IMAGE" ]; then images+=(--image "$PLATFORM_REF"); fi
+          python3 scripts/security/release_images.py vex-generate --name "$RELEASE" "${images[@]}" \
+            --output "${{ steps.names.outputs.asset_name }}.openvex.json"
+      - name: Generate SBOM (SPDX JSON)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ env.PLATFORM_REF }}
+          format: spdx-json
+          output-file: ${{ steps.names.outputs.asset_name }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Scan with the release VEX applied
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_PLATFORM: ${{ inputs.platform }}
+          TRIVY_VEX: ${{ steps.names.outputs.asset_name }}.openvex.json
+          TRIVY_SHOW_SUPPRESSED: 'true'
+        with:
+          scan-type: image
+          image-ref: ${{ inputs.image }}
+          scanners: vuln
+          format: json
+          output: ${{ steps.names.outputs.asset_name }}.trivy.json
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          trivyignores: ${{ runner.temp }}/release-empty.trivyignore
+          exit-code: '0'
+      - name: Refuse a release image with a fixable high or critical finding
+        run: |
+          set -euo pipefail
+          name="${{ steps.names.outputs.asset_name }}"
+          python3 scripts/security/release_images.py verdict --unregistered --release "$RELEASE" \
+            --identity existing-image-identity.json --trivy "$name.trivy.json" --output "$name.verdict.json"
+          {
+            echo "## Release security assets: $name"
+            echo "- Attestation-free platform manifest: \`$PLATFORM_REF\`"
+            jq -r '"- Findings: \(.findingCount); documented not affected (VEX): \(.suppressedFindings|length); fixable high/critical: \(.blockingFindings|length)"' "$name.verdict.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq -e '.status == "pass"' "$name.verdict.json" >/dev/null
+      - name: Upload release security assets
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-security-assets-${{ steps.names.outputs.asset_name }}
+          path: |
+            ${{ steps.names.outputs.asset_name }}.openvex.json
+            ${{ steps.names.outputs.asset_name }}.spdx.json
+            ${{ steps.names.outputs.asset_name }}.trivy.json
+            ${{ steps.names.outputs.asset_name }}.verdict.json
+            ${{ steps.names.outputs.asset_name }}.attestation-free-ref.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  register:
+    name: Prepare the inventory registration
+    needs: assets
+    if: inputs.register
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      RELEASE: ${{ inputs.release }}
+      IMAGE: ${{ inputs.image }}
+      PLATFORM: ${{ inputs.platform }}
+      REVISION: ${{ inputs.source_revision }}
+    steps:
+      # Workflows here hold no push or merge authority (validate-single-merge-authority.sh),
+      # so this job prepares the change and the release owner commits it in a pull request.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Add the digest to the supported inventory
+        run: |
+          set -euo pipefail
+          python3 scripts/security/release_images.py inventory-add --release "$RELEASE" \
+            --image "$IMAGE" --platform "$PLATFORM" --revision "$REVISION"
+          python3 scripts/security/release_images.py inventory-validate
+          git diff -- eng/security/supported-images.json > supported-images.patch
+          {
+            echo "## Register ${RELEASE} ${PLATFORM} for nightly rescans"
+            if [ -s supported-images.patch ]; then
+              echo "Run this on trunk and commit the result in a pull request (one command per platform; the artifact patch is for reference):"
+              echo '```'
+              echo "python3 scripts/security/release_images.py inventory-add --release '$RELEASE' --image '$IMAGE' --platform '$PLATFORM' --revision '$REVISION'"
+              echo '```'
+            else
+              echo "Already registered; nothing to commit."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the inventory change
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: supported-images-${{ needs.assets.outputs.asset_name }}
+          path: supported-images.patch
+          if-no-files-found: error
+          retention-days: 90

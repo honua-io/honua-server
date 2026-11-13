@@ -71,9 +71,9 @@ public sealed class GPServerDegradedJobStoreTests : IAsyncLifetime
             .ToArray();
 
         details.Should().Contain($"code: {CapabilityUnavailableCodes.ErrorCode}");
-        details.Should().Contain($"missingDependency: {CapabilityUnavailableCodes.RedisDependency}");
+        details.Should().Contain($"missingDependency: {CapabilityUnavailableCodes.SystemDatabaseDependency}");
         details.Should().Contain($"capability: {CapabilityUnavailableCodes.DurableJobsCapability}");
-        details.Should().Contain($"remediationRef: {CapabilityUnavailableCodes.RedisRemediationRef}");
+        details.Should().Contain($"remediationRef: {CapabilityUnavailableCodes.SystemDatabaseRemediationRef}");
         details.Should().Contain(detail => detail!.StartsWith("remediation: ", StringComparison.Ordinal));
     }
 }

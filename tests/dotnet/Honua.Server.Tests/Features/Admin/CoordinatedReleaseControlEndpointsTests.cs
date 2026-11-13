@@ -157,8 +157,8 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
     {
         var packageId = $"pkg-{Guid.NewGuid():N}";
         var created = await CreateAsync(packageId);
-        var operationId = JsonDocument.Parse(await created.Content.ReadAsStringAsync())
-            .RootElement.GetProperty("operationId").GetString()!;
+        var operationId = JsonElement.Parse(await created.Content.ReadAsStringAsync())
+            .GetProperty("operationId").GetString()!;
 
         // Drive + approve each gate as it appears until terminal.
         var root = await DriveWithHumanGatesAsync(packageId, operationId);
@@ -174,8 +174,8 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
     {
         var packageId = $"pkg-{Guid.NewGuid():N}";
         var created = await CreateAsync(packageId);
-        var operationId = JsonDocument.Parse(await created.Content.ReadAsStringAsync())
-            .RootElement.GetProperty("operationId").GetString()!;
+        var operationId = JsonElement.Parse(await created.Content.ReadAsStringAsync())
+            .GetProperty("operationId").GetString()!;
 
         // Approve the container gate and let the container step succeed so a reversible step has run.
         for (var i = 0; i < 8; i++)
@@ -210,8 +210,8 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
 
         var packageId = $"pkg-{Guid.NewGuid():N}";
         var created = await CreateAsync(packageId);
-        var operationId = JsonDocument.Parse(await created.Content.ReadAsStringAsync())
-            .RootElement.GetProperty("operationId").GetString()!;
+        var operationId = JsonElement.Parse(await created.Content.ReadAsStringAsync())
+            .GetProperty("operationId").GetString()!;
 
         var root = await DriveWithHumanGatesAsync(packageId, operationId);
 

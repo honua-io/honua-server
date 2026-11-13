@@ -953,7 +953,9 @@ def smoke(function, expected_version=None):
 
 
 def backend(action, function, alias, previous, candidate):
-    driver = ROOT / "scripts/cloud/lambda-deploy-driver/bin/Release/net10.0/LambdaDeployDriver.dll"
+    tfm = subprocess.run([str(ROOT / "scripts/ci/honua-target-framework.sh"), str(ROOT)],
+                         capture_output=True, text=True, check=True).stdout.strip()
+    driver = ROOT / "scripts/cloud/lambda-deploy-driver/bin/Release" / tfm / "LambdaDeployDriver.dll"
     result = subprocess.run(["dotnet", str(driver), action, function, alias, previous, candidate, os.environ["AWS_REGION"]],
                             capture_output=True, text=True)
     require(result.returncode == 0, f"Deploy backend {action} failed")

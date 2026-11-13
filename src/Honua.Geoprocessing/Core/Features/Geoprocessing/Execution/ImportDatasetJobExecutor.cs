@@ -373,14 +373,14 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
             {
                 Timestamp = completedAt,
                 Level = ExecutionLogLevel.Info,
-                Message = $"Imported '{request.FileName}' into layer {publishedLayer.LayerId} "
+                Message = $"Imported '{request.FileName}' into layer {publishedLayer.StorageLayerId} "
                     + $"({importResult.FeatureCount} features, {tilesGenerated} raster tiles).",
                 Phase = "Provenance",
                 Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["sourceFile"] = request.FileName,
                     ["table"] = physicalTable,
-                    ["layerId"] = publishedLayer.LayerId.ToString(CultureInfo.InvariantCulture),
+                    ["layerId"] = publishedLayer.StorageLayerId.ToString(CultureInfo.InvariantCulture),
                     ["serviceName"] = serviceName,
                     ["featureCount"] = importResult.FeatureCount.ToString(CultureInfo.InvariantCulture),
                     ["tilesGenerated"] = tilesGenerated.ToString(CultureInfo.InvariantCulture)
@@ -514,7 +514,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
                 writer.WriteNumber("detectedSrid", detectedSrid);
             }
 
-            writer.WriteNumber("layerId", publishedLayer.LayerId);
+            writer.WriteNumber("layerId", publishedLayer.StorageLayerId);
             writer.WriteString("layerName", publishedLayer.LayerName);
             writer.WriteString("serviceName", string.IsNullOrWhiteSpace(request.ServiceName) ? "default" : request.ServiceName!);
             writer.WriteNumber("tilesGenerated", tilesGenerated);

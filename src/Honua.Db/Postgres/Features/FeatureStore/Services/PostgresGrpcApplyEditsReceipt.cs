@@ -78,8 +78,17 @@ internal static class PostgresGrpcApplyEditsReceipt
             Value = payload.ToArray(),
         });
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.TimestampTz, Value = expiresAt });
-        var written = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        return written == 1;
+        try
+        {
+            var written = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return written == 1;
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.SerializationFailure)
+        {
+            // Under repeatable read, a receipt another transaction committed for this scope after
+            // this snapshot began is reported as a serialization failure, not as a conflict.
+            return false;
+        }
     }
 
     internal static async Task<byte[]?> TryReadAsync(

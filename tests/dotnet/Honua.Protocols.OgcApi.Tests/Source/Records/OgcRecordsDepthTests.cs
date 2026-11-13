@@ -37,7 +37,7 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
         // Spec-legal 3D bbox (minx,miny,minz,maxx,maxy,maxz) must not 400 and must
         // filter on the horizontal ordinates only (#1987 regression).
         var intersecting = await GetRecordIdsAsync("bbox=-123,37,0,-122,38,100");
-        intersecting.Should().Contain(["service:test", $"layer:{WebAppFixture.TestLayerId}"]);
+        intersecting.Should().Contain(["service:test", $"layer:pub-layer-{WebAppFixture.TestLayerId}"]);
 
         var outside = await GetRecordIdsAsync("bbox=100,80,0,110,85,100");
         outside.Should().BeEmpty();
@@ -51,11 +51,11 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
         // west > east crosses the antimeridian (RFC 7946 §5.2) and represents
         // [west,180] ∪ [-180,east]; the seeded records sit around -122.5..-122.3.
         var matched = await GetRecordIdsAsync("bbox=170,37,-122,38");
-        matched.Should().Contain(["service:test", $"layer:{WebAppFixture.TestLayerId}"]);
+        matched.Should().Contain(["service:test", $"layer:pub-layer-{WebAppFixture.TestLayerId}"]);
 
         var unmatched = await GetRecordIdsAsync("bbox=170,37,-124,38");
         unmatched.Should().NotContain("service:test");
-        unmatched.Should().NotContain($"layer:{WebAppFixture.TestLayerId}");
+        unmatched.Should().NotContain($"layer:pub-layer-{WebAppFixture.TestLayerId}");
     }
 
     [IntegrationTest]
@@ -103,7 +103,7 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
         {
             var ids = await GetRecordIdsAsync(query + "&limit=100");
             ids.Should().Contain(
-                ["service:test", $"layer:{WebAppFixture.TestLayerId}"],
+                ["service:test", $"layer:pub-layer-{WebAppFixture.TestLayerId}"],
                 $"datetime query '{query}' must not exclude records without a temporal value");
         }
     }
@@ -274,7 +274,7 @@ public sealed class OgcRecordsDepthTests : IClassFixture<OgcRecordsEndpointTests
         var matched = await GetRecordIdsAsync($"ids={ids}&limit=100");
 
         matched.Should().Contain("service:test");
-        matched.Should().NotContain($"layer:{WebAppFixture.TestLayerId}");
+        matched.Should().NotContain($"layer:pub-layer-{WebAppFixture.TestLayerId}");
     }
 
     [IntegrationTest]

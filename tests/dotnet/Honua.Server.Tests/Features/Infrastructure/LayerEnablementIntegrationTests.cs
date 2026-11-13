@@ -45,7 +45,7 @@ public sealed class LayerEnablementIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
-    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
     [Endpoint("GET /odata/Layers({layerId})")]

@@ -197,7 +197,7 @@ public sealed class EditingParityConformanceMatrixTests
             AttributeRules = rules
         };
 
-    private static JsonElement JsonElementOf(string json) => JsonDocument.Parse(json).RootElement.Clone();
+    private static JsonElement JsonElementOf(string json) => JsonElement.Parse(json);
 
     private static Dictionary<string, object?> Attributes(params (string Key, object? Value)[] pairs)
     {

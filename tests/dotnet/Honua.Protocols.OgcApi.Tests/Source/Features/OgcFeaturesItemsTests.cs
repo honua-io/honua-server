@@ -245,7 +245,7 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var content = await response.Content.ReadAsStringAsync();
-        var detail = JsonDocument.Parse(content).RootElement.GetProperty("detail").GetString();
+        var detail = JsonElement.Parse(content).GetProperty("detail").GetString();
 
         detail.Should().NotBeNull();
         detail!.ToLowerInvariant().Should().NotContain("syntax error");

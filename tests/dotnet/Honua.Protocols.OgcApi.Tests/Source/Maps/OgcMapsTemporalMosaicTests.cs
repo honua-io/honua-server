@@ -28,6 +28,8 @@ public sealed class OgcMapsTemporalMosaicTests
         var fixture = await CreateFixtureAsync(HonuaEdition.Community).ConfigureAwait(false);
         try
         {
+            await using var heldRasters = await RasterIntegrationTestData.HoldIssue522MosaicAsync(fixture).ConfigureAwait(false);
+
             var response = await fixture.Client.GetAsync(
                 $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
                 "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=2024-02-15T00:00:00Z");
@@ -49,6 +51,8 @@ public sealed class OgcMapsTemporalMosaicTests
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro, renderer).ConfigureAwait(false);
         try
         {
+            await using var heldRasters = await RasterIntegrationTestData.HoldIssue522MosaicAsync(fixture).ConfigureAwait(false);
+
             var expectedTimestamp = DateTimeOffset.Parse("2024-02-15T00:00:00Z", CultureInfo.InvariantCulture);
             var response = await fixture.Client.GetAsync(
                 $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
@@ -76,6 +80,8 @@ public sealed class OgcMapsTemporalMosaicTests
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro, renderer).ConfigureAwait(false);
         try
         {
+            await using var heldRasters = await RasterIntegrationTestData.HoldIssue522MosaicAsync(fixture).ConfigureAwait(false);
+
             var expectedStart = DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture);
             var expectedEnd = DateTimeOffset.Parse("2024-03-31T23:59:59Z", CultureInfo.InvariantCulture);
             var response = await fixture.Client.GetAsync(
@@ -102,6 +108,8 @@ public sealed class OgcMapsTemporalMosaicTests
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro, renderer).ConfigureAwait(false);
         try
         {
+            await using var heldRasters = await RasterIntegrationTestData.HoldIssue522MosaicAsync(fixture).ConfigureAwait(false);
+
             var expectedEnd = DateTimeOffset.Parse("2024-03-31T23:59:59Z", CultureInfo.InvariantCulture);
             var response = await fixture.Client.GetAsync(
                 $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
@@ -127,6 +135,8 @@ public sealed class OgcMapsTemporalMosaicTests
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro, renderer).ConfigureAwait(false);
         try
         {
+            await using var heldRasters = await RasterIntegrationTestData.HoldIssue522MosaicAsync(fixture).ConfigureAwait(false);
+
             var expectedEnd = DateTimeOffset.Parse("2024-03-31T23:59:59Z", CultureInfo.InvariantCulture);
             var response = await fixture.Client.GetAsync(
                 $"/ogc/maps/map?collections={WebAppFixture.TestLayerId}" +
@@ -152,6 +162,8 @@ public sealed class OgcMapsTemporalMosaicTests
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro, renderer).ConfigureAwait(false);
         try
         {
+            await using var heldRasters = await RasterIntegrationTestData.HoldIssue522MosaicAsync(fixture).ConfigureAwait(false);
+
             var expectedStart = DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture);
             var response = await fixture.Client.GetAsync(
                 $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
@@ -176,6 +188,8 @@ public sealed class OgcMapsTemporalMosaicTests
         var fixture = await CreateFixtureAsync(HonuaEdition.Community).ConfigureAwait(false);
         try
         {
+            await using var heldRasters = await RasterIntegrationTestData.HoldIssue522MosaicAsync(fixture).ConfigureAwait(false);
+
             var response = await fixture.Client.GetAsync(
                 $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
                 "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=2024-01-01T00:00:00Z/..");
@@ -196,6 +210,8 @@ public sealed class OgcMapsTemporalMosaicTests
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro).ConfigureAwait(false);
         try
         {
+            await using var heldRasters = await RasterIntegrationTestData.HoldIssue522MosaicAsync(fixture).ConfigureAwait(false);
+
             var response = await fixture.Client.GetAsync(
                 $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
                 "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=not-a-datetime");
@@ -216,6 +232,8 @@ public sealed class OgcMapsTemporalMosaicTests
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro).ConfigureAwait(false);
         try
         {
+            await using var heldRasters = await RasterIntegrationTestData.HoldIssue522MosaicAsync(fixture).ConfigureAwait(false);
+
             var response = await fixture.Client.GetAsync(
                 $"/ogc/maps/collections/{WebAppFixture.TestLayerId}/map" +
                 "?bbox=0,0,4,2&width=64&height=32&f=png&datetime=2024-12-01T00:00:00Z/2024-01-01T00:00:00Z");
@@ -240,7 +258,6 @@ public sealed class OgcMapsTemporalMosaicTests
         }
 
         await fixture.InitializeAsync().ConfigureAwait(false);
-        await RasterIntegrationTestData.SeedIssue522MosaicAsync(fixture).ConfigureAwait(false);
         return fixture;
     }
 

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>$(HonuaTargetFramework)</TargetFramework>
     <PublishAot>true</PublishAot>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <!-- Globalization must NOT be invariant: Microsoft.Data.SqlClient and Oracle.ManagedDataAccess throw

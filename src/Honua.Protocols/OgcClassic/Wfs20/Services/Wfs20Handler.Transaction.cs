@@ -131,9 +131,9 @@ internal sealed partial class Wfs20Handler
                 using var postCommitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 try
                 {
-                    foreach (var (layerId, serviceId) in serviceIdsByLayer)
+                    foreach (var layerId in serviceIdsByLayer.Keys)
                     {
-                        await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, postCommitCts.Token).ConfigureAwait(false);
+                        await _mutationEventService.InvalidateStorageLayerAsync(layerId, postCommitCts.Token).ConfigureAwait(false);
                     }
 
                     await PublishTransactionEventsAsync(
@@ -192,14 +192,12 @@ internal sealed partial class Wfs20Handler
         }
         catch (WfsTransactionException ex)
         {
-            // Typed protocol exception with an author-controlled message/locator; reported verbatim by design.
-            Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            HonuaTelemetry.RecordException(activity, ex);
-            return Wfs20ErrorResults.CreateBadRequest(
-                context,
-                ex.ExceptionCode,
-                ex.Message,
-                ex.Locator);
+            return TypedProtocolBadRequest(context, activity, ex);
+        }
+        catch (WfsQueryException ex)
+        {
+            // Target-resolution query errors (e.g. a ResourceId naming another feature type), as on GetFeature.
+            return TypedProtocolBadRequest(context, activity, ex);
         }
         catch (ArgumentException ex)
         {
@@ -1178,6 +1176,20 @@ internal sealed partial class Wfs20Handler
     }
 
 
+    // Typed protocol exception with an author-controlled message/locator; reported verbatim by design.
+    private IResult TypedProtocolBadRequest(HttpContext context, Activity? activity, Exception ex)
+    {
+        var (exceptionCode, locator) = ex switch
+        {
+            WfsTransactionException transaction => (transaction.ExceptionCode, transaction.Locator),
+            WfsQueryException query => (query.ExceptionCode, query.Locator),
+            _ => throw new ArgumentException("Only typed WFS protocol exceptions are reported verbatim.", nameof(ex)),
+        };
+        Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
+        HonuaTelemetry.RecordException(activity, ex);
+        return Wfs20ErrorResults.CreateBadRequest(context, exceptionCode, ex.Message, locator);
+    }
+
     private static async Task<IResult?> ValidateTransactionLayerWriteAccessAsync(
         HttpContext context,
         WfsFeatureTypeDescriptor descriptor,
@@ -1244,15 +1256,7 @@ internal sealed partial class Wfs20Handler
             throw new WfsTransactionException("MissingParameterValue", "Transaction action is missing a feature type name.", "typeName");
         }
 
-        var trimmedTypeName = rawTypeName.Trim();
-        var localName = trimmedTypeName.Contains(':', StringComparison.Ordinal)
-            ? trimmedTypeName[(trimmedTypeName.LastIndexOf(':') + 1)..]
-            : trimmedTypeName;
-
-        var match = descriptors.FirstOrDefault(descriptor =>
-            descriptor.QualifiedName.Equals(trimmedTypeName, StringComparison.OrdinalIgnoreCase) ||
-            descriptor.LocalName.Equals(trimmedTypeName, StringComparison.OrdinalIgnoreCase) ||
-            descriptor.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase));
+        var match = descriptors.FirstOrDefault(descriptor => MatchesRequestedType(descriptor, rawTypeName.Trim()));
         if (match is not null)
         {
             return match;

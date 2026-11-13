@@ -16,7 +16,7 @@ public sealed class LayerRelationshipJsonTests
     public void RelationshipUpdateJson_LegacyNumericId_RetainsSerializedName()
     {
         var item = JsonSerializer.Deserialize(
-            """{"id":"relationship.test","name":"Test","relatedLayerId":4,"role":"origin","cardinality":"one-to-many","originField":"origin_id","destinationField":"destination_id","esriRelationshipId":3}""",
+            """{"id":"relationship.test","name":"Test","relatedStorageLayerId":4,"role":"origin","cardinality":"one-to-many","originField":"origin_id","destinationField":"destination_id","esriRelationshipId":3}""",
             LayerAuthoringJsonContext.Default.LayerRelationshipUpdateItem)!;
 
         Assert.Equal(3, item.GeoServicesRelationshipId);
@@ -30,7 +30,7 @@ public sealed class LayerRelationshipJsonTests
     public void RelationshipReadbackJson_LegacyNumericId_RetainsSerializedName()
     {
         var item = JsonSerializer.Deserialize(
-            """{"id":"relationship.test","name":"Test","relatedLayerId":4,"role":"origin","cardinality":"one-to-many","originField":"origin_id","destinationField":"destination_id","esriRelationshipId":3}""",
+            """{"id":"relationship.test","name":"Test","relatedStorageLayerId":4,"role":"origin","cardinality":"one-to-many","originField":"origin_id","destinationField":"destination_id","esriRelationshipId":3}""",
             LayerAuthoringJsonContext.Default.LayerRelationshipItem)!;
 
         Assert.Equal(3, item.GeoServicesRelationshipId);

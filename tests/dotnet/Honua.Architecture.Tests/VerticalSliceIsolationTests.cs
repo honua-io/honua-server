@@ -129,7 +129,7 @@ public sealed class VerticalSliceIsolationTests
             "Configuration",
             "Coordination",
             "DataIntegrity",
-            "Events",           // Bulk lives in Honua.Hosting; FeatureChangeRetryQueue remains in Server.
+            "Events",           // Lives in Honua.Hosting under the preserved namespace.
             "Filtering",
             "GeoJson",
             "Geometries",

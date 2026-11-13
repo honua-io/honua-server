@@ -64,7 +64,6 @@ public sealed class FeatureServerEditCacheInvalidationTests : IAsyncLifetime
 
     /// <summary>
     /// Every cache key is scoped to the tenant's schema before it reaches the store
-    /// (<c>RedisCacheService.GetPrefixedKey</c> -> <see cref="CacheScopeKeys.EnsureScoped"/>),
     /// and the schema comes from the ambient <see cref="SchemaContext"/> the request
     /// middleware sets. A bare test thread has no ambient schema, so it would read and write
     /// the unscoped default namespace while the server's edit invalidates the fixture's

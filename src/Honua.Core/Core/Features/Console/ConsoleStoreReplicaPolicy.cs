@@ -9,9 +9,9 @@ public static class ConsoleStoreReplicaPolicy
 {
     public const string ConsoleExpectedReplicaCountKey = "Console:ExpectedReplicaCount";
 
-    public const string DeploymentReplicaCountKey = "Deployment:ReplicaCount";
+    public const string DeploymentReplicaCountKey = Honua.Core.Configuration.DeploymentTaskCount.ReplicaCountKey;
 
-    public const string ServerReplicasKey = "HONUA_SERVER_REPLICAS";
+    public const string ServerReplicasKey = Honua.Core.Configuration.DeploymentTaskCount.ServerReplicasKey;
 
     public static int ResolveExpectedReplicas(
         string? consoleExpectedReplicaCount,

@@ -25,15 +25,29 @@ namespace Honua.Server.Tests.Features.Spec;
 /// operator-facing evidence for ticket #789's acceptance criteria.
 /// </summary>
 [Protocol(TestProtocols.Spec)]
-public sealed class SpecEndpointsTests
+public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixture>
 {
+    private readonly Fixture _fixture;
+
+    public SpecEndpointsTests(Fixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    // Share the application for read-only requests; successful applies keep isolated hosts and stores.
+    public sealed class Fixture : IDisposable
+    {
+        public WebApplicationFactory<Program> Application { get; } = CreateFactory();
+
+        public void Dispose() => Application.Dispose();
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /v1/spec/validate")]
     public async Task Validate_TextSpec_ReturnsDiagnosticsAndCanonicalJson()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.PostAsync("/v1/spec/validate", JsonContent(new
         {
@@ -69,8 +83,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/validate")]
     public async Task Validate_TextSpecWithUnknownOperator_ReturnsInvalidWithDiagnostic()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.PostAsync("/v1/spec/validate", JsonContent(new
         {
@@ -98,8 +111,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/validate")]
     public async Task Validate_CanonicalSpecObject_RunsSameValidator()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.PostAsync("/v1/spec/validate", JsonContent(new
         {
@@ -139,8 +151,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/validate")]
     public async Task Validate_CanonicalSpecObjectWithOutOfRangeNumber_ReturnsParseDiagnostic()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var content = new StringContent(
             """
@@ -188,8 +199,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/validate")]
     public async Task Validate_WithoutSource_Returns400WithInvalidRequestBody()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync("/v1/spec/validate", content);
@@ -204,8 +214,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_LinearChain_ReturnsDagWithContentHashesInTopologicalOrder()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = BuildDocument(
             ComputeNode("a"),
@@ -235,8 +244,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_MalformedJson_Returns400WithInvalidRequestBody()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var content = new StringContent("{not:valid", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync("/v1/spec/plan", content);
@@ -254,8 +262,7 @@ public sealed class SpecEndpointsTests
         // Blank grammar/process-family versions collide in the content-hash
         // cache key. The planner rejects at the entry point so REST maps to
         // 400 / `version-skew` before the executor is reached.
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -276,8 +283,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_MissingProcessFamilyVersion_Returns400WithoutOpeningStream()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -307,8 +313,7 @@ public sealed class SpecEndpointsTests
         // Missing 'kind' must not silently coerce to Compute — operators need an
         // explicit rejection so a typo or omission does not accidentally
         // dispatch through the compute executor.
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var nodeWithoutKind = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -330,8 +335,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_NodeWithoutKind_Returns400WithoutOpeningStream()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var nodeWithoutKind = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -363,8 +367,7 @@ public sealed class SpecEndpointsTests
         // (SpecResourceKind)999 that passes the null check and flows through to
         // the orchestrator. The transport-boundary whitelist must reject it
         // with the same `unknown-kind` code operators already handle.
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var numericKindNode = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -387,8 +390,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_NumericKindOutOfRange_Returns400WithoutOpeningStream()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var numericKindNode = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -421,8 +423,7 @@ public sealed class SpecEndpointsTests
         // mapping's catch-all arm and silently flow through as ReadWrite. The
         // transport boundary must reject with the stable `unknown-cache-mode`
         // code before the apply starts.
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -450,8 +451,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_Cycle_Returns400WithDagCycleCode()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = BuildDocument(
             ComputeNode("a", ("src", "@b")),
@@ -469,8 +469,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_MalformedJson_Returns400WithInvalidRequestBody()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
         {
@@ -489,8 +488,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_DuplicateNodeIds_Returns400WithoutOpeningStream()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = BuildDocument(
             ComputeNode("a"),
@@ -518,8 +516,7 @@ public sealed class SpecEndpointsTests
         // values in the event stream. The resolver now rejects them with a
         // stable `invalid-node-id` diagnostic that surfaces at the REST
         // boundary.
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = BuildDocument(ComputeNode(""));
 
@@ -539,8 +536,7 @@ public sealed class SpecEndpointsTests
         // explicit null. Previously the transport swallowed it and the
         // downstream enumeration tripped a NullReferenceException — today the
         // boundary validates and maps to the documented 400 contract.
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -564,8 +560,7 @@ public sealed class SpecEndpointsTests
         // `[null]` deserialises as a real null entry inside the nodes list. The
         // boundary rejects it with a stable diagnostic instead of throwing NRE
         // at the first enumeration.
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -586,8 +581,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_NullNodeEntry_Returns400WithoutOpeningStream()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -614,8 +608,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_BlankNodeId_Returns400WithoutOpeningStream()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = BuildDocument(ComputeNode("   "));
 
@@ -637,8 +630,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_Cycle_Returns400WithoutOpeningStream()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = BuildDocument(
             ComputeNode("a", ("src", "@b")),
@@ -708,8 +700,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_WithoutEventStreamAccept_Returns400()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var document = BuildDocument(ComputeNode("a"));
         using var response = await client.PostAsync("/v1/spec/apply", JsonContent(document));
@@ -781,8 +772,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/cancel")]
     public async Task Cancel_UnknownToken_Returns404WithApplyTokenUnknown()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var content = new StringContent("{\"applyToken\":\"does-not-exist\"}", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync("/v1/spec/cancel", content);
@@ -797,8 +787,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("POST /v1/spec/cancel")]
     public async Task Cancel_MissingToken_Returns400()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync("/v1/spec/cancel", content);
@@ -813,8 +802,7 @@ public sealed class SpecEndpointsTests
     [Endpoint("GET /v1/spec/artifact/{hash}")]
     public async Task Artifact_UnknownHash_Returns404WithArtifactNotFound()
     {
-        using var factory = CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/v1/spec/artifact/deadbeef");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);

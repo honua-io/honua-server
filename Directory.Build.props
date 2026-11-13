@@ -23,11 +23,30 @@
     <VersionPrefix>2026.1.1</VersionPrefix>
   </PropertyGroup>
 
+  <!--
+    One target framework for every project in this build. Projects say
+    <TargetFramework>$(HonuaTargetFramework)</TargetFramework>. Set the HonuaTargetFramework
+    environment variable to retarget: MSBuild reads it as this property and
+    scripts/ci/honua-target-framework.sh reads it for output paths, so both move together.
+    A net11.0 trial build also needs SDK 11.
+    Not inherited by separately built trees with their own Directory.Build.props
+    (docker/worker-customcode-dotnet/harness, the gp-dotnet template).
+  -->
+  <PropertyGroup>
+    <HonuaTargetFramework Condition="'$(HonuaTargetFramework)' == ''">net10.0</HonuaTargetFramework>
+  </PropertyGroup>
+
   <PropertyGroup>
     <LangVersion>preview</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      NuGet audit advisories (NU1901-NU1904) stay visible as warnings but never fail
+      restore or build: a newly published advisory is dependency work, not a broken
+      build. Projects that set their own WarningsNotAsErrors append to this list.
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
 
     <!--

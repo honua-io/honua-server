@@ -40,7 +40,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
     {
         Name = ToolName,
         Title = "Query features",
-        Description = "Query features from a published layer (by serviceId/layerId) with an optional attribute WHERE clause, bbox, outFields, and result limit. Returns a GeoJSON FeatureCollection. "
+        Description = "Query features from a published layer (by serviceId/serviceLayerIndex) with an optional attribute WHERE clause, bbox, outFields, and result limit. Returns a GeoJSON FeatureCollection. "
             + "Paging: results are capped at 'limit' (default 100, max 1000). When the response reports exceededTransferLimit=true there are more matching features; page through them mechanically by re-issuing the SAME query with cursor set to nextCursor (or resultOffset set to nextOffset), repeating until exceededTransferLimit=false. "
             + "Set returnCountOnly=true to get just the matching {count} (no features) for a cheap cardinality check, and returnGeometry=false to return attribute-only rows (geometry omitted) when scanning attributes. "
             + "Geometry coordinates are rounded to geometryPrecision decimal places (default 6, ~0.1 m) to keep responses compact; pass a higher value for finer precision or a negative value for full precision. "
@@ -68,7 +68,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
         var graphProvider = httpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var layer = await MapToolLayerResolver.ResolveForReadAsync(
-            httpContext, snapshot, argument.ServiceId, argument.LayerId, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
+            httpContext, snapshot, argument.ServiceId, argument.ServiceLayerIndex, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
 
         var limit = ResolveLimit(argument.Limit);
         var offset = ResolveOffset(argument.ResultOffset, argument.Cursor);
@@ -119,7 +119,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
             var countOutput = new McpQueryFeaturesOutput
             {
                 ServiceId = layer.Service.Metadata.Id,
-                LayerId = argument.LayerId!.Value,
+                ServiceLayerIndex = argument.ServiceLayerIndex!.Value,
                 ReturnedCount = 0,
                 Limit = limit,
                 ResultOffset = offset,
@@ -149,7 +149,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
         var output = new McpQueryFeaturesOutput
         {
             ServiceId = layer.Service.Metadata.Id,
-            LayerId = argument.LayerId!.Value,
+            ServiceLayerIndex = argument.ServiceLayerIndex!.Value,
             ReturnedCount = geoJsonFeatures.Count,
             Limit = limit,
             ResultOffset = offset,
@@ -179,7 +179,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
                 "Matched {0} feature(s) in {1}/{2} (count only, no geometry). Count in structuredContent.count.",
                 count,
                 output.ServiceId,
-                output.LayerId);
+                output.ServiceLayerIndex);
             return AppendAdvisories(countSummary, output, zeroResults: count == 0);
         }
 
@@ -199,7 +199,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
             "Returned {0} feature(s) from {1}/{2} at offset {3} ({4}, {5}). Feature attributes are in structuredContent.features; GeoJSON FeatureCollection is in structuredContent.geojson.",
             output.ReturnedCount,
             output.ServiceId,
-            output.LayerId,
+            output.ServiceLayerIndex,
             output.ResultOffset,
             pagingNote,
             geometryNote);

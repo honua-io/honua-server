@@ -33,6 +33,52 @@ def bash_path(path):
 
 
 class ManagedSdkSelectionTests(unittest.TestCase):
+    def test_target_runtimes_share_private_root_and_preserve_sdk_host(self):
+        for target in ('net10.0', 'net11.0'):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                tools = root / 'tools'
+                tools.mkdir()
+                curl = tools / 'curl'
+                curl.write_text('''#!/usr/bin/env bash
+set -eu
+while [[ "$1" != --output ]]; do shift; done
+cat > "$2" <<'INSTALLER'
+printf '%s\\n' "$*" >> "${INSTALL_CALLS}"
+exit "${INSTALL_EXIT:-0}"
+INSTALLER
+''', encoding='utf-8')
+                curl.chmod(0o755)
+                calls = root / 'calls'
+                environment = dict(
+                    CI_ACTION_PATH=bash_path(ROOT / '.github/actions/setup-dotnet-ci'),
+                    RUNNER_TEMP=root.as_posix(), DOTNET_INSTALL_DIR=(root / 'private').as_posix(),
+                    HonuaTargetFramework=target, INSTALL_CALLS=bash_path(calls),
+                    PATH=tools.as_posix() + os.pathsep + os.environ['PATH'])
+                result = self.run_script('Install managed target runtimes', root, **environment)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(calls.read_text().splitlines(), [
+                    '--runtime ' + runtime + ' --channel ' + target[3:]
+                    + ' --install-dir ' + bash_path(root / 'private')
+                    + ' --skip-non-versioned-files --no-path'
+                    for runtime in ('dotnet', 'aspnetcore')])
+                self.assertFalse(list(root.glob('honua-dotnet-install.*.sh')))
+                # A failed bootstrap must stop setup instead of masking missing runtimes.
+                calls.unlink()
+                result = self.run_script('Install managed target runtimes', root,
+                                         **environment, INSTALL_EXIT='23')
+                self.assertEqual(result.returncode, 23, result.stderr)
+                self.assertEqual(len(calls.read_text().splitlines()), 1)
+                self.assertFalse(list(root.glob('honua-dotnet-install.*.sh')))
+
+    def test_runtime_setup_precedes_sdk_identity_and_only_runs_for_consumers(self):
+        block = ACTION.split('    - name: Install managed target runtimes\n', 1)[1].split('    - name:', 1)[0]
+        self.assertIn("if: inputs.artifact-sdk-version != ''", block)
+        self.assertLess(ACTION.index('    - name: Setup .NET\n'),
+                        ACTION.index('    - name: Install managed target runtimes\n'))
+        self.assertLess(ACTION.index('    - name: Install managed target runtimes\n'),
+                        ACTION.index('    - name: Record actual SDK identity\n'))
+
     def run_script(self, name, directory, **environment):
         env = dict(os.environ, **environment)
         # Shell startup hooks must not replace the fake hosts selected by the fixture.

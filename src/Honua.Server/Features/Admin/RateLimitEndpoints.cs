@@ -10,11 +10,14 @@ using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Honua.Server.Features.Admin.Services;
 
 namespace Honua.Server.Features.Admin;
 
 internal static partial class RateLimitEndpoints
 {
+    private const string RateLimitSettingsName = "Rate-limit policies";
+
     internal sealed class RateLimitEndpointsLog;
 
     internal static partial class RateLimitLog
@@ -47,6 +50,7 @@ internal static partial class RateLimitEndpoints
 
         group.MapPost("/", HandleCreatePolicy)
             .WithDisplayName("Create Rate Limit Policy")
+            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapGet("/{id:guid}", HandleGetPolicy)
@@ -55,10 +59,12 @@ internal static partial class RateLimitEndpoints
 
         group.MapPut("/{id:guid}", HandleUpdatePolicy)
             .WithDisplayName("Update Rate Limit Policy")
+            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
         group.MapDelete("/{id:guid}", HandleDeletePolicy)
             .WithDisplayName("Delete Rate Limit Policy")
+            .RefuseWhenProcessLocalOnSeveralTasks<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>(RateLimitSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
         group.MapGet("/status", HandleGetStatus)

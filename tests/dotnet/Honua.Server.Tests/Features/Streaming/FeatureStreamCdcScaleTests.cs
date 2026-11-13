@@ -153,7 +153,7 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
 
         // Wait for all consumers to finish.
         var allDone = Task.WhenAll(consumerTasks);
-        await Task.WhenAny(allDone, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(false);
+        await allDone.WaitAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         await cts.CancelAsync().ConfigureAwait(false);
 
         // Assert: all subscribers received all events.

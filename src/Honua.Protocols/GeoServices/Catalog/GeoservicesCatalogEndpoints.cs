@@ -74,7 +74,6 @@ internal static class GeoservicesCatalogEndpoints
         // resource accepts either verb; a GET-only mapping answered those POSTs with a 404
         // envelope for a resource that plainly exists.
         endpoints.Map("/rest/services", HandleGetServicesDirectory)
-            .WithMetadata(new GeoServicesServiceRoutes.CatalogRoute())
             .WithDisplayName("GeoServices Services Directory")
             .WithName("GeoServicesServicesDirectory")
             .WithSummary("List available GeoServices endpoints")

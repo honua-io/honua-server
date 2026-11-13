@@ -20,7 +20,7 @@ internal sealed record LayerDisplayUpdateRequest
 
 internal sealed record LayerDisplayResponse
 {
-    public int LayerId { get; init; }
+    public int StorageLayerId { get; init; }
     public double? MinScale { get; init; }
     public double? MaxScale { get; init; }
     public bool DefaultVisibility { get; init; }
@@ -43,7 +43,7 @@ internal sealed record LayerSpatialUpdateRequest
 
 internal sealed record LayerSpatialResponse
 {
-    public int LayerId { get; init; }
+    public int StorageLayerId { get; init; }
     public MetadataV2SpatialReference? SpatialReference { get; init; }
     public MetadataV2GeometryType GeometryType { get; init; }
     public IReadOnlyList<MetadataV2SpatialReference> SupportedCrs { get; init; } = [];

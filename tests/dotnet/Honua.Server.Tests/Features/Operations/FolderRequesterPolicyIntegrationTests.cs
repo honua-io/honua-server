@@ -119,7 +119,13 @@ public sealed partial class FolderOperationIntegrationTests
             (await SnapshotAsync()).Etag.Should().Be(before.Etag, "role policy changes do not change the metadata ETag");
             await ApproveAsync(proposalId);
             (await _proposals.GetAsync(proposalId))!.Status.Should().Be(OperationProposalStatus.Failed);
-            (await _proposals.GetAsync(proposalId))!.ResolutionReason.Should().Be(FolderApprovalAuthorization.FreshProposalRequired);
+            var refused = (await _proposals.GetAsync(proposalId))!;
+            refused.ResolutionReason.Should().Be(FolderApprovalAuthorization.FreshProposalRequired);
+            var instances = _fixture.Services.GetRequiredService<IOperationInstanceStore>();
+            var canonical = await instances.GetAsync(refused.Audit.OperationInstanceId!);
+            canonical.Should().NotBeNull();
+            canonical!.Status.Should().Be(OperationHandleStatus.Failed);
+            canonical.Reason.Should().Be(refused.ResolutionReason);
             (await SnapshotAsync()).Etag.Should().Be(before.Etag);
             (await SnapshotAsync()).Graph.Folders.Should().NotContain(folder => folder.Metadata.Name == "Pending");
         }

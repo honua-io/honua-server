@@ -55,14 +55,14 @@ internal sealed class PublishResultTool : IMcpTool
         Description =
             "Promote a completed analysis job's result artifact into a hosted, queryable/renderable layer. "
             + "Chain: run honua_execute_plan → poll honua://jobs/{id} until terminal → call honua_publish_result "
-            + "with sourceId set to that job id → the returned serviceId + layerId chain straight into "
+            + "with sourceId set to that job id → the returned serviceId + serviceLayerIndex chain straight into "
             + "honua_query_features and honua_render_map. "
             + "Supported artifact kinds are FeatureLayer and Table (vector/tabular datasets the job materialized "
             + "into a table); Scalar, Raster, File, Report, Map, and AppBundle artifacts are not publishable and "
             + "return a structured error. Large artifacts are promoted by reference — the tool publishes the "
             + "materialized table, never the artifact bytes, so payload size is irrelevant. "
             + "Publishing routes through the same operator-approval gate as honua_publish_service: the result is a "
-            + "structured operation handle — Completed carries serviceId + layerId + serviceUri + metadataRevision; "
+            + "structured operation handle — Completed carries serviceId + serviceLayerIndex + serviceUri + metadataRevision; "
             + "RequiresApproval carries the approval lane to wait on; Queued carries the durable job id; Denied "
             + "carries the reason.",
         InputSchema = McpToolSchemas.PublishResultArgumentSchema,
@@ -306,9 +306,13 @@ internal sealed class PublishResultTool : IMcpTool
 
         if (handle.Result is { } result)
         {
-            if (result.Details.TryGetValue("layerId", out var layerId))
+            if (result.Details.TryGetValue("storageLayerId", out var storageLayerId))
             {
-                output.LayerId = layerId;
+                output.StorageLayerId = storageLayerId;
+            }
+            if (result.Details.TryGetValue("serviceLayerIndex", out var serviceLayerIndex))
+            {
+                output.ServiceLayerIndex = serviceLayerIndex;
             }
 
             if (result.Details.TryGetValue("serviceName", out var serviceName))

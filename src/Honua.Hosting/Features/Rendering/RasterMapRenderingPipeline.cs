@@ -48,7 +48,7 @@ internal sealed class RasterRenderCapacityExceededException(string message, int 
 
 internal sealed class RasterRenderSurfaceException(string message) : Exception(message);
 
-internal static class RasterMapRenderingPipeline
+internal static partial class RasterMapRenderingPipeline
 {
     internal sealed class RasterStylePlan
     {
@@ -86,7 +86,8 @@ internal static class RasterMapRenderingPipeline
         VerticalSelection? VerticalSelection = null,
         string? StableOrderField = null,
         MetadataV2FieldType? StableOrderFieldType = null,
-        ImmutableArray<string>? EnforcedMaskedFields = null);
+        ImmutableArray<string>? EnforcedMaskedFields = null,
+        MetadataV2Resource? Resource = null);
 
     internal static RenderLayerDescriptor CreateRenderLayerDescriptorFromV2(
         int layerId,
@@ -222,6 +223,7 @@ internal static class RasterMapRenderingPipeline
 
         var featureReader = services.GetRequiredService<IFeatureReader>();
         var styleCatalog = services.GetRequiredService<ILayerStyleCatalog>();
+        var styleSources = new RasterStyleSources(styleCatalog, services.GetService<IGeoServicesStyleConverter>());
 
         // The tile envelope is expressed in the gridset CRS (3857 for WebMercatorQuad, 4326 for
         // WorldCRS84Quad). Build the spatial filter in that CRS and let the canonical query
@@ -274,10 +276,11 @@ internal static class RasterMapRenderingPipeline
                 continue;
             }
 
-            var stylePlan = await GetRasterStylePlanAsync(
-                styleCatalog,
-                layer.LayerId,
-                cancellationToken).ConfigureAwait(false);
+            // With a resource, tiles draw the layer's saved presentation like export and GetMap.
+            var stylePlan = layer.Resource is { } layerResource
+                ? await GetRasterStylePlanAsync(styleSources, layerResource, layer.LayerId, cancellationToken)
+                    .ConfigureAwait(false)
+                : await GetRasterStylePlanAsync(styleCatalog, layer.LayerId, cancellationToken).ConfigureAwait(false);
             if (!StyleTranslator.IsAnyLayerInZoomRange(stylePlan.StyleLayers, renderZoom))
             {
                 continue;

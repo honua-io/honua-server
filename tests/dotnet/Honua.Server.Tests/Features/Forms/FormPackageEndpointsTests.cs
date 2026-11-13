@@ -695,5 +695,5 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         };
 
     private static JsonElement Json(string json)
-        => JsonDocument.Parse(json).RootElement.Clone();
+        => JsonElement.Parse(json);
 }

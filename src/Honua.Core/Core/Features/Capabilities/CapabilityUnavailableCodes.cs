@@ -3,50 +3,28 @@
 
 namespace Honua.Core.Features.Capabilities;
 
-// Without Redis the cache falls back to memory and reads keep serving, but the durable job substrate is not composed and the refusal must name that dependency.
+// Without the system database reads keep serving, but the durable job substrate and control plane are not composed and the refusal must name that dependency.
 public static class CapabilityUnavailableCodes
 {
     public const string ProblemType = "https://honua.io/problems/capability-unavailable";
 
     public const string ErrorCode = "dependency-unavailable";
 
-    public const string EntitlementErrorCode = "license-required";
-
-    public const string RedisDependency = "redis";
+    public const string SystemDatabaseDependency = "system-database";
 
     // A durable job store without a runnable queue would accept a submission and never drain it.
     public const string JobQueueDependency = "job-queue";
-
-    public const string RedisCacheEntitlement = "caching.redis";
 
     public const string DurableJobsCapability = "jobs.runner";
 
     public const string ControlPlaneProposalsCapability = "operations.proposals";
 
-    public const string RedisRemediation =
-        "Set ConnectionStrings__Redis to a reachable Redis instance and restart the server. " +
-        "With the repository compose files, drop the '-f docker/compose/docker-compose.no-redis.yml' override " +
-        "and run 'HONUA_DEV_GRANT_EDITION=Pro docker compose up -d' again (or install a licence " +
-        "that includes 'caching.redis'); PostGIS-backed metadata state is preserved.";
+    public const string SystemDatabaseRemediation =
+        "Set ConnectionStrings__DefaultConnection to the PostgreSQL system database and restart the " +
+        "server. Durable jobs, the job queue and governed proposals are tables in it.";
 
-    public const string RedisRemediationRef =
-        "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not";
-
-    public const string EntitlementRemediation =
-        "Redis is configured but the Pro 'caching.redis' entitlement is not active, so the " +
-        "durable job substrate was not composed. Install a licence that includes " +
-        "'caching.redis'; outside Production you can instead set Licensing:DevGrantEdition=Pro " +
-        "(HONUA_DEV_GRANT_EDITION=Pro for the repository compose files). Restart the server " +
-        "after either change.";
-
-    public const string EntitlementRemediationRef =
-        "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-configured-but-not-entitled";
-
-    public const string UnentitledRedisDetail =
-        "Durable geoprocessing jobs and workflows require the Pro 'caching.redis' entitlement. " +
-        "Redis is configured on this server, but the active licence does not entitle it, so the " +
-        "durable job substrate was never composed and the request is refused up front instead of " +
-        "being queued and never run.";
+    public const string SystemDatabaseRemediationRef =
+        "https://honua.io/docs/guides/deploy/troubleshooting/#database-connections";
 
     public const string RuntimeIncompleteRemediation =
         "A durable job store is registered without a runnable job queue, so submitted jobs could " +
@@ -78,31 +56,30 @@ public static class CapabilityUnavailableCodes
     public const string Title = "Capability unavailable";
 
     public const string DurableJobStoreDetail =
-        "Durable geoprocessing jobs and workflows require a Redis-backed job store. This server " +
-        "was started without a Redis connection, so the request is refused up front instead of " +
-        "being queued and never run.";
+        "Durable geoprocessing jobs and workflows require the job store in the system database. " +
+        "This server was started without a system database, so the request is refused up front " +
+        "instead of being queued and never run.";
 
-    public const string UnentitledControlPlaneDetail =
-        "The operation proposal and approval control plane requires the Pro 'caching.redis' " +
-        "entitlement. Redis is configured on this server, but the active licence does not entitle " +
-        "it, so the durable control plane was never composed.";
+    // The workflow definition store has not moved to the system database yet, so this refusal
+    // names the store and the connection that composes it today.
+    public const string WorkflowDefinitionStoreDependency = "workflow-definition-store";
 
-    public const string UnentitledWorkflowPublicationDetail =
-        "Publishing a workflow package to a Schedule target requires the durable workflow " +
-        "definition store, which needs the Pro 'caching.redis' entitlement. Redis is configured " +
-        "on this server, but the active licence does not entitle it, so the store was never " +
-        "composed. The publication is refused up front rather than reported as successful " +
-        "without a durable record.";
+    public const string WorkflowDefinitionStoreRemediation =
+        "Publish to a target other than Schedule, or set ConnectionStrings__Redis to a reachable " +
+        "Redis instance and restart the server; the durable workflow definition store is composed " +
+        "only with that connection.";
+
+    public const string WorkflowDefinitionStoreRemediationRef =
+        "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not";
 
     public const string DurableWorkflowPublicationDetail =
-        "Publishing a workflow package to a Schedule target requires the Redis-backed durable " +
-        "workflow definition store. This server was started without a Redis connection, so the " +
-        "compiled workflow definition could not be persisted and no scheduler would ever run it. " +
-        "The publication is refused up front rather than reported as successful without a " +
-        "durable record.";
+        "Publishing a workflow package to a Schedule target requires the durable workflow " +
+        "definition store, which this server has not composed, so the compiled workflow " +
+        "definition could not be persisted and no scheduler would ever run it. The publication " +
+        "is refused up front rather than reported as successful without a durable record.";
 
     public const string DurableControlPlaneDetail =
-        "The operation proposal and approval control plane requires a Redis-backed durable " +
-        "store. This server was started without a Redis connection, so proposals cannot be " +
+        "The operation proposal and approval control plane requires the durable proposal store " +
+        "in the system database. This server was started without one, so proposals cannot be " +
         "listed, inspected, approved, or rejected.";
 }

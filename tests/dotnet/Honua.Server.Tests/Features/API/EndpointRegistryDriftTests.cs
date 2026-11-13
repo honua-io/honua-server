@@ -366,6 +366,7 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                path.Equals("/openapi.json", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/metrics", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/oauth/token", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("/admin/auth/callback", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/wfs", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/wps", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/wps/", StringComparison.OrdinalIgnoreCase) ||

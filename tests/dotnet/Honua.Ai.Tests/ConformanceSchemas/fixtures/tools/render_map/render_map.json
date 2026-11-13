@@ -4,8 +4,8 @@
   "validates": "inputs",
   "inputs": {
     "layers": [
-      { "serviceId": "basemap", "layerId": 0 },
-      { "serviceId": "county_parcels", "layerId": 0 }
+      { "serviceId": "basemap", "serviceLayerIndex": 0 },
+      { "serviceId": "county_parcels", "serviceLayerIndex": 0 }
     ],
     "bbox": [-97.95, 30.15, -97.55, 30.55],
     "bboxSrid": 4326,

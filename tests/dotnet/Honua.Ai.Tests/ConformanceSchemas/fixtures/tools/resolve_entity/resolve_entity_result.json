@@ -1,0 +1,30 @@
+{
+  "id": "resolve_entity.service_layer_index_result",
+  "schemaRef": "tools/resolve_entity.result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "query": "parcels",
+    "entityType": "any",
+    "matchCount": 2,
+    "matches": [
+      {
+        "kind": "layer",
+        "serviceId": "county_parcels",
+        "serviceLayerIndex": 3,
+        "name": "Parcels",
+        "score": 1
+      },
+      {
+        "kind": "service",
+        "serviceId": "county_parcels",
+        "name": "County parcels",
+        "score": 0.5
+      }
+    ]
+  },
+  "expected": "tool_result",
+  "canonicalRefs": [
+    "CapabilityCatalog",
+    "LayerRef"
+  ]
+}

@@ -184,7 +184,7 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         queries.Single().Where.Should().Contain("STAC_ID");
         queries.Single().Where.Should().NotContain("ITEM_ID");
 
-        var returnedIds = System.Text.Json.JsonDocument.Parse(content).RootElement
+        var returnedIds = System.Text.Json.JsonElement.Parse(content)
             .GetProperty("features")
             .EnumerateArray()
             .Select(feature => feature.GetProperty("id").GetString())
@@ -525,7 +525,7 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         queries.Should().OnlyContain(query =>
             !string.IsNullOrWhiteSpace(query.Where) && query.Where.Contains(DetailId, StringComparison.Ordinal));
         queries[0].Where.Should().Contain("STAC_ID");
-        System.Text.Json.JsonDocument.Parse(content).RootElement.GetProperty("id").GetString().Should().Be(DetailId);
+        System.Text.Json.JsonElement.Parse(content).GetProperty("id").GetString().Should().Be(DetailId);
     }
 
     private FeatureQuery CaptureProviderNeutralQuery(FeatureQuery query)

@@ -222,6 +222,13 @@ ControlPlane__ExecutionWorkloads__1__ParameterEntries__0__Key="batch.job_queue_a
 ControlPlane__ExecutionWorkloads__1__ParameterEntries__0__Value="arn:aws:batch:..."
 ```
 
+Environment variables merge into the array by index: an entry you set inherits
+every field you leave out (including `TargetKind` and `Parameters`) from the
+default at the same index. When you reorder or replace entries, set
+`WorkloadId`, `Backend` and `TargetKind` on each one. The server refuses to start
+when an entry pairs a built-in backend with another target kind (for example
+`Backend=local` with `TargetKind=AwsBatch`) and names the entry to fix.
+
 ## Verifying it routed
 
 Submit a GP job and confirm the job's spec:

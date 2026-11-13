@@ -127,7 +127,7 @@ public sealed class ImportTypedColumnInferenceTests
         inference.Observe("ctid", "kept");
         inference.Observe("tableoid", 1);
         inference.Observe("a b", "kept");
-        inference.Observe("notes", JsonDocument.Parse("{\"kind\":\"park\"}").RootElement);
+        inference.Observe("notes", JsonElement.Parse("{\"kind\":\"park\"}"));
         inference.Observe("name", "Alpha");
 
         inference.Resolve().Select(column => column.Name).Should().Equal("name");

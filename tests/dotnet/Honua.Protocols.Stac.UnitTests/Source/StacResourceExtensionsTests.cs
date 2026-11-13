@@ -14,7 +14,7 @@ public sealed class StacResourceExtensionsTests
     [UnitTest]
     public void ResolveLicense_PrefersEveryResourceDeclarationBeforeServiceFallback()
     {
-        var stacExtension = JsonDocument.Parse("""{ "license": "CC0-1.0" }""").RootElement.Clone();
+        var stacExtension = JsonElement.Parse("""{ "license": "CC0-1.0" }""");
         var extensionResource = new MetadataV2Resource
         {
             Extensions = new Dictionary<string, JsonElement> { ["stac"] = stacExtension },

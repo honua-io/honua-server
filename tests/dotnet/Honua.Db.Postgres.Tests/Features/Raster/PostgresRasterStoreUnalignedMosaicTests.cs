@@ -42,7 +42,7 @@ namespace Honua.Db.Postgres.Tests.Features.Raster;
 /// </para>
 /// </remarks>
 [Collection("Database")]
-public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixture)
+public sealed partial class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixture)
 {
     private const int LayerId = 4792;
 

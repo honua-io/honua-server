@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Server.Hosting;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -119,6 +120,7 @@ public sealed class GatedBootExitTests
         start.Environment["Security__ConnectionEncryption__MasterKey"] =
             "gated-boot-refusal-connection-encryption-key";
         start.Environment["Security__ConnectionEncryption__Salt"] = "Z2F0ZWQtYm9vdC1yZWZ1c2FsLXNhbHQ=";
+        var keyRingPath = TestKeyRingCertificate.AddToEnvironment(start.Environment, "GatedBoot-Refusal-KeyRing");
         start.Environment["DOTNET_DbgEnableMiniDump"] = "1";
         start.Environment["DOTNET_DbgMiniDumpName"] = dumpPath;
         start.Environment["COMPlus_DbgEnableMiniDump"] = "1";
@@ -131,6 +133,7 @@ public sealed class GatedBootExitTests
         var stderrTask = process.StandardError.ReadToEndAsync();
         var exited = await WaitForExitAsync(process, TimeSpan.FromMinutes(4));
         var output = await stdoutTask.ConfigureAwait(false) + await stderrTask.ConfigureAwait(false);
+        File.Delete(keyRingPath);
         var tail = Tail(output);
         var dumpsCreated = SnapshotCrashDumps(serverDirectory, dumpDirectory)
             .Where(path => !dumpsBefore.Contains(path))

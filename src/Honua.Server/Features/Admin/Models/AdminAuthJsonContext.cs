@@ -9,6 +9,8 @@ namespace Honua.Server.Features.Admin.Models;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
+[JsonSerializable(typeof(AdminPasswordSignInRequest))]
+[JsonSerializable(typeof(AdminCsrfResponse))]
 [JsonSerializable(typeof(AdminAuthConfigResponse))]
 [JsonSerializable(typeof(AdminAuthProviderInfo))]
 [JsonSerializable(typeof(AdminAuthClientCertificateInfo))]

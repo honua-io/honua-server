@@ -122,9 +122,9 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
                 {
                     Name = "list_incidents",
                     Description = "List incidents.",
-                    InputSchema = JsonDocument.Parse("{}").RootElement.Clone(),
-                    Annotations = JsonDocument.Parse("{\"readOnlyHint\":true}").RootElement.Clone(),
-                    OutputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone()
+                    InputSchema = JsonElement.Parse("{}"),
+                    Annotations = JsonElement.Parse("{\"readOnlyHint\":true}"),
+                    OutputSchema = JsonElement.Parse("{\"type\":\"object\"}")
                 }
             ]
         };
@@ -223,7 +223,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
                         {
                             Id = "call_123",
                             Name = "list_incidents",
-                            Arguments = JsonDocument.Parse("""{"status":"open"}""").RootElement.Clone()
+                            Arguments = JsonElement.Parse("""{"status":"open"}""")
                         }
                     ]
                 },
@@ -368,7 +368,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
                 new StudioAiToolDefinition
                 {
                     Name = "list_incidents",
-                    InputSchema = JsonDocument.Parse("""{"type":"object"}""").RootElement
+                    InputSchema = JsonElement.Parse("""{"type":"object"}""")
                 }
             ],
             ToolChoice = new StudioAiToolChoice { Mode = StudioAiToolChoiceMode.Specific, ToolName = "list_incidents" }
@@ -465,12 +465,12 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
             new StudioAiToolDefinition
             {
                 Name = "list_incidents",
-                InputSchema = JsonDocument.Parse("""{"type":"object","properties":{"status":{"type":"string"}}}""").RootElement
+                InputSchema = JsonElement.Parse("""{"type":"object","properties":{"status":{"type":"string"}}}""")
             },
             new StudioAiToolDefinition
             {
                 Name = "geocode",
-                InputSchema = JsonDocument.Parse("""{"type":"object","properties":{"address":{"type":"string"}}}""").RootElement
+                InputSchema = JsonElement.Parse("""{"type":"object","properties":{"address":{"type":"string"}}}""")
             }
         ]
     };

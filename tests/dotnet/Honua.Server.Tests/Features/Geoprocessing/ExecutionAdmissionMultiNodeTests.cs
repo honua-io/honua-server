@@ -10,26 +10,27 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Security;
+using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using NSubstitute;
-using StackExchange.Redis;
-using Testcontainers.Redis;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
 // Multi-node execution-admission proofs. Every test composes two or more independent
-// "server nodes" — each with its own Redis connection, job store instance, admission evaluator,
-// admission coordinator, and job service, sharing nothing in-process — against the PostgreSQL
-// job tables that hold the durable job records and one real Redis that holds the admission lease.
+// "server nodes" — each with its own job store instance, admission evaluator, admission
+// coordinator, and job service, sharing nothing in-process — against the PostgreSQL job tables
+// that hold the durable job records, the admission lease row, and the rate-window count.
 // Submissions are released together from a barrier across nodes, and an independent observer
 // samples the durable active set throughout, so the assertions are on what any node could see
 // at any observation point rather than on a single evaluator's arithmetic.
@@ -39,7 +40,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 // limits, never from a snapshot of current output.
 [Protocol(TestProtocols.GPServer)]
 public sealed class ExecutionAdmissionMultiNodeTests
-    : IClassFixture<ExecutionAdmissionMultiNodeTests.RedisServer>, IClassFixture<DatabaseFixtureAdapter>, IAsyncLifetime
+    : IClassFixture<DatabaseFixtureAdapter>, IAsyncLifetime
 {
     private const int RetryAfterSeconds = 7;
     private const string DefaultPartition = "(default)";
@@ -47,45 +48,25 @@ public sealed class ExecutionAdmissionMultiNodeTests
     private static readonly IOptionsMonitor<GeoprocessingExecutorOptions> ExecutorOptions =
         new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions());
 
-    private readonly RedisServer _redis;
     private readonly DatabaseFixtureAdapter _database;
     private readonly ITestOutputHelper _output;
     private readonly List<Node> _nodes = [];
-    private ConnectionMultiplexer _observer = null!;
     private PostgresJobSubstrateHarness _jobs = null!;
     private PostgresExecutionJobStore _observerStore = null!;
 
-    public ExecutionAdmissionMultiNodeTests(RedisServer redis, DatabaseFixtureAdapter database, ITestOutputHelper output)
+    public ExecutionAdmissionMultiNodeTests(DatabaseFixtureAdapter database, ITestOutputHelper output)
     {
-        _redis = redis;
         _database = database;
         _output = output;
     }
 
     public async Task InitializeAsync()
     {
-        var options = ConfigurationOptions.Parse(_redis.ConnectionString);
-        options.AllowAdmin = true;
-        _observer = await ConnectionMultiplexer.ConnectAsync(options);
-        foreach (var endpoint in _observer.GetEndPoints())
-        {
-            await _observer.GetServer(endpoint).FlushDatabaseAsync();
-        }
-
         _jobs = await PostgresJobSubstrateHarness.CreateAsync(_database, nameof(ExecutionAdmissionMultiNodeTests));
         _observerStore = _jobs.JobStore;
     }
 
-    public async Task DisposeAsync()
-    {
-        foreach (var node in _nodes)
-        {
-            await node.DisposeAsync();
-        }
-
-        await _observer.DisposeAsync();
-        await _jobs.DisposeAsync();
-    }
+    public async Task DisposeAsync() => await _jobs.DisposeAsync();
 
     // -----------------------------------------------------------------------
     // Concurrency denominators under a cross-node barrier
@@ -97,8 +78,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
     public async Task TwoNodes_BarrierBurstBeyondGlobalAndPartitionLimits_NeverOversubscribe()
     {
         var limits = Limits(global: 5, perPartition: 3);
-        var nodeA = await CreateNodeAsync("node-a", limits);
-        var nodeB = await CreateNodeAsync("node-b", limits);
+        var nodeA = CreateNode("node-a", limits);
+        var nodeB = CreateNode("node-b", limits);
 
         // 24 submissions from three tenants, alternating nodes: every limit is exceeded several
         // times over. Serialized admission grants exactly min(global, sum(min(partition, 8))) = 5.
@@ -140,8 +121,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
     public async Task TwoNodes_TenantSaturatesItsPartition_OtherTenantIsStillAdmitted()
     {
         var limits = Limits(global: 100, perPartition: 3);
-        var nodeA = await CreateNodeAsync("node-a", limits);
-        var nodeB = await CreateNodeAsync("node-b", limits);
+        var nodeA = CreateNode("node-a", limits);
+        var nodeB = CreateNode("node-b", limits);
 
         // Tenant A floods both nodes with a backlog; tenant B submits during the same burst.
         var submissions = new List<Func<Task<Attempt>>>();
@@ -178,8 +159,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
     public async Task TwoNodes_WeightedCostBurst_NeverExceedsPartitionCostLimit()
     {
         var limits = Limits(global: 100, perPartition: 100, cost: 10);
-        var nodeA = await CreateNodeAsync("node-a", limits);
-        var nodeB = await CreateNodeAsync("node-b", limits);
+        var nodeA = CreateNode("node-a", limits);
+        var nodeB = CreateNode("node-b", limits);
 
         // gdal.gdalwarp is charged its raster resource class (4); geometry.buffer is charged 1.
         // 25 units requested against a 10-unit partition budget.
@@ -224,8 +205,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
     public async Task TwoNodes_SharedRateLimit_IsNotMultipliedByNodesNorResetByRestart()
     {
         var limits = Limits(global: 100, perPartition: 100, rate: 4);
-        var nodeA = await CreateNodeAsync("node-a", limits);
-        var nodeB = await CreateNodeAsync("node-b", limits);
+        var nodeA = CreateNode("node-a", limits);
+        var nodeB = CreateNode("node-b", limits);
 
         var submissions = new List<Func<Task<Attempt>>>();
         for (var i = 0; i < 10; i++)
@@ -246,8 +227,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
             && a.RetryAfterSeconds == RetryAfterSeconds);
 
         // Restart node A: a fresh process has empty local state but must inherit the shared window.
-        await RestartAsync(nodeA);
-        var restartedA = await CreateNodeAsync("node-a-restarted", limits);
+        Restart(nodeA);
+        var restartedA = CreateNode("node-a-restarted", limits);
 
         var afterRestart = new[]
         {
@@ -262,6 +243,36 @@ public sealed class ExecutionAdmissionMultiNodeTests
             .Admitted.Should().BeTrue();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task TwoNodes_OnePrincipalBurstAcrossBothNodes_AdmitsTheRateLimitInTotal()
+    {
+        const int rateLimit = 3;
+        var limits = Limits(global: 100, perPartition: 100, rate: rateLimit);
+        var nodeA = CreateNode("node-a", limits);
+        var nodeB = CreateNode("node-b", limits);
+
+        var submissions = Enumerable.Range(0, rateLimit * 4)
+            .Select(i => (Func<Task<Attempt>>)(() => SubmitAsync(
+                i % 2 == 0 ? nodeA : nodeB, "tenant-r", "rate-user", $"window-{i}", BufferPlan(), cost: 1)))
+            .ToList();
+
+        var (attempts, sampler) = await BurstAsync(submissions);
+        WriteLedger(nameof(TwoNodes_OnePrincipalBurstAcrossBothNodes_AdmitsTheRateLimitInTotal), limits, attempts, sampler);
+
+        attempts.Count(a => a.Admitted).Should().Be(rateLimit, "per-node windows would admit the limit on each node");
+        attempts.Where(a => !a.Admitted).Should().OnlyContain(a =>
+            a.Outcome == ExecutionAdmissionOutcome.Throttled && a.Dimension == ExecutionAdmissionDimension.Rate);
+
+        var chargedWindow = new AdmissionSubmissionWindow(
+            ExecutionJobKind.Geoprocessing,
+            RatePrincipal("tenant-r", "rate-user"),
+            TimeSpan.FromSeconds(limits.RateWindowSeconds),
+            CountCap: int.MaxValue);
+        (await _observerStore.CountAsync(chargedWindow)).Should().Be(rateLimit);
+    }
+
     // -----------------------------------------------------------------------
     // Restart recovery and convergence
     // -----------------------------------------------------------------------
@@ -272,16 +283,16 @@ public sealed class ExecutionAdmissionMultiNodeTests
     public async Task RestartedNode_CountsWorkAdmittedBeforeRestart_AndCountsConvergeAfterCompletion()
     {
         var limits = Limits(global: 100, perPartition: 2);
-        var nodeA = await CreateNodeAsync("node-a", limits);
-        var nodeB = await CreateNodeAsync("node-b", limits);
+        var nodeA = CreateNode("node-a", limits);
+        var nodeB = CreateNode("node-b", limits);
 
         var first = await SubmitAsync(nodeA, "tenant-a", "alice", "restart-1", BufferPlan(), cost: 1);
         var second = await SubmitAsync(nodeB, "tenant-a", "alice", "restart-2", BufferPlan(), cost: 1);
         first.Admitted.Should().BeTrue();
         second.Admitted.Should().BeTrue();
 
-        await RestartAsync(nodeA);
-        var restartedA = await CreateNodeAsync("node-a-restarted", limits);
+        Restart(nodeA);
+        var restartedA = CreateNode("node-a-restarted", limits);
 
         var capped = await SubmitAsync(restartedA, "tenant-a", "alice", "restart-3", BufferPlan(), cost: 1);
         capped.Admitted.Should().BeFalse("the restarted node counts the work admitted before it restarted");
@@ -310,8 +321,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
             .ReturnsForAnyArgs(
                 _ => Task.FromException(new InvalidOperationException("progress store unavailable")),
                 _ => Task.CompletedTask);
-        var nodeA = await CreateNodeAsync("node-a", limits, progress: failingProgress);
-        var nodeB = await CreateNodeAsync("node-b", limits);
+        var nodeA = CreateNode("node-a", limits, progress: failingProgress);
+        var nodeB = CreateNode("node-b", limits);
 
         var failure = async () => await nodeA.Service.SubmitJobAsync(BufferPlan(), "fails-after-admission", Principal("tenant-a", "alice"));
         await failure.Should().ThrowAsync<InvalidOperationException>();
@@ -336,10 +347,10 @@ public sealed class ExecutionAdmissionMultiNodeTests
     {
         var limits = Limits(global: 100, perPartition: 100);
         limits.SharedLeaseAcquireTimeoutMilliseconds = 300;
-        var node = await CreateNodeAsync("node-b", limits);
+        var node = CreateNode("node-b", limits);
 
-        var database = _observer.GetDatabase();
-        (await database.LockTakeAsync(ExecutionAdmissionCoordinator.SharedLeaseKey, "crashed-node", TimeSpan.FromSeconds(2)))
+        var crashedNodeClaim = new LeaseClaim(ExecutionAdmissionCoordinator.SharedLeaseKey, "crashed-node");
+        (await new PostgresLeaseStore(_observerStore).TryAcquireAsync(crashedNodeClaim, TimeSpan.FromSeconds(2)))
             .Should().BeTrue();
 
         var blocked = await SubmitAsync(node, "tenant-a", "alice", "while-wedged", BufferPlan(), cost: 1);
@@ -350,13 +361,13 @@ public sealed class ExecutionAdmissionMultiNodeTests
         (await _observerStore.GetAsync(ScopedJobId("while-wedged", "tenant-a", "alice"))).Should().BeNull();
 
         var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (await database.KeyExistsAsync(ExecutionAdmissionCoordinator.SharedLeaseKey) && DateTime.UtcNow < deadline)
+        while (await AdmissionLeaseHolderAsync() is not null && DateTime.UtcNow < deadline)
         {
             await Task.Delay(100);
         }
 
         (await SubmitAsync(node, "tenant-a", "alice", "after-expiry", BufferPlan(), cost: 1)).Admitted.Should().BeTrue();
-        (await database.KeyExistsAsync(ExecutionAdmissionCoordinator.SharedLeaseKey)).Should().BeFalse(
+        (await AdmissionLeaseHolderAsync()).Should().BeNull(
             "a completed admission releases the lease instead of holding it for its TTL");
     }
 
@@ -368,13 +379,13 @@ public sealed class ExecutionAdmissionMultiNodeTests
         // Simulates a pause longer than the lease TTL: the lease disappears while this node is
         // evaluating, so another node may be admitting against the same snapshot.
         var limits = Limits(global: 100, perPartition: 100);
-        var database = _observer.GetDatabase();
-        var node = await CreateNodeAsync(
+        var node = CreateNode(
             "node-a",
             limits,
             wrapStore: inner => new InterceptingJobStore(inner)
             {
-                AfterListActive = () => database.KeyDeleteAsync(ExecutionAdmissionCoordinator.SharedLeaseKey)
+                AfterListActive = () => _jobs.ExecuteAsync(
+                    $"DELETE FROM {LeasesTable} WHERE lease_key = @lease_key", AdmissionLeaseKeyParameter())
             });
 
         var lost = await SubmitAsync(node, "tenant-a", "alice", "lease-lost", BufferPlan(), cost: 1);
@@ -398,8 +409,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
     public async Task ConcurrentReplayOfOneKeyAcrossNodes_CreatesOneJobAndChargesOnce()
     {
         var limits = Limits(global: 100, perPartition: 100, rate: 2);
-        var nodeA = await CreateNodeAsync("node-a", limits);
-        var nodeB = await CreateNodeAsync("node-b", limits);
+        var nodeA = CreateNode("node-a", limits);
+        var nodeB = CreateNode("node-b", limits);
 
         var submissions = Enumerable.Range(0, 10)
             .Select(i => (Func<Task<Attempt>>)(() => SubmitAsync(
@@ -431,8 +442,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
     public async Task CrossTenantProbesOnAnotherNode_DiscloseNeitherExistenceStateNorCancellation()
     {
         var limits = Limits(global: 100, perPartition: 100);
-        var nodeA = await CreateNodeAsync("node-a", limits);
-        var nodeB = await CreateNodeAsync("node-b", limits);
+        var nodeA = CreateNode("node-a", limits);
+        var nodeB = CreateNode("node-b", limits);
         var alice = Principal("tenant-a", "alice");
         var mallory = Principal("tenant-b", "mallory");
 
@@ -474,8 +485,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
         // shared-lease counterpart passing is evidence rather than luck.
         var limits = Limits(global: 1, perPartition: 100);
         var rendezvous = new Rendezvous(parties: 2, TimeSpan.FromSeconds(3));
-        var nodeA = await CreateNodeAsync("node-a", limits, sharedLease: false, wrapStore: rendezvous.Wrap);
-        var nodeB = await CreateNodeAsync("node-b", limits, sharedLease: false, wrapStore: rendezvous.Wrap);
+        var nodeA = CreateNode("node-a", limits, sharedLease: false, wrapStore: rendezvous.Wrap);
+        var nodeB = CreateNode("node-b", limits, sharedLease: false, wrapStore: rendezvous.Wrap);
 
         var (attempts, sampler) = await BurstAsync(
         [
@@ -496,8 +507,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
     {
         var limits = Limits(global: 1, perPartition: 100);
         var rendezvous = new Rendezvous(parties: 2, TimeSpan.FromSeconds(1));
-        var nodeA = await CreateNodeAsync("node-a", limits, wrapStore: rendezvous.Wrap);
-        var nodeB = await CreateNodeAsync("node-b", limits, wrapStore: rendezvous.Wrap);
+        var nodeA = CreateNode("node-a", limits, wrapStore: rendezvous.Wrap);
+        var nodeB = CreateNode("node-b", limits, wrapStore: rendezvous.Wrap);
 
         var (attempts, sampler) = await BurstAsync(
         [
@@ -533,22 +544,18 @@ public sealed class ExecutionAdmissionMultiNodeTests
             DefaultRetryAfterSeconds = RetryAfterSeconds
         };
 
-    private async Task<Node> CreateNodeAsync(
+    private Node CreateNode(
         string name,
         ExecutionAdmissionOptions limits,
         bool sharedLease = true,
         IUniversalProgressStore? progress = null,
         Func<IExecutionJobStore, IExecutionJobStore>? wrapStore = null)
     {
-        var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redis.ConnectionString);
-        IExecutionJobStore store = _jobs.CreateNodeJobStore();
-        if (wrapStore is not null)
-        {
-            store = wrapStore(store);
-        }
+        var nodeStore = _jobs.CreateNodeJobStore();
+        var store = wrapStore is null ? nodeStore : wrapStore(nodeStore);
 
         var admission = AdmissionNodeComposition.Compose(
-            multiplexer,
+            nodeStore,
             store,
             new StaticOptionsMonitor<ExecutionAdmissionOptions>(limits),
             sharedLease);
@@ -573,16 +580,22 @@ public sealed class ExecutionAdmissionMultiNodeTests
             admissionEvaluator: admission.Evaluator,
             admissionCoordinator: admission.Coordinator);
 
-        var node = new Node(name, multiplexer, service, enqueued);
+        var node = new Node(name, service, enqueued);
         _nodes.Add(node);
         return node;
     }
 
-    private async Task RestartAsync(Node node)
-    {
-        _nodes.Remove(node);
-        await node.DisposeAsync();
-    }
+    private void Restart(Node node) => _nodes.Remove(node);
+
+    private string LeasesTable => _jobs.Database.Table("leases");
+
+    private static NpgsqlParameter AdmissionLeaseKeyParameter()
+        => new("lease_key", ExecutionAdmissionCoordinator.SharedLeaseKey);
+
+    private Task<string?> AdmissionLeaseHolderAsync()
+        => _jobs.ScalarAsync<string>(
+            $"SELECT owner_id FROM {LeasesTable} WHERE lease_key = @lease_key AND expires_at > now()",
+            AdmissionLeaseKeyParameter());
 
     private static async Task<Attempt> SubmitAsync(
         Node node,
@@ -609,7 +622,7 @@ public sealed class ExecutionAdmissionMultiNodeTests
     private async Task<(IReadOnlyList<Attempt> Attempts, ActiveSampler Sampler)> BurstAsync(
         IReadOnlyList<Func<Task<Attempt>>> submissions)
     {
-        var sampler = new ActiveSampler();
+        var sampler = new ActiveSampler(ReadPartition, ReadCost);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var stop = new CancellationTokenSource();
 
@@ -684,7 +697,13 @@ public sealed class ExecutionAdmissionMultiNodeTests
     }
 
     private static string ScopedJobId(string key, string tenant, string user)
-        => GeoprocessingJobService.CreateJobId(key, CanonicalSecurityActor.Resolve(Principal(tenant, user))!.ActorId, tenant);
+        => GeoprocessingJobService.CreateJobId(key, ActorId(tenant, user), tenant);
+
+    private static string RatePrincipal(string tenant, string user)
+        => ExecutionAdmissionIdentity.ResolveRatePrincipal(ActorId(tenant, user), tenant);
+
+    private static string ActorId(string tenant, string user)
+        => CanonicalSecurityActor.Resolve(Principal(tenant, user))!.ActorId;
 
     private static ClaimsPrincipal Principal(string tenant, string user)
         => new(new ClaimsIdentity(
@@ -762,96 +781,20 @@ public sealed class ExecutionAdmissionMultiNodeTests
 
     private sealed class Node(
         string name,
-        ConnectionMultiplexer multiplexer,
         GeoprocessingJobService service,
-        ConcurrentQueue<string> enqueued) : IAsyncDisposable
+        ConcurrentQueue<string> enqueued)
     {
         public string Name { get; } = name;
 
         public GeoprocessingJobService Service { get; } = service;
 
         public string[] EnqueuedJobIds => enqueued.ToArray();
-
-        public ValueTask DisposeAsync() => multiplexer.DisposeAsync();
     }
 
     /// <summary>
     /// Independent observer of the durable active set: the maximum global count and the maximum
     /// per-partition count and cost weight seen at any sample during a burst.
     /// </summary>
-    private sealed class ActiveSampler
-    {
-        private readonly object _sync = new();
-
-        public int Samples { get; private set; }
-
-        public int MaxGlobal { get; private set; }
-
-        public Dictionary<string, int> MaxPerPartition { get; } = new(StringComparer.Ordinal);
-
-        public Dictionary<string, double> MaxCostPerPartition { get; } = new(StringComparer.Ordinal);
-
-        public async Task RunAsync(IExecutionJobStore store, CancellationToken cancellationToken)
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                await SampleAsync(store);
-                try
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(2), cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
-            }
-        }
-
-        public async Task SampleAsync(IExecutionJobStore store)
-        {
-            var active = await store.ListActiveAsync();
-            lock (_sync)
-            {
-                Samples++;
-                MaxGlobal = Math.Max(MaxGlobal, active.Count);
-                foreach (var partition in active.GroupBy(ReadPartition))
-                {
-                    MaxPerPartition[partition.Key] = Math.Max(
-                        MaxPerPartition.GetValueOrDefault(partition.Key), partition.Count());
-                    MaxCostPerPartition[partition.Key] = Math.Max(
-                        MaxCostPerPartition.GetValueOrDefault(partition.Key), partition.Sum(ReadCost));
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Holds every wrapped node's record creation until <c>parties</c> nodes have reached it (or a
-    /// timeout passes), forcing all evaluations to complete before any record becomes visible.
-    /// </summary>
-    private sealed class Rendezvous(int parties, TimeSpan timeout)
-    {
-        private readonly TaskCompletionSource _allArrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private int _arrived;
-
-        public bool AllArrived => _allArrived.Task.IsCompleted;
-
-        public InterceptingJobStore Wrap(IExecutionJobStore inner) => new(inner)
-        {
-            BeforeCreate = ArriveAsync
-        };
-
-        private async Task ArriveAsync()
-        {
-            if (Interlocked.Increment(ref _arrived) >= parties)
-            {
-                _allArrived.TrySetResult();
-            }
-
-            await Task.WhenAny(_allArrived.Task, Task.Delay(timeout));
-        }
-    }
-
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
         public T CurrentValue => value;
@@ -859,31 +802,5 @@ public sealed class ExecutionAdmissionMultiNodeTests
         public T Get(string? name) => value;
 
         public IDisposable? OnChange(Action<T, string?> listener) => null;
-    }
-
-    /// <summary>
-    /// A dedicated Redis for this class: tests flush it between runs, so it must never be the
-    /// process-wide shared container or an externally supplied server.
-    /// </summary>
-    public sealed class RedisServer : IAsyncLifetime
-    {
-        private RedisContainer? _container;
-
-        public string ConnectionString { get; private set; } = string.Empty;
-
-        public async Task InitializeAsync()
-        {
-            _container = new RedisBuilder("redis:7.2-alpine").Build();
-            await _container.StartAsync();
-            ConnectionString = _container.GetConnectionString();
-        }
-
-        public async Task DisposeAsync()
-        {
-            if (_container is not null)
-            {
-                await _container.DisposeAsync();
-            }
-        }
     }
 }

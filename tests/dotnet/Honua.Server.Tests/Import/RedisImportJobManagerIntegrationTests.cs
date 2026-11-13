@@ -54,26 +54,6 @@ public sealed class RedisImportJobManagerIntegrationTests
     }
 
     [IntegrationTest]
-    public async Task LeaderElection_AllowsSingleLeader()
-    {
-        var lockKey = $"test:leader:{Guid.NewGuid():N}";
-        using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
-        using var electionA = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-a");
-        using var electionB = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-b");
-
-        var acquiredA = await electionA.TryAcquireLeadershipAsync();
-        var acquiredB = await electionB.TryAcquireLeadershipAsync();
-
-        acquiredA.Should().BeTrue();
-        acquiredB.Should().BeFalse();
-
-        await electionA.ReleaseLeadershipAsync();
-
-        var acquiredBAfter = await electionB.TryAcquireLeadershipAsync();
-        acquiredBAfter.Should().BeTrue();
-    }
-
-    [IntegrationTest]
     [FlakyTest("In-memory fallback Dequeue with 200ms timeout occasionally returns null under CI load when the Enqueue→Dequeue settle exceeds the wait window. Tracked in #812 quarantine sweep.")]
     public async Task JobQueue_WithoutRedis_UsesInMemoryFallback()
     {
@@ -85,52 +65,6 @@ public sealed class RedisImportJobManagerIntegrationTests
 
         var job = await queue.DequeueAsync(TimeSpan.FromMilliseconds(200));
         job.Should().Be("job-1");
-    }
-
-    [IntegrationTest]
-    public async Task LeaderElection_WithoutRedis_UsesLocalFallbackLeadership()
-    {
-        using var election = new RedisLeaderElection(null, NullLogger.Instance, $"test:leader:{Guid.NewGuid():N}", "instance-a");
-
-        var acquired = await election.TryAcquireLeadershipAsync();
-
-        acquired.Should().BeTrue();
-        election.IsLeader.Should().BeTrue();
-    }
-
-    [IntegrationTest]
-    public async Task LeaderElection_Dispose_ReleasesLeadershipForNextInstance()
-    {
-        var lockKey = $"test:leader:{Guid.NewGuid():N}";
-        using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
-        var electionA = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-a");
-        var electionB = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-b");
-        var disposedA = false;
-
-        try
-        {
-            (await electionA.TryAcquireLeadershipAsync()).Should().BeTrue();
-            (await electionB.TryAcquireLeadershipAsync()).Should().BeFalse();
-
-            // Await the deterministic release path (DisposeAsync) rather than the synchronous
-            // Dispose(): the latter schedules the Redis LockRelease as a fire-and-forget Task.Run,
-            // so the lock can still be held when B polls immediately after, intermittently failing
-            // this test. DisposeAsync awaits the release before returning, removing that race.
-            await electionA.DisposeAsync();
-            disposedA = true;
-
-            (await electionB.TryAcquireLeadershipAsync()).Should().BeTrue(
-                "disposing the current leader should release the Redis lock promptly");
-        }
-        finally
-        {
-            if (!disposedA)
-            {
-                await electionA.DisposeAsync();
-            }
-
-            await electionB.DisposeAsync();
-        }
     }
 
     [IntegrationTest]

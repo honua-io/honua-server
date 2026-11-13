@@ -202,4 +202,19 @@ internal static class ServiceResourceValidationHelpers
 
     internal static bool IsCatalogStorageUnavailable(Exception exception)
         => exception is DbException { SqlState: "42P01" };
+
+    public static IResult CreateAdminValidationProblem<T>(
+        HttpContext context,
+        ResourceValidationResult<T> validation,
+        string fallbackMessage)
+    {
+        var statusCode = validation.ErrorCode switch
+        {
+            ResourceValidationError.AmbiguousIdentifier => StatusCodes.Status409Conflict,
+            ResourceValidationError.InvalidIdentifier => StatusCodes.Status400BadRequest,
+            _ => StatusCodes.Status404NotFound,
+        };
+        return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, validation.ErrorMessage ?? fallbackMessage);
+    }
+
 }

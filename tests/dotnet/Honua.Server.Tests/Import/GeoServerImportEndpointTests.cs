@@ -292,7 +292,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
                     distributedCache,
                     sp.GetRequiredService<ILogger<GeoServerImportJobManager>>(),
                     new StaticHostEnvironment("Production"),
-                    redis));
+                    new ImportCoordinationStores(redis, new InMemoryLeaseStore())));
             });
 
         try
@@ -379,7 +379,6 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         finally
         {
             await isolatedFixture.DisposeAsync();
-            ((IDisposable)coordination.JobManager).Dispose();
         }
     }
 
@@ -486,8 +485,8 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             .Returns(call => underlying.GetProgressAsync(call.Arg<string>(), call.Arg<CancellationToken>()));
         store.SetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(call => underlying.SetProgressAsync(call.Arg<string>(), call.Arg<IOperationProgress>(), call.Arg<TimeSpan?>(), call.Arg<CancellationToken>()));
-        store.TrySetProgressAsync(new OperationProgressWrite(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>()), Arg.Any<OperationStatus>(), Arg.Any<CancellationToken>())
-            .Returns(call => underlying.TrySetProgressAsync(new OperationProgressWrite(call.Arg<string>(), call.Arg<IOperationProgress>(), call.Arg<TimeSpan?>()), call.Arg<OperationStatus>(), call.Arg<CancellationToken>()));
+        store.TrySetProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<OperationStatus>(), Arg.Any<CancellationToken>())
+            .Returns(call => underlying.TrySetProgressAsync(call.Arg<OperationProgressWrite>(), call.Arg<OperationStatus>(), call.Arg<CancellationToken>()));
         var importService = new TestGeoServerImportService(TimeSpan.Zero);
         var fixture = WithoutGeoServerWorker(new WebAppFixture()
             .WithTestLicense(HonuaEdition.Enterprise)
@@ -541,7 +540,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         var store = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns("Development");
-        using var manager = new GeoServerImportJobManager(store, null,
+        var manager = new GeoServerImportJobManager(store, null,
             NullLogger<GeoServerImportJobManager>.Instance, environment);
         const string jobId = "cancelled-stale-worker";
         var queued = GeoServerImportProgress.CreateInitial(jobId,

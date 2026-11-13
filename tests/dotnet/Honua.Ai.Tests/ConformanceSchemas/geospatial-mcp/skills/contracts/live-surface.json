@@ -8,7 +8,7 @@
     },
     {
       "skill": "choosing-a-visualization", "standardTool": "query_features", "profile": "base",
-      "requiredFields": ["serviceId", "layerId"],
+      "requiredFields": ["serviceId", "serviceLayerIndex"],
       "requiredProperties": ["where", "bbox", "bboxSrid", "outFields", "limit", "resultOffset", "returnGeometry", "returnCountOnly", "outSrid", "geometryPrecision"]
     },
     {
@@ -37,7 +37,7 @@
     },
     {
       "skill": "choosing-a-visualization", "standardTool": "apply_style_preset", "profile": "base",
-      "requiredFields": ["serviceId", "layerId", "styleId"], "requiredProperties": []
+      "requiredFields": ["serviceId", "serviceLayerIndex", "styleId"], "requiredProperties": []
     },
     {
       "skill": "choosing-a-visualization", "standardTool": "render_map", "profile": "base",
@@ -51,6 +51,73 @@
     },
     {
       "skill": "choosing-a-visualization", "standardTool": "publish_result", "profile": "base",
+      "requiredFields": ["sourceId"], "requiredProperties": ["targetKind", "visibility", "routePrefix"]
+    },
+    {
+      "skill": "layer-composition", "standardTool": "list_layers", "profile": "base",
+      "requiredFields": [], "requiredProperties": ["filter"]
+    },
+    {
+      "skill": "layer-composition", "standardTool": "create_map_package", "profile": "base",
+      "requiredFields": [], "requiredProperties": ["templateId", "sourceBindings", "styleId", "themeId", "initialView"]
+    },
+    {
+      "skill": "layer-composition", "standardTool": "refine_map_package", "profile": "base",
+      "requiredFields": ["mapPackageId"], "requiredProperties": ["styleId", "themeId", "sourceBindings", "initialView"]
+    },
+    {
+      "skill": "layer-composition", "standardTool": "compose_mixed_protocol_map", "profile": "base",
+      "requiredFields": ["sourceBindings"], "requiredProperties": ["templateId", "styleId", "themeId", "initialView"]
+    },
+    {
+      "skill": "layer-composition", "standardTool": "render_map", "profile": "base",
+      "requiredFields": ["layers", "bbox"],
+      "requiredProperties": ["bboxSrid", "width", "height", "transparent", "maxInlineBytes"],
+      "forbiddenProperties": ["palette", "classBreaks"]
+    },
+    {
+      "skill": "layer-composition", "standardTool": "preview_map_package", "profile": "base",
+      "requiredFields": ["mapPackageId"], "requiredProperties": ["width", "height"]
+    },
+    {
+      "skill": "query-shaping", "standardTool": "list_layers", "profile": "base",
+      "requiredFields": [], "requiredProperties": ["filter"]
+    },
+    {
+      "skill": "query-shaping", "standardTool": "query_features", "profile": "base",
+      "requiredFields": ["serviceId", "serviceLayerIndex"],
+      "requiredProperties": ["where", "bbox", "bboxSrid", "outFields", "limit", "resultOffset", "returnGeometry", "returnCountOnly", "outSrid", "geometryPrecision"]
+    },
+    {
+      "skill": "query-shaping", "standardTool": "summarize_statistics", "profile": "analysis", "fallbackTool": "plan_analysis",
+      "requiredFields": ["source", "statistics"], "requiredProperties": ["groupByFields", "where"]
+    },
+    {
+      "skill": "query-shaping", "standardTool": "plan_analysis", "profile": "base",
+      "requiredFields": ["intent"], "requiredProperties": ["context"]
+    },
+    {
+      "skill": "query-shaping", "standardTool": "validate_plan", "profile": "base",
+      "requiredFields": ["plan"], "requiredProperties": ["plan"]
+    },
+    {
+      "skill": "query-shaping", "standardTool": "execute_plan", "profile": "base",
+      "requiredFields": ["plan"], "requiredProperties": ["plan", "idempotencyKey"]
+    },
+    {
+      "skill": "query-shaping", "standardTool": "reproject_features", "profile": "analysis", "fallbackTool": "plan_analysis",
+      "requiredFields": ["source", "targetSrid"], "requiredProperties": ["sourceSrid", "where"]
+    },
+    {
+      "skill": "publishing", "standardTool": "create_map_package", "profile": "base",
+      "requiredFields": [], "requiredProperties": ["templateId", "sourceBindings", "styleId", "themeId", "initialView"]
+    },
+    {
+      "skill": "publishing", "standardTool": "preview_map_package", "profile": "base",
+      "requiredFields": ["mapPackageId"], "requiredProperties": ["width", "height"]
+    },
+    {
+      "skill": "publishing", "standardTool": "publish_result", "profile": "base",
       "requiredFields": ["sourceId"], "requiredProperties": ["targetKind", "visibility", "routePrefix"]
     }
   ]

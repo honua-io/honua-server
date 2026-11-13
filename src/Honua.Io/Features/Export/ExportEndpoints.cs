@@ -24,13 +24,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Io.Export;
 
-internal static class ExportEndpoints
+internal static partial class ExportEndpoints
 {
     private const long AsyncThreshold = 50_000;
 
     public static void MapExportEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/v{version:apiVersion}/admin/services/{serviceName}/layers/{layerId:int}/export")
+        var group = app.MapGroup("/api/v{version:apiVersion}/admin/services/{serviceName}/layers/{serviceLayerIndex:int}/export")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Export")
@@ -44,7 +44,7 @@ internal static class ExportEndpoints
 
     private static async Task<IResult> HandleExport(
         string serviceName,
-        int layerId,
+        int serviceLayerIndex,
         [FromQuery] string format,
         [FromQuery] string? where,
         [FromQuery] string? bbox,
@@ -80,7 +80,7 @@ internal static class ExportEndpoints
         }
 
         // Validate service + layer against the Metadata v2 graph.
-        var validation = await resourceValidator.ValidateServiceLayerV2Async(serviceName, layerId, cancellationToken);
+        var validation = await resourceValidator.ValidateServiceLayerV2Async(serviceName, serviceLayerIndex, cancellationToken);
         if (!validation.IsValid)
         {
             var statusCode = validation.ErrorCode == ResourceValidationError.NotFound
@@ -94,8 +94,16 @@ internal static class ExportEndpoints
         }
 
         var triple = validation.Resource;
+        if (triple.StorageLayerId is not { } storageLayerId)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                "Layer has no feature storage binding.");
+        }
+
         var resource = triple.Resource;
-        var layerName = ResolveLayerName(resource, layerId);
+        var layerName = ResolveLayerName(resource, serviceLayerIndex);
         var geometryType = MapGeometryType(resource.ReadGeometryType());
         var layerSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
 
@@ -125,7 +133,7 @@ internal static class ExportEndpoints
         using var activity = HonuaTelemetry.StartFeatureActivity(
             "export",
             HonuaTelemetry.Protocols.Admin,
-            layerId.ToString(CultureInfo.InvariantCulture));
+            serviceLayerIndex.ToString(CultureInfo.InvariantCulture));
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceName);
         activity?.SetTag("honua.export.format", format);
 
@@ -141,34 +149,16 @@ internal static class ExportEndpoints
         }
 
         var query = ApplyOutputFieldProjection(countQuery, selectedFields, outFields);
-        long count;
-        var countSw = Stopwatch.StartNew();
-        using (var countActivity = HonuaTelemetry.StartDatabaseActivity(
-            "export.count",
-            layerId.ToString(CultureInfo.InvariantCulture)))
-        {
-            countActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Admin);
-            countActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceName);
-            try
+        var count = await CountFeaturesAsync(featureReader,
+            new(storageLayerId, countQuery, cancellationToken)
             {
-                count = await featureReader.CountAsync(layerId, countQuery, cancellationToken);
-                HonuaTelemetry.SetSuccess(countActivity, ToTelemetryFeatureCount(count));
-            }
-            catch (Exception ex)
-            {
-                HonuaTelemetry.RecordException(countActivity, ex);
-                HonuaTelemetry.RecordException(activity, ex);
-                throw;
-            }
-            finally
-            {
-                HonuaTelemetry.CategorizeLatency(countActivity, countSw.Elapsed.TotalMilliseconds);
-            }
-        }
+                ServiceName = serviceName,
+                ServiceLayerIndex = serviceLayerIndex,
+            }, activity);
 
         activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, count);
 
-        ExportLog.ExportRequested(logger, serviceName, layerId, format, count);
+        ExportLog.ExportRequested(logger, serviceName, serviceLayerIndex, format, count);
 
         var outputSrid = outSR ?? layerSrid;
 
@@ -203,8 +193,11 @@ internal static class ExportEndpoints
                 httpContext.User,
                 httpContext.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value,
                 httpContext.RequestServices.GetService<ITenantContext>());
-            var job = new ExportJob(jobId, serviceName, layerId, layerName, format,
-                query, selectedFields, outputSrid, count, geometryType, submitter);
+            var job = new ExportJob(jobId, serviceName, storageLayerId, layerName, format,
+                query, selectedFields, outputSrid, count, geometryType, submitter)
+            {
+                ServiceLayerIndex = serviceLayerIndex,
+            };
 
             try
             {
@@ -241,7 +234,7 @@ internal static class ExportEndpoints
                 throw;
             }
 
-            ExportLog.AsyncExportQueued(logger, jobId, serviceName, layerId, format, count);
+            ExportLog.AsyncExportQueued(logger, jobId, serviceName, serviceLayerIndex, format, count);
             HonuaTelemetry.SetSuccess(activity, ToTelemetryFeatureCount(count));
             HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
 
@@ -258,7 +251,7 @@ internal static class ExportEndpoints
         }
 
         // Sync path — stream directly
-        var features = streamingStore.StreamFeaturesAsync(layerId, query, cancellationToken);
+        var features = streamingStore.StreamFeaturesAsync(storageLayerId, query, cancellationToken);
 
         try
         {
@@ -269,17 +262,17 @@ internal static class ExportEndpoints
             if (!isBuiltInFormat && pluginFormats.TryGetFormat(format, out var pluginFormat) && pluginFormat is not null)
             {
                 return await WriteFeatureFormatResponseAsync(
-                    httpContext, pluginFormat, features, selectedFields, serviceName, layerId, layerName,
+                    httpContext, pluginFormat, features, selectedFields, serviceName, serviceLayerIndex, layerName,
                     outputSrid, logger, sw, activity);
             }
 
             return builtInFormat switch
             {
                 BuiltInExportFormat.Csv => await WriteFeatureFormatResponseAsync(httpContext, CsvOutputFormat.Instance, features, selectedFields,
-                    serviceName, layerId, layerName, outputSrid, logger, sw, activity),
-                BuiltInExportFormat.Shapefile => await WriteShapefileResponseAsync(httpContext, features, selectedFields, layerId, layerName, geometryType, outputSrid,
+                    serviceName, serviceLayerIndex, layerName, outputSrid, logger, sw, activity),
+                BuiltInExportFormat.Shapefile => await WriteShapefileResponseAsync(httpContext, features, selectedFields, serviceLayerIndex, layerName, geometryType, outputSrid,
                     crsRegistry, serviceName, logger, sw, activity, cancellationToken),
-                BuiltInExportFormat.GeoPackage => await WriteGeoPackageResponseAsync(httpContext, features, selectedFields, layerId, layerName, geometryType, outputSrid,
+                BuiltInExportFormat.GeoPackage => await WriteGeoPackageResponseAsync(httpContext, features, selectedFields, serviceLayerIndex, layerName, geometryType, outputSrid,
                     crsRegistry, serviceName, logger, sw, activity, cancellationToken),
                 _ => ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status400BadRequest,
@@ -289,7 +282,7 @@ internal static class ExportEndpoints
         }
         catch (Exception ex)
         {
-            ExportLog.ExportFailed(logger, serviceName, layerId, format, ex);
+            ExportLog.ExportFailed(logger, serviceName, serviceLayerIndex, format, ex);
             HonuaTelemetry.RecordException(activity, ex);
             HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
             throw;
@@ -302,7 +295,7 @@ internal static class ExportEndpoints
         IAsyncEnumerable<Feature> features,
         ExportField[] fields,
         string serviceName,
-        int layerId,
+        int serviceLayerIndex,
         string layerName,
         int outputSrid,
         ILogger logger,
@@ -322,12 +315,12 @@ internal static class ExportEndpoints
         }
 
         var context = new FeatureOutputFormatContext(
-            serviceName, layerId, layerName, outputFields.MoveToImmutable(), outputSrid);
+            serviceName, serviceLayerIndex, layerName, outputFields.MoveToImmutable(), outputSrid);
 
         var rowCount = await format.WriteAsync(features, context, response.Body, httpContext.RequestAborted)
             .ConfigureAwait(false);
 
-        ExportLog.ExportCompleted(logger, serviceName, layerId, format.FormatId, rowCount, sw.Elapsed.TotalMilliseconds);
+        ExportLog.ExportCompleted(logger, serviceName, serviceLayerIndex, format.FormatId, rowCount, sw.Elapsed.TotalMilliseconds);
         HonuaTelemetry.SetSuccess(activity, ToTelemetryFeatureCount(rowCount));
         HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
         return Results.Empty;
@@ -337,7 +330,7 @@ internal static class ExportEndpoints
         HttpContext httpContext,
         IAsyncEnumerable<Feature> features,
         ExportField[] fields,
-        int layerId,
+        int serviceLayerIndex,
         string layerName,
         ExportGeometryType geometryType,
         int outputSrid,
@@ -365,7 +358,7 @@ internal static class ExportEndpoints
             response.Body, features, fields, geometryType,
             prjWkt, logger, cancellationToken);
 
-        ExportLog.ExportCompleted(logger, serviceName, layerId, "shapefile", result.WrittenCount,
+        ExportLog.ExportCompleted(logger, serviceName, serviceLayerIndex, "shapefile", result.WrittenCount,
             sw.Elapsed.TotalMilliseconds);
         HonuaTelemetry.SetSuccess(activity, ToTelemetryFeatureCount(result.WrittenCount));
         HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
@@ -376,7 +369,7 @@ internal static class ExportEndpoints
         HttpContext httpContext,
         IAsyncEnumerable<Feature> features,
         ExportField[] fields,
-        int layerId,
+        int serviceLayerIndex,
         string layerName,
         ExportGeometryType geometryType,
         int outputSrid,
@@ -421,7 +414,7 @@ internal static class ExportEndpoints
             await using var fileStream = File.OpenRead(gpkgPath);
             await fileStream.CopyToAsync(response.Body, cancellationToken);
 
-            ExportLog.ExportCompleted(logger, serviceName, layerId, "gpkg", featureCount,
+            ExportLog.ExportCompleted(logger, serviceName, serviceLayerIndex, "gpkg", featureCount,
                 sw.Elapsed.TotalMilliseconds);
             HonuaTelemetry.SetSuccess(activity, ToTelemetryFeatureCount(featureCount));
             HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
@@ -498,9 +491,9 @@ internal static class ExportEndpoints
     internal static string SanitizeExportFilename(string serviceName, string layerName)
         => FileUploadSecurity.SanitizeFileName($"{serviceName}_{layerName}");
 
-    private static string ResolveLayerName(MetadataV2Resource resource, int layerId)
+    private static string ResolveLayerName(MetadataV2Resource resource, int serviceLayerIndex)
         => string.IsNullOrWhiteSpace(resource.Metadata.Name)
-            ? $"layer-{layerId.ToString(CultureInfo.InvariantCulture)}"
+            ? $"layer-{serviceLayerIndex.ToString(CultureInfo.InvariantCulture)}"
             : resource.Metadata.Name;
 
     private static ExportField[] ResolveOutputFields(MetadataV2Resource resource, string? outFields)
@@ -570,7 +563,7 @@ internal static class ExportEndpoints
 internal sealed record ExportJob(
     string JobId,
     string ServiceName,
-    int LayerId,
+    int StorageLayerId,
     string LayerName,
     string Format,
     FeatureQuery Query,
@@ -578,4 +571,7 @@ internal sealed record ExportJob(
     int OutputSrid,
     long TotalFeatures,
     ExportGeometryType GeometryType,
-    JobSecurityContext? Submitter = null);
+    JobSecurityContext? Submitter = null)
+{
+    public required int ServiceLayerIndex { get; init; }
+}

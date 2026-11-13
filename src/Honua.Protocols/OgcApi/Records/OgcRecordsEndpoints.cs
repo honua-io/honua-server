@@ -11,6 +11,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Records.Models;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
@@ -375,6 +376,46 @@ internal static class OgcRecordsEndpoints
             return result;
         }
 
+        var resourceCatalogRecords = new List<CatalogRecord>();
+
+        // Resource-level records: one per resource, attributed to its primary publication's service.
+        var resourceRecords = snapshot.Graph.Resources
+            .Select(resource =>
+            {
+                var publications = TenantScopeHelpers.FilterVisiblePublications(
+                        context, snapshot, snapshot.Index.PublicationsByResource[resource.Metadata.Id])
+                    .Where(snapshot.IsRoutable)
+                    .ToArray();
+                var primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();
+                return (Resource: resource, Primary: primary);
+            })
+            .Where(item => item.Primary is not null)
+            .OrderBy(item => item.Primary!.Metadata.Id, StringComparer.Ordinal);
+        var resourceRecordIds = new HashSet<string>(StringComparer.Ordinal);
+        var recordPublications = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);
+        foreach (var item in resourceRecords)
+        {
+            var resource = item.Resource;
+            var primary = item.Primary!;
+            MetadataV2Service? primaryService = snapshot.Index.ServicesById.TryGetValue(primary.ServiceId, out var svc)
+                ? svc
+                : null;
+
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, primaryService))
+            {
+                continue;
+            }
+
+            var record = CreateResourceRecord(resource, primary, primaryService, snapshot, baseUrl,
+                await GetBboxAsync(resource).ConfigureAwait(false));
+            if (resourceRecordIds.Add(record.Feature.Id))
+            {
+                resourceCatalogRecords.Add(record);
+                recordPublications.Add(resource.Metadata.Id, primary);
+            }
+        }
+
+
         // Service-level records: one public record per service name. The V2 graph can
         // contain multiple protocol-specific service rows with the same public name
         // (for example FeatureServer/MapServer/STAC views), but Records should expose
@@ -422,58 +463,17 @@ internal static class OgcRecordsEndpoints
 
             records.Add(CreateServiceRecord(
                 representative,
-                visiblePublications.Select(t => (t.Publication, t.Resource)).ToArray()!,
+                visiblePublications
+                    .Where(item => recordPublications.ContainsKey(item.Resource!.Metadata.Id))
+                    .Select(item => (recordPublications[item.Resource!.Metadata.Id], item.Resource)).ToArray()!,
                 snapshot,
                 baseUrl,
                 mergedModified,
                 CombineBboxes(visiblePublications.Select(p => resourceBboxes[p.Resource!.Metadata.Id]))));
         }
 
-        // Resource-level records: one per resource, attributed to its primary publication's service.
-        var resourceRecords = snapshot.Graph.Resources
-            .Select(resource =>
-            {
-                var publications = TenantScopeHelpers.FilterVisiblePublications(
-                        context, snapshot, snapshot.Index.PublicationsByResource[resource.Metadata.Id])
-                    .Where(snapshot.IsRoutable)
-                    .ToArray();
-                var primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();
-                var storageLayerId = primary is not null ? snapshot.ResolveStorageLayerId(primary) : null;
-                var layerSort = primary is not null
-                    ? storageLayerId ?? primary.LayerIndex ?? int.MaxValue
-                    : int.MaxValue;
-                return (Resource: resource, Publications: publications, Primary: primary, LayerSort: layerSort, HasStorageLayer: storageLayerId.HasValue);
-            })
-            .Where(item => item.Primary is not null)
-            .OrderByDescending(item => item.HasStorageLayer)
-            .ThenBy(item => item.LayerSort)
-            // Multiple protocol resources may share one legacy storage-layer id.
-            // Keep the feature dataset as the canonical layer:{id} catalog record.
-            .ThenBy(item => item.Resource.Type == MetadataV2ResourceType.FeatureDataset ? 0 : 1)
-            .ThenBy(item => item.Resource.Metadata.Id, StringComparer.OrdinalIgnoreCase);
-        var resourceRecordIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var item in resourceRecords)
-        {
-            // Pick the primary publication if any (prefer IsPrimary, else first).
-            var resource = item.Resource;
-            var primary = item.Primary;
-            MetadataV2Service? primaryService = primary is not null && snapshot.Index.ServicesById.TryGetValue(primary.ServiceId, out var svc)
-                ? svc
-                : null;
 
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, primaryService))
-            {
-                continue;
-            }
-
-            var record = CreateResourceRecord(resource, primary, primaryService, snapshot, baseUrl,
-                await GetBboxAsync(resource).ConfigureAwait(false));
-            if (resourceRecordIds.Add(record.Feature.Id))
-            {
-                records.Add(record);
-            }
-        }
-
+        records.AddRange(resourceCatalogRecords);
         return records;
     }
 
@@ -500,13 +500,10 @@ internal static class OgcRecordsEndpoints
             links.Add(Link.Create($"{servicePath}/MapServer", RelationTypes.Alternate, MediaTypes.Json, "MapServer"));
         }
 
-        // External-facing layer ids are the storage layer ids (the v1 catalog's layer.Id).
         var layerIds = visiblePublications
-            .Select(p => snapshot.ResolveStorageLayerId(p.Publication))
-            .Where(id => id.HasValue)
-            .Select(id => id!.Value)
-            // Several protocol-specific service rows can publish the same storage layer (#5510).
-            .Distinct()
+            .Select(static item => item.Publication.Metadata.Id)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
             .ToImmutableArray();
 
         var properties = new OgcRecordProperties
@@ -540,39 +537,35 @@ internal static class OgcRecordsEndpoints
 
     private static CatalogRecord CreateResourceRecord(
         MetadataV2Resource resource,
-        MetadataV2Publication? publication,
+        MetadataV2Publication publication,
         MetadataV2Service? service,
         MetadataV2GraphSnapshot snapshot,
         string baseUrl,
         ImmutableArray<double>? bbox)
     {
-        // Use the storage layer id as the externally-facing v1-compatible identifier
-        // when available; otherwise fall back to the resource id.
-        var storageLayerId = publication is not null
-            ? snapshot.ResolveStorageLayerId(publication)
-            : snapshot.ResolveStorageLayerId(resource);
-        var layerIdString = storageLayerId.HasValue
-            ? storageLayerId.Value.ToString(CultureInfo.InvariantCulture)
-            : resource.Metadata.Id;
+        var publicationId = publication.Metadata.Id;
+        var collectionId = Uri.EscapeDataString(
+            LayerValidationHelpers.AdvertisedCollectionId(publication, resource) ?? resource.Metadata.Id);
 
         var links = ImmutableArray.CreateBuilder<Link>();
-        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"layer:{layerIdString}")}", RelationTypes.Self, MediaTypes.GeoJson, resource.Metadata.Name));
+        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"layer:{publicationId}")}", RelationTypes.Self, MediaTypes.GeoJson, resource.Metadata.Name));
 
         if (IsProtocolEnabled(service, OgcFeaturesProtocolName))
         {
-            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "OGC API Features collection"));
-            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{layerIdString}/items", RelationTypes.Data, MediaTypes.GeoJson, "OGC API Features items"));
+            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{collectionId}", RelationTypes.Alternate, MediaTypes.Json, "OGC API Features collection"));
+            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{collectionId}/items", RelationTypes.Data, MediaTypes.GeoJson, "OGC API Features items"));
         }
 
         if (IsProtocolEnabled(service, StacProtocolName))
         {
-            links.Add(Link.Create($"{baseUrl}/stac/collections/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "STAC collection"));
+            links.Add(Link.Create($"{baseUrl}/stac/collections/{collectionId}", RelationTypes.Alternate, MediaTypes.Json, "STAC collection"));
         }
 
         if (service is { } featureServerService &&
-            IsProtocolEnabled(featureServerService, FeatureServerProtocolName))
+            IsProtocolEnabled(featureServerService, FeatureServerProtocolName) &&
+            publication.LayerIndex is int serviceLayerIndex)
         {
-            links.Add(Link.Create($"{baseUrl}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, featureServerService)}/FeatureServer/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
+            links.Add(Link.Create($"{baseUrl}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, featureServerService)}/FeatureServer/{serviceLayerIndex}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
         }
 
         var properties = new OgcRecordProperties
@@ -582,13 +575,13 @@ internal static class OgcRecordsEndpoints
             Type = "dataset",
             ResourceType = "Layer",
             GeometryType = resource.ReadGeometryType().ToString(),
-            ExternalIds = ImmutableArray.Create(layerIdString, resource.Metadata.Name)
+            ExternalIds = ImmutableArray.Create(publicationId, resource.Metadata.Name)
         };
 
         return new CatalogRecord(
             new OgcRecordFeature
             {
-                Id = $"layer:{layerIdString}",
+                Id = $"layer:{publicationId}",
                 Geometry = CreateExtentGeometry(bbox),
                 Bbox = bbox,
                 Properties = properties,
@@ -596,10 +589,10 @@ internal static class OgcRecordsEndpoints
             },
             bbox,
             Modified: ResolveModified(resource.Metadata),
-            ExternalIds: [layerIdString, resource.Metadata.Name],
+            ExternalIds: [publicationId, resource.Metadata.Name],
             SearchText: BuildSearchText(
-                $"layer:{layerIdString}",
-                layerIdString,
+                $"layer:{publicationId}",
+                publicationId,
                 resource.Metadata.Name,
                 resource.Metadata.Title,
                 resource.Metadata.Description));

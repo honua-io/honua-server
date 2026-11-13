@@ -515,6 +515,49 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         }
     }
 
+    // Takes the schema-mutation advisory lock shared with SeedRunner and holds it until the
+    // returned handle is disposed. Use it when a test writes process-global rows (for example
+    // honua.raster_data) and must also read them back before any parallel fixture seed runs;
+    // RunUnderSchemaMutationLockAsync covers a single action instead.
+    public async Task<IAsyncDisposable> AcquireSchemaMutationLockAsync(CancellationToken cancellationToken = default)
+    {
+        var lockConnection = await GetConnectionAsync().ConfigureAwait(false);
+        try
+        {
+            await ExecuteAdvisoryLockCommandAsync(lockConnection, "SELECT pg_advisory_lock(@key);", cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await lockConnection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        return new SchemaMutationLockLease(lockConnection);
+    }
+
+    private sealed class SchemaMutationLockLease(NpgsqlConnection lockConnection) : IAsyncDisposable
+    {
+        private NpgsqlConnection? _lockConnection = lockConnection;
+
+        public async ValueTask DisposeAsync()
+        {
+            var connection = Interlocked.Exchange(ref _lockConnection, null);
+            if (connection is null)
+            {
+                return;
+            }
+
+            try
+            {
+                await ExecuteAdvisoryLockCommandAsync(connection, "SELECT pg_advisory_unlock(@key);", CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
     /// <summary>
     /// Applies a raw SQL seed/setup script that mutates the literal, process-global
     /// <c>honua</c>/<c>honua_data</c> schemas (e.g. <c>CREATE SCHEMA IF NOT EXISTS honua</c>,

@@ -631,10 +631,10 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             "the refusal must carry a typed problem URI, not about:blank");
         root.GetProperty("status").GetInt32().Should().Be(503);
         root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
-        root.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        root.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
         root.GetProperty("capability").GetString().Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
         root.GetProperty("remediation").GetString().Should().NotBeNullOrWhiteSpace();
-        root.GetProperty("remediationRef").GetString().Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
+        root.GetProperty("remediationRef").GetString().Should().Be(CapabilityUnavailableCodes.SystemDatabaseRemediationRef);
     }
 
     [IntegrationTest]
@@ -678,7 +678,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         document.RootElement.GetProperty("type").GetString()
             .Should().Be(CapabilityUnavailableCodes.ProblemType);
         document.RootElement.GetProperty("missingDependency").GetString()
-            .Should().Be(CapabilityUnavailableCodes.RedisDependency);
+            .Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
     }
 
     [IntegrationTest]

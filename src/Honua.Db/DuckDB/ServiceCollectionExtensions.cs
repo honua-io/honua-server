@@ -195,11 +195,9 @@ internal static class ServiceCollectionExtensions
         // the same scoped connection provider the feature store uses.
         services.AddScoped<IDatabaseHealthChecker, DuckDBDatabaseHealthChecker>();
 
-        // Capability provider for the feature-change transactional outbox (#692). DuckDB is
-        // read-only so it reports SupportsTransactionalOutbox = false. The dispatcher will
-        // skip startup; mutation event delivery falls through to the post-commit publish +
-        // retry queue path. Registered via TryAdd so the Postgres provider wins when both
-        // backends are configured.
+        // DuckDB is read-only, so it reports SupportsTransactionalOutbox = false and the outbox
+        // dispatcher does not start. Registered via TryAdd so the Postgres provider wins when
+        // both backends are configured.
         services.TryAddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxCapabilityProvider,
             Honua.Db.DuckDB.Features.Infrastructure.Events.Outbox.DuckDbOutboxCapabilityProvider>();
 

@@ -12,7 +12,7 @@ public sealed class CacheOptionsValidator : ConfigurationValidator<CacheOptions>
     {
         // Complex business rule validations
         ValidateTtlLogic(options, errors);
-        ValidateFallbackConfiguration(options, errors);
+        ValidateCapacity(options, errors);
         ValidateKeyPrefix(options, errors);
         ValidateBackgroundRefresh(options, errors);
     }
@@ -45,15 +45,9 @@ public sealed class CacheOptionsValidator : ConfigurationValidator<CacheOptions>
         ValidateRange(options.JitterPercentage, 0.0, 0.5, "JitterPercentage", errors);
     }
 
-    private static void ValidateFallbackConfiguration(CacheOptions options, List<string> errors)
+    private static void ValidateCapacity(CacheOptions options, List<string> errors)
     {
-        // When fallback is enabled, validate fallback settings
-        if (options.EnableFallback)
-        {
-            ValidateRange(options.FallbackMaxEntries, 1, 100000, "FallbackMaxEntries", errors);
-            ValidateRange(options.RetryIntervalSeconds, 5, 300, "RetryIntervalSeconds", errors);
-        }
-
+        ValidateRange(options.MaxEntries, 10, 500000, "MaxEntries", errors);
         ValidateRange(options.ResponseCacheMaxEntries, 100, 500000, "ResponseCacheMaxEntries", errors);
         ValidateRange(options.ResponseCacheMaxEntryBytes, 1024, 268435456, "ResponseCacheMaxEntryBytes", errors);
         ValidateRange(options.ResponseCacheMaxBytes, 65536, 1073741824, "ResponseCacheMaxBytes", errors);

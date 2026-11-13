@@ -27,6 +27,8 @@ public sealed class ImageServerKmlTests
         var fixture = await CreateFixtureAsync();
         try
         {
+            await using var heldRasters = await RasterIntegrationTestData.HoldIssue522MosaicAsync(fixture);
+
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/kml/image.kmz");
 
@@ -41,7 +43,7 @@ public sealed class ImageServerKmlTests
             var latLonBox = groundOverlay.Element(Kml + "LatLonBox");
             latLonBox.Should().NotBeNull();
 
-            // Seeded mosaic (SeedIssue522MosaicAsync) aggregates to x[0,4], y[0,2] in WGS84.
+            // Seeded mosaic (HoldIssue522MosaicAsync) aggregates to x[0,4], y[0,2] in WGS84.
             ParseCoordinate(latLonBox!, "north").Should().BeApproximately(2.0, 1e-6);
             ParseCoordinate(latLonBox!, "south").Should().BeApproximately(0.0, 1e-6);
             ParseCoordinate(latLonBox!, "east").Should().BeApproximately(4.0, 1e-6);
@@ -123,7 +125,6 @@ public sealed class ImageServerKmlTests
     {
         var fixture = new WebAppFixture();
         await fixture.InitializeAsync();
-        await RasterIntegrationTestData.SeedIssue522MosaicAsync(fixture);
         return fixture;
     }
 }

@@ -53,7 +53,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_WithCoveredPoint_ReturnsElevationAndSourceMetadata()
     {
-        await SeedFullWorldRasterAsync(123.4);
+        await using var heldRasters = await HoldFullWorldRasterAsync(123.4);
 
         var response = await _fixture.Client.GetAsync(
             "/elevation/0/value?x=0&y=0");
@@ -90,7 +90,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_WithCollectionName_ResolvesDataset()
     {
-        await SeedFullWorldRasterAsync(50);
+        await using var heldRasters = await HoldFullWorldRasterAsync(50);
 
         var response = await _fixture.Client.GetAsync(
             "/elevation/Test%20Layer/value?x=0&y=0");
@@ -107,7 +107,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_WithPointOutsideCoverage_ReturnsOutOfBoundsAndNoData()
     {
-        await RasterIntegrationTestData.ReplaceLayerRastersAsync(
+        await using var heldRasters = await RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -141,7 +141,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_MissingCoordinates_ReturnsBadRequest()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync("/elevation/0/value?x=0");
 
@@ -154,7 +154,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_NonFiniteCoordinate_ReturnsBadRequest()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync(
             $"/elevation/0/value?x=NaN&y=0");
@@ -167,7 +167,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_UnsupportedSrid_ReturnsUnprocessableEntity()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync(
             $"/elevation/0/value?x=0&y=0&srid=999999");
@@ -184,7 +184,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
         // Regression: default SRID is 4326. PostGIS geography only accepts SRID
         // 4326, so latitudes outside [-90, 90] must be rejected at the edge as
         // a stable 422 rather than leaking a provider-side geography exception.
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync("/elevation/0/value?x=0&y=100");
 
@@ -199,7 +199,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_ExplicitWgs84LongitudeOutOfRange_ReturnsUnprocessableEntity()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync("/elevation/0/value?x=200&y=0&srid=4326");
 
@@ -212,7 +212,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_UnknownDataset_ReturnsNotFound()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync("/elevation/999999/value?x=0&y=0");
 
@@ -224,7 +224,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_NoRasterRegistered_ReturnsNotFound()
     {
-        await ClearLayerRastersAsync();
+        await using var heldRasters = await HoldNoRastersAsync();
 
         var response = await _fixture.Client.GetAsync("/elevation/0/value?x=0&y=0");
 
@@ -242,7 +242,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
         // SRID 0/unset before issuing geometry-transform SQL, otherwise the
         // failure surfaces as a provider-side ST_Transform exception instead
         // of the documented 422 problem response.
-        await SeedRasterAsync(srid: 0, value: 1);
+        await using var heldRasters = await HoldRasterAsync(srid: 0, value: 1);
 
         var response = await _fixture.Client.GetAsync("/elevation/0/value?x=0&y=0");
 
@@ -257,7 +257,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_WhenElevationProtocolDisabled_ReturnsNotFound()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
         // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         _fixture.UpdateV2ServiceMetadata(
@@ -287,7 +287,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_WithCoveredLine_ReturnsOrderedSamples()
     {
-        await SeedFullWorldRasterAsync(75);
+        await using var heldRasters = await HoldFullWorldRasterAsync(75);
 
         var line = "LINESTRING(0 0, 0.5 0.5, 1 1)";
         var response = await _fixture.Client.GetAsync(
@@ -327,7 +327,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_WithLineOutsideCoverage_ReturnsAllNoDataSamples()
     {
-        await RasterIntegrationTestData.ReplaceLayerRastersAsync(
+        await using var heldRasters = await RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -366,7 +366,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_WithInvalidWkt_ReturnsUnprocessableEntity()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync(
             $"/elevation/0/profile?line={Uri.EscapeDataString("NOT_VALID_WKT")}");
@@ -379,7 +379,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_WithNonLineStringGeometry_ReturnsUnprocessableEntity()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync(
             $"/elevation/0/profile?line={Uri.EscapeDataString("POINT(0 0)")}");
@@ -394,7 +394,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_MissingLineParameter_ReturnsBadRequest()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var response = await _fixture.Client.GetAsync("/elevation/0/profile");
 
@@ -406,7 +406,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_SampleCountAboveLimit_ReturnsUnprocessableEntity()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var line = "LINESTRING(0 0, 1 1)";
         var response = await _fixture.Client.GetAsync(
@@ -422,7 +422,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_SampleCountBelowMinimum_ReturnsUnprocessableEntity()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var line = "LINESTRING(0 0, 1 1)";
         var response = await _fixture.Client.GetAsync(
@@ -436,7 +436,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_UnsupportedSrid_ReturnsUnprocessableEntity()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var line = "LINESTRING(0 0, 1 1)";
         var response = await _fixture.Client.GetAsync(
@@ -452,7 +452,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     {
         // Regression: default SRID is 4326. Reject any LineString vertex with
         // latitude outside [-90, 90] before reaching the PostGIS geography cast.
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var line = "LINESTRING(0 100, 1 100)";
         var response = await _fixture.Client.GetAsync(
@@ -469,7 +469,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_ExplicitWgs84LongitudeOutOfRange_ReturnsUnprocessableEntity()
     {
-        await SeedFullWorldRasterAsync(1);
+        await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
         var line = "LINESTRING(-200 0, 0 0)";
         var response = await _fixture.Client.GetAsync(
@@ -484,7 +484,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_NoRasterRegistered_ReturnsNotFound()
     {
-        await ClearLayerRastersAsync();
+        await using var heldRasters = await HoldNoRastersAsync();
 
         var line = "LINESTRING(0 0, 1 1)";
         var response = await _fixture.Client.GetAsync(
@@ -501,7 +501,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
         // Regression: profile SQL transforms each sample point into the source
         // raster SRID; a raster registered with SRID 0 must be rejected as a
         // 422 problem response before any PostGIS transform runs.
-        await SeedRasterAsync(srid: 0, value: 1);
+        await using var heldRasters = await HoldRasterAsync(srid: 0, value: 1);
 
         var line = "LINESTRING(0 0, 1 1)";
         var response = await _fixture.Client.GetAsync(
@@ -518,7 +518,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_DefaultSampleCount_AppliesConfiguredDefault()
     {
-        await SeedFullWorldRasterAsync(10);
+        await using var heldRasters = await HoldFullWorldRasterAsync(10);
 
         var line = "LINESTRING(0 0, 1 1)";
         var response = await _fixture.Client.GetAsync(
@@ -538,7 +538,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
         // Regression: profile lines in projected CRSs (e.g. EPSG:3857) must be
         // transformed to WGS84 before any geography cast — PostGIS geography
         // only accepts SRID 4326 input.
-        await SeedFullWorldRasterAsync(42);
+        await using var heldRasters = await HoldFullWorldRasterAsync(42);
 
         // Web Mercator coordinates roughly equivalent to (0,0) → (1,1) in 4326.
         // 1° lon at the equator ≈ 111 195 m → ~157 km diagonal.
@@ -577,7 +577,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     {
         // Regression: ?interval was previously ignored (always set to MaxSampleCount).
         // Now the SQL derives effective_count = ceil(length / interval) + 1, capped.
-        await SeedFullWorldRasterAsync(7);
+        await using var heldRasters = await HoldFullWorldRasterAsync(7);
 
         // ~157 km geodesic line. With interval=50 km we expect ceil(157/50)+1 = 5 samples.
         var line = "LINESTRING(0 0, 1 1)";
@@ -607,7 +607,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_WithIntervalAndSampleCount_PrefersExplicitSampleCount()
     {
-        await SeedFullWorldRasterAsync(7);
+        await using var heldRasters = await HoldFullWorldRasterAsync(7);
 
         var line = "LINESTRING(0 0, 1 1)";
         var response = await _fixture.Client.GetAsync(
@@ -624,7 +624,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_WithMixedResolutionMosaic_ReturnsActionableUnprocessableEntity()
     {
-        await SeedMixedResolutionMosaicAsync();
+        await using var heldRasters = await HoldMixedResolutionMosaicAsync();
 
         var line = "LINESTRING(0 0, 0.1 0)";
         var response = await _fixture.Client.GetAsync(
@@ -635,8 +635,8 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
         (await response.Content.ReadAsStringAsync()).Should().Contain("pixel grids are not aligned");
     }
 
-    private Task SeedFullWorldRasterAsync(double elevationMeters)
-        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+    private Task<IAsyncDisposable> HoldFullWorldRasterAsync(double elevationMeters)
+        => RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -652,8 +652,8 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
                 CreatedAt: RasterIntegrationTestData.WestAcquisition,
                 Srid: 3857));
 
-    private Task SeedRasterAsync(int srid, double value)
-        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+    private Task<IAsyncDisposable> HoldRasterAsync(int srid, double value)
+        => RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -669,8 +669,8 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
                 CreatedAt: RasterIntegrationTestData.WestAcquisition,
                 Srid: srid));
 
-    private Task SeedMixedResolutionMosaicAsync()
-        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+    private Task<IAsyncDisposable> HoldMixedResolutionMosaicAsync()
+        => RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -698,16 +698,6 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
                 CreatedAt: RasterIntegrationTestData.EastAcquisition,
                 Srid: 3857));
 
-    private async Task ClearLayerRastersAsync()
-    {
-        var schemaName = _fixture.CurrentSchema
-            ?? throw new InvalidOperationException("Fixture schema is not initialized.");
-
-        // #2020: route the global honua.raster_data DELETE through the schema-mutation advisory
-        // lock (parameterized overload).
-        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
-            "DELETE FROM honua.raster_data WHERE layer_id = @layerId;",
-            command => command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId),
-            schemaName);
-    }
+    private Task<IAsyncDisposable> HoldNoRastersAsync()
+        => RasterIntegrationTestData.HoldLayerRastersAsync(_fixture, WebAppFixture.TestLayerId);
 }

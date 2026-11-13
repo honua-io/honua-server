@@ -48,10 +48,10 @@ public sealed class CacheOperationsEndpointsTests : IAsyncLifetime
         data.TryGetProperty("isHealthy", out _).Should().BeTrue();
         data.TryGetProperty("isUsingFallback", out _).Should().BeTrue();
         data.TryGetProperty("cacheEnabled", out _).Should().BeTrue();
-        data.TryGetProperty("fallbackEnabled", out _).Should().BeTrue();
+        data.TryGetProperty("fallbackEnabled", out _).Should().BeFalse();
         data.TryGetProperty("keyPrefix", out _).Should().BeTrue();
         data.TryGetProperty("defaultTtlSeconds", out _).Should().BeTrue();
-        data.TryGetProperty("retryIntervalSeconds", out _).Should().BeTrue();
+        data.TryGetProperty("retryIntervalSeconds", out _).Should().BeFalse();
         data.TryGetProperty("generatedAt", out _).Should().BeTrue();
     }
 

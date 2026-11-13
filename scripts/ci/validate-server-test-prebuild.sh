@@ -43,7 +43,7 @@ jq -e '
 "${python_bin}" scripts/ci/server-test-prebuild-receipt.test.py
 "${python_bin}" scripts/ci/summarize-server-test-prebuild-benchmark.test.py
 "${python_bin}" scripts/ci/audit-server-test-prebuild-evidence.test.py
-node --test scripts/ci/trusted-pr-workflow-run.test.js
+node --test scripts/ci/trusted-pr-workflow-run.test.js scripts/ci/trusted-pr-workflow-run-draft-admission.test.js
 "${python_bin}" -m py_compile \
   scripts/ci/plan-server-test-prebuild.py \
   scripts/ci/plan-server-test-prebuild-benchmark.py \

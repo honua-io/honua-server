@@ -270,6 +270,7 @@ internal static class RasterMosaicSql
         // One row per band that has a value at the sample. FIRST/LAST then pick within
         // that band, so a raster that is NoData on band 2 cannot hide the raster that
         // supplied band 2. MIN/MAX compare that same per-band sample.
+        // Keep alignment behind a projection boundary so each band's probes reuse the computed raster.
         var ranked = $"""
             SELECT candidate.id,
                    band.n AS band,
@@ -280,6 +281,7 @@ internal static class RasterMosaicSql
                 SELECT source.*, {aligned} AS aligned_rast
                 FROM source
                 WHERE source.rast IS NOT NULL
+                OFFSET 0
             ) AS candidate
             CROSS JOIN LATERAL generate_series(1, ST_NumBands(candidate.aligned_rast)) AS band(n)
             WHERE candidate.aligned_rast IS NOT NULL

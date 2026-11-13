@@ -60,7 +60,7 @@ public sealed class Wfs20HiddenFieldTests : IClassFixture<Wfs20HiddenFieldTestsF
     public async Task Output_OmitsHiddenFields(string operation, string extra)
     {
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST={operation}&TYPENAMES=test_layer&COUNT=1{extra}");
+            $"/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST={operation}&TYPENAMES=pub-layer-0&COUNT=1{extra}");
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         body.Should().Contain("name");
@@ -78,7 +78,7 @@ public sealed class Wfs20HiddenFieldTests : IClassFixture<Wfs20HiddenFieldTestsF
     public async Task Query_RejectsHiddenFields(string operation, string query)
     {
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST={operation}&TYPENAMES=test_layer&{query}");
+            $"/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST={operation}&TYPENAMES=pub-layer-0&{query}");
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
     }
     [IntegrationTest]
@@ -91,12 +91,12 @@ public sealed class Wfs20HiddenFieldTests : IClassFixture<Wfs20HiddenFieldTestsF
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Update typeName="test_layer">
+              <wfs:Update typeName="pub-layer-0">
                 <wfs:Property>
                   <wfs:ValueReference>category</wfs:ValueReference>
                   <wfs:Value>private-update-5614</wfs:Value>
                 </wfs:Property>
-                <fes:Filter><fes:ResourceId rid="test_layer.1" /></fes:Filter>
+                <fes:Filter><fes:ResourceId rid="pub-layer-0.1" /></fes:Filter>
               </wfs:Update>
             </wfs:Transaction>
             """;

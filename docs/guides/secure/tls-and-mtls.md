@@ -30,7 +30,7 @@ SecurityHeaders__EnableHsts=true
 SecurityHeaders__HstsMaxAge=31536000
 ```
 
-`KnownProxies` must list only trusted hops; `PUBLIC_BASE_URL` drives absolute links and `Location` headers (the request `Host` header is never reflected). Direct Kestrel HTTPS is supported, but the proxy-first pattern keeps certificate rotation out of the app.
+`KnownProxies` must list only trusted hops; when the proxy's address changes (a cloud load balancer), list its subnet in `ForwardedHeaders__KnownNetworks__0` (CIDR) instead. If TLS ends at an edge in front of an HTTP load balancer that rewrites `X-Forwarded-Proto`, set `ForwardedHeaders__ProtoHeaderName` to the header the edge sends (for CloudFront, `CloudFront-Forwarded-Proto`; see [AWS ECS/Fargate](../deploy/cloud-deployments.md#aws-ecsfargate)). `PUBLIC_BASE_URL` drives absolute links and `Location` headers (the request `Host` header is never reflected). Direct Kestrel HTTPS is supported, but the proxy-first pattern keeps certificate rotation out of the app.
 
 ### 2. Encrypt the database connection
 

@@ -1533,7 +1533,8 @@ methods whose names are prefixes of one another stay together. Every child excep
 lists its classes or methods intersected with the parent filter. The remaining child is
 the complement: the parent filter minus everything the others list, so new classes and
 methods have exactly one owner. Children keep the parent's paths, project, budgets and
-report flags. `dispatch_rank` holds the estimate until a full run measures the children.
+report flags. `dispatch_rank` held the estimate until the 11 Nov 2026 full runs measured
+the children (see gate-model.md).
 
 | Parent | Measured job p50 (min) | Children | Estimated child job minutes | Partition granularity |
 |---|---:|---:|---|---|
@@ -1555,3 +1556,24 @@ expands to all of its children. The affected-shard selector ranks one child per 
 family before any family's second child when the routing signals tie, so a change to a
 class split across many children does not take every slot from another changed test's
 owner.
+
+## Admin authentication capacity split (12 November 2026)
+
+Trunk `8558bbce1e` [run 43209990084](https://github.com/honua-io/honua-server/actions/runs/43209990084/job/131180962263)
+exhausted the authentication/credentials shard's 22-minute inner budget with
+output still arriving two seconds before termination (100.2% utilization).
+This is a censored sample, not a completed duration. The recorded baseline is
+[admin-auth-capacity-baseline.json](../../../scripts/ci/fixtures/admin-auth-capacity-baseline.json).
+
+The seven classes now run in four jobs: authentication and operator bearer;
+OAuth and OIDC; API keys; client certificates. Whole classes stay together.
+Every child retains all original source triggers, report flags, project,
+parallelism and 22/32-minute inner/outer budgets. Required checks are unchanged.
+The coverage fixture proves the historical selection has exactly one owner,
+and the containing identity partition includes all four children.
+
+The children conservatively inherit the parent's 21.7-minute dispatch rank;
+these are not measured child durations. PR time-budget deferral therefore stays
+in force until completed scheduled trunk samples justify new ranks. The next
+scheduled full run must establish child durations and policy headroom; no
+post-change reduction is claimed yet. No daytime full CI dispatch is needed.

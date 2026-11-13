@@ -1,0 +1,15 @@
+{
+  "id": "query_features.service_layer_index_result",
+  "schemaRef": "tools/query_features.result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "serviceId": "county_parcels",
+    "serviceLayerIndex": 3,
+    "returnedCount": 0,
+    "features": []
+  },
+  "expected": "tool_result",
+  "canonicalRefs": [
+    "LayerRef"
+  ]
+}

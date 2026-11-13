@@ -80,6 +80,11 @@ test("installed SDK keeps original HTTP open and receives typed cancellation thr
   assert.deepEqual(result.proof.cleanup, { blockerReleased: true, otherClientClosed: true, originalRequestDrained: true });
   assert.equal(result.queryCalls, 2);
   const request = result.calls.find((call) => call.method === "tools/call");
+  for (const call of result.calls.filter((call) => call.method === "tools/call")) {
+    assert.equal(call.params.arguments.serviceLayerIndex, fixture.serviceLayerIndex);
+    assert.equal(Object.hasOwn(call.params.arguments, "layerId"), false);
+  }
+  assert.equal(result.proof.layerId, fixture.serviceLayerIndex);
   const cancellations = result.calls.filter((call) => call.method === "notifications/cancelled");
   assert.equal(cancellations.length, 4);
   assert.notEqual(cancellations[0].session, request.session);

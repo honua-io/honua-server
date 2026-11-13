@@ -30,14 +30,12 @@ public sealed class ApiKeyStoreOutageTests
         var dependencies = Dependencies(store);
 
         var bootstrap = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            BreakGlassPassword,
-            "ApiKey",
+            new ApiKeyPresentation(BreakGlassPassword, "ApiKey", null),
             dependencies,
             NullLogger.Instance,
             CancellationToken.None);
         var unknown = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            "not-the-admin-password",
-            "ApiKey",
+            new ApiKeyPresentation("not-the-admin-password", "ApiKey", null),
             dependencies,
             NullLogger.Instance,
             CancellationToken.None);
@@ -78,7 +76,8 @@ public sealed class ApiKeyStoreOutageTests
         var store = UnavailableStore(new Npgsql.NpgsqlException("database unavailable"));
 
         var bootstrap = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            BreakGlassPassword, "ApiKey", Dependencies(store), NullLogger.Instance, CancellationToken.None);
+            new ApiKeyPresentation(BreakGlassPassword, "ApiKey", null),
+            Dependencies(store), NullLogger.Instance, CancellationToken.None);
         var verifier = new AdminPortalCredentialVerifier(
             Options.Create(new ApiKeyAuthenticationOptions { AdminPassword = BreakGlassPassword, EnvironmentName = "Test" }),
             adminApiKeyStore: store,
@@ -100,7 +99,8 @@ public sealed class ApiKeyStoreOutageTests
         store.Enqueue(record);
 
         var validation = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            "managed-key", "ApiKey", Dependencies(store), NullLogger.Instance, CancellationToken.None);
+            new ApiKeyPresentation("managed-key", "ApiKey", null),
+            Dependencies(store), NullLogger.Instance, CancellationToken.None);
         var verifier = new AdminPortalCredentialVerifier(
             Options.Create(new ApiKeyAuthenticationOptions { AdminPassword = BreakGlassPassword, EnvironmentName = "Test" }),
             adminApiKeyStore: store,
@@ -121,9 +121,11 @@ public sealed class ApiKeyStoreOutageTests
         var store = UnavailableStore(fault);
 
         var bootstrap = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            BreakGlassPassword, "ApiKey", Dependencies(store), NullLogger.Instance, CancellationToken.None);
+            new ApiKeyPresentation(BreakGlassPassword, "ApiKey", null),
+            Dependencies(store), NullLogger.Instance, CancellationToken.None);
         var unknown = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            "not-the-admin-password", "ApiKey", Dependencies(store), NullLogger.Instance, CancellationToken.None);
+            new ApiKeyPresentation("not-the-admin-password", "ApiKey", null),
+            Dependencies(store), NullLogger.Instance, CancellationToken.None);
 
         Assert.Equal(ApiKeyRejection.None, bootstrap.Rejection);
         Assert.Equal(ApiKeyRejection.CredentialStoreUnavailable, unknown.Rejection);
@@ -137,7 +139,8 @@ public sealed class ApiKeyStoreOutageTests
 
         var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-                "managed-key", "ApiKey", Dependencies(store), NullLogger.Instance, CancellationToken.None));
+                new ApiKeyPresentation("managed-key", "ApiKey", null),
+                Dependencies(store), NullLogger.Instance, CancellationToken.None));
 
         Assert.Equal("changed on every attempt", thrown.Message);
     }

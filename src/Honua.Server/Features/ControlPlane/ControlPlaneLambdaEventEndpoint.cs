@@ -250,38 +250,21 @@ internal static partial class ControlPlaneLambdaEventEndpoint
         return IsHandler(selector, ScheduledTickHandler) ? ScheduledTickHandler : null;
     }
 
-    // A present but unentitled Redis is reported as a licence problem; any other absence is a missing Redis.
     private static IResult DependencyUnavailable(HttpContext context, string handler, string? subject)
     {
-        var substrate = context.RequestServices?.GetService<IOptions<DurableJobSubstrateOptions>>()?.Value
-            ?? new DurableJobSubstrateOptions();
-        var unentitled = substrate.Classify(jobStorePresent: false, jobQueuePresent: false)
-            == DurableJobSubstrateCause.RedisNotEntitled;
         var work = subject is null
             ? $"The '{handler}' control-plane event handler"
             : $"The '{handler}' handler for '{subject}'";
 
-        return unentitled
-            ? ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
-                context,
-                work + " needs the durable job and workflow-operation stores, which require the Pro "
-                + "'caching.redis' entitlement. Redis is configured on this server, but the active licence "
-                + "does not entitle it, so the invocation was not run.",
-                missingDependency: null,
-                CapabilityUnavailableCodes.EntitlementRemediation,
-                CapabilityUnavailableCodes.EntitlementRemediationRef,
-                CapabilityUnavailableCodes.DurableJobsCapability,
-                errorCode: CapabilityUnavailableCodes.EntitlementErrorCode,
-                missingEntitlement: CapabilityUnavailableCodes.RedisCacheEntitlement)
-            : ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
-                context,
-                work + " needs the Redis-backed durable job and workflow-operation stores. This server "
-                + "was started without Redis, so the invocation was not run; serving, configuration, and "
-                + "style/render are unaffected.",
-                CapabilityUnavailableCodes.RedisDependency,
-                CapabilityUnavailableCodes.RedisRemediation,
-                CapabilityUnavailableCodes.RedisRemediationRef,
-                CapabilityUnavailableCodes.DurableJobsCapability);
+        return ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+            context,
+            work + " needs the durable job and workflow-operation stores in the system database. This "
+            + "server was started without one, so the invocation was not run; serving, configuration, and "
+            + "style/render are unaffected.",
+            CapabilityUnavailableCodes.SystemDatabaseDependency,
+            CapabilityUnavailableCodes.SystemDatabaseRemediation,
+            CapabilityUnavailableCodes.SystemDatabaseRemediationRef,
+            CapabilityUnavailableCodes.DurableJobsCapability);
     }
 
     internal static string? ExtractBatchJobId(JsonDocument? document)
@@ -466,7 +449,7 @@ internal sealed class ControlPlaneLambdaEventTargets(
             // No handler for a tick that only exists with the durable stores: name the missing
             // dependency rather than a generic "kind unavailable".
             throw new ControlPlaneEventDependencyUnavailableException(
-                CapabilityUnavailableCodes.RedisDependency,
+                CapabilityUnavailableCodes.SystemDatabaseDependency,
                 kind.ToString());
         }
     }
@@ -475,7 +458,7 @@ internal sealed class ControlPlaneLambdaEventTargets(
     {
         if (!DurableControlPlaneComposed)
         {
-            throw new ControlPlaneEventDependencyUnavailableException(CapabilityUnavailableCodes.RedisDependency, subject: null);
+            throw new ControlPlaneEventDependencyUnavailableException(CapabilityUnavailableCodes.SystemDatabaseDependency, subject: null);
         }
     }
 }

@@ -39,6 +39,9 @@ public sealed class TileJsonCredentialEndpointTests : IAsyncLifetime
         resource.AccessPolicy.Should().Be(new AccessPolicy());
     }
 
+    private string StylePublicationId => _fixture.GetCurrentV2GraphSnapshot().Graph.Publications
+        .First(publication => publication.ResourceId == "res-layer-0" && publication.LayerIndex == WebAppFixture.TestLayerId).Metadata.Id;
+
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
@@ -46,7 +49,7 @@ public sealed class TileJsonCredentialEndpointTests : IAsyncLifetime
     [InlineData("dark")]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /tiles/{layerId}/tile.json")]
-    [Endpoint("GET /api/styles/{layerId}.json")]
+    [Endpoint("GET /api/styles/{publicationId}.json")]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
     public async Task ProtectedTileJson_AdvertisedStyleAndTilesKeepBoundToken(string theme)
     {
@@ -94,7 +97,7 @@ public sealed class TileJsonCredentialEndpointTests : IAsyncLifetime
         client.DefaultRequestHeaders.Referrer = new Uri("https://other.example.test/");
         using var wrongBinding = await client.GetAsync(metadataPath + "?token=" + Uri.EscapeDataString(firstToken));
         wrongBinding.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        using var anonymousStyle = await client.GetAsync("/api/styles/0.json");
+        using var anonymousStyle = await client.GetAsync($"/api/styles/{Uri.EscapeDataString(StylePublicationId)}.json");
         anonymousStyle.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         using var anonymousTile = await client.GetAsync("/tiles/0/0/0/0.mvt");
         anonymousTile.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -108,7 +111,7 @@ public sealed class TileJsonCredentialEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
-    [Endpoint("GET /api/styles/{layerId}.json")]
+    [Endpoint("GET /api/styles/{publicationId}.json")]
     public async Task ProtectedStyle_OnlyOwnedTileSourcesInheritToken()
     {
         const string storedStyle = """
@@ -127,7 +130,7 @@ public sealed class TileJsonCredentialEndpointTests : IAsyncLifetime
         using var client = _fixture.CreateClient();
         client.DefaultRequestHeaders.Referrer = new Uri(Referer);
         var token = await IssueTokenAsync(client);
-        using var response = await ReadJsonAsync(client, "/api/styles/0.json?token=" + Uri.EscapeDataString(token));
+        using var response = await ReadJsonAsync(client, $"/api/styles/{Uri.EscapeDataString(StylePublicationId)}.json?token=" + Uri.EscapeDataString(token));
         var root = response.RootElement;
         var sources = root.GetProperty("sources");
         AssertToken(sources.GetProperty("owned").GetProperty("tiles")[0].GetString()!, token);

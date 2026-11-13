@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
@@ -34,27 +35,19 @@ public sealed class AdminLogoutDependencyLossTests
         var store = new AdminAuthSessionStore(sharedSessions, NullLogger<AdminAuthSessionStore>.Instance);
         var otherReplica = new AdminAuthSessionStore(sharedSessions, NullLogger<AdminAuthSessionStore>.Instance);
         using var certificate = SamlTestAssertions.CreateSigningCertificate();
-        await using var fixture = new WebAppFixture()
-            .UseSeed("tests/seed/server.yaml")
-            .ReplaceService(store)
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
-                builder.UseSetting("Saml:Enabled", "true");
-                builder.UseSetting("Saml:EntityId", SamlTestAssertions.Audience);
-                builder.UseSetting("Saml:IdpEntityId", SamlTestAssertions.Issuer);
-                builder.UseSetting("Saml:AssertionConsumerServiceUrl", SamlTestAssertions.Audience + "/saml/acs");
-                builder.UseSetting("Saml:IdpSigningCertificate", SamlTestAssertions.ToBase64Der(certificate));
-            });
+        await using var fixture = CreateSamlFixture(store, certificate);
         await fixture.InitializeAsync();
         var sessionId = await issuer.CreateAuthenticatedSessionAsync("saml", "token", null,
             [new AdminAuthSessionClaim { Type = "sub", Value = "admin" }],
             DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
         Assert.NotNull(await otherReplica.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
         using var client = fixture.CreateClient(allowAutoRedirect: false);
+        client.BaseAddress = new Uri("https://localhost");
         client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}");
+        if (!saml)
+        {
+            await SetCsrfHeaderAsync(client);
+        }
         var path = saml ? "/saml/slo" : "/api/v1/admin/auth/logout";
         var signedRequest = SamlTestAssertions.CreateSignedLogoutRequest(certificate, "admin");
         using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = signedRequest });
@@ -73,6 +66,10 @@ public sealed class AdminLogoutDependencyLossTests
         sharedSessions.RevocationUnavailable = false;
         // The failed response must be honest: revocation has not yet happened.
         Assert.NotNull(await otherReplica.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+        if (!saml)
+        {
+            await SetCsrfHeaderAsync(client);
+        }
         using var retried = await client.PostAsync(path, saml ? content : null);
         Assert.Equal(HttpStatusCode.OK, retried.StatusCode);
         Assert.Contains(retried.Headers.GetValues("Set-Cookie"), cookie =>
@@ -80,6 +77,23 @@ public sealed class AdminLogoutDependencyLossTests
         Assert.Null(await store.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
         Assert.Null(await otherReplica.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
     }
+
+    private static WebAppFixture CreateSamlFixture(
+        AdminAuthSessionStore store, X509Certificate2 certificate) =>
+        new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ReplaceService(store)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
+                builder.UseSetting("Saml:Enabled", "true");
+                builder.UseSetting("Saml:EntityId", SamlTestAssertions.Audience);
+                builder.UseSetting("Saml:IdpEntityId", SamlTestAssertions.Issuer);
+                builder.UseSetting("Saml:AssertionConsumerServiceUrl", SamlTestAssertions.Audience + "/saml/acs");
+                builder.UseSetting("Saml:IdpSigningCertificate", SamlTestAssertions.ToBase64Der(certificate));
+            });
 
     private sealed class RevocationFaultTokenStore : ISecurityTokenStore
     {
@@ -103,5 +117,14 @@ public sealed class AdminLogoutDependencyLossTests
             => RevocationUnavailable
                 ? Task.FromException(new IOException("Dependency unavailable"))
                 : _inner.RevokeAsync(key, cancellationToken);
+    }
+
+    private static async Task SetCsrfHeaderAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync("/api/v1/admin/auth/csrf");
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
+        client.DefaultRequestHeaders.Add("X-Honua-CSRF", document.RootElement.GetProperty("requestToken").GetString());
     }
 }

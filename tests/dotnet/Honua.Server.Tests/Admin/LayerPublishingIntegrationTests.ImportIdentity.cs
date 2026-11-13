@@ -38,10 +38,11 @@ public sealed partial class LayerPublishingIntegrationTests
         feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().BeApproximately(-157.8, 0.000001);
         using var canonical = JsonDocument.Parse(await ReadFeatureServerAsync("id=1", "id ASC"));
         canonical.RootElement.GetProperty("features")[0].GetProperty("attributes").GetProperty("objectid").GetInt64().Should().Be(1899);
+        var catalogLayer = await ReadImportedGeometryCatalogLayerAsync();
         var mcp = await CallGeometryCatalogAsync("honua_query_features", new
         {
-            serviceId = _serviceName,
-            layerId = _layerId,
+            serviceId = catalogLayer.GetProperty("serviceId").GetString(),
+            serviceLayerIndex = catalogLayer.GetProperty("serviceLayerIndex").GetInt32(),
             where = "objectid=1899",
             outFields = new[] { "id", "objectid", "name" },
             limit = 10
@@ -83,6 +84,6 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
     }
 }

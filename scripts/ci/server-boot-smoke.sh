@@ -20,7 +20,8 @@ LOG_SUFFIX=""
 SERVER_LOG="${HONUA_SERVER_BOOT_SMOKE_LOG:-${RUNNER_TEMP:-/tmp}/honua-server-boot-smoke${LOG_SUFFIX}.log}"
 DB_LOG="${HONUA_SERVER_BOOT_SMOKE_DB_LOG:-${RUNNER_TEMP:-/tmp}/honua-server-boot-smoke-postgis${LOG_SUFFIX}.log}"
 DB_INIT_LOG="${HONUA_SERVER_BOOT_SMOKE_DB_INIT_LOG:-${DB_LOG}.init}"
-SERVER_DLL="${HONUA_SERVER_BOOT_SMOKE_DLL:-${REPO_ROOT}/src/Honua.Server/bin/Release/net10.0/Honua.Server.dll}"
+HONUA_TFM="$("${SCRIPT_DIR}/honua-target-framework.sh" "${REPO_ROOT}")"
+SERVER_DLL="${HONUA_SERVER_BOOT_SMOKE_DLL:-${REPO_ROOT}/src/Honua.Server/bin/Release/${HONUA_TFM}/Honua.Server.dll}"
 # Keep the smoke below the workflow's 175-second wrapper while allowing the
 # image's first-boot init to absorb the occasional slow Docker daemon.
 POSTGIS_INIT_WAIT_SECONDS=75

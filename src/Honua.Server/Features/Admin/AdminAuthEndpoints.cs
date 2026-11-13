@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Antiforgery;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -37,6 +38,12 @@ internal static class AdminAuthEndpoints
 
     public static void MapAdminAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        _ = endpoints.MapGet(AdminRedirectPath, (HttpContext context,
+                AdminOidcCallbackEndpoint endpoint, IHttpClientFactory clients) => endpoint.HandleAsync(context, clients))
+            .WithDisplayName("Complete Browser Administrator Sign In")
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
+            .AllowAnonymous();
+
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/auth")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
@@ -51,6 +58,22 @@ internal static class AdminAuthEndpoints
         _ = group.MapGet("/session", HandleGetSession)
             .WithDisplayName("Get Admin Auth Session")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        _ = group.MapGet("/csrf", HandleGetCsrf)
+            .WithDisplayName("Get Browser Session CSRF Token");
+
+        _ = group.MapPost("/session", (HttpContext context,
+                AdminPasswordSignInRequest request, AdminPasswordSessionEndpoint endpoint) => endpoint.HandleAsync(context, request))
+            .WithDisplayName("Sign In Browser Administrator Session")
+            .AddEndpointFilter<RequireHttpsEndpointFilter>()
+            .WithMetadata(new RequireBrowserCsrfMetadata())
+            .WithMetadata(new RateLimitAttribute(5));
+
+        _ = group.MapPost("/password-token", (HttpContext context,
+                AdminPasswordSignInRequest request, AdminPasswordTokenEndpoint endpoint) => endpoint.HandleAsync(context, request))
+            .WithDisplayName("Sign In Browser Administrator Bearer")
+            .AddEndpointFilter<RequireHttpsEndpointFilter>()
+            .WithMetadata(new RateLimitAttribute(5));
 
         _ = group.MapPost("/providers/{providerKey}/authorize-url", HandleCreateAuthorizeUrl)
             .WithDisplayName("Create Admin Auth Authorize Url")
@@ -74,6 +97,18 @@ internal static class AdminAuthEndpoints
         _ = group.MapGet("/providers/{providerKey}/logout-url", HandleGetLogoutUrl)
             .WithDisplayName("Get Admin Auth Logout Url")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+    }
+
+    private static IResult HandleGetCsrf(HttpContext context, [FromServices] IAntiforgery antiforgery)
+    {
+        if (!context.Request.IsHttps)
+        {
+            return TypedResults.BadRequest();
+        }
+
+        context.Response.Headers.CacheControl = "no-store";
+        var tokens = antiforgery.GetAndStoreTokens(context);
+        return TypedResults.Ok(new AdminCsrfResponse { RequestToken = tokens.RequestToken! });
     }
 
     private static async Task<Microsoft.AspNetCore.Http.HttpResults.Ok<AdminAuthConfigResponse>> HandleGetAuthConfig(
@@ -154,6 +189,11 @@ internal static class AdminAuthEndpoints
         HttpContext context,
         [FromServices] AdminAuthSessionStore sessionStore)
     {
+        if (context.User.Identity is { IsAuthenticated: true, AuthenticationType: OidcAuthenticationExtensions.OperatorBearerScheme })
+        {
+            return TypedResults.Ok(CreateSessionResponse(context.User, "operator-bearer", null));
+        }
+
         var sessionId = context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName];
         var session = await sessionStore.GetAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
         if (session is null)
@@ -169,20 +209,21 @@ internal static class AdminAuthEndpoints
             return TypedResults.Ok(new AdminAuthSessionResponse());
         }
 
-        return TypedResults.Ok(new AdminAuthSessionResponse
+        return TypedResults.Ok(CreateSessionResponse(context.User, session.ProviderKey, session.ExpiresAt));
+    }
+
+    private static AdminAuthSessionResponse CreateSessionResponse(
+        ClaimsPrincipal principal, string providerKey, DateTimeOffset? expiresAt) => new()
         {
             IsAuthenticated = true,
-            ProviderKey = session.ProviderKey,
-            ExpiresAt = session.ExpiresAt,
-            Claims = context.User.Claims
-                .Select(claim => new AdminAuthClaimInfo
-                {
-                    Type = claim.Type,
-                    Value = claim.Value
-                })
-                .ToList()
-        });
-    }
+            ProviderKey = providerKey,
+            ExpiresAt = expiresAt,
+            Claims = principal.Claims.Select(claim => new AdminAuthClaimInfo
+            {
+                Type = claim.Type,
+                Value = claim.Value
+            }).ToList()
+        };
 
     private static async Task<IResult> HandleIssueOperatorBearer(
         HttpContext context,
@@ -217,19 +258,21 @@ internal static class AdminAuthEndpoints
                 "Operator bearer issuance is not configured on this server.");
         }
 
-        var expiresInSeconds = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
-        return TypedResults.Ok(new AdminOperatorBearerResponse
+        return TypedResults.Ok(CreateOperatorBearerResponse(issuance));
+    }
+
+    internal static AdminOperatorBearerResponse CreateOperatorBearerResponse(OperatorBearerIssuance issuance) =>
+        new()
         {
             AccessToken = issuance.Token,
             TokenType = "Bearer",
             ExpiresAt = issuance.ExpiresAt,
-            ExpiresIn = expiresInSeconds
-        });
-    }
+            ExpiresIn = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds)
+        };
 
     private static async Task<IResult> HandleCreateAuthorizeUrl(
         string providerKey,
-        AdminAuthAuthorizeUrlRequest _,
+        AdminAuthAuthorizeUrlRequest request,
         HttpContext context,
         [FromServices] IOptions<OidcAuthenticationOptions> oidcOptions,
         [FromServices] AdminAuthSessionStore sessionStore,
@@ -239,6 +282,12 @@ internal static class AdminAuthEndpoints
         if (!OidcProviderCatalog.TryResolveProvider(oidcOptions.Value, providerKey, out var provider))
         {
             return StandardErrorHelpers.CreateNotFound(context, "Identity provider was not found.");
+        }
+
+        var returnTo = request.ReturnTo ?? AdminOidcCallbackEndpoint.DefaultReturnPath;
+        if (!AdminOidcCallbackEndpoint.IsAllowedReturnPath(returnTo))
+        {
+            return TypedResults.BadRequest();
         }
 
         var baseUrlRequirement = RequireConfiguredAdminCallback(context, oidcOptions.Value);
@@ -267,11 +316,14 @@ internal static class AdminAuthEndpoints
             var verifier = GenerateRandomString(64);
             var challenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
             var pendingSessionId = await sessionStore.CreatePendingSessionAsync(
-                provider.Key,
-                state,
-                verifier,
-                DateTimeOffset.UtcNow.Add(PendingSessionLifetime),
-                context.RequestAborted).ConfigureAwait(false);
+                new AdminAuthPendingSession
+                {
+                    ProviderKey = provider.Key,
+                    State = state,
+                    CodeVerifier = verifier,
+                    ExpiresAt = DateTimeOffset.UtcNow.Add(PendingSessionLifetime),
+                    ReturnTo = returnTo
+                }, context.RequestAborted).ConfigureAwait(false);
 
             if (context.Request.Cookies.TryGetValue(AdminAuthSessionStore.AuthSessionCookieName, out var existingSessionId))
             {
@@ -279,11 +331,10 @@ internal static class AdminAuthEndpoints
                 DeleteCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName);
             }
 
-            SetCookie(
-                context.Response,
-                AdminAuthSessionStore.PendingSessionCookieName,
-                pendingSessionId,
-                CreateAdminAuthCookieOptions(context, PendingSessionLifetime));
+            // The provider returns through a top-level cross-site GET.
+            var pendingCookieOptions = CreateAdminAuthCookieOptions(context, PendingSessionLifetime);
+            pendingCookieOptions.SameSite = SameSiteMode.Lax;
+            SetCookie(context.Response, AdminAuthSessionStore.PendingSessionCookieName, pendingSessionId, pendingCookieOptions);
 
             var authorizeUrl = BuildAuthorizeUrl(
                 discovery.AuthorizationEndpoint,
@@ -311,7 +362,7 @@ internal static class AdminAuthEndpoints
         }
     }
 
-    private static async Task<IResult> HandleRequestToken(
+    internal static async Task<IResult> HandleRequestToken(
         string providerKey,
         AdminAuthTokenRequest request,
         HttpContext context,
@@ -775,7 +826,7 @@ internal static class AdminAuthEndpoints
         return $"{BaseUrlResolver.GetBaseUrl(context)}{path}";
     }
 
-    private static CookieOptions CreateAdminAuthCookieOptions(HttpContext context, TimeSpan lifetime)
+    internal static CookieOptions CreateAdminAuthCookieOptions(HttpContext context, TimeSpan lifetime)
     {
         return new CookieOptions
         {

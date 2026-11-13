@@ -1,0 +1,17 @@
+{
+  "id": "render_map.service_layer_index_result",
+  "schemaRef": "tools/render_map.result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "layers": [
+      {
+        "serviceId": "county_parcels",
+        "serviceLayerIndex": 3
+      }
+    ]
+  },
+  "expected": "tool_result",
+  "canonicalRefs": [
+    "LayerRef"
+  ]
+}

@@ -414,11 +414,6 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
             trailers.Add("honua-missing-dependency", exception.MissingDependency);
         }
 
-        if (exception.MissingEntitlement is not null)
-        {
-            trailers.Add("honua-missing-entitlement", exception.MissingEntitlement);
-        }
-
         return trailers;
     }
 

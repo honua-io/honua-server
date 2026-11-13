@@ -1,0 +1,24 @@
+name: Runner label lint
+
+# Pull-request jobs from forks must resolve to GitHub-hosted runners. This
+# check parses the candidate's workflow files and reports when a fork-reachable
+# job could resolve runs-on to a self-hosted runner without the fork guard.
+# pull_request_target keeps this caller on the base branch's version; the
+# shared workflow checks out only the PR's .github/workflows (merge ref, else head), without
+# credentials, and reads it as data.
+on:
+  push:
+    branches: [trunk]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  runner-label-lint:
+    uses: honua-io/.github/.github/workflows/runner-label-lint.yml@ee6ad1b3db454828b77d8765f8770316b2f2db84 # runner-label lint

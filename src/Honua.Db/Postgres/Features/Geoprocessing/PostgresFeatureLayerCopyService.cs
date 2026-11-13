@@ -135,7 +135,7 @@ internal sealed class PostgresFeatureLayerCopyService(
                 Enabled = false
             }, cancellationToken).ConfigureAwait(false);
             var current = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var targetResource = current.Index.ResourcesByStorageLayerId[target.LayerId];
+            var targetResource = current.Index.ResourcesByStorageLayerId[target.StorageLayerId];
             var annotations = resource.Metadata.Annotations.ToDictionary(kv => kv.Key, kv => kv.Value);
             annotations["gp.processId"] = "data-management.copy-features";
             annotations["gp.sourceLayerId"] = sourceLayerId.ToString(CultureInfo.InvariantCulture);
@@ -163,8 +163,8 @@ internal sealed class PostgresFeatureLayerCopyService(
             {
                 Resources = current.Graph.Resources.Select(r => r.Metadata.Id == copied.Metadata.Id ? copied : r).ToArray()
             }, current.Etag, cancellationToken).ConfigureAwait(false);
-            await publisher.SetLayerEnabledAsync(connectionString, target.LayerId, serviceName, true, cancellationToken).ConfigureAwait(false);
-            return new FeatureLayerCopyResult(target.LayerId, count, srid);
+            await publisher.SetLayerEnabledAsync(connectionString, target.StorageLayerId, serviceName, true, cancellationToken).ConfigureAwait(false);
+            return new FeatureLayerCopyResult(target.StorageLayerId, count, srid);
         }
         catch
         {

@@ -30,7 +30,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         var response = new LayerRelationshipBatchResponse
         {
             Layers = request.Layers.Select(item => BuildRelationshipResponse(
-                item.LayerId, ResolveRelationshipResource(item.LayerId, saved).Resource!, saved)).ToArray(),
+                item.StorageLayerId, ResolveRelationshipResource(item.StorageLayerId, saved).Resource!, saved)).ToArray(),
         };
         return Results.Json(ApiResponse<LayerRelationshipBatchResponse>.CreateSuccess(response),
             LayerAuthoringJsonContext.Default.ApiResponseLayerRelationshipBatchResponse);
@@ -43,7 +43,7 @@ internal static partial class AdminLayerAuthoringEndpoints
     {
         if (request.Layers is null || request.Layers.Count is < 1 or > MaxRelationshipBatchLayers
             || request.Layers.Any(item => item is null)
-            || request.Layers.Select(item => item.LayerId).Distinct().Count() != request.Layers.Count)
+            || request.Layers.Select(item => item.StorageLayerId).Distinct().Count() != request.Layers.Count)
         {
             return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
                 $"Supply between 1 and {MaxRelationshipBatchLayers} distinct layers."));
@@ -57,14 +57,14 @@ internal static partial class AdminLayerAuthoringEndpoints
             var replacements = new Dictionary<string, MetadataV2Resource>(StringComparer.Ordinal);
             foreach (var item in request.Layers)
             {
-                var (resource, resolutionError) = ResolveRelationshipResource(item.LayerId, snapshot);
+                var (resource, resolutionError) = ResolveRelationshipResource(item.StorageLayerId, snapshot);
                 if (resource is null || resolutionError is not null)
                 {
                     return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
                         resolutionError ?? "Layer could not be resolved."));
                 }
 
-                var (relationships, error) = BuildRelationships(item.LayerId, resource,
+                var (relationships, error) = BuildRelationships(item.StorageLayerId, resource,
                     new LayerRelationshipUpdateRequest { Relationships = item.Relationships }, snapshot);
                 if (error is not null)
                 {
@@ -113,21 +113,11 @@ internal static partial class AdminLayerAuthoringEndpoints
     }
 
     private static (MetadataV2Resource? Resource, string? Error) ResolveRelationshipResource(
-        int layerId, MetadataV2GraphSnapshot snapshot)
+        int storageLayerId, MetadataV2GraphSnapshot snapshot)
     {
-        // These admin DTOs carry global storage-layer ids, not service-local
-        // LayerIndex values. A resource may have several protocol publications.
-        var resourceIds = snapshot.PublicationsForStorageLayer(layerId)
-            .Where(publication => snapshot.ResolveResource(publication)?.Type
-                is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
-            .Select(publication => publication.ResourceId).Distinct(StringComparer.Ordinal).Take(2).ToArray();
-        if (resourceIds.Length != 1)
-        {
-            return (null, $"Layer {layerId} must resolve to exactly one routable storage-backed resource.");
-        }
-
-        return snapshot.Index.ResourcesById.TryGetValue(resourceIds[0], out var resource)
-            ? (resource, null)
-            : (null, $"Layer {layerId} was not found.");
+        var target = snapshot.ResolveStorageResource(storageLayerId);
+        return target.Resource?.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table
+            ? (target.Resource, null)
+            : (null, $"Layer {storageLayerId} must resolve to exactly one routable storage-backed resource.");
     }
 }

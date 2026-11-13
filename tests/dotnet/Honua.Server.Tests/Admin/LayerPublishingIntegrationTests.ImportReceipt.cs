@@ -43,13 +43,13 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             Enabled = false
         }, connectionId.GetString());
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
         published.Enabled.Should().BeFalse();
-        var route = $"/api/v1/admin/connections/{connectionId.GetString()}/layers/{published.LayerId}/enabled?serviceName={_serviceName}";
+        var route = $"/api/v1/admin/connections/{connectionId.GetString()}/layers/{published.StorageLayerId}/enabled?serviceName={_serviceName}";
         using var enabled = await _client.PutAsync(route,
             JsonContent.Create(new LayerEnabledRequest { Enabled = true }, options: _jsonOptions));
         enabled.StatusCode.Should().Be(HttpStatusCode.OK, await enabled.Content.ReadAsStringAsync());
-        using var items = await GetGeometryJsonAsync($"/ogc/features/collections/{published.LayerId}/items?f=json");
+        using var items = await GetGeometryJsonAsync($"/ogc/features/collections/{published.StorageLayerId}/items?f=json");
         items.RootElement.GetProperty("features").GetArrayLength().Should().Be(1);
         items.RootElement.GetProperty("features")[0].GetProperty("properties").GetProperty("name").GetString()
             .Should().Be("Receipt row");

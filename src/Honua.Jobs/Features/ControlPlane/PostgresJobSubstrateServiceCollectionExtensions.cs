@@ -47,6 +47,7 @@ internal static class PostgresJobSubstrateServiceCollectionExtensions
         services.TryAddSingleton<PostgresExecutionJobStore>();
         services.TryAddSingleton<IExecutionJobStore>(provider => provider.GetRequiredService<PostgresExecutionJobStore>());
         services.TryAddSingleton<IJobStoreClock>(provider => provider.GetRequiredService<PostgresExecutionJobStore>());
+        services.TryAddSingleton<IAdmissionSubmissionCounter>(provider => provider.GetRequiredService<PostgresExecutionJobStore>());
         services.TryAddSingleton<IReconcilableJobSource>(provider => provider.GetRequiredService<PostgresExecutionJobStore>());
         return true;
     }

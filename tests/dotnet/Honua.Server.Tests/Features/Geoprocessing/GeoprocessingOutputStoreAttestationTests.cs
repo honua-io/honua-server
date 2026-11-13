@@ -4,7 +4,6 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Health;
@@ -106,12 +105,10 @@ public sealed class GeoprocessingOutputStoreAttestationTests : IDisposable
         await start.Should().ThrowAsync<OptionsValidationException>();
     }
 
-    [Theory]
+    [Fact]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Readiness_ExposesCredentialFreeEvidenceAndDetectsLostMount(bool durableRedis)
+    public async Task Readiness_ExposesCredentialFreeEvidenceAndDetectsLostMount()
     {
         var options = Attest();
         using var host = BuildHost(GeoprocessingOutputStoreTestHelper.Configuration(options));
@@ -121,16 +118,7 @@ public sealed class GeoprocessingOutputStoreAttestationTests : IDisposable
         migrations.MarkSucceeded();
         var readiness = new ReadinessCheckService(new MockHealthyDatabaseChecker(), migrations,
             NullLogger<ReadinessCheckService>.Instance,
-            outputStoreHealth: host.Services.GetRequiredService<GeoprocessingOutputStoreHealthCheck>(),
-            durableJobSubstrateOptions: Options.Create(new DurableJobSubstrateOptions
-            {
-                RedisConfigured = durableRedis,
-                RedisEntitled = durableRedis,
-                RedisDurabilityAttestation = durableRedis
-                    ? new RedisDurabilityAttestation(
-                        "redis:6379", "aof_enabled=1", "appendfsync=always", "noeviction", DateTimeOffset.UtcNow)
-                    : null
-            }));
+            outputStoreHealth: host.Services.GetRequiredService<GeoprocessingOutputStoreHealthCheck>());
         (await readiness.CheckReadinessAsync()).IsReady.Should().BeTrue();
         var healthy = await health.CheckHealthAsync();
         healthy.Status.Should().Be(HealthStatus.Healthy);

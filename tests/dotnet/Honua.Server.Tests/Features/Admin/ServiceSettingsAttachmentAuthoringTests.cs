@@ -36,7 +36,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     private const string UpdatePath = "/api/v1/admin/services/attachment-authoring-owned/layers/900/metadata";
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task AttachmentIntent_RoundTripsWithoutChangingOtherMetadata_AndInvalidatesAliases()
     {
@@ -93,7 +93,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task AttachmentIntent_OmittedOrNullPreservesLegacyMetadata_ExplicitValueUsesCanonicalDefaults()
     {
         await using var fixture = await CreateFixtureAsync(withEditing: false);
@@ -136,7 +136,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task AttachmentIntent_WhenPublicationRelinks_DoesNotChangeEitherResource()
     {
         await using var fixture = await CreateFixtureAsync(withEditing: true);
@@ -157,7 +157,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task AttachmentIntent_InvalidBoolean_IsRejectedWithoutMutation()
     {
         await using var fixture = await CreateFixtureAsync(withEditing: true);

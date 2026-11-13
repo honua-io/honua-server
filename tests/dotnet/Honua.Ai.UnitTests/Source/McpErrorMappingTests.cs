@@ -118,10 +118,10 @@ public sealed class McpErrorMappingTests
         error.Code.Should().Be(JsonRpcServerError);
         error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
         error.Data.Retryable.Should().BeFalse();
-        error.Data.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        error.Data.MissingDependency.Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
         error.Data.Capability.Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
-        error.Data.Remediation.Should().Be(CapabilityUnavailableCodes.RedisRemediation);
-        error.Data.RemediationRef.Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
+        error.Data.Remediation.Should().Be(CapabilityUnavailableCodes.SystemDatabaseRemediation);
+        error.Data.RemediationRef.Should().Be(CapabilityUnavailableCodes.SystemDatabaseRemediationRef);
     }
 
     [UnitTest]
@@ -138,31 +138,13 @@ public sealed class McpErrorMappingTests
         structured.GetProperty("code").GetString().Should().Be(McpErrorMapper.Codes.Unavailable);
         structured.GetProperty("retryable").GetBoolean().Should().BeFalse();
         structured.GetProperty("missingDependency").GetString()
-            .Should().Be(CapabilityUnavailableCodes.RedisDependency);
+            .Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
         structured.GetProperty("capability").GetString()
             .Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
         structured.GetProperty("remediationRef").GetString()
-            .Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
+            .Should().Be(CapabilityUnavailableCodes.SystemDatabaseRemediationRef);
         structured.GetProperty("error").GetProperty("kind").GetString()
             .Should().Be("PreconditionFailed", "nothing executed, so this is not an execution failure");
-    }
-
-    [UnitTest]
-    public void StoreUnavailableException_UnentitledRedis_ReportsLicenseCodeAndEntitlementNotMissingRedis()
-    {
-        // honua-release#202 follow-up: Redis is deployed but the Pro `caching.redis` entitlement is
-        // absent. Telling the caller a Redis dependency is missing would send an operator to
-        // reinstall something already running, so the receipt names the entitlement instead.
-        var error = McpErrorMapper.Map(
-            GeoprocessingStoreUnavailableException.ForCause(DurableJobSubstrateCause.RedisNotEntitled));
-
-        error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
-        error.Data.Retryable.Should().BeFalse();
-        error.Data.MissingDependency.Should().BeNull("Redis is present; nothing is missing but a licence");
-        error.Data.MissingEntitlement.Should().Be(CapabilityUnavailableCodes.RedisCacheEntitlement);
-        error.Data.Capability.Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
-        error.Data.Remediation.Should().Be(CapabilityUnavailableCodes.EntitlementRemediation);
-        error.Data.Remediation.Should().NotContain("Set ConnectionStrings__Redis");
     }
 
     [UnitTest]

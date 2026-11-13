@@ -4,6 +4,7 @@ name: Focused MCP Certification
 # in nightly-container-build.yml.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'tests/mcp-certification/**'
@@ -31,6 +32,7 @@ concurrency:
 
 jobs:
   inspector-browser-controls:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Public Inspector UI cancellation controls
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -105,6 +107,7 @@ jobs:
           retention-days: 30
 
   request-cancellation-controls:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Installed SDK cancellation harness controls
     runs-on: ubuntu-latest
     timeout-minutes: 10

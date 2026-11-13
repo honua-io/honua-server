@@ -59,7 +59,7 @@ public sealed class QueryFeaturesToolTests
         var response = await DispatchAsync(
             reader,
             QueryFeaturesTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"returnGeometry":false}""");
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":0,"returnGeometry":false}""");
 
         var structured = SuccessfulContent(response);
         structured.GetProperty("features")[0].GetProperty("attributes").TryGetProperty("name", out _).Should().BeTrue();
@@ -92,7 +92,7 @@ public sealed class QueryFeaturesToolTests
             });
 
         var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"outFields":{{outFields}},"returnGeometry":false}""");
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":0,"outFields":{{outFields}},"returnGeometry":false}""");
 
         var structured = SuccessfulContent(response);
         captured.OutFields.Should().NotBeNull();
@@ -120,7 +120,7 @@ public sealed class QueryFeaturesToolTests
             });
 
         var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"outFields":["NAME"],"returnGeometry":false}""");
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":0,"outFields":["NAME"],"returnGeometry":false}""");
 
         SuccessfulContent(response);
         captured.OutFields.Should().NotBeNull();
@@ -141,7 +141,7 @@ public sealed class QueryFeaturesToolTests
     {
         var reader = Substitute.For<IFeatureReader>();
         var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"outFields":{{outFields}}}""");
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":0,"outFields":{{outFields}}}""");
 
         AssertInvalidArgument(response);
         await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
@@ -157,7 +157,7 @@ public sealed class QueryFeaturesToolTests
         var response = await DispatchAsync(
             reader,
             QueryFeaturesTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"outFields":["{{HiddenField}}"]}""");
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":0,"outFields":["{{HiddenField}}"]}""");
 
         AssertInvalidArgument(response);
         await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
@@ -173,7 +173,7 @@ public sealed class QueryFeaturesToolTests
         var response = await DispatchAsync(
             reader,
             QueryFeaturesTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"where":"{{HiddenField}} = 'x'"}""");
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":0,"where":"{{HiddenField}} = 'x'"}""");
 
         AssertInvalidArgument(response);
         await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
@@ -189,7 +189,7 @@ public sealed class QueryFeaturesToolTests
         var response = await DispatchAsync(
             reader,
             DescribeLayerTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"includeRowCount":false}""");
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":0,"includeRowCount":false}""");
 
         var structured = SuccessfulContent(response);
         var names = structured.GetProperty("fields").EnumerateArray()
@@ -293,7 +293,7 @@ public sealed class QueryFeaturesToolTests
             });
 
         var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":0,"returnGeometry":false}""");
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":0,"returnGeometry":false}""");
 
         var structured = SuccessfulContent(response);
         foreach (var value in new[]

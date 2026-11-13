@@ -45,14 +45,14 @@ public sealed class Wfs20DeclaredEditCapabilityTests
     private const string PublicationId = "svc-cities-layer-1";
 
     private const string InsertAction =
-        "<wfs:Insert><honua:cities><honua:name>created</honua:name></honua:cities></wfs:Insert>";
+        "<wfs:Insert><honua:svc-cities-layer-1><honua:name>created</honua:name></honua:svc-cities-layer-1></wfs:Insert>";
 
     private const string UpdateAction =
-        "<wfs:Update typeName=\"honua:cities\"><wfs:Property><wfs:ValueReference>name</wfs:ValueReference>" +
-        "<wfs:Value>changed</wfs:Value></wfs:Property><fes:Filter><fes:ResourceId rid=\"cities.1\"/></fes:Filter></wfs:Update>";
+        "<wfs:Update typeName=\"honua:svc-cities-layer-1\"><wfs:Property><wfs:ValueReference>name</wfs:ValueReference>" +
+        "<wfs:Value>changed</wfs:Value></wfs:Property><fes:Filter><fes:ResourceId rid=\"svc-cities-layer-1.1\"/></fes:Filter></wfs:Update>";
 
     private const string DeleteAction =
-        "<wfs:Delete typeName=\"honua:cities\"><fes:Filter><fes:ResourceId rid=\"cities.1\"/></fes:Filter></wfs:Delete>";
+        "<wfs:Delete typeName=\"honua:svc-cities-layer-1\"><fes:Filter><fes:ResourceId rid=\"svc-cities-layer-1.1\"/></fes:Filter></wfs:Delete>";
 
     [UnitTheory]
     [InlineData(InsertAction)]
@@ -126,6 +126,19 @@ public sealed class Wfs20DeclaredEditCapabilityTests
     }
 
     [UnitTest]
+    public async Task HandleTransactionAsync_ResourceIdForAnotherFeatureType_ReturnsBadRequestBeforeWriting()
+    {
+        // A rid ("cities.1") qualified with a type name that is not advertised.
+        var (status, writer) = await ExecuteAsync(
+            "<wfs:Replace><honua:svc-cities-layer-1><honua:name>after</honua:name></honua:svc-cities-layer-1>" +
+            "<fes:Filter><fes:ResourceId rid=\"cities.1\"/></fes:Filter></wfs:Replace>",
+            ["Query", "Update"]);
+
+        status.Should().Be(StatusCodes.Status400BadRequest);
+        writer.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
     public async Task HandleTransactionAsync_ReplaceOmittingNonEditableField_PreservesStoredValue()
     {
         var (status, writer) = await ExecuteAsync(
@@ -144,7 +157,7 @@ public sealed class Wfs20DeclaredEditCapabilityTests
     public async Task HandleTransactionAsync_InsertInitializingNonEditableField_KeepsCreateBehavior()
     {
         var (status, writer) = await ExecuteAsync(
-            "<wfs:Insert><honua:cities><honua:name>created</honua:name><honua:code>A</honua:code></honua:cities></wfs:Insert>",
+            "<wfs:Insert><honua:svc-cities-layer-1><honua:name>created</honua:name><honua:code>A</honua:code></honua:svc-cities-layer-1></wfs:Insert>",
             ["Query", "Create"]);
 
         status.Should().Be(StatusCodes.Status200OK);
@@ -152,8 +165,8 @@ public sealed class Wfs20DeclaredEditCapabilityTests
     }
 
     private static string ReplaceAction(string properties)
-        => "<wfs:Replace><honua:cities>" + properties +
-           "</honua:cities><fes:Filter><fes:ResourceId rid=\"cities.1\"/></fes:Filter></wfs:Replace>";
+        => "<wfs:Replace><honua:svc-cities-layer-1>" + properties +
+           "</honua:svc-cities-layer-1><fes:Filter><fes:ResourceId rid=\"svc-cities-layer-1.1\"/></fes:Filter></wfs:Replace>";
 
     private static Wfs20Handler.TransactionFeatureChanges Changes(string field, string value)
         => new(

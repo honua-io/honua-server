@@ -81,6 +81,11 @@ internal static class TileCacheExecutionSpecBuilder
             parameters[TileCacheJobParameterKeys.Format] = request.Format;
         }
 
+        if (!string.IsNullOrWhiteSpace(request.TileCompression))
+        {
+            parameters[TileCacheJobParameterKeys.Compression] = request.TileCompression;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.GenerationId))
         {
             parameters[TileCacheJobParameterKeys.GenerationId] = request.GenerationId;
@@ -228,6 +233,13 @@ internal static class TileCacheExecutionSpecBuilder
         parameters.TryGetValue(TileCacheJobParameterKeys.Style, out var style);
         parameters.TryGetValue(TileCacheJobParameterKeys.Format, out var format);
         parameters.TryGetValue(TileCacheJobParameterKeys.GenerationId, out var generationId);
+        parameters.TryGetValue(TileCacheJobParameterKeys.Compression, out var tileCompression);
+        if (!string.IsNullOrWhiteSpace(tileCompression) && !TileArchiveCompression.IsSupported(tileCompression))
+        {
+            error = $"invalid tile-cache parameter 'compression'; expected one of: {TileArchiveCompression.SupportedValues}";
+            return false;
+        }
+
         if (parameters.TryGetValue(TileCacheJobParameterKeys.SchemaName, out var schema)
             && !string.IsNullOrWhiteSpace(schema))
         {
@@ -253,6 +265,7 @@ internal static class TileCacheExecutionSpecBuilder
             Style = string.IsNullOrWhiteSpace(style) ? null : style,
             Format = string.IsNullOrWhiteSpace(format) ? null : format,
             GenerationId = string.IsNullOrWhiteSpace(generationId) ? null : generationId,
+            TileCompression = TileArchiveCompression.Normalize(tileCompression),
         };
 
         try
@@ -286,6 +299,7 @@ internal static class TileCacheExecutionSpecBuilder
             Format = string.IsNullOrWhiteSpace(request.Format)
                 ? null
                 : request.Format.Trim().ToLowerInvariant(),
+            TileCompression = TileArchiveCompression.Normalize(request.TileCompression),
         };
     }
 

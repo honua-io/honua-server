@@ -41,7 +41,6 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IOptions<TenantContextOptions> tenantContextOptions,
         DeploymentCapabilityProfile deploymentProfile,
         DeploymentIdentity deploymentIdentity,
-        IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
         IExecutionJobStore? executionJobStore = null,
         IJobQueue? jobQueue = null,
         Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? backgroundImportRunner = null,
@@ -82,13 +81,8 @@ internal sealed class CapabilityManifestOptionsSnapshot
         ManifestFromRegistry = manifestFeatureOptions.Value.FromRegistry;
         TenantSchemaRoutingEnabled = tenantSchemaOptions.Value.Enabled;
         TenantContextEnabled = tenantContextOptions.Value.Enabled;
-        var substrate = durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions();
-        DurableJobSubstrateCause = substrate.Classify(executionJobStore is not null, jobQueue is not null);
-        DurableJobRuntimeAvailable =
-            DurableJobSubstrateCause == Core.Features.Capabilities.DurableJobSubstrateCause.Available;
+        DurableJobRuntimeAvailable = executionJobStore is not null && jobQueue is not null;
         ProposalStoreAvailable = UnavailableOperationProposalStore.IsDurable(proposalStore);
-        ProposalStoreUnavailableCause = substrate.Classify(jobStorePresent: false, jobQueuePresent: false);
-        RedisDurability = BuildRedisDurability(substrate, ProposalStoreAvailable);
         DeploymentIdentity = deploymentIdentity;
         DeploymentProfile = new CapabilityManifestDeploymentProfile
         {
@@ -133,39 +127,10 @@ internal sealed class CapabilityManifestOptionsSnapshot
     // jobs.runner is advertised only when both the durable store and a runnable queue exist, because a store without a queue would persist submissions that never drain.
     public bool DurableJobRuntimeAvailable { get; }
 
-    public DurableJobSubstrateCause DurableJobSubstrateCause { get; }
-
-    // Proposals are stored in Redis, so the job store being present does not make them available.
+    // The proposal store is composed separately from the job store and queue, so it is reported on its own.
     public bool ProposalStoreAvailable { get; }
-
-    public DurableJobSubstrateCause ProposalStoreUnavailableCause { get; }
-
-    // The Redis durability outcome is published only next to an available proposal store so it is not read as a reason a capability is withheld.
-    public CapabilityManifestRedisDurability? RedisDurability { get; }
 
     public CapabilityManifestDeploymentProfile DeploymentProfile { get; }
 
     public DeploymentIdentity DeploymentIdentity { get; }
-
-    private static CapabilityManifestRedisDurability? BuildRedisDurability(
-        DurableJobSubstrateOptions substrate,
-        bool redisBackedStoreAvailable)
-    {
-        if (!redisBackedStoreAvailable || substrate.RedisDurabilityStatus is not { } status)
-        {
-            return null;
-        }
-
-        if (substrate.RedisDurabilityAttestation is not null || substrate.RedisDurabilityFailure is not { } cause)
-        {
-            return new CapabilityManifestRedisDurability { Status = status };
-        }
-
-        return new CapabilityManifestRedisDurability
-        {
-            Status = status,
-            Cause = cause.ToString(),
-            Remediation = DurableJobSubstrateRemediation.For(cause),
-        };
-    }
 }

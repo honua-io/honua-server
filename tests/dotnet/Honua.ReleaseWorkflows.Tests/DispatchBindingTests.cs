@@ -231,7 +231,8 @@ public sealed class DispatchBindingTests
         Assert.Contains("if-no-files-found: error", common, StringComparison.Ordinal);
         Assert.Contains("release-compose-file: docker/cite/ogc-api-features/compose.yml", caller, StringComparison.Ordinal);
         Assert.Contains("'server-cite-conformance'", caller, StringComparison.Ordinal);
-        Assert.Contains("tested-honua-git-sha: ${{ github.sha }}", caller, StringComparison.Ordinal);
+        Assert.Contains("tested-honua-git-sha: ${{ inputs.honua_image != '' && inputs.source_sha || github.sha }}", caller, StringComparison.Ordinal);
+        Assert.Contains("source_sha:", caller, StringComparison.Ordinal);
     }
 
     private static Task<(int ExitCode, string Output, string Error, string Calls, string Receipt)> DispatchAsync(string scenario, params string[] arguments)

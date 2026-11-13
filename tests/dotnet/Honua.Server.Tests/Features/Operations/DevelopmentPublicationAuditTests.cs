@@ -29,7 +29,7 @@ public sealed class DevelopmentPublicationAuditTests
         publisher.ValidateTableForPublishAsync(Arg.Any<string>(), Arg.Any<TablePublishValidationRequest>(), Arg.Any<CancellationToken>())
             .Returns(new TablePublishValidationResult { IsValid = true, Status = "valid", Schema = "public", Table = "parcels", ServiceName = "default" });
         publisher.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new PublishedLayerSummary { LayerId = 321, LayerName = "parcels", Schema = "public", Table = "parcels", GeometryType = "Polygon", Srid = 4326, ServiceName = "default" });
+            .Returns(new PublishedLayerSummary { StorageLayerId = 321, LayerName = "parcels", Schema = "public", Table = "parcels", GeometryType = "Polygon", Srid = 4326, ServiceName = "default" });
         var resolver = Substitute.For<ISecureConnectionResolver>();
         resolver.ResolveConnectionStringAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
         resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");

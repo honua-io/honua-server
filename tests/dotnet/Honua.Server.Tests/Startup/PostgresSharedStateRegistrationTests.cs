@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Infrastructure.Coordination;
@@ -21,12 +22,7 @@ public sealed class PostgresSharedStateRegistrationTests
     public async Task AddPostgresSharedState_WithASystemDatabase_ResolvesThePostgresStores()
     {
         await using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=honua;Username=honua;Password=honua");
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(dataSource);
-        services.AddPostgresSharedState(new ConfigurationBuilder().Build());
-
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = BuildProvider(dataSource);
 
         provider.GetRequiredService<IVersionJobStore>().Should().BeOfType<PostgresVersionJobStore>();
         provider.GetRequiredService<ITileCacheGenerationCheckpointStore>().Should().BeOfType<PostgresTileCacheGenerationCheckpointStore>();
@@ -35,13 +31,39 @@ public sealed class PostgresSharedStateRegistrationTests
     [UnitTest]
     public async Task AddPostgresSharedState_WithoutASystemDatabase_ResolvesProcessLocalStores()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddPostgresSharedState(new ConfigurationBuilder().Build());
-
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = BuildProvider(dataSource: null);
 
         provider.GetRequiredService<IVersionJobStore>().Should().BeOfType<InMemoryVersionJobStore>();
         provider.GetRequiredService<ITileCacheGenerationCheckpointStore>().Should().BeOfType<InMemoryTileCacheGenerationCheckpointStore>();
+    }
+
+    [UnitTest]
+    public void AddPostgresSharedState_WithoutSystemDataSource_RegistersNoLeaseStore()
+    {
+        using var provider = BuildProvider(dataSource: null);
+
+        provider.GetService<ILeaseStore>().Should().BeNull();
+    }
+
+    [UnitTest]
+    public void AddPostgresSharedState_WithSystemDataSource_RegistersPostgresLeaseStore()
+    {
+        using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=honua;Username=honua");
+        using var provider = BuildProvider(dataSource);
+
+        provider.GetService<ILeaseStore>().Should().BeOfType<PostgresLeaseStore>();
+    }
+
+    private static ServiceProvider BuildProvider(NpgsqlDataSource? dataSource)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        if (dataSource is not null)
+        {
+            services.AddSingleton(dataSource);
+        }
+
+        services.AddPostgresSharedState(new ConfigurationBuilder().Build());
+        return services.BuildServiceProvider();
     }
 }

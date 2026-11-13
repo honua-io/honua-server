@@ -815,7 +815,7 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
+        return JsonElement.Parse(await response.Content.ReadAsStringAsync());
     }
 
     private async Task<JsonElement> SynchronizeDownloadWithResponseAsync(string replicaId, long replicaServerGen)
@@ -833,7 +833,7 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
+        return JsonElement.Parse(await response.Content.ReadAsStringAsync());
     }
 
     private async Task UnregisterReplicaAsync(string replicaId)

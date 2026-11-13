@@ -23,15 +23,15 @@ drift.
 <!-- BEGIN GENERATED DOTNET BASE IMAGE INVENTORY -->
 | Dockerfile | Build argument | Image reference |
 | --- | --- | --- |
-| `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
-| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee` |
-| `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
-| `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:62028293921f5bd6db3d9f9119cd29cd926dfd3c2336da23b09f425e40c3c832` |
-| `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
-| `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
-| `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:62028293921f5bd6db3d9f9119cd29cd926dfd3c2336da23b09f425e40c3c832` |
-| `docker/worker-customcode-dotnet/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
-| `docker/worker-gdal/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
+| `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
+| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:bfd912c83295ce66d4b706ebb8541b9f14259b0e76fbb88b2751f58ce2399d2e` |
+| `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
+| `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:9cab4d7d886226d47b5489ef9abf0544e2f109fde11a8acc190217610af26c00` |
+| `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:9cab4d7d886226d47b5489ef9abf0544e2f109fde11a8acc190217610af26c00` |
+| `docker/worker-customcode-dotnet/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
+| `docker/worker-gdal/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` |
 <!-- END GENERATED DOTNET BASE IMAGE INVENTORY -->
 
 ### Other pinned serving bases
@@ -50,7 +50,7 @@ upstream contents deterministic so nightly Trivy stops re-uploading the same
 advisories under shifting layers and (b) brings the Functions image in line with
 the existing platform Dockerfile pattern (`Dockerfile`,
 `docker/Dockerfile.aot`, `docker/Dockerfile.lambda{,.aot}`). Refresh cadence:
-explicit PR per published image. The 2026-10-19 refresh moves off host 4.1053.200.3 (ASP.NET Core 8.0.30 and worker 9.0.19) to host 4.1055.250.1, whose shared frameworks are ASP.NET Core 8.0.32, the 9.0.21 worker, and Microsoft.NETCore.App 10.0.13. The floating `4-dotnet-isolated9.0-appservice` tag still resolves to ASP.NET Core 8.0.31. The 2026-11-04 refresh moves to host 4.1055.300.2, whose shared frameworks are 8.0.33, 9.0.22 and 10.0.14, together with the .NET 10.0.14 SDK, ASP.NET Core and runtime-deps images, the GDAL worker runtime, and the Native AOT toolchain the SDK restores (Microsoft.DotNet.ILCompiler 10.0.14, the first release outside GHSA-p3jp-9v83-76w9). The generated .NET inventory also records the
+explicit PR per published image. The 2026-10-19 refresh moves off host 4.1053.200.3 (ASP.NET Core 8.0.30 and worker 9.0.19) to host 4.1055.250.1, whose shared frameworks are ASP.NET Core 8.0.32, the 9.0.21 worker, and Microsoft.NETCore.App 10.0.13. The floating `4-dotnet-isolated9.0-appservice` tag still resolves to ASP.NET Core 8.0.31. The 2026-11-04 refresh moves to host 4.1055.300.2, whose shared frameworks are 8.0.33, 9.0.22 and 10.0.14, together with the .NET 10.0.14 SDK, ASP.NET Core and runtime-deps images, the GDAL worker runtime, and the Native AOT toolchain the SDK restores (Microsoft.DotNet.ILCompiler 10.0.14, the first release outside GHSA-p3jp-9v83-76w9). The 2026-11-11 refresh moves the .NET SDK (10.0.404), ASP.NET Core and runtime-deps images, the GDAL worker runtime and the Native AOT toolchain to 10.0.15, clearing CVE-2026-114146, CVE-2026-114147 and CVE-2026-114149 in the ASP.NET Core runtime and CVE-2026-109518 in apt; the Functions host pin is unchanged. The generated .NET inventory also records the
 digest-pinned auxiliary `docker/Dockerfile.lambda.aot.simple`; it remains outside
 the platform publish matrix. Developer images, including `docker/Dockerfile.dev`, are now digest-pinned
 and included in the generated inventory.

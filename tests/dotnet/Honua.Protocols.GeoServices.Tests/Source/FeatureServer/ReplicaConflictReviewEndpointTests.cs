@@ -669,7 +669,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
                 Action = "mergeFields",
                 FieldValues = new Dictionary<string, JsonElement>
                 {
-                    ["name"] = JsonDocument.Parse("\"merged\"").RootElement.Clone(),
+                    ["name"] = JsonElement.Parse("\"merged\""),
                 },
             }));
 
@@ -704,10 +704,9 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
                 Action = "mergeFields",
                 FieldValues = new Dictionary<string, JsonElement>
                 {
-                    ["name"] = JsonDocument.Parse("\"hijacked\"").RootElement.Clone(),
-                    ["objectid"] = JsonDocument.Parse(
-                        bystanderObjectId.ToString(System.Globalization.CultureInfo.InvariantCulture))
-                        .RootElement.Clone(),
+                    ["name"] = JsonElement.Parse("\"hijacked\""),
+                    ["objectid"] = JsonElement.Parse(
+                        bystanderObjectId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 },
             }));
 

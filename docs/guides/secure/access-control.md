@@ -26,7 +26,7 @@ In the [API explorer](../../reference/openapi-and-explorer.md), run `PUT /api/v1
 }
 ```
 
-Reads stay public; writes now require the `editors` role. Omit `allowedRoles`/`allowedWriteRoles` fields you don't want to change — only supplied fields are patched. Per-layer metadata (including layer-level policy) is managed via `PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata`.
+Reads stay public; writes now require the `editors` role. Omit `allowedRoles`/`allowedWriteRoles` fields you don't want to change — only supplied fields are patched. Per-layer metadata (including layer-level policy) is managed via `PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata`.
 
 ### 2. Create a role
 

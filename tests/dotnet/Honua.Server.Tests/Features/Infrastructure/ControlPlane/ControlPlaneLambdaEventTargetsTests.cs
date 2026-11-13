@@ -48,7 +48,7 @@ public sealed class ControlPlaneLambdaEventTargetsTests
         var act = () => targets.ReconcileBatchJobAsync("batch-job-1", CancellationToken.None);
 
         (await act.Should().ThrowAsync<ControlPlaneEventDependencyUnavailableException>())
-            .Which.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+            .Which.MissingDependency.Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
     }
 
     [UnitTest]
@@ -60,7 +60,7 @@ public sealed class ControlPlaneLambdaEventTargetsTests
         var act = () => targets.RunBackstopAsync(CancellationToken.None);
 
         (await act.Should().ThrowAsync<ControlPlaneEventDependencyUnavailableException>())
-            .Which.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+            .Which.MissingDependency.Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
     }
 
     [UnitTest]
@@ -87,7 +87,7 @@ public sealed class ControlPlaneLambdaEventTargetsTests
         var act = () => targets.RunScheduledTickAsync(kind, CancellationToken.None);
 
         var refusal = (await act.Should().ThrowAsync<ControlPlaneEventDependencyUnavailableException>()).Which;
-        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
         refusal.Subject.Should().Be(kind.ToString());
     }
 

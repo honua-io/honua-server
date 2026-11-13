@@ -417,8 +417,8 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/share/traffic")]
     [Endpoint("GET /api/v1/admin/share/traffic/series")]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic")]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic/series")]
     public async Task TrafficEndpoints_ReturnAggregateAndPerItemSummaryAndSeries()
     {
         const string range = "periodStart=2026-05-25T00:00:00Z&periodEnd=2026-05-25T02:00:00Z";
@@ -458,8 +458,8 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic")]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic/series")]
     public async Task PerItemTraffic_WithoutResourceId_MatchesServiceAndLayerBuckets()
     {
         const string range = "periodStart=2026-05-25T00:00:00Z&periodEnd=2026-05-25T02:00:00Z";
@@ -539,7 +539,7 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic")]
     public async Task PerItemTraffic_ServiceNameMatch_IsCaseSensitive()
     {
         const string range = "periodStart=2026-05-25T00:00:00Z&periodEnd=2026-05-25T02:00:00Z";
@@ -582,7 +582,7 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
         {
             resourceId = $"content-{serviceName}",
             serviceName,
-            layerId = 7,
+            serviceLayerIndex = 7,
             displayName = displayName ?? $"{serviceName} export",
             destinationType,
             destinationConfig = destinationConfig ?? destinationType switch
@@ -790,8 +790,8 @@ public sealed class ShareAdminTrafficUnavailableTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/share/traffic")]
     [Endpoint("GET /api/v1/admin/share/traffic/series")]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic")]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic/series")]
     public async Task TrafficEndpoints_WhenStoreUnavailable_ReturnServiceUnavailable()
     {
         const string range = "periodStart=2026-05-25T00:00:00Z&periodEnd=2026-05-25T02:00:00Z";

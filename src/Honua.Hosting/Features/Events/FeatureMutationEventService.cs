@@ -26,8 +26,12 @@ internal sealed class FeatureMutationEventService(
 
     public bool OutboxEnabled => _outboxCapabilityProvider?.SupportsTransactionalOutbox == true;
 
-    public Task InvalidateLayerAsync(string? serviceId, int layerId, CancellationToken cancellationToken)
-        => _outputCacheInvalidationService?.InvalidateEditedLayerAsync(serviceId, layerId, cancellationToken)
+    public Task InvalidateLayerAsync(string? serviceId, int serviceLayerIndex, CancellationToken cancellationToken)
+        => _outputCacheInvalidationService?.InvalidateEditedLayerAsync(serviceId, serviceLayerIndex, cancellationToken)
+           ?? Task.CompletedTask;
+
+    public Task InvalidateStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
+        => _outputCacheInvalidationService?.InvalidateEditedStorageLayerAsync(storageLayerId, cancellationToken)
            ?? Task.CompletedTask;
 
     public Task InvalidateCollectionAsync(string? collectionId, CancellationToken cancellationToken)
@@ -43,10 +47,7 @@ internal sealed class FeatureMutationEventService(
     public async Task InvalidatePublishedLayerAsync(MetadataV2Publication publication, int storageLayerId)
     {
         ArgumentNullException.ThrowIfNull(publication);
-        await InvalidateLayerAsync(
-            null,
-            LayerValidationHelpers.QueryCacheLayerId(publication, storageLayerId),
-            CancellationToken.None).ConfigureAwait(false);
+        await InvalidateStorageLayerAsync(storageLayerId, CancellationToken.None).ConfigureAwait(false);
 
         var publicationId = publication.Metadata.Id;
         if (!string.IsNullOrWhiteSpace(publicationId))
@@ -214,7 +215,7 @@ internal sealed class FeatureMutationEventService(
         // When the active provider supports a transactional outbox, the outbox row was
         // committed inside the mutation transaction and the dispatcher will publish it.
         // Skipping this fire-and-forget publish prevents a duplicate event from racing the
-        // dispatcher and avoids charging the request hot path for an extra Redis/append round trip.
+        // dispatcher and avoids charging the request hot path for an extra append round trip.
         if (OutboxEnabled)
         {
             return;

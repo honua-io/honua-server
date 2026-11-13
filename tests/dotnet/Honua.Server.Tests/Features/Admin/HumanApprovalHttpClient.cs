@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Security.Claims;
+using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using System.Net.Http.Json;
@@ -46,6 +47,7 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
     {
         provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(subject, subject, ["admin"], tenantId);
         var client = fixture.CreateClient();
+        client.BaseAddress = new Uri("https://localhost");
         try
         {
             using var authorize = await client.PostAsJsonAsync("/api/v1/admin/auth/providers/oidc/authorize-url", new { });
@@ -67,6 +69,10 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
                 claim => new Claim(claim.Type, claim.Value)), OidcAuthenticationExtensions.AdminSessionScheme));
             var actor = CanonicalSecurityActor.Resolve(principal);
             actor.Should().NotBeNull();
+            using var csrfResponse = await client.GetAsync("/api/v1/admin/auth/csrf");
+            csrfResponse.EnsureSuccessStatusCode();
+            using var csrf = JsonDocument.Parse(await csrfResponse.Content.ReadAsStringAsync());
+            client.DefaultRequestHeaders.Add("X-Honua-CSRF", csrf.RootElement.GetProperty("requestToken").GetString());
             return new HumanApprovalHttpClient(client, actor!.ActorId);
         }
         catch

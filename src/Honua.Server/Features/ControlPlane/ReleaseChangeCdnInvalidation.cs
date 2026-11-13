@@ -29,7 +29,8 @@ internal sealed partial class ReleaseChangeCdnInvalidation(
         {
             if (await new PostgresCdnReleaseRecord(dataSource).TryRecordChangeAsync(release, stoppingToken).ConfigureAwait(false))
             {
-                var result = await invalidation.InvalidateNowAsync(CdnPaths.Everything, stoppingToken).ConfigureAwait(false);
+                var result = await invalidation.InvalidateNowAsync(CdnPaths.Everything, stoppingToken, CdnPurgeCause.Release(release))
+                    .ConfigureAwait(false);
                 var outcome = result.Outcome.ToString();
                 Log.ReleaseChanged(logger, release, outcome, result.Detail ?? string.Empty);
             }

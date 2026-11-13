@@ -246,8 +246,8 @@ internal sealed record GeocodeAddressesResponse
 internal sealed record GeocodeAddressLocation
 {
     // Esri geocodeAddresses reports a ResultID on every location that correlates it back to
-    // the submitted record (the OBJECTID/ResultID supplied in the request). Honua assigns the
-    // zero-based input index so clients can map each location to its input even when an input
+    // the submitted record: Honua emits the record's OBJECTID, or its one-based position when the
+    // record has none, so clients can map each location to its input even when an input
     // produced no match. Emitted first to mirror the Esri response field ordering.
     [JsonPropertyName("resultId")]
     public required int ResultId { get; init; }

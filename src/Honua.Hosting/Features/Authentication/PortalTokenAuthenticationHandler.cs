@@ -23,6 +23,8 @@ internal sealed class PortalTokenAuthenticationHandler(
     internal const string GeoServicesAuthorizationHeader = "X-Esri-Authorization";
 
     private const string InvalidTokenMessage = "The supplied portal token is invalid, expired, or bound to a different client.";
+    private const string SourceRefusedMessage = "Too many failed authentication attempts from this source.";
+    private const int PortalTokenLength = 64;
 
     private readonly IPortalTokenIssuer _tokenIssuer = tokenIssuer ?? throw new ArgumentNullException(nameof(tokenIssuer));
 
@@ -50,8 +52,19 @@ internal sealed class PortalTokenAuthenticationHandler(
             return AuthenticateResult.Success(new AuthenticationTicket(validation.Principal, Scheme.Name));
         }
 
-        var apiKeyPrincipal = await TryAuthenticateApiKeyAsync(token).ConfigureAwait(false);
-        if (apiKeyPrincipal is not null)
+        // An unknown or expired issued token is never an API key, so it neither reaches the key check nor counts as a failed attempt.
+        if (HasIssuedTokenShape(token))
+        {
+            return AuthenticateResult.Fail(InvalidTokenMessage);
+        }
+
+        var apiKey = await TryAuthenticateApiKeyAsync(token).ConfigureAwait(false);
+        if (apiKey.Rejection == ApiKeyRejection.SourceRefused)
+        {
+            return AuthenticateResult.Fail(SourceRefusedMessage);
+        }
+
+        if (apiKey.Success?.Principal is { } apiKeyPrincipal)
         {
             if (fromQuery && HasAdministrativeAuthority(apiKeyPrincipal))
             {
@@ -84,13 +97,18 @@ internal sealed class PortalTokenAuthenticationHandler(
            principal.FindAll(AdminApiKeyPermission.PermissionClaimType)
                .Any(claim => AdminApiKeyPermission.IsAdministrativeGrant(claim.Value));
 
-    private async Task<ClaimsPrincipal?> TryAuthenticateApiKeyAsync(string token)
+    // Portal tokens are 64 lowercase hex characters and OIDC access tokens are JWTs; managed keys carry their own prefix.
+    private static bool HasIssuedTokenShape(string token)
+        => (token.Length == PortalTokenLength && token.All(char.IsAsciiHexDigitLower))
+           || (token.StartsWith("eyJ", StringComparison.Ordinal) && token.Count(character => character == '.') == 2);
+
+    private async Task<ApiKeyValidation> TryAuthenticateApiKeyAsync(string token)
     {
         // Hosts that do not register API-key authentication have no key to match.
         var dependencies = Context.RequestServices.GetService<ApiKeyAuthenticationDependencies>();
         if (dependencies is null)
         {
-            return null;
+            return new ApiKeyValidation(null, ApiKeyRejection.InvalidKey);
         }
 
         // Validate under the API-key scheme so the principal is indistinguishable from an
@@ -98,13 +116,11 @@ internal sealed class PortalTokenAuthenticationHandler(
         // The request context carries Origin/Referer and the resolved client IP, so a key's
         // referrer and IP restrictions apply on every token transport, the URL included.
         var apiKey = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            token,
-            AuthenticationExtensions.ApiKeyScheme,
+            new ApiKeyPresentation(token, AuthenticationExtensions.ApiKeyScheme, ApiKeyRequestContext.From(Context)),
             dependencies,
-            ApiKeyRequestContext.From(Context),
             Logger,
             Context.RequestAborted).ConfigureAwait(false);
-        return apiKey.Success?.Principal;
+        return apiKey;
     }
 
     private async ValueTask<(string? Token, bool HasConflictingValues, bool FromQuery)> ExtractTokenAsync()

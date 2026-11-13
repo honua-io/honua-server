@@ -374,7 +374,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
             BindingFlags.Instance | BindingFlags.NonPublic)!;
         var layer = new PublishedLayerSummary
         {
-            LayerId = 1,
+            StorageLayerId = 1,
             LayerName = "Layer",
             Schema = "public",
             Table = "source",
@@ -3154,7 +3154,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
         };
         var layer = new PublishedLayerSummary
         {
-            LayerId = 7,
+            StorageLayerId = 7,
             LayerName = "Parcels",
             Schema = "public",
             Table = "parcels",

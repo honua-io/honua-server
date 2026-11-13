@@ -81,10 +81,10 @@ public sealed partial class LayerPublishingIntegrationTests
             Enabled = true,
             CreateEditableCopy = true
         }, _connectionName);
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
         await UploadAsync(mode);
         using (var sourceResponse = await GetGeometryJsonAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{sourceLayer.LayerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true"))
+            $"/rest/services/{_serviceName}/FeatureServer/{sourceLayer.StorageLayerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true"))
         {
             var sourceFeatures = sourceResponse.RootElement.GetProperty("features");
             sourceFeatures.GetArrayLength().Should().Be(mode == "Append" ? 2 : 1);

@@ -12,7 +12,7 @@ observer_workflow=.github/workflows/pr-gate-impact-observe.yml
 
 "${python_bin}" scripts/ci/classify-pr-gate-impact.test.py
 "${python_bin}" -m py_compile scripts/ci/classify-pr-gate-impact.py
-node --test scripts/ci/trusted-pr-workflow-run.test.js
+node --test scripts/ci/trusted-pr-workflow-run.test.js scripts/ci/trusted-pr-workflow-run-draft-admission.test.js
 
 grep -Fq 'PR_GATE_IMPACT_MODE: observe' "${observer_workflow}"
 grep -Fq 'workflow_run:' "${observer_workflow}"

@@ -82,7 +82,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsIdempotencyStore());
+            new GrpcApplyEditsReceipts());
 
         // Default: valid service/layer
         _resourceValidator
@@ -176,7 +176,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsIdempotencyStore());
+            new GrpcApplyEditsReceipts());
         void AddRouting(IServiceCollection services)
         {
             services.AddSingleton(router);
@@ -357,7 +357,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(limits),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsIdempotencyStore());
+            new GrpcApplyEditsReceipts());
         var request = CreateApplyEditsRequest(editKinds: 4);
         request.Deletes.Add(3);
 
@@ -2001,7 +2001,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions { StreamBatchSize = 1 }),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsIdempotencyStore());
+            new GrpcApplyEditsReceipts());
 
         var features = Enumerable.Range(1, 3)
             .Select(i => Feature.Create(i, null))
@@ -2586,7 +2586,7 @@ public sealed class GrpcFeatureServiceTests
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            new GrpcApplyEditsIdempotencyStore());
+            new GrpcApplyEditsReceipts());
 
         if (edit)
         {

@@ -170,7 +170,6 @@ internal static class McpErrorMapper
                 Code = Codes.Unavailable,
                 Retryable = !storeEx.HasDependencyReceipt,
                 MissingDependency = storeEx.MissingDependency,
-                MissingEntitlement = storeEx.MissingEntitlement,
                 Capability = storeEx.CapabilityId,
                 Remediation = storeEx.Remediation,
                 RemediationRef = storeEx.RemediationRef

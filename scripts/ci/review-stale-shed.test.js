@@ -437,15 +437,18 @@ test('normalization consumer sheds moved, draft, or closed subjects before artif
 // A ready transition can race the successful producer's workflow_run event at
 // the same SHA. Historical admission, rather than the current draft flag,
 // determines whether an envelope could have been produced.
-const runNormalizationHandoff = async ({ skipped = true, total = 2, attempt = 1 } = {}) => {
+const runNormalizationHandoff = async ({
+  skipped = true, total = 2, attempt = 1, generatorConclusion = 'success',
+  packagerConclusion = 'skipped',
+} = {}) => {
   const outputs = {};
   const calls = [];
   const summary = { addRaw() { return this; }, async write() {} };
   const jobs = [
-    { name: 'Generate bounded normalization projections', conclusion: 'success', steps: [
+    { name: 'Generate bounded normalization projections', conclusion: generatorConclusion, steps: [
       { name: 'Record superseded normalization admission', conclusion: skipped ? 'success' : 'skipped' },
     ] },
-    { name: 'Produce data-only normalization envelope', conclusion: 'skipped' },
+    { name: 'Produce data-only normalization envelope', conclusion: packagerConclusion },
   ];
   const repository = { full_name: 'honua-io/honua-server' };
   await vm.runInNewContext(`(async () => {${NORMALIZATION_CONSUMER}})()`, {
@@ -489,4 +492,20 @@ test('normalization consumer preserves skipped draft admission after same-SHA re
 test('normalization consumer still rejects missing artifacts without historical skip proof', async () => {
   await assert.rejects(runNormalizationHandoff({ skipped: false }), /Expected one non-expired/);
   await assert.rejects(runNormalizationHandoff({ total: 101 }), /bounded page/);
+});
+
+
+test('normalization consumer sheds job-level draft skips after same-SHA ready transition', async () => {
+  const result = await runNormalizationHandoff({ generatorConclusion: 'skipped', skipped: false, attempt: 2 });
+  assert.equal(result.outputs.superseded, 'true');
+  assert.deepEqual(result.calls, ['jobs']);
+});
+
+test('normalization consumer requires both jobs skipped for job-level draft admission', async () => {
+  await assert.rejects(runNormalizationHandoff({
+    generatorConclusion: 'skipped', packagerConclusion: 'success', skipped: false,
+  }), /Expected one non-expired/);
+  await assert.rejects(runNormalizationHandoff({
+    generatorConclusion: 'failure', skipped: false,
+  }), /Expected one non-expired/);
 });

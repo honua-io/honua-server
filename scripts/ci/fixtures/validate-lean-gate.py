@@ -133,6 +133,20 @@ for step in steps:
         assert "if: inputs.phase != 'build'" in step, name
     if any(label in name for label in ['Compute gate build scope', 'Union producer test roots', 'Restore selected build scope', 'Build (warnings as errors)', 'Format Check']):
         assert "if: inputs.phase != 'test'" in step, name
+# The producer shares a 10 GiB slice with runner services. Verify the actual
+# restore/build steps rather than accepting resource settings elsewhere.
+for name in ("Restore selected build scope", "Build (warnings as errors)"):
+    step = next(step for step in steps if step.splitlines()[0] == f"    - name: {name}")
+    for setting in ("DOTNET_PROCESSOR_COUNT: '4'", "DOTNET_CLI_USE_MSBUILD_SERVER: 'false'",
+                    "MSBUILDDISABLENODEREUSE: '1'"):
+        assert setting in step, (name, setting)
+    invocations = re.findall(r"(?:dotnet build|scripts/ci/dotnet-restore-retry\.sh) (?:[^\n]*\\\n)*[^\n]*", step)
+    assert len(invocations) == (2 if name.startswith("Build") else 1), name
+    for invocation in invocations:
+        arguments = shlex.split(invocation.replace("\\\n", " "))
+        assert arguments.count('-maxcpucount:4') == 1, name
+        assert not any(arg.startswith(('-m:', '/m:', '/maxcpucount:', '-maxcpucount:'))
+                       and arg != '-maxcpucount:4' for arg in arguments), name
 assert steps[0].startswith('    - name: Validate gate phase')
 assert steps[1].startswith('    - name: Pre-pull Testcontainers PostGIS image')
 assert TEXT.index('Regenerate projections') < TEXT.index('Run .NET Tests (Architecture Source)')
@@ -164,7 +178,7 @@ require(
 )
 require(
     r"dotnet build \"\$\{GATE_BUILD_FILTER\}\" \\\s+--no-restore \\\s+"
-    r"--configuration Release \\\s+(?:-graphBuild \\\s+)?"
+    r"--configuration Release \\\s+(?:-graphBuild -maxcpucount:4 \\\s+)?"
     r"/p:TreatWarningsAsErrors=true",
     "build the affected solution filter with the same "
     "--no-restore/Release/warnings-as-errors contract as the full build",

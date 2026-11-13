@@ -259,9 +259,9 @@ public sealed class WfsMultiLayerTransactionLockTests
         public async Task<(int Status, string Body)> ExecuteAsync(string action, bool multiLayer, string holder = "bob")
         {
             static string ActionXml(string action, int layer) => $"""
-                <wfs:{action} typeName="honua:layer{layer}">
+                <wfs:{action} typeName="honua:pub-{layer}">
                   {(action == "Update" ? "<wfs:Property><wfs:ValueReference>name</wfs:ValueReference><wfs:Value>changed</wfs:Value></wfs:Property>" : "")}
-                  <fes:Filter><fes:ResourceId rid="layer{layer}.{layer * 11}" /></fes:Filter>
+                  <fes:Filter><fes:ResourceId rid="pub-{layer}.{layer * 11}" /></fes:Filter>
                 </wfs:{action}>
                 """;
             var xml = $"""

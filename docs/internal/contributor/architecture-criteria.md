@@ -33,6 +33,12 @@
    - The blocking smells in [Clean Code](#clean-code-robert-c-martin) below, including new XML doc
      comments (`///`) in application code
 
+7. **Configuration and Cache Coherence Violations** ([ADR-0086](adr/0086-one-generation-for-configuration-and-caches.md))
+   - A new configuration store held only in a task's memory, or a new cache whose key does not include
+     the configuration generation (the catalog revision until the shared generation lands), unless the
+     code cites ADR-0086 with the reason
+   - A cached replay of a protected resource without an access grant recorded under the key's generation
+
 ## ⚠️ NEEDS_ATTENTION (Pass with Warnings - Review Required)
 
 ### Design Concerns:

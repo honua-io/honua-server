@@ -35,8 +35,8 @@ public sealed class GeoJsonTemporalFidelityTests
             "epoch" => expected.ToUnixTimeMilliseconds(),
             "epoch-text" => expected.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture),
             "epoch-double" => (double)expected.ToUnixTimeMilliseconds(),
-            "json-number" => JsonDocument.Parse("1709210096789").RootElement.Clone(),
-            "json-string" => JsonDocument.Parse("\"2024-02-29T12:34:56.789Z\"").RootElement.Clone(),
+            "json-number" => JsonElement.Parse("1709210096789"),
+            "json-string" => JsonElement.Parse("\"2024-02-29T12:34:56.789Z\""),
             _ => throw new ArgumentOutOfRangeException(nameof(representation))
         };
 

@@ -4,10 +4,11 @@
 
 import { test, expect } from '@playwright/test';
 import { createMap } from './support/map-harness.js';
-import { BASE_URL, POINT_LAYER_ID, POINT_CENTER } from './support/constants.js';
+import { getStyleUrl } from './support/style-discovery.js';
+import { POINT_LAYER_ID, POINT_CENTER } from './support/constants.js';
 
 test.describe('Tile Rendering', () => {
-  test('[JS-EXT-01][JS-EXT-02] MVT tiles are fetched and decoded successfully', async ({ page }) => {
+  test('[JS-EXT-01][JS-EXT-02] MVT tiles are fetched and decoded successfully', async ({ page, request }) => {
     const tileRequests: { url: string; status: number; contentType: string }[] = [];
 
     // Intercept tile requests to verify they complete with correct content-type.
@@ -21,7 +22,7 @@ test.describe('Tile Rendering', () => {
       await route.fulfill({ response });
     });
 
-    const styleUrl = `${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`;
+    const styleUrl = await getStyleUrl(request, POINT_LAYER_ID);
     await createMap(page, {
       styleUrl,
       center: POINT_CENTER,
@@ -45,8 +46,8 @@ test.describe('Tile Rendering', () => {
     expect(okCount).toBeGreaterThan(0);
   });
 
-  test('[JS-EXT-01] canvas is not blank after tile render', async ({ page }) => {
-    const styleUrl = `${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`;
+  test('[JS-EXT-01] canvas is not blank after tile render', async ({ page, request }) => {
+    const styleUrl = await getStyleUrl(request, POINT_LAYER_ID);
     const map = await createMap(page, {
       styleUrl,
       center: POINT_CENTER,

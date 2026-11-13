@@ -100,9 +100,9 @@ public sealed class BedrockStudioAiProxyAdapterTests
                 new StudioAiToolDefinition
                 {
                     Name = "lookup",
-                    InputSchema = System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone(),
-                    Annotations = System.Text.Json.JsonDocument.Parse("{\"readOnlyHint\":true}").RootElement.Clone(),
-                    OutputSchema = System.Text.Json.JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone()
+                    InputSchema = System.Text.Json.JsonElement.Parse("{}"),
+                    Annotations = System.Text.Json.JsonElement.Parse("{\"readOnlyHint\":true}"),
+                    OutputSchema = System.Text.Json.JsonElement.Parse("{\"type\":\"object\"}")
                 }
             ]
         };

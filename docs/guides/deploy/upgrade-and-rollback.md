@@ -426,7 +426,7 @@ The self-hosted rolling backend launches each replica itself, so anything the im
 
 A mount whose host path is missing or empty blocks the plan, so you read the reason instead of watching the standby exit at startup and the rollout fail at the exposure deadline as a health failure.
 
-Reach for `mount.` when the image needs a *file*. A server that connects to Redis outside Development and Test composes the durable operation secret channel and refuses to start until `Operations:SecretChannel:KeyRingCertificatePath` names a PKCS#12 certificate with a private key, which is exactly such a file. Mount the directory holding it, then point the setting at the in-container path: `mount./etc/honua/keyring` = `/srv/honua/keyring` on the host, with `env.Operations__SecretChannel__KeyRingCertificatePath` = `/etc/honua/keyring/operation-keyring.pfx` and `env.Operations__SecretChannel__KeyRingCertificatePassword` set alongside it.
+Reach for `mount.` when the image needs a *file*. A server with a configured database outside Development and Test stores the operation key ring there and refuses to start until `Operations:SecretChannel:KeyRingCertificatePath` names a PKCS#12 certificate with a private key, which is exactly such a file. Mount the directory holding it, then point the setting at the in-container path: `mount./etc/honua/keyring` = `/srv/honua/keyring` on the host, with `env.Operations__SecretChannel__KeyRingCertificatePath` = `/etc/honua/keyring/operation-keyring.pfx` and `env.Operations__SecretChannel__KeyRingCertificatePassword` set alongside it.
 
 ## Promotion requirements
 

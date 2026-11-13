@@ -20,10 +20,8 @@ using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;
 using Honua.Server.Features.Portal;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Server.Startup;
 
@@ -256,7 +254,7 @@ internal static class InfrastructureCompositionRoot
         services.AddSingleton<Honua.Core.Features.Tiles.ITileMatrixSetRegistry, Honua.Core.Features.Tiles.TileMatrixSetRegistry>();
     }
 
-    public static void ConfigureCaching(IServiceCollection services, IConfiguration configuration, bool redisCacheEntitled)
+    public static void ConfigureCaching(IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<CacheOptions>()
             .Bind(configuration.GetSection(CacheOptions.SectionName))
@@ -265,27 +263,10 @@ internal static class InfrastructureCompositionRoot
 
         services.AddMemoryCache();
 
-        // Register RedisCacheService (handles both Redis and fallback modes)
-        // IDistributedCache is optionally provided by Aspire's AddRedisDistributedCache
-        services.AddSingleton<RedisCacheService>(sp =>
-        {
-            var distributedCache = sp.GetService<IDistributedCache>();
-            var options = sp.GetRequiredService<IOptions<CacheOptions>>();
-            var logger = sp.GetRequiredService<ILogger<RedisCacheService>>();
-            var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
-            var redis = redisCacheEntitled ? sp.GetService<IConnectionMultiplexer>() : null;
-
-            // StackExchangeRedisCache prepends its InstanceName to all keys internally.
-            // Raw multiplexer operations (e.g., TTL lookup) must use the same prefix.
-            var redisCacheOpts = sp.GetService<IOptions<Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions>>();
-            var instanceName = redisCacheOpts?.Value?.InstanceName;
-
-            return new RedisCacheService(distributedCache, options, logger, performanceMonitor, redis, instanceName);
-        });
-
-        services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
-        services.AddSingleton<ICacheHealthChecker>(sp => sp.GetRequiredService<RedisCacheService>());
-        services.AddSingleton<ICacheStorageMetricsProvider>(sp => sp.GetRequiredService<RedisCacheService>());
+        services.AddSingleton<InMemoryCacheService>();
+        services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
+        services.AddSingleton<ICacheHealthChecker>(sp => sp.GetRequiredService<InMemoryCacheService>());
+        services.AddSingleton<ICacheStorageMetricsProvider>(sp => sp.GetRequiredService<InMemoryCacheService>());
 
         services.AddSingleton<IResponseCache>(sp =>
         {
@@ -298,19 +279,9 @@ internal static class InfrastructureCompositionRoot
                 sp.GetRequiredService<ILogger<MonitoredResponseCacheDecorator>>());
         });
 
-        services.AddSingleton<DistributedCacheRefreshCoordinator>(sp =>
-            new DistributedCacheRefreshCoordinator(
-                sp.GetRequiredService<IOptions<CacheOptions>>(),
-                sp.GetRequiredService<IPerformanceMonitor>(),
-                sp.GetRequiredService<ILogger<DistributedCacheRefreshCoordinator>>(),
-                redisCacheEntitled ? sp.GetService<IConnectionMultiplexer>() : null));
-
-        services.AddSingleton<ICacheRefreshCoordinator>(sp =>
-            sp.GetRequiredService<DistributedCacheRefreshCoordinator>());
-        services.AddSingleton<IDistributedCacheRefreshCoordinator>(sp =>
-            sp.GetRequiredService<DistributedCacheRefreshCoordinator>());
-        services.AddHostedService(sp =>
-            sp.GetRequiredService<DistributedCacheRefreshCoordinator>());
+        services.AddSingleton<CacheRefreshCoordinator>();
+        services.AddSingleton<ICacheRefreshCoordinator>(sp => sp.GetRequiredService<CacheRefreshCoordinator>());
+        services.AddHostedService(sp => sp.GetRequiredService<CacheRefreshCoordinator>());
 
         ConfigureMetadataGraphCoherence(services);
     }

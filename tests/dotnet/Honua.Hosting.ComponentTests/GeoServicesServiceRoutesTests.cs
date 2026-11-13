@@ -12,10 +12,12 @@ using Honua.Infrastructure.Caching;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Hosting.ComponentTests;
@@ -171,7 +173,6 @@ public sealed class GeoServicesServiceRoutesTests
         app.UseOutputCache();
         var reads = 0;
         app.MapGet("/rest/services", () => Results.Text($"read-{++reads}"))
-            .WithMetadata(new GeoServicesServiceRoutes.CatalogRoute())
             .CacheOutput(policy => policy.AddPolicy<RouteTagOutputCachePolicy>());
         await app.StartAsync();
         using var client = app.GetTestClient();
@@ -182,6 +183,43 @@ public sealed class GeoServicesServiceRoutesTests
         provider.GetCurrentAsync(Arg.Any<CancellationToken>())
             .Returns(new MetadataV2GraphSnapshot(snapshot.Graph, "revision-two", DateTimeOffset.UnixEpoch));
         (await client.GetStringAsync("/rest/services")).Should().Be("read-2");
+    }
+
+    [Fact]
+    public async Task CatalogCache_NewRevision_DoesNotReusePriorOgcCollectionResponse()
+    {
+        await using var app = CreateApp();
+        app.UseOutputCache();
+        var reads = 0;
+        app.MapGet("/ogc/collections/{collectionId}", (string collectionId) => Results.Text($"{collectionId}-{++reads}"))
+            .CacheOutput(policy => policy.AddPolicy<RouteTagOutputCachePolicy>());
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+        (await client.GetStringAsync("/ogc/collections/parcels")).Should().Be("parcels-1");
+        (await client.GetStringAsync("/ogc/collections/parcels")).Should().Be("parcels-1");
+        var provider = app.Services.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await provider.GetCurrentAsync();
+        provider.GetCurrentAsync(Arg.Any<CancellationToken>())
+            .Returns(new MetadataV2GraphSnapshot(snapshot.Graph, "revision-two", DateTimeOffset.UnixEpoch));
+        (await client.GetStringAsync("/ogc/collections/parcels")).Should().Be("parcels-2");
+    }
+
+    [Fact]
+    public async Task CatalogCache_EndpointWithoutOutputCache_DoesNotReadCatalog()
+    {
+        await using var app = CreateApp();
+        app.Services.GetRequiredService<IOptions<OutputCacheOptions>>().Value
+            .AddBasePolicy(policy => policy.AddPolicy<RouteTagOutputCachePolicy>(), excludeDefaultPolicy: true);
+        app.UseOutputCache();
+        app.MapGet("/ogc/collections/{collectionId}/items", () => Results.Text("items"));
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+        var provider = app.Services.GetRequiredService<IMetadataV2GraphProvider>();
+        provider.ClearReceivedCalls();
+
+        (await client.GetStringAsync("/ogc/collections/parcels/items")).Should().Be("items");
+
+        await provider.DidNotReceive().GetCurrentAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]

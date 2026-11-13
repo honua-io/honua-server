@@ -103,6 +103,91 @@ public sealed class AlertEvaluationBackgroundServiceTests
         }
     }
 
+    [UnitTest]
+    public async Task Execute_LeaseLostDuringAPass_CancelsThePassAndWritesNoCheckpoint()
+    {
+        var leader = new ScriptedLeader { Allow = true };
+        var store = new MutableCheckpointStore(initialGeneration: 10);
+        var pipeline = new BlockingPipeline();
+        await using var provider = CreateProvider(store, pipeline);
+        var service = CreateService(provider, leader, leaseDuration: TimeSpan.FromMilliseconds(150));
+
+        try
+        {
+            await service.StartAsync(CancellationToken.None);
+            await WaitUntilAsync(() => pipeline.Started);
+            leader.Allow = false;
+
+            await WaitUntilAsync(() => pipeline.Cancelled);
+            leader.Allow = true;
+            await WaitUntilAsync(() => pipeline.Starts >= 2);
+
+            store.Writes.Should().Be(0, "a pass that lost the lease must not commit its checkpoint");
+            store.Reads.Should().BeGreaterThanOrEqualTo(2, "the next leadership reloads the checkpoint from the store");
+            service.ExecuteTask!.IsFaulted.Should().BeFalse();
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [UnitTest]
+    public async Task Execute_RenewalThrowsDuringAPass_StopsThePassAndReloadsTheCheckpoint()
+    {
+        var leader = new ScriptedLeader { Allow = true };
+        var store = new MutableCheckpointStore(initialGeneration: 10);
+        var pipeline = new BlockingPipeline(completedPasses: 1);
+        await using var provider = CreateProvider(store, pipeline);
+        var service = CreateService(provider, leader, leaseDuration: TimeSpan.FromMilliseconds(150));
+
+        try
+        {
+            await service.StartAsync(CancellationToken.None);
+            await WaitUntilAsync(() => pipeline.Started);
+            leader.ThrowRenewals = true;
+
+            await WaitUntilAsync(() => pipeline.Cancelled);
+            leader.ThrowRenewals = false;
+            await WaitUntilAsync(() => pipeline.Starts >= 2);
+
+            store.Writes.Should().Be(1, "only the pass that completed before the failed renewal commits");
+            store.Reads.Should().BeGreaterThanOrEqualTo(2, "a pass stopped by a failed renewal must not reuse its cached checkpoint");
+            service.ExecuteTask!.IsFaulted.Should().BeFalse();
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [UnitTest]
+    public async Task Execute_RenewalHangsDuringAPass_CancelsThePassBeforeTheLeaseRunsOut()
+    {
+        var leader = new ScriptedLeader { Allow = true };
+        var store = new MutableCheckpointStore(initialGeneration: 10);
+        var pipeline = new BlockingPipeline();
+        await using var provider = CreateProvider(store, pipeline);
+        var service = CreateService(provider, leader, leaseDuration: TimeSpan.FromMilliseconds(300));
+
+        try
+        {
+            await service.StartAsync(CancellationToken.None);
+            await WaitUntilAsync(() => pipeline.Started);
+            leader.HangRenewals = true;
+
+            await WaitUntilAsync(() => pipeline.Cancelled);
+
+            store.Writes.Should().Be(0);
+            service.ExecuteTask!.IsFaulted.Should().BeFalse();
+        }
+        finally
+        {
+            leader.HangRenewals = false;
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
     private static ServiceProvider CreateProvider(IAlertCheckpointStore store, IAlertPipeline pipeline)
     {
         var services = new ServiceCollection();
@@ -114,7 +199,8 @@ public sealed class AlertEvaluationBackgroundServiceTests
     private static AlertEvaluationBackgroundService CreateService(
         ServiceProvider provider,
         ILeaderElectionStrategy leader,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        TimeSpan? leaseDuration = null)
     {
         var options = Options.Create(new AlertOptions
         {
@@ -125,6 +211,7 @@ public sealed class AlertEvaluationBackgroundServiceTests
                 IdleDelay = TimeSpan.FromMilliseconds(20),
                 DwellSweepInterval = TimeSpan.FromHours(1),
                 ChangeBatchSize = 10,
+                LeaderLeaseDuration = leaseDuration ?? TimeSpan.FromSeconds(30),
             },
         });
         return new AlertEvaluationBackgroundService(
@@ -166,13 +253,27 @@ public sealed class AlertEvaluationBackgroundServiceTests
 
         public string InstanceId => "test-leader";
 
-        public Task<bool> TryAcquireAsync(CancellationToken cancellationToken = default)
+        public volatile bool HangRenewals;
+
+        public volatile bool ThrowRenewals;
+
+        public async Task<bool> TryAcquireAsync(CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _calls);
+            if (HangRenewals)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            if (ThrowRenewals)
+            {
+                throw new InvalidOperationException("lease store unavailable");
+            }
+
             var leader = Allow;
             IsLeader = leader;
             LastAcquireFaulted = false;
-            return Task.FromResult(leader);
+            return leader;
         }
 
         public Task ReleaseAsync(CancellationToken cancellationToken = default)
@@ -188,18 +289,76 @@ public sealed class AlertEvaluationBackgroundServiceTests
 
         public void SetGeneration(long generation) => Interlocked.Exchange(ref _generation, generation);
 
+        private int _reads;
+
+        public int Reads => Volatile.Read(ref _reads);
+
         public Task<AlertWorkerCheckpoint> GetAsync(string workerName, CancellationToken cancellationToken = default)
-            => Task.FromResult(new AlertWorkerCheckpoint
+        {
+            Interlocked.Increment(ref _reads);
+            return Task.FromResult(new AlertWorkerCheckpoint
             {
                 WorkerName = workerName,
                 LastGeneration = Interlocked.Read(ref _generation),
             });
+        }
+
+        public int Writes => Volatile.Read(ref _writes);
+
+        private int _writes;
 
         public Task SetAsync(AlertWorkerCheckpoint checkpoint, CancellationToken cancellationToken = default)
         {
+            Interlocked.Increment(ref _writes);
             Interlocked.Exchange(ref _generation, checkpoint.LastGeneration);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class BlockingPipeline(int completedPasses = 0) : IAlertPipeline
+    {
+        private int _remainingCompletedPasses = completedPasses;
+        private volatile bool _started;
+        private volatile bool _cancelled;
+        private int _starts;
+
+        public bool Started => _started;
+
+        public int Starts => Volatile.Read(ref _starts);
+
+        public bool Cancelled => _cancelled;
+
+        public async Task<long> ProcessChangesAsync(
+            long lastProcessedGeneration,
+            int batchSize,
+            DateTimeOffset? evaluatedAt = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Decrement(ref _remainingCompletedPasses) >= 0)
+            {
+                return lastProcessedGeneration + 1;
+            }
+
+            _started = true;
+            Interlocked.Increment(ref _starts);
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                _cancelled = true;
+                throw;
+            }
+
+            return lastProcessedGeneration + 1;
+        }
+
+        public Task<int> SweepDwellAsync(
+            DateTimeOffset evaluatedAt,
+            int batchSize,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(0);
     }
 
     private sealed class FlakyCheckpointStore(int failuresBeforeSuccess) : IAlertCheckpointStore

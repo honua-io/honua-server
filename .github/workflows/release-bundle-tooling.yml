@@ -7,6 +7,7 @@ name: Release Bundle Tooling
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'scripts/release/**'
       - 'eng/release/bundle-suites.v1.json'
@@ -25,6 +26,7 @@ concurrency:
 
 jobs:
   tooling:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Release tooling smokes
     runs-on: ubuntu-24.04
     timeout-minutes: 15

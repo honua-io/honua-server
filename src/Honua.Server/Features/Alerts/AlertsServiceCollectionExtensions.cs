@@ -8,6 +8,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Alerts;
+using Honua.Server.Startup;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -70,13 +71,10 @@ internal static class AlertsServiceCollectionExtensions
 
         // Second outbox consumer: ops notifications (deploy/job terminal events).
         services.AddScoped<Honua.Alerts.Ops.OpsNotificationService>();
-        services.AddSingleton<ILeaderElectionStrategy>(serviceProvider =>
-        {
-            var dataSource = serviceProvider.GetService<Npgsql.NpgsqlDataSource>();
-            return dataSource is null
-                ? new SingleInstanceLeaderElectionStrategy()
-                : ActivatorUtilities.CreateInstance<PostgresAdvisoryLockLeaderElectionStrategy>(serviceProvider, dataSource);
-        });
+        services.AddSingleton<ILeaderElectionStrategy>(serviceProvider => new LeaseLeaderElectionStrategy(
+            serviceProvider.SharedLeaseStore(),
+            serviceProvider.GetRequiredService<IOptions<AlertOptions>>(),
+            serviceProvider.GetRequiredService<ILogger<LeaseLeaderElectionStrategy>>()));
         services.AddSingleton<InMemoryAlertNotificationBroadcaster>();
         services.AddSingleton<IAlertNotificationBroadcaster>(sp => sp.GetRequiredService<InMemoryAlertNotificationBroadcaster>());
         services.AddSingleton<IStreamingSubscriptionManager>(sp => sp.GetRequiredService<InMemoryAlertNotificationBroadcaster>());
@@ -92,9 +90,8 @@ internal static class AlertsServiceCollectionExtensions
         // health-state source, so the dispatch-backlog health check reads the live snapshot.
         services.AddSingleton<AlertDispatchBackgroundService>();
         services.AddSingleton<IAlertDispatchHealth>(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
-        // Evaluation, dispatch, and the audit reconciler each take a pooled connection, and
-        // evaluation holds a dedicated advisory-lock connection. An event-handler Lambda
-        // cannot spare that from a pool of 2 (honua-server#6515).
+        // Evaluation, dispatch, and the audit reconciler are polling loops that each take a
+        // pooled connection. An event-handler Lambda cannot spare them from its pool of 2.
         if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
         {
             services.AddHostedService(sp => sp.GetRequiredService<AlertEvaluationBackgroundService>());

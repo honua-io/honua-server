@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using Honua.Core.Features.Metadata.Domain.V2;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
@@ -139,9 +140,12 @@ public sealed class RecordsLandingAndLimitTests : IClassFixture<OgcRecordsEndpoi
         using var json = await ReadJsonAsync(response);
         var layerIds = json.RootElement.GetProperty("properties").GetProperty("layerIds")
             .EnumerateArray()
-            .Select(value => value.GetInt32())
+            .Select(value => value.GetString())
             .ToArray();
-        layerIds.Should().Contain(WebAppFixture.TestLayerId);
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publicationId = snapshot.Graph.Publications.First(publication =>
+            snapshot.ResolveStorageLayerId(publication) == WebAppFixture.TestLayerId).Metadata.Id;
+        layerIds.Should().Contain(publicationId);
         layerIds.Should().OnlyHaveUniqueItems();
     }
 

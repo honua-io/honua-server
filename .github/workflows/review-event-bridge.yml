@@ -18,7 +18,7 @@ jobs:
   notify:
     if: github.event.pull_request.base.ref == 'trunk'
     name: Notify trusted review gate
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 15
     concurrency:
       group: review-event-bridge-pr-${{ github.event.pull_request.number }}

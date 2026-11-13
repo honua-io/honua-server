@@ -4,7 +4,7 @@
   "validates": "inputs",
   "inputs": {
     "layers": [
-      { "serviceId": "county_parcels", "layerId": 0 }
+      { "serviceId": "county_parcels", "serviceLayerIndex": 0 }
     ],
     "bbox": [-97.75, 30.26, -97.73, 30.28],
     "bboxSrid": 4326,

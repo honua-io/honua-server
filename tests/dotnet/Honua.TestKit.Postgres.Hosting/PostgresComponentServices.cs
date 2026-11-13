@@ -93,7 +93,7 @@ public static class PostgresComponentServices
         app.UseInputValidation();
         app.UseAuthentication();
         app.UseAuthorization();
-        app.UseWhen(context => OutputCachingRegistration.HasLiveOutputCacheEntitlements(context.RequestServices, false),
+        app.UseWhen(context => OutputCachingRegistration.HasLiveOutputCacheEntitlements(context.RequestServices),
             static entitled => entitled.UseOutputCache());
     }
 }

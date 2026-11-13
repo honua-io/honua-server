@@ -5,10 +5,10 @@ namespace Honua.Ai.Protocols.Mcp.MapTools;
 
 internal static class StudioCatalogSourceIdentity
 {
-    internal static string Create(string serviceId, int layerId)
-        => Honua.Core.Features.Studio.Domain.StudioCatalogSourceIdentity.Create(serviceId, layerId);
+    internal static string Create(string serviceId, int serviceLayerIndex)
+        => Honua.Core.Features.Studio.Domain.StudioCatalogSourceIdentity.Create(serviceId, serviceLayerIndex);
 
-    internal static bool TryCreate(string serviceId, int layerId, out string catalogId)
+    internal static bool TryCreate(string serviceId, int serviceLayerIndex, out string catalogId)
         => Honua.Core.Features.Studio.Domain.StudioCatalogSourceIdentity.TryCreate(
-            serviceId, layerId, out catalogId);
+            serviceId, serviceLayerIndex, out catalogId);
 }

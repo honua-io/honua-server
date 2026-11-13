@@ -90,7 +90,7 @@ public sealed class AdminOperationApprovalBridgeTests
     }
 
     [UnitTest]
-    public async Task CreateProposalAsync_NoDurableControlPlane_RefusesWithTypedRedisDependency()
+    public async Task CreateProposalAsync_NoDurableControlPlane_RefusesWithTypedSystemDatabaseDependency()
     {
         // No gateway and no durable proposal store (absent, or the Redis-off placeholder): the
         // control plane was never composed, so the bridge refuses with the typed receipt (#5733).
@@ -105,7 +105,7 @@ public sealed class AdminOperationApprovalBridgeTests
             var refusal = await Assert.ThrowsAsync<CapabilityUnavailableException>(
                 () => bridge.CreateProposalAsync(Descriptor(), Request(), Context(), Decision()));
 
-            refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+            refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
             refusal.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
         }
     }

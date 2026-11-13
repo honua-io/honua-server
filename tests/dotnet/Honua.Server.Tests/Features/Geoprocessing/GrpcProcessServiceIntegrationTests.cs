@@ -146,9 +146,9 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
             trailers.Should().ContainKey("honua-capability");
             trailers["honua-capability"].Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
             trailers.Should().ContainKey("honua-missing-dependency");
-            trailers["honua-missing-dependency"].Should().Be(CapabilityUnavailableCodes.RedisDependency);
+            trailers["honua-missing-dependency"].Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
             trailers.Should().ContainKey("honua-remediation-ref");
-            trailers["honua-remediation-ref"].Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
+            trailers["honua-remediation-ref"].Should().Be(CapabilityUnavailableCodes.SystemDatabaseRemediationRef);
         }
     }
 

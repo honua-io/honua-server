@@ -168,13 +168,6 @@ internal static partial class Log
         ILogger logger, string checkName, string status, double elapsedMs);
 
     [LoggerMessage(
-        EventId = 4021,
-        Level = LogLevel.Debug,
-        Message = "Health check executed: Redis durability not attested ({Cause}); informational, the control plane and job runner remain available")]
-    public static partial void DurableJobSubstrateDegraded(
-        ILogger logger, Honua.Core.Features.Capabilities.DurableJobSubstrateCause cause);
-
-    [LoggerMessage(
         EventId = 4030,
         Level = LogLevel.Debug,
         Message = "Correlation ID established: {CorrelationId} for {RequestPath}")]

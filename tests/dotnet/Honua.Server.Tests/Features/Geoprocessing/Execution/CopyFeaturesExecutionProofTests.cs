@@ -69,7 +69,7 @@ public sealed partial class CopyFeaturesExecutionProofTests : IAsyncLifetime
                 ServiceName = "copyproof_" + Guid.NewGuid().ToString("N"),
                 Enabled = true
             });
-        _sourceId = published.LayerId;
+        _sourceId = published.StorageLayerId;
         _sourceResource = (await _fixture.GetService<IMetadataV2GraphProvider>().GetCurrentAsync())
             .Index.ResourcesByStorageLayerId[_sourceId];
     }

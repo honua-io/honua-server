@@ -25,14 +25,14 @@ internal sealed class ApplyStylePresetTool : IMcpTool
     public const string ToolName = "honua_apply_style_preset";
 
     private const string ToolDescription =
-        "Apply a named style preset (a reusable catalog styleId) as a published layer's primary/default style, addressed by serviceId/layerId. "
+        "Apply a named style preset (a reusable catalog styleId) as a published layer's primary/default style, addressed by serviceId/serviceLayerIndex. "
         + "The preset must already exist in the style catalog — discover the valid presets with honua_get_style (omit styleId to list them); an unknown preset is rejected and the valid presets are named. "
         + "The applied style persists through the canonical OGC API - Styles pipeline (styleId-keyed catalog + Metadata v2 graph), so a subsequent honua_render_map for the layer resolves the new style. "
         + "Requires admin write authorization and passes through operator approval and operation policy; approval-required calls do not change the layer. "
         + "Set dryRun=true to validate a preset application without changing metadata; a successful preview returns applied=false. "
         + "The result carries the canonical style.apply-preset operation handle (operationId, operationInstanceId, correlationId, auditId), in the same shape as honua_publish_service. "
         + "It authors presentation metadata only and never edits feature records. Re-applying the same preset is a no-op (idempotent). "
-        + "Styled-map arc: query/analyze -> honua_publish_result (analysis result -> serviceId/layerId) -> honua_apply_style_preset -> honua_render_map.";
+        + "Styled-map arc: query/analyze -> honua_publish_result (analysis result -> serviceId/serviceLayerIndex) -> honua_apply_style_preset -> honua_render_map.";
 
     private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<ApplyStylePresetTool> _logger;
@@ -110,7 +110,7 @@ internal sealed class ApplyStylePresetTool : IMcpTool
 
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var layer = await MapToolLayerResolver.ResolveForReadAsync(
-            httpContext, snapshot, argument.ServiceId, argument.LayerId, AuthorizationOperation.Admin, cancellationToken)
+            httpContext, snapshot, argument.ServiceId, argument.ServiceLayerIndex, AuthorizationOperation.Admin, cancellationToken)
             .ConfigureAwait(false);
 
         var styleId = argument.StyleId!.Trim();
@@ -133,7 +133,7 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             Parameters = new Dictionary<string, string?>
             {
                 ["serviceId"] = layer.Service.Metadata.Id,
-                ["layerId"] = argument.LayerId!.Value.ToString(CultureInfo.InvariantCulture),
+                ["serviceLayerIndex"] = argument.ServiceLayerIndex!.Value.ToString(CultureInfo.InvariantCulture),
                 ["styleId"] = styleId,
             },
         }, new OperationPolicyContext
@@ -182,7 +182,7 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             AuthorizationOutcome = operation.AuthorizationOutcome,
             PolicyOutcome = operation.PolicyDecision?.ToString(),
             ServiceId = layer.Service.Metadata.Id,
-            LayerId = argument.LayerId!.Value,
+            ServiceLayerIndex = argument.ServiceLayerIndex!.Value,
             StyleId = preset.StyleId,
             Title = preset.Title,
             StyleVersion = preset.StyleVersion,

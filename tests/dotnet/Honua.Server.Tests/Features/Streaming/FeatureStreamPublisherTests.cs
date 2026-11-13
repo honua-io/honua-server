@@ -7,6 +7,7 @@ using Honua.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Honua.Server.Tests.Infrastructure.Telemetry;
@@ -85,44 +86,41 @@ public sealed class FeatureStreamPublisherTests : IDisposable
     }
 
     [UnitTest]
-    public async Task PublishAsync_WhenAppendFails_DoesNotThrowAndDoesNotBroadcast()
+    public async Task PublishAsync_WhenAppendFails_LogsTheDroppedEventAndDoesNotBroadcast()
     {
         using var session = _sessionManager.CreateSession("WebSocket", null);
-        var retryQueue = new RecordingRetryQueue();
+        var logger = new RecordingLogger<FeatureStreamPublisher>();
         var publisher = new FeatureStreamPublisher(
             new ThrowingFeatureChangeEventStore(),
             _sessionManager,
-            NullLogger<FeatureStreamPublisher>.Instance,
-            retryQueue);
+            logger);
 
         await publisher.PublishAsync(new FeatureChangeEventRequest
         {
+            EventId = "evt-dropped",
             ServiceId = "svc-1",
-            LayerId = 0,
-            ObjectId = 1,
+            LayerId = 4,
+            ObjectId = 17,
             Operation = "update",
             Protocol = "rest",
             RequestId = "req-pub-fail"
         });
 
         Assert.False(session.Reader.TryRead(out _));
-        Assert.Single(retryQueue.Requests);
-        Assert.Equal("req-pub-fail", retryQueue.Requests[0].RequestId);
+        var warning = Assert.Single(logger.Messages);
+        Assert.Contains("evt-dropped", warning, StringComparison.Ordinal);
+        Assert.Contains("layer 4 object 17", warning, StringComparison.Ordinal);
     }
 
     [UnitTest]
-    public async Task PublishStrictAsync_WhenAppendFails_ThrowsAndDoesNotQueueRetry()
+    public async Task PublishStrictAsync_WhenAppendFails_ThrowsAndDoesNotBroadcast()
     {
-        // Outbox dispatcher contract (#692): a failed durable append must surface as an
-        // exception so the dispatcher can keep the outbox row claimed/failed instead of
-        // silently transferring durability to the best-effort retry queue.
+        // The outbox dispatcher keeps the row for retry only if a failed append surfaces.
         using var session = _sessionManager.CreateSession("WebSocket", null);
-        var retryQueue = new RecordingRetryQueue();
         var publisher = new FeatureStreamPublisher(
             new ThrowingFeatureChangeEventStore(),
             _sessionManager,
-            NullLogger<FeatureStreamPublisher>.Instance,
-            retryQueue);
+            NullLogger<FeatureStreamPublisher>.Instance);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await publisher.PublishStrictAsync(new FeatureChangeEventRequest
@@ -136,7 +134,6 @@ public sealed class FeatureStreamPublisherTests : IDisposable
             }));
 
         Assert.False(session.Reader.TryRead(out _));
-        Assert.Empty(retryQueue.Requests);
     }
 
     [UnitTest]
@@ -160,30 +157,6 @@ public sealed class FeatureStreamPublisherTests : IDisposable
         Assert.Single(stored);
         Assert.True(session.Reader.TryRead(out var msg));
         Assert.Equal("svc-strict", msg.Envelope.ServiceId);
-    }
-
-    [UnitTest]
-    public async Task PublishAsync_WhenAppendFailsAndRetryQueueFails_ThrowsAndDoesNotBroadcast()
-    {
-        using var session = _sessionManager.CreateSession("WebSocket", null);
-        var publisher = new FeatureStreamPublisher(
-            new ThrowingFeatureChangeEventStore(),
-            _sessionManager,
-            NullLogger<FeatureStreamPublisher>.Instance,
-            new ThrowingRetryQueue());
-
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await publisher.PublishAsync(new FeatureChangeEventRequest
-            {
-                ServiceId = "svc-1",
-                LayerId = 0,
-                ObjectId = 1,
-                Operation = "update",
-                Protocol = "rest",
-                RequestId = "req-pub-fail-queue"
-            }));
-
-        Assert.False(session.Reader.TryRead(out _));
     }
 
     [UnitTest]
@@ -337,7 +310,6 @@ public sealed class FeatureStreamPublisherTests : IDisposable
             _store,
             _sessionManager,
             NullLogger<FeatureStreamPublisher>.Instance,
-            retryQueue: null,
             sinkBroadcaster: broadcaster);
 
         await publisher.PublishAsync(new FeatureChangeEventRequest
@@ -406,7 +378,6 @@ public sealed class FeatureStreamPublisherTests : IDisposable
             _store,
             _sessionManager,
             NullLogger<FeatureStreamPublisher>.Instance,
-            retryQueue: null,
             sinkBroadcaster: broadcaster);
 
         await publisher.PublishAsync(new FeatureChangeEventRequest
@@ -465,40 +436,27 @@ public sealed class FeatureStreamPublisherTests : IDisposable
             => throw new InvalidOperationException("metadata unavailable");
     }
 
-    private sealed class RecordingRetryQueue : IFeatureChangeRetryQueue
+    private sealed class RecordingLogger<T> : ILogger<T>
     {
-        public List<FeatureChangeEventRequest> Requests { get; } = [];
+        public List<string> Messages { get; } = [];
 
-        public Task<string> EnqueueAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
         {
-            Requests.Add(request);
-            return Task.FromResult(Guid.NewGuid().ToString("N"));
+            if (IsEnabled(logLevel))
+            {
+                Messages.Add(formatter(state, exception));
+            }
         }
-
-        public async IAsyncEnumerable<string> ReadQueuedIdsAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public Task ProcessQueuedAsync(string pendingId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-    }
-
-    private sealed class ThrowingRetryQueue : IFeatureChangeRetryQueue
-    {
-        public Task<string> EnqueueAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("retry queue unavailable");
-
-        public async IAsyncEnumerable<string> ReadQueuedIdsAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public Task ProcessQueuedAsync(string pendingId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
     }
 }

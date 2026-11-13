@@ -213,7 +213,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         return new McpQueryFeaturesOutput
         {
             ServiceId = "county_parcels",
-            LayerId = 0,
+            ServiceLayerIndex = 0,
             ReturnedCount = featureCount,
             Limit = 100,
             ResultOffset = 0,
@@ -246,7 +246,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             var output = new McpQueryFeaturesOutput
             {
                 ServiceId = "county_parcels",
-                LayerId = 0,
+                ServiceLayerIndex = 0,
                 ReturnedCount = featureCount,
                 Limit = 100,
                 GeoJson = new McpGeoJsonFeatureCollection { Features = features },
@@ -278,6 +278,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         var pagingNote = output.ExceededTransferLimit && output.NextOffset is { } next
             ? $"more available: re-query with resultOffset={next}"
             : "last page";
-        return $"Returned {output.ReturnedCount} feature(s) from {output.ServiceId}/{output.LayerId} at offset {output.ResultOffset} ({pagingNote}, geometry included). GeoJSON FeatureCollection in structuredContent.geojson.";
+        return $"Returned {output.ReturnedCount} feature(s) from {output.ServiceId}/{output.ServiceLayerIndex} at offset {output.ResultOffset} ({pagingNote}, geometry included). GeoJSON FeatureCollection in structuredContent.geojson.";
     }
 }

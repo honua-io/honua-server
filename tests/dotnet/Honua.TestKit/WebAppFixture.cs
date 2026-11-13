@@ -56,11 +56,14 @@ public sealed class WebAppFixture : IAsyncLifetime
     private string? _currentSchema;
     private string _environmentName = "Test";
     private bool _useSharedServer;
+    private bool _hasSharedReference;
+    private int _disposeState;
     private bool _useKestrel;
     private string? _seedPath;
     private string? _seedProfile;
     private IServiceScope? _serviceScope;
     private string? _serviceOverrideScopeId;
+    private WebAppFixture? _schemaOwner;
 
     /// <summary>
     /// Test service ID used for testing operations.
@@ -184,6 +187,12 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         // Create and seed the fixture schema before the host is built so the host can
         // configure it as an operational schema (#5391). Seeding touches only the database.
+        if (_schemaOwner is not null)
+        {
+            _currentSchema = _schemaOwner.CurrentSchema
+                ?? throw new InvalidOperationException("The schema owner must be initialized before a host shares its schema.");
+        }
+
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
             _currentSchema = await postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
@@ -440,6 +449,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         // factory/Postgres construction) lives on WebAppFixtureSharedBootstrapMixin.
         await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin
             .EnsureInitializedAsync(SharedAdminPassword);
+        _hasSharedReference = true;
 
         if (_scopedServiceOverrides.Count > 0)
         {
@@ -466,10 +476,30 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
         _serviceScope?.Dispose();
         _serviceScope = null;
 
         if (_useSharedServer)
+        {
+            await DisposeSharedServerAsync();
+        }
+        else
+        {
+            await DisposePrivateServerAsync();
+        }
+    }
+
+    private async Task DisposeSharedServerAsync()
+    {
+        if (!_hasSharedReference)
+        {
+            return;
+        }
+        try
         {
             if (_serviceOverrideScopeId is not null)
             {
@@ -478,35 +508,45 @@ public sealed class WebAppFixture : IAsyncLifetime
                     .Remove(_serviceOverrideScopeId);
                 _serviceOverrideScopeId = null;
             }
-
             if (_currentSchema is not null)
             {
                 await Postgres.DropSchemaAsync(_currentSchema);
             }
-
-            Client.Dispose();
-
-            // Audit-A2: ref-counted teardown of the shared factory + Postgres lives on
-            // WebAppFixtureSharedBootstrapMixin.
+        }
+        finally
+        {
+            Client?.Dispose();
+            _hasSharedReference = false;
             await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.ReleaseAsync();
-            return;
         }
+    }
 
-        if (_currentSchema is not null)
+    private async Task DisposePrivateServerAsync()
+    {
+        try
         {
-            await Postgres.DropSchemaAsync(_currentSchema);
+            if (_currentSchema is not null && _postgres is not null && _schemaOwner is null)
+            {
+                await _postgres.DropSchemaAsync(_currentSchema);
+            }
         }
-
-        // Null when initialization failed: disposing must not hide that failure.
-        Client?.Dispose();
-        if (_factory is not null)
+        finally
         {
-            await _factory.DisposeAsync();
-        }
-
-        if (_postgres is not null)
-        {
-            await _postgres.DisposeAsync();
+            Client?.Dispose();
+            try
+            {
+                if (_factory is not null)
+                {
+                    await _factory.DisposeAsync();
+                }
+            }
+            finally
+            {
+                if (_postgres is not null)
+                {
+                    await _postgres.DisposeAsync();
+                }
+            }
         }
     }
 
@@ -565,6 +605,17 @@ public sealed class WebAppFixture : IAsyncLifetime
         _configureWebHost = _configureWebHost == null
             ? configureEnvironment
             : _configureWebHost + configureEnvironment;
+        return this;
+    }
+
+    /// <summary>
+    /// Runs this isolated host on another fixture's database schema, as a second task of one
+    /// deployment would. The owner must be initialized first and keeps the schema's lifetime.
+    /// </summary>
+    public WebAppFixture ShareSchemaWith(WebAppFixture owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        _schemaOwner = owner;
         return this;
     }
 
@@ -731,12 +782,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         return _currentSchema;
     }
 
-    /// <summary>
-    /// Audit-A2 follow-up: the secure-connection bootstrap now lives on
-    /// <see cref="Mixins.WebAppFixtureSecureConnectionMixin"/>. This wrapper preserves the call
-    /// site shape that <c>InitializeAsync</c> / <c>CreateIsolatedSchemaAsync</c> use.
-    /// </summary>
-    private Task EnsureTestSecureConnectionAsync()
+    public Task EnsureTestSecureConnectionAsync()
         => Honua.TestKit.Mixins.WebAppFixtureSecureConnectionMixin.EnsureTestSecureConnectionAsync(_serviceScope);
 
     private async Task SeedSchemaAsync(string schemaName)

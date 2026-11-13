@@ -227,9 +227,8 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
 
         try
         {
-            // Strict publish: a failed durable append must not be silently traded for a
-            // best-effort retry-queue enqueue. The outbox row stays claimed/failed and is
-            // re-dispatched on the next pass.
+            // Strict publish: a failed durable append throws, so the outbox row stays
+            // claimed/failed and is re-dispatched on the next pass.
             await publisher.PublishStrictAsync(request, cancellationToken).ConfigureAwait(false);
             var marked = await repository.MarkDispatchedAsync(entry.OutboxId, ownerNodeId, cancellationToken).ConfigureAwait(false);
             if (!marked)

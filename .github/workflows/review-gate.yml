@@ -36,7 +36,7 @@ jobs:
        github.event.workflow_run.name != 'Review Event Bridge' ||
        github.event.workflow_run.conclusion == 'success')
     name: Resolve pull request identity
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 20
     concurrency:
       # Keep all heads for one PR in the same serial queue. Fork
@@ -138,7 +138,7 @@ jobs:
     needs: resolve
     if: needs.resolve.outputs.pr != ''
     name: Publish SHA-bound review attestation
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 20
     concurrency:
       # Resolve first so fork workflow_run events (whose pull_requests array is

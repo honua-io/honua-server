@@ -39,8 +39,8 @@ These are response targets, not a guarantee that every issue will be fixed in th
 | --- | --- | --- | --- | --- |
 | Critical | remote code execution, auth bypass, active secret exposure | `1` business day | `3` business days | patch or mitigation target within `7` calendar days |
 | High | privilege escalation, tenant data exposure, significant integrity risk | `2` business days | `5` business days | patch or mitigation target within `30` calendar days |
-| Medium | meaningful but contained security weakness with workaround | `3` business days | `10` business days | fix in the next planned release or mitigation within `90` calendar days |
-| Low | hardening issue or low-likelihood abuse path | `5` business days | next backlog review | fix as capacity allows |
+| Medium | meaningful but contained security weakness with workaround | `3` business days | `10` business days | fix in the next planned release |
+| Low | hardening issue or low-likelihood abuse path | `5` business days | next backlog review | reviewed at every release; fixed or recorded as not exploitable |
 
 ## Disclosure Policy
 
@@ -53,6 +53,23 @@ These are response targets, not a guarantee that every issue will be fixed in th
 
 - Security fixes are applied to the current supported release line and current development branch.
 - Older releases may require customers to upgrade to receive a fix if no patch branch exists.
+- A fix that customers need before the next planned release ships as a patch release with a GitHub security advisory. The maintainer procedure is [`docs/internal/security/security-patch-releases.md`](docs/internal/security/security-patch-releases.md); the customer upgrade steps are in [`docs/guides/secure/container-vulnerabilities.md`](docs/guides/secure/container-vulnerabilities.md).
+
+## Container Image Vulnerabilities
+
+Known vulnerabilities in the packages inside published Honua images (operating-system packages, the .NET runtime, bundled libraries) follow these fix deadlines, counted from the day the finding is confirmed:
+
+| Severity | Fix deadline |
+| --- | --- |
+| Critical | patch release within `7` calendar days |
+| High | patch release within `30` calendar days |
+| Medium | fixed in the next planned release |
+| Low | reviewed at every release |
+
+- Every finding ends in one of two states: fixed (a base image, package or dependency update), or recorded as not affected with the reason in [`eng/security/vex-statements.json`](eng/security/vex-statements.json). A finding with no upstream fix stays open and is fixed in the first release after the fix ships.
+- A not-affected decision names the exact package version, an OpenVEX justification, an impact statement and the evidence. A new package version voids it, so the finding returns for review.
+- Each release publishes an OpenVEX document generated from that file, alongside its SBOM and build provenance. The image vulnerability gates (`ci.yml`, `release-bundle.yml`), the nightly scans and the release-asset scan apply the same decisions and list the findings they suppress.
+- Every supported release image is rescanned by digest every night (`.github/workflows/security-nightly.yml`, inventory in [`eng/security/supported-images.json`](eng/security/supported-images.json)). Fixable high and critical findings in a supported release are filed in a private tracker. Public issues never carry exploit detail.
 
 ## Operational Security Baseline
 

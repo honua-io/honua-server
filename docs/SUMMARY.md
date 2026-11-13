@@ -145,6 +145,7 @@
   - [Access control](guides/secure/access-control.md)
   - [TLS & mTLS](guides/secure/tls-and-mtls.md)
   - [Production checklist](guides/secure/production-checklist.md)
+  - [Container vulnerabilities and security updates](guides/secure/container-vulnerabilities.md)
   - [Compliance](guides/secure/compliance.md)
 - Deploy & operate
   - [Operating Honua](guides/operate/README.md)

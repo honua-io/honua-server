@@ -80,7 +80,7 @@ jobs:
 
             const {
               recordObservationSkip,
-              resolveForObservation,
+              resolvePrGateForObservation,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
             const source = {
               runId: process.env.SOURCE_RUN_ID,
@@ -93,10 +93,9 @@ jobs:
               label: 'pr-gate-impact',
               markerPath: path.join(runnerTemp, 'observation-skipped.json'),
             };
-            // Observation only. resolveForObservation downgrades ONLY a
-            // superseded source (cancelled run, moved head, closed PR) to a
-            // recorded skip; misconfiguration and API drift still throw.
-            const resolved = await resolveForObservation({
+            // Observe admitted heavy gates; exact-attempt draft skips stay outside
+            // the promotion evidence window. Trust and API drift still throw.
+            const resolved = await resolvePrGateForObservation({
               github,
               ...skip,
               ...context.repo,

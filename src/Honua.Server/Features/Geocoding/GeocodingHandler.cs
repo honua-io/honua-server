@@ -611,13 +611,16 @@ internal sealed class GeocodingHandler(
         // under the "addresses" parameter, e.g. addresses={"records":[{"attributes":{...}}]}.
         // Accept that as the primary name and fall back to "records" for direct callers.
         var recordsJson = GetValue(values, "addresses") ?? GetValue(values, "records");
-        if (!TryParseRecords(recordsJson, out var queries, out var parseError))
+        var parsedRecords = ParseRecords(recordsJson);
+        if (parsedRecords.Error is { } parseError)
         {
-            GeocodingLog.BatchRecordsParseFailed(_logger, parseError ?? "Unknown parse error");
-            return StandardErrorHelpers.CreateBadRequest(context, parseError ?? "Invalid records parameter.");
+            GeocodingLog.BatchRecordsParseFailed(_logger, parseError);
+            return StandardErrorHelpers.CreateBadRequest(context, parseError);
         }
 
-        if (queries is null || queries.Count == 0)
+        var queries = parsedRecords.Queries;
+        var recordIds = parsedRecords.RecordIds;
+        if (queries.Count == 0)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "records parameter is required and must contain at least one address.");
         }
@@ -676,15 +679,17 @@ internal sealed class GeocodingHandler(
             // The coordinator returns one candidate slot per submitted record, in request order,
             // including explicit "no match" slots (NaN coordinates) for blank or zero-candidate
             // inputs. We emit one location per candidate so the locations array stays 1:1 and in
-            // order with the input records, and stamp each with a ResultID derived from the
-            // candidate's correlation attribute (falling back to its positional index) so clients
-            // can map results back to inputs even when an input produced no match.
+            // order with the input records. The candidate's correlation attribute (or its position)
+            // names the zero-based input index; the emitted ResultID is that record's OBJECTID, or
+            // its one-based position when the record has none, as GeoServices clients correlate
+            // batch results by ResultID == OBJECTID. ResultID is stamped both on the
+            // location and in its attributes, for match and no-match slots alike.
             var candidates = result.Data ?? [];
             var reprojectedLocations = new List<GeocodeAddressLocation>(candidates.Count);
             for (var index = 0; index < candidates.Count; index++)
             {
                 var candidate = candidates[index];
-                var resultId = ResolveResultId(candidate, index);
+                var resultId = ResolveClientResultId(ResolveResultId(candidate, index), recordIds!);
 
                 var isMatch = !double.IsNaN(candidate.X) && !double.IsNaN(candidate.Y);
                 GeocodePoint? location = null;
@@ -714,7 +719,9 @@ internal sealed class GeocodingHandler(
                     Address = candidate.Address,
                     Score = candidate.Score,
                     Location = location,
-                    Attributes = ProjectAttributes(GeoServicesAddressAttributes(candidate), outFields)
+                    Attributes = WithResultId(
+                        ProjectAttributes(GeoServicesAddressAttributes(candidate), outFields),
+                        resultId)
                 });
             }
 
@@ -741,15 +748,13 @@ internal sealed class GeocodingHandler(
         }
     }
 
-    private static bool TryParseRecords(string? recordsJson, out List<string>? queries, out string? error)
-    {
-        queries = null;
-        error = null;
+    private sealed record ParsedRecords(List<string> Queries, List<int?> RecordIds, string? Error);
 
+    private static ParsedRecords ParseRecords(string? recordsJson)
+    {
         if (string.IsNullOrWhiteSpace(recordsJson))
         {
-            error = "records parameter is required and must contain at least one address.";
-            return false;
+            return new([], [], "records parameter is required and must contain at least one address.");
         }
 
         try
@@ -768,11 +773,11 @@ internal sealed class GeocodingHandler(
             }
             else
             {
-                error = "records must be a JSON array or an object with a 'records' array property.";
-                return false;
+                return new([], [], "records must be a JSON array or an object with a 'records' array property.");
             }
 
-            queries = new List<string>(recordsArray.GetArrayLength());
+            var queries = new List<string>(recordsArray.GetArrayLength());
+            List<int?> recordIds = [.. recordsArray.EnumerateArray().Select(ExtractObjectIdFromRecord)];
             List<int>? invalidIndices = null;
             var index = 0;
             // Not a simple .Select(): the loop branches into two different accumulators
@@ -788,9 +793,7 @@ internal sealed class GeocodingHandler(
                     }
                     catch (GeocodeRequestException ex)
                     {
-                        queries = null;
-                        error = ex.Message;
-                        return false;
+                        return new([], [], ex.Message);
                     }
 
                     queries.Add(address);
@@ -806,26 +809,42 @@ internal sealed class GeocodingHandler(
 
             if (invalidIndices is { Count: > 0 })
             {
-                queries = null;
-                error = invalidIndices.Count == 1
+                var error = invalidIndices.Count == 1
                     ? $"Record at index {invalidIndices[0]} does not contain a valid address."
                     : $"Records at indices {string.Join(", ", invalidIndices)} do not contain valid addresses.";
-                return false;
+                return new([], [], error);
             }
 
             if (queries.Count == 0)
             {
-                error = "No valid address records found in the request.";
-                return false;
+                return new([], [], "No valid address records found in the request.");
             }
 
-            return true;
+            return new(queries, recordIds, null);
         }
         catch (JsonException)
         {
-            error = "records parameter contains invalid JSON.";
-            return false;
+            return new([], [], "records parameter contains invalid JSON.");
         }
+    }
+
+    // Reads the GeoServices record correlation id (attributes.OBJECTID, number or numeric string).
+    private static int? ExtractObjectIdFromRecord(JsonElement record)
+    {
+        if (record.ValueKind != JsonValueKind.Object ||
+            !record.TryGetProperty("attributes", out var attributes) ||
+            attributes.ValueKind != JsonValueKind.Object ||
+            !attributes.TryGetProperty("OBJECTID", out var objectId))
+        {
+            return null;
+        }
+
+        return objectId.ValueKind switch
+        {
+            JsonValueKind.Number when objectId.TryGetInt32(out var number) => number,
+            JsonValueKind.String when int.TryParse(objectId.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => null
+        };
     }
 
     private static string? ExtractAddressFromRecord(JsonElement record)
@@ -1335,6 +1354,19 @@ internal sealed class GeocodingHandler(
 
         return positionalIndex;
     }
+
+    // Maps a zero-based input index to the ResultID a GeoServices client expects: the submitted
+    // record's OBJECTID, or the one-based position when the record carried none.
+    private static int ResolveClientResultId(int inputIndex, List<int?> recordIds)
+        => inputIndex >= 0 && inputIndex < recordIds.Count && recordIds[inputIndex] is { } objectId
+            ? objectId
+            : inputIndex + 1;
+
+    private static Dictionary<string, string?> WithResultId(IReadOnlyDictionary<string, string?> attributes, int resultId)
+        => new(attributes, StringComparer.Ordinal)
+        {
+            [Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate.ResultIdAttribute] = resultId.ToString(CultureInfo.InvariantCulture)
+        };
 
     private static IReadOnlyDictionary<string, string?> GeoServicesAddressAttributes(
         Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate candidate)

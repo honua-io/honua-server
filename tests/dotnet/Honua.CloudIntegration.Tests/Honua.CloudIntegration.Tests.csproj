@@ -24,7 +24,7 @@
     the Honua.Server.Tests ADR-0037 shard matrix, so it never runs on the per-PR server-test path.
   -->
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>$(HonuaTargetFramework)</TargetFramework>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <NoWarn>$(NoWarn);CS1591</NoWarn>

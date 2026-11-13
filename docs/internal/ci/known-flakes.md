@@ -22,7 +22,10 @@ snapshot. Fix the underlying test and close its issue; do not renew an active ex
 
 `scripts/ci/validate-flake-quarantine.py` enforces at most 25 active methods, literal
 project-scoped identities, and a maximum 14-day lifetime. Expired entries automatically
-return to gating. Invalid snapshots fail closed. When full, additional flakes still get
+return to gating. Invalid snapshots fail closed. Issue reads make up to three attempts
+with backoff; a GitHub API outage that outlasts them fails the step with gh's redacted error,
+not as an invalid quarantine. Issue writes are never repeated, so a lost response cannot
+file a duplicate. When full, additional flakes still get
 issues but remain gating. The runner and duplicate foundation/lean-gate coverage apply
 exact method exclusions from a validated snapshot. Existing execution tripwires remain:
 an exclusion that leaves a shard without executed cases does not make it pass.

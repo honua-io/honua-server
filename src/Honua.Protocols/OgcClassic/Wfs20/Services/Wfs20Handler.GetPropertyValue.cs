@@ -257,7 +257,7 @@ internal sealed partial class Wfs20Handler
         var (normalizedFilter, normalizedResourceId) = NormalizeFilterInputs(filter, resourceId);
         var sqlFilter = TranslateFesFilter(descriptor.Resource, normalizedFilter);
         var spatialFilter = ParseBboxFilterForResource(bbox, descriptor.Resource);
-        var resourceIds = ParseResourceIds(normalizedResourceId, descriptor, enforceResourceIdTypeMatch, requireResourceIdQualifier);
+        var resourceIds = ParseResourceIds(normalizedResourceId, descriptor.LocalName, enforceResourceIdTypeMatch, requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
             ? SqlFragmentHelpers.CombineSqlFilters(sqlFilter, FalseSqlFilter)
             : sqlFilter;

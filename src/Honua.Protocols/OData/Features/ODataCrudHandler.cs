@@ -401,7 +401,7 @@ internal sealed class ODataCrudHandler(
 
             if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))
             {
-                await _mutationEventService.InvalidateLayerAsync(null, resolvedLayerId.Value, CancellationToken.None);
+                await _mutationEventService.InvalidateStorageLayerAsync(createStorageLayerId, CancellationToken.None);
                 if (hasCreatedObjectId)
                 {
                     await _mutationEventService.PublishAsync(
@@ -649,7 +649,7 @@ internal sealed class ODataCrudHandler(
 
             if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))
             {
-                await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+                await _mutationEventService.InvalidateStorageLayerAsync(updateStorageLayerId, CancellationToken.None);
                 // Inline publish on non-outbox backends. Mirror the outbox scope's
                 // geometry-change formula so consumers see a consistent contract: PUT
                 // (replace) always reports GeometryChanged=true because the operation
@@ -758,7 +758,7 @@ internal sealed class ODataCrudHandler(
         {
             if (!ODataBatchContext.ShouldSuppressMutationSideEffects(context))
             {
-                await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+                await _mutationEventService.InvalidateStorageLayerAsync(deleteStorageLayerId, CancellationToken.None);
                 await _mutationEventService.PublishAsync(
                     context,
                     layerId,

@@ -4,17 +4,19 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Server.Features.Infrastructure.Coordination;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-// The admission stack one server node builds over its own Redis connection and job store, with
-// operator authorization and approval that allow every request.
+// The admission stack one server node builds over its own PostgreSQL job store, which also backs
+// the node's submission lease and rate-window count, with operator authorization and approval that
+// allow every request.
 internal sealed class AdmissionNodeComposition
 {
     private AdmissionNodeComposition(ExecutionAdmissionEvaluator evaluator, ExecutionAdmissionCoordinator coordinator)
@@ -41,8 +43,8 @@ internal sealed class AdmissionNodeComposition
     public IOperatorApprovalEvaluator OperatorApproval { get; }
 
     public static AdmissionNodeComposition Compose(
-        ConnectionMultiplexer multiplexer,
-        IExecutionJobStore store,
+        PostgresExecutionJobStore nodeStore,
+        IExecutionJobStore admittedStore,
         IOptionsMonitor<ExecutionAdmissionOptions> limits,
         bool sharedLease)
     {
@@ -50,12 +52,12 @@ internal sealed class AdmissionNodeComposition
             limits,
             TimeProvider.System,
             NullLogger<ExecutionAdmissionEvaluator>.Instance,
-            store,
-            multiplexer);
+            admittedStore,
+            nodeStore);
         var coordinator = new ExecutionAdmissionCoordinator(
             limits,
             NullLogger<ExecutionAdmissionCoordinator>.Instance,
-            sharedLease ? multiplexer : null);
+            sharedLease ? new PostgresLeaseStore(nodeStore) : null);
         return new AdmissionNodeComposition(evaluator, coordinator);
     }
 }

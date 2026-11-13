@@ -4,6 +4,7 @@
 import { test, expect } from '@playwright/test';
 import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { createMap } from './support/map-harness.js';
+import { getStyleUrl } from './support/style-discovery.js';
 import {
   BASE_URL,
   LINE_LAYER_ID,
@@ -21,7 +22,7 @@ const STYLE_LAYERS = [
 test.describe('Style Loading', () => {
   for (const layer of STYLE_LAYERS) {
     test(`[CERT-CONN-01] ${layer.name} style JSON is valid MapLibre v8`, async ({ request }) => {
-      const response = await request.get(`${BASE_URL}/api/styles/${layer.layerId}.json`);
+      const response = await request.get(await getStyleUrl(request, layer.layerId));
       expect(response.status()).toBe(200);
 
       const style = await response.json();
@@ -49,7 +50,10 @@ test.describe('Style Loading', () => {
 
     // TileJSON includes a style URL.
     expect(tileJson.style).toBeDefined();
-    expect(tileJson.style).toContain(`/api/styles/${POINT_LAYER_ID}.json`);
+    expect(new URL(tileJson.style).pathname).toBe(`/api/styles/pub-browser-compat-feature-${POINT_LAYER_ID}.json`);
+    const styleResponse = await request.get(tileJson.style);
+    expect(styleResponse.status()).toBe(200);
+    expect((await styleResponse.json()).version).toBe(8);
 
     // Vector layers metadata is present.
     expect(tileJson.vector_layers).toBeDefined();
@@ -57,8 +61,8 @@ test.describe('Style Loading', () => {
     expect(tileJson.vector_layers[0].id).toBe('layer');
   });
 
-  test('[CERT-RNDR-01] MapLibre map initializes from style URL and reaches idle', async ({ page }) => {
-    const styleUrl = `${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`;
+  test('[CERT-RNDR-01] MapLibre map initializes from style URL and reaches idle', async ({ page, request }) => {
+    const styleUrl = await getStyleUrl(request, POINT_LAYER_ID);
     await createMap(page, {
       styleUrl,
       center: POINT_CENTER,

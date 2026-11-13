@@ -5,7 +5,7 @@ namespace Honua.Server.Features.Admin.Models;
 
 internal sealed record LayerValidationResponse
 {
-    public int LayerId { get; init; }
+    public int StorageLayerId { get; init; }
 
     public required string LayerName { get; init; }
 

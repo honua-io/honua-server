@@ -11,6 +11,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -31,40 +32,40 @@ internal static class AdminLayerFieldConfigurationEndpoints
             .WithTags("Admin", "Metadata", "Fields")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/{layerId:int}/fields", HandleGetLayerFields)
+        _ = group.MapGet("/{storageLayerId:int}/fields", HandleGetLayerFields)
             .WithName("GetAdminLayerFields")
             .WithSummary("Get persisted layer field configuration")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
-        _ = group.MapPut("/{layerId:int}/fields", HandleUpdateLayerFields)
+        _ = group.MapPut("/{storageLayerId:int}/fields", HandleUpdateLayerFields)
             .WithName("UpdateAdminLayerFields")
             .WithSummary("Update persisted layer field aliases, coded-value domains, and visibility")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
     private static async Task<IResult> HandleGetLayerFields(
-        int layerId,
+        int storageLayerId,
         HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
         [FromServices] ILayerFieldConfigurationStore fieldConfigurationStore,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
         }
 
-        var configurations = await fieldConfigurationStore.GetFieldConfigurationsAsync(layerId, cancellationToken)
+        var configurations = await fieldConfigurationStore.GetFieldConfigurationsAsync(storageLayerId, cancellationToken)
             .ConfigureAwait(false);
-        var response = BuildResponse(layerId, layerResult.Resource, configurations);
+        var response = BuildResponse(storageLayerId, layerResult.Resource, configurations);
         return Results.Json(
             ApiResponse<LayerFieldConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFieldConfigurationResponse);
     }
 
     private static async Task<IResult> HandleUpdateLayerFields(
-        int layerId,
+        int storageLayerId,
         LayerFieldConfigurationUpdateRequest request,
         HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
@@ -73,7 +74,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -81,7 +82,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
 
         var preview = AdminLayerConfigurationTargets.Resolve(
             await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false),
-            layerId);
+            storageLayerId);
         if (preview.IsAmbiguous)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -90,7 +91,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
                 preview.ConflictDetail ?? "The layer id is published by more than one resource.");
         }
 
-        var validationError = ValidateRequest(layerId, layerResult.Resource, request);
+        var validationError = ValidateRequest(storageLayerId, layerResult.Resource, request);
         if (validationError != null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, validationError);
@@ -107,7 +108,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         var applied = await ApplyUpdatedFieldConfigurationsAsync(
                 graphStore,
                 fieldConfigurationStore,
-                layerId,
+                storageLayerId,
                 updates,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -120,35 +121,31 @@ internal static class AdminLayerFieldConfigurationEndpoints
         }
 
         var configurations = applied.Configurations;
-        await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
+        await cacheInvalidator.InvalidateServiceCatalogAsync(null, [storageLayerId], cancellationToken).ConfigureAwait(false);
 
-        var response = BuildResponse(layerId, layerResult.Resource, configurations);
+        var response = BuildResponse(storageLayerId, layerResult.Resource, configurations);
         return Results.Json(
             ApiResponse<LayerFieldConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFieldConfigurationResponse);
     }
 
     private static async Task<(MetadataV2Resource? Resource, IResult? Problem)> ValidateLayerAsync(
-        int layerId,
+        int storageLayerId,
         HttpContext context,
         IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
         if (!layerResult.IsValid || layerResult.Resource == null)
         {
-            var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status404NotFound;
-            var message = layerResult.ErrorMessage ?? $"Layer {layerId} not found.";
-            return (null, ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message));
+            return (null, ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, layerResult, $"Layer {storageLayerId} not found."));
         }
 
         return (layerResult.Resource, null);
     }
 
     private static string? ValidateRequest(
-        int layerId,
+        int storageLayerId,
         MetadataV2Resource resource,
         LayerFieldConfigurationUpdateRequest request)
     {
@@ -171,7 +168,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
             var fieldName = field.Name.Trim();
             if (!knownFields.TryGetValue(fieldName, out var layerField))
             {
-                return $"Field '{fieldName}' does not exist on layer {layerId}.";
+                return $"Field '{fieldName}' does not exist on layer {storageLayerId}.";
             }
 
             if (!seen.Add(fieldName))
@@ -255,7 +252,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
     }
 
     private static LayerFieldConfigurationResponse BuildResponse(
-        int layerId,
+        int storageLayerId,
         MetadataV2Resource resource,
         IReadOnlyList<LayerFieldConfiguration> configurations)
     {
@@ -281,7 +278,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
 
         return new LayerFieldConfigurationResponse
         {
-            LayerId = layerId,
+            StorageLayerId = storageLayerId,
             Fields = fields
         };
     }
@@ -290,24 +287,24 @@ internal static class AdminLayerFieldConfigurationEndpoints
     internal static async Task<AdminLayerFieldApplyResult> ApplyUpdatedFieldConfigurationsAsync(
         IMetadataV2GraphStore graphStore,
         ILayerFieldConfigurationStore fieldConfigurationStore,
-        int layerId,
+        int storageLayerId,
         IReadOnlyList<LayerFieldConfigurationUpdate> updates,
         CancellationToken cancellationToken)
     {
         var preview = AdminLayerConfigurationTargets.Resolve(
             await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false),
-            layerId);
+            storageLayerId);
         if (preview.IsAmbiguous)
         {
             return AdminLayerFieldApplyResult.Ambiguous(preview.ConflictDetail!);
         }
 
-        var existing = await fieldConfigurationStore.GetFieldConfigurationsAsync(layerId, cancellationToken)
+        var existing = await fieldConfigurationStore.GetFieldConfigurationsAsync(storageLayerId, cancellationToken)
             .ConfigureAwait(false);
         var configurations = MergeFieldConfigurations(existing, updates);
         var written = await AdminLayerConfigurationTargets.WriteAsync(
             graphStore,
-            layerId,
+            storageLayerId,
             resource => ApplyFieldConfigurations(resource, configurations),
             cancellationToken).ConfigureAwait(false);
         if (written.IsAmbiguous)
@@ -316,7 +313,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         }
 
         var stored = await fieldConfigurationStore.UpdateFieldConfigurationsAsync(
-                layerId,
+                storageLayerId,
                 updates,
                 cancellationToken)
             .ConfigureAwait(false);

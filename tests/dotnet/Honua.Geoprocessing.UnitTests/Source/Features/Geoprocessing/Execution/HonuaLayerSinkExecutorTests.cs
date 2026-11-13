@@ -492,7 +492,7 @@ public sealed class HonuaLayerSinkExecutorTests
         const string prefix = "data:application/json;base64,";
         uri.Should().StartWith(prefix);
         var json = Encoding.UTF8.GetString(Convert.FromBase64String(uri[prefix.Length..]));
-        return JsonDocument.Parse(json).RootElement.Clone();
+        return JsonElement.Parse(json);
     }
 
     private static IOptionsMonitor<GeoprocessingExecutorOptions> Options()

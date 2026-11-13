@@ -70,8 +70,10 @@ proof-ledger, schema, route coverage, judgment and OpenAPI checks stay hard.
 The trailing Server foundation family also refreshes before its validators,
 so it cannot race the post-merge writer against stale committed projections.
 The separate capability aggregation check now also reports drift with a notice.
-The existing normalization producer/consumer remains in observation mode and
-continues its bounded reproducibility checks without modifying PR branches.
+The normalization producer/consumer runs in enforce mode (#3219): on a
+same-repository PR branch it commits the validated catalog/parity/matrix blobs
+and re-requests exact-head review; forks and protected branches stay read-only.
+This writer still owns the trunk copy.
 
 Generation and validation check out the triggering `github.sha`, including
 on reruns, with read-only contents/packages permissions and no persisted Git

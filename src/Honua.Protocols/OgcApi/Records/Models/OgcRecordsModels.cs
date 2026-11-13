@@ -209,5 +209,5 @@ public sealed record OgcRecordProperties
     /// </summary>
     [JsonPropertyName("layerIds")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public ImmutableArray<int>? LayerIds { get; init; }
+    public ImmutableArray<string>? LayerIds { get; init; }
 }

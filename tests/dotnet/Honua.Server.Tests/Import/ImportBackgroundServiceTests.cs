@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
 using System.Collections.Concurrent;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -36,7 +37,7 @@ public sealed class ImportBackgroundServiceTests
     {
         using var provider = CreateGeoservicesProvider(new SuccessfulGeoservicesImportService());
         var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        using var jobManager = new RedisImportJobManager(
+        var jobManager = new RedisImportJobManager(
             universalProgressStore,
             null,
             NullLogger<RedisImportJobManager>.Instance,
@@ -100,7 +101,7 @@ public sealed class ImportBackgroundServiceTests
     {
         using var provider = CreateGeoservicesProvider(new NeedsReviewGeoservicesImportService());
         var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        using var jobManager = new RedisImportJobManager(
+        var jobManager = new RedisImportJobManager(
             universalProgressStore,
             null,
             NullLogger<RedisImportJobManager>.Instance,
@@ -157,7 +158,7 @@ public sealed class ImportBackgroundServiceTests
         var importer = new CommittedCancelGeoservicesImportService();
         using var provider = CreateGeoservicesProvider(importer);
         var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        using var jobManager = new RedisImportJobManager(
+        var jobManager = new RedisImportJobManager(
             universalProgressStore,
             null,
             NullLogger<RedisImportJobManager>.Instance,
@@ -226,7 +227,7 @@ public sealed class ImportBackgroundServiceTests
     {
         using var provider = CreateGeoservicesProvider(new ThrowingGeoservicesImportService(ThrowingBehavior.FailImmediately));
         var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        using var jobManager = new RedisImportJobManager(
+        var jobManager = new RedisImportJobManager(
             universalProgressStore,
             null,
             NullLogger<RedisImportJobManager>.Instance,
@@ -277,7 +278,7 @@ public sealed class ImportBackgroundServiceTests
     {
         using var provider = CreateGeoservicesProvider(new ThrowingGeoservicesImportService(ThrowingBehavior.ThrowAfterCancellation));
         var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        using var jobManager = new RedisImportJobManager(
+        var jobManager = new RedisImportJobManager(
             universalProgressStore,
             null,
             NullLogger<RedisImportJobManager>.Instance,
@@ -339,7 +340,7 @@ public sealed class ImportBackgroundServiceTests
         policy.OperationCancellation.Returns(expiry.Token);
         using var provider = CreateGeoservicesProvider(new ThrowingGeoservicesImportService(ThrowingBehavior.ThrowAfterCancellation));
         var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        using var jobManager = new RedisImportJobManager(
+        var jobManager = new RedisImportJobManager(
             universalProgressStore,
             null,
             NullLogger<RedisImportJobManager>.Instance,
@@ -392,13 +393,13 @@ public sealed class ImportBackgroundServiceTests
     {
         using var provider = CreateGeoservicesProvider(new ThrowingGeoservicesImportService(ThrowingBehavior.ThrowAfterCancellation));
         var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var (redis, database) = CreateLeaseLossRedis("geoservices:import:queue", "geoservices:import:leader", "geoservices-lease-loss");
-        using var jobManager = new RedisImportJobManager(
+        var (redis, database) = CreateSingleJobRedis("geoservices:import:queue", "geoservices-lease-loss");
+        var jobManager = new RedisImportJobManager(
             universalProgressStore,
             null,
             NullLogger<RedisImportJobManager>.Instance,
             new TestHostEnvironment(),
-            redis);
+            new ImportCoordinationStores(redis, CreateLeaseLossStore()));
         var service = new GeoservicesImportBackgroundService(
             provider.GetRequiredService<IServiceScopeFactory>(),
             jobManager,
@@ -459,7 +460,7 @@ public sealed class ImportBackgroundServiceTests
     }
 
     [UnitTest]
-    public async Task GeoservicesBackgroundService_InStrictMode_WhenRedisFailsDuringHeartbeat_RequeuesWork()
+    public async Task GeoservicesBackgroundService_InStrictMode_WhenTheLeaseStoreFailsDuringHeartbeat_RequeuesWork()
     {
         using var provider = CreateGeoservicesProvider(new ThrowingGeoservicesImportService(ThrowingBehavior.ThrowAfterCancellation));
         var distributedCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
@@ -467,13 +468,13 @@ public sealed class ImportBackgroundServiceTests
             distributedCache,
             NullLogger<UniversalProgressStore>.Instance,
             redis: null);
-        var (redis, database) = CreateHeartbeatFailureRedis("geoservices:import:queue", "geoservices:import:leader", "geoservices-strict-heartbeat");
-        using var jobManager = new RedisImportJobManager(
+        var (redis, database) = CreateDurableSingleJobRedis("geoservices:import:queue", "geoservices-strict-heartbeat");
+        var jobManager = new RedisImportJobManager(
             universalProgressStore,
             distributedCache,
             NullLogger<RedisImportJobManager>.Instance,
             new ProductionHostEnvironment(),
-            redis);
+            new ImportCoordinationStores(redis, CreateHeartbeatFailureStore()));
         var service = new GeoservicesImportBackgroundService(
             provider.GetRequiredService<IServiceScopeFactory>(),
             jobManager,
@@ -524,7 +525,7 @@ public sealed class ImportBackgroundServiceTests
     {
         using var provider = CreateGeoServerProvider(new ThrowingGeoServerImportService(ThrowingBehavior.FailImmediately));
         var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        using var jobManager = new GeoServerImportJobManager(
+        var jobManager = new GeoServerImportJobManager(
             universalProgressStore,
             null,
             NullLogger<GeoServerImportJobManager>.Instance,
@@ -575,7 +576,7 @@ public sealed class ImportBackgroundServiceTests
     {
         using var provider = CreateGeoServerProvider(new ThrowingGeoServerImportService(ThrowingBehavior.ThrowAfterCancellation));
         var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        using var jobManager = new GeoServerImportJobManager(
+        var jobManager = new GeoServerImportJobManager(
             universalProgressStore,
             null,
             NullLogger<GeoServerImportJobManager>.Instance,
@@ -638,7 +639,7 @@ public sealed class ImportBackgroundServiceTests
         policy.OperationCancellation.Returns(expiry.Token);
         using var provider = CreateGeoServerProvider(new ThrowingGeoServerImportService(ThrowingBehavior.ThrowAfterCancellation));
         var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        using var jobManager = new GeoServerImportJobManager(
+        var jobManager = new GeoServerImportJobManager(
             universalProgressStore,
             null,
             NullLogger<GeoServerImportJobManager>.Instance,
@@ -692,13 +693,13 @@ public sealed class ImportBackgroundServiceTests
     {
         using var provider = CreateGeoServerProvider(new ThrowingGeoServerImportService(ThrowingBehavior.ThrowAfterCancellation));
         var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var (redis, database) = CreateLeaseLossRedis("geoserver:import:queue", "geoserver:import:leader", "geoserver-lease-loss");
-        using var jobManager = new GeoServerImportJobManager(
+        var (redis, database) = CreateSingleJobRedis("geoserver:import:queue", "geoserver-lease-loss");
+        var jobManager = new GeoServerImportJobManager(
             universalProgressStore,
             null,
             NullLogger<GeoServerImportJobManager>.Instance,
             new TestHostEnvironment(),
-            redis);
+            new ImportCoordinationStores(redis, CreateLeaseLossStore()));
         var service = new GeoServerImportBackgroundService(
             new ConfigurationBuilder().Build(),
             new TestHostEnvironment(),
@@ -783,9 +784,29 @@ public sealed class ImportBackgroundServiceTests
         throw new TimeoutException($"Condition was not met within {timeout.TotalSeconds} seconds.");
     }
 
-    private static (IConnectionMultiplexer Redis, IDatabase Database) CreateLeaseLossRedis(
+    // The lease is won once, renewed once, then lost to another node.
+    private static ILeaseStore CreateLeaseLossStore()
+    {
+        var leases = Substitute.For<ILeaseStore>();
+        leases.TryAcquireAsync(default, default, default).ReturnsForAnyArgs(true, false);
+        leases.RenewAsync(default, default, default).ReturnsForAnyArgs(true, false);
+        return leases;
+    }
+
+    // The lease is won and renewed twice, then the store stops answering.
+    private static ILeaseStore CreateHeartbeatFailureStore()
+    {
+        var leases = Substitute.For<ILeaseStore>();
+        leases.TryAcquireAsync(default, default, default).ReturnsForAnyArgs(true);
+        leases.RenewAsync(default, default, default).ReturnsForAnyArgs(
+            Task.FromResult(true),
+            Task.FromResult(true),
+            Task.FromException<bool>(new TimeoutException("simulated lease store outage")));
+        return leases;
+    }
+
+    private static (IConnectionMultiplexer Redis, IDatabase Database) CreateSingleJobRedis(
         string queueKey,
-        string leaderKey,
         string jobId)
     {
         var database = Substitute.For<IDatabase>();
@@ -804,23 +825,14 @@ public sealed class ImportBackgroundServiceTests
             .Returns(
                 Task.FromResult((RedisValue)jobId),
                 Task.FromResult(RedisValue.Null));
-        database.LockTakeAsync(leaderKey, Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(
-                Task.FromResult(true),
-                Task.FromResult(false));
-        database.LockExtendAsync(leaderKey, Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(
-                Task.FromResult(true),
-                Task.FromResult(false));
         database.ListRemoveAsync($"{queueKey}:processing", Arg.Any<RedisValue>(), 1, Arg.Any<CommandFlags>())
             .Returns(Task.FromResult(1L));
 
         return (redis, database);
     }
 
-    private static (IConnectionMultiplexer Redis, IDatabase Database) CreateHeartbeatFailureRedis(
+    private static (IConnectionMultiplexer Redis, IDatabase Database) CreateDurableSingleJobRedis(
         string queueKey,
-        string leaderKey,
         string jobId)
     {
         var redisStrings = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
@@ -843,13 +855,6 @@ public sealed class ImportBackgroundServiceTests
             .Returns(
                 Task.FromResult((RedisValue)jobId),
                 Task.FromResult(RedisValue.Null));
-        database.LockTakeAsync(leaderKey, Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-        database.LockExtendAsync(leaderKey, Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(
-                Task.FromResult(true),
-                Task.FromResult(true),
-                Task.FromException<bool>(new RedisConnectionException(ConnectionFailureType.SocketFailure, "simulated Redis outage")));
         database.ListRemoveAsync($"{queueKey}:processing", Arg.Any<RedisValue>(), 1, Arg.Any<CommandFlags>())
             .Returns(Task.FromResult(1L));
         database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())

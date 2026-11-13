@@ -396,7 +396,7 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
     {
         try
         {
-            return JsonDocument.Parse(json).RootElement;
+            return JsonElement.Parse(json);
         }
         catch (JsonException)
         {

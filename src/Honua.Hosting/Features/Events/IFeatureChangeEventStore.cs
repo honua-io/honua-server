@@ -84,7 +84,7 @@ internal interface IFeatureChangeEventStoreHealth
 
 internal interface IFeatureChangeEventPublisher
 {
-    // Best-effort publish may replace a failed durable append with a retry enqueue.
+    // Best-effort publish logs and drops an event whose durable append fails.
     Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default);
 
     // Strict publish throws on a failed append so the outbox row stays claimed instead of moving to a queue that may be memory-only.

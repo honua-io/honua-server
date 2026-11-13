@@ -772,7 +772,7 @@ public sealed partial class FormPackageValidatorTests
         };
 
     private static JsonElement Json(string json)
-        => JsonDocument.Parse(json).RootElement.Clone();
+        => JsonElement.Parse(json);
 
     private static JsonElement JsonArray(IEnumerable<string> values)
         => JsonSerializer.SerializeToElement(values);

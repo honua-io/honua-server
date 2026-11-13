@@ -8,9 +8,7 @@ import subprocess
 import sys
 
 from completed_ci_base import completed_base
-
-
-SHARD_BACKLOG_LIMIT = 30
+from trailing_selection import SHARD_BACKLOG_LIMIT
 
 
 def git(*arguments):

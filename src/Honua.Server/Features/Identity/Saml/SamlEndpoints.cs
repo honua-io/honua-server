@@ -9,6 +9,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Server.Features.Admin;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
@@ -52,8 +53,8 @@ internal static partial class SamlEndpoints
             });
 
         group.MapGet("/metadata", HandleMetadata).WithDisplayName("SAML SP Metadata");
-        group.MapPost("/acs", HandleAssertionConsumerService).WithDisplayName("SAML Assertion Consumer Service");
-        group.MapPost("/slo", HandleSingleLogout).WithDisplayName("SAML Single Logout Service");
+        group.MapPost("/acs", HandleAssertionConsumerService).WithMetadata(new BrowserCsrfProtocolBindingMetadata()).WithDisplayName("SAML Assertion Consumer Service");
+        group.MapPost("/slo", HandleSingleLogout).WithMetadata(new BrowserCsrfProtocolBindingMetadata()).WithDisplayName("SAML Single Logout Service");
     }
 
     private static IResult HandleMetadata(

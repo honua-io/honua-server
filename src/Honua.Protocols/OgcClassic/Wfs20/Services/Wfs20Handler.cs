@@ -235,7 +235,7 @@ internal sealed partial class Wfs20Handler
         var spatialFilter = ParseBboxFilterForResource(bbox, resource, wfsVersion);
         var resourceIds = ParseResourceIds(
             normalizedResourceId,
-            descriptor,
+            descriptor.LocalName,
             enforceResourceIdTypeMatch,
             requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
@@ -454,7 +454,6 @@ internal sealed partial class Wfs20Handler
         }
 
         if (resource.Metadata.Name.Equals("Other", StringComparison.Ordinal) &&
-            IsWfs10CiteLayerName(resource.Metadata.Name) &&
             !resolved.Any(existing => existing.Equals("string1", StringComparison.OrdinalIgnoreCase)) &&
             GetVisibleAttributeFields(resource).Any(field => field.Name.Equals("string1", StringComparison.OrdinalIgnoreCase)))
         {
@@ -601,20 +600,7 @@ internal sealed partial class Wfs20Handler
 
     private static ResourceIdResolution ParseResourceIds(
         string? resourceId,
-        WfsFeatureTypeDescriptor descriptor,
-        bool enforceTypeMatch,
-        bool requireTypeQualifier)
-        => ParseResourceIds(
-            resourceId,
-            descriptor.LocalName,
-            descriptor.Resource.Metadata.Name,
-            enforceTypeMatch,
-            requireTypeQualifier);
-
-    private static ResourceIdResolution ParseResourceIds(
-        string? resourceId,
         string localTypeName,
-        string resourceName,
         bool enforceTypeMatch,
         bool requireTypeQualifier)
     {
@@ -638,8 +624,7 @@ internal sealed partial class Wfs20Handler
             }
 
             if (prefix.Length > 0 &&
-                !FilterExpressionHelpers.NormalizeIdentifier(prefix).Equals(localTypeName, StringComparison.OrdinalIgnoreCase) &&
-                !FilterExpressionHelpers.NormalizeIdentifier(prefix).Equals(resourceName, StringComparison.OrdinalIgnoreCase))
+                !FilterExpressionHelpers.NormalizeIdentifier(prefix).Equals(localTypeName, StringComparison.Ordinal))
             {
                 if (enforceTypeMatch)
                 {
@@ -845,12 +830,10 @@ internal sealed partial class Wfs20Handler
             "http://schemas.opengis.net/wfs/2.0/wfs.xsd"
         };
 
-        if (selectedTypes.Count > 0)
+        foreach (var group in selectedTypes.GroupBy(descriptor => descriptor.NamespaceUri))
         {
-            var typeNames = string.Join(
-                ",",
-                selectedTypes.Select(descriptor => descriptor.LocalName));
-            values.Add(FeatureNamespaceUri);
+            var typeNames = string.Join(",", group.Select(descriptor => descriptor.QualifiedName));
+            values.Add(group.Key);
             values.Add(
                 $"{wfsUrl}?SERVICE=WFS&VERSION={Wfs20Utilities.Version}&REQUEST=DescribeFeatureType&TYPENAMES={Uri.EscapeDataString(typeNames)}");
         }
@@ -1283,11 +1266,11 @@ internal sealed partial class Wfs20Handler
             writer.WriteStartElement("wfs", "member", Wfs20Utilities.WfsNamespace);
         }
 
-        writer.WriteStartElement(FeatureNamespacePrefix, plan.Descriptor.LocalName, FeatureNamespaceUri);
+        writer.WriteStartElement(plan.Descriptor.NamespacePrefix, plan.Descriptor.LocalName, plan.Descriptor.NamespaceUri);
         if (!includeMemberWrapper)
         {
             writer.WriteAttributeString("xmlns", "gml", null, Wfs20Utilities.GmlNamespace);
-            writer.WriteAttributeString("xmlns", FeatureNamespacePrefix, null, FeatureNamespaceUri);
+            writer.WriteAttributeString("xmlns", plan.Descriptor.NamespacePrefix, null, plan.Descriptor.NamespaceUri);
             writer.WriteAttributeString("xmlns", "xsi", null, Wfs20Utilities.XsiNamespace);
         }
 
@@ -1304,12 +1287,12 @@ internal sealed partial class Wfs20Handler
         if (TryGetGmlIdentifierValue(feature.Attributes, out var gmlIdentifier, out var gmlIdentifierCodeSpace))
         {
             writer.WriteStartElement("gml", "identifier", Wfs20Utilities.GmlNamespace);
-            // codeSpace is mandatory on gml:CodeWithAuthorityType; fall back to the WFS namespace
-            // URI when a transaction supplied an identifier without an explicit authority so the
+            // codeSpace is mandatory on gml:CodeWithAuthorityType; use the feature namespace
+            // when a transaction supplied an identifier without an explicit authority so the
             // emitted GML stays schema-valid.
             writer.WriteAttributeString(
                 "codeSpace",
-                string.IsNullOrWhiteSpace(gmlIdentifierCodeSpace) ? FeatureNamespaceUri : gmlIdentifierCodeSpace);
+                string.IsNullOrWhiteSpace(gmlIdentifierCodeSpace) ? plan.Descriptor.NamespaceUri : gmlIdentifierCodeSpace);
             writer.WriteString(gmlIdentifier);
             writer.WriteEndElement();
         }
@@ -1325,9 +1308,9 @@ internal sealed partial class Wfs20Handler
             !string.IsNullOrWhiteSpace(feature.GeometryGml))
         {
             writer.WriteStartElement(
-                FeatureNamespacePrefix,
+                plan.Descriptor.NamespacePrefix,
                 XmlConvert.EncodeLocalName(geometryPropertyName),
-                FeatureNamespaceUri);
+                plan.Descriptor.NamespaceUri);
             writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, plan.Query, plan.RequestedSrsName));
             writer.WriteEndElement();
         }
@@ -1339,9 +1322,9 @@ internal sealed partial class Wfs20Handler
                 if (field.Nullable)
                 {
                     writer.WriteStartElement(
-                        FeatureNamespacePrefix,
+                        plan.Descriptor.NamespacePrefix,
                         XmlConvert.EncodeLocalName(field.Name),
-                        FeatureNamespaceUri);
+                        plan.Descriptor.NamespaceUri);
                     writer.WriteAttributeString("xsi", "nil", Wfs20Utilities.XsiNamespace, XmlConvert.ToString(true));
                     writer.WriteEndElement();
                 }
@@ -1350,9 +1333,9 @@ internal sealed partial class Wfs20Handler
             }
 
             writer.WriteStartElement(
-                FeatureNamespacePrefix,
+                plan.Descriptor.NamespacePrefix,
                 XmlConvert.EncodeLocalName(field.Name),
-                FeatureNamespaceUri);
+                plan.Descriptor.NamespaceUri);
             writer.WriteString(ConvertFieldValueToInvariantString(value, field));
             writer.WriteEndElement();
         }
@@ -1621,45 +1604,6 @@ internal sealed partial class Wfs20Handler
         {
             writer.WriteAttributeString("previous", previous);
         }
-    }
-
-    private static string BuildTypeLocalName(string resourceName, int storageLayerId)
-    {
-        var input = string.IsNullOrWhiteSpace(resourceName)
-            ? $"layer_{storageLayerId.ToString(CultureInfo.InvariantCulture)}"
-            : resourceName;
-
-        var builder = new StringBuilder(input.Length);
-        var lastWasUnderscore = false;
-
-        foreach (var ch in input)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                builder.Append(char.ToLowerInvariant(ch));
-                lastWasUnderscore = false;
-                continue;
-            }
-
-            if (!lastWasUnderscore)
-            {
-                builder.Append('_');
-                lastWasUnderscore = true;
-            }
-        }
-
-        var result = builder.ToString().Trim('_');
-        if (string.IsNullOrWhiteSpace(result))
-        {
-            result = $"layer_{storageLayerId.ToString(CultureInfo.InvariantCulture)}";
-        }
-
-        if (char.IsDigit(result[0]))
-        {
-            result = $"layer_{result}";
-        }
-
-        return result;
     }
 
     private static bool IsAnonymousWriteAllowed(

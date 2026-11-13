@@ -412,7 +412,7 @@ internal sealed partial class GeoservicesImportService
                 var attachmentOutcome = await CopyAttachmentsAsync(
                     request,
                     layerInfo,
-                    publishedLayer.LayerId,
+                    publishedLayer.StorageLayerId,
                     objectIdMap,
                     warnings,
                     progress,
@@ -453,7 +453,7 @@ internal sealed partial class GeoservicesImportService
             {
                 ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Validating, request,
                     "Reconciling published layer against source snapshot",
-                    featuresProcessed, featuresProcessed, layerInfo.Name, publishedLayer.LayerId,
+                    featuresProcessed, featuresProcessed, layerInfo.Name, publishedLayer.StorageLayerId,
                     attachmentsProcessed: attachmentCount, failedAttachments: failedAttachments);
 
                 // #4600 AC6: a filtered import is reconciled against the filtered source. The discovery
@@ -513,7 +513,7 @@ internal sealed partial class GeoservicesImportService
                 Attachments = attachmentFidelity,
                 Relationships = request.DeferRelationshipApplyToBatch
                     ? []
-                    : DescribeUnappliedSourceRelationships(layerInfo, publishedLayer?.LayerId),
+                    : DescribeUnappliedSourceRelationships(layerInfo, publishedLayer?.StorageLayerId),
                 SourceSnapshot = sourceSnapshot
             });
 
@@ -533,7 +533,7 @@ internal sealed partial class GeoservicesImportService
                     featuresProcessed,
                     featuresProcessed,
                     layerInfo.Name,
-                    publishedLayer?.LayerId,
+                    publishedLayer?.StorageLayerId,
                     attachmentsProcessed: attachmentCount,
                     failedAttachments: failedAttachments,
                     reconciliationArtifact: reconciliation.Artifact,
@@ -547,7 +547,7 @@ internal sealed partial class GeoservicesImportService
                     request.LayerId,
                     featuresProcessed,
                     failedFeatures,
-                    publishedLayer?.LayerId,
+                    publishedLayer?.StorageLayerId,
                     publishedLayer?.ServiceName ?? request.ServiceName,
                     layerInfo.Name,
                     stopwatch.Elapsed,
@@ -570,7 +570,7 @@ internal sealed partial class GeoservicesImportService
                 featuresProcessed,
                 featuresProcessed,
                 layerInfo.Name,
-                publishedLayer?.LayerId,
+                publishedLayer?.StorageLayerId,
                 attachmentsProcessed: attachmentCount,
                 failedAttachments: failedAttachments,
                 reconciliationArtifact: reconciliation.Artifact,
@@ -584,7 +584,7 @@ internal sealed partial class GeoservicesImportService
                 request.LayerId,
                 featuresProcessed,
                 failedFeatures,
-                publishedLayer?.LayerId,
+                publishedLayer?.StorageLayerId,
                 publishedLayer?.ServiceName ?? request.ServiceName,
                 layerInfo.Name,
                 duration: stopwatch.Elapsed,

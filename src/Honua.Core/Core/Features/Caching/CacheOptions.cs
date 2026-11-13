@@ -57,16 +57,11 @@ public sealed class CacheOptions
     [Range(0, 60, ErrorMessage = "MetadataGraphRevalidationSeconds must be between 0 and 60 seconds.")]
     public int MetadataGraphRevalidationSeconds { get; set; } = 2;
 
-    public bool EnableFallback { get; set; } = true;
-
-    [Range(10, 100000, ErrorMessage = ErrorMessages.RangeValidation.FallbackMaxEntries)]
-    public int FallbackMaxEntries { get; set; } = 1000;
+    [Range(10, 500000, ErrorMessage = ErrorMessages.RangeValidation.MaxEntries)]
+    public int MaxEntries { get; set; } = 10000;
 
     [Range(100, 500000)]
     public int ResponseCacheMaxEntries { get; set; } = 10000;
-
-    [Range(5, 300, ErrorMessage = ErrorMessages.RangeValidation.RetryIntervalSeconds)]
-    public int RetryIntervalSeconds { get; set; } = TimeConstants.ThirtySeconds;
 
     public string KeyPrefix { get; set; } = "honua:";
 
@@ -94,8 +89,6 @@ public sealed class CacheOptions
     public TimeSpan QueryTtl => TimeSpan.FromSeconds(QueryTtlSeconds);
 
     public TimeSpan MetadataGraphTtl => TimeSpan.FromSeconds(MetadataGraphTtlSeconds);
-
-    public TimeSpan RetryInterval => TimeSpan.FromSeconds(RetryIntervalSeconds);
 
     public TimeSpan GetDefaultTtlWithJitter()
     {

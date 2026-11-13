@@ -332,6 +332,30 @@ internal static class TileOperationsEndpoints
             statusCode: StatusCodes.Status202Accepted);
     }
 
+    private static ProblemDetailsResponse? ValidateTileCompression(
+        HttpContext context,
+        string? tileCompression,
+        string operation)
+    {
+        if (string.IsNullOrWhiteSpace(tileCompression))
+        {
+            return null;
+        }
+
+        var detail = operation is not ("archive" or "publish")
+            ? "Property 'tileCompression' applies only to archive and publish operations."
+            : !TileArchiveCompression.IsSupported(tileCompression)
+                ? $"Property 'tileCompression' must be one of: {TileArchiveCompression.SupportedValues}."
+                : null;
+        return detail is null
+            ? null
+            : ProblemDetailsHelpers.CreateAdminProblemDetails(
+                context,
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                detail);
+    }
+
     private static ProblemDetailsResponse? ValidateStartRequest(HttpContext context, TileOperationStartRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Operation))
@@ -362,6 +386,11 @@ internal static class TileOperationsEndpoints
         }
 
         var operation = request.Operation.Trim().ToLowerInvariant();
+        if (ValidateTileCompression(context, request.TileCompression, operation) is { } compressionError)
+        {
+            return compressionError;
+        }
+
         if (operation is "seed" or "warm" && !request.LayerId.HasValue && string.IsNullOrWhiteSpace(request.ServiceId))
         {
             return ProblemDetailsHelpers.CreateAdminProblemDetails(

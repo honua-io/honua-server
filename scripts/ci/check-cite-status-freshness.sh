@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
-# Fails visibly when docs/cite-status.md — the authoritative OGC CITE
-# evidence snapshot — has gone stale beyond a threshold. #2944: the CITE
-# Evidence Report workflow now runs on a weekly schedule, but the workflow
-# regenerating the raw evidence bundle does not by itself guarantee that a
-# human/agent updates the hand-maintained docs/cite-status.md summary. This
-# check gives that drift a visible, failing signal instead of letting the
-# "authoritative" snapshot silently go quiet.
+# Evidence generation on manual dispatch or RC builds does not refresh the
+# hand-maintained docs/cite-status.md summary. Fail when that summary is stale.
 #
 # Usage: scripts/ci/check-cite-status-freshness.sh [path-to-cite-status.md]
 #

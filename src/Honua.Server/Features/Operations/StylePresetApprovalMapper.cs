@@ -43,7 +43,7 @@ internal sealed class StylePresetApprovalMapper : IOperationApprovalRequestMappe
             Plan = new OperationProposalPlan
             {
                 Summary = $"{(payload.DryRun ? "Preview" : "Apply")} style '{payload.Parameters["styleId"]}' "
-                    + $"on service '{payload.Parameters["serviceId"]}', layer '{payload.Parameters["layerId"]}'.",
+                    + $"on service '{payload.Parameters["serviceId"]}', layer '{payload.Parameters["serviceLayerIndex"]}'.",
                 RiskLevel = ProposalRiskLevel.Medium,
                 ExecutionPayload = serialized,
             },

@@ -391,7 +391,7 @@ public sealed class StacSearchTests : IAsyncLifetime
             var content = await response.Content.ReadAsStringAsync();
 
             response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-            var returnedIds = JsonDocument.Parse(content).RootElement
+            var returnedIds = JsonElement.Parse(content)
                 .GetProperty("features")
                 .EnumerateArray()
                 .Select(feature => feature.GetProperty("id").GetString());
@@ -429,7 +429,7 @@ public sealed class StacSearchTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var returnedIds = JsonDocument.Parse(content).RootElement
+        var returnedIds = JsonElement.Parse(content)
             .GetProperty("features")
             .EnumerateArray()
             .Select(feature => feature.GetProperty("id").GetString());

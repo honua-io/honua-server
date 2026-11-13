@@ -5,35 +5,45 @@ using System.Globalization;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
 
+// Every cached response is derived from the catalog, and an anonymous caller's access is decided by the catalog alone.
+// Keying each entry by the catalog revision means another node's change to a layer, its access policy or its style
+// retires this node's entries as soon as this node sees the new revision, instead of when their lifetime ends.
 internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
 {
+    internal const string CatalogRevisionKey = "honua-service-revision";
+
     public async ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)
     {
         AddRouteTags(context);
+        if (!MayUseOutputCache(context.HttpContext))
+        {
+            return;
+        }
+
         var snapshot = GeoServicesServicePath.FromRequest(context.HttpContext)?.Snapshot;
-        if (snapshot is null && context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<GeoServicesServiceRoutes.CatalogRoute>() is not null)
+        if (snapshot is null)
         {
             try
             {
-                snapshot = await context.HttpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
-                    .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+                snapshot = await CurrentCatalogAsync(context.HttpContext, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (ServiceResourceValidationHelpers.IsCatalogStorageUnavailable(exception))
             {
-                context.EnableOutputCaching = false;
-                context.AllowCacheLookup = false;
-                context.AllowCacheStorage = false;
+                DisableCaching(context);
                 return;
             }
         }
+
         if (snapshot is not null)
         {
-            context.CacheVaryByRules.VaryByValues["honua-service-revision"] = snapshot.Etag;
+            context.CacheVaryByRules.VaryByValues[CatalogRevisionKey] = snapshot.Etag;
             context.CacheVaryByRules.VaryByValues["honua-service-tenant"] = TenantScopeHelpers.ResolveRequestTenantId(context.HttpContext) ?? string.Empty;
+            OutputCacheStatus.UseCatalogRevision(context.HttpContext, snapshot.Etag);
         }
     }
 
@@ -46,6 +56,23 @@ internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
     {
         AddRouteTags(context);
         return ValueTask.CompletedTask;
+    }
+
+    // Only a GET to an endpoint that opted into output caching can be looked up or stored; the base policy also sees
+    // every other request, and those must not pay for a catalog read.
+    private static bool MayUseOutputCache(HttpContext context)
+        => HttpMethods.IsGet(context.Request.Method) && OutputCacheStatus.RouteUsesOutputCache(context);
+
+    private static async ValueTask<MetadataV2GraphSnapshot?> CurrentCatalogAsync(HttpContext context, CancellationToken cancellationToken)
+        => context.RequestServices.GetService<IMetadataV2GraphProvider>() is { } provider
+            ? await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+
+    private static void DisableCaching(OutputCacheContext context)
+    {
+        context.EnableOutputCaching = false;
+        context.AllowCacheLookup = false;
+        context.AllowCacheStorage = false;
     }
 
     private static void AddRouteTags(OutputCacheContext context)

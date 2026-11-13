@@ -128,7 +128,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
         projectedCoordinates!.Value.Y.Should().BeApproximately(4547675.35, 2d);
 
         created.Geometry.Should().NotBeNull();
-        var createdCoordinates = JsonDocument.Parse(created.Geometry!.CoordinatesJson!).RootElement.EnumerateArray().ToArray();
+        var createdCoordinates = JsonElement.Parse(created.Geometry!.CoordinatesJson!).EnumerateArray().ToArray();
         createdCoordinates[0].GetDouble().Should().BeApproximately(37.7749, 1e-4);
         createdCoordinates[1].GetDouble().Should().BeApproximately(-122.4194, 1e-4);
 
@@ -240,7 +240,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
 
         var responseContent = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, responseContent);
-        JsonDocument.Parse(responseContent).RootElement.GetProperty("detail").GetString()
+        JsonElement.Parse(responseContent).GetProperty("detail").GetString()
             .Should().Contain("does not match the layer geometry type Polygon");
     }
 
@@ -439,7 +439,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var responseContent = await response.Content.ReadAsStringAsync();
-        JsonDocument.Parse(responseContent).RootElement.GetProperty("detail").GetString().Should().Contain("Unsupported CRS");
+        JsonElement.Parse(responseContent).GetProperty("detail").GetString().Should().Contain("Unsupported CRS");
     }
 
     [IntegrationTest]
@@ -529,7 +529,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var responseContent = await response.Content.ReadAsStringAsync();
-        JsonDocument.Parse(responseContent).RootElement.GetProperty("detail").GetString().Should().Contain("Unsupported explicit geometry CRS 'EPSG:3395'");
+        JsonElement.Parse(responseContent).GetProperty("detail").GetString().Should().Contain("Unsupported explicit geometry CRS 'EPSG:3395'");
     }
 
     [IntegrationTest]
@@ -559,7 +559,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var responseContent = await response.Content.ReadAsStringAsync();
-        JsonDocument.Parse(responseContent).RootElement.GetProperty("detail").GetString().Should().Contain("Unsupported CRS");
+        JsonElement.Parse(responseContent).GetProperty("detail").GetString().Should().Contain("Unsupported CRS");
     }
 
     [IntegrationTest]
@@ -573,7 +573,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var responseContent = await response.Content.ReadAsStringAsync();
-        JsonDocument.Parse(responseContent).RootElement.GetProperty("detail").GetString().Should().Contain("Unsupported CRS");
+        JsonElement.Parse(responseContent).GetProperty("detail").GetString().Should().Contain("Unsupported CRS");
     }
 
     [IntegrationTest]
@@ -644,7 +644,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
     private static void AssertPointCoordinates(GeoJsonFeature feature, double[] expected)
     {
         feature.Geometry.Should().NotBeNull();
-        var coordinates = JsonDocument.Parse(feature.Geometry!.CoordinatesJson!).RootElement
+        var coordinates = JsonElement.Parse(feature.Geometry!.CoordinatesJson!)
             .EnumerateArray()
             .Select(static value => value.GetDouble())
             .ToArray();

@@ -51,7 +51,7 @@ public sealed partial class LayerPublishingIntegrationTests
             }, _connectionId, services.GetRequiredService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>().TenantId);
             if (refresh)
             {
-                _layerId = (await publisher.PublishLayerAsync(connectionString, request)).LayerId;
+                _layerId = (await publisher.PublishLayerAsync(connectionString, request)).StorageLayerId;
             }
 
             var mutation = new ConcurrentSourceMutation(async () =>
@@ -72,7 +72,7 @@ public sealed partial class LayerPublishingIntegrationTests
                 }
                 else
                 {
-                    _layerId = (await publisher.PublishLayerAsync(connectionString, request)).LayerId;
+                    _layerId = (await publisher.PublishLayerAsync(connectionString, request)).StorageLayerId;
                 }
             }
 

@@ -183,6 +183,9 @@ swa_restore() {
 }
 
 write_swa_manifest "${swa_roots[@]}"
+jq -n --arg root "${swa_repo}/samples/Demo/" \
+  '{"Demo, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null":$root,"Published":"~"}' \
+  > "${swa_bin}/MvcTestingAppManifest.json"
 swa_package >/dev/null
 jq -e --arg repo "${swa_repo}" --arg nuget "${swa_nuget}/demo.auth/1.0.0/staticwebassets" '
   .repo_root == $repo and
@@ -214,7 +217,18 @@ fi
 swa_consumer="${swa}/consumer"
 mkdir -p "${swa_consumer}/samples/Demo/wwwroot"
 cp "${swa_repo}/samples/Demo/wwwroot/index.html" "${swa_consumer}/samples/Demo/wwwroot/"
+# Remove the producer so a leaked absolute root cannot make the fixture pass.
+mv "${swa_repo}" "${swa}/producer-away"
 swa_restore "${swa_consumer}" >/dev/null
+restored_bin="${swa_consumer}/tests/dotnet/Hosted.Tests/bin/Release/net10.0"
+jq -e --arg root "${swa_consumer}/samples/Demo" \
+  '.["Demo, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"] == $root and .Published == "~"' \
+  "${restored_bin}/MvcTestingAppManifest.json" >/dev/null
+jq -e --arg repo "${swa_repo}" --arg dest "${swa_consumer}" \
+  --arg nuget "${swa_nuget}/demo.auth/1.0.0/staticwebassets/" \
+  '.ContentRoots | .[0] == $nuget and .[1] == ($dest + "/samples/Demo/wwwroot") and
+    all(.[]; startswith($repo) | not)' "${restored_bin}/Hosted.staticwebassets.runtime.json" >/dev/null
+mv "${swa}/producer-away" "${swa_repo}"
 [[ -f "${swa_consumer}/samples/Demo/bin/Release/net10.0/wwwroot/_framework/blazor.webassembly.js" ]]
 [[ -f "${swa_consumer}/samples/Demo/obj/Release/net10.0/compressed/_framework/blazor.webassembly.js.gz" ]]
 [[ -d "${swa_consumer}/src/Server/obj/Release/net10.0/compressed" ]]
@@ -238,6 +252,21 @@ if swa_restore "${swa}/consumer-unsafe-root" >/dev/null 2>&1; then
   exit 1
 fi
 mv "${swa_manifest}.valid" "${swa_manifest}"
+
+# Invalid MVC roots fail before installation and leave existing outputs intact.
+cp "${swa_bin}/MvcTestingAppManifest.json" "${swa}/mvc.valid"
+printf 'preserved\n' > "${restored_bin}/existing-output.txt"
+for invalid_root in "${swa_repo}/missing-app" "${swa_repo}/../elsewhere" "${swa}/elsewhere"; do
+  jq -n --arg root "${invalid_root}" '{Demo:$root}' > "${swa_bin}/MvcTestingAppManifest.json"
+  swa_package >/dev/null
+  if swa_restore "${swa_consumer}" >/dev/null 2>&1; then
+    echo "::error::Restore accepted invalid MVC content root: ${invalid_root}" >&2
+    exit 1
+  fi
+  [[ "$(cat "${restored_bin}/existing-output.txt")" == preserved ]]
+done
+mv "${swa}/mvc.valid" "${swa_bin}/MvcTestingAppManifest.json"
+swa_package >/dev/null
 
 printf 'generated\n' > "${swa_repo}/samples/Demo/wwwroot/generated.js"
 if swa_package >/dev/null 2>&1; then

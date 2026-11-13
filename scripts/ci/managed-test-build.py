@@ -98,9 +98,9 @@ def build_standalone(root, projects):
         raise ValueError('Unknown standalone project')
     for project in standalone_projects(root, projects):
         subprocess.run(['bash', str(root / 'scripts/ci/dotnet-restore-retry.sh'), project,
-                        '-p:Configuration=Release', *PROPERTIES], cwd=root, check=True)
+                        '-p:Configuration=Release', '-maxcpucount:4', *PROPERTIES], cwd=root, check=True)
         subprocess.run(['dotnet', 'build', project, '--no-restore', '-c', 'Release',
-                        '-graphBuild', *PROPERTIES], cwd=root, check=True)
+                        '-graphBuild', '-maxcpucount:4', *PROPERTIES], cwd=root, check=True)
 
 
 def package_dependencies_ready(root, project):
