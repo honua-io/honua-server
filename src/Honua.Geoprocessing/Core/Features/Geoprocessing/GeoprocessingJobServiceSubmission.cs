@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Geoprocessing;
 
