@@ -49,9 +49,7 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
 
         if (AgentApprovalRule.Applies(request.OperationId, context.Roles))
         {
-            var agentGuardrail = gatewayRequest.ActionDiscriminator is null
-                ? _legacyGuardrails.Resolve(gatewayRequest.Kind)
-                : _legacyGuardrails.Resolve(gatewayRequest.Kind, gatewayRequest.ActionDiscriminator);
+            var agentGuardrail = ResolveGuardrail(gatewayRequest);
             return agentGuardrail.Tier == GuardrailTier.Blocked
                 ? new PolicyDecision
                 {
@@ -77,9 +75,7 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             return PolicyDecision.Allowed;
         }
 
-        var guardrail = gatewayRequest.ActionDiscriminator is null
-            ? _legacyGuardrails.Resolve(gatewayRequest.Kind)
-            : _legacyGuardrails.Resolve(gatewayRequest.Kind, gatewayRequest.ActionDiscriminator);
+        var guardrail = ResolveGuardrail(gatewayRequest);
         if (IsDefaultPrivateDraftApproval(guardrail, gatewayRequest, descriptor.OperationId)
             && IsOwnedDraftMutation(request, context)
             && await IsInteractiveHumanAsync(cancellationToken).ConfigureAwait(false))
@@ -87,7 +83,16 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             return PolicyDecision.Allowed;
         }
 
-        return guardrail.Tier switch
+        return EvaluateGuardrail(guardrail);
+    }
+
+    private GuardrailDecision ResolveGuardrail(OperationGatewayRequest request) =>
+        request.ActionDiscriminator is null
+            ? _legacyGuardrails.Resolve(request.Kind)
+            : _legacyGuardrails.Resolve(request.Kind, request.ActionDiscriminator);
+
+    private static PolicyDecision EvaluateGuardrail(GuardrailDecision guardrail) =>
+        guardrail.Tier switch
         {
             GuardrailTier.DirectExecute => PolicyDecision.Allowed,
             GuardrailTier.RequiresApproval => new PolicyDecision
@@ -102,7 +107,6 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
                 Reason = guardrail.Source,
             },
         };
-    }
 
     private static bool IsOwnedDraftMutation(OperationRequest request, OperationPolicyContext context) =>
         request.OperationId is not (StudioDraftMutationContext.UpdateOperationId or StudioDraftMutationContext.DeleteOperationId)

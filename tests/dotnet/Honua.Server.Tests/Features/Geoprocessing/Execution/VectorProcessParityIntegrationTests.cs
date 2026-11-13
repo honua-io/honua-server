@@ -309,17 +309,7 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
             using var human = await HumanApprovalHttpClient.AuthenticateAsync(fixture, identityProvider);
             var completed = await McpPublicationFixtureSetup.ApprovePublicationAsync(human, client, result);
             var publishedServiceId = completed.Result!.Details["serviceName"];
-            using var serviceResourceResponse = await client.PostAsJsonAsync("/mcp", new
-            {
-                jsonrpc = "2.0",
-                id = 3,
-                method = "resources/read",
-                @params = new { uri = $"honua://published-services/{service}" }
-            });
-            serviceResourceResponse.EnsureSuccessStatusCode();
-            using var serviceResource = JsonDocument.Parse(await serviceResourceResponse.Content.ReadAsStringAsync());
-            var serviceUri = serviceResource.RootElement.GetProperty("result").GetProperty("contents")[0].GetProperty("uri").GetString();
-            serviceUri.Should().Be($"honua://published-services/{service}");
+            await AssertPublishedServiceResourceAsync(client, service);
             publishedServiceId.Should().Be(service);
             var serviceLayerIndex = completed.Result.Details["serviceLayerIndex"];
             serviceLayerIndex.Should().NotBeNullOrWhiteSpace();
@@ -1098,5 +1088,20 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
         root.GetProperty("type").GetString().Should().Be("MeasureResult");
         root.GetProperty("processId").GetString().Should().Be(expectedProcessId);
         return root;
+    }
+
+    private static async Task AssertPublishedServiceResourceAsync(HttpClient client, string service)
+    {
+        using var serviceResourceResponse = await client.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = 3,
+            method = "resources/read",
+            @params = new { uri = $"honua://published-services/{service}" }
+    });
+    serviceResourceResponse.EnsureSuccessStatusCode();
+    using var serviceResource = JsonDocument.Parse(await serviceResourceResponse.Content.ReadAsStringAsync());
+    var serviceUri = serviceResource.RootElement.GetProperty("result").GetProperty("contents")[0].GetProperty("uri").GetString();
+    serviceUri.Should().Be($"honua://published-services/{service}");
     }
 }

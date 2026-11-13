@@ -305,21 +305,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
                 return false;
             }
 
-            // Cascade-delete an orphan content item: if this was the item's last remaining
-            // draft and no version has ever been saved for it, the item has nothing openable
-            // (no draft, no version) and must not surface in content-item enumeration (#3003).
-            var cascadeSql = $"""
-                DELETE FROM {_itemsTable}
-                WHERE item_id = @item_id
-                  AND current_version_id IS NULL
-                  AND published_version_id IS NULL
-                  AND NOT EXISTS (SELECT 1 FROM {_draftsTable} WHERE item_id = @item_id)
-                """;
-            await using (var cascadeCommand = new NpgsqlCommand(cascadeSql, connection, transaction))
-            {
-                cascadeCommand.Parameters.AddWithValue("@item_id", itemId.Value);
-                await cascadeCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await DeleteOrphanItemAsync(transaction, itemId.Value, cancellationToken).ConfigureAwait(false);
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             return true;
@@ -328,6 +314,22 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
+        }
+    }
+
+    private async Task DeleteOrphanItemAsync(NpgsqlTransaction transaction, Guid itemId, CancellationToken cancellationToken)
+    {
+        var cascadeSql = $"""
+            DELETE FROM {_itemsTable}
+            WHERE item_id = @item_id
+              AND current_version_id IS NULL
+              AND published_version_id IS NULL
+              AND NOT EXISTS (SELECT 1 FROM {_draftsTable} WHERE item_id = @item_id)
+            """;
+        await using (var cascadeCommand = new NpgsqlCommand(cascadeSql, transaction.Connection, transaction))
+        {
+            cascadeCommand.Parameters.AddWithValue("@item_id", itemId);
+            await cascadeCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 

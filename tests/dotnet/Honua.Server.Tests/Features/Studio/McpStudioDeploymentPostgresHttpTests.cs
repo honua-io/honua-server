@@ -127,22 +127,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
 
         var published = await CallToolAsync(admin, "honua_studio_propose_publication",
             $$"""{"itemId":"{{itemId:D}}","versionId":"{{versionId:D}}","contentHash":"{{contentHash}}","route":"{{route}}","visibility":"public"}""");
-        published.GetProperty("status").GetString().Should().Be("AwaitingApproval");
-        published.TryGetProperty("shareUrl", out _).Should().BeFalse();
-        using var approvalScope = _fixture.Services.CreateScope();
-        var lifecycle = approvalScope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
-        (await lifecycle.GetPointersAsync(itemId))!.PublishedVersionId.Should().BeNull();
-        using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
-            _fixture, _identityProvider, "deployment-human-publisher", TenantA);
-        using var approval = await approver.ApproveAsync(published.GetProperty("proposalId").GetString()!);
-        var approvalBody = await approval.Content.ReadAsStringAsync();
-        approval.StatusCode.Should().Be(HttpStatusCode.OK, approvalBody);
-        using var decision = JsonDocument.Parse(approvalBody);
-        decision.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", approvalBody);
-        var publication = await lifecycle.GetActivePublicationRequestByRouteAsync(route);
-        publication.Should().NotBeNull();
-        publication!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
-        publication.PublicationUrl.Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
+        var publication = await ApprovePublicationAsync(published, itemId, route);
         var deploymentId = publication.DeploymentId;
         var resourceUri = publication.DeploymentResourceUri;
         deploymentId.Should().NotBeNullOrWhiteSpace();
@@ -312,4 +297,25 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
             signingCredentials: credentials);
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+    private async Task<StudioPublicationRequest> ApprovePublicationAsync(JsonElement published, Guid itemId, string route)
+    {
+        published.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        published.TryGetProperty("shareUrl", out _).Should().BeFalse();
+        using var approvalScope = _fixture.Services.CreateScope();
+        var lifecycle = approvalScope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+        (await lifecycle.GetPointersAsync(itemId))!.PublishedVersionId.Should().BeNull();
+        using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "deployment-human-publisher", TenantA);
+        using var approval = await approver.ApproveAsync(published.GetProperty("proposalId").GetString()!);
+        var approvalBody = await approval.Content.ReadAsStringAsync();
+        approval.StatusCode.Should().Be(HttpStatusCode.OK, approvalBody);
+        using var decision = JsonDocument.Parse(approvalBody);
+        decision.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", approvalBody);
+        var publication = await lifecycle.GetActivePublicationRequestByRouteAsync(route);
+        publication.Should().NotBeNull();
+        publication!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+        publication.PublicationUrl.Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
+        return publication;
+    }
+
 }

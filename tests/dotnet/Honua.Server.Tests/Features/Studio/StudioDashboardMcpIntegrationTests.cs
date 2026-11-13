@@ -264,38 +264,44 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             reader.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
                 .Should().Be(StudioPackagePersistenceMode.Durable);
 
-            // Publication waits for a verified human decision even for an administrator.
-            _fixture.Services.GetRequiredService<IOptions<GuardrailLadderOptions>>().Value
-                .Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
-            _fixture.Services.GetRequiredService<IGuardrailLadder>().Resolve(OperationClass.StudioDraftMutation)
-                .Tier.Should().Be(GuardrailTier.RequiresApproval);
-            const string route = "/studio/dashboard-fixture";
-            var intent = await CallAsync("propose_publication",
-                $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"{{route}}","visibility":"personal"}""");
-            intent.GetProperty("status").GetString().Should().Be("AwaitingApproval");
-            intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
-            intent.TryGetProperty("shareUrl", out _).Should().BeFalse();
-            (await lifecycle.GetPointersAsync(version.ItemId))!.PublishedVersionId.Should().BeNull();
-            using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
-                _fixture, _identityProvider, "dashboard-human-publisher");
-            using var approval = await approver.ApproveAsync(intent.GetProperty("proposalId").GetString()!);
-            var approvalBody = await approval.Content.ReadAsStringAsync();
-            approval.StatusCode.Should().Be(HttpStatusCode.OK, approvalBody);
-            using var decision = JsonDocument.Parse(approvalBody);
-            decision.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", approvalBody);
-            var publication = await lifecycle.GetActivePublicationRequestByRouteAsync(route);
-            publication.Should().NotBeNull();
-            publication!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
-            publication.PublicationUrl.Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
-            var pointers = await lifecycle.GetPointersAsync(version.ItemId);
-            pointers!.CurrentVersionId.Should().Be(version.VersionId);
-            pointers.PublishedVersionId.Should().Be(version.VersionId);
-            (await lifecycle.GetVersionAsync(version.ItemId, version.VersionId))!.ContentHash.Should().Be(expectedHash);
+            await AssertHumanApprovedPublicationAsync(lifecycle, version, expectedHash);
         }
         finally
         {
             await replica.DisposeAsync();
         }
+    }
+
+    private async Task AssertHumanApprovedPublicationAsync(
+        IStudioPackageLifecycleService lifecycle, StudioContentVersion version, string expectedHash)
+    {
+        // Publication waits for a verified human decision even for an administrator.
+        _fixture.Services.GetRequiredService<IOptions<GuardrailLadderOptions>>().Value
+            .Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
+        _fixture.Services.GetRequiredService<IGuardrailLadder>().Resolve(OperationClass.StudioDraftMutation)
+            .Tier.Should().Be(GuardrailTier.RequiresApproval);
+        const string route = "/studio/dashboard-fixture";
+        var intent = await CallAsync("propose_publication",
+            $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"{{route}}","visibility":"personal"}""");
+        intent.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
+        intent.TryGetProperty("shareUrl", out _).Should().BeFalse();
+        (await lifecycle.GetPointersAsync(version.ItemId))!.PublishedVersionId.Should().BeNull();
+        using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "dashboard-human-publisher");
+        using var approval = await approver.ApproveAsync(intent.GetProperty("proposalId").GetString()!);
+        var approvalBody = await approval.Content.ReadAsStringAsync();
+        approval.StatusCode.Should().Be(HttpStatusCode.OK, approvalBody);
+        using var decision = JsonDocument.Parse(approvalBody);
+        decision.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", approvalBody);
+        var publication = await lifecycle.GetActivePublicationRequestByRouteAsync(route);
+        publication.Should().NotBeNull();
+        publication!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+        publication.PublicationUrl.Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
+        var pointers = await lifecycle.GetPointersAsync(version.ItemId);
+        pointers!.CurrentVersionId.Should().Be(version.VersionId);
+        pointers.PublishedVersionId.Should().Be(version.VersionId);
+        (await lifecycle.GetVersionAsync(version.ItemId, version.VersionId))!.ContentHash.Should().Be(expectedHash);
     }
 
     private async Task<JsonElement> CallAsync(string verb, string arguments)

@@ -38,11 +38,6 @@ internal static partial class SceneDatasetEndpoints
             .WithTags(ScenesAdminTagAdmin, ScenesAdminTagScenes)
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/", HandleListScenes)
-            .WithName("ListSceneDatasets")
-            .WithSummary("List registered scene datasets.")
-            .Produces<SceneDatasetSummary[]>(StatusCodes.Status200OK);
-
         _ = group.MapPost("/", HandleRegisterScene)
             .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithName("RegisterSceneDataset")
@@ -51,12 +46,6 @@ internal static partial class SceneDatasetEndpoints
             .Produces<SceneDatasetDetail>(StatusCodes.Status201Created)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status409Conflict);
-
-        _ = group.MapGet("/{id:guid}", HandleGetScene)
-            .WithName("GetSceneDataset")
-            .WithSummary("Get the full record of a scene dataset.")
-            .Produces<SceneDatasetDetail>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status404NotFound);
 
         _ = group.MapPut("/{id:guid}", HandleUpdateScene)
             .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
@@ -74,13 +63,28 @@ internal static partial class SceneDatasetEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        MapSceneReadEndpoints(group);
+        return endpoints;
+    }
+
+    private static void MapSceneReadEndpoints(RouteGroupBuilder group)
+    {
+        _ = group.MapGet("/", HandleListScenes)
+            .WithName("ListSceneDatasets")
+            .WithSummary("List registered scene datasets.")
+            .Produces<SceneDatasetSummary[]>(StatusCodes.Status200OK);
+
+        _ = group.MapGet("/{id:guid}", HandleGetScene)
+            .WithName("GetSceneDataset")
+            .WithSummary("Get the full record of a scene dataset.")
+            .Produces<SceneDatasetDetail>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         _ = group.MapGet("/{id:guid}/resolve", HandleResolveScene)
             .WithName("ResolveSceneDataset")
             .WithSummary("Resolve a scene dataset to embed snippets and serving metadata.")
             .Produces<SceneDatasetResolveResponse>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound);
-
-        return endpoints;
     }
 
     private static async Task<IResult> HandleListScenes(
