@@ -13,8 +13,10 @@ using Npgsql;
 namespace Honua.Server.Features.Admin;
 
 // Append last, on the state writer's transaction, so a client never loses a committed change.
-internal sealed class AdminControlPlaneRealtimeWriter(PostgresRealtimeEventLog log) : IControlPlaneRealtimeWriter
+internal sealed class AdminControlPlaneRealtimeWriter(PostgresRealtimeEventLog log, RealtimeDispatcher dispatcher) : IControlPlaneRealtimeWriter
 {
+    public void NotifyCommitted() => dispatcher.Wake();
+
     public async Task AppendProposalAsync(OperationProposal proposal, ControlPlaneWriteContext context)
     {
         if (proposal.Status is OperationProposalStatus.Planned or OperationProposalStatus.Executing)

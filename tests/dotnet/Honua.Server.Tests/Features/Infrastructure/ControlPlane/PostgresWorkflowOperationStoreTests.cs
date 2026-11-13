@@ -47,6 +47,8 @@ public sealed class PostgresWorkflowOperationStoreTests(DatabaseFixtureAdapter d
 
     private sealed class RejectingRealtimeWriter : IControlPlaneRealtimeWriter
     {
+        public void NotifyCommitted() => throw new InvalidOperationException("Unexpected notification after failed append");
+
         public Task AppendTransitionAsync(WorkflowOperationTransition transition, ControlPlaneWriteContext context)
             => throw new InvalidOperationException("Simulated realtime append failure");
 

@@ -63,6 +63,10 @@ internal sealed partial class PostgresOperationProposalStore(
                     await realtime.AppendProposalAsync(created, new ControlPlaneWriteContext(transaction, token)).ConfigureAwait(false);
                 }
                 await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
+                if (changed)
+                {
+                    storage.Realtime?.NotifyCommitted();
+                }
                 return changed;
             },
             StatementRepeat.NotAfterSend,
@@ -128,6 +132,10 @@ internal sealed partial class PostgresOperationProposalStore(
                     await realtime.AppendProposalAsync(next, new ControlPlaneWriteContext(transaction, token)).ConfigureAwait(false);
                 }
                 await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
+                if (changed)
+                {
+                    storage.Realtime?.NotifyCommitted();
+                }
                 return changed;
             },
             StatementRepeat.NotAfterSend,

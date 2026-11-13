@@ -38,7 +38,7 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
     {
         await using var log = await RealtimeLogHarness.CreateAsync(database);
         var dispatcher = log.CreateDispatcher();
-        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log) };
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log, dispatcher) };
         using var host = CreateFactory(log, dispatcher, storage, inProcess: true);
         using var client = host.CreateClient();
         client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
@@ -86,8 +86,8 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
     public async Task Live_WorkflowTransitions_ShareEventIdentityWithRestTimeline()
     {
         await using var log = await RealtimeLogHarness.CreateAsync(database);
-        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log) };
         var dispatcher = log.CreateDispatcher();
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log, dispatcher) };
         using var tail = log.CreateTail(dispatcher, null, new RealtimeOptions());
         await tail.StartAsync(default);
         using var host = CreateFactory(log, dispatcher, storage);
@@ -151,8 +151,8 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
     public async Task Live_AnotherTaskPublishes_ReceivesHealthAndResumesTransitionsOnReplacementTask()
     {
         await using var log = await RealtimeLogHarness.CreateAsync(database);
-        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log) };
         var dispatcherA = log.CreateDispatcher();
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log, dispatcherA) };
         var dispatcherB = log.CreateDispatcher();
         using var tailA = log.CreateTail(dispatcherA, null, new RealtimeOptions());
         using var tailB = log.CreateTail(dispatcherB, null, new RealtimeOptions());

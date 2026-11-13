@@ -152,6 +152,10 @@ internal sealed partial class PostgresWorkflowOperationStore(
                     }
                 }
                 await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
+                if (changed)
+                {
+                    storage.Realtime?.NotifyCommitted();
+                }
                 return changed;
             },
             StatementRepeat.NotAfterSend,

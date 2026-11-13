@@ -15,6 +15,7 @@ internal sealed record ControlPlaneStorage(JobStoreDatabase Database, ILeaseStor
 
 internal interface IControlPlaneRealtimeWriter
 {
+    void NotifyCommitted();
     Task AppendProposalAsync(OperationProposal proposal, ControlPlaneWriteContext context);
     Task AppendTransitionAsync(WorkflowOperationTransition transition, ControlPlaneWriteContext context);
 }
