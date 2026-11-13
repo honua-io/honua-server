@@ -22665,6 +22665,71 @@
           }
         }
       }
+    },
+    "/coordinate-systems": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Search Coordinate Systems",
+        "operationId": "SearchCoordinateSystemsV1",
+        "description": "Search the configured coordinate-system catalog by name or code. Results include display names, units and areas when available.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Search text; leading and trailing whitespace is removed before validation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching coordinate systems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoordinateSystemSearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "The coordinate-system catalog is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -52285,6 +52350,51 @@
           "timestamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "CoordinateSystemSearchResult": {
+        "type": "object",
+        "required": [
+          "items",
+          "hasMore"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoordinateSystemEntry"
+            }
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "Whether more matches exist beyond this response limit."
+          }
+        }
+      },
+      "CoordinateSystemEntry": {
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "unit",
+          "area"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true
+          },
+          "area": {
+            "type": "string",
+            "nullable": true
           }
         }
       }
