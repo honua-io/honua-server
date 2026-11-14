@@ -115,7 +115,7 @@ internal sealed class WorkflowEventTriggerBackgroundService(
         }
 
         var cursorMarker = await definitionStore
-            .GetTriggerCursorAsync(definition.WorkflowId, RedisWorkflowDefinitionStore.ChangeFeedCursorKind, cancellationToken)
+            .GetTriggerCursorAsync(definition.WorkflowId, WorkflowTriggerCursors.ChangeFeedCursorKind, cancellationToken)
             .ConfigureAwait(false);
         var sinceGeneration = ParseGeneration(cursorMarker);
 
@@ -140,7 +140,7 @@ internal sealed class WorkflowEventTriggerBackgroundService(
 
         var fired = await FireAsync(
             definition,
-            RedisWorkflowDefinitionStore.ChangeFeedCursorKind,
+            WorkflowTriggerCursors.ChangeFeedCursorKind,
             marker,
             metadata,
             cancellationToken).ConfigureAwait(false);
@@ -182,7 +182,7 @@ internal sealed class WorkflowEventTriggerBackgroundService(
         }
 
         var cursorMarker = await definitionStore
-            .GetTriggerCursorAsync(definition.WorkflowId, RedisWorkflowDefinitionStore.ObjectStoreCursorKind, cancellationToken)
+            .GetTriggerCursorAsync(definition.WorkflowId, WorkflowTriggerCursors.ObjectStoreCursorKind, cancellationToken)
             .ConfigureAwait(false);
 
         // First observation seeds the cursor without firing so an already-present backlog of objects
@@ -190,7 +190,7 @@ internal sealed class WorkflowEventTriggerBackgroundService(
         if (cursorMarker is null)
         {
             await definitionStore
-                .SetTriggerCursorAsync(definition.WorkflowId, RedisWorkflowDefinitionStore.ObjectStoreCursorKind, result.Marker, cancellationToken)
+                .SetTriggerCursorAsync(definition.WorkflowId, WorkflowTriggerCursors.ObjectStoreCursorKind, result.Marker, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -212,7 +212,7 @@ internal sealed class WorkflowEventTriggerBackgroundService(
 
         var fired = await FireAsync(
             definition,
-            RedisWorkflowDefinitionStore.ObjectStoreCursorKind,
+            WorkflowTriggerCursors.ObjectStoreCursorKind,
             result.Marker,
             metadata,
             cancellationToken).ConfigureAwait(false);
@@ -257,7 +257,7 @@ internal sealed class WorkflowEventTriggerBackgroundService(
         try
         {
             var principal = OrchestrationSystemPrincipal.Create(null);
-            var triggerKind = cursorKind == RedisWorkflowDefinitionStore.ChangeFeedCursorKind
+            var triggerKind = cursorKind == WorkflowTriggerCursors.ChangeFeedCursorKind
                 ? WorkflowTriggerKind.ChangeFeed
                 : WorkflowTriggerKind.ObjectStore;
 
