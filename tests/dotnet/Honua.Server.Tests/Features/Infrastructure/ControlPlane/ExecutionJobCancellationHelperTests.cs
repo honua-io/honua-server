@@ -35,14 +35,16 @@ public sealed class ExecutionJobCancellationHelperTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    public async Task QueuedCancellationCasLosesToWorkerPickup_RequestsDurableCancellation(int attemptIncrement)
+    [InlineData(0, 2)]
+    [InlineData(1, 2)]
+    [InlineData(1, 3)]
+    [InlineData(1, 5)]
+    public async Task QueuedCancellationCasLosesToWorkerPickup_RequestsDurableCancellation(int attemptIncrement, long version)
     {
         var original = CreateJobRecord("queued-pickup", ExecutionJobStatus.Queued, backend: "local") with { Version = 1 };
         var claimed = original with
         {
-            Version = 2,
+            Version = version,
             Status = ExecutionJobStatus.Running,
             AttemptCount = original.AttemptCount + attemptIncrement,
             ClaimedBy = "worker",
