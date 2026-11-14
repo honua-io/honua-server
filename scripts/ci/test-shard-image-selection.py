@@ -34,6 +34,7 @@ PARENT_IMAGES = {
     "Server Features Admin Layer Management": [],
     "Server Features Admin Release Control": [],
     "Server Features Collaboration Mobile and Identity": [],
+    "Server Features Packages and Temporal": [],
 }
 assert {contract["originalShard"]["name"] for contract in contracts} == set(PARENT_IMAGES), "Unlisted split parent."
 cases = {child: PARENT_IMAGES[contract["originalShard"]["name"]]
