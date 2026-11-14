@@ -638,7 +638,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             .ContainSingle("the Studio denial replaces the generic auth.denied event")
             .Subject;
         denialAudit.Action.Should().Be("studio.create_version");
-        denialAudit.Actor.Should().Be(bobOwnerId);
+        denialAudit.Actor.Should().Be($"apikey:api-key:{bobKey.Record.Id:D}");
         denialAudit.ActorType.Should().Be(AuditActorType.ApiKey);
         denialAudit.ResourceType.Should().Be("studio-content-item");
         denialAudit.ResourceId.Should().Be(itemId.ToString("D"));
@@ -674,7 +674,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             .ContainSingle(evt => evt.Action == "studio.lifecycle" && evt.ResourceId == requestPath)
             .Subject;
         auditEvent.EventType.Should().Be(AuditEventType.Authorization);
-        auditEvent.Actor.Should().Be(scopedKey.Record.Id.ToString("D"));
+        auditEvent.Actor.Should().Be($"apikey:api-key:{scopedKey.Record.Id:D}");
         auditEvent.ActorType.Should().Be(AuditActorType.ApiKey);
         auditEvent.ResourceType.Should().Be("studio");
         auditEvent.Outcome.Should().Be(AuditOutcome.Denied);
@@ -720,7 +720,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var stableDenials = auditLog.Events.ToArray();
         stableDenials.Should().OnlyContain(evt => evt.Action == "studio.list_own");
         stableDenials.Should().OnlyContain(evt =>
-            evt.Actor == scopedKey.Record.Id.ToString("D")
+            evt.Actor == $"apikey:api-key:{scopedKey.Record.Id:D}"
             && evt.ActorType == AuditActorType.ApiKey
             && evt.Outcome == AuditOutcome.Denied
             && evt.Details == """{"code":"studio_authorization/authentication_required"}""");
@@ -790,7 +790,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 evt.ResourceId == "/api/v1/studio/package-drafts")
             .Subject;
         writeAudit.EventType.Should().Be(AuditEventType.Authorization);
-        writeAudit.Actor.Should().Be(readOnlyKey.Record.Id.ToString("D"));
+        writeAudit.Actor.Should().Be($"apikey:api-key:{readOnlyKey.Record.Id:D}");
         writeAudit.ActorType.Should().Be(AuditActorType.ApiKey);
         writeAudit.ResourceType.Should().Be("studio");
         writeAudit.Outcome.Should().Be(AuditOutcome.Denied);
@@ -944,7 +944,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             .ContainSingle("the Studio denial replaces the generic auth.denied event")
             .Subject;
         denialAudit.Action.Should().Be("studio.read_content_item");
-        denialAudit.Actor.Should().Be(bobKey.Record.Id.ToString("D"));
+        denialAudit.Actor.Should().Be($"apikey:api-key:{bobKey.Record.Id:D}");
         denialAudit.ActorType.Should().Be(AuditActorType.ApiKey);
         denialAudit.ResourceType.Should().Be("studio-content-item");
         denialAudit.ResourceId.Should().Be(itemId.ToString("D"));
