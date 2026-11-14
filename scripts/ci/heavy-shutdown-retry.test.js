@@ -147,7 +147,7 @@ for (const log of [
 test('selective dispatch nonce cannot imitate the full-mode prefix', () => {
   const f = fixture();
   assert.equal(eligibleRun({ ...f.run, event: 'workflow_dispatch',
-    display_title: 'CI selective full nonce' }, 'honua-io/honua-server'), false);
+    display_title: 'CI affected full nonce' }, 'honua-io/honua-server'), false);
   const workflow = fs.readFileSync('.github/workflows/ci.yml', 'utf8');
-  assert.match(workflow, /'full ' \|\| github.ref == 'refs\/heads\/trunk' && 'selective '/);
+  assert.match(workflow, /'full ' \|\| github.ref == 'refs\/heads\/trunk' && 'affected '/);
 });

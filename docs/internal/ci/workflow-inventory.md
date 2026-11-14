@@ -897,7 +897,7 @@ rerun. Only attempt 1 qualifies, and every failed non-summary job must have the
 Successful jobs remain completed; failed jobs and their dependents run once more.
 Manual cancellations, selective runs, mixed product failures, unreadable logs and
 second interruptions do not retry. Summary failures qualify only in known dependent-verdict steps; independent foundation/artifact failures remain failures. Required job names and dependency contracts
-are unchanged. Manual full trunk runs use the `CI full` title prefix and selective trunk runs use `CI selective`, so a dispatch nonce cannot change the mode; merge-train
+are unchanged. Manual full trunk runs use the `CI full` title prefix and selective trunk runs retain `CI affected`, so a dispatch nonce cannot change the mode; merge-train
 dispatch identities retain their existing exact title.
 
 Normal PRs add zero jobs. Each failed first-attempt full trunk run starts one
