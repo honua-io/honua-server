@@ -102,7 +102,7 @@ internal static partial class GrpcTypedValues
         }
         catch (ArgumentOutOfRangeException)
         {
-            throw new ArgumentException($"timestamp_offset_value '{value}' is outside the representable range.");
+            throw new UnstorableValueException($"timestamp_offset_value '{value}' is outside the representable range.");
         }
     }
 
@@ -110,18 +110,23 @@ internal static partial class GrpcTypedValues
     // (more than 28-29 significant digits or out of range) are refused, never rounded.
     public static decimal ParseDecimal(string value)
     {
-        if (!DecimalPattern().IsMatch(value)
-            || !decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
-                CultureInfo.InvariantCulture, out var number))
+        if (!DecimalPattern().IsMatch(value))
         {
             throw new ArgumentException($"decimal_value '{value}' is not an exact base-10 number.");
+        }
+
+        // Lexically valid but outside the decimal range: the server cannot hold it.
+        if (!decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                CultureInfo.InvariantCulture, out var number))
+        {
+            throw new UnstorableValueException($"decimal_value '{value}' is outside the supported decimal range.");
         }
 
         var exact = number.ToString(CultureInfo.InvariantCulture);
         if (!string.Equals(exact, value, StringComparison.Ordinal)
             && !string.Equals(exact, NormalizeNegativeZero(value), StringComparison.Ordinal))
         {
-            throw new ArgumentException($"decimal_value '{value}' exceeds the supported decimal precision.");
+            throw new UnstorableValueException($"decimal_value '{value}' exceeds the supported decimal precision.");
         }
 
         return number;
@@ -182,3 +187,6 @@ internal static partial class GrpcTypedValues
             ? value[1..]
             : value;
 }
+
+// A lexically valid value the server cannot hold without loss: FAILED_PRECONDITION, not INVALID_ARGUMENT.
+internal sealed class UnstorableValueException(string message) : Exception(message);

@@ -83,7 +83,7 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task DeleteByGlobalId_WithoutDeleteGrant_IsDeniedBeforeAnyRead()
     {
         var act = async () => await _sut.ApplyEdits(DeleteRequest(), CallContext("update"));
@@ -93,7 +93,7 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task DeleteByGlobalId_WithoutDeleteCapability_FailsPreconditionBeforeAnyRead()
     {
         UseLayer(GlobalIdResource(hidden: false), capabilities: ["Query", "Update"]);
@@ -105,7 +105,7 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task DeleteByGlobalId_ResolvesTheTargetAndReportsItsGlobalId()
     {
         _featureWriter.ApplyEditsAsync(default, default, default).ReturnsForAnyArgs(Task.FromResult(
@@ -121,7 +121,7 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task DeleteByGlobalId_MissingTarget_FailsNotFoundWithoutWriting()
     {
         _featureReader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -134,7 +134,7 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task GlobalIdSelectors_OnHiddenGlobalIdField_FailPreconditionWithoutReading()
     {
         UseLayer(GlobalIdResource(hidden: true), capabilities: null);
@@ -146,10 +146,47 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
     }
 
     [UnitTest]
-    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task AddWithExistingGlobalId_IsRejectedWithoutWriting()
     {
         var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        request.Adds.Add(new Proto.Feature { GlobalId = GlobalId });
+
+        var act = async () => await _sut.ApplyEdits(request, CallContext("insert"));
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        AssertNothingWritten();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task AddWithoutGlobalId_GetsAServerAssignedIdentity()
+    {
+        _featureReader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Empty());
+        _featureWriter.ApplyEditsAsync(default, default, default).ReturnsForAnyArgs(Task.FromResult(
+            FeatureEditResult.Success(1, 0, 0, createResults: [EditOperationResult.Success(7)])));
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        request.Adds.Add(new Proto.Feature());
+
+        var response = await _sut.ApplyEdits(request, CallContext("insert"));
+
+        var written = (FeatureEditBatch)_featureWriter.ReceivedCalls()
+            .Single(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+            .GetArguments()[1]!;
+        var assigned = written.Creates.Single().Attributes["GlobalID"].Should().BeOfType<string>().Subject;
+        Guid.TryParseExact(assigned, "D", out _).Should().BeTrue();
+        response.AddResults.Single().GlobalId.Should().Be(assigned);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task AddsRepeatingAGlobalIdThroughRawAttributes_AreRejectedWithoutWriting()
+    {
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        var raw = new Proto.Feature();
+        raw.Attributes["GlobalID"] = new Proto.AttributeValue { StringValue = "{" + GlobalId.ToUpperInvariant() + "}" };
+        request.Adds.Add(raw);
         request.Adds.Add(new Proto.Feature { GlobalId = GlobalId });
 
         var act = async () => await _sut.ApplyEdits(request, CallContext("insert"));

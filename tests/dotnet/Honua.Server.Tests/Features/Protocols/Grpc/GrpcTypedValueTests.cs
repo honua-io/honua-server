@@ -32,8 +32,9 @@ public sealed class GrpcTypedValueTests
 
         var attributes = GrpcConversionHelpers.ToFeatureEditBatch(request).Creates[0].Attributes;
 
-        attributes["day"].Should().Be(new DateOnly(2026, 11, 14));
-        attributes["opens"].Should().Be(new TimeOnly(8, 30, 0).Add(TimeSpan.FromTicks(1234567)));
+        // Dates and times are stored as canonical text, as the other edit protocols store them.
+        attributes["day"].Should().Be("2026-11-14");
+        attributes["opens"].Should().Be("08:30:00.1234567");
         attributes["signed"].Should().Be(new DateTimeOffset(2026, 11, 14, 8, 30, 0, 500, TimeSpan.FromHours(-8)));
         ((decimal)attributes["fee"]!).ToString(System.Globalization.CultureInfo.InvariantCulture)
             .Should().Be("12345678901234567890.10");
@@ -75,10 +76,14 @@ public sealed class GrpcTypedValueTests
     [InlineData("+1")]
     [InlineData("01")]
     [InlineData("1.")]
+    public void ParseDecimal_InvalidText_Throws(string value)
+        => FluentActions.Invoking(() => GrpcTypedValues.ParseDecimal(value)).Should().Throw<ArgumentException>();
+
+    [UnitTheory]
     [InlineData("0.12345678901234567890123456789")]
     [InlineData("99999999999999999999999999999999")]
-    public void ParseDecimal_InexactOrInvalid_Throws(string value)
-        => FluentActions.Invoking(() => GrpcTypedValues.ParseDecimal(value)).Should().Throw<ArgumentException>();
+    public void ParseDecimal_BeyondServerPrecision_IsUnstorable(string value)
+        => FluentActions.Invoking(() => GrpcTypedValues.ParseDecimal(value)).Should().Throw<UnstorableValueException>();
 
     [UnitTheory]
     [InlineData("0.10")]

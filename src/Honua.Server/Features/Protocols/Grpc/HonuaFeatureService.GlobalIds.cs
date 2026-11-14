@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Google.Protobuf.Collections;
 using Grpc.Core;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,11 +20,17 @@ namespace Honua.Server.Features.Protocols.Grpc;
 internal sealed partial class HonuaFeatureService
 {
     // One ApplyEdits call's global-ID context; Field is the caller-visible global-ID field.
+    // ClientAddIds are the IDs adds supplied; AssignedAddIds the IDs every add was given.
     private readonly record struct GlobalIdEdit(
         Proto.ApplyEditsRequest Request,
         GrpcLayerContext Layer,
         IServiceProvider Services,
-        string? Field);
+        string? Field)
+    {
+        public ImmutableArray<string> ClientAddIds { get; init; } = [];
+
+        public ImmutableArray<string> AssignedAddIds { get; init; } = [];
+    }
 
     private readonly record struct QueryGlobalIds(GrpcLayerContext Layer, IServiceProvider Services, string? Field);
 
@@ -71,6 +78,13 @@ internal sealed partial class HonuaFeatureService
             throw new RpcException(new Status(StatusCode.InvalidArgument, "object_ids and global_ids are mutually exclusive."));
         }
 
+        if (request.GlobalIds.Count > GrpcGlobalIds.MaxQuerySelectors)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"global_ids accepts at most {GrpcGlobalIds.MaxQuerySelectors} IDs per request."));
+        }
+
         ImmutableArray<string> ids;
         try
         {
@@ -114,23 +128,52 @@ internal sealed partial class HonuaFeatureService
         return proto;
     }
 
-    // Adds keep their client global IDs as attribute values; the field must be visible.
-    private static FeatureEditBatch WithClientGlobalIds(GlobalIdEdit edit, FeatureEditBatch batch)
+    // Every add gets a global ID, as on GeoServices: the client's (Feature.global_id or the raw
+    // attribute, validated and checked for duplicates like any selector) or a new one. Writers
+    // generate none. Updates never change a stored global ID, so raw values on updates are dropped.
+    private static (FeatureEditBatch Batch, GlobalIdEdit Edit) AssignInsertGlobalIds(GlobalIdEdit edit, FeatureEditBatch batch)
     {
-        var adds = edit.Request.Adds;
-        if (!adds.Any(static add => add.GlobalId.Length > 0))
+        if (GrpcGlobalIds.ResolveField(edit.Layer.Resource) is not { } field)
         {
-            return batch;
+            return edit.Request.Adds.Any(static add => add.GlobalId.Length > 0)
+                ? throw new RpcException(new Status(StatusCode.FailedPrecondition, "The layer does not declare a global-ID field."))
+                : (batch, edit);
         }
 
-        var field = RequireGlobalIdField(edit.Field);
-        return batch with
+        var supplied = batch.Creates.Select((create, index) => ClientGlobalId(edit.Request.Adds[index], create, field)).ToArray();
+        ImmutableArray<string> clientIds;
+        try
         {
-            Creates = [.. batch.Creates.Select((create, index) => adds[index].GlobalId is { Length: > 0 } globalId
-                ? create with { Attributes = create.Attributes.SetItem(field, GrpcGlobalIds.Normalize(globalId)) }
-                : create)],
-        };
+            clientIds = GrpcGlobalIds.ParseDistinctSelectors(supplied.OfType<string>(), "add global IDs");
+        }
+        catch (ArgumentException ex)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+        }
+
+        if (!clientIds.IsEmpty)
+        {
+            RequireGlobalIdField(edit.Field);
+        }
+
+        var assigned = ImmutableArray.CreateBuilder<string>(batch.Creates.Length);
+        var creates = batch.Creates.Select((create, index) =>
+        {
+            var attributes = new Dictionary<string, object?>(WithoutField(create.Attributes, field), StringComparer.OrdinalIgnoreCase);
+            assigned.Add(InsertGlobalIds.Assign(edit.Layer.Resource, attributes, field, supplied[index]));
+            return create with { Attributes = attributes.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase) };
+        }).ToImmutableArray();
+        var updates = batch.Updates.Select(update => update with { Attributes = WithoutField(update.Attributes, field) }).ToImmutableArray();
+        return (batch with { Creates = creates, Updates = updates },
+            edit with { ClientAddIds = clientIds, AssignedAddIds = assigned.MoveToImmutable() });
     }
+
+    private static string? ClientGlobalId(Proto.Feature add, Feature create, string field)
+        => add.GlobalId.Length > 0 ? add.GlobalId : GrpcGlobalIds.Read(create.Attributes, field);
+
+    private static ImmutableDictionary<string, object?> WithoutField(ImmutableDictionary<string, object?> attributes, string field)
+        => attributes.Keys.Where(key => key.Equals(field, StringComparison.OrdinalIgnoreCase)).Aggregate(
+            attributes, static (kept, key) => kept.Remove(key));
 
     // Readdresses a use_global_ids batch by object ID after the idempotency replay check. Every
     // selector must name a row the caller can read (otherwise NOT_FOUND before any write), and a
@@ -140,8 +183,9 @@ internal sealed partial class HonuaFeatureService
         FeatureEditBatch batch,
         CancellationToken cancellationToken)
     {
-        var addIds = edit.Request.Adds.Where(static add => add.GlobalId.Length > 0)
-            .Select(static add => GrpcGlobalIds.Normalize(add.GlobalId)).ToImmutableArray();
+        // The check sees only rows the caller may read, so it never reveals hidden rows; a unique
+        // index on the global-ID column is the storage guard against cross-partition duplicates.
+        var addIds = edit.ClientAddIds;
         if (!addIds.IsEmpty)
         {
             var existing = await ResolveObjectIdsAsync(edit, addIds, cancellationToken).ConfigureAwait(false);
@@ -219,7 +263,7 @@ internal sealed partial class HonuaFeatureService
             return response;
         }
 
-        Stamp(response.AddResults, [.. request.Adds.Select(static add => add.GlobalId)]);
+        Stamp(response.AddResults, [.. edit.AssignedAddIds]);
         if (request.UseGlobalIds)
         {
             Stamp(response.UpdateResults, [.. request.Updates.Select(static update => update.GlobalId)]);

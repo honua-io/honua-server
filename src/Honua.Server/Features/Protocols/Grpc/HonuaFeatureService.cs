@@ -300,6 +300,10 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         {
             editBatch = GrpcConversionHelpers.ToFeatureEditBatch(request);
         }
+        catch (UnstorableValueException ex)
+        {
+            throw new RpcException(new Status(StatusCode.FailedPrecondition, ex.Message));
+        }
         catch (ArgumentException ex)
         {
             throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
@@ -315,7 +319,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             layer,
             requestServices,
             await VisibleGlobalIdFieldAsync(layer, requestServices, context.CancellationToken).ConfigureAwait(false));
-        editBatch = WithClientGlobalIds(globalIds, editBatch);
+        (editBatch, globalIds) = AssignInsertGlobalIds(globalIds, editBatch);
         editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
             .ConfigureAwait(false);
 
@@ -357,6 +361,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             return keyedEdit.Response;
         }
 
+        editBatch = await ResolveGlobalIdTargetsAsync(globalIds, editBatch, context.CancellationToken).ConfigureAwait(false);
+
         // Per-row geometry-change semantics mirror the inline publish path
         // (PublishFeatureChangeEventsAsync below): a row is considered to have changed
         // geometry when the request feature carries non-null WKB. Deletes default to
@@ -373,7 +379,6 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
         // The same read supplies stored geometry for a partial update. Omitted attributes
         // are merged from the locked row by the writer, not from this snapshot.
-        editBatch = await ResolveGlobalIdTargetsAsync(globalIds, editBatch, context.CancellationToken).ConfigureAwait(false);
         editBatch = await EnsureEditTargetsVisibleAsync(
             layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
 

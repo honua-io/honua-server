@@ -123,13 +123,8 @@ internal static class ServerMaintainedEditFields
         }
 
         var name = CanonicalName(resource, fieldName);
-        if (useGlobalIds && TryGet(attributes, name, out var supplied) && supplied is not null)
-        {
-            attributes[name] = NormalizeGuid(supplied);
-            return;
-        }
-
-        attributes[name] = Guid.NewGuid().ToString("D");
+        var supplied = useGlobalIds && TryGet(attributes, name, out var value) ? value : null;
+        InsertGlobalIds.Assign(resource, attributes, name, supplied);
     }
 
     private static void SetUser(
@@ -240,17 +235,6 @@ internal static class ServerMaintainedEditFields
 
         value = caseInsensitive;
         return foundCaseInsensitive;
-    }
-
-    private static string NormalizeGuid(object value)
-    {
-        if (value is Guid guid)
-        {
-            return guid.ToString("D");
-        }
-
-        var text = Convert.ToString(value, CultureInfo.InvariantCulture);
-        return Guid.TryParse(text, out var parsed) ? parsed.ToString("D") : text ?? Guid.NewGuid().ToString("D");
     }
 
     private static void Add(HashSet<string> names, string? fieldName)

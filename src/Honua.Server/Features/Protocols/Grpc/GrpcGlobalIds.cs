@@ -12,6 +12,10 @@ namespace Honua.Server.Features.Protocols.Grpc;
 // case-insensitive on input and lowercase on output.
 internal static partial class GrpcGlobalIds
 {
+    // Each ID becomes up to four bound parameters (text columns match stored spellings), so the
+    // list stays well under PostgreSQL's 65,535-parameter limit.
+    public const int MaxQuerySelectors = 1000;
+
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z", RegexOptions.CultureInvariant)]
     private static partial Regex PlainIdentifier();
 

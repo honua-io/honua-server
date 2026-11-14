@@ -385,6 +385,34 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     }
 
     /// <summary>
+    /// Replaces the resource published at <paramref name="layerIndex"/> with
+    /// <paramref name="mutate"/>'s result, for tests that need metadata the seeded graph lacks
+    /// (for example a declared global-ID field).
+    /// </summary>
+    internal static Task UpdateResourceAsync(
+        WebAppFixture fixture,
+        int layerIndex,
+        Func<MetadataV2Resource, MetadataV2Resource> mutate,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var provider = RequireProvider(fixture);
+        var snapshot = ReadCurrent(fixture, provider);
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex)
+            ?? throw new InvalidOperationException($"No publication for layer {layerIndex} in the test V2 graph.");
+        var resources = snapshot.Graph.Resources.ToArray();
+        var index = Array.FindIndex(resources, resource => string.Equals(resource.Metadata.Id, pub.ResourceId, StringComparison.Ordinal));
+        if (index < 0)
+        {
+            throw MissingResourceMutation(layerIndex, pub.ResourceId, nameof(UpdateResourceAsync));
+        }
+
+        resources[index] = mutate(resources[index]);
+        WriteGraph(fixture, provider, snapshot.Graph with { Resources = resources, Revision = snapshot.Graph.Revision + 1 });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Sets (or clears) the Esri attribute-rule set on the resource published at
     /// <paramref name="layerIndex"/> so the shared edit path's calculation/constraint
     /// enforcement can be exercised end-to-end against the served graph

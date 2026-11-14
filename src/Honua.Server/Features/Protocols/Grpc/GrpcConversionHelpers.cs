@@ -416,8 +416,12 @@ internal static class GrpcConversionHelpers
             Proto.AttributeValue.ValueOneofCase.BoolValue => value.BoolValue,
             Proto.AttributeValue.ValueOneofCase.DatetimeValue => DateTimeOffset.FromUnixTimeMilliseconds(value.DatetimeValue).UtcDateTime,
             Proto.AttributeValue.ValueOneofCase.BytesValue => value.BytesValue.ToByteArray(),
-            Proto.AttributeValue.ValueOneofCase.DateValue => GrpcTypedValues.ParseDate(value.DateValue),
-            Proto.AttributeValue.ValueOneofCase.TimeValue => GrpcTypedValues.ParseTime(value.TimeValue),
+            // Validated, then stored as canonical text like every other edit protocol does: the
+            // managed writer serializes attributes without DateOnly/TimeOnly converters.
+            Proto.AttributeValue.ValueOneofCase.DateValue
+                => GrpcTypedValues.FormatDate(GrpcTypedValues.ParseDate(value.DateValue)),
+            Proto.AttributeValue.ValueOneofCase.TimeValue
+                => GrpcTypedValues.FormatTime(GrpcTypedValues.ParseTime(value.TimeValue)),
             Proto.AttributeValue.ValueOneofCase.TimestampOffsetValue
                 => GrpcTypedValues.ParseTimestampOffset(value.TimestampOffsetValue),
             Proto.AttributeValue.ValueOneofCase.DecimalValue => GrpcTypedValues.ParseDecimal(value.DecimalValue),
