@@ -6,27 +6,6 @@ using Honua.Core.Features.Security.Admission;
 
 namespace Honua.Ai.StudioAiProxy.Abstractions;
 
-public interface IStudioAiProxyService
-{
-    bool Enabled { get; }
-
-    Task<StudioAiCapabilitiesResponse> GetCapabilitiesAsync(CancellationToken cancellationToken = default);
-
-    // Validation is separate from streaming because SSE cannot change the HTTP status after the first byte is written.
-    string? ValidateRequest(StudioAiChatRequest request);
-
-    Task<StudioAiPreparedCall> PrepareChatAsync(StudioAiChatRequest request, AiExecutionContext? executionContext,
-        CancellationToken cancellationToken);
-
-    IAsyncEnumerable<StudioAiChatEvent> StreamPreparedChatAsync(StudioAiPreparedCall prepared,
-        StudioAiProxyCallSummary summary, CancellationToken cancellationToken);
-
-    IAsyncEnumerable<StudioAiChatEvent> StreamChatAsync(
-        StudioAiChatRequest request,
-        StudioAiProxyCallSummary summary,
-        CancellationToken cancellationToken);
-}
-
 public sealed class StudioAiProxyCallSummary
 {
     public string Provider { get; set; } = string.Empty;

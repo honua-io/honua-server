@@ -7,7 +7,7 @@ using Honua.Core.Features.EmbedGovernance.Domain;
 
 namespace Honua.Core.Features.EmbedGovernance;
 
-public sealed class InMemoryEmbedAnalyticsStore : IEmbedAnalyticsStore
+public sealed class InMemoryEmbedAnalyticsStore
 {
     private const string Unknown = "(unknown)";
     private readonly int _capacity;

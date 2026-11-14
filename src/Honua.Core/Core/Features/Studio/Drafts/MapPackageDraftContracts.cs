@@ -47,7 +47,7 @@ public sealed record MapPackageDraftRequest
 
 /// <summary>
 /// Wire-shaped source binding input validated and mapped onto the canonical
-/// <see cref="SourceBinding"/> by <see cref="IMapPackageDraftFactory"/>.
+/// <see cref="SourceBinding"/> by <see cref="MapPackageDraftFactory"/>.
 /// </summary>
 public sealed record SourceBindingInput
 {
@@ -132,22 +132,4 @@ public sealed record MapPackageDraftResult
     /// Whether a package was created.
     /// </summary>
     public bool Succeeded => Package is not null;
-}
-
-/// <summary>
-/// Creates <see cref="MapPackage"/> drafts deterministically from structured
-/// input, with no model inference and no natural-language input (ADR-0076).
-/// </summary>
-public interface IMapPackageDraftFactory
-{
-    /// <summary>
-    /// Validates <paramref name="request"/> and projects it onto a draft
-    /// <see cref="MapPackage"/>.
-    /// </summary>
-    /// <param name="request">The structured composition input.</param>
-    /// <returns>
-    /// A result carrying the created package, or the blocking findings that
-    /// prevented creation.
-    /// </returns>
-    MapPackageDraftResult CreateDraft(MapPackageDraftRequest request);
 }

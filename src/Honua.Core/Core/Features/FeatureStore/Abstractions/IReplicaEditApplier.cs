@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.FeatureStore.Services;
+
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 
@@ -13,7 +15,7 @@ namespace Honua.Core.Features.FeatureStore.Abstractions;
 /// outbox behavior as ordinary edits, rather than the replica path issuing its own data access.
 /// </summary>
 /// <remarks>
-/// The canonical <see cref="IReplicaSyncService"/> owns conflict detection and the upload cursor; it
+/// The canonical <see cref="ReplicaSyncService"/> owns conflict detection and the upload cursor; it
 /// only decides <em>which</em> edits to apply and delegates the <em>how</em> to this applier so the
 /// shared edit pipeline remains the single write path (#1272).
 /// </remarks>

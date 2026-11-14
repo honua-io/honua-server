@@ -189,7 +189,7 @@ internal static class McpServiceCollectionExtensions
         // Authoring tools (#1951, re-founded by ADR-0076 / #3255):
         // create_map_package / create_app_package create draft packages
         // deterministically from structured input through the shared
-        // IMapPackageDraftFactory / IAppPackageDraftFactory in Honua.Core. They
+        // MapPackageDraftFactory / AppPackageDraftFactory in Honua.Core. They
         // make no model call and take no prompt.
         //
         // Both factories arrive by CONSTRUCTOR injection rather than a

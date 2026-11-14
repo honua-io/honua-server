@@ -209,7 +209,7 @@ public static partial class Extensions
 
                     if (adaptiveSamplingOptions?.Enabled == true)
                     {
-                        var adaptiveSampler = serviceProvider.GetRequiredService<IAdaptiveSampler>();
+                        var adaptiveSampler = serviceProvider.GetRequiredService<AdaptiveSampler>();
                         return new AdaptiveOpenTelemetrySampler(adaptiveSampler, tracingOptions);
                     }
 
@@ -782,10 +782,10 @@ public static partial class Extensions
         builder.Services.AddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
 
         // Register smart sampling rules as singleton
-        builder.Services.AddSingleton<ISmartSamplingRules, SmartSamplingRules>();
+        builder.Services.AddSingleton<SmartSamplingRules>();
 
         // Register adaptive sampler as singleton
-        builder.Services.AddSingleton<IAdaptiveSampler, AdaptiveSampler>();
+        builder.Services.AddSingleton<AdaptiveSampler>();
 
         return builder;
     }

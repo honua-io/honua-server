@@ -8,7 +8,7 @@ using Honua.Core.Features.Security.Domain;
 namespace Honua.Core.Features.Authorization;
 
 /// <summary>
-/// Default <see cref="IPortalAccessProjection"/> (#1370): a pure projection from
+/// Default <see cref="PortalAccessProjection"/> (#1370): a pure projection from
 /// the canonical RBAC decision and the coarse <see cref="AccessPolicy"/> seam onto
 /// the ArcGIS Portal <see cref="PortalAccessLevel"/> and per-item visibility.
 /// </summary>
@@ -31,7 +31,7 @@ namespace Honua.Core.Features.Authorization;
 /// challenge so anonymous callers can sign in rather than silently losing the item.
 /// </para>
 /// </remarks>
-public sealed class PortalAccessProjection : IPortalAccessProjection
+public sealed class PortalAccessProjection
 {
     private readonly bool _enabled;
 

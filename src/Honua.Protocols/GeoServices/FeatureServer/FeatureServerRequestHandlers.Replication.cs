@@ -1259,7 +1259,7 @@ internal static partial class FeatureServerEndpoints
                 var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
                 var limitsOptions = context.RequestServices
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
-                var syncService = context.RequestServices.GetRequiredService<IReplicaSyncService>();
+                var syncService = context.RequestServices.GetRequiredService<ReplicaSyncService>();
                 var applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
 
                 // The server side of each conflict is snapshotted by the canonical sync service through

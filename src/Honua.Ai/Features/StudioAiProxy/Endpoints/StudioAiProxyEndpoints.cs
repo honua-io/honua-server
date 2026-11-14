@@ -58,7 +58,7 @@ internal static class StudioAiProxyEndpoints
 
     private static async Task<IResult> HandleGetCapabilities(
         HttpContext context,
-        IStudioAiProxyService service,
+        StudioAiProxyService service,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
@@ -70,7 +70,7 @@ internal static class StudioAiProxyEndpoints
 
     private static async Task<IResult> HandleChat(
         HttpContext context,
-        IStudioAiProxyService service,
+        StudioAiProxyService service,
         IOptions<StudioAiProxyConfiguration> options,
         IStudioAuthorizationService authorizationService,
         IAuditLog auditLog,

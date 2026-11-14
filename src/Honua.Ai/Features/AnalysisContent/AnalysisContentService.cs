@@ -33,7 +33,7 @@ internal sealed partial class AnalysisContentService(
     IGeoprocessingJobService geoprocessingJobService,
     IEnumerable<IExecutionLogStore> logStores,
     TimeProvider timeProvider,
-    ILogger<AnalysisContentService> logger) : IAnalysisContentService
+    ILogger<AnalysisContentService> logger)
 {
     private const int DefaultPreviewLimit = 25;
     private const int MaxPreviewLimit = 200;

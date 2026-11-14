@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.EmbedGovernance;
+
 using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.DataProtection;
@@ -538,8 +540,7 @@ builder.Services.Configure<Honua.Infrastructure.Caching.QueryResultCacheOptions>
     options.EnableDetailedMetrics = !builder.Environment.IsProduction();
 });
 
-builder.Services.AddSingleton<Honua.Infrastructure.Caching.IQueryResultCacheManager,
-    Honua.Infrastructure.Caching.QueryResultCacheManager>();
+builder.Services.AddSingleton<Honua.Infrastructure.Caching.QueryResultCacheManager>();
 
 if (useTestSchemaHeaders)
 {
@@ -911,9 +912,9 @@ if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
 // evaluation, rate accounting, and redacted analytics ingestion. In-memory
 // defaults; durable providers can replace these via TryAdd later.
-builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.IEmbedKeyStore>(sp =>
+builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore>(sp =>
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore(sp.GetService<TimeProvider>()));
-builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.IEmbedAnalyticsStore>(
+builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore>(
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore());
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
@@ -1113,7 +1114,7 @@ if (offlineSyncEnabled)
             sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
             sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
 #endif
-    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Services.ReplicaSyncService,
         Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
 }
 

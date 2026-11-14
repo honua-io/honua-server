@@ -166,7 +166,7 @@ public static class PortalTokenAuthenticationExtensions
         // parallel durable token store (ADR-0049). They are additive — the flag-gated
         // Increment-1 client_credentials path keeps working via the API-key fallback.
         services.TryAddSingleton<IOAuthClientStore>(sp => new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
-        services.TryAddSingleton<IOAuthScopeCatalogue, InMemoryOAuthScopeCatalogue>();
+        services.TryAddSingleton<InMemoryOAuthScopeCatalogue>();
 
         // Process-local defaults for non-Postgres providers. The server's Postgres
         // composition registers durable stores first, so TryAdd preserves them.
@@ -202,7 +202,7 @@ public static class PortalTokenAuthenticationExtensions
 
     private static void TryAddPortalAccessProjection(this IServiceCollection services, IConfiguration configuration)
     {
-        services.TryAddSingleton<IPortalAccessProjection>(_ =>
+        services.TryAddSingleton<PortalAccessProjection>(_ =>
         {
             // The Portal access/visibility projection is off-by-default so the
             // facade never exposes a discovery surface unless an operator opts in,

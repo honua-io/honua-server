@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.TileCachePackage.Services;
+
 using System.Text.Json.Serialization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.TileCachePackage.Abstractions;
@@ -78,7 +80,7 @@ internal static class TileCachePackageEndpoints
         // API request-delegate factory infer it as a JSON body parameter on hosts where it
         // is absent, which fails app startup when the source-generated JSON resolver cannot
         // produce metadata for the service interface.
-        var importService = context.RequestServices.GetRequiredService<ITileCachePackageImportService>();
+        var importService = context.RequestServices.GetRequiredService<TileCachePackageImportService>();
 
         if (string.IsNullOrWhiteSpace(tilesetId))
         {

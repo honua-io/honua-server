@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Mobile.FieldCollection;
+
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Licensing.Domain;
@@ -278,7 +280,7 @@ internal static class FieldCollectionSyncEndpoints
         [FromBody] FieldCollectionPushRequestModel? body,
         [FromServices] IFieldCollectionSyncStore store,
         [FromServices] ILoggerFactory loggerFactory,
-        [FromServices] IFieldCollectionAutomationTrigger? automationTrigger = null)
+        [FromServices] FieldCollectionAutomationTrigger? automationTrigger = null)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("FieldCollectionSync.Push");
         activity?.SetTag("honua.protocol", ProtocolTag);

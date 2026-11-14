@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.EmbedGovernance;
+
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.EmbedGovernance.Abstractions;
 using Honua.Core.Features.EmbedGovernance.Domain;
@@ -56,8 +58,8 @@ internal static partial class EmbedPolicyEndpoints
 
     private static async Task<Results<Ok<EmbedPolicyResponse>, UnauthorizedHttpResult, JsonHttpResult<ApiResponse<object>>>>
         HandlePolicy(
-            [FromServices] IEmbedKeyStore store,
-            [FromServices] IEmbedAnalyticsStore analytics,
+            [FromServices] InMemoryEmbedKeyStore store,
+            [FromServices] InMemoryEmbedAnalyticsStore analytics,
             [FromServices] IAuditLog auditLog,
             [FromServices] ILogger<EmbedPolicyEndpointsLog> logger,
             [FromQuery] string? serviceId,
@@ -109,8 +111,8 @@ internal static partial class EmbedPolicyEndpoints
     private static async Task<Results<Ok<ApiResponse<EmbedAnalyticsIngestResponse>>, UnauthorizedHttpResult, BadRequest<ApiResponse<object>>, JsonHttpResult<ApiResponse<object>>>>
         HandleAnalytics(
             IngestEmbedAnalyticsRequest request,
-            [FromServices] IEmbedKeyStore store,
-            [FromServices] IEmbedAnalyticsStore analytics,
+            [FromServices] InMemoryEmbedKeyStore store,
+            [FromServices] InMemoryEmbedAnalyticsStore analytics,
             [FromServices] IAuditLog auditLog,
             [FromServices] ILogger<EmbedPolicyEndpointsLog> logger,
             HttpContext context)
@@ -181,7 +183,7 @@ internal static partial class EmbedPolicyEndpoints
         return TypedResults.Ok(ApiResponse<EmbedAnalyticsIngestResponse>.CreateSuccess(response));
     }
 
-    private static async Task<EmbedKeyValidationResult?> ResolveKeyAsync(IEmbedKeyStore store, HttpContext context)
+    private static async Task<EmbedKeyValidationResult?> ResolveKeyAsync(InMemoryEmbedKeyStore store, HttpContext context)
     {
         var keyMaterial = ExtractKeyMaterial(context);
         if (string.IsNullOrWhiteSpace(keyMaterial))
@@ -294,7 +296,7 @@ internal static partial class EmbedPolicyEndpoints
     }
 
     private static Task IngestDenialAsync(
-        IEmbedAnalyticsStore analytics,
+        InMemoryEmbedAnalyticsStore analytics,
         EmbedKeyRecord key,
         EmbedPolicyRequest request,
         EmbedPolicyDecision decision,

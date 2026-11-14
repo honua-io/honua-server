@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Honua.Core.Features.FeatureStore.Services;
 
 /// <summary>
-/// Canonical replica-upload synchronization pipeline (#1272). See <see cref="IReplicaSyncService"/>.
+/// Canonical replica-upload synchronization pipeline (#1272). See <see cref="ReplicaSyncService"/>.
 /// </summary>
 /// <remarks>
 /// Conflict detection compares each uploaded update/delete against the server change log since the
@@ -23,7 +23,7 @@ namespace Honua.Core.Features.FeatureStore.Services;
 /// non-manual strategy behavior is preserved (conflict-record creation + resolution API is owned by
 /// #1287).
 /// </remarks>
-public sealed partial class ReplicaSyncService : IReplicaSyncService
+public sealed partial class ReplicaSyncService
 {
     // PA-020: replica conflict detection / edit application is a hot path (every replica
     // upload) and previously had no telemetry span.

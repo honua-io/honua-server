@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization;
+
 namespace Honua.Core.Features.Authorization.Domain;
 
 /// <summary>
@@ -14,7 +16,7 @@ namespace Honua.Core.Features.Authorization.Domain;
 /// The string forms (<see cref="PortalAccessLevelExtensions.ToWireName"/>) are
 /// the exact lowercase tokens ArcGIS Pro / Field Maps expect in
 /// <c>content/items/{id}</c> and <c>search</c> responses. The shared
-/// <c>IPortalAccessProjection</c> is the single helper the Portal read surface
+/// <c>PortalAccessProjection</c> is the single helper the Portal read surface
 /// (#1243) and the OAuth2 bridge (#1242) consume so the reported access never
 /// drifts from the real authorization decision.
 /// </remarks>

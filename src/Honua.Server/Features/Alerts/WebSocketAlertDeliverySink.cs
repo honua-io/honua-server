@@ -8,7 +8,7 @@ using Honua.Infrastructure.Abstractions;
 
 namespace Honua.Alerts;
 
-internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationBroadcaster, IStreamingSubscriptionManager, IDisposable
+internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationBroadcaster, IDisposable
 {
     private readonly ConcurrentDictionary<Guid, SubscriptionEntry> _subscribers = new();
 

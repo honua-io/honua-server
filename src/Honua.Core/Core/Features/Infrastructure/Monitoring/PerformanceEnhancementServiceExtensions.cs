@@ -33,7 +33,7 @@ public static class PerformanceEnhancementServiceExtensions
             options.CaptureQueryText = false; // Security - don't capture query text by default
         });
 
-        services.AddSingleton<IDatabaseQueryPerformanceMonitor, DatabaseQueryPerformanceMonitor>();
+        services.AddSingleton<DatabaseQueryPerformanceMonitor>();
 
         // Add resource leak detection (development/test only)
         services.Configure<ResourceLeakDetectionOptions>(options =>
@@ -72,7 +72,7 @@ public static class PerformanceEnhancementServiceExtensions
             options.MaxOccurrencesPerWindow = 5;
         });
 
-        services.AddSingleton<IEnhancedExceptionTelemetry, EnhancedExceptionTelemetry>();
+        services.AddSingleton<EnhancedExceptionTelemetry>();
 
         // Query result caching is configured at the Server level since it depends on IMemoryCache
 
@@ -91,7 +91,7 @@ public static class PerformanceEnhancementServiceExtensions
             services.Configure(configureOptions);
         }
 
-        services.AddSingleton<IDatabaseQueryPerformanceMonitor, DatabaseQueryPerformanceMonitor>();
+        services.AddSingleton<DatabaseQueryPerformanceMonitor>();
 
         return services;
     }
@@ -133,7 +133,7 @@ public static class PerformanceEnhancementServiceExtensions
             services.Configure(configureOptions);
         }
 
-        services.AddSingleton<IEnhancedExceptionTelemetry, EnhancedExceptionTelemetry>();
+        services.AddSingleton<EnhancedExceptionTelemetry>();
 
         return services;
     }
