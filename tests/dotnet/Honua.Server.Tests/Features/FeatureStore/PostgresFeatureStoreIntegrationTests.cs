@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Data;
 using System.Globalization;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -31,7 +32,7 @@ namespace Honua.Server.Tests.Features.FeatureStore;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
-public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
+public partial class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 {
     private const int PointsLayerId = 11001;
     private const int PolygonsLayerId = 11002;
@@ -876,7 +877,8 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         lineResult.Items.First().Geometry.Should().NotBeNull();
     }
 
-    private PostgresFeatureStoreRefactored CreateFeatureStore()
+    private PostgresFeatureStoreRefactored CreateFeatureStore(
+        IRowLevelSecurityFilterSource? rowFilters = null, IFieldMaskSource? fieldMasks = null)
     {
         var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource, () => _testSchema);
         var poolProvider = new DefaultObjectPoolProvider();
@@ -905,7 +907,9 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
             dictionaryPool,
             connectionEncryptionService: null,
             filterExpressionService: null,
-            CreateMetadataProvider());
+            CreateMetadataProvider(),
+            rlsFilterSource: rowFilters,
+            fieldMaskSource: fieldMasks);
     }
 
     private static int GetLayerId(string tableName)
