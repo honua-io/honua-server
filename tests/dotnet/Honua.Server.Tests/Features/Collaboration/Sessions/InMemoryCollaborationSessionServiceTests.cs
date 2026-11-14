@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
+using Honua.Core.Features.Realtime;
 using FluentAssertions;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.TestKit.Attributes;
@@ -294,7 +296,7 @@ public sealed class InMemoryCollaborationSessionServiceTests
     public async Task PublishOperation_DeliversToEveryParticipantIncludingSubmitter()
     {
         var clock = new FakeCollaborationClock(FixedUtcNow());
-        var backplane = new RecordingBackplane();
+        var backplane = new RecordingProvider();
         var service = new InMemoryCollaborationSessionService(
             new AllowSavedMapCollaborationAuthorizer(), clock, backplane);
         var alice = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
@@ -321,15 +323,14 @@ public sealed class InMemoryCollaborationSessionServiceTests
             e.Event.Type == CollaborationSessionEventTypes.OperationAppended);
         service.DrainEvents(bob.SessionId).Should().ContainSingle(e =>
             e.Event.Operation != null && e.Event.Operation.Id == "op-1");
-        backplane.Published.Should().ContainSingle(e =>
-            e.Event.Type == CollaborationSessionEventTypes.OperationAppended);
+        backplane.Published.Should().BeEmpty("committed operation references are published by the database trigger");
     }
 
     [UnitTest]
-    public async Task UpdateCursor_PublishesEventToBackplane_ForCrossNodeFanOut()
+    public async Task UpdateCursor_PublishesEventToProvider_ForCrossNodeFanOut()
     {
         var clock = new FakeCollaborationClock(FixedUtcNow());
-        var backplane = new RecordingBackplane();
+        var backplane = new RecordingProvider();
         var service = new InMemoryCollaborationSessionService(
             new AllowSavedMapCollaborationAuthorizer(), clock, backplane);
         var alice = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
@@ -402,15 +403,49 @@ public sealed class InMemoryCollaborationSessionServiceTests
     private static InMemoryCollaborationSessionService CreateService(FakeCollaborationClock clock) =>
         new(new AllowSavedMapCollaborationAuthorizer(), clock);
 
-    private sealed class RecordingBackplane : ICollaborationSessionBackplane
+    [UnitTest]
+    public async Task CoalescedPresence_RebuildsSnapshot_WithoutGrantingForeignSessionOwnership()
+    {
+        var clock = new FakeCollaborationClock(FixedUtcNow());
+        var provider = new RecordingProvider();
+        var source = new InMemoryCollaborationSessionService(new AllowSavedMapCollaborationAuthorizer(), clock, provider);
+        var alice = (await source.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
+        source.UpdateCursor(alice.SessionId, new CollaborationCursor { X = 12, Y = 34 });
+        var retained = provider.Drafts[^1].Payload.Deserialize(CollaborationSessionJsonContext.Default.CollaborationPresenceMessage)!;
+        retained.Presence!.UserId.Should().BeNull();
+        retained.Presence.ClientInstanceId.Should().BeNull();
+
+        var destination = CreateService(clock);
+        destination.ApplyRemotePresence(retained);
+        var bob = (await destination.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Bob" }, Principal("bob"))).Response!;
+        bob.Snapshot.Participants.Should().HaveCount(2);
+        bob.Snapshot.Cursors[alice.ParticipantId].X.Should().Be(12);
+        destination.DrainEvents(alice.SessionId).Should().BeEmpty();
+        destination.Leave(alice.SessionId).Should().BeFalse();
+        destination.GetSnapshot("map-b").Participants.Should().BeEmpty();
+
+        clock.Advance(InMemoryCollaborationSessionService.RemotePresenceLifetime + TimeSpan.FromSeconds(1));
+        destination.PruneRemotePresence();
+        destination.GetSnapshot("map-a").Participants.Should().ContainSingle(p => p.Id == bob.ParticipantId);
+        destination.DrainEvents(bob.SessionId).Should().Contain(e =>
+            e.Event.Type == CollaborationSessionEventTypes.ParticipantLeft && e.Event.ParticipantId == alice.ParticipantId);
+    }
+
+    private sealed class RecordingProvider : IRealtimeFanoutProvider
     {
         public List<CollaborationEventEnvelope> Published { get; } = [];
-
-        // Stands in for a real cross-replica backplane: these tests exercise fan-out, which is
-        // exactly the capability the flag advertises.
-        public bool SupportsCrossReplicaDelivery => true;
-
-        public void Publish(CollaborationEventEnvelope ev) => Published.Add(ev);
+        public List<RealtimeEventDraft> Drafts { get; } = [];
+        public RealtimeProviderCapabilities Capabilities => new(true, true, true);
+        public void Enqueue(RealtimeEventDraft draft)
+        {
+            Drafts.Add(draft);
+            Published.Add(draft.Payload.Deserialize(CollaborationSessionJsonContext.Default.CollaborationPresenceMessage)!.Event);
+        }
+        public ValueTask<RealtimePosition> AppendAsync(RealtimeEventDraft draft, System.Data.Common.DbTransaction? transaction, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(string scopeKey, long after, long through, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public ValueTask<IRealtimeStreamLease?> TryAcquireMcpStreamAsync(string sessionId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request) => throw new NotSupportedException();
+        public ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     [UnitTest]
