@@ -2,7 +2,7 @@
   <!-- Explicit maintenance command only: capture requested diagnostics as SARIF.
        Normal builds retain warnings-as-errors and the checked-in baseline. -->
   <PropertyGroup Condition="'$(HonuaCaptureAnalyzerBaseline)' == 'true'">
-    <ErrorLog>$(MSBuildThisFileDirectory)artifacts/analyzer-baseline/$(MSBuildProjectName).sarif,version=2.1</ErrorLog>
+    <ErrorLog>$(MSBuildThisFileDirectory)artifacts/analyzer-baseline/$(MSBuildProjectName).$(TargetFramework).sarif,version=2.1</ErrorLog>
     <WarningsNotAsErrors>$(WarningsNotAsErrors);CA2000;IDE0063;RS0030;S1244;S2486;S108;CA1508;CA1851</WarningsNotAsErrors>
   </PropertyGroup>
   <Target Name="HonuaPrepareAnalyzerBaselineCapture" BeforeTargets="CoreCompile" Condition="'$(HonuaCaptureAnalyzerBaseline)' == 'true'">
