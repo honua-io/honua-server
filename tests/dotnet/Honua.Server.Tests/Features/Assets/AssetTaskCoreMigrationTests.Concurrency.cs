@@ -22,7 +22,7 @@ public sealed partial class AssetTaskCoreMigrationTests
 
     private async Task AssertOlderRelinkerRejectedAsync(string evidenceTable)
     {
-        await SeedProfileAndTaskAsync();
+        await SeedProfileAndTaskAsync(evidenceTable == "asset_inspections" ? "inspection" : "repair");
         await using var connection = await _postgres.DataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead);
         await using var read = new NpgsqlCommand(Qualify("SELECT count(*) FROM {s}.work_tasks"), connection, transaction);

@@ -193,6 +193,14 @@ CREATE OR REPLACE TRIGGER trg_asset_service_records_append_only
 CREATE OR REPLACE FUNCTION $HonuaSchema$.reject_task_identity_mutation()
 RETURNS trigger AS $$
 BEGIN
+    IF ROW(NEW.task_id, NEW.object_id) IS DISTINCT FROM ROW(OLD.task_id, OLD.object_id) THEN
+        RAISE EXCEPTION 'Task identifiers are immutable' USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.task_type IS DISTINCT FROM OLD.task_type
+        AND (EXISTS (SELECT 1 FROM $HonuaSchema$.asset_inspections WHERE task_id = OLD.task_id)
+            OR EXISTS (SELECT 1 FROM $HonuaSchema$.asset_service_records WHERE task_id = OLD.task_id)) THEN
+        RAISE EXCEPTION 'Completion evidence pins task type' USING ERRCODE = 'check_violation';
+    END IF;
     IF NEW.service_id IS DISTINCT FROM OLD.service_id THEN
         RAISE EXCEPTION 'Task service is immutable' USING ERRCODE = 'check_violation';
     END IF;
@@ -220,16 +228,20 @@ RETURNS trigger AS $$
 DECLARE
     task_profile UUID;
     task_asset TEXT;
+    completion_task_type TEXT;
 BEGIN
     -- A new row version makes an older repeatable-read relinker fail serialization.
     -- The public version remains the version of the task command.
     UPDATE $HonuaSchema$.work_tasks SET version = version WHERE task_id = NEW.task_id
-        RETURNING profile_id, asset_id INTO task_profile, task_asset;
+        RETURNING profile_id, asset_id, task_type INTO task_profile, task_asset, completion_task_type;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Completion task does not exist' USING ERRCODE = 'foreign_key_violation';
     END IF;
     IF ROW(NEW.profile_id, NEW.asset_id) IS DISTINCT FROM ROW(task_profile, task_asset) THEN
         RAISE EXCEPTION 'Completion asset must match its task' USING ERRCODE = 'check_violation';
+    END IF;
+    IF (TG_TABLE_NAME = 'asset_inspections') IS DISTINCT FROM (completion_task_type = 'inspection') THEN
+        RAISE EXCEPTION 'Completion kind must match task type' USING ERRCODE = 'check_violation';
     END IF;
     RETURN NEW;
 END;

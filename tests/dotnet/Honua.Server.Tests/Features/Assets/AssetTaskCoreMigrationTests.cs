@@ -209,7 +209,7 @@ public sealed partial class AssetTaskCoreMigrationTests : IAsyncLifetime
     [Operation(Operations.TestInfrastructure)]
     public async Task WorkTasks_ServiceEvidencePreventsRelink()
     {
-        await SeedProfileAndTaskAsync();
+        await SeedProfileAndTaskAsync("repair");
         await ExecuteAsync(Qualify(CompletionInsertSql("asset_service_records", "@profile", "'SIGN-001'")));
 
         (await SqlStateAsync("UPDATE {s}.work_tasks SET asset_id = 'SIGN-002', version = version + 1"))
@@ -281,7 +281,10 @@ public sealed partial class AssetTaskCoreMigrationTests : IAsyncLifetime
             VALUES ('county-signs', gen_random_uuid(), 'work_task', @task, 'create', 'planner', repeat('a', 64), 201, '{}', now())
             """));
         await ExecuteAsync(Qualify(CompletionInsertSql("asset_inspections", "@profile", "'SIGN-001'")));
-        await ExecuteAsync(Qualify(CompletionInsertSql("asset_service_records", "@profile", "'SIGN-001'")));
+        await ExecuteAsync(Qualify(InsertTaskSql("repair", "assigned", ("'crew'", "@profile", "'SIGN-001'")))
+            .Replace("@task", "'11111111-1111-1111-1111-111111111111'", StringComparison.Ordinal));
+        await ExecuteAsync(Qualify(CompletionInsertSql("asset_service_records", "@profile", "'SIGN-001'"))
+            .Replace("@task", "'11111111-1111-1111-1111-111111111111'", StringComparison.Ordinal));
         await ApplyMigrationAsync();
 
         foreach (var table in new[] { "work_task_history", "asset_command_receipts", "asset_inspections", "asset_service_records" })
@@ -307,10 +310,10 @@ public sealed partial class AssetTaskCoreMigrationTests : IAsyncLifetime
                 'repair', 'service', 1, '{}', '[]', 'crew', now(), now())
             """;
 
-    private async Task SeedProfileAndTaskAsync()
+    private async Task SeedProfileAndTaskAsync(string taskType = "inspection")
     {
         await ExecuteAsync(Qualify(ProfileInsertSql("@profile")));
-        await ExecuteAsync(Qualify(InsertTaskSql("inspection", "assigned", ("'crew'", "@profile", "'SIGN-001'"))));
+        await ExecuteAsync(Qualify(InsertTaskSql(taskType, "assigned", ("'crew'", "@profile", "'SIGN-001'"))));
     }
 
     private static string ProfileInsertSql(string profileId) => $$"""

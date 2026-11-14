@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Migration.Watermark;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Server.Features.Orchestration;
 using Honua.TestKit.Attributes;
@@ -25,6 +26,7 @@ public sealed class OrchestrationServiceCollectionExtensionsTests
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IWorkflowRunStore));
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(WorkflowOrchestrationEngine));
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IWorkflowCancellationCoordinator));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(ISourceWatermarkStore));
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService));
     }
 
@@ -39,5 +41,7 @@ public sealed class OrchestrationServiceCollectionExtensionsTests
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(PostgresWorkflowDefinitionStore));
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(PostgresWorkflowRunStore));
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(WorkflowOrchestrationEngine));
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(ISourceWatermarkStore)
+            && descriptor.ImplementationType == typeof(PostgresSourceWatermarkStore));
     }
 }
