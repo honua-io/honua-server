@@ -6,7 +6,6 @@ using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
 using System.Security.Claims;
-using System.Security;
 using System.Text.Json;
 using System.Text;
 using System.Xml.Linq;
@@ -1898,7 +1897,7 @@ internal sealed partial class Wfs20Handler
 
     private static string EscapeCsv(string? value) => CsvFieldFormatter.Escape(value);
 
-    private static string XmlEscape(string value) => SecurityElement.Escape(value) ?? string.Empty;
+    private static string XmlEscape(string value) => OgcClassicRequestHelpers.EscapeXml(value);
 
     private bool CanAttemptPagedGetFeatureFastPath(
         IReadOnlyList<WfsFeatureTypeDescriptor> selectedTypes,
