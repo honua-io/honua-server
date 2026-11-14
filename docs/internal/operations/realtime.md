@@ -43,7 +43,7 @@ are seconds. Avoid tenant, user, subscription, or event identifiers as metric la
 | `honua.realtime.wakeups` | Wake-ups by `source`: `notify`, `safety-poll`, `degraded-poll`, or `local-poll` (the in-process provider, which has no listener). Polling preserves delivery when notifications are unavailable. |
 | `honua.realtime.resets` | Reset frames written, by family, transport, and reason. A reset requires the client to resynchronize its snapshot. |
 | `honua.realtime.slow_consumer.closed` | Subscriptions closed when their bounded channel filled. Alert when five-minute closures exceed 1% of active subscribers, accounting for periods with no subscribers. |
-| `honua.realtime.frames.dropped` | Frames a session never received: rejected by its full bounded channel, or held for a replay when the session closed. Correlate with slow-consumer closures and client reconnects. |
+| `honua.realtime.frames.dropped` | Frames a session never received: rejected by its full bounded channel, or held for its replay when it closed on a failure. Correlate with slow-consumer closures and client reconnects. |
 | `honua.realtime.authz.frames_filtered` | Frames filtered by authorization, by family and transport. |
 | `honua.realtime.authz.streams_revoked` | Sessions closed after access revocation, by family and transport. |
 | `honua.realtime.notify_queue.usage` | Database-wide PostgreSQL notification queue fraction. Alert above 0.25. The maintenance lease holder samples once per minute; missing samples require checking the sampler warning log and lease/database health. |

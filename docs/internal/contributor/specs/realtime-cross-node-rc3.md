@@ -410,7 +410,7 @@ are folded into these, tagged by `family` and `transport`.
 | `honua.realtime.delivery.latency` | histogram | Commit (`created_at` or `changed_at`) to frame written, per family |
 | `honua.realtime.listener.connected` | gauge 0/1 | Listener health per task |
 | `honua.realtime.listener.reconnects` | counter | |
-| `honua.realtime.wakeups` | counter | Tag `source=notify|safety-poll|degraded-poll` |
+| `honua.realtime.wakeups` | counter | Tag `source=notify|safety-poll|degraded-poll|local-poll` |
 | `honua.realtime.resets` | counter | Tag `reason` |
 | `honua.realtime.slow_consumer.closed` / `.frames.dropped` | counter | |
 | `honua.realtime.authz.frames_filtered` / `.streams_revoked` | counter | |

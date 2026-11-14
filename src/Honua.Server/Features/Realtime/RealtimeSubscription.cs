@@ -321,6 +321,19 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
         }
     }
 
+    private bool MatchesOrFalse(RealtimeEvent realtimeEvent)
+    {
+        try
+        {
+            return Matches(realtimeEvent);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Only counting a drop; the filter's failure is reported where delivery evaluates it.
+            return false;
+        }
+    }
+
     private bool Matches(RealtimeEvent realtimeEvent)
         => (_scopes is null || _scopes.Contains(realtimeEvent.ScopeKey))
            && (_request.Filter is null || _request.Filter(realtimeEvent));
@@ -355,8 +368,13 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
             RealtimeMetrics.SlowConsumerClosed.Add(1, new KeyValuePair<string, object?>("family", Family.Name));
         }
 
-        // Events held for a replay that will not finish are never delivered to this session.
-        RecordDropped(_handoff.Count);
+        // On a failure, held events this session would have received are lost with its replay; a
+        // clean close (disconnect, drain) loses nothing the client still wanted.
+        if (error is not null)
+        {
+            RecordDropped(_handoff.Count(MatchesOrFalse));
+        }
+
         _handoff.Clear();
         _dispatcher.Remove(this);
         _request.Writer.TryComplete(error);

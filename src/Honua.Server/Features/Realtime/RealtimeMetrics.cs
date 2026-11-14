@@ -56,7 +56,7 @@ internal static class RealtimeMetrics
         "honua.realtime.slow_consumer.closed", unit: null, description: "Sessions closed because their bounded channel filled, tagged by family.");
 
     internal static readonly Counter<long> FramesDropped = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.realtime.frames.dropped", unit: null, description: "Frames a session never received: rejected by its full bounded channel or held for a replay when it closed, tagged by family.");
+        "honua.realtime.frames.dropped", unit: null, description: "Frames a session never received: rejected by its full bounded channel or held for its replay when it closed on a failure, tagged by family.");
 
     internal static readonly Counter<long> FramesFiltered = HonuaTelemetry.Meter.CreateCounter<long>(
         "honua.realtime.authz.frames_filtered", unit: null, description: "Frames filtered by authorization, tagged by family and transport.");
