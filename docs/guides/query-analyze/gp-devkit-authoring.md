@@ -13,7 +13,7 @@ Start with the local devkit, use Docker for native dependencies, and use the
 
 | Work | What you need |
 | --- | --- |
-| Managed geometry and transforms on inline data | Repository checkout and .NET 10 SDK |
+| Managed geometry and transforms on inline data | Repository checkout and .NET 11 SDK |
 | Native GDAL/PDAL operations | The above plus Docker and the heavy-worker image |
 | Processes reading layers, databases, or object storage | Their configured input services and credentials |
 | Python SDK, GPServer, OGC, or MCP integration | Local server, PostGIS, Redis, and a heavy worker for native jobs |
@@ -60,7 +60,8 @@ plan without running it. Its size and cost estimates are heuristics.
 The customer install is the `Honua.Geoprocessing.Cli` package on the GitHub Packages
 feed `https://nuget.pkg.github.com/honua-io/index.json`. `Publish GP Devkit` pushes
 that package only from an explicit canonical-trunk dispatch and retains the
-publication identity for honua-release#615. Authenticate the `honua-github` source
+publication identity for honua-release#615. The tool runs on the .NET 11 runtime; the
+`gp-dotnet` projects it scaffolds target `net10.0`. Authenticate the `honua-github` source
 with a GitHub token that can read packages before installing:
 
 ```bash

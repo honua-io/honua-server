@@ -25,27 +25,14 @@ public sealed class DevelopmentPublicationAuditTests
     [Endpoint("POST /mcp tools/call honua_publish_service")]
     public async Task Publish_DevelopmentHost_PersistsActorAndTimeInAdminAudit()
     {
-        var publisher = Substitute.For<ILayerPublishingService>();
-        publisher.ValidateTableForPublishAsync(Arg.Any<string>(), Arg.Any<TablePublishValidationRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new TablePublishValidationResult { IsValid = true, Status = "valid", Schema = "public", Table = "parcels", ServiceName = "default" });
-        publisher.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new PublishedLayerSummary { StorageLayerId = 321, LayerName = "parcels", Schema = "public", Table = "parcels", GeometryType = "Polygon", Srid = 4326, ServiceName = "default" });
-        var resolver = Substitute.For<ISecureConnectionResolver>();
-        resolver.ResolveConnectionStringAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
-        resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
-
-        var fixture = new WebAppFixture().UseEnvironment(Environments.Development)
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("Licensing:Mode", "Disabled");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-            })
-            .ReplaceService(publisher).ReplaceService(resolver);
+        var publisher = CreatePublisher();
+        await using var redis = new RedisFixture();
+        await redis.InitializeAsync();
+        var fixture = CreateFixture(publisher, redis.ConnectionString);
         await fixture.InitializeAsync();
         try
         {
-            using var admin = fixture.CreateAdminClient();
+            using var admin = await HumanApprovedOperation.CreateProposerClientAsync(fixture);
             using var publish = await admin.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0",
@@ -67,20 +54,60 @@ public sealed class DevelopmentPublicationAuditTests
             publish.StatusCode.Should().Be(HttpStatusCode.OK);
             using var receipt = JsonDocument.Parse(await publish.Content.ReadAsStringAsync());
             var result = receipt.RootElement.GetProperty("result").GetProperty("structuredContent");
-            result.GetProperty("status").GetString().Should().Be("Completed", result.GetRawText());
-            var operationId = result.GetProperty("operationInstanceId").GetString();
+            result.GetProperty("status").GetString().Should().Be("RequiresApproval", result.GetRawText());
+            await publisher.DidNotReceive().PublishLayerAsync(
+                Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+            var handle = await HumanApprovedOperation.ApproveAndReadHandleAsync(
+                fixture, result.GetProperty("proposalId").GetString()!);
+            handle.GetProperty("status").GetString().Should().Be("Completed");
+            await publisher.Received(1).PublishLayerAsync(
+                Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+            var operationId = handle.GetProperty("operationInstanceId").GetString();
             operationId.Should().NotBeNullOrWhiteSpace();
-            using var response = await admin.GetAsync($"/api/v1/admin/observability/audit?resourceId={Uri.EscapeDataString(operationId!)}&action=operation.completed");
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var audit = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var events = audit.RootElement.GetProperty("items").EnumerateArray().ToArray();
-            events.Should().ContainSingle();
-            events[0].GetProperty("actor").GetString().Should().StartWith("apikey:api-key:");
-            events[0].GetProperty("timestamp").GetDateTimeOffset().Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2));
+            await AssertAuditAsync(admin, operationId!);
         }
         finally
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static WebAppFixture CreateFixture(ILayerPublishingService publisher, string redisConnectionString)
+    {
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver.ResolveConnectionStringAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
+        resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
+
+        return new WebAppFixture().UseEnvironment(Environments.Development)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("Licensing:Mode", "Disabled");
+                builder.UseSetting("ConnectionStrings:redis", redisConnectionString);
+                builder.UseSetting("Public:BaseUrl", "http://localhost");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
+            .ReplaceService(publisher).ReplaceService(resolver);
+    }
+
+    private static ILayerPublishingService CreatePublisher()
+    {
+        var publisher = Substitute.For<ILayerPublishingService>();
+        publisher.ValidateTableForPublishAsync(Arg.Any<string>(), Arg.Any<TablePublishValidationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new TablePublishValidationResult { IsValid = true, Status = "valid", Schema = "public", Table = "parcels", ServiceName = "default" });
+        publisher.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishedLayerSummary { StorageLayerId = 321, LayerName = "parcels", Schema = "public", Table = "parcels", GeometryType = "Polygon", Srid = 4326, ServiceName = "default" });
+        return publisher;
+    }
+
+    private static async Task AssertAuditAsync(HttpClient admin, string operationId)
+    {
+        using var response = await admin.GetAsync($"/api/v1/admin/observability/audit?resourceId={Uri.EscapeDataString(operationId)}&action=operation.completed");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var audit = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var events = audit.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        events.Should().ContainSingle();
+        events[0].GetProperty("actor").GetString().Should().StartWith("apikey:api-key:");
+        events[0].GetProperty("timestamp").GetDateTimeOffset().Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2));
     }
 }

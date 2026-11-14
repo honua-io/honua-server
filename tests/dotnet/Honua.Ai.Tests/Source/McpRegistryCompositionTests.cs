@@ -187,7 +187,7 @@ public sealed class McpRegistryCompositionTests
     public async Task ProductionOperationsComposition_ByDefault_PublishesExactlyTheAuditedAdminProjection()
     {
         const int ExpectedManifestTools = 72;
-        const int ExpectedRosterAdditions = 7;
+        const int ExpectedRosterAdditions = 8;
         const int ExpectedPublishedTools = ExpectedManifestTools + ExpectedRosterAdditions;
         const int ExpectedExclusions = 18;
         const string ExpectedExclusionDigest = "4b8e74902239822013532dac7eb7cae22e9c47e5c297ebb36741b27be7090196";
@@ -222,6 +222,7 @@ public sealed class McpRegistryCompositionTests
         var rosterAdditions = new[]
         {
             "honua_admin_connections_list",
+            "honua_admin_connection_layers_list",
             "honua_admin_connection_tables_list",
             "honua_admin_connections_create",
             "honua_admin_connections_test",
@@ -261,9 +262,9 @@ public sealed class McpRegistryCompositionTests
     {
         // The explicit full-catalog opt-in keeps its pre-#3363 meaning: every eligible
         // descriptor publishes except the audited exclusions and hand-authored duplicates.
-        const int ExpectedCatalogAdminOperations = 116;
+        const int ExpectedCatalogAdminOperations = 117;
         const int ExpectedExclusionsInCatalog = 11;
-        const int ExpectedPublishedAdminTools = 105;
+        const int ExpectedPublishedAdminTools = 106;
 
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
         {

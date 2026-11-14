@@ -69,7 +69,7 @@
 #   Server tests assert the CONTENT of dozens of documents (docs/cite-status.md,
 #   docs/reference/geoprocessing-operations.md,
 #   docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md,
-#   docs/internal/operator/audit-coverage-matrix.md, ...). A docs-only exit that
+#   docs/internal/operations/audit-coverage-matrix.md, ...). A docs-only exit that
 #   skipped those tests would let a documentation edit turn trunk red.
 #
 # THE GATE-INPUT SCAN
@@ -242,6 +242,7 @@ GATE_INPUTS = (
     # affected-shard families.
     "src",
     "tests/dotnet",
+    "eng/ci/fixtures",
     "Directory.Build.props",
     "Directory.Build.targets",
     "Directory.Packages.props",
@@ -432,7 +433,8 @@ def scan(tree: str) -> dict[str, dict[str, str]]:
         # This versioned audit format records historical changed_paths; it never
         # reads those documents. A dated report must not make every path it has
         # ever observed into a new runtime dependency. Other JSON stays governed.
-        if source.startswith("docs/ci/") and source.endswith(".json"):
+        if ((source.startswith("docs/ci/") and source.endswith(".json"))
+                or source == "eng/ci/fixtures/shard-promotion/reconciliation.json"):
             try:
                 report = json.loads(body)
                 if isinstance(report, dict) and report.get("contract") == "honua.affected-shards-reconciliation/v1":

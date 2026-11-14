@@ -69,7 +69,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
                     return new(GeoprocessingTerminalWaitOutcome.NotFound);
                 }
 
-                if (GeoprocessingJobService.IsTerminal(job.Status))
+                if (job.Status.IsTerminal())
                 {
                     return new(GeoprocessingTerminalWaitOutcome.Terminal, job);
                 }
@@ -163,7 +163,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
         string jobId, string serviceId, string taskName, ClaimsPrincipal principal, TimeSpan timeout)
     {
         ValidateTimeout(timeout);
-        var principalSnapshot = new ClaimsPrincipal(principal.Identities.Select(identity => new ClaimsIdentity(identity)));
+        var principalSnapshot = _jobs.CaptureOrphanCleanupPrincipal(jobId, principal);
         _ = Task.Run(() => CancelOrphanedInBackgroundAsync(
             jobId, principalSnapshot, timeout, serviceId, taskName), CancellationToken.None);
     }
@@ -187,7 +187,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
         // This service and its collaborators are singletons. Clone the request principal,
         // then leave the response path before starting cleanup so a slow cancellation cannot
         // extend the synchronous request deadline.
-        var principalSnapshot = new ClaimsPrincipal(principal);
+        var principalSnapshot = _jobs.CaptureOrphanCleanupPrincipal(jobId, principal);
         _ = Task.Run(
             () => CancelOrphanedInBackgroundAsync(jobId, principalSnapshot, timeout),
             CancellationToken.None);
@@ -274,7 +274,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
                 : isOrphanCleanup
                 ? await _jobs.GetJobForTerminalAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false)
                 : await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
-            return GeoprocessingJobService.IsTerminal(latest.Status) && latest.Status != ExecutionJobStatus.Cancelled
+            return latest.Status.IsTerminal() && latest.Status != ExecutionJobStatus.Cancelled
                 ? new(GeoprocessingCancelOutcome.AlreadyTerminal, latest)
                 : new(GeoprocessingCancelOutcome.Cancelled, latest);
         }
@@ -297,7 +297,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
                     : isOrphanCleanup
                     ? await _jobs.GetJobForTerminalAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false)
                     : await _jobs.GetJobAsync(jobId, principal, linkedSource.Token).ConfigureAwait(false);
-                return GeoprocessingJobService.IsTerminal(winner.Status)
+                return winner.Status.IsTerminal()
                     ? new(GeoprocessingCancelOutcome.AlreadyTerminal, winner)
                     : new(GeoprocessingCancelOutcome.Unconfirmed, winner);
             }

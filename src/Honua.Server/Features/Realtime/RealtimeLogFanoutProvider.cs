@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Data.Common;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Realtime;
 using Npgsql;
 
@@ -13,7 +14,8 @@ namespace Honua.Server.Features.Realtime;
 internal abstract class RealtimeLogFanoutProvider(
     PostgresRealtimeEventLog log,
     RealtimeDispatcher dispatcher,
-    RealtimePresenceBatcher presence) : IRealtimeFanoutProvider
+    RealtimePresenceBatcher presence,
+    ILeaseStore? leases) : IRealtimeFanoutProvider
 {
     public abstract RealtimeProviderCapabilities Capabilities { get; }
 
@@ -44,15 +46,36 @@ internal abstract class RealtimeLogFanoutProvider(
 
     public IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request) => dispatcher.Subscribe(request);
 
+    public ValueTask<IRealtimeStreamLease?> TryAcquireMcpStreamAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        return RealtimeStreamLease.TryAcquireAsync(
+            leases ?? throw new InvalidOperationException("MCP stream ownership requires the shared PostgreSQL lease store."),
+            sessionId, cancellationToken);
+    }
+
     public async ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken)
         => await log.ReadWindowAsync(family.Name, cancellationToken).ConfigureAwait(false);
+
+    public async ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(
+        string scopeKey, long after, long through, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scopeKey);
+        ArgumentOutOfRangeException.ThrowIfNegative(after);
+        ArgumentOutOfRangeException.ThrowIfLessThan(through, after);
+        // A fixed page bound also bounds memory when a caller configures a large replay allowance.
+        return await log.ReadAfterAsync(
+            new RealtimeLogRead(RealtimeLogFamilies.CollabPresence, after, 256, [scopeKey], through),
+            cancellationToken).ConfigureAwait(false);
+    }
 }
 
 // One task, or tasks that each serve only their own clients: woken locally and by a slow poll.
 internal sealed class InProcessRealtimeFanoutProvider(
     PostgresRealtimeEventLog log,
     RealtimeDispatcher dispatcher,
-    RealtimePresenceBatcher presence) : RealtimeLogFanoutProvider(log, dispatcher, presence)
+    RealtimePresenceBatcher presence,
+    ILeaseStore? leases = null) : RealtimeLogFanoutProvider(log, dispatcher, presence, leases)
 {
     private static readonly RealtimeProviderCapabilities _capabilities = new(CrossNode: false, OrderedPerFamily: true, Resumable: true);
 
@@ -63,7 +86,8 @@ internal sealed class InProcessRealtimeFanoutProvider(
 internal sealed class PostgresRealtimeFanoutProvider(
     PostgresRealtimeEventLog log,
     RealtimeDispatcher dispatcher,
-    RealtimePresenceBatcher presence) : RealtimeLogFanoutProvider(log, dispatcher, presence)
+    RealtimePresenceBatcher presence,
+    ILeaseStore? leases = null) : RealtimeLogFanoutProvider(log, dispatcher, presence, leases)
 {
     private static readonly RealtimeProviderCapabilities _capabilities = new(CrossNode: true, OrderedPerFamily: true, Resumable: true);
 

@@ -582,6 +582,11 @@ public static partial class OidcAuthenticationExtensions
                 var pairing = audiencesByIssuer;
                 options.TokenValidationParameters.AudienceValidator = (audiences, securityToken, validationParameters) =>
                 {
+                    if (OidcTokenValidationParametersFactory.AcceptClientIdAudience(oidcOptions, securityToken))
+                    {
+                        return true;
+                    }
+
                     var issuer = securityToken?.Issuer;
                     if (!string.IsNullOrWhiteSpace(issuer) && pairing.TryGetValue(issuer, out var allowedForIssuer))
                     {

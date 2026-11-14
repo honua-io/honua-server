@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <PackageReference Include="Oracle.ManagedDataAccess.Core" />
+    <!-- Pin the patched PKCS dependency selected by the database client (CVE-2026-84008 / CVE-2026-70162). -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
