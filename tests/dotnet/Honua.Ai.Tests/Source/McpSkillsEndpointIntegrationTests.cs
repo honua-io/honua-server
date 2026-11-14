@@ -40,11 +40,11 @@ public sealed class McpSkillsEndpointIntegrationTests : IAsyncLifetime
             var uri = entry.GetProperty("uri").GetString()!;
             var fetched = (await SendAsync("skills/get", uri)).GetProperty("result").GetProperty("skill");
             Assert.Equal(entry.GetRawText(), fetched.GetRawText());
-            var directory = System.IO.Path.Combine(FindRoot().FullName, "skills",
+            var directory = System.IO.Path.Join(FindRoot().FullName, "skills",
                 entry.GetProperty("frontmatter").GetProperty("name").GetString()!);
             var expectedUris = Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
                 .Select(path => "skill://" + System.IO.Path.GetRelativePath(
-                    System.IO.Path.Combine(FindRoot().FullName, "skills"), path).Replace('\\', '/'))
+                    System.IO.Path.Join(FindRoot().FullName, "skills"), path).Replace('\\', '/'))
                 .Order(StringComparer.Ordinal).ToArray();
             Assert.Equal(expectedUris, entry.GetProperty("resources").EnumerateArray()
                 .Select(resource => resource.GetProperty("uri").GetString()!).Order(StringComparer.Ordinal).ToArray());
@@ -67,7 +67,7 @@ public sealed class McpSkillsEndpointIntegrationTests : IAsyncLifetime
         Assert.Equal(resource.GetProperty("size").GetInt64(), bytes.LongLength);
         Assert.Equal(resource.GetProperty("digest").GetString(),
             "sha256:" + Convert.ToHexStringLower(SHA256.HashData(bytes)));
-        var source = System.IO.Path.Combine(FindRoot().FullName, "skills", resourceUri["skill://".Length..]);
+        var source = System.IO.Path.Join(FindRoot().FullName, "skills", resourceUri["skill://".Length..]);
         Assert.Equal(File.ReadAllBytes(source), bytes);
         if (resourceUri == uri)
         {
@@ -111,7 +111,7 @@ public sealed class McpSkillsEndpointIntegrationTests : IAsyncLifetime
     private static DirectoryInfo FindRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(System.IO.Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory is not null && !File.Exists(System.IO.Path.Join(directory.FullName, "Honua.sln")))
             directory = directory.Parent;
         return directory ?? throw new InvalidOperationException("Repository root not found.");
     }
