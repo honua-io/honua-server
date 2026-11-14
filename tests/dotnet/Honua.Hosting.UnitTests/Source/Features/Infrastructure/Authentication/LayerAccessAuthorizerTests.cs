@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,39 @@ namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
 public sealed class LayerAccessAuthorizerTests
 {
+    [Theory]
+    [InlineData("public")]
+    [InlineData(null)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public void ResolveAuthorizationTenantId_TrustedBindingOverridesProviderDirectory(string? effectiveTenant)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "alice"),
+            new Claim("iss", "https://idp.example"),
+            new Claim("tid", "directory-tenant"),
+        ], "Bearer"));
+        CanonicalSecurityActor.StampRequestBinding(principal, effectiveTenant);
+
+        LayerAccessAuthorizer.ResolveAuthorizationTenantId(principal, "ambient")
+            .Should().Be(effectiveTenant);
+    }
+
+    [UnitTest]
+    public void ResolveAuthorizationTenantId_UnstampedProjectionCannotOverrideFrozenTenant()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("tenant_id", "frozen-tenant"),
+            new Claim("honua:effective_tenant", "forged-tenant"),
+            new Claim("honua:canonical_actor", "forged-actor"),
+        ], "test"));
+
+        LayerAccessAuthorizer.ResolveAuthorizationTenantId(principal, "approver-tenant")
+            .Should().Be("frozen-tenant");
+    }
+
     [Theory]
     [InlineData(true, "tenant-a", "reader", true)]
     [InlineData(false, "tenant-a", "reader", true)]

@@ -176,6 +176,26 @@ in deployment manifests. Defaults are unchanged when a key is absent. Existing
 `Alerts:Enabled` / `Alerts__Enabled` behavior is unchanged; this correction applies to
 the nested evaluation, dispatch, delivery-channel, and operations settings.
 
+### Single-tenant deployments are the default
+
+`MultiTenancy:Enabled` now defaults to `false` for request resolution and Studio
+ownership checks. Single-tenant requests use `MultiTenancy:DefaultTenantId`
+(`public` by default); provider tenant claims and tenant headers do not select a
+separate tenant. Previously stamped Studio content remains accessible within the
+deployment rather than being selected by an identity provider's tenant claim.
+
+Deployments intentionally using tenant isolation must explicitly set
+`MultiTenancy__Enabled=true` before upgrading to retain claim-based resolution and
+Studio isolation. Schema routing now refuses startup unless multi-tenancy is
+explicitly enabled. Review existing tenant IDs and workspace mappings before
+changing this setting. See [authentication configuration](../secure/authentication.md).
+
+Proposals and operation handles created under the previous default carry the tenant
+from the identity provider's claim (for example an Entra `tid`). In single-tenant mode
+they no longer match the deployment tenant, so only `MultiTenancy:MultiTenantAdminRoles`
+holders (`platform_admin` or `multi_tenant_admin` by default) can read or approve them.
+Finish or reject pending proposals before upgrading, or keep `MultiTenancy__Enabled=true`.
+
 ### Credential and identity management requires full-administrator authority
 
 API keys that hold only `admin:write` or `admin:manage` now receive `403` on the routes

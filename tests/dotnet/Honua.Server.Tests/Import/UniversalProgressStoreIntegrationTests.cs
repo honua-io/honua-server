@@ -141,6 +141,32 @@ public sealed class UniversalProgressStoreIntegrationTests
     [IntegrationTheory]
     [InlineData("")]
     [InlineData("honua:")]
+    public async Task TryReplaceProgressAsync_MissingSnapshot_PreservesFirstWriter(string instanceName)
+    {
+        using var provider = BuildRedisServices(instanceName);
+        using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
+        var store = new UniversalProgressStore(provider.GetRequiredService<IDistributedCache>(),
+            NullLogger<UniversalProgressStore>.Instance, multiplexer,
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions>>());
+        var id = $"new-lease-{Guid.NewGuid():N}";
+        var progress = PrintProgress.CreateInitial(id, "pdf", "map", 1);
+        try
+        {
+            (await store.TryReplaceProgressAsync(new OperationProgressWrite(id, progress), null)).Outcome
+                .Should().Be(ProgressCompareAndSetOutcome.Updated);
+            (await store.TryReplaceProgressAsync(new OperationProgressWrite(id, progress with { Status = OperationStatus.Failed }), null)).Outcome
+                .Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
+            (await store.GetProgressAsync<PrintProgress>(id))!.Status.Should().Be(progress.Status);
+        }
+        finally
+        {
+            await store.DeleteProgressAsync(id);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData("honua:")]
     public async Task TryReplaceProgressAsync_ConcurrentRefresh_RejectsStaleSnapshotAndKeepsExpiry(string instanceName)
     {
         using var provider = BuildRedisServices(instanceName);

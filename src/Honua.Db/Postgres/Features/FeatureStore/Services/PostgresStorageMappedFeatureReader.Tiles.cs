@@ -88,6 +88,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
                 ? geometry
                 : DatumTransformSql.BuildTransformExpression(
                     geometry, targetSrid, selection, _storageSrid);
+            var originalGeometryForTile = geometryForTile;
             if (!step.IsFull)
             {
                 geometryForTile = MvtTileBudget.Generalize(
@@ -122,12 +123,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
                     FROM (
                         SELECT
                             {_primaryKeyColumn}::bigint AS objectid,
-                            ST_AsMVTGeom(
-                                {geometryForTile},
-                                {tileEnvelope},
-                                {extentParameter},
-                                {bufferParameter}
-                            ) AS geom
+                            {MvtTileBudget.EncodeGeometry(geometryForTile, originalGeometryForTile, new(tileEnvelope, extentParameter, bufferParameter))} AS geom
                         FROM {BuildFeatureSource(effectiveQuery, sql)}
                     """);
             }
@@ -139,12 +135,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
                         SELECT
                             {_primaryKeyColumn}::bigint AS objectid,
                             {attributes} AS attributes,
-                            ST_AsMVTGeom(
-                                {geometryForTile},
-                                {tileEnvelope},
-                                {extentParameter},
-                                {bufferParameter}
-                            ) AS geom
+                            {MvtTileBudget.EncodeGeometry(geometryForTile, originalGeometryForTile, new(tileEnvelope, extentParameter, bufferParameter))} AS geom
                         FROM {BuildFeatureSource(effectiveQuery, sql)}
                     """);
             }
@@ -155,48 +146,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
                 $" {BuildWhereJoiner(sql)} {geometry} && {envelopeForFilter}" +
                 $" AND ST_Intersects({geometry}, {envelopeForFilter})");
 
-            if (!step.IsFull)
+            if (tileLimits.MaxFeaturesPerTile > 0)
             {
-                var predicate = MvtTileBudget.MinSizePredicate(
-                    geometryForTile,
-                    MvtTileBudget.MinMapUnits(tileWidth, tileExtent, step),
-                    value => sql.AddParameter(value));
-                if (predicate is not null)
-                {
-                    sql.Append(CultureInfo.InvariantCulture, $" AND {predicate}");
-                }
+                sql.Append(CultureInfo.InvariantCulture,
+                    $" ORDER BY {_primaryKeyColumn} LIMIT {sql.AddParameter(tileLimits.MaxFeaturesPerTile)}");
             }
 
-            if (step.IsFull)
-            {
-                if (tileLimits.MaxFeaturesPerTile > 0)
-                {
-                    sql.Append(
-                        CultureInfo.InvariantCulture,
-                        $" LIMIT {sql.AddParameter(tileLimits.MaxFeaturesPerTile)}");
-                }
-
-                sql.Append(CultureInfo.InvariantCulture, """
-
-                    ) AS tile
-                    """);
-            }
-            else
-            {
-                if (MvtTileBudget.FeatureLimit(tileLimits.MaxFeaturesPerTile, step) is int featureCap)
-                {
-                    sql.Append(
-                        CultureInfo.InvariantCulture,
-                        $" ORDER BY ST_Area({geometryForTile}) DESC, objectid ASC" +
-                        $" LIMIT {sql.AddParameter(featureCap)}");
-                }
-
-                sql.Append(CultureInfo.InvariantCulture, """
-
-                    ) AS tile
-                    WHERE geom IS NOT NULL
-                    """);
-            }
+            sql.Append(CultureInfo.InvariantCulture, " ) AS tile");
 
             return sql;
         }

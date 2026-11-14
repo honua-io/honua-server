@@ -9,27 +9,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Reconciles durable metadata-release workflow operations through the staged-activation lifecycle
-/// for protected additive changes:
-/// Preflight (change policy + compatibility gate, before any mutation) →
-/// Backup (capture the immutable prior revision and its ETag) →
-/// ScriptMigration (prepare and stage an immutable candidate; the active pointer does not move) →
-/// ServicePublication (qualified additive ETL, still before activation) →
-/// Smoke (exercise the candidate explicitly while canonical readers stay on the prior revision) →
-/// MetadataApply (atomic, ETag-conditional activation; a newer update is rebased and revalidated or
-/// rejected, never overwritten) →
-/// SloWatch (post-activation regression check on the live revision) → Complete.
-///
-/// Rollback restores only what the operation owns — it reactivates the prior revision while the
-/// candidate is still current, and otherwise reverts the owned fields on top of later updates — never
-/// touches physical data, and verifies the recovered service before reporting RolledBack. Failures
-/// before activation discard the candidate and leave the live catalog untouched. Snapshot-required
-/// rollback is deferred and refused with a clear message.
-///
-/// Mirrors <see cref="DeployWorkflowReconciler"/>: leased, idempotent, single advance per cycle so
-/// the background loop re-enters and resumes from the persisted stage.
-/// </summary>
 internal sealed partial class MetadataReleaseReconciler(
     IWorkflowOperationStore workflowStore,
     IMetadataReleasePreflightGate preflightGate,
@@ -518,11 +497,6 @@ internal sealed partial class MetadataReleaseReconciler(
         };
     }
 
-    /// <summary>
-    /// While the candidate is still current, the prior revision plus the owned change is exactly the
-    /// live state, so reactivating the prior revision restores precisely the operation-owned change.
-    /// Returns null when that exact restore does not apply.
-    /// </summary>
     private async Task<RecoveryOutcome?> RestorePriorRevisionAsync(
         MetadataReleaseContext release,
         CancellationToken cancellationToken)
@@ -542,10 +516,16 @@ internal sealed partial class MetadataReleaseReconciler(
             return null;
         }
 
-        var result = await activator.ActivateAsync(priorRevision, live.Etag, cancellationToken).ConfigureAwait(false);
-        return result.Outcome == MetadataReleaseActivationOutcome.Conflict
-            ? null
-            : new RecoveryOutcome($"Reactivated prior revision {priorRevision} while candidate revision {candidateRevision} was still current.");
+        try
+        {
+            var restored = await activator.CommitRevertAsync(prior.Graph, live.Etag, cancellationToken).ConfigureAwait(false);
+            return new RecoveryOutcome($"Restored prior revision {priorRevision} as new revision {restored.Revision} while candidate revision {candidateRevision} was still current.");
+        }
+        catch (MetadataV2GraphConcurrencyException)
+        {
+            // Preserve the winning writer by reverting only owned changes against its new revision.
+            return null;
+        }
     }
 
     /// <summary>
@@ -672,7 +652,7 @@ internal sealed partial class MetadataReleaseReconciler(
             Class = rollbackClass,
             Steps =
             [
-                "Reactivate the prior revision while the candidate is still current; otherwise revert only this release's owned fields on top of later updates.",
+                "Restore the prior document as a new revision while the candidate is still current; otherwise revert only this release's owned fields on top of later updates.",
                 "Leave physical data and committed feature edits untouched.",
                 "Verify the recovered revision (schema, bindings, authorization, canonical query) before reporting RolledBack."
             ]

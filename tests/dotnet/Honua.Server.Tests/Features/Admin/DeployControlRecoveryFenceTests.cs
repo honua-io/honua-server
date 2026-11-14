@@ -74,6 +74,7 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                builder.UseSetting("MultiTenancy:Enabled", "true");
                 builder.UseSetting("Authentication:ClientCertificates:Mode", "Optional");
                 builder.UseSetting("Oidc:Enabled", "true");
                 builder.UseSetting("Oidc:RequireHttps", "true");
