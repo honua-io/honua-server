@@ -130,3 +130,31 @@ SharedCache__CacheTagHeader=x-amz-meta-cache-tag
 - **Everything is `private, no-store`.** The request carries a credential or names a tenant, or a development bypass identity is active. None of these is shared.
 - **A change is not visible through the CDN.** Check the admin response for `Honua-Cdn-Invalidation: failed`, and the task role's permission on the distribution.
 - **Edits made outside Honua are not visible.** Shorten the layer's lifetime, or invalidate the layer's cache after loading data.
+
+## Purge after an ECS deployment settles
+
+When the ops event queue is enabled, the server consumes ECS
+`SERVICE_DEPLOYMENT_COMPLETED` events and performs a second CDN purge after the
+replacement deployment settles. This removes responses that old tasks could
+have cached after the release-change purge.
+
+Only configured ECS deploy targets are eligible. Their `aws.region`,
+`aws.ecs.cluster` (name or ARN), and canary or stable service must match the event.
+The supported backends are `honua-aws-ecs-alb` and `honua-gitops-aws-ecs`.
+The queue must receive ECS Deployment State Change events for these services,
+and the server's task role must allow describing them. Unrelated events do not
+cause a purge.
+
+Before purging, the consumer checks the live service: the event's deployment is
+primary, its rollout is complete, running tasks match the desired count, no tasks
+are pending, and every older deployment has zero running and pending tasks.
+A completion event that arrives before this state is visible stays retryable.
+Events for an explicitly superseded deployment do not trigger a purge.
+
+PostgreSQL coordinates consumers across tasks and records a successful purge in
+`cdn_deployment_purges`. Repeated deliveries of that deployment do not purge
+again. Failed purges remain unrecorded and use the queue's retry and dead-letter
+policy. If a process stops after submitting a purge but before committing its
+record, retry can submit the purge again; purging is safe to repeat. The CDN
+purge log carries the release change ID `deployment:<event-id>`. CDN propagation
+still depends on the configured provider.
