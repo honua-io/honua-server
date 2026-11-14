@@ -696,6 +696,20 @@ and successful jobs. Full CI also checks the merged foundation TRX outcomes;
 foundation security build and test failures count even when built separately.
 `CI Gate` depends on these enforced test summaries.
 
+Each shard job uploads its results as `<artifact>-attempt-<run_attempt>`, and
+both aggregates download every attempt into its own directory. A failed-jobs
+rerun re-runs only failed or cancelled shards; each shard's highest attempt is
+the one counted, so a rerun's receipt replaces the earlier attempt's and a
+shard the rerun did not repeat keeps its earlier passing receipt. A newer
+failing attempt still overrides an older passing one. Before this change the
+aggregates merged same-named artifacts, and GitHub's artifact ids do not follow
+upload order: on honua-server#7648 run 43603773296 attempt 2, attempt 1's empty
+`Packages and Temporal` artifact outranked attempt 2's receipt, leaving 5/6
+receipts. This adds no jobs or runners and changes no required check names or
+`needs`; the receipt count, TRX re-verification and job-result checks are
+unchanged. The quarantine publisher keeps one artifact per shard, the newest
+attempt.
+
 The retained `*.timing.json` includes `execution` with actual result counts,
 TRX SHA-256, source SHA/dirty flag, project, and runner/verifier hashes. The timing
 record retains the effective filter and original shard status. Its count status
