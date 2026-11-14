@@ -18,6 +18,7 @@ namespace Honua.Server.Features.Streaming;
 
 internal static partial class RealtimeNotificationEndpoints
 {
+    private static readonly string[] JobStatusPayloadProperties = ["status", "updatedAt"];
     public static void MapRealtimeNotificationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/streaming")
@@ -75,7 +76,7 @@ internal static partial class RealtimeNotificationEndpoints
             {
                 writer.WriteStartObject();
                 writer.WriteString("jobId", item.ScopeKey);
-                foreach (var name in new[] { "status", "updatedAt" })
+                foreach (var name in JobStatusPayloadProperties)
                 {
                     if (item.Payload.TryGetProperty(name, out var value))
                     {
