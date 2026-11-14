@@ -35,7 +35,6 @@
     "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataGeometryCrudTests.cs",
     "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataMultipartBatchTests.cs",
     "tests/dotnet/Honua.Protocols.OData.Tests/Source/Services/",
-    "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/",
     "tests/dotnet/Honua.Protocols.SensorThings.Tests/Source/",
     "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminApiVersioningTests.cs",
     "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminCapabilitiesEndpointTests.cs",

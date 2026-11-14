@@ -6,8 +6,8 @@ spans from full run `43580101834`, plus at least 3.8 minutes of setup allowance,
 initialize their ranks at 6.8–9.7 minutes. These estimates need measurement in the
 next coordinated full run. Exact partition fixtures preserve the parent methods,
 future-method fallback, triggers, projects and budgets. The split restores a
-budget-eligible owner for 63 source paths, bringing coverage to 730 of 794 paths.
-The remaining 64 paths are explicit existing debt in `pr-owner-debt.json`;
+budget-eligible owner for 63 source paths, bringing coverage to 731 of 794 paths.
+The remaining 63 paths are explicit existing debt in `pr-owner-debt.json`;
 the time-budget fixture rejects any additional path losing its last eligible
 owner and includes a failure injection that makes all owners exceed the budget.
 
