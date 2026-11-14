@@ -240,8 +240,12 @@ public sealed partial class TileCacheJobExecutorPublishTests
         }
         return new ExecutionJobRecord
         {
-            OperationId = id, Status = status, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
-            AttemptCount = status == ExecutionJobStatus.Running ? 1 : 0, Spec = spec
+            OperationId = id,
+            Status = status,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            AttemptCount = status == ExecutionJobStatus.Running ? 1 : 0,
+            Spec = spec
         };
     }
 

@@ -89,7 +89,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
             ? JobExecutionResult.Succeeded(finalProgress.Warnings)
             : JobExecutionResult.Failed(finalProgress.ErrorMessage ?? "Tile operation failed.", finalProgress.Warnings)
                 with
-                { IsRetryable = false };
+            { IsRetryable = false };
     }
 
     // GET /admin/tile-operations/jobs/{id} reads the tile-shaped progress, not the job record.

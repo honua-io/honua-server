@@ -27,7 +27,8 @@ public sealed class LocalBatchComputeBackendCancellationTests
         var progressStore = Substitute.For<IUniversalProgressStore>();
         progressStore.GetProgressAsync("export-race", Arg.Any<CancellationToken>())
             .Returns(Honua.Infrastructure.Progress.ExportProgress.CreateInitial("export-race", "csv", "svc", 0, 1)
-                with { Status = status });
+                with
+            { Status = status });
         var backend = new LocalBatchComputeBackend(progressStore, []);
         var job = new ExecutionJobRecord
         {

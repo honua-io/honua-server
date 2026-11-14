@@ -103,7 +103,11 @@ public sealed partial class TileCacheJobExecutorPublishTests
             UpdatedAt = now,
             Spec = TileCacheExecutionSpecBuilder.Build(new TileOperationStartRequest
             {
-                Operation = "archive", LayerId = 1, MinZoom = 0, MaxZoom = 0, MaxTiles = 1
+                Operation = "archive",
+                LayerId = 1,
+                MinZoom = 0,
+                MaxZoom = 0,
+                MaxTiles = 1
             }, null, new TileCacheBatchOptions())
         };
         return job;

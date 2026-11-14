@@ -139,7 +139,7 @@ public sealed partial class ExportJobTests
         }
     }
 
-    private static async Task PrepareAdmissionProgressAsync(IUniversalProgressStore progress,
+    private static async Task PrepareAdmissionProgressAsync(ComparingInMemoryProgressStore progress,
         ExportJob job, OperationStatus? initialStatus)
     {
         await progress.DeleteProgressAsync(job.JobId);

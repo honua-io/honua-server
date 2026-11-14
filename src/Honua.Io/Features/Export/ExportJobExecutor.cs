@@ -89,7 +89,7 @@ internal sealed class ExportJobExecutor(
     private static ExportProgress Fresh(ExportJob request)
         => ExportProgress.CreateInitial(request.JobId, request.Format, request.ServiceName, request.ServiceLayerIndex, request.TotalFeatures)
             with
-            { Status = OperationStatus.Processing, CurrentPhase = ExportingPhase };
+        { Status = OperationStatus.Processing, CurrentPhase = ExportingPhase };
 
     private async Task<JobExecutionResult> ExportAsync(ExportRun run, CancellationToken cancellationToken)
     {

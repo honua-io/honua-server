@@ -506,7 +506,8 @@ public sealed class ExportJobServiceTests
     {
         var progressStore = new ComparingInMemoryProgressStore();
         var running = ExportProgress.CreateInitial("export-retry", "csv", "svc", 1, 10)
-            with { Status = OperationStatus.Processing };
+            with
+        { Status = OperationStatus.Processing };
         await progressStore.SetProgressAsync("export-retry", running);
         var callback = new ExportJobTerminalCallback(NullLogger<ExportJobTerminalCallback>.Instance);
         var oldAttempt = new ExecutionJobRecord

@@ -1277,11 +1277,16 @@ public sealed partial class OperationsProgressEndpointsTests : IAsyncLifetime
         var now = DateTimeOffset.UtcNow;
         var job = new ExecutionJobRecord
         {
-            OperationId = operationId, Status = ExecutionJobStatus.Queued, CreatedAt = now, UpdatedAt = now,
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
             Spec = new ExecutionJobSpec
             {
-                Kind = ExecutionJobKind.TileCache, Backend = "local",
-                TargetKind = BatchComputeTargetKind.KubernetesJob, WorkloadName = "tile-cancel",
+                Kind = ExecutionJobKind.TileCache,
+                Backend = "local",
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                WorkloadName = "tile-cancel",
                 Parameters = new Dictionary<string, string> { ["operation"] = operation }
             }
         };
@@ -1351,11 +1356,14 @@ public sealed partial class OperationsProgressEndpointsTests : IAsyncLifetime
             Status = status,
             ProviderOperationId = status == ExecutionJobStatus.Running ? "provider-operation" : null,
             CancellationRequestedAt = status == ExecutionJobStatus.Running ? now : null,
-            CreatedAt = now, UpdatedAt = now,
+            CreatedAt = now,
+            UpdatedAt = now,
             Spec = new ExecutionJobSpec
             {
-                Kind = ExecutionJobKind.TileCache, Backend = "aws-batch",
-                TargetKind = BatchComputeTargetKind.AwsBatch, WorkloadName = "tile-cancel-race",
+                Kind = ExecutionJobKind.TileCache,
+                Backend = "aws-batch",
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                WorkloadName = "tile-cancel-race",
                 Parameters = new Dictionary<string, string> { [TileCacheJobParameterKeys.Operation] = operation }
             }
         };
@@ -1374,11 +1382,15 @@ public sealed partial class OperationsProgressEndpointsTests : IAsyncLifetime
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
         {
-            OperationId = operationId, Version = 1, Status = status,
-            CreatedAt = now, UpdatedAt = now,
+            OperationId = operationId,
+            Version = 1,
+            Status = status,
+            CreatedAt = now,
+            UpdatedAt = now,
             Spec = new ExecutionJobSpec
             {
-                Kind = kind, Backend = "local",
+                Kind = kind,
+                Backend = "local",
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 WorkloadName = kind == ExecutionJobKind.Geoprocessing ? "cancel-in-flight" : "cancel-retry"
             }

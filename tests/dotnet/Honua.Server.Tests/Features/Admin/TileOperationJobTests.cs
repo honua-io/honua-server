@@ -214,7 +214,7 @@ public sealed partial class TileOperationJobTests
         var progressStore = new ComparingInMemoryProgressStore();
         var running = TileOperationProgress.CreateInitial("tile-1", "seed", null, 1, "WebMercatorQuad")
             with
-            { Status = OperationStatus.Processing };
+        { Status = OperationStatus.Processing };
         await progressStore.SetProgressAsync("tile-1", running);
         var callback = new TileCacheJobTerminalCallback();
         var now = DateTimeOffset.UtcNow;
