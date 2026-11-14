@@ -30,11 +30,11 @@ internal static class AuditExportServiceCollectionExtensions
         section.Bind(options);
 
         // Shared, inert-without-sinks infrastructure.
-        services.TryAddSingleton<InMemoryAuditDeadLetterStore>();
+        services.TryAddSingleton<IAuditDeadLetterStore, InMemoryAuditDeadLetterStore>();
         services.TryAddSingleton(_ => new AuditResidencyGuard(options.AllowedRegions));
         services.TryAddSingleton(sp => new AuditExportDispatcher(
             options.Dispatch,
-            sp.GetRequiredService<InMemoryAuditDeadLetterStore>(),
+            sp.GetRequiredService<IAuditDeadLetterStore>(),
             sp.GetRequiredService<ILogger<AuditExportDispatcher>>(),
             sp.GetRequiredService<AuditResidencyGuard>()));
 

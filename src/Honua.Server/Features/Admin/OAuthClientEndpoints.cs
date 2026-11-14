@@ -141,7 +141,7 @@ internal static partial class OAuthClientEndpoints
     }
 
     private static async Task<Ok<ApiResponse<IReadOnlyList<OAuthScopeResponse>>>> HandleListScopes(
-        [FromServices] InMemoryOAuthScopeCatalogue catalogue,
+        [FromServices] IOAuthScopeCatalogue catalogue,
         HttpContext context)
     {
         var scopes = await catalogue.ListAsync(context.RequestAborted);
@@ -151,7 +151,7 @@ internal static partial class OAuthClientEndpoints
 
     private static async Task<Results<Ok<ApiResponse<OAuthScopeResponse>>, BadRequest<ApiResponse<object>>>> HandleDefineScope(
         DefineOAuthScopeRequest request,
-        [FromServices] InMemoryOAuthScopeCatalogue catalogue,
+        [FromServices] IOAuthScopeCatalogue catalogue,
         [FromServices] ILogger<OAuthClientEndpointsLog> logger,
         HttpContext context)
     {
@@ -173,7 +173,7 @@ internal static partial class OAuthClientEndpoints
 
     private static async Task<Results<Ok<ApiResponse<OAuthScopeResponse>>, NotFound<ApiResponse<object>>>> HandleDeleteScope(
         string scope,
-        [FromServices] InMemoryOAuthScopeCatalogue catalogue,
+        [FromServices] IOAuthScopeCatalogue catalogue,
         [FromServices] ILogger<OAuthClientEndpointsLog> logger,
         HttpContext context)
     {

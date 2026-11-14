@@ -16,7 +16,7 @@ internal sealed class PortalOAuthTokenService(
     PortalOAuthStore store,
     IAdminApiKeyStore apiKeyStore,
     IOAuthClientStore clientStore,
-    InMemoryOAuthScopeCatalogue scopeCatalogue,
+    IOAuthScopeCatalogue scopeCatalogue,
     PortalJwtAccessTokenService jwtService,
     ClientCredentialsFederationService federation,
     IOptions<PortalTokenAuthenticationOptions> tokenOptions,
@@ -35,7 +35,7 @@ internal sealed class PortalOAuthTokenService(
     private readonly PortalOAuthStore _store = store;
     private readonly IAdminApiKeyStore _apiKeyStore = apiKeyStore;
     private readonly IOAuthClientStore _clientStore = clientStore;
-    private readonly InMemoryOAuthScopeCatalogue _scopeCatalogue = scopeCatalogue;
+    private readonly IOAuthScopeCatalogue _scopeCatalogue = scopeCatalogue;
     private readonly PortalJwtAccessTokenService _jwtService = jwtService;
     private readonly ClientCredentialsFederationService _federation = federation;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;

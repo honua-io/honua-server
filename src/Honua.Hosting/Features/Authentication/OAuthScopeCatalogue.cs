@@ -5,6 +5,23 @@ using System.Collections.Concurrent;
 
 namespace Honua.Infrastructure.Authentication;
 
+internal interface IOAuthScopeCatalogue
+{
+    Task<IReadOnlyList<OAuthScopeDefinition>> ListAsync(CancellationToken cancellationToken);
+
+    Task<OAuthScopeDefinition?> GetAsync(string scope, CancellationToken cancellationToken);
+
+    Task<OAuthScopeDefinition> DefineAsync(OAuthScopeDefinition definition, CancellationToken cancellationToken);
+
+    Task<OAuthScopeDefinition?> DeleteAsync(string scope, CancellationToken cancellationToken);
+
+    // A requested scope is kept only when it is in the catalogue and in the client's registered scopes; anything else is dropped and never escalated.
+    Task<OAuthScopeGrant> ResolveGrantAsync(
+        string? requestedScope,
+        IReadOnlyList<string> allowedScopes,
+        CancellationToken cancellationToken);
+}
+
 internal sealed record OAuthScopeDefinition(
     string Scope,
     string Description,
@@ -14,7 +31,7 @@ internal sealed record OAuthScopeGrant(
     IReadOnlyList<string> GrantedScopes,
     IReadOnlyList<string> GrantedPermissions);
 
-internal sealed class InMemoryOAuthScopeCatalogue
+internal sealed class InMemoryOAuthScopeCatalogue : IOAuthScopeCatalogue
 {
     private readonly ConcurrentDictionary<string, OAuthScopeDefinition> _scopes =
         new(StringComparer.OrdinalIgnoreCase);
