@@ -53,6 +53,22 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
     internal ObservationStreamOptions Options => _options;
     public int SessionCount => Volatile.Read(ref _activeSessionCount);
 
+    public async ValueTask<(ObservationStreamSession? Session, ObservationStreamAdmissionLimit RejectedBy)> CreateSessionAsync(
+        ObservationStreamRequest request, CancellationToken cancellationToken)
+    {
+        // Fix the live starting cursor before the transport announces connected. Subscription
+        // initialization can then replay everything committed after this read, even if delayed.
+        if (request.After is null)
+        {
+            var window = await _provider.GetWindowAsync(RealtimeFamily.Observations, cancellationToken)
+                .ConfigureAwait(false);
+            request = request with { After = window.Head };
+        }
+
+        var session = TryCreateSession(request, out var rejectedBy);
+        return (session, rejectedBy);
+    }
+
     public ObservationStreamSession? TryCreateSession(
         ObservationStreamRequest request, out ObservationStreamAdmissionLimit rejectedBy)
     {

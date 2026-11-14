@@ -36,6 +36,33 @@ public sealed class ObservationStreamProviderTests
         Assert.False(request.Filter(Event(null, null)));
     }
 
+    [UnitTheory]
+    [InlineData("SSE")]
+    [InlineData("WebSocket")]
+    public async Task CreateSession_WaitsForInitialWindowAndPinsReplayBeforeHandshake(string transport)
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        var window = new TaskCompletionSource<RealtimeLogWindow>(TaskCreationOptions.RunContinuationsAsynchronously);
+        provider.GetWindowAsync(RealtimeFamily.Observations, Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<RealtimeLogWindow>(window.Task));
+        RealtimeSubscriptionRequest? subscribed = null;
+        provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(value => subscribed = value))
+            .Returns(Substitute.For<IRealtimeSubscription>());
+        await using var manager = new ObservationStreamSessionManager(
+            NullLogger<ObservationStreamSessionManager>.Instance, provider);
+        var opening = manager.CreateSessionAsync(new(transport, 7, new("a", null), "alice", null),
+            CancellationToken.None).AsTask();
+        Assert.False(opening.IsCompleted);
+        Assert.Null(subscribed);
+        window.SetResult(new(RealtimeFamily.Observations, 1, 42));
+        var (session, rejectedBy) = await opening.WaitAsync(TimeSpan.FromSeconds(5));
+        await using var lease = session;
+        Assert.NotNull(session);
+        Assert.Equal(ObservationStreamAdmissionLimit.None, rejectedBy);
+        Assert.NotNull(subscribed);
+        Assert.Equal(42, subscribed.After);
+    }
+
     [UnitTest]
     public async Task Replay_WhenBufferFills_WaitsForReaderWithoutDisconnecting()
     {
