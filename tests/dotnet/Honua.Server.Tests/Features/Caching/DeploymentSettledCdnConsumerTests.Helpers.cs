@@ -25,14 +25,20 @@ public sealed partial class DeploymentSettledCdnConsumerTests
         string service = "server", string eventName = "SERVICE_DEPLOYMENT_COMPLETED")
         => new(id, DateTimeOffset.UtcNow, JsonSerializer.Serialize(new Dictionary<string, object>
         {
-            ["source"] = "aws.ecs", ["detail-type"] = "ECS Deployment State Change", ["region"] = "us-west-2",
+            ["source"] = "aws.ecs",
+            ["detail-type"] = "ECS Deployment State Change",
+            ["region"] = "us-west-2",
             ["resources"] = new[] { $"arn:aws:ecs:us-west-2:123456789012:service/test/{service}" },
             ["detail"] = new { eventName, deploymentId = deployment }
         }));
 
     private static AwsEcsServiceState Settled() => new()
     {
-        ServiceName = "server", Status = "ACTIVE", RunningCount = 2, DesiredCount = 2, TaskDefinitionArn = "task:2",
+        ServiceName = "server",
+        Status = "ACTIVE",
+        RunningCount = 2,
+        DesiredCount = 2,
+        TaskDefinitionArn = "task:2",
         Deployments = [new AwsEcsDeploymentState { DeploymentId = "ecs-svc/new", Status = "PRIMARY",
             TaskDefinitionArn = "task:2", RolloutState = "COMPLETED", RunningCount = 2, DesiredCount = 2 }]
     };
@@ -57,7 +63,10 @@ public sealed partial class DeploymentSettledCdnConsumerTests
     {
         var target = new DeployTargetOptions
         {
-            TargetId = "server-target", TargetKind = DeployTargetKind.AwsEcs, Backend = "honua-aws-ecs-alb", TargetName = "server",
+            TargetId = "server-target",
+            TargetKind = DeployTargetKind.AwsEcs,
+            Backend = "honua-aws-ecs-alb",
+            TargetName = "server",
             Parameters = new() { ["aws.region"] = "us-west-2", ["aws.ecs.cluster"] = Cluster }
         };
         configure?.Invoke(target);

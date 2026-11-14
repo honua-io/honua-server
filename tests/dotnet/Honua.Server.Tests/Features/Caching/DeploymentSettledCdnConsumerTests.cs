@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.SharedCaching;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using NSubstitute;
@@ -51,8 +52,11 @@ public sealed partial class DeploymentSettledCdnConsumerTests(DatabaseFixtureAda
         => InSchemaAsync(async database =>
         {
             var ready = Settled();
-            var ecs = Ecs(ready with { Deployments = [ready.Deployments[0],
-                new AwsEcsDeploymentState { Status = "ACTIVE", DeploymentId = "old", RunningCount = 1 }] });
+            var ecs = Ecs(ready with
+            {
+                Deployments = [ready.Deployments[0],
+                new AwsEcsDeploymentState { Status = "ACTIVE", DeploymentId = "old", RunningCount = 1 }]
+            });
             var cdn = Cdn(CdnInvalidationOutcome.Submitted);
             var handle = () => Host(database, ecs, cdn).HandleAsync(Event(), default);
             await handle.Should().ThrowAsync<InvalidOperationException>().WithMessage("*drain*");
@@ -68,8 +72,11 @@ public sealed partial class DeploymentSettledCdnConsumerTests(DatabaseFixtureAda
         => InSchemaAsync(async database =>
         {
             var ready = Settled();
-            var ecs = Ecs(ready with { Deployments = [ready.Deployments[0],
-                new AwsEcsDeploymentState { DeploymentId = "old", Status = "ACTIVE" }] });
+            var ecs = Ecs(ready with
+            {
+                Deployments = [ready.Deployments[0],
+                new AwsEcsDeploymentState { DeploymentId = "old", Status = "ACTIVE" }]
+            });
             var cdn = Cdn(CdnInvalidationOutcome.Submitted);
             var host = Host(database, ecs, cdn);
             await host.HandleAsync(Event(deployment: "old"), default);
@@ -115,7 +122,8 @@ public sealed partial class DeploymentSettledCdnConsumerTests(DatabaseFixtureAda
                 {
                     target.Parameters["aws.ecs.cluster"] = "staging";
                     target.ParameterEntries.Add(new() { Key = "aws.ecs.cluster", Value = Cluster });
-                },
+                }
+                ,
                 _ => target => target.Parameters.Remove("aws.region"),
             };
             var cdn = Cdn(CdnInvalidationOutcome.Submitted);
