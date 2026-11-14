@@ -149,6 +149,24 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
         (await response.Content.ReadAsStringAsync()).Should().Be("Not Ready");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ReadinessCheck)]
+    [Endpoint("GET /healthz/deep")]
+    public async Task DeepHealthEndpoint_HeadRequest_DoesNotExecuteDependencies()
+    {
+        var checker = Substitute.For<IDatabaseHealthChecker>();
+        checker.IsDatabaseHealthyAsync(Arg.Any<CancellationToken>()).Returns(true);
+        using var host = Configure(checker, HealthyCatalog());
+        using var client = host.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/healthz/deep");
+
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().Contain("GET");
+        await checker.DidNotReceive().IsDatabaseHealthyAsync(Arg.Any<CancellationToken>());
+    }
+
     private WebApplicationFactory<Program> Configure(IDatabaseHealthChecker checker, IMetadataV2GraphProvider catalog)
         => factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {

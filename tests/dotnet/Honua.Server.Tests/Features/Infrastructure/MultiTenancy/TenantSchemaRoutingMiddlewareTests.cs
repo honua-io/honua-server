@@ -30,6 +30,24 @@ public class TenantSchemaRoutingMiddlewareTests
 {
     [IntegrationTest]
     [Operation(Operations.Security)]
+    public async Task TenantIndependentEndpoint_DoesNotRouteToTenantSchema()
+    {
+        using var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["default"] = AuthenticatedPrincipal(("tid", "acme")),
+            },
+            defaultPrincipalKey: "default",
+            routingEnabled: true);
+
+        using var response = await client.GetAsync("/control-plane");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("<null>", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("GET /schema")]
     public async Task RoutingEnabled_DerivesTenantSchemaFromTenantId()
     {
@@ -440,6 +458,10 @@ public class TenantSchemaRoutingMiddlewareTests
 
         // Report the schema the request was routed to (or <null> when none was set). Reads the
         // same request-scoped schema context the database search-path applier reads.
+        app.MapGet("/control-plane", (ISchemaContext schema) =>
+            Results.Text(schema.CurrentSchema ?? "<null>"))
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+
         app.MapGet("/schema", (ISchemaContext schema) =>
             Results.Text(schema.CurrentSchema ?? "<null>"));
 
