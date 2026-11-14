@@ -95,6 +95,26 @@ public sealed class PostgresWorkflowDefinitionStoreTests
     }
 
     [IntegrationTest]
+    public async Task TryClaimScheduleFireAsync_EightConcurrentClaims_ExactlyOneSucceeds()
+    {
+        await using var first = CreateHost();
+        await using var second = CreateHost();
+        await first.InitializeAsync();
+        await second.InitializeAsync();
+        var nodes = new[]
+        {
+            first.GetService<IWorkflowDefinitionStore>(),
+            second.GetService<IWorkflowDefinitionStore>()
+        };
+        var id = Guid.NewGuid().ToString("N");
+
+        var claims = await Task.WhenAll(Enumerable.Range(0, 8).Select(index =>
+            nodes[index % nodes.Length].TryClaimScheduleFireAsync(id, FireTime, TimeSpan.FromHours(24))));
+
+        claims.Should().ContainSingle(claimed => claimed);
+    }
+
+    [IntegrationTest]
     public async Task SetTriggerCursorAsync_CompetingNodes_AdvancesOrdinallyWithoutCompositeKeyCollisions()
     {
         await using var first = CreateHost();
