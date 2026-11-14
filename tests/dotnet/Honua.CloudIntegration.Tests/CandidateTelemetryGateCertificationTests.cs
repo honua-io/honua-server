@@ -641,15 +641,15 @@ public sealed class CandidateTelemetryGateCertificationTests
                 INSERT INTO honua.services (service_name, description, srid, supported_formats, capabilities, metadata)
                 VALUES ('candidate_gate', 'Rollback feature proof', 4326, ARRAY['JSON'], ARRAY['Query'],
                         '{"accessPolicy":{"allowAnonymous":true}}');
-                INSERT INTO honua.layers (layer_id, layer_name, table_name, geometry_type, srid, metadata)
-                VALUES (7650, 'Rollback feature', 'features', 'Point', 4326,
+                INSERT INTO honua.layers (layer_id, layer_name, table_schema, table_name, geometry_type, srid, metadata)
+                VALUES (7650, 'Rollback feature', 'public', 'features', 'Point', 4326,
                         '{"accessPolicy":{"allowAnonymous":true}}');
                 INSERT INTO honua.layer_fields (layer_id, field_name, field_type, field_order, nullable)
                 VALUES (7650, 'objectid', 'Integer', 0, false), (7650, 'name', 'String', 1, true),
                        (7650, 'shape', 'Geometry', 2, true);
                 INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
                 VALUES ('candidate_gate', 7650, 0);
-                INSERT INTO honua.features (objectid, layer_id, geometry, attributes)
+                INSERT INTO public.features (objectid, layer_id, geometry, attributes)
                 VALUES (7650, 7650, ST_SetSRID(ST_Point(1, 2), 4326),
                         jsonb_build_object('objectid', 7650, 'name', '{{PreviousFeatureMarker}}'));
                 """
