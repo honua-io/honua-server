@@ -33,7 +33,7 @@ class ComposeQuickstartTests(unittest.TestCase):
                                     cwd=path, env=self.compose_env(path), capture_output=True, text=True)
             self.assertEqual(0, result.returncode, result.stderr)
             postgres = json.loads(result.stdout)['services']['postgres']
-            self.assertEqual('build', postgres['pull_policy'])
+            self.assertEqual('missing', postgres['pull_policy'])
             self.assertEqual('pgrouting/pgrouting:17-3.5-3.7.3', postgres['build']['args']['BASE_IMAGE'])
             for name in ('Dockerfile', 'grids.txt', 'fetch-grids.sh'):
                 self.assertEqual((ROOT / 'docker/proj-grids' / name).read_bytes(),

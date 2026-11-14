@@ -231,7 +231,7 @@ services:
       context: ./docker/proj-grids
       args:
         BASE_IMAGE: pgrouting/pgrouting:17-3.5-3.7.3
-    pull_policy: build
+    pull_policy: missing
     environment:
       POSTGRES_DB: honua
       POSTGRES_USER: honua
