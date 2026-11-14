@@ -10,17 +10,32 @@ namespace Honua.Db.Postgres.Features.FileImport;
 internal sealed partial class StreamingFileImportService
 {
     private sealed record DirectImportGuard(ImportedDatasetSpatialMetadata.Identity Identity, double? CoordinateEpoch);
-    private sealed record ImportTargetPreparation(
-        string LoadTableName, bool HadExistingTarget, bool AppendUsesStaging,
-        ImportedDatasetSpatialMetadata.Identity? LiveIdentity, int StorageSrid);
+    private sealed record ImportTargetPreparation
+    {
+        public required string LoadTableName { get; init; }
+        public required bool HadExistingTarget { get; init; }
+        public required bool AppendUsesStaging { get; init; }
+        public ImportedDatasetSpatialMetadata.Identity? LiveIdentity { get; init; }
+        public required int StorageSrid { get; init; }
+    }
 
-    private sealed record ImportTargetOptions(
-        ImportRequest Request, string Schema, string Table, int SourceSrid, double? CoordinateEpoch);
+    private sealed record ImportTargetOptions
+    {
+        public required ImportRequest Request { get; init; }
+        public required string Schema { get; init; }
+        public required string Table { get; init; }
+        public required int SourceSrid { get; init; }
+        public double? CoordinateEpoch { get; init; }
+    }
 
     private async Task<ImportTargetPreparation> PrepareImportTargetAsync(
         NpgsqlConnection connection, ImportTargetOptions options, CancellationToken cancellationToken)
     {
-        var (request, schema, table, sourceSrid, coordinateEpoch) = options;
+        var request = options.Request;
+        var schema = options.Schema;
+        var table = options.Table;
+        var sourceSrid = options.SourceSrid;
+        var coordinateEpoch = options.CoordinateEpoch;
         var storageSrid = request.TargetSrid ?? sourceSrid;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         if (!await ImportedDatasetSpatialMetadata.IsAvailableAsync(
@@ -88,7 +103,14 @@ internal sealed partial class StreamingFileImportService
             ? await CreateStagingTableAsync(connection, schema, table, storageSrid, cancellationToken, transaction)
             : table;
         await transaction.CommitSafelyAsync(cancellationToken);
-        return new ImportTargetPreparation(loadTable, existed, stagedAppend, identity, storageSrid);
+        return new ImportTargetPreparation
+        {
+            LoadTableName = loadTable,
+            HadExistingTarget = existed,
+            AppendUsesStaging = stagedAppend,
+            LiveIdentity = identity,
+            StorageSrid = storageSrid
+        };
     }
 
     private async Task ValidateDirectImportAsync(
