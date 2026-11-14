@@ -70,6 +70,34 @@ public sealed class PostgresSourceWatermarkStoreTests
     }
 
     [IntegrationTest]
+    public async Task AdvanceAsync_CompetingInitialCompletions_PersistsTheGreatestFileTimestamp()
+    {
+        await using var host = CreateHost();
+        await host.InitializeAsync();
+        var store = host.GetService<ISourceWatermarkStore>();
+        var initial = Mark($"pipeline-{Guid.NewGuid():N}", "source", Timestamp) with
+        {
+            Kind = WatermarkKind.FileModifiedTime
+        };
+        try
+        {
+            await Task.WhenAll(Enumerable.Range(0, 8).Select(offset => store.AdvanceAsync(initial with
+            {
+                Value = SourceWatermark.Encode(Timestamp.AddMinutes(offset))
+            })));
+
+            var persisted = await store.GetAsync(initial.PipelineId, initial.SourceId);
+            persisted.Should().NotBeNull();
+            persisted!.Kind.Should().Be(WatermarkKind.FileModifiedTime);
+            persisted.AsTimestamp().Should().Be(Timestamp.AddMinutes(7));
+        }
+        finally
+        {
+            await store.ClearAsync(initial.PipelineId, initial.SourceId);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ClearAsync_CompositeKeysWithSeparators_RemovesOnlyTheRequestedSource()
     {
         await using var host = CreateHost();
