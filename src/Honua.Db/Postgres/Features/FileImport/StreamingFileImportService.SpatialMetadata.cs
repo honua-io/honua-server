@@ -14,10 +14,13 @@ internal sealed partial class StreamingFileImportService
         string LoadTableName, bool HadExistingTarget, bool AppendUsesStaging,
         ImportedDatasetSpatialMetadata.Identity? LiveIdentity, int StorageSrid);
 
+    private sealed record ImportTargetOptions(
+        ImportRequest Request, string Schema, string Table, int SourceSrid, double? CoordinateEpoch);
+
     private async Task<ImportTargetPreparation> PrepareImportTargetAsync(
-        NpgsqlConnection connection, ImportRequest request, string schema, string table,
-        int sourceSrid, double? coordinateEpoch, CancellationToken cancellationToken)
+        NpgsqlConnection connection, ImportTargetOptions options, CancellationToken cancellationToken)
     {
+        var (request, schema, table, sourceSrid, coordinateEpoch) = options;
         var storageSrid = request.TargetSrid ?? sourceSrid;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         if (!await ImportedDatasetSpatialMetadata.IsAvailableAsync(

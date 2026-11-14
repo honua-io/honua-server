@@ -66,7 +66,8 @@ internal sealed partial class StreamingFileImportService
                 cancellationToken);
 
             var target = await PrepareImportTargetAsync(
-                connection, request, targetSchema, allowedTableName, sourceSrid, coordinateEpoch, cancellationToken);
+                connection, new ImportTargetOptions(request, targetSchema, allowedTableName, sourceSrid, coordinateEpoch),
+                cancellationToken);
             request = request with { TargetSrid = target.StorageSrid };
             var loadTableName = target.LoadTableName;
             var hadExistingTarget = target.HadExistingTarget;

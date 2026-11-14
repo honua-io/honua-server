@@ -22,11 +22,11 @@ public sealed partial class DirectImportCrsContractTests
     public async Task ImportFile_ExistingTarget_UsesStoredCrsUnlessExplicitlyOverridden(ImportLoadMode mode, int? targetSrid)
     {
         var tableName = NewImportFields()["TableName"];
-        var seed = await ImportCsvAsync(tableName, "SRID=4326;POINT (0 0)", ImportLoadMode.Replace, 4326);
+        var seed = await ImportCsvAsync(tableName, "SRID=4326;POINT (0 0)", new CsvImportOptions(ImportLoadMode.Replace, 4326));
         seed.Success.Should().BeTrue(seed.ErrorMessage);
         _importedTables.Add((seed.Schema!, seed.PhysicalTableName!));
 
-        var result = await ImportCsvAsync(tableName, ProjectedPoint, mode, targetSrid);
+        var result = await ImportCsvAsync(tableName, ProjectedPoint, new CsvImportOptions(mode, targetSrid));
         result.Success.Should().Be(!targetSrid.HasValue, result.ErrorMessage);
         if (targetSrid.HasValue)
         {
@@ -59,7 +59,7 @@ public sealed partial class DirectImportCrsContractTests
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task ImportFile_NewAppendTargetWithoutOverride_PreservesSourceCrs(ImportLoadMode mode)
     {
-        var result = await ImportCsvAsync(NewImportFields()["TableName"], ProjectedPoint, mode, null);
+        var result = await ImportCsvAsync(NewImportFields()["TableName"], ProjectedPoint, new CsvImportOptions(mode, null));
         result.Success.Should().BeTrue(result.ErrorMessage);
         _importedTables.Add((result.Schema!, result.PhysicalTableName!));
         result.StoredSrid.Should().Be(2193);
@@ -69,7 +69,9 @@ public sealed partial class DirectImportCrsContractTests
         (await query.ExecuteScalarAsync()).Should().Be(2193);
     }
 
-    private async Task<ImportResult> ImportCsvAsync(string tableName, string geometry, ImportLoadMode mode, int? targetSrid)
+    private sealed record CsvImportOptions(ImportLoadMode Mode, int? TargetSrid);
+
+    private async Task<ImportResult> ImportCsvAsync(string tableName, string geometry, CsvImportOptions options)
     {
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes($"geometry,name\n\"{geometry}\",sample\n"));
         await using var scope = _fixture.Services.CreateAsyncScope();
@@ -78,9 +80,9 @@ public sealed partial class DirectImportCrsContractTests
             FileStream = stream,
             FileName = "point.csv",
             TableName = tableName,
-            LoadMode = mode,
-            KeyColumns = mode == ImportLoadMode.Upsert ? ["name"] : [],
-            TargetSrid = targetSrid
+            LoadMode = options.Mode,
+            KeyColumns = options.Mode == ImportLoadMode.Upsert ? ["name"] : [],
+            TargetSrid = options.TargetSrid
         });
     }
 }
