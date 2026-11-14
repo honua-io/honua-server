@@ -70,7 +70,8 @@ internal static class ObservationStreamEndpoints
                 "Observation subscriptions require a resolved tenant scope.");
         }
 
-        if (!TryReadCursor(context, out var after))
+        var (cursorValid, after) = ReadCursor(context);
+        if (!cursorValid)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "A nonnegative observations-family cursor is required.");
         }
@@ -124,20 +125,20 @@ internal static class ObservationStreamEndpoints
         return Results.Empty;
     }
 
-    private static bool TryReadCursor(HttpContext context, out long? after)
+    private static (bool Valid, long? After) ReadCursor(HttpContext context)
     {
         var hasQueryCursor = context.Request.Query.ContainsKey("cursor");
         var hasHeaderCursor = context.Request.Headers.ContainsKey("Last-Event-ID");
         var queryCursor = context.Request.Query["cursor"].ToString();
         var headerCursor = context.Request.Headers["Last-Event-ID"].ToString();
         var rawCursor = hasQueryCursor ? queryCursor : headerCursor;
-        after = null;
+        long? after = null;
         if ((hasQueryCursor && hasHeaderCursor && queryCursor != headerCursor)
             || ((hasQueryCursor || hasHeaderCursor) && (!rawCursor.StartsWith("observations:", StringComparison.Ordinal)
                 || !long.TryParse(rawCursor.AsSpan("observations:".Length), NumberStyles.None,
                     CultureInfo.InvariantCulture, out var sequence) || sequence < 0)))
         {
-            return false;
+            return (false, null);
         }
 
         if (!string.IsNullOrEmpty(rawCursor))
@@ -145,7 +146,7 @@ internal static class ObservationStreamEndpoints
             after = long.Parse(rawCursor.AsSpan("observations:".Length), CultureInfo.InvariantCulture);
         }
 
-        return true;
+        return (true, after);
     }
 
     private static IResult CreateAdmissionRejected(
