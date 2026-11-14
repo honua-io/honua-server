@@ -70,13 +70,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             ".shp", ".dbf", ".shx", ".prj", ".cpg"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
-    // Safe: the second Path.Combine argument in each of these is a compile-time relative literal,
-    // never caller-supplied input, so it cannot silently discard Path.GetTempPath().
-    private static readonly string _shapefileScratchRoot = Path.Join(Path.GetTempPath(), "honua-shapefile");
-    private static readonly string _geoPackageScratchRoot = Path.Join(Path.GetTempPath(), "honua-geopackage");
-    private static readonly string _kmzScratchRoot = Path.Join(Path.GetTempPath(), "honua-kmz");
-    private static readonly string _fileGdbScratchRoot = Path.Join(Path.GetTempPath(), "honua-filegdb");
-    private static readonly string _geoParquetScratchRoot = Path.Join(Path.GetTempPath(), "honua-geoparquet");
     private static readonly CompositeFormat _partialImportWarningFormat =
         CompositeFormat.Parse("{0} row(s) failed while continue-on-error was enabled; previously imported rows were retained.");
     private static readonly CompositeFormat _csvUnparseableGeometryWarningFormat =
@@ -403,7 +396,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     Options = FileOptions.Asynchronous | FileOptions.SequentialScan
                 });
                 shouldDisposeStream = true;
-                detectedSrid = request.SourceSrid ?? 4326;
+                detectedSrid = 4326;
             }
             else if (format.Value == SupportedFileFormat.FileGdb)
             {
@@ -421,14 +414,12 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     return result;
                 }
 
-                // A geodatabase with no feature classes has nothing to georeference (the import
-                // reports NoFeaturesFound), so only then is the target SRID an acceptable source.
-                // Otherwise an unresolvable CRS must fail with SourceSridRequired like every other
-                // format instead of silently assuming the target SRID (#6114).
-                detectedSrid = request.SourceSrid
-                    ?? (layers.Length == 0
-                        ? request.TargetSrid
-                        : await ResolveFileGdbSridAsync(layers, cancellationToken));
+                if (layers.Length == 0)
+                {
+                    return ImportResult.CreateFailure(request.TableName, format.Value, "No features found in file", stopwatch.Elapsed);
+                }
+
+                detectedSrid = await ResolveFileGdbSridAsync(layers, cancellationToken);
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
             else if (format.Value == SupportedFileFormat.GeoParquet)
@@ -457,11 +448,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
                 fileStream = prep.Stream!;
             }
-            else if (format.Value == SupportedFileFormat.FlatGeobuf && !fileStream.CanSeek)
+            else if (format.Value is SupportedFileFormat.FlatGeobuf or SupportedFileFormat.GeoJson or SupportedFileFormat.GeoServicesJson && !fileStream.CanSeek)
             {
-                // FlatGeobuf requires seeking for both CRS detection and Deserialize.
-                // Always spill non-seekable streams at the service level so progress
-                // metrics, BytesRead, and TotalBytes are available from the seekable temp file.
+                // GeoJSON and GeoServices JSON need a complete CRS inspection before validation (a declaration
+                // can sit past the CRS-detection header); FlatGeobuf requires seeking to deserialize.
                 fgbTempStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
                 if (shouldDisposeStream)
                 {
@@ -472,18 +462,13 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 shouldDisposeStream = true;
                 totalBytes = fgbTempStream.Length;
                 ImportLog.SpilledToTempFile(_logger, totalBytes.Value);
-                detectedSrid = request.SourceSrid
-                    ?? await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
+                detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
                 // ReadHeader advances position; reset so Deserialize can read from the start.
                 fileStream.Position = 0;
             }
             else
             {
-                if (request.SourceSrid.HasValue)
-                {
-                    detectedSrid = request.SourceSrid;
-                }
-                else if (!fileStream.CanSeek)
+                if (!fileStream.CanSeek)
                 {
                     var header = await ReadHeaderAsync(fileStream, cancellationToken);
                     detectedSrid = header == null
@@ -512,13 +497,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             if (!sourceSrid.HasValue)
             {
                 errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
-                var validationErrors = new[]
-                {
-                    ImportValidationIssue.Create(
-                        ImportValidationErrorCodes.SourceSridRequired,
-                        errorMessage,
-                        field: nameof(request.SourceSrid))
-                };
+                var validationErrors = SourceSridRequiredIssues(errorMessage);
                 result = ImportResult.CreateFailure(
                     request.TableName,
                     format.Value,
@@ -529,6 +508,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     validationErrors);
                 return result;
             }
+
+            var targetSrid = request.TargetSrid ?? sourceSrid.Value;
+            request = request with { TargetSrid = targetSrid };
 
             if (coordinateEpoch.HasValue &&
                 (!detectedSrid.HasValue || sourceSrid.Value != request.TargetSrid ||
@@ -541,7 +523,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
             var sridValidationErrors = await ValidateImportSridsAsync(
                 sourceSrid.Value,
-                request.TargetSrid,
+                targetSrid,
                 cancellationToken);
             if (sridValidationErrors.Count > 0)
             {
@@ -557,26 +539,33 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 return result;
             }
 
+            if (format.Value is SupportedFileFormat.Csv or SupportedFileFormat.Wkt && !request.SourceSrid.HasValue)
+            {
+                if (!fileStream.CanSeek)
+                {
+                    var seekable = await SpillToSeekableTempAsync(fileStream, cancellationToken);
+                    if (shouldDisposeStream) await fileStream.DisposeAsync();
+                    fileStream = seekable;
+                    shouldDisposeStream = true;
+                    totalBytes = seekable.Length;
+                }
+                if (!await HasUniformSourceCrsAsync(
+                        fileStream,
+                        new SourceCrsUniformityCheck(format.Value, sourceSrid.Value, request.CsvOptions),
+                        cancellationToken))
+                {
+                    return ImportResult.CreateFailure(request.TableName, format.Value, MixedSourceCrsMessage,
+                        stopwatch.Elapsed, warnings, ImportValidationErrorCodes.SourceSridHeterogeneous,
+                        [ImportValidationIssue.Create(ImportValidationErrorCodes.SourceSridHeterogeneous, MixedSourceCrsMessage)]);
+                }
+            }
+
             // Non-fatal preflight issues (e.g. GeoJSON geometries that will be repaired by the
-            // shared validity gate on import, #2743). Relayed on the successful result alongside the
+            // shared validity gate on import). Relayed on the successful result alongside the
             // per-row issues so callers still see them without the whole file being rejected.
             ImportValidationIssue[] preflightWarnings = [];
             if (format.Value == SupportedFileFormat.GeoJson)
             {
-                if (!fileStream.CanSeek)
-                {
-                    var seekableStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
-                    if (shouldDisposeStream)
-                    {
-                        await fileStream.DisposeAsync();
-                    }
-
-                    fileStream = seekableStream;
-                    shouldDisposeStream = true;
-                    totalBytes = seekableStream.Length;
-                    ImportLog.SpilledToTempFile(_logger, totalBytes.Value);
-                }
-
                 var geoJsonValidation = await _geoJsonReader.ValidateAsync(fileStream, cancellationToken);
                 if (!geoJsonValidation.IsValid)
                 {
@@ -688,6 +677,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 schema: ResolveTargetSchema(request.TargetSchema),
                 repairedGeometryCount: repairedCount) with
             {
+                SourceSrid = sourceSrid.Value,
+                StoredSrid = targetSrid,
+                Reprojected = sourceSrid.Value != targetSrid,
                 StorageCrsCoordinateEpoch = coordinateEpoch,
                 // Per-row issues (e.g. CSV address rows that failed to geocode, or GeoJSON
                 // geometries repaired by the validity gate) that did not block the import but should

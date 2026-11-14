@@ -37,7 +37,7 @@ concurrency:
 env:
   # Keep Testcontainers cleanup enabled with its identical upstream index.
   TESTCONTAINERS_RYUK_CONTAINER_IMAGE: 'mirror.gcr.io/testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0'
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   # Reuse the persistent MSBuild server across this job's restore, gate build,
   # and no-build test invocations. Managed producer properties disable Roslyn sharing.
   DOTNET_CLI_USE_MSBUILD_SERVER: true
@@ -791,7 +791,7 @@ jobs:
     # The shard's OWN outer budget from .github/ci-shards.json, exactly as
     # ci.yml::server-tests applies it. Substituting a flat cap here would make
     # this lane time out on shards the trailing matrix runs comfortably, which
-    # is precisely the false red measured in docs/ci/affected-shards-promotion.md.
+    # is precisely the false red measured in docs/internal/ci/affected-shards-promotion.md.
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: true
@@ -821,6 +821,17 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Several self-hosted runners share one host and its /tmp; each job keeps temp files and the
+      # app's local storage directories under its own runner temp. Set in a step because the runner
+      # context is unavailable in job env.
+      - name: Use the job's own temp directory
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TemporaryFiles__StorageDirectory=${RUNNER_TEMP}/honua-temp"
+            echo "FileStorage__LocalStorage__BasePath=${RUNNER_TEMP}/honua-storage"
+          } >> "${GITHUB_ENV}"
 
       - name: Load validated flaky-test quarantine
         env:
@@ -900,7 +911,9 @@ jobs:
 
   affected-shards:
     # Enforce measured execution receipts before the required gate can succeed.
-    name: PR Gate / Affected shards
+    # A draft run reports under a draft-only name, so its skipped result never
+    # stands in for this required context; see the `required` job.
+    name: ${{ github.event.pull_request.draft && 'PR Gate / Affected shards (draft)' || 'PR Gate / Affected shards' }}
     if: always() && github.event_name == 'pull_request' && !github.event.pull_request.draft
     needs: [affected-shards-select, affected-shard, server-test-producer]
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
@@ -1150,8 +1163,11 @@ jobs:
 
   required:
     # Keep the exact branch-protection context stable while both independent
-    # verification paths fail closed into it.
-    name: PR Gate
+    # verification paths fail closed into it. A draft run reports its light
+    # verdict as `PR Gate (draft)`: the ready run creates this check only when
+    # its needs finish, so a draft success under the required name would let a
+    # PR marked ready merge before its heavy jobs ran. Ready runs keep the name.
+    name: ${{ github.event.pull_request.draft && 'PR Gate (draft)' || 'PR Gate' }}
     if: always()
     needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}

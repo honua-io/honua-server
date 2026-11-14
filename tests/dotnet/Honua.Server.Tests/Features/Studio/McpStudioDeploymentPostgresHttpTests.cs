@@ -14,10 +14,12 @@ using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Db.Postgres.Features.Publishing;
 using Honua.Db.Postgres.Features.Studio;
-using Honua.TestKit.Extensions;
+using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
@@ -36,19 +38,20 @@ namespace Honua.Server.Tests.Features.Studio;
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
 {
-    private const string Issuer = "https://idp.example.com";
-    private const string Audience = "honua-mcp-client-id";
+    private const string Issuer = AdminAuthEndpointsTests.TestOidcIssuer;
+    private const string Audience = AdminAuthEndpointsTests.TestOidcAudience;
     private const string SigningKey = "studio-deployment-signing-key-at-least-32-characters";
     private const string TenantA = "tenant-a";
     private const string TenantB = "tenant-b";
 
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly RedisFixture _redis = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
 
     public async Task InitializeAsync()
     {
         await _redis.InitializeAsync();
-        _fixture.ConfigureWebHost(builder =>
+        HumanApprovalHttpClient.Configure(_fixture, _identityProvider).ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
@@ -88,13 +91,14 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
             .Should().BeOfType<PostgresStudioPackageStore>();
         _fixture.Services.GetRequiredService<IDeploymentStore>()
             .Should().BeOfType<PostgresDeploymentStore>();
-        await ApplyStudioMigrationsAsync();
+        await StudioPostgresTestSchema.ApplyAsync(_fixture);
     }
 
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
         await _redis.DisposeAsync();
+        _identityProvider.Dispose();
     }
 
     [IntegrationTest]
@@ -123,9 +127,9 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
 
         var published = await CallToolAsync(admin, "honua_studio_propose_publication",
             $$"""{"itemId":"{{itemId:D}}","versionId":"{{versionId:D}}","contentHash":"{{contentHash}}","route":"{{route}}","visibility":"public"}""");
-        published.GetProperty("status").GetString().Should().Be("Published");
-        var deploymentId = published.GetProperty("deploymentId").GetString();
-        var resourceUri = published.GetProperty("deploymentResourceUri").GetString();
+        var publication = await ApprovePublicationAsync(published, itemId, route);
+        var deploymentId = publication.DeploymentId;
+        var resourceUri = publication.DeploymentResourceUri;
         deploymentId.Should().NotBeNullOrWhiteSpace();
         resourceUri.Should().Be($"honua://deployments/{deploymentId}");
 
@@ -170,37 +174,6 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
         {
             denied.StatusCode.Should().Be(HttpStatusCode.Unauthorized, denial);
         }
-    }
-
-    private async Task ApplyStudioMigrationsAsync()
-    {
-        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.");
-        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
-        {
-            foreach (var file in new[]
-                     {
-                         "035_CreateStudioPackageLifecycle.sql",
-                         "036_CreateContentPublications.sql",
-                         "082_CreatePromotionStores.sql",
-                         "089_AddStudioContentEnumerationIndexes.sql",
-                         "090_AddStudioContentItemOwner.sql",
-                         "092_CreateSavedMapOperationLog.sql",
-                         "093_EnsureConfiguredStudioPackageLifecycle.sql",
-                         "094_CreateSavedMapCheckpointVersionRecovery.sql",
-                         "095_DeleteSavedMapOperationLogWithStudioDraft.sql",
-                         "120_AddStudioTenantOwnership.sql",
-                         "126_AddStudioContentHashInput.sql",
-                         "134_VersionCanonicalDeployments.sql",
-                     })
-            {
-                await using var stream = typeof(Program).Assembly.GetManifestResourceStream($"Honua.Server.Migrations.{file}")
-                    ?? throw new InvalidOperationException($"Missing embedded migration {file}.");
-                using var reader = new StreamReader(stream);
-                var sql = (await reader.ReadToEndAsync())
-                    .Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
-                await _fixture.Postgres.ExecuteAsync(sql, schema);
-            }
-        });
     }
 
     private async Task AssertPersistedRowAsync(string deploymentId)
@@ -293,4 +266,25 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
             signingCredentials: credentials);
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+    private async Task<StudioPublicationRequest> ApprovePublicationAsync(JsonElement published, Guid itemId, string route)
+    {
+        published.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        published.TryGetProperty("shareUrl", out _).Should().BeFalse();
+        using var approvalScope = _fixture.Services.CreateScope();
+        var lifecycle = approvalScope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+        (await lifecycle.GetPointersAsync(itemId))!.PublishedVersionId.Should().BeNull();
+        using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "deployment-human-publisher", TenantA);
+        using var approval = await approver.ApproveAsync(published.GetProperty("proposalId").GetString()!);
+        var approvalBody = await approval.Content.ReadAsStringAsync();
+        approval.StatusCode.Should().Be(HttpStatusCode.OK, approvalBody);
+        using var decision = JsonDocument.Parse(approvalBody);
+        decision.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", approvalBody);
+        var publication = await lifecycle.GetActivePublicationRequestByRouteAsync(route);
+        publication.Should().NotBeNull();
+        publication!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+        publication.PublicationUrl.Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
+        return publication;
+    }
+
 }

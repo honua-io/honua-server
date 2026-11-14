@@ -100,16 +100,13 @@ public sealed class RateLimitingPartitionIntegrationTests
             await next();
         });
 
-        // Construct the middleware directly (redis: null -> process-local fixed-window path) so the
-        // test does not require a Redis dependency.
         app.Use(next =>
         {
             var middleware = new RateLimitingMiddleware(
                 next,
                 policyStore,
                 options,
-                NullLogger<RateLimitingMiddleware>.Instance,
-                redis: null);
+                NullLogger<RateLimitingMiddleware>.Instance);
             return context => middleware.InvokeAsync(context);
         });
 

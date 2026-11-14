@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   REGISTRY_GHCR: ghcr.io
   IMAGE_NAME_GHCR: ${{ github.repository }}
   REGISTRY_DOCKERHUB: docker.io
@@ -24,16 +24,18 @@ concurrency:
 jobs:
   build-and-push:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
+    continue-on-error: ${{ matrix.image_key == 'aot' }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
         include:
           - image_key: jit
-            image_name: Development JIT Image
+            image_name: PostGIS JIT Image
             dockerfile: Dockerfile
-            tag_suffix: -jit
+            tag_suffix: ""
+            store_profile: postgis
             cache_scope: honua-jit
             sarif_output: trivy-results
             sarif_category: trivy
@@ -41,19 +43,43 @@ jobs:
             platform: linux/amd64
             runner: ubuntu-24.04
           - image_key: jit
-            image_name: Development JIT Image
+            image_name: PostGIS JIT Image
             dockerfile: Dockerfile
-            tag_suffix: -jit
+            tag_suffix: ""
+            store_profile: postgis
             cache_scope: honua-jit
             sarif_output: trivy-results
             sarif_category: trivy
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+          - image_key: jit-full
+            image_name: Full-store JIT Image
+            dockerfile: Dockerfile
+            tag_suffix: -full
+            store_profile: full
+            cache_scope: honua-jit-full
+            sarif_output: trivy-results-full
+            sarif_category: trivy-full
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: jit-full
+            image_name: Full-store JIT Image
+            dockerfile: Dockerfile
+            tag_suffix: -full
+            store_profile: full
+            cache_scope: honua-jit-full
+            sarif_output: trivy-results-full
+            sarif_category: trivy-full
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
           - image_key: aot
-            image_name: Production Native-AOT Image
+            image_name: Optional Native-AOT Image
             dockerfile: docker/Dockerfile.aot
-            tag_suffix: ""
+            tag_suffix: -aot
+            store_profile: postgis
             cache_scope: honua-aot
             sarif_output: trivy-results-aot
             sarif_category: trivy-aot
@@ -61,9 +87,10 @@ jobs:
             platform: linux/amd64
             runner: ubuntu-24.04
           - image_key: aot
-            image_name: Production Native-AOT Image
+            image_name: Optional Native-AOT Image
             dockerfile: docker/Dockerfile.aot
-            tag_suffix: ""
+            tag_suffix: -aot
+            store_profile: postgis
             cache_scope: honua-aot
             sarif_output: trivy-results-aot
             sarif_category: trivy-aot
@@ -241,9 +268,8 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build native-AOT candidate by digest
-        id: aot_candidate
-        if: matrix.image_key == 'aot'
+      - name: Build serving candidate by digest
+        id: candidate
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
@@ -251,6 +277,9 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ steps.targets.outputs.staging_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.store_profile }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
@@ -259,30 +288,33 @@ jobs:
           provenance: true
           sbom: true
 
-      - name: Verify native-AOT candidate before registry publication
-        if: matrix.image_key == 'aot'
+      - name: Verify serving candidate before registry publication
         shell: bash
         env:
-          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.aot_candidate.outputs.digest }}
+          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.candidate.outputs.digest }}
+          IMAGE_TAGS: ${{ steps.arch_tags.outputs.tags }}
         run: |
           set -euo pipefail
           docker pull "$CANDIDATE"
-          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+          if [ "${{ matrix.image_key }}" = aot ]; then
+            python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+          fi
+          python3 scripts/ci/measure-serving-image.py "$CANDIDATE" --profile "${{ matrix.store_profile }}" \
+            --published --output artifacts/published-image-size.json
 
       # On v* tags no public tag is assigned until the exact candidate digest passes the blocking
       # Trivy gate (fixable HIGH/CRITICAL only, by design; see scripts/ci/trivy-release-gate.sh).
-      - name: Gate native-AOT tag release on fixable HIGH/CRITICAL vulnerabilities
-        if: matrix.image_key == 'aot' && startsWith(github.ref, 'refs/tags/v')
+      - name: Gate serving tag release on fixable HIGH/CRITICAL vulnerabilities
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
-          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.aot_candidate.outputs.digest }}
+          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.candidate.outputs.digest }}
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
         run: scripts/ci/trivy-release-gate.sh "$CANDIDATE"
 
-      - name: Publish verified native-AOT architecture tags
-        if: matrix.image_key == 'aot'
+      - name: Publish verified serving architecture tags
         shell: bash
         env:
-          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.aot_candidate.outputs.digest }}
+          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.candidate.outputs.digest }}
           TAGS: ${{ steps.arch_tags.outputs.tags }}
         run: |
           set -euo pipefail
@@ -293,63 +325,25 @@ jobs:
             --staging-tag "boundary-candidate-${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}" \
             --authfile "$HOME/.docker/config.json"
 
-      - name: Build JIT candidate by digest
-        id: build
-        if: matrix.image_key == 'jit'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ steps.targets.outputs.staging_image }},push-by-digest=true,name-canonical=true,push=true
-          labels: ${{ steps.meta.outputs.labels }}
-          # Immutable deployment identity (#3038): the running process reads HONUA_GIT_SHA to
-          # advertise deploymentRevision on the capability manifest and streaming capabilities.
-          build-args: |
-            HONUA_GIT_SHA=${{ github.sha }}
-          secrets: |
-            github_actor=${{ github.actor }}
-            github_token=${{ github.token }}
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}-${{ matrix.arch }}
-          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}-${{ matrix.arch }},mode=max
-          provenance: true
-          sbom: true
-
-      # On v* tags no public tag is assigned until the exact candidate digest passes the blocking
-      # Trivy gate (fixable HIGH/CRITICAL only, by design; see scripts/ci/trivy-release-gate.sh).
-      - name: Gate JIT tag release on fixable HIGH/CRITICAL vulnerabilities
-        if: matrix.image_key == 'jit' && startsWith(github.ref, 'refs/tags/v')
-        env:
-          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.build.outputs.digest }}
-          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
-        run: scripts/ci/trivy-release-gate.sh "$CANDIDATE"
-
-      - name: Publish JIT architecture tags
-        if: matrix.image_key == 'jit'
-        shell: bash
-        env:
-          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.build.outputs.digest }}
-          TAGS: ${{ steps.arch_tags.outputs.tags }}
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends skopeo
-          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
-            --candidate "$CANDIDATE" \
-            --staging-tag "candidate-${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}" \
-            --authfile "$HOME/.docker/config.json"
-
       - name: Pull image for Trivy scan
         id: scan_prep
         shell: bash
         env:
-          SCAN_SOURCE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ matrix.image_key == 'aot' && steps.aot_candidate.outputs.digest || steps.build.outputs.digest }}
+          SCAN_SOURCE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.candidate.outputs.digest }}
           SCAN_LOCAL: honua-scan:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}
         run: |
           set -euo pipefail
           docker pull "$SCAN_SOURCE"
           docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
           echo "scan_local=$SCAN_LOCAL" >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact published image sizes
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: published-image-size-${{ matrix.image_key }}-${{ matrix.arch }}
+          path: artifacts/published-image-size.json
+          if-no-files-found: error
 
       - name: Run Trivy vulnerability scanner
         shell: bash
@@ -380,6 +374,7 @@ jobs:
 
   publish-manifests:
     name: Publish ${{ matrix.image_name }} Manifest
+    continue-on-error: ${{ matrix.tag_suffix == '-aot' }}
     needs: build-and-push
     if: ${{ needs.build-and-push.result == 'success' }}
     runs-on: ubuntu-24.04
@@ -388,12 +383,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image_name: Development JIT Image
-            tag_suffix: -jit
-            compatibility_alias: ""
-          - image_name: Production Native-AOT Image
+          - image_name: PostGIS JIT Image
             tag_suffix: ""
-            compatibility_alias: -aot
+            compatibility_alias: -jit
+          - image_name: Full-store JIT Image
+            tag_suffix: -full
+            compatibility_alias: ""
+          - image_name: Optional Native-AOT Image
+            tag_suffix: -aot
+            compatibility_alias: ""
     permissions:
       contents: read
       packages: write
