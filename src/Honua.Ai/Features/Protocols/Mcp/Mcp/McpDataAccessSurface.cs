@@ -30,7 +30,7 @@ namespace Honua.Ai.Protocols.Mcp;
 /// and converts domain exceptions into JSON-RPC errors via
 /// <see cref="McpErrorMapper"/>.
 /// </summary>
-internal sealed class McpDataAccessSurface
+internal sealed partial class McpDataAccessSurface
 {
     public static readonly IReadOnlyList<string> SupportedLegacyProtocolVersions = ["2025-06-18", "2025-03-26"];
 
@@ -55,7 +55,7 @@ internal sealed class McpDataAccessSurface
         // Dynamic, runtime-published tools (#2483). None composed by default, so the
         // surface behaves exactly as before unless a host opts a source in.
         _toolSources = toolSources?.ToList() ?? [];
-        _resources = resources.ToList();
+        _resources = [.. resources, OperatingSkillsResource.Instance];
         _limits = limits ?? McpSurfaceLimits.Default;
         _logger = logger;
         _proposalEvidenceVerifier = proposalEvidenceVerifier;
@@ -162,6 +162,8 @@ internal sealed class McpDataAccessSurface
             {
                 "server/discover" when httpContext.Items.ContainsKey(McpModernProtocol.RequestItemKey) =>
                     new McpJsonRpcResponse { Id = request.Id, Result = McpModernResults.Discover() },
+                "skills/list" when httpContext.Items.ContainsKey(McpModernProtocol.RequestItemKey) => ListSkills(request),
+                "skills/get" when httpContext.Items.ContainsKey(McpModernProtocol.RequestItemKey) => GetSkill(request),
                 "initialize" when httpContext.Items.ContainsKey(McpModernProtocol.RequestItemKey) =>
                     ErrorResponse(request.Id, McpErrorMapper.MethodNotFound("initialize is a legacy method.")),
                 "initialize" => HandleInitialize(httpContext, request),
@@ -937,26 +939,34 @@ internal sealed class McpDataAccessSurface
                 .ReadAsync(httpContext, parameters.Uri, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Chunk large documents (job results, catalogs) into windowed pages so
-            // a single resources/read response stays bounded; small documents are
-            // returned verbatim with no nextCursor. An invalid cursor surfaces as
-            // the same invalid_argument the list methods use.
-            try
+            // Skill manifests describe whole-file digests. Never return a truncated file.
+            if (handler is OperatingSkillsResource)
             {
-                var page = McpPagination.Chunk(
-                    result.Contents,
-                    parameters.Cursor,
-                    maxChars,
-                    out var nextCursor);
-                result = new McpResourcesReadResult { Contents = page, NextCursor = nextCursor };
+                if (!string.IsNullOrEmpty(parameters.Cursor) || parameters.MaxChars is not null)
+                {
+                    throw new GeoprocessingValidationException(
+                        "Skill files must be read whole, without cursor or maxChars.");
+                }
             }
-            catch (GeoprocessingValidationException ex)
+            else
             {
-                McpTelemetry.ResourceReadCount.Add(
-                    1,
-                    new KeyValuePair<string, object?>("resource_family", resourceFamily),
-                    new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
-                return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+                try
+                {
+                    var page = McpPagination.Chunk(
+                        result.Contents,
+                        parameters.Cursor,
+                        maxChars,
+                        out var nextCursor);
+                    result = new McpResourcesReadResult { Contents = page, NextCursor = nextCursor };
+                }
+                catch (GeoprocessingValidationException ex)
+                {
+                    McpTelemetry.ResourceReadCount.Add(
+                        1,
+                        new KeyValuePair<string, object?>("resource_family", resourceFamily),
+                        new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
+                    return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+                }
             }
 
             var completionStatus = McpTelemetry.Status.Ok;
