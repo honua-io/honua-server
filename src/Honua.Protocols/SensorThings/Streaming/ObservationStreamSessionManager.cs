@@ -71,6 +71,12 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
             return null;
         }
 
+        return CreateReservedSession(request, principal);
+    }
+
+    private ObservationStreamSession CreateReservedSession(
+        ObservationStreamRequest request, (string Tenant, string Principal) principal)
+    {
         var id = Guid.NewGuid();
         var channel = Channel.CreateBounded<RealtimeDelivery>(new BoundedChannelOptions(_options.MaxBufferPerConnection)
         {
@@ -81,17 +87,8 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
         var cts = new CancellationTokenSource();
         var token = cts.Token;
         var state = new ObservationStreamSessionState();
-        var writer = new DeliveryWriter(channel.Writer, () =>
-        {
-            if (state.TrySet(ObservationStreamDisconnectReason.SlowConsumer))
-            {
-                Interlocked.Increment(ref _slowConsumerDrops);
-                _observationStreamDrops.Add(1,
-                    new KeyValuePair<string, object?>("datastream.id", request.DatastreamId));
-                ObservationStreamLog.SlowConsumerDisconnected(_logger, id);
-                cts.Cancel();
-            }
-        });
+        var writer = new DeliveryWriter(channel.Writer,
+            () => DisconnectSlowConsumer(new(id, request.DatastreamId, state, cts)));
         try
         {
             var subscription = _provider.Subscribe(new RealtimeSubscriptionRequest(
@@ -109,6 +106,21 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
 
         ObservationStreamLog.SessionCreated(_logger, id, request.Transport, request.DatastreamId);
         return new ObservationStreamSession(id, channel.Reader, this, state, token);
+    }
+
+    private sealed record SlowConsumerState(
+        Guid Id, long? DatastreamId, ObservationStreamSessionState State, CancellationTokenSource Cancellation);
+
+    private void DisconnectSlowConsumer(SlowConsumerState consumer)
+    {
+        if (consumer.State.TrySet(ObservationStreamDisconnectReason.SlowConsumer))
+        {
+            Interlocked.Increment(ref _slowConsumerDrops);
+            _observationStreamDrops.Add(1,
+                new KeyValuePair<string, object?>("datastream.id", consumer.DatastreamId));
+            ObservationStreamLog.SlowConsumerDisconnected(_logger, consumer.Id);
+            consumer.Cancellation.Cancel();
+        }
     }
 
     private static bool MatchesScope(RealtimeEvent value, ObservationStreamScope scope)

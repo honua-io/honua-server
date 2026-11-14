@@ -34,12 +34,7 @@ public sealed class ObservationStreamPostgresTests(DatabaseFixtureAdapter databa
         await using var tenantB = second.TryCreateSession(new("SSE", null, new("tenant-b", "schema_b"), "bob", 0), out _)!;
         await using var wrongSchema = second.TryCreateSession(new("SSE", null, new("tenant-a", "schema_b"), "alice", 0), out _)!;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        foreach (var session in new[] { local, remote })
-        {
-            Assert.Equal(1, Assert.IsType<RealtimeDelivery.Event>(await session.Reader.ReadAsync(timeout.Token)).Value.Sequence);
-            Assert.Equal(4, Assert.IsType<RealtimeDelivery.Event>(await session.Reader.ReadAsync(timeout.Token)).Value.Sequence);
-            Assert.False(session.Reader.TryRead(out _));
-        }
+        await AssertInitialReplayAsync([local, remote], timeout.Token);
         Assert.Equal(2, Assert.IsType<RealtimeDelivery.Event>(await tenantB.Reader.ReadAsync(timeout.Token)).Value.Sequence);
         Assert.False(wrongSchema.Reader.TryRead(out _));
         await using var resumed = second.TryCreateSession(new("SSE", 1, new("tenant-a", "schema_a"), "alice", 1), out _)!;
@@ -58,6 +53,17 @@ public sealed class ObservationStreamPostgresTests(DatabaseFixtureAdapter databa
         }
         Assert.False(tenantB.Reader.TryRead(out _));
         Assert.False(wrongSchema.Reader.TryRead(out _));
+    }
+
+    private static async Task AssertInitialReplayAsync(
+        ObservationStreamSession[] sessions, CancellationToken cancellationToken)
+    {
+        foreach (var session in sessions)
+        {
+            Assert.Equal(1, Assert.IsType<RealtimeDelivery.Event>(await session.Reader.ReadAsync(cancellationToken)).Value.Sequence);
+            Assert.Equal(4, Assert.IsType<RealtimeDelivery.Event>(await session.Reader.ReadAsync(cancellationToken)).Value.Sequence);
+            Assert.False(session.Reader.TryRead(out _));
+        }
     }
 
     private static RealtimeEventDraft Draft(string? tenant, string? schema, string datastream)

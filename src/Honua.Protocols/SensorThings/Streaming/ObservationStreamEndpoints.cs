@@ -70,23 +70,9 @@ internal static class ObservationStreamEndpoints
                 "Observation subscriptions require a resolved tenant scope.");
         }
 
-        var hasQueryCursor = context.Request.Query.ContainsKey("cursor");
-        var hasHeaderCursor = context.Request.Headers.ContainsKey("Last-Event-ID");
-        var queryCursor = context.Request.Query["cursor"].ToString();
-        var headerCursor = context.Request.Headers["Last-Event-ID"].ToString();
-        var rawCursor = hasQueryCursor ? queryCursor : headerCursor;
-        long? after = null;
-        if ((hasQueryCursor && hasHeaderCursor && queryCursor != headerCursor)
-            || ((hasQueryCursor || hasHeaderCursor) && (!rawCursor.StartsWith("observations:", StringComparison.Ordinal)
-                || !long.TryParse(rawCursor.AsSpan("observations:".Length), NumberStyles.None,
-                    CultureInfo.InvariantCulture, out var sequence) || sequence < 0)))
+        if (!TryReadCursor(context, out var after))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "A nonnegative observations-family cursor is required.");
-        }
-
-        if (!string.IsNullOrEmpty(rawCursor))
-        {
-            after = long.Parse(rawCursor.AsSpan("observations:".Length), CultureInfo.InvariantCulture);
         }
 
         long? datastreamId = null;
@@ -136,6 +122,30 @@ internal static class ObservationStreamEndpoints
         }
 
         return Results.Empty;
+    }
+
+    private static bool TryReadCursor(HttpContext context, out long? after)
+    {
+        var hasQueryCursor = context.Request.Query.ContainsKey("cursor");
+        var hasHeaderCursor = context.Request.Headers.ContainsKey("Last-Event-ID");
+        var queryCursor = context.Request.Query["cursor"].ToString();
+        var headerCursor = context.Request.Headers["Last-Event-ID"].ToString();
+        var rawCursor = hasQueryCursor ? queryCursor : headerCursor;
+        after = null;
+        if ((hasQueryCursor && hasHeaderCursor && queryCursor != headerCursor)
+            || ((hasQueryCursor || hasHeaderCursor) && (!rawCursor.StartsWith("observations:", StringComparison.Ordinal)
+                || !long.TryParse(rawCursor.AsSpan("observations:".Length), NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var sequence) || sequence < 0)))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(rawCursor))
+        {
+            after = long.Parse(rawCursor.AsSpan("observations:".Length), CultureInfo.InvariantCulture);
+        }
+
+        return true;
     }
 
     private static IResult CreateAdmissionRejected(
