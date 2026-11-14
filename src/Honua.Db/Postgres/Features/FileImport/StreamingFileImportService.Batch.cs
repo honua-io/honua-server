@@ -51,7 +51,7 @@ internal sealed partial class StreamingFileImportService
         public required string SchemaName { get; init; }
         public required string TableName { get; init; }
         public required List<IFeature> Features { get; init; }
-        public required IReadOnlyList<Lazy<WkbGateResult>> GeometryResults { get; init; }
+        public required Lazy<WkbGateResult>[] GeometryResults { get; init; }
         public int SourceSrid { get; init; }
         public int TargetSrid { get; init; }
         public ImportLoadMode LoadMode { get; init; }
