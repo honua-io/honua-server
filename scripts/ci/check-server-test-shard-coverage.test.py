@@ -536,9 +536,8 @@ def test_studio_dashboard_mcp_integration_has_one_server_assembly_owner() -> Non
         if classes[f"{KNOWN}::{fqn}"]["csproj"] in MODULE.shard_projects(shard)
         and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), fqn)
     ]
-    # #3204 moved Features.Studio (and this fixture with it) to `Server Features
-    # Studio Packaging`; the parent kept Export/Reporting/SpatialAnalytics.
-    assert owners == ["Server Features Studio Packaging"], owners
+    # MCP dashboard tests stay with the non-package Studio tests.
+    assert owners == ["Server Features Studio Packaging 2"], owners
 
 
 def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:

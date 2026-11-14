@@ -20,24 +20,20 @@ namespace Honua.Server.Tests.Features.Collaboration;
 /// would, and it is armed once so only the checkpoint's apply is raced; the version save's own
 /// internal update runs unmolested.
 /// </remarks>
-internal sealed class ConcurrentUpdateAfterDraftWriteStore : IStudioPackageStore
+internal sealed class ConcurrentUpdateAfterDraftWriteStore : DelegatingStudioPackageStore
 {
-    private readonly IStudioPackageStore _inner;
     private readonly JsonElement _competingBody;
     private int _armed;
 
-    public ConcurrentUpdateAfterDraftWriteStore(IStudioPackageStore inner, JsonElement competingBody)
+    public ConcurrentUpdateAfterDraftWriteStore(IStudioPackageStore inner, JsonElement competingBody) : base(inner)
     {
-        _inner = inner;
         _competingBody = competingBody;
     }
 
     /// <summary>Arms exactly one interleaved competing draft update.</summary>
     public void ArmOnce() => Interlocked.Exchange(ref _armed, 1);
 
-    public StudioPackagePersistenceMode PersistenceMode => _inner.PersistenceMode;
-
-    public async Task<StudioPackageDraft?> UpdateDraftAsync(
+    public override async Task<StudioPackageDraft?> UpdateDraftAsync(
         StudioPackageDraft draft,
         CancellationToken cancellationToken = default)
     {
@@ -57,87 +53,6 @@ internal sealed class ConcurrentUpdateAfterDraftWriteStore : IStudioPackageStore
 
         return updated;
     }
-
-    public Task<StudioPackageDraft> CreateDraftAsync(
-        StudioPackageDraft draft,
-        CancellationToken cancellationToken = default) => _inner.CreateDraftAsync(draft, cancellationToken);
-
-    public Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
-        => _inner.GetDraftAsync(draftId, cancellationToken);
-
-    public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
-        => _inner.DeleteDraftAsync(draftId, cancellationToken);
-
-    public Task<StudioContentVersion> CreateVersionAsync(
-        StudioPackageDraft draft,
-        string? changeNote,
-        string? actorId,
-        CancellationToken cancellationToken = default)
-        => _inner.CreateVersionAsync(draft, changeNote, actorId, cancellationToken);
-
-    public Task<StudioContentVersion> CreateCheckpointVersionAsync(
-        StudioPackageDraft draft,
-        string? changeNote,
-        string? actorId,
-        StudioVersionCheckpoint checkpoint,
-        CancellationToken cancellationToken = default)
-        => _inner.CreateCheckpointVersionAsync(draft, changeNote, actorId, checkpoint, cancellationToken);
-
-    public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
-        string mapId,
-        long afterCursor,
-        long throughCursor,
-        CancellationToken cancellationToken = default)
-        => _inner.GetLatestCheckpointVersionAsync(mapId, afterCursor, throughCursor, cancellationToken);
-
-    public Task AcknowledgeCheckpointVersionAsync(
-        Guid versionId,
-        CancellationToken cancellationToken = default)
-        => _inner.AcknowledgeCheckpointVersionAsync(versionId, cancellationToken);
-
-    public Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(
-        Guid itemId,
-        CancellationToken cancellationToken = default) => _inner.ListVersionsAsync(itemId, cancellationToken);
-
-    public Task<StudioContentVersion?> GetVersionAsync(
-        Guid itemId,
-        Guid versionId,
-        CancellationToken cancellationToken = default) => _inner.GetVersionAsync(itemId, versionId, cancellationToken);
-
-    public Task<StudioContentItemPointers?> GetPointersAsync(
-        Guid itemId,
-        CancellationToken cancellationToken = default) => _inner.GetPointersAsync(itemId, cancellationToken);
-
-    public Task<StudioContentItemListResult> ListContentItemsAsync(
-        StudioContentItemQuery query,
-        CancellationToken cancellationToken = default) => _inner.ListContentItemsAsync(query, cancellationToken);
-
-    public Task<StudioPackageDraftListResult> ListDraftsAsync(
-        StudioPackageDraftQuery query,
-        CancellationToken cancellationToken = default) => _inner.ListDraftsAsync(query, cancellationToken);
-
-    public Task<StudioPublicationRequest> CreatePublicationRequestAsync(
-        StudioPublicationRequest request,
-        Guid? expectedCurrentVersionId,
-        CancellationToken cancellationToken = default)
-        => _inner.CreatePublicationRequestAsync(request, expectedCurrentVersionId, cancellationToken);
-
-    public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
-        Guid itemId, Guid versionId, Guid requestId, CancellationToken cancellationToken = default)
-        => _inner.GetPublicationRequestAsync(itemId, versionId, requestId, cancellationToken);
-
-    public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
-        string route, CancellationToken cancellationToken = default)
-        => _inner.GetActivePublicationRequestByRouteAsync(route, cancellationToken);
-
-    public Task<StudioRollbackRequest> RollbackAsync(
-        Guid itemId,
-        Guid targetVersionId,
-        StudioRollbackPointer target,
-        string? actorId,
-        string? reason,
-        CancellationToken cancellationToken = default)
-        => _inner.RollbackAsync(itemId, targetVersionId, target, actorId, reason, cancellationToken);
 }
 
 /// <summary>
@@ -145,14 +60,13 @@ internal sealed class ConcurrentUpdateAfterDraftWriteStore : IStudioPackageStore
 /// lifecycle version-save reads that generation, reproducing the deletion window between
 /// <c>SaveDraftAsVersionAsync</c>'s read and validation update.
 /// </summary>
-internal sealed class DeleteDuringVersionSaveStore : IStudioPackageStore
+internal sealed class DeleteDuringVersionSaveStore : DelegatingStudioPackageStore
 {
-    private readonly IStudioPackageStore _inner;
     private int _armAfterNextUpdate;
     private int _deleteAfterNextRead;
     private int _deleteWasTriggered;
 
-    public DeleteDuringVersionSaveStore(IStudioPackageStore inner) => _inner = inner;
+    public DeleteDuringVersionSaveStore(IStudioPackageStore inner) : base(inner) { }
 
     /// <summary>Arms exactly one deletion after the next successful draft update.</summary>
     public void ArmOnce() => Interlocked.Exchange(ref _armAfterNextUpdate, 1);
@@ -160,9 +74,7 @@ internal sealed class DeleteDuringVersionSaveStore : IStudioPackageStore
     /// <summary>Whether the deterministic deletion seam ran.</summary>
     public bool DeleteWasTriggered => Volatile.Read(ref _deleteWasTriggered) != 0;
 
-    public StudioPackagePersistenceMode PersistenceMode => _inner.PersistenceMode;
-
-    public async Task<StudioPackageDraft?> UpdateDraftAsync(
+    public override async Task<StudioPackageDraft?> UpdateDraftAsync(
         StudioPackageDraft draft,
         CancellationToken cancellationToken = default)
     {
@@ -175,11 +87,7 @@ internal sealed class DeleteDuringVersionSaveStore : IStudioPackageStore
         return updated;
     }
 
-    public Task<StudioPackageDraft> CreateDraftAsync(
-        StudioPackageDraft draft,
-        CancellationToken cancellationToken = default) => _inner.CreateDraftAsync(draft, cancellationToken);
-
-    public async Task<StudioPackageDraft?> GetDraftAsync(
+    public override async Task<StudioPackageDraft?> GetDraftAsync(
         Guid draftId,
         CancellationToken cancellationToken = default)
     {
@@ -192,9 +100,32 @@ internal sealed class DeleteDuringVersionSaveStore : IStudioPackageStore
 
         return draft;
     }
+}
+
+internal abstract class DelegatingStudioPackageStore : IStudioPackageStore
+{
+    protected readonly IStudioPackageStore _inner;
+
+    protected DelegatingStudioPackageStore(IStudioPackageStore inner) => _inner = inner;
+
+    public StudioPackagePersistenceMode PersistenceMode => _inner.PersistenceMode;
+
+    public virtual Task<StudioPackageDraft?> UpdateDraftAsync(
+        StudioPackageDraft draft, CancellationToken cancellationToken = default)
+        => _inner.UpdateDraftAsync(draft, cancellationToken);
+
+    public Task<StudioPackageDraft> CreateDraftAsync(
+        StudioPackageDraft draft,
+        CancellationToken cancellationToken = default) => _inner.CreateDraftAsync(draft, cancellationToken);
+
+    public virtual Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
+        => _inner.GetDraftAsync(draftId, cancellationToken);
 
     public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => _inner.DeleteDraftAsync(draftId, cancellationToken);
+
+    public Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default)
+        => _inner.DeleteDraftAsync(draftId, expectedGeneration, cancellationToken);
 
     public Task<StudioContentVersion> CreateVersionAsync(
         StudioPackageDraft draft,

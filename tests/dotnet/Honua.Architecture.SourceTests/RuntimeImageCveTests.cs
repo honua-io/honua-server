@@ -21,7 +21,7 @@ public sealed class RuntimeImageCveTests
             var runtimeStage = dockerfile[dockerfile.LastIndexOf("AS runtime", StringComparison.Ordinal)..];
 
             runtimeStage.Should().NotContain("wget", $"{relativePath} runtime stage must not install or call wget");
-            dockerfile.Should().Contain("10.0-noble-chiseled-extra@sha256:");
+            dockerfile.Should().Contain("11.0.0-resolute-chiseled-extra@sha256:");
             runtimeStage.Should().NotContain("RUN ");
             runtimeStage.Should().NotContain("bash");
             runtimeStage.Should().Contain("HEALTHCHECK", relativePath);
@@ -60,7 +60,7 @@ public sealed class RuntimeImageCveTests
         var dockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker", "Dockerfile.lambda.aot"));
         var runtimeStage = dockerfile[dockerfile.LastIndexOf("AS runtime", StringComparison.Ordinal)..];
 
-        dockerfile.Should().Contain("10.0-noble-chiseled-extra@sha256:");
+        dockerfile.Should().Contain("11.0.0-resolute-chiseled-extra@sha256:");
         dockerfile.Should().Contain("sh docker/runtime/verify-native.sh /runtime-root /var/task");
         runtimeStage.Should().NotContain("RUN ");
         runtimeStage.Should().NotContain("apt-get");

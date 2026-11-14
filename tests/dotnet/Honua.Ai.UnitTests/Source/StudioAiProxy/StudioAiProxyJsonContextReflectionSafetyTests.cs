@@ -55,7 +55,7 @@ public sealed class StudioAiProxyJsonContextReflectionSafetyTests
             Function = new OpenAiProxyToolChoiceFunctionRef { Name = "list_incidents" }
         };
 
-        var json = JsonSerializer.Serialize(dto, AotOptions.GetTypeInfo(typeof(OpenAiProxyToolChoiceSpecific)));
+        var json = JsonSerializer.Serialize(dto, AotOptions.GetTypeInfo<OpenAiProxyToolChoiceSpecific>());
 
         json.Should().Be("""{"type":"function","function":{"name":"list_incidents"}}""");
     }

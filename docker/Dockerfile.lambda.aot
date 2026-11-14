@@ -6,11 +6,11 @@
 # docs/internal/security/code-scanning-2026-Q2-remediation.md.
 # These ARG defaults are the single source of truth for the GHCR mirror of these
 # bases (scripts/ci/base-image-mirrors.sh + the nightly `mirror-base-images` job).
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
 # Lambda Web Adapter. The nightly build mirrors this digest to GHCR and passes the mirror here, because
 # anonymous Public ECR pulls are rate limited (429) from shared runners.
 ARG LAMBDA_ADAPTER_IMAGE=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4
-ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled-extra@sha256:bf8715422b59a65719605d4fe2b8f3f0eb96209b84cb2ed6bf3b5af7d879f148
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute-chiseled-extra@sha256:661d3e8cfdab9503453095a5b53b17f63402400266c0e0f6f2d1b1192e6da5c9
 
 FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS chiseled-base
 
@@ -137,7 +137,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           -p:PublishAot=true \
           -p:DebugType=None \
           -p:DebugSymbols=false \
-          -p:HonuaNobleRuntimePublish=true \
+          -p:HonuaUbuntuRuntimePublish=true \
           -p:StripSymbols=true \
           -p:OptimizationPreference=Speed \
           -p:IlcOptimizationPreference=Speed \
