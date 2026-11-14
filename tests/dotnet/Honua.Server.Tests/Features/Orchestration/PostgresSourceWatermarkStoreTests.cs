@@ -122,6 +122,28 @@ public sealed class PostgresSourceWatermarkStoreTests
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData("opaque-cursor")]
+    public async Task AdvanceAsync_NonTimestampValue_PreservesTheRequestedValue(string? value)
+    {
+        await using var host = CreateHost();
+        await host.InitializeAsync();
+        var store = host.GetService<ISourceWatermarkStore>();
+        var initial = Mark($"pipeline-{Guid.NewGuid():N}", "source", Timestamp);
+        var requested = initial with { Value = value, UpdatedAt = null };
+        try
+        {
+            await store.AdvanceAsync(initial);
+            (await store.AdvanceAsync(requested)).Should().BeEquivalentTo(requested);
+            (await store.GetAsync(initial.PipelineId, initial.SourceId)).Should().BeEquivalentTo(requested);
+        }
+        finally
+        {
+            await store.ClearAsync(initial.PipelineId, initial.SourceId);
+        }
+    }
+
     private static SourceWatermark Mark(string pipeline, string source, DateTimeOffset timestamp) => new()
     {
         PipelineId = pipeline,
