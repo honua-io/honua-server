@@ -1392,3 +1392,5 @@ Live after-change readiness diagnostics and elapsed time await a new failure;
 no lifecycle rerun or runtime savings are claimed from unit validation.
 
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
+
+Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
