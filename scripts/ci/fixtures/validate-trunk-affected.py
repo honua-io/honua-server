@@ -65,7 +65,9 @@ class TrunkAffectedWorkflowTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("certified_selector", CERTIFIED_SELECTOR)
         selector = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(selector)
-        self.assertEqual(workflow("ci.yml")["run-name"], "CI ${{ inputs.merge_train_nonce }}")
+        self.assertEqual(workflow("ci.yml")["run-name"], "CI ${{ github.ref == 'refs/heads/trunk' && (github.event_name == 'schedule' || inputs.full_ci || !inputs.selective_base) && 'full ' || github.ref == 'refs/heads/trunk' && 'affected ' || '' }}${{ inputs.merge_train_nonce }}")
+        from trailing_selection import AFFECTED_RUN_TITLE_PREFIX
+        self.assertEqual(AFFECTED_RUN_TITLE_PREFIX, "CI affected ")
         scripts = step_scripts(self.job)
         selective_title = 'run_title="affected ${COMPLETED_BASE:0:12}..${HEAD_SHA:0:12}"'
         self.assertIn(selective_title, scripts)
@@ -181,7 +183,7 @@ class CompletedBaseExecutionTests(unittest.TestCase):
                        check=True, capture_output=True, text=True)
         return (self.clone / "summary").read_text()
 
-    def test_ci_doctor_summary_keeps_failed_merge_in_green_range(self):
+    def test_investigation_summary_keeps_failed_merge_in_green_range(self):
         summary = self.run_investigation_summary(self.heads[0])
         self.assertIn(f"`{self.heads[0]}`..`{self.heads[2]}` (2 merges", summary)
         self.assertIn("change 1", summary)
