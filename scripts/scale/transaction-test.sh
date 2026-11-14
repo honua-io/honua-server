@@ -8,7 +8,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPOSE_FILE="$PROJECT_DIR/docker/scale-test/compose.yml"
-BASE_URL="http://localhost:8080"
+BASE_URL="${BASE_URL:-http://127.0.0.1:${HONUA_SCALE_TEST_HTTP_PORT:-8080}}"
+source "$SCRIPT_DIR/scale-test-readiness.sh"
 
 # Colors for output
 RED='\033[0;31m'
@@ -300,7 +301,7 @@ main() {
     echo
 
     # Ensure scale-test environment is running
-    if ! curl -s "http://localhost:8080/healthz/live" >/dev/null 2>&1; then
+    if ! honua_wait_scale_test "$COMPOSE_FILE" "$BASE_URL"; then
         log_error "Scale-test environment not running. Please start with: ./scripts/scale/scale-test.sh"
         exit 1
     fi

@@ -105,6 +105,34 @@ overrides and use private project names outside CI. CI keeps the Compose default
 following workflow steps can find the same stack. Local post-apply startup prints
 the private directory containing its process and container state.
 
+The scale launcher also allocates a private local Compose project, network, and
+published ports, including optional monitoring services. It prints the actual
+monitoring URLs, stop command, and project/HTTP-port exports needed by
+`scripts/scale/transaction-test.sh`. Both scripts require the selected project's
+live nginx container to own the HTTP listener before running tests. Preserve the
+printed exports when attaching transaction tests to that running stack. CI keeps
+the declared Compose defaults, and explicit port/project overrides still apply.
+
+The capacity candidate workflow retains its serialized, receipt-bound project
+and ports. Its private substrate state records the launched server container ID;
+both initial readiness and catalogue-republish readiness require that container's
+published listener. Cleanup removes the ID with the private Compose inputs.
+Load/soak drivers and post-apply probes with deliberate external URLs remain
+external qualification clients.
+
+The launch paths fall into these ownership models:
+
+| Path | Readiness owner |
+| --- | --- |
+| Python `shared/server.py` and `conftest.py` | Launched process and its selected listener, checked before and after health. |
+| Shared JavaScript `tests/shared/js-bootstrap.ts` | Launched Python bootstrap process, through the shared ownership CLI; explicit `HONUA_BASE_URL` is external. |
+| OpenLayers `tests/js/openlayers/rendering/global-setup.ts` | Per-run page-server nonce; an existing page server cannot satisfy readiness. |
+| .NET `Honua.TestKit/WebAppFixture.cs` | In-process `WebApplicationFactory` client, with no shared HTTP port. |
+| Shell CI, quickstart, SDK migration and local post-apply launchers | Launched process or exact container through `scripts/ci/owned-server.py`. |
+| Scale and transaction scripts | Selected Compose project's nginx container and its published listener. |
+| Capacity candidate startup and republish | Exact container ID captured by `scripts/soak/capacity-substrate.sh`. |
+| Load/soak drivers and external post-apply probes | Deliberately supplied target URL; these clients do not launch the server. |
+
 SDK migration fixtures treat remote or HTTPS URLs as explicit external targets.
 Set `HONUA_SDK_MIGRATION_EXTERNAL=true` or `HONUA_SDK_GEOSERVER_EXTERNAL=true` to
 probe a deliberately supplied loopback fixture instead of launching one.
