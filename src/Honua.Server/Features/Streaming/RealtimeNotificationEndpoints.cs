@@ -122,9 +122,11 @@ internal static partial class RealtimeNotificationEndpoints
     internal static async Task StreamAsync(HttpContext context, IRealtimeFanoutProvider provider, StreamRequest request)
     {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        var after = request.After ?? (await provider.GetWindowAsync(request.Family, lifetime.Token)
+            .ConfigureAwait(false)).Head;
         var channel = Channel.CreateBounded<RealtimeDelivery>(256);
         await using var subscription = provider.Subscribe(new RealtimeSubscriptionRequest(
-            request.Family, request.Scopes, request.After, new ClosingWriter(channel.Writer, lifetime)));
+            request.Family, request.Scopes, after, new ClosingWriter(channel.Writer, lifetime)));
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers.CacheControl = "no-store, no-transform";
         context.Response.Headers["X-Accel-Buffering"] = "no";

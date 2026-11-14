@@ -1,7 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net.WebSockets;
 using System.Security.Claims;
+using Honua.Alerts;
+using Honua.Server.Features.Admin;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -77,6 +84,8 @@ public sealed class RealtimeNotificationEndpointsTests
         var provider = Substitute.For<IRealtimeFanoutProvider>();
         var jobs = Substitute.For<IGeoprocessingJobService>();
         var context = CreateContext("?jobId=mine");
+        provider.GetWindowAsync(RealtimeFamily.Jobs, Arg.Any<CancellationToken>())
+            .Returns(new RealtimeLogWindow(RealtimeFamily.Jobs, 0, 0));
         var calls = 0;
         jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(_ =>
             ++calls == 1 ? Task.FromResult(new ExecutionJobRecord { OperationId = "mine", Status = ExecutionJobStatus.Running }) :
@@ -148,6 +157,8 @@ public sealed class RealtimeNotificationEndpointsTests
     {
         var current = LayerSnapshot("after", true);
         var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.GetWindowAsync(RealtimeFamily.Catalog, Arg.Any<CancellationToken>())
+            .Returns(new RealtimeLogWindow(RealtimeFamily.Catalog, 0, 0));
         var graphs = Substitute.For<IMetadataV2GraphProvider>();
         var history = Substitute.For<IMetadataV2EnvironmentSnapshotReader>();
         graphs.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(current);
@@ -188,6 +199,76 @@ public sealed class RealtimeNotificationEndpointsTests
 
         Assert.Equal(StatusCodes.Status403Forbidden, ((IStatusCodeHttpResult)result).StatusCode);
         provider.DidNotReceive().Subscribe(Arg.Any<RealtimeSubscriptionRequest>());
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData("jobs")]
+    [InlineData("catalog")]
+    public async Task Stream_WithoutCursor_CapturesHeadBeforeDelayedWorkerStarts(string familyName)
+    {
+        var family = new RealtimeFamily(familyName);
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        var context = CreateContext("");
+        provider.GetWindowAsync(family, Arg.Any<CancellationToken>())
+            .Returns(new RealtimeLogWindow(family, 1, 7));
+        var delivered = new List<long>();
+        provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(request =>
+        {
+            // The worker starts after event 8 committed. A null cursor would resolve
+            // to that newer head and skip the event published during registration.
+            if ((request.After ?? 8) < 8)
+            {
+                request.Writer.TryWrite(new RealtimeDelivery.Event(Event(8, "mine") with { Family = family }));
+            }
+            request.Writer.TryComplete();
+        })).Returns(Substitute.For<IRealtimeSubscription>());
+
+        await RealtimeNotificationEndpoints.StreamAsync(context, provider,
+            new RealtimeNotificationEndpoints.StreamRequest(family, [], null, (item, _) =>
+            {
+                delivered.Add(item.Sequence);
+                return Task.FromResult(true);
+            }));
+
+        Assert.Collection(delivered, sequence => Assert.Equal(8, sequence));
+    }
+
+    [UnitTest]
+    public async Task Alerts_RetentionReset_SendsRecoveryFrameBeforeClosingWebSocket()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.GetWindowAsync(RealtimeFamily.Alerts, Arg.Any<CancellationToken>())
+            .Returns(new RealtimeLogWindow(RealtimeFamily.Alerts, 20, 42));
+        provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(request =>
+        {
+            request.Writer.TryWrite(new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, 42));
+            request.Writer.TryComplete();
+        })).Returns(Substitute.For<IRealtimeSubscription>());
+        await using var broadcaster = new RealtimeAlertNotificationBroadcaster(
+            provider, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        await using var app = builder.Build();
+        app.UseWebSockets();
+        app.MapGet("/alerts", (HttpContext context) => StreamingOperationsEndpoints.HandleAlertStream(broadcaster, context));
+        await app.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var socket = await app.GetTestServer().CreateWebSocketClient()
+            .ConnectAsync(new Uri("ws://localhost/alerts?cursor=alerts:1"), timeout.Token);
+        var buffer = new byte[1024];
+
+        var frame = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), timeout.Token);
+        if (frame.MessageType == WebSocketMessageType.Close)
+        {
+            await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closed", timeout.Token);
+        }
+        Assert.Equal(WebSocketMessageType.Text, frame.MessageType);
+        using var payload = JsonDocument.Parse(buffer.AsMemory(0, frame.Count));
+        Assert.Equal("reset", payload.RootElement.GetProperty("type").GetString());
+        Assert.Equal("retention", payload.RootElement.GetProperty("reason").GetString());
+        Assert.Equal(42, payload.RootElement.GetProperty("head").GetInt64());
+        await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closed", timeout.Token);
     }
 
     private static MetadataV2GraphSnapshot LayerSnapshot(string etag, bool changed)

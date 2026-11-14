@@ -74,7 +74,7 @@ internal static class StreamingOperationsEndpoints
             StreamingOperationsJsonContext.Default.ApiResponseSubscriberListResponse);
     }
 
-    private static async Task<IResult> HandleAlertStream(
+    internal static async Task<IResult> HandleAlertStream(
         [FromServices] Honua.Alerts.RealtimeAlertNotificationBroadcaster broadcaster,
         HttpContext context)
     {
@@ -141,13 +141,12 @@ internal static class StreamingOperationsEndpoints
         var buffer = new byte[1];
         try
         {
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                context.RequestAborted,
-                subscription.DisconnectToken);
-
-            while (webSocket.State == WebSocketState.Open && !linkedCts.Token.IsCancellationRequested)
+            while (webSocket.State == WebSocketState.Open && !subscription.DisconnectToken.IsCancellationRequested)
             {
-                var result = await webSocket.ReceiveAsync(buffer, linkedCts.Token).ConfigureAwait(false);
+                // Cancel the wait on a server reset without aborting the socket, so
+                // the recovery frame can still be sent before the close handshake.
+                var receive = webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), context.RequestAborted);
+                var result = await receive.WaitAsync(subscription.DisconnectToken).ConfigureAwait(false);
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
                     break;
@@ -164,6 +163,7 @@ internal static class StreamingOperationsEndpoints
             {
                 try
                 {
+                    await SendResetAsync(webSocket, subscription.Reset, context.RequestAborted).ConfigureAwait(false);
                     await webSocket.CloseAsync(
                         WebSocketCloseStatus.NormalClosure,
                         subscription.DisconnectToken.IsCancellationRequested
@@ -179,10 +179,33 @@ internal static class StreamingOperationsEndpoints
                 {
                     // Best-effort close; the socket may already have been disposed concurrently.
                 }
+                catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+                {
+                    // The client disconnected before receiving the recovery frame.
+                }
             }
         }
 
         return Results.Empty;
+    }
+
+    private static async Task SendResetAsync(WebSocket socket,
+        Honua.Core.Features.Realtime.RealtimeDelivery.Reset? reset, CancellationToken cancellationToken)
+    {
+        if (reset is null)
+        {
+            return;
+        }
+        using var payload = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(payload))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "reset");
+            writer.WriteString("reason", reset.Reason);
+            writer.WriteNumber("head", reset.Head);
+            writer.WriteEndObject();
+        }
+        await socket.SendAsync(payload.ToArray(), WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
     }
 
     private static bool TryParseAlertCursor(string cursor, out long? after)

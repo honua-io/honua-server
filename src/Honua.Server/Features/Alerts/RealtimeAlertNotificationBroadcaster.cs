@@ -122,6 +122,7 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
         public StreamingSubscriptionInfo Info { get; }
         public Guid SubscriberId => Info.SubscriberId;
         public CancellationToken DisconnectToken { get; }
+        public RealtimeDelivery.Reset? Reset { get; private set; }
         public Task Completion { get; private set; } = Task.CompletedTask;
 
         public void Start(long after)
@@ -159,8 +160,9 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
                 await using var sourceLifetime = source;
                 await foreach (var delivery in _deliveries.Reader.ReadAllAsync(DisconnectToken).ConfigureAwait(false))
                 {
-                    if (delivery is RealtimeDelivery.Reset)
+                    if (delivery is RealtimeDelivery.Reset reset)
                     {
+                        Reset = reset;
                         break;
                     }
 
@@ -201,7 +203,10 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
             public override bool TryComplete(Exception? error = null)
             {
                 var completed = writer.TryComplete(error);
-                closed.TrySetResult();
+                if (error is not null)
+                {
+                    closed.TrySetResult();
+                }
                 return completed;
             }
         }
