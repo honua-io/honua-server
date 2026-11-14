@@ -19,29 +19,21 @@ internal static class OrchestrationServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
 
-        // The orchestration engine requires durable stores. Without Redis-backed
-        // IWorkflowDefinitionStore/IWorkflowRunStore the engine cannot activate, so
-        // skip registering it. Admin cancel then resolves IWorkflowCancellationCoordinator
-        // to null and returns the documented 503 Service Unavailable instead of a 500
-        // from a DI activation failure.
-        if (!services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
-        {
-            return services;
-        }
-
-        services.TryAddSingleton<IWorkflowDefinitionStore>(sp =>
-            new RedisWorkflowDefinitionStore(sp.GetRequiredService<IConnectionMultiplexer>()));
-
-        services.TryAddSingleton<IWorkflowRunStore>(sp =>
-            new RedisWorkflowRunStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+        services.TryAddSingleton<PostgresWorkflowDefinitionStore>();
+        services.TryAddSingleton<IWorkflowDefinitionStore>(sp => sp.GetRequiredService<PostgresWorkflowDefinitionStore>());
+        services.TryAddSingleton<PostgresWorkflowRunStore>();
+        services.TryAddSingleton<IWorkflowRunStore>(sp => sp.GetRequiredService<PostgresWorkflowRunStore>());
 
         services.TryAddSingleton<WorkflowOrchestrationEngine>();
         services.TryAddSingleton<IWorkflowCancellationCoordinator>(sp =>
             sp.GetRequiredService<WorkflowOrchestrationEngine>());
 
         // Durable per-pipeline+source high-water marks for incremental ("changed-since") extract.
-        services.TryAddSingleton<ISourceWatermarkStore>(sp =>
-            new RedisSourceWatermarkStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer)))
+        {
+            services.TryAddSingleton<ISourceWatermarkStore>(sp =>
+                new RedisSourceWatermarkStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+        }
 
         // Event/CDC trigger probes. The change-feed probe adapts the scoped IChangeTracker; the
         // object-store probe is a poll-based file-system baseline whose StoreId->root bindings come
@@ -80,9 +72,6 @@ internal static class OrchestrationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        // Background services depend on the same Redis-backed stores the engine needs.
-        // Only start them when AddOrchestration actually registered the engine — otherwise
-        // hosted-service activation would fail at startup in Redis-less deployments.
         if (!services.Any(d => d.ServiceType == typeof(WorkflowOrchestrationEngine)))
         {
             return services;

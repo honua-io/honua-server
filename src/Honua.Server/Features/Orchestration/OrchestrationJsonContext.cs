@@ -9,6 +9,7 @@ namespace Honua.Server.Features.Orchestration;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(WorkflowDefinition))]
 [JsonSerializable(typeof(WorkflowRun))]
 [JsonSerializable(typeof(WorkflowStepState))]
