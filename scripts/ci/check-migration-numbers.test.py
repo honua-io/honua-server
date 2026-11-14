@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Exercise migration admission against diverged git histories."""
+
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+
+SCRIPT = Path(__file__).with_name("check-migration-numbers.py")
+SERVER = "src/Honua.Server/Migrations"
+POSTGRES = "src/Honua.Db/Postgres/Migrations"
+
+
+class MigrationNumberTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.git("init", "-q")
+        self.add(SERVER, "001_Initial.sql")
+        self.base = self.commit()
+        self.git("branch", "trunk")
+
+    def git(self, *args):
+        return subprocess.check_output(["git", *args], cwd=self.root, text=True).strip()
+
+    def add(self, directory, name, content="SELECT 1;"):
+        path = self.root / directory / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+
+    def commit(self):
+        self.git("add", "-A")
+        self.git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "fixture")
+        return self.git("rev-parse", "HEAD")
+
+    def check(self):
+        return subprocess.run(
+            ["python3", str(SCRIPT), "--base", self.base, "--head", "HEAD", "--trunk", "trunk"],
+            cwd=self.root, capture_output=True, text=True,
+        )
+
+    def test_unique_new_number_passes(self):
+        self.add(SERVER, "002_New.sql")
+        self.commit()
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_existing_modification_is_left_to_immutability_guard(self):
+        self.add(SERVER, "001_Initial.sql", "SELECT 2;")
+        self.commit()
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_same_number_in_other_migration_namespace_passes(self):
+        self.add(POSTGRES, "001_Raster.sql")
+        self.commit()
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_duplicate_new_numbers_fail(self):
+        for name in ("002_First.sql", "002_Second.sql", "003_Third.sql"):
+            self.add(SERVER, name)
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("next free number: 004", result.stdout)
+
+    def test_newer_trunk_collision_reports_next_after_all_pending_numbers(self):
+        self.git("checkout", "-q", "trunk")
+        self.add(SERVER, "002_Landed.sql")
+        self.commit()
+        self.git("checkout", "-q", "--detach", self.base)
+        self.add(SERVER, "002_Pending.sql")
+        self.add(SERVER, "004_AlsoPending.sql")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("002_Landed.sql", result.stdout)
+        self.assertIn("next free number: 005", result.stdout)
+
+    def test_same_filename_on_diverged_trunk_is_also_a_collision(self):
+        self.git("checkout", "-q", "trunk")
+        self.add(SERVER, "002_New.sql", "SELECT 2;")
+        self.commit()
+        self.git("checkout", "-q", "--detach", self.base)
+        self.add(SERVER, "002_New.sql", "SELECT 3;")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("next free number: 003", result.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()
