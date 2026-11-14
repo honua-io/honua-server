@@ -352,17 +352,19 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     // attached, positioned relay, or once a session falls behind it, the session reads the store.
     // SSE sessions use this; WebSocket control subscriptions advance their own poll cursors and
     // still read the store on every interval.
-    private Func<long>? _relayPosition;
-    private long _relayStart;
+    private RelayAttachment? _relayAttachment;
     private long _relayedThrough;
 
-    internal void AttachRelay(Func<long> position)
+    private sealed class RelayAttachment(Func<long> position)
     {
-        Interlocked.Exchange(ref _relayStart, 0);
-        Volatile.Write(ref _relayPosition, position);
+        public Func<long> Position { get; } = position;
+        public long Start;
     }
 
-    internal void DetachRelay() => Volatile.Write(ref _relayPosition, null);
+    internal void AttachRelay(Func<long> position)
+        => Volatile.Write(ref _relayAttachment, new RelayAttachment(position));
+
+    internal void DetachRelay() => Volatile.Write(ref _relayAttachment, null);
 
     // Called after a change has been offered to every local session.
     internal void MarkRelayed(long generation) => InterlockedMax(ref _relayedThrough, generation);
@@ -379,15 +381,13 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     // real store read, and the delivered-cursor floor, as current as a read would have.
     internal long? StorePollSkipCursor(Guid sessionId, long replayCursor)
     {
-        var relay = Volatile.Read(ref _relayPosition);
-        if (relay is null || replayCursor < Interlocked.Read(ref _storeReadRequiredThrough) ||
-            !_sessions.TryGetValue(sessionId, out var entry) ||
-            replayCursor < entry.StoreReadRequiredThrough)
+        var relay = Volatile.Read(ref _relayAttachment);
+        if (relay is null || !_sessions.TryGetValue(sessionId, out var entry))
         {
             return null;
         }
 
-        var position = relay();
+        var position = relay.Position();
         if (position <= 0)
         {
             return null;
@@ -396,15 +396,25 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         // The first positioned reading marks where the relay began; a session that started
         // before it reads the store once to cover what came before. Relayed is read before
         // considered: a change is marked considered before it is marked relayed.
-        Interlocked.CompareExchange(ref _relayStart, position, 0);
-        var relayed = Math.Max(Interlocked.Read(ref _relayedThrough), Interlocked.Read(ref _relayStart));
+        Interlocked.CompareExchange(ref relay.Start, position, 0);
+        var relayed = Math.Max(Interlocked.Read(ref _relayedThrough), Interlocked.Read(ref relay.Start));
         var considered = entry.ConsideredThrough;
         if (Math.Max(considered, replayCursor) < relayed)
         {
             return null;
         }
 
-        return entry.Channel.Reader.TryPeek(out _) ? replayCursor : Math.Max(replayCursor, considered);
+        var proposed = entry.Channel.Reader.TryPeek(out _) ? replayCursor : Math.Max(replayCursor, considered);
+        // Capture advancement before checking the floors: a later considered generation must
+        // never cover an earlier dropped change that this session has not read from the store.
+        if (replayCursor < Interlocked.Read(ref _storeReadRequiredThrough) ||
+            replayCursor < entry.StoreReadRequiredThrough ||
+            !ReferenceEquals(relay, Volatile.Read(ref _relayAttachment)))
+        {
+            return null;
+        }
+
+        return proposed;
     }
 
     private static void InterlockedMax(ref long target, long value)
