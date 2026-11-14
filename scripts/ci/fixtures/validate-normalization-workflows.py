@@ -383,13 +383,23 @@ def validate(
 
 
 def validate_concurrency(producer: str, consumer: str) -> None:
-    expected_groups = {
-        "producer": "normalization-producer-${{ github.event.pull_request.number }}",
-        "consumer": "normalization-consumer-${{ github.event.workflow_run.pull_requests[0].number || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) }}",
-    }
-    for label, document in (("producer", yaml.safe_load(producer)), ("consumer", yaml.safe_load(consumer))):
-        if document.get("concurrency") != {"group": expected_groups[label], "cancel-in-progress": True}:
-            raise AssertionError(f"{label} must cancel superseded normalization runs per PR")
+    producer_doc, consumer_doc = yaml.safe_load(producer), yaml.safe_load(consumer)
+    expected = "normalization-producer-${{ !github.event.pull_request.draft && (github.event.action != 'edited' || github.event.changes.base.ref.from != null) && github.event.pull_request.number || format('ignored-{0}', github.run_id) }}"
+    if producer_doc.get("concurrency") != {"group": expected, "cancel-in-progress": True}:
+        raise AssertionError("producer must cancel superseded normalization runs per PR")
+    job = consumer_doc["jobs"]["validate"]
+    if "concurrency" in consumer_doc or job.get("concurrency") != {
+        "group": "normalization-consumer-${{ needs.admit.outputs.pr }}", "cancel-in-progress": True,
+    } or job.get("needs") != "admit" or "needs.admit.outputs.pr != ''" not in job["if"]:
+        raise AssertionError("consumer must cancel superseded normalization runs per PR after live admission")
+    admission = consumer_doc["jobs"]["admit"]
+    checkout, resolver = admission["steps"]
+    if (admission.get("outputs", {}).get("pr") != "${{ steps.live.outputs.pr }}"
+            or checkout.get("with", {}).get("ref") != "${{ github.event.repository.default_branch }}"
+            or checkout["with"].get("persist-credentials") is not False
+            or "require('./scripts/ci/admit-normalization-consumer')" not in resolver["with"]["script"]):
+        raise AssertionError("consumer admission must resolve live state from trusted policy")
+
 
 
 def main() -> None:

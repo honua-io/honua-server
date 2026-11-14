@@ -183,10 +183,13 @@ Existing release cancellation policy is retained.
 
 Derived Artifact Normalization (`Generate bounded normalization projections`,
 `Produce data-only normalization envelope`) cancels superseded runs per PR with
-`cancel-in-progress: true`. Its consumer groups by PR, falling back to head
-repository plus branch when GitHub omits the association. Live-head checks and
-compare-and-swap still prevent superseded subjects from producing data or mutating
-branches. Review helpers instead cancel superseded events; their replacement
+`cancel-in-progress: true`. Draft and title/body-only edits use isolated groups
+and cannot cancel eligible generation. The consumer first resolves the live PR
+using trusted default-branch policy; missing associations use a commit lookup.
+Only a live, open, ready head enters the per-PR validation cancellation group,
+so a delayed old-head completion cannot replace current-head validation.
+Live-head checks and compare-and-swap still prevent superseded subjects from
+producing data or mutating branches. Review helpers instead cancel superseded events; their replacement
 re-reads live review evidence and admission state. Closed/draft review subjects
 finish neutrally before publication. Missing admission prerequisites finish the
 attestation helper neutrally while the separate required `Review Gate` status

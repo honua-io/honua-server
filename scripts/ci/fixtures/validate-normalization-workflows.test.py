@@ -51,7 +51,7 @@ class NormalizationContractTests(unittest.TestCase):
                              ("  group: normalization-", "  group: shared-")):
                 with self.subTest(workflow=workflow, mutation=new):
                     with self.assertRaisesRegex(AssertionError, "cancel superseded"):
-                        run(**{workflow: SOURCES[workflow].replace(old, new, 1)})
+                        run(**{workflow: SOURCES[workflow].replace(old, new.replace("\n  queue:", "\n      queue:") if workflow == "consumer" else new, 1)})
 
     def test_generator_in_packaging_is_rejected(self) -> None:
         marker = "      - name: Download bounded projection data\n"

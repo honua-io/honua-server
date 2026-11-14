@@ -17,10 +17,6 @@ permissions:
   contents: read
   pull-requests: read
 
-concurrency:
-  group: normalization-consumer-${{ github.event.workflow_run.pull_requests[0].number || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) }}
-  cancel-in-progress: true
-
 # Enforce since the 2026-11-12 v3 shadow audit (#3219): 76 valid envelopes, all
 # byte-reproduced independently, with the release App token configured.
 # Rollback is the one-value change back to `observe`.
@@ -28,8 +24,32 @@ env:
   NORMALIZATION_MODE: enforce
 
 jobs:
+  admit:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    outputs:
+      pr: ${{ steps.live.outputs.pr }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - id: live
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const {admitNormalization} = require('./scripts/ci/admit-normalization-consumer');
+            const pr = await admitNormalization({github, context});
+            if (pr) core.setOutput('pr', String(pr));
+
   validate:
+    needs: admit
+    concurrency:
+      group: normalization-consumer-${{ needs.admit.outputs.pr }}
+      cancel-in-progress: true
     if: >
+      needs.admit.outputs.pr != '' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success'
     name: Validate normalization envelope

@@ -38,7 +38,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: normalization-producer-${{ github.event.pull_request.number }}
+  group: normalization-producer-${{ !github.event.pull_request.draft && (github.event.action != 'edited' || github.event.changes.base.ref.from != null) && github.event.pull_request.number || format('ignored-{0}', github.run_id) }}
   cancel-in-progress: true
 
 env:

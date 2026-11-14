@@ -133,8 +133,10 @@ admission: draft helpers skip without publishing success; `ready_for_review`
 re-enters attestation. Blocking reviews retain failure, and real attestation/API
 errors fail. Review helpers cancel superseded events per PR and re-read live
 review/admission state before acting. Normalization producers and consumers
-cancel superseded runs per PR; consumers without a PR association use the head
-repository and branch as their group. Live-head checks and compare-and-swap
+cancel superseded work per PR. Draft and metadata-only producer events use
+isolated groups so they cannot cancel eligible generation. A trusted consumer
+admission job resolves the live PR and rejects old-head completions before
+entering the per-PR cancellation group. Live-head checks and compare-and-swap
 remain required before producing data or mutating a branch.
 
 Completions without a PR number use an isolated resolver group per run; once resolved, publication cancels older work by PR number. An unresolvable completion cannot cancel a resolver for another run.
