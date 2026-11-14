@@ -173,7 +173,9 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
             .Order().ToArray();
         var p95 = (int)Math.Ceiling(Edits * 0.95) - 1;
         latencies[p95].Should().BeLessThanOrEqualTo(latencyTarget,
-            $"p95 commit-to-relay was {toRelay[p95].TotalMilliseconds:F0} ms and relay-to-frame {toFrame[p95].TotalMilliseconds:F0} ms");
+            $"p95 commit-to-relay was {toRelay[p95].TotalMilliseconds:F0} ms and relay-to-frame {toFrame[p95].TotalMilliseconds:F0} ms; " +
+            $"relay moved {relayed.Count} times ({DescribeRelay(relayed)}) for frame generations " +
+            $"{frames[0].Generation}..{frames[^1].Generation}");
     }
 
     // Records when task B's feature relay first reached each position, sampled every few
@@ -202,6 +204,12 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         }
         return samples;
     }
+
+    private static string DescribeRelay(List<(long Position, long At)> samples)
+        => samples.Count == 0
+            ? "never"
+            : $"first {samples[0].Position}, last {samples[^1].Position}, " +
+              $"largest step {samples.Zip(samples.Skip(1), (a, b) => b.Position - a.Position).DefaultIfEmpty(samples[0].Position).Max()}";
 
     private static long RelayedAt(List<(long Position, long At)> samples, FeatureFrame frame)
         => samples.FirstOrDefault(sample => sample.Position >= frame.Generation) is { At: > 0 } sample
