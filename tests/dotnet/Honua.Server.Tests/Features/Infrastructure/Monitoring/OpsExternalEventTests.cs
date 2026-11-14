@@ -19,6 +19,7 @@ public sealed class OpsExternalEventTests
     [Theory]
     [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"containers\":[{\"exitCode\":137,\"reason\":\"OutOfMemoryError\"}]}", "ecs-task-oom")]
     [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"stoppedReason\":\"CannotPullContainerError: denied\"}", "image-pull-failed")]
+    [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"stoppedReason\":\"Task failed to start\",\"containers\":[{\"reason\":\"CannotPullContainerError: denied\"}]}", "image-pull-failed")]
     [InlineData("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_FAILED\"}", "ecs-deployment-failed")]
     [InlineData("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_COMPLETED\"}", "ecs-deployment-completed")]
     [InlineData("aws.backup", "Backup Job State Change", "{\"state\":\"FAILED\"}", "backup-job-failed")]

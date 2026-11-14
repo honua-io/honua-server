@@ -124,13 +124,14 @@ internal static class OpsExternalEventMapper
         }
 
         var reason = Text(detail, "stoppedReason");
-        if (reason.Contains("CannotPullContainerError", StringComparison.OrdinalIgnoreCase))
+        var containers = detail.TryGetProperty("containers", out var array) && array.ValueKind == JsonValueKind.Array
+            ? array.EnumerateArray().ToArray() : [];
+        if (reason.Contains("CannotPullContainerError", StringComparison.OrdinalIgnoreCase) ||
+            containers.Any(c => Text(c, "reason").Contains("CannotPullContainerError", StringComparison.OrdinalIgnoreCase)))
         {
             return Warning("image-pull-failed", "A server image could not be pulled", "Check the image digest, registry access and task execution-role permissions. Changing task capacity will not repair registry credentials.");
         }
 
-        var containers = detail.TryGetProperty("containers", out var array) && array.ValueKind == JsonValueKind.Array
-            ? array.EnumerateArray().ToArray() : [];
         if (reason.Contains("OutOfMemory", StringComparison.OrdinalIgnoreCase) || containers.Any(c => Text(c, "reason").Contains("OutOfMemory", StringComparison.OrdinalIgnoreCase)))
         {
             return Warning("ecs-task-oom", "A server task ran out of memory", "Check task memory and workload pressure. A memory increase changes cost and requires operator approval.");
