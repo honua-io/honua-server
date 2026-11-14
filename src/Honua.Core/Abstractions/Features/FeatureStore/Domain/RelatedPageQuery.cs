@@ -9,7 +9,10 @@ public readonly record struct RelatedPageCursor(long OriginId, long? RelatedId);
 
 public readonly record struct RelatedFeaturePosition(long OriginId, Feature? RelatedFeature);
 
-public readonly record struct RelatedFeaturePage(ImmutableArray<RelatedFeaturePosition> Positions, bool HasMore);
+public readonly record struct RelatedFeaturePage(ImmutableArray<RelatedFeaturePosition> Positions)
+{
+    public bool HasMore { get; init; }
+}
 
 public readonly record struct RelatedPageQuery(RelatedQuery Relationship, int PositionLimit, RelatedPageCursor? After = null)
 {

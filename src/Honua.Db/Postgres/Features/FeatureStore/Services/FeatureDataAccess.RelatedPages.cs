@@ -36,12 +36,12 @@ internal sealed partial class FeatureDataAccess
         {
             if (positions.Count == request.Query.PositionLimit)
             {
-                return new RelatedFeaturePage(positions.ToImmutable(), true);
+                return new RelatedFeaturePage(positions.ToImmutable()) { HasMore = true };
             }
             Feature? feature = reader.IsDBNull(0) ? null : ProjectRelatedFeature(ReadFeature(reader, attributesReader), request);
             positions.Add(new RelatedFeaturePosition(reader.GetInt64(3), feature));
         }
-        return new RelatedFeaturePage(positions.ToImmutable(), false);
+        return new RelatedFeaturePage(positions.ToImmutable());
     }
 
     private static void ValidateRelatedPageFields(RelatedPageReadRequest request)
