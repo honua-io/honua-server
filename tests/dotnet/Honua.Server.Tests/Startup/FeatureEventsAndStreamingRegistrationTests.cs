@@ -88,7 +88,8 @@ public sealed class FeatureEventsAndStreamingRegistrationTests
 
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IHostedService)
-            && descriptor.ImplementationType == typeof(FeatureStreamRealtimeRelay));
+            && descriptor.ImplementationFactory != null
+            && descriptor.ImplementationFactory.Method.DeclaringType == typeof(FeatureStreamRealtimeRelay));
     }
 
     [UnitTest]
@@ -104,7 +105,22 @@ public sealed class FeatureEventsAndStreamingRegistrationTests
 
         services.AddHonuaFeatureEventsAndStreaming(configuration);
 
-        services.Should().NotContain(descriptor => descriptor.ImplementationType == typeof(FeatureStreamRealtimeRelay));
+        services.Should().NotContain(descriptor => descriptor.ImplementationFactory != null
+            && descriptor.ImplementationFactory.Method.DeclaringType == typeof(FeatureStreamRealtimeRelay));
+    }
+
+    [UnitTest]
+    public async Task ResolveHostedServices_WithoutDatabaseAndDisabledWebhooks_DoesNotRequireDatabase()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHonuaFeatureEventsAndStreaming(new ConfigurationBuilder().Build());
+        await using var provider = services.BuildServiceProvider();
+
+        var hostedServices = provider.GetServices<IHostedService>().ToArray();
+
+        hostedServices.Should().ContainSingle(service => service is FeatureStreamRealtimeRelay);
+        hostedServices.Should().NotContain(service => service is FeatureChangeWebhookDispatcher);
     }
 
     private static ServiceProvider BuildServices(IConfiguration configuration)

@@ -168,14 +168,17 @@ internal static class FeatureEventsAndStreamingRegistration
             "feature-change-webhook",
             HttpResiliencePolicies.FastApiDefaults,
             configureHandler: static () => WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
-        services.AddHostedService(sp =>
-            new FeatureChangeWebhookDispatcher(
-                sp.GetRequiredService<IFeatureChangeEventStore>(),
-                sp.GetRequiredService<IStreamCursorStore>(),
-                sp.SharedLeaseStore(),
-                sp.GetRequiredService<IHttpClientFactory>(),
-                sp.GetRequiredService<IOptions<FeatureChangeWebhookOptions>>(),
-                sp.GetRequiredService<ILogger<FeatureChangeWebhookDispatcher>>()));
+        if (configuration.GetValue<bool>($"{FeatureChangeWebhookOptions.SectionName}:Enabled"))
+        {
+            services.AddHostedService(sp =>
+                new FeatureChangeWebhookDispatcher(
+                    sp.GetRequiredService<IFeatureChangeEventStore>(),
+                    sp.GetRequiredService<IStreamCursorStore>(),
+                    sp.SharedLeaseStore(),
+                    sp.GetRequiredService<IHttpClientFactory>(),
+                    sp.GetRequiredService<IOptions<FeatureChangeWebhookOptions>>(),
+                    sp.GetRequiredService<ILogger<FeatureChangeWebhookDispatcher>>()));
+        }
 
         return services;
     }
