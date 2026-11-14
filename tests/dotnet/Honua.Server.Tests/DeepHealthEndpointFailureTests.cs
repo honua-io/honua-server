@@ -50,7 +50,7 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
         checker.IsDatabaseHealthyAsync(Arg.Any<CancellationToken>()).Returns(true);
         var catalog = Substitute.For<IMetadataV2GraphProvider>();
         catalog.GetCurrentAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => ValueTask.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("secret connection string")));
+            .Returns<MetadataV2GraphSnapshot>(_ => throw new InvalidOperationException("secret connection string"));
         using var host = Configure(checker, catalog);
         using var client = host.CreateClient();
 
