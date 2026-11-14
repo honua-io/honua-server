@@ -2288,7 +2288,7 @@ public sealed class GrpcFeatureServiceTests
         params PermissionGrant[]? resolverGrants)
         => CreateCallContext(user, tenantId, resolverGrants);
 
-    private static TestServerCallContext CreateCallContext(
+    internal static TestServerCallContext CreateCallContext(
         ClaimsPrincipal? user,
         string? tenantId,
         PermissionGrant[]? resolverGrants,

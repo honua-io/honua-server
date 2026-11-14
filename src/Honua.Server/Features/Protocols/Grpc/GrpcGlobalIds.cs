@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Proto = Geospatial.V1;
 
@@ -12,16 +13,18 @@ namespace Honua.Server.Features.Protocols.Grpc;
 // case-insensitive on input and lowercase on output.
 internal static partial class GrpcGlobalIds
 {
-    // Each ID becomes up to four bound parameters (text columns match stored spellings), so the
-    // list stays well under PostgreSQL's 65,535-parameter limit.
-    public const int MaxQuerySelectors = 1000;
+    // IN values one filter expression may hold (Honua.Core FilterParserGuard.MaxInListSize).
+    private const int MaxPredicateValues = 2_000;
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z", RegexOptions.CultureInvariant)]
     private static partial Regex PlainIdentifier();
 
     // Lowercase hyphenated form of a stored global ID; non-UUID values pass through.
-    public static string Normalize(string value)
-        => Guid.TryParse(value, out var guid) ? guid.ToString("D") : value;
+    public static string Normalize(string value) => InsertGlobalIds.Normalize(value);
+
+    // Selectors one bound predicate can carry: text columns match four spellings per ID.
+    public static int MaxSelectorsPerPredicate(MetadataV2Resource resource, string field)
+        => MaxPredicateValues / (IsUuidColumn(resource, field) ? 1 : 4);
 
     // One wire selector; throws ArgumentException (INVALID_ARGUMENT) for anything else.
     public static string ParseSelector(string value, string fieldName)
@@ -95,10 +98,7 @@ internal static partial class GrpcGlobalIds
             throw new ArgumentException($"Global-ID field '{field}' cannot be used as a selector.");
         }
 
-        var isUuidColumn = resource.SchemaFields
-            .FirstOrDefault(candidate => candidate.Name.Equals(field, StringComparison.OrdinalIgnoreCase))?.Type
-            is MetadataV2FieldType.Uuid;
-        var spellings = isUuidColumn
+        var spellings = IsUuidColumn(resource, field)
             ? ids
             : ids.SelectMany(static id => new[] { id, id.ToUpperInvariant(), $"{{{id}}}", $"{{{id.ToUpperInvariant()}}}" });
         return $"{field} IN ({string.Join(", ", spellings.Select(static id => $"'{id}'"))})";
@@ -116,17 +116,17 @@ internal static partial class GrpcGlobalIds
         {
             if (key.Equals(field, StringComparison.OrdinalIgnoreCase))
             {
-                return value switch
-                {
-                    Guid guid => guid.ToString("D"),
-                    string { Length: > 0 } text => Normalize(text),
-                    _ => null,
-                };
+                return value is Guid or string { Length: > 0 } ? InsertGlobalIds.Normalize(value) : null;
             }
         }
 
         return null;
     }
+
+    private static bool IsUuidColumn(MetadataV2Resource resource, string field)
+        => resource.SchemaFields
+            .FirstOrDefault(candidate => candidate.Name.Equals(field, StringComparison.OrdinalIgnoreCase))?.Type
+            is MetadataV2FieldType.Uuid;
 
     private static void EnsureDistinct(ImmutableArray<string> ids, string fieldName)
     {

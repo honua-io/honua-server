@@ -195,6 +195,53 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
         AssertNothingWritten();
     }
 
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task MaskedGlobalIdField_ExposesNoIdsAndRefusesSelectors()
+    {
+        var masks = Substitute.For<IFieldMaskSource>();
+        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(ImmutableArray.Create("GLOBALID")));
+        _featureWriter.ApplyEditsAsync(default, default, default).ReturnsForAnyArgs(Task.FromResult(
+            FeatureEditResult.Success(1, 0, 0, createResults: [EditOperationResult.Success(7, GlobalId)])));
+        var add = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        add.Adds.Add(new Proto.Feature());
+
+        var added = await _sut.ApplyEdits(add, MaskedContext(masks, "insert"));
+        var selector = async () => await _sut.ApplyEdits(DeleteRequest(), MaskedContext(masks, "delete"));
+
+        added.AddResults.Should().ContainSingle().Which.GlobalId.Should().BeEmpty();
+        (await selector.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task MaskedGlobalIdField_IsAbsentFromQueryResults()
+    {
+        var masks = Substitute.For<IFieldMaskSource>();
+        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(ImmutableArray.Create("globalid")));
+
+        var response = await _sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, ReturnGeometry = false },
+            MaskedContext(masks));
+
+        response.GlobalIdFieldName.Should().BeEmpty();
+        response.Features.Should().OnlyContain(feature => feature.GlobalId.Length == 0);
+    }
+
+    private GrpcFeatureServiceTests.TestServerCallContext MaskedContext(IFieldMaskSource masks, params string[] operations)
+    {
+        var context = GrpcFeatureServiceTests.CreateCallContext(
+            GrpcFeatureServiceTests.CreateAuthenticatedUser("editor"),
+            tenantId: null,
+            [.. operations.DefaultIfEmpty("query").Select(operation => new PermissionGrant { Service = "test", Layer = "*", Operation = operation })],
+            services => services.AddSingleton(masks));
+        _contexts.Add(context);
+        return context;
+    }
+
     private void UseLayer(MetadataV2Resource resource, IReadOnlyList<string>? capabilities)
     {
         var triple = GrpcFeatureServiceTests.CreateTriple(GrpcFeatureServiceTests.CreateService("test"), resource);

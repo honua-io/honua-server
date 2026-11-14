@@ -370,10 +370,8 @@ public sealed class WebAppFixture : IAsyncLifetime
     public void UpdateV2ResourceSubtypes(int layerIndex, MetadataV2Subtypes? subtypes)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceSubtypes(this, layerIndex, subtypes);
 
-    /// <summary>
-    /// Replaces the resource published at <paramref name="layerIndex"/>. Delegates to
-    /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
-    /// </summary>
+    // Replaces the resource published at layerIndex. Delegates to
+    // Mixins.WebAppFixtureMetadataV2GraphMutationMixin.
     public Task UpdateV2ResourceAsync(
         int layerIndex,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,

@@ -2,37 +2,18 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Edit;
 
-/// <summary>
-/// Insert-time global-ID assignment shared by every edit protocol. Writers never generate
-/// global IDs, so each inserted row gets the supplied ID in canonical lowercase form or a new one.
-/// </summary>
+// Insert-time global IDs shared by every edit protocol. Writers never generate them, so each
+// inserted row stores the supplied ID in canonical lowercase form or a new one.
 public static class InsertGlobalIds
 {
-    /// <summary>
-    /// Stores the global ID for an inserted row under the declared field's canonical name and
-    /// returns it: <paramref name="supplied"/> when given, otherwise a new UUID.
-    /// </summary>
-    public static string Assign(
-        MetadataV2Resource resource,
-        IDictionary<string, object?> attributes,
-        string fieldName,
-        object? supplied)
-    {
-        ArgumentNullException.ThrowIfNull(resource);
-        ArgumentNullException.ThrowIfNull(attributes);
+    // The ID to store for an inserted row: the supplied one, normalised, or a new UUID.
+    public static string Resolve(object? supplied)
+        => supplied is null ? Guid.NewGuid().ToString("D") : Normalize(supplied);
 
-        var name = resource.SchemaFields
-            .FirstOrDefault(field => field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))?.Name ?? fieldName;
-        var id = supplied is null ? Guid.NewGuid().ToString("D") : Normalize(supplied);
-        attributes[name] = id;
-        return id;
-    }
-
-    /// <summary>Lowercase hyphenated form of a GUID value; other text passes through.</summary>
+    // Lowercase hyphenated form of a GUID value; other text passes through.
     public static string Normalize(object value)
     {
         if (value is Guid guid)

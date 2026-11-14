@@ -78,12 +78,6 @@ internal sealed partial class HonuaFeatureService
             throw new RpcException(new Status(StatusCode.InvalidArgument, "object_ids and global_ids are mutually exclusive."));
         }
 
-        if (request.GlobalIds.Count > GrpcGlobalIds.MaxQuerySelectors)
-        {
-            throw new RpcException(new Status(
-                StatusCode.InvalidArgument,
-                $"global_ids accepts at most {GrpcGlobalIds.MaxQuerySelectors} IDs per request."));
-        }
 
         ImmutableArray<string> ids;
         try
@@ -96,6 +90,12 @@ internal sealed partial class HonuaFeatureService
         }
 
         var field = RequireGlobalIdField(selection.Field);
+        var cap = GrpcGlobalIds.MaxSelectorsPerPredicate(selection.Layer.Resource, field);
+        if (ids.Length > cap)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, $"global_ids accepts at most {cap} IDs per request."));
+        }
+
         return await BindWhereClauseAsync(
             GrpcGlobalIds.Predicate(selection.Layer.Resource, field, ids),
             selection.Layer.Resource,
@@ -160,7 +160,9 @@ internal sealed partial class HonuaFeatureService
         var creates = batch.Creates.Select((create, index) =>
         {
             var attributes = new Dictionary<string, object?>(WithoutField(create.Attributes, field), StringComparer.OrdinalIgnoreCase);
-            assigned.Add(InsertGlobalIds.Assign(edit.Layer.Resource, attributes, field, supplied[index]));
+            var id = InsertGlobalIds.Resolve(supplied[index]);
+            attributes[field] = id;
+            assigned.Add(id);
             return create with { Attributes = attributes.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase) };
         }).ToImmutableArray();
         var updates = batch.Updates.Select(update => update with { Attributes = WithoutField(update.Attributes, field) }).ToImmutableArray();
@@ -183,8 +185,9 @@ internal sealed partial class HonuaFeatureService
         FeatureEditBatch batch,
         CancellationToken cancellationToken)
     {
-        // The check sees only rows the caller may read, so it never reveals hidden rows; a unique
-        // index on the global-ID column is the storage guard against cross-partition duplicates.
+        // Best effort: the check sees only rows the caller may read (it must not reveal hidden
+        // rows) and runs outside the write transaction. Managed storage has no unique index on
+        // the global-ID attribute, so concurrent or RLS-hidden duplicates are not excluded yet.
         var addIds = edit.ClientAddIds;
         if (!addIds.IsEmpty)
         {
@@ -231,14 +234,20 @@ internal sealed partial class HonuaFeatureService
         }
 
         var field = RequireGlobalIdField(edit.Field);
-        var filter = await BindWhereClauseAsync(
-            GrpcGlobalIds.Predicate(edit.Layer.Resource, field, globalIds), edit.Layer.Resource, edit.Services, cancellationToken)
-            .ConfigureAwait(false);
-        var rows = await _featureReader.QueryAsync(
-            edit.Layer.StorageLayerId,
-            new FeatureQuery { SqlFilter = filter, OutFields = [field], Limit = globalIds.Length + 1 },
-            cancellationToken).ConfigureAwait(false);
-        foreach (var row in rows.Items)
+        var rows = new List<Feature>();
+        foreach (var chunk in globalIds.Chunk(GrpcGlobalIds.MaxSelectorsPerPredicate(edit.Layer.Resource, field)))
+        {
+            var filter = await BindWhereClauseAsync(
+                GrpcGlobalIds.Predicate(edit.Layer.Resource, field, [.. chunk]), edit.Layer.Resource, edit.Services, cancellationToken)
+                .ConfigureAwait(false);
+            var page = await _featureReader.QueryAsync(
+                edit.Layer.StorageLayerId,
+                new FeatureQuery { SqlFilter = filter, OutFields = [field], Limit = chunk.Length + 1 },
+                cancellationToken).ConfigureAwait(false);
+            rows.AddRange(page.Items);
+        }
+
+        foreach (var row in rows)
         {
             if (GrpcGlobalIds.Read(row.Attributes, field) is { } globalId && !resolved.TryAdd(globalId, row.Id))
             {
@@ -263,7 +272,7 @@ internal sealed partial class HonuaFeatureService
             return response;
         }
 
-        Stamp(response.AddResults, [.. edit.AssignedAddIds]);
+        StampAdds(response.AddResults, edit.AssignedAddIds);
         if (request.UseGlobalIds)
         {
             Stamp(response.UpdateResults, [.. request.Updates.Select(static update => update.GlobalId)]);
@@ -281,6 +290,16 @@ internal sealed partial class HonuaFeatureService
             {
                 results[index].GlobalId = GrpcGlobalIds.Normalize(selectors[index]);
             }
+        }
+    }
+
+    // An add's identity is the ID this call assigned (the writer reads a fixed attribute name);
+    // a failed add stored nothing, so it reports none.
+    private static void StampAdds(RepeatedField<Proto.EditResult> results, ImmutableArray<string> assigned)
+    {
+        for (var index = 0; index < results.Count; index++)
+        {
+            results[index].GlobalId = results[index].Success && index < assigned.Length ? assigned[index] : string.Empty;
         }
     }
 

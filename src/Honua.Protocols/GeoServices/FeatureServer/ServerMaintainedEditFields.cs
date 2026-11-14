@@ -124,7 +124,7 @@ internal static class ServerMaintainedEditFields
 
         var name = CanonicalName(resource, fieldName);
         var supplied = useGlobalIds && TryGet(attributes, name, out var value) ? value : null;
-        InsertGlobalIds.Assign(resource, attributes, name, supplied);
+        attributes[name] = InsertGlobalIds.Resolve(supplied);
     }
 
     private static void SetUser(

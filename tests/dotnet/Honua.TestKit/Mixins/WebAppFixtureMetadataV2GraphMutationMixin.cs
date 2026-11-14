@@ -384,11 +384,9 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WriteGraph(fixture, provider, updatedGraph);
     }
 
-    /// <summary>
-    /// Replaces the resource published at <paramref name="layerIndex"/> with
-    /// <paramref name="mutate"/>'s result, for tests that need metadata the seeded graph lacks
-    /// (for example a declared global-ID field).
-    /// </summary>
+    // Replaces the resource published at layerIndex with
+    // mutate's result, for tests that need metadata the seeded graph lacks
+    // (for example a declared global-ID field).
     internal static Task UpdateResourceAsync(
         WebAppFixture fixture,
         int layerIndex,
