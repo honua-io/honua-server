@@ -50,24 +50,30 @@ public sealed class McpSkillsEndpointIntegrationTests : IAsyncLifetime
                 .Select(resource => resource.GetProperty("uri").GetString()!).Order(StringComparer.Ordinal).ToArray());
             foreach (var resource in entry.GetProperty("resources").EnumerateArray())
             {
-                var resourceUri = resource.GetProperty("uri").GetString()!;
-                var read = (await SendAsync("resources/read", resourceUri)).GetProperty("result");
-                var content = Assert.Single(read.GetProperty("contents").EnumerateArray());
-                var bytes = content.TryGetProperty("text", out var text)
-                    ? Encoding.UTF8.GetBytes(text.GetString()!)
-                    : Convert.FromBase64String(content.GetProperty("blob").GetString()!);
-                Assert.Equal(resource.GetProperty("size").GetInt64(), bytes.LongLength);
-                Assert.Equal(resource.GetProperty("digest").GetString(),
-                    "sha256:" + Convert.ToHexStringLower(SHA256.HashData(bytes)));
-                var source = System.IO.Path.Combine(FindRoot().FullName, "skills", resourceUri["skill://".Length..]);
-                Assert.Equal(File.ReadAllBytes(source), bytes);
-                if (resourceUri == uri)
-                {
-                    var markdown = Encoding.UTF8.GetString(bytes);
-                    using var frontmatter = JsonDocument.Parse(markdown.Split("---", 3)[1]);
-                    Assert.True(JsonElement.DeepEquals(frontmatter.RootElement, entry.GetProperty("frontmatter")));
-                }
+                await AssertResourceAsync(resource, entry);
             }
+        }
+    }
+
+    private async Task AssertResourceAsync(JsonElement resource, JsonElement entry)
+    {
+        var uri = entry.GetProperty("uri").GetString()!;
+        var resourceUri = resource.GetProperty("uri").GetString()!;
+        var read = (await SendAsync("resources/read", resourceUri)).GetProperty("result");
+        var content = Assert.Single(read.GetProperty("contents").EnumerateArray());
+        var bytes = content.TryGetProperty("text", out var text)
+            ? Encoding.UTF8.GetBytes(text.GetString()!)
+            : Convert.FromBase64String(content.GetProperty("blob").GetString()!);
+        Assert.Equal(resource.GetProperty("size").GetInt64(), bytes.LongLength);
+        Assert.Equal(resource.GetProperty("digest").GetString(),
+            "sha256:" + Convert.ToHexStringLower(SHA256.HashData(bytes)));
+        var source = System.IO.Path.Combine(FindRoot().FullName, "skills", resourceUri["skill://".Length..]);
+        Assert.Equal(File.ReadAllBytes(source), bytes);
+        if (resourceUri == uri)
+        {
+            var markdown = Encoding.UTF8.GetString(bytes);
+            using var frontmatter = JsonDocument.Parse(markdown.Split("---", 3)[1]);
+            Assert.True(JsonElement.DeepEquals(frontmatter.RootElement, entry.GetProperty("frontmatter")));
         }
     }
 
