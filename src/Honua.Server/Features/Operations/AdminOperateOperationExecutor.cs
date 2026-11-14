@@ -23,6 +23,17 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor, IOpera
     private readonly TimeProvider _clock;
     private readonly OperationLineageAttestationStore _lineageAttestationStore;
 
+    public static AdminOperateOperationExecutor Create(
+        IServiceProvider services, IAdminHttpOperationDefinition definition, IOperationDescriptor descriptor) => new(
+        definition,
+        descriptor,
+        services.GetRequiredService<IHttpClientFactory>(),
+        services.GetRequiredService<IHttpContextAccessor>(),
+        services.GetService<IAdminApiKeyStore>(),
+        services.GetRequiredService<TimeProvider>(),
+        services.GetRequiredService<OperationLineageAttestationStore>(),
+        services.GetRequiredService<IOperationSecretStore>());
+
     public AdminOperateOperationExecutor(IAdminHttpOperationDefinition definition, IOperationDescriptor descriptor,
         IHttpClientFactory httpClientFactory,
         IHttpContextAccessor httpContextAccessor, IAdminApiKeyStore? adminApiKeyStore, TimeProvider clock,

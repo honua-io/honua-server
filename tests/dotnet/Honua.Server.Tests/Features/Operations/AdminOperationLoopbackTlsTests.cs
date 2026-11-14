@@ -17,10 +17,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// An approved operation replayed to this server over the TLS loopback must succeed when Kestrel serves a
-/// certificate the host does not trust or that does not name the request host, and must trust nothing else.
-/// </summary>
+// An approved operation replayed to this server over the TLS loopback must succeed when Kestrel serves a
+// certificate the host does not trust or that does not name the request host, and must trust nothing else.
 [Trait("Tier", "Fast")]
 public sealed class AdminOperationLoopbackTlsTests
 {
@@ -30,9 +28,9 @@ public sealed class AdminOperationLoopbackTlsTests
         using var certificate = CreateSelfSigned("CN=other");
         using var request = new HttpRequestMessage(HttpMethod.Get, "https://127.0.0.1:8443/");
 
-        AdminOperationLoopbackTls.Validate(request, certificate, null, SslPolicyErrors.None).Should().BeTrue();
-        AdminOperationLoopbackTls.Validate(request, certificate, null, SslPolicyErrors.RemoteCertificateChainErrors).Should().BeFalse();
-        AdminOperationLoopbackTls.Validate(request, certificate, null, SslPolicyErrors.RemoteCertificateNameMismatch).Should().BeFalse();
+        AdminOperationLoopbackTls.Validate(request, certificate, SslPolicyErrors.None).Should().BeTrue();
+        AdminOperationLoopbackTls.Validate(request, certificate, SslPolicyErrors.RemoteCertificateChainErrors).Should().BeFalse();
+        AdminOperationLoopbackTls.Validate(request, certificate, SslPolicyErrors.RemoteCertificateNameMismatch).Should().BeFalse();
     }
 
     [Fact]
@@ -44,10 +42,10 @@ public sealed class AdminOperationLoopbackTlsTests
         request.Options.Set(AdminOperationLoopbackTls.ExpectedServerCertificateHash, served.GetCertHashString(HashAlgorithmName.SHA256));
         const SslPolicyErrors untrusted = SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch;
 
-        AdminOperationLoopbackTls.Validate(request, served, null, untrusted).Should().BeTrue();
-        AdminOperationLoopbackTls.Validate(request, impostor, null, SslPolicyErrors.None).Should().BeFalse(
+        AdminOperationLoopbackTls.Validate(request, served, untrusted).Should().BeTrue();
+        AdminOperationLoopbackTls.Validate(request, impostor, SslPolicyErrors.None).Should().BeFalse(
             "a pinned replay trusts the served certificate only, even if another certificate chains to a trusted root");
-        AdminOperationLoopbackTls.Validate(request, null, null, SslPolicyErrors.RemoteCertificateNotAvailable).Should().BeFalse();
+        AdminOperationLoopbackTls.Validate(request, null, SslPolicyErrors.RemoteCertificateNotAvailable).Should().BeFalse();
     }
 
     [Fact]
@@ -57,7 +55,7 @@ public sealed class AdminOperationLoopbackTlsTests
         using var request = new HttpRequestMessage(HttpMethod.Get, "https://127.0.0.1:8443/");
         request.Options.Set(AdminOperationLoopbackTls.ExpectedServerCertificateHash, "not-hex");
 
-        AdminOperationLoopbackTls.Validate(request, certificate, null, SslPolicyErrors.None).Should().BeFalse();
+        AdminOperationLoopbackTls.Validate(request, certificate, SslPolicyErrors.None).Should().BeFalse();
     }
 
     [Fact]
@@ -77,56 +75,68 @@ public sealed class AdminOperationLoopbackTlsTests
         // request host ("honua.example") validates by default: the shape of a direct-TLS deployment with a
         // private-CA or self-signed certificate.
         using var certificate = CreateSelfSigned("CN=served.invalid");
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.Logging.ClearProviders();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
-        await using var app = builder.Build();
-        app.MapGet("/target", () => Results.Text("replayed"));
-        app.MapGet("/replay", async (HttpContext current, bool pinned) =>
-        {
-            using var message = new HttpRequestMessage(HttpMethod.Get,
-                new UriBuilder(Uri.UriSchemeHttps, IPAddress.Loopback.ToString(), current.Connection.LocalPort, "/target").Uri);
-            message.Headers.Host = current.Request.Host.Value;
-            if (pinned)
-                AdminOperationLoopbackTls.PinServedCertificate(message, current);
-            using var handler = AdminOperationLoopbackTls.CreateHandler();
-            using var client = new HttpClient(handler);
-            try
-            {
-                using var response = await client.SendAsync(message);
-                return Results.Text(await response.Content.ReadAsStringAsync());
-            }
-            catch (HttpRequestException exception)
-            {
-                return Results.Text("failed:" + exception.GetType().Name, statusCode: StatusCodes.Status502BadGateway);
-            }
-        });
-        await app.StartAsync();
+        await using var app = await StartReplayServerAsync(certificate);
         try
         {
             var address = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single());
-            var servedHash = certificate.GetCertHashString(HashAlgorithmName.SHA256);
             using var callerHandler = new SocketsHttpHandler();
+            var servedHash = certificate.GetCertHashString(HashAlgorithmName.SHA256);
             callerHandler.SslOptions.RemoteCertificateValidationCallback = (_, presented, _, _) =>
                 presented is not null && presented.GetCertHashString(HashAlgorithmName.SHA256) == servedHash;
             using var caller = new HttpClient(callerHandler);
 
-            using var pinnedRequest = new HttpRequestMessage(HttpMethod.Get, new Uri(address, "/replay?pinned=true"));
-            pinnedRequest.Headers.Host = "honua.example";
-            using var pinnedResponse = await caller.SendAsync(pinnedRequest);
-            pinnedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            (await pinnedResponse.Content.ReadAsStringAsync()).Should().Be("replayed");
-
-            using var unpinnedRequest = new HttpRequestMessage(HttpMethod.Get, new Uri(address, "/replay?pinned=false"));
-            unpinnedRequest.Headers.Host = "honua.example";
-            using var unpinnedResponse = await caller.SendAsync(unpinnedRequest);
-            unpinnedResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway,
+            var (pinnedStatus, pinnedBody) = await RequestReplayAsync(caller, address, pinned: true);
+            pinnedStatus.Should().Be(HttpStatusCode.OK);
+            pinnedBody.Should().Be("replayed");
+            var (unpinnedStatus, _) = await RequestReplayAsync(caller, address, pinned: false);
+            unpinnedStatus.Should().Be(HttpStatusCode.BadGateway,
                 "without the pin, default validation rejects the server's own untrusted certificate");
         }
         finally
         {
             await app.StopAsync();
         }
+    }
+
+    private static async Task<WebApplication> StartReplayServerAsync(X509Certificate2 certificate)
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
+        var app = builder.Build();
+        app.MapGet("/target", () => Results.Text("replayed"));
+        app.MapGet("/replay", ReplayToSelfAsync);
+        await app.StartAsync();
+        return app;
+    }
+
+    // Mirrors the executors: replay to 127.0.0.1 on the local port with the original Host header.
+    private static async Task<IResult> ReplayToSelfAsync(HttpContext current, bool pinned)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Get,
+            new UriBuilder(Uri.UriSchemeHttps, IPAddress.Loopback.ToString(), current.Connection.LocalPort, "/target").Uri);
+        message.Headers.Host = current.Request.Host.Value;
+        if (pinned)
+            AdminOperationLoopbackTls.PinServedCertificate(message, current);
+        using var handler = AdminOperationLoopbackTls.CreateHandler();
+        using var client = new HttpClient(handler);
+        try
+        {
+            using var response = await client.SendAsync(message);
+            return Results.Text(await response.Content.ReadAsStringAsync());
+        }
+        catch (HttpRequestException exception)
+        {
+            return Results.Text("failed:" + exception.GetType().Name, statusCode: StatusCodes.Status502BadGateway);
+        }
+    }
+
+    private static async Task<(HttpStatusCode Status, string Body)> RequestReplayAsync(HttpClient caller, Uri address, bool pinned)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(address, $"/replay?pinned={(pinned ? "true" : "false")}"));
+        request.Headers.Host = "honua.example";
+        using var response = await caller.SendAsync(request);
+        return (response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 
     private static X509Certificate2 CreateSelfSigned(string subject)
