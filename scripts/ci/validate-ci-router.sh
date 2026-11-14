@@ -1744,7 +1744,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
     "WFS 8" \
   `# Method-split classes (including Wps20EndpointsTests and ImageServerEndpointsTests) are pinned` \
-  `# by shard_partitions and full-run-capacity contracts above, which check every method.` \
+  `# by shard_partitions, full-run-capacity and real-inventory tests above.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
@@ -1861,10 +1861,6 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Core Spatial Query and Streaming" \
   --assert-owner \
-    "Honua.Server.Tests.FeatureServerEndpointTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core Endpoints" \
-  --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices MapServer" \
@@ -1880,10 +1876,6 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices GPServer Endpoints" \
-  --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests" \
-    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices GPServer SOAP" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1965,15 +1957,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Platform and Connections" \
   --assert-owner \
-    "Honua.Server.Tests.Features.Admin.TileCacheJobExecutorPublishTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Integrations and Automation 4" \
-  --assert-owner \
     "Honua.Server.Tests.Features.Admin.ConfigurationSecretRedactorTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Integrations and Automation 4" \
-  --assert-owner \
-    "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryServiceTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Integrations and Automation 4" \
   --assert-owner \
