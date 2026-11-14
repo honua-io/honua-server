@@ -1580,6 +1580,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetLogoutUrl_Cognito_UsesClientAndPublicLogoutUriWithoutDiscoveryEndpoint",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetLogoutUrl_InProductionWithoutConfiguredPublicBaseUrl_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetLogoutUrl_NoOidcConfigured_ReturnsNotFound",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetLogoutUrl_WithUnknownProvider_DoesNotClearAuthenticatedSession"
@@ -3853,6 +3854,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_AdditionalRoleClaim_IsAccepted",
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_CognitoAccessToken_IsAccepted",
+        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_CognitoFallback_PreservesTrustValidation",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_ExpiredJwt_IsRejected",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_NoToken_IsRejected",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_TamperedSignature_IsRejected",
@@ -11473,6 +11477,7 @@
         "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_ActualHttpReadMatchesSql_ThenMembershipAndUnshareRevoke",
         "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_AfterHostRestart_ReadsPersistedAudience_AndNextRequestSeesRevocation",
         "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTestsPostgresDurability.AcceptedGroupsAndShares_SurviveReplicaReconstruction_AndRevokeFreshReads",
+        "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTestsPostgresDurability.TenantlessShares_SingleTenantUpgradePreservesAudienceAndRevocation",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_SqlInspectionExemption_IsLimitedToPassword",
         "Honua.Server.Tests.GeoParquetBudgetEndpointTests.Query_ExceedsInputOrOutputBudget_ReturnsCompleteErrorAndCanEncodeNextRequest",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithBoundedQueryWriterOutput_PreservesRowsAcrossRowGroupBoundaries",
@@ -14776,7 +14781,8 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_Sse_EmitsConnectedThenPushesIngestedObservation",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_UnscopedCredentialOrForeignCursor_IsRejectedBeforeHandshake",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_WebSocket_OnlyDeliversResolvedTenant",
-        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_WithoutTransportHeader_Returns400"
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_WithoutTransportHeader_Returns400",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamSingleTenantTests.ObservationsStream_NonAdminWithoutTenantClaim_IsAdmittedInSingleTenantMode"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "preview",

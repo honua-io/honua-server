@@ -58,6 +58,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
             builder.UseSetting("Licensing:Mode", "Disabled");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("MultiTenancy:Enabled", "true");
             builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
             builder.UseSetting("Oidc:Enabled", "true");
             builder.UseSetting("Oidc:RequireHttps", "true");
