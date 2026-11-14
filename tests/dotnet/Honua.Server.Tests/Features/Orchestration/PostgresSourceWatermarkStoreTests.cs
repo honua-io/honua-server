@@ -145,6 +145,34 @@ public sealed class PostgresSourceWatermarkStoreTests
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task AdvanceAsync_EqualOrOlderTimestamp_RefreshesOnlyTheTouchTime(int offset)
+    {
+        await using var host = CreateHost();
+        await host.InitializeAsync();
+        var store = host.GetService<ISourceWatermarkStore>();
+        var initial = Mark($"pipeline-{Guid.NewGuid():N}", "source", Timestamp);
+        var requested = initial with
+        {
+            Kind = WatermarkKind.FileModifiedTime,
+            Value = SourceWatermark.Encode(Timestamp.AddMinutes(offset)),
+            UpdatedAt = null
+        };
+        try
+        {
+            await store.AdvanceAsync(initial);
+            var expected = initial with { UpdatedAt = null };
+            (await store.AdvanceAsync(requested)).Should().BeEquivalentTo(expected);
+            (await store.GetAsync(initial.PipelineId, initial.SourceId)).Should().BeEquivalentTo(expected);
+        }
+        finally
+        {
+            await store.ClearAsync(initial.PipelineId, initial.SourceId);
+        }
+    }
+
     private static SourceWatermark Mark(string pipeline, string source, DateTimeOffset timestamp) => new()
     {
         PipelineId = pipeline,
