@@ -29,6 +29,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -58,7 +59,9 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
 
     public McpPublishedServicePostgresDurabilityTests()
     {
-        _fixture = new WebAppFixture().WithProductionJobSubstrate().WithTestLicense(HonuaEdition.Pro);
+        _fixture = new WebAppFixture().WithProductionJobSubstrate().WithTestLicense(HonuaEdition.Pro)
+            // Human approval capabilities are audience-bound to the configured public origin.
+            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", "http://localhost"));
         _fixture.ConfigureServices(services =>
         {
             services.RemoveAll<IMetadataV2GraphProvider>();
