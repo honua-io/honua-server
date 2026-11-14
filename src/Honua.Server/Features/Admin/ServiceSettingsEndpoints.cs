@@ -137,6 +137,7 @@ internal static partial class ServiceSettingsEndpoints
             }
 
             var response = BuildSettingsResponse(serviceName, services);
+            context.Response.Headers.ETag = snapshot.Etag;
             return TypedResults.Ok(ApiResponse<ServiceSettingsResponse>.CreateSuccess(response));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -190,9 +191,8 @@ internal static partial class ServiceSettingsEndpoints
             }
 
             await MutateServicesByNameAsync(
-                graphStore,
-                serviceName,
-                svc => svc with { Protocols = normalizedProtocols },
+                new ServiceMutation(graphStore, serviceName,
+                    svc => svc with { Protocols = normalizedProtocols }),
                 context.RequestAborted).ConfigureAwait(false);
             await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
 
@@ -257,9 +257,7 @@ internal static partial class ServiceSettingsEndpoints
             }
 
             await MutateServicesByNameAsync(
-                graphStore,
-                serviceName,
-                svc =>
+                new ServiceMutation(graphStore, serviceName, svc =>
                 {
                     var existing = svc.AccessPolicy ?? new AccessPolicy();
                     return svc with
@@ -272,14 +270,21 @@ internal static partial class ServiceSettingsEndpoints
                             AllowedWriteRoles = request.AllowedWriteRoles ?? existing.AllowedWriteRoles,
                         },
                     };
-                },
-                context.RequestAborted).ConfigureAwait(false);
+                }),
+                context.RequestAborted, request.ExpectedMetadataEtag).ConfigureAwait(false);
             await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
 
             var refreshed = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
             TryResolveServicesByName(refreshed, serviceName, out var updatedServices);
             var response = BuildSettingsResponse(serviceName, updatedServices ?? Array.Empty<MetadataV2Service>());
             return TypedResults.Ok(ApiResponse<ServiceSettingsResponse>.CreateSuccess(response));
+        }
+        catch (MetadataV2GraphConcurrencyException)
+        {
+            return TypedResults.Problem(
+                title: "Access policy metadata changed",
+                detail: "Inspect service settings again before applying this access policy.",
+                statusCode: StatusCodes.Status409Conflict);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -784,67 +789,6 @@ internal static partial class ServiceSettingsEndpoints
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ServiceSettingsLog.InvalidateServiceCatalogCacheFailed(logger, serviceName, ex);
-        }
-    }
-
-    // The Metadata v2 graph store uses optimistic concurrency: SaveAsync rejects a stale expected-etag with an
-    // "etag mismatch" InvalidOperationException. Background writers (catalog cache, CRS warmup) can bump the
-    // etag between our read and write, so the read-modify-write is retried a few times before surfacing.
-    private const int MetadataMutationMaxAttempts = 5;
-
-    private static bool IsEtagMismatch(Exception exception) =>
-        exception is InvalidOperationException
-        && exception.Message.Contains("etag mismatch", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Loads the canonical Metadata v2 graph, applies <paramref name="mutate"/> to every
-    /// service whose <c>Metadata.Name</c> matches <paramref name="serviceName"/>
-    /// (case-insensitively), and persists the result. Multiple service entries can share
-    /// a name when the same logical service is exposed under different protocols (e.g.
-    /// FeatureServer / MapServer / Stac all named "test"), and the v1 admin endpoint
-    /// updated all of them in one row because protocol toggles lived on a single
-    /// per-service settings record. Retries on optimistic-concurrency etag mismatch.
-    /// </summary>
-    private static async Task MutateServicesByNameAsync(
-        IMetadataV2GraphStore graphStore,
-        string serviceName,
-        Func<MetadataV2Service, MetadataV2Service> mutate,
-        CancellationToken cancellationToken)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var services = snapshot.Graph.Services.ToArray();
-            var mutatedAny = false;
-            for (var i = 0; i < services.Length; i++)
-            {
-                if (string.Equals(services[i].Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
-                {
-                    services[i] = mutate(services[i]);
-                    mutatedAny = true;
-                }
-            }
-
-            if (!mutatedAny)
-            {
-                return;
-            }
-
-            var updated = snapshot.Graph with
-            {
-                Services = services,
-                Revision = snapshot.Graph.Revision + 1,
-            };
-
-            try
-            {
-                _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-            catch (Exception ex) when (IsEtagMismatch(ex) && attempt < MetadataMutationMaxAttempts)
-            {
-                // Concurrent etag bump — re-read and re-apply the mutation against the fresh snapshot.
-            }
         }
     }
 

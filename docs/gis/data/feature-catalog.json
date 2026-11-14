@@ -4704,7 +4704,8 @@
         "Honua.Server.Tests.Features.Admin.ProviderOnlyServiceSettingsTests.GetServiceSettings_WithoutAGraphStore_ReturnsTheProviderSnapshot",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.GetServiceSettings_ResponseIncludesAccessPolicyAndTimeInfo",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.GetServiceSettings_WithDefaultMetadata_IncludesGrpcInEnabledAndAvailableProtocols",
-        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.GetServiceSettings_WithServiceName_ReturnsSettingsOrNotFound"
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.GetServiceSettings_WithServiceName_ReturnsSettingsOrNotFound",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.GetSettings_ReturnsMetadataEtagForAccessPolicyPrecondition"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -26275,6 +26276,11 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PutServiceAccessPolicy_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.UpdateAccessPolicy_AgentKey_RequiresHumanApproval",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.UpdateAccessPolicy_HumanAdministratorKey_IsNotGated",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateAccessPolicy_ConcurrentSaveConflict_RejectsPinnedWrite",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateAccessPolicy_ConcurrentSaveConflict_RetriesUnpinnedWrite",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateAccessPolicy_WithEmptyMetadataEtag_RejectsWithoutChangingGraph",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateAccessPolicy_WithMatchingMetadataEtag_UpdatesPolicy",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateAccessPolicy_WithStaleMetadataEtag_RejectsWithoutChangingGraph",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateAccessPolicy_WithValidPayload_ReturnsUpdatedOrNotFound"
       ],
       "proof_ledger_surface": "control-plane-admin",
