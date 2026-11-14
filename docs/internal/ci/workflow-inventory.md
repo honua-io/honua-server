@@ -1,5 +1,17 @@
 # CI Workflow Inventory
 
+The latest full-run capacity audit partitions ten additional parents into 21
+children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
+Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
+OGC API Features, GeoServices GPServer and NAServer, STAC Protocol, and Operator
+Eval Harness. Each crossed 80% of its test budget in the last three full runs.
+Whole-class selections are retained except the GP/NAS routing class, whose
+methods are partitioned with a residual fallback for future tests. Method-union,
+future-method and mutation checks enforce complete, disjoint selection and
+unchanged projects, source triggers and budgets. Historical TRX interval weights
+guide the cuts; they are not measured child elapsed runtimes. Dispatch ranks stay
+inherited until complete child runs provide measurements.
+
 
 The live-output capacity partitions replace File and Raster Import with three
 numbered children (import orchestration, direct CRS/authorization contracts, and
