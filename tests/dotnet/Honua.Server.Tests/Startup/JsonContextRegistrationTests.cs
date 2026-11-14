@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Server.Features.AgentWorkspace;
 using Honua.Server.Features.DataEnrichment.Models;
 using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
@@ -46,6 +47,17 @@ public sealed class JsonContextRegistrationTests
             .Should().NotBeNull("the enrichment update-dataset [FromBody] type must be in the configured HTTP JSON resolver");
         serializerOptions.GetTypeInfo<EnrichmentDatasetMetadata>()
             .Should().NotBeNull("the enrichment dataset response body must be serializable through the configured HTTP JSON resolver");
+    }
+
+    [UnitTest]
+    public void AddHonuaJsonContexts_ResolvesLocalProcessRequestBodies()
+    {
+        var serializerOptions = BuildConfiguredHttpJsonOptions().SerializerOptions;
+
+        serializerOptions.GetTypeInfo(typeof(LocalProcessBindRequest)).Should().NotBeNull();
+        serializerOptions.GetTypeInfo(typeof(LocalProcessSourceWrite)).Should().NotBeNull();
+        serializerOptions.GetTypeInfo(typeof(LocalProcessSnapshotRequest)).Should().NotBeNull();
+        serializerOptions.GetTypeInfo(typeof(LocalProcessRunRequest)).Should().NotBeNull();
     }
 
     [UnitTest]

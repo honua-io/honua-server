@@ -999,6 +999,60 @@
       ]
     },
     {
+      "surfaceId": "native-local-process-workspaces",
+      "displayName": "Native local process workspaces",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/agent/workspaces/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/agent/workspaces"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry and authenticated endpoint integration tests cover workspace identity and all native local process routes",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.Studio.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/AgentWorkspace/LocalProcessWorkspaceEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7437"
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Postgres-backed endpoint tests assert immutable owner, tenant and target boundaries and reject machine principals; transport tests assert trusted headers, source preconditions, bounded artifact receipts and no retries after uncertain mutations",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/AgentWorkspace/LocalProcessWorkspaceEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/AgentWorkspace/LocalProcessWorkspaceGatewayTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7437"
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated local process JSON contracts and typed gateway tests preserve native route request and receipt shapes; the feature document records identity, authorization and private sandbox configuration",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/AgentWorkspace/LocalProcessWorkspaceGateway.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/AgentWorkspace/LocalProcessWorkspaceGatewayTests.cs",
+            "docs/internal/features/native-local-processes.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7437"
+        }
+      ]
+    },
+    {
       "surfaceId": "migration-scan",
       "displayName": "Migration source inventory scan",
       "surfaceKind": "http-route-family",
