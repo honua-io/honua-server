@@ -498,6 +498,32 @@ public sealed class StudioAuthorizationServiceTests
     }
 
     [UnitTest]
+    public async Task ResolveCallerId_SingleTenantDefault_PreservesExistingPrivateOwner()
+    {
+        var service = BuildService(enabled: true, out _, tenantId: "public",
+            multiTenancyEnabled: false,
+            tenantSource: Honua.Core.Features.MultiTenancy.Abstractions.TenantContextSource.Default);
+        var principal = IssuedPrincipal("https://idp.example", "alice");
+        const string existingOwner = "subject:https%3A%2F%2Fidp.example:alice@tenant:";
+
+        Assert.Equal(existingOwner, service.ResolveCallerId(principal));
+        var decision = await service.AuthorizeAsync(principal, service.ResolveCallerId(principal),
+            StudioAuthorizationOperation.UpdateDraft, resourceOwnerId: existingOwner, resourceTenantId: "public");
+        Assert.True(decision.IsAllowed);
+        Assert.NotEqual(existingOwner, service.ResolveCallerId(IssuedPrincipal("https://other.example", "alice")));
+        Assert.NotEqual(existingOwner, service.ResolveCallerId(IssuedPrincipal("https://idp.example", "bob")));
+    }
+
+    [UnitTest]
+    public void ResolveCallerId_SingleTenantFrozenBinding_KeepsTenantComponent()
+    {
+        var service = BuildService(enabled: true, out _, tenantId: "public", multiTenancyEnabled: false);
+
+        Assert.Equal("subject:https%3A%2F%2Fidp.example:alice@tenant:public",
+            service.ResolveCallerId(IssuedPrincipal("https://idp.example", "alice")));
+    }
+
+    [UnitTest]
     public void ResolveCallerId_IssuerlessApiKeyPrincipal_KeepsImmutableKeyId()
     {
         var service = BuildService(enabled: true, out _, tenantId: "tenant-a");
@@ -595,7 +621,9 @@ public sealed class StudioAuthorizationServiceTests
         bool enabled,
         out FakeOperatorAuthorizationEvaluator evaluator,
         string[]? adminRoles = null,
-        string? tenantId = null)
+        string? tenantId = null,
+        bool? multiTenancyEnabled = null,
+        Honua.Core.Features.MultiTenancy.Abstractions.TenantContextSource tenantSource = Honua.Core.Features.MultiTenancy.Abstractions.TenantContextSource.Claim)
     {
         evaluator = new FakeOperatorAuthorizationEvaluator();
         var options = new StaticOptionsMonitor<StudioEndUserAuthorizationOptions>(new StudioEndUserAuthorizationOptions { Enabled = enabled });
@@ -605,7 +633,9 @@ public sealed class StudioAuthorizationServiceTests
             new OperatorScopeAuthorizer(),
             options,
             adminRoleOptions,
-            tenantId is null ? null : new StaticTenantContext(tenantId));
+            tenantId is null ? null : new StaticTenantContext(tenantId, tenantSource),
+            multiTenancyEnabled is null ? null : new StaticOptionsMonitor<Honua.Core.Features.MultiTenancy.TenantIsolationOptions>(
+                new Honua.Core.Features.MultiTenancy.TenantIsolationOptions { Enabled = multiTenancyEnabled.Value }));
     }
 
     private static ClaimsPrincipal IssuedPrincipal(string issuer, string subject)
@@ -617,13 +647,14 @@ public sealed class StudioAuthorizationServiceTests
             ],
             authenticationType: "Bearer"));
 
-    private sealed class StaticTenantContext(string tenantId)
+    private sealed class StaticTenantContext(string tenantId,
+        Honua.Core.Features.MultiTenancy.Abstractions.TenantContextSource source)
         : Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext
     {
         public string? TenantId { get; } = tenantId;
 
         public Honua.Core.Features.MultiTenancy.Abstractions.TenantContextSource Source
-            => Honua.Core.Features.MultiTenancy.Abstractions.TenantContextSource.Claim;
+            => source;
 
         public bool RequireTenantId(out string tenantId, out string? reason)
         {

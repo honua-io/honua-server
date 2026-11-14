@@ -98,6 +98,7 @@ internal abstract class AdaptiveCompressionStream : Stream
     private readonly AdaptiveCompressionOptions _options;
     private readonly MemoryStream _buffer;
     private Stream? _compressionStream;
+    private bool _disposed;
 
     protected AdaptiveCompressionStream(Stream outputStream, AdaptiveCompressionOptions options)
     {
@@ -228,8 +229,10 @@ internal abstract class AdaptiveCompressionStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        // DisposeAsync releases the buffer before Stream.DisposeAsync calls back here.
+        if (disposing && !_disposed)
         {
+            _disposed = true;
             if (_compressionStream == null && _buffer.Length > 0)
             {
                 InitializeCompressionStream();
@@ -242,6 +245,11 @@ internal abstract class AdaptiveCompressionStream : Stream
 
     public override async ValueTask DisposeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         if (_compressionStream == null && _buffer.Length > 0)
         {
             await InitializeCompressionStreamAsync(CancellationToken.None);
@@ -253,6 +261,7 @@ internal abstract class AdaptiveCompressionStream : Stream
         }
 
         await _buffer.DisposeAsync();
+        _disposed = true;
         await base.DisposeAsync();
     }
 

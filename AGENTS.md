@@ -3,7 +3,7 @@
 
 Honua Server exposes one geospatial capability set through thin protocol adapters (protocol list:
 README). It is a clean rewrite: read the archived `../Honua.Server` for behaviour, never copy from it.
-.NET 10 Minimal APIs only (no controllers), warnings as errors, AOT-conscious: use source-generated
+.NET 11 Minimal APIs only (no controllers), warnings as errors, AOT-conscious: use source-generated
 JSON and logging. Package versions are central in `Directory.Packages.props`.
 
 ## Commands (mirror CI)

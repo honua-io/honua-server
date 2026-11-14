@@ -15,7 +15,7 @@ internal static class DataStoreProviderPolicy
 
     public const string FullImageTagSuffix = "-full";
     public const string DocumentationHref =
-        "https://github.com/honua-io/honua-server/blob/trunk/docs/ops/nightly-images.md";
+        "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/operate/nightly-images.md";
     public const string RefusalMessage =
         "This image includes only the PostGIS data store. Use the same-version nightly-jit-<revision>" +
         FullImageTagSuffix + " image for additional data stores; see " + DocumentationHref + ".";

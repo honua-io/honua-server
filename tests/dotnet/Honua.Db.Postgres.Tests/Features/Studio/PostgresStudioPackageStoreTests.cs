@@ -1137,6 +1137,37 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task DeleteDraft_OwnershipChanges_RejectsStaleGenerationAndPreservesDraft()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var draft = await store.CreateDraftAsync(BuildDraft("1=1", "conditional-delete"));
+            var transferred = await store.UpdateDraftAsync(draft with { OwnerId = "new-owner" });
+
+            var staleDelete = () => store.DeleteDraftAsync(draft.DraftId, draft.Generation);
+            await staleDelete.Should().ThrowAsync<InvalidOperationException>();
+            var preserved = await store.GetDraftAsync(draft.DraftId);
+            preserved.Should().BeEquivalentTo(transferred, options => options
+                .Using<JsonElement>(context => JsonElement.DeepEquals(context.Subject, context.Expectation).Should().BeTrue())
+                .WhenTypeIs<JsonElement>());
+            var items = await store.ListContentItemsAsync(new StudioContentItemQuery());
+            items.Items.Should().ContainSingle(item => item.ItemId == draft.ItemId);
+
+            (await store.DeleteDraftAsync(draft.DraftId, transferred!.Generation)).Should().BeTrue();
+            (await store.GetDraftAsync(draft.DraftId)).Should().BeNull();
+            (await store.ListContentItemsAsync(new StudioContentItemQuery())).Items.Should().BeEmpty();
+            (await store.DeleteDraftAsync(draft.DraftId, transferred.Generation)).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task DeleteDraft_AfterVersionSaved_KeepsContentItemListed()
     {
         // A draft deleted after its content was saved as a version must not remove the item:
