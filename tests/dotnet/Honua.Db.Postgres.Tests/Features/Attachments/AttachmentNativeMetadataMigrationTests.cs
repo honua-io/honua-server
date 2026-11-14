@@ -86,7 +86,7 @@ public sealed class AttachmentNativeMetadataMigrationTests(PostgresFixture fixtu
         {
             root = root.Parent;
         }
-        var path = Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", "163_CreateAttachmentNativeMetadata.sql");
+        var path = Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", "182_CreateAttachmentNativeMetadata.sql");
         await ExecuteAsync(schema, (await File.ReadAllTextAsync(path)).Replace("$HonuaSchema$", "\"{schema}\"", StringComparison.Ordinal));
     }
 
