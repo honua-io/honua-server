@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Realtime;
 [Operation(Operations.TestInfrastructure)]
 public sealed class CollaborationRealtimeTriggerTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
-    [Fact]
+    [UnitTest]
     public async Task Migration_IsAdditiveAndAcceptedByProductionSafetyClassifier()
     {
         const string resource = "Honua.Server.Migrations.161_PublishSavedMapOperationsToRealtime.sql";
@@ -25,6 +25,17 @@ public sealed class CollaborationRealtimeTriggerTests(DatabaseFixtureAdapter dat
 
         MigrationSafetyClassifier.Classify(resource, sql).Classification.Should()
             .Be(MigrationSafetyClassification.Expand);
+    }
+
+    [IntegrationTest]
+    public async Task Migration_Reapplied_PublishesEachOperationOnce()
+    {
+        await using var harness = await CreateHarnessAsync();
+        await harness.ApplyMigrationAsync("Honua.Server.Migrations.161_PublishSavedMapOperationsToRealtime.sql");
+        await using var connection = await harness.DataSource.OpenConnectionAsync();
+        await InsertOperationAsync(harness, connection);
+
+        (await harness.ReadSequencesAsync("collab-ops")).Should().Equal(1L);
     }
 
     [IntegrationTest]
