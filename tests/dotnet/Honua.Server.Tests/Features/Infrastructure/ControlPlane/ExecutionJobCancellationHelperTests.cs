@@ -7,6 +7,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using Honua.ServiceDefaults;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -15,6 +16,37 @@ public sealed class ExecutionJobCancellationHelperTests
 {
     private const string TransitionTestBackendNoOp = "execution-cancel-noop-test";
     private const string TransitionTestBackendCancelled = "execution-cancel-terminal-test";
+
+    [Fact]
+    public async Task TryApplyBackendCancelAsync_RetryWinsBeforeReread_DoesNotCancelRetry()
+    {
+        var cancelledAttempt = CreateJobRecord("delayed-cancel", ExecutionJobStatus.Running) with
+        {
+            AttemptCount = 1,
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            ProviderOperationId = "old-provider"
+        };
+        // Console retry preserves AttemptCount until pickup, but clears the cancellation and provider.
+        var retried = cancelledAttempt with
+        {
+            Status = ExecutionJobStatus.Queued,
+            Version = 2,
+            CancellationRequestedAt = null,
+            ProviderOperationId = null,
+            NextRetryAt = DateTimeOffset.UtcNow
+        };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+        store.GetAsync(retried.OperationId, Arg.Any<CancellationToken>()).Returns(retried);
+
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(store, cancelledAttempt,
+            new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled });
+
+        result.Outcome.Should().Be(BackendCancelApplyOutcome.Unconfirmed);
+        result.TerminalTransition.Should().BeNull();
+        await store.Received(1).TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
 
     [Fact]
     public async Task TryApplyBackendCancelAsync_IdenticalNonterminalObservation_IsNoOpAndDoesNotBumpUpdatedAt()
