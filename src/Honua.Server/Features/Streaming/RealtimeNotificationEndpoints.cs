@@ -63,7 +63,7 @@ internal static partial class RealtimeNotificationEndpoints
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
-        await StreamAsync(context, provider, RealtimeFamily.Jobs, scopes, after, async (item, token) =>
+        await StreamAsync(context, provider, new StreamRequest(RealtimeFamily.Jobs, scopes, after, async (item, token) =>
         {
             if (item.Kind != "job.status" || !scopes.Contains(item.ScopeKey, StringComparer.Ordinal))
             {
@@ -71,7 +71,7 @@ internal static partial class RealtimeNotificationEndpoints
             }
             // Re-evaluate current ownership and authorization for replay and live delivery.
             await jobs.GetJobAsync(item.ScopeKey, context.User, token).ConfigureAwait(false);
-            await WriteFrameAsync(context.Response, item.Position, "job.status", writer =>
+            await WriteFrameAsync(context.Response, new StreamFrame(item.Position, "job.status", writer =>
             {
                 writer.WriteStartObject();
                 writer.WriteString("jobId", item.ScopeKey);
@@ -84,9 +84,9 @@ internal static partial class RealtimeNotificationEndpoints
                     }
                 }
                 writer.WriteEndObject();
-            }, token).ConfigureAwait(false);
+            }), token).ConfigureAwait(false);
             return true;
-        }).ConfigureAwait(false);
+        })).ConfigureAwait(false);
         return Results.Empty;
     }
 
@@ -113,14 +113,17 @@ internal static partial class RealtimeNotificationEndpoints
         return true;
     }
 
-    internal static async Task StreamAsync(HttpContext context, IRealtimeFanoutProvider provider,
-        RealtimeFamily family, IReadOnlyCollection<string> scopes, long? after,
-        Func<RealtimeEvent, CancellationToken, Task<bool>> deliver)
+    internal sealed record StreamRequest(RealtimeFamily Family, IReadOnlyCollection<string> Scopes,
+        long? After, Func<RealtimeEvent, CancellationToken, Task<bool>> Deliver);
+
+    internal sealed record StreamFrame(RealtimePosition? Position, string Kind, Action<Utf8JsonWriter> WritePayload);
+
+    internal static async Task StreamAsync(HttpContext context, IRealtimeFanoutProvider provider, StreamRequest request)
     {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         var channel = Channel.CreateBounded<RealtimeDelivery>(256);
         await using var subscription = provider.Subscribe(new RealtimeSubscriptionRequest(
-            family, scopes, after, new ClosingWriter(channel.Writer, lifetime)));
+            request.Family, request.Scopes, request.After, new ClosingWriter(channel.Writer, lifetime)));
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers.CacheControl = "no-store, no-transform";
         context.Response.Headers["X-Accel-Buffering"] = "no";
@@ -133,19 +136,19 @@ internal static partial class RealtimeNotificationEndpoints
                 switch (delivery)
                 {
                     case RealtimeDelivery.Event item:
-                        if (!await deliver(item.Value, lifetime.Token).ConfigureAwait(false))
+                        if (!await request.Deliver(item.Value, lifetime.Token).ConfigureAwait(false))
                         {
                             return;
                         }
                         break;
                     case RealtimeDelivery.Reset reset:
-                        await WriteFrameAsync(context.Response, null, "reset", writer =>
+                        await WriteFrameAsync(context.Response, new StreamFrame(null, "reset", writer =>
                         {
                             writer.WriteStartObject();
                             writer.WriteString("reason", reset.Reason);
                             writer.WriteNumber("head", reset.Head);
                             writer.WriteEndObject();
-                        }, lifetime.Token).ConfigureAwait(false);
+                        }), lifetime.Token).ConfigureAwait(false);
                         return;
                     case RealtimeDelivery.Heartbeat:
                         await context.Response.WriteAsync(": hb\n\n", lifetime.Token).ConfigureAwait(false);
@@ -171,15 +174,14 @@ internal static partial class RealtimeNotificationEndpoints
         }
     }
 
-    internal static async Task WriteFrameAsync(HttpResponse response, RealtimePosition? position,
-        string kind, Action<Utf8JsonWriter> writePayload, CancellationToken token)
+    internal static async Task WriteFrameAsync(HttpResponse response, StreamFrame frame, CancellationToken token)
     {
         using var payload = new MemoryStream();
         using (var writer = new Utf8JsonWriter(payload))
         {
-            writePayload(writer);
+            frame.WritePayload(writer);
         }
-        var header = position is { } cursor ? $"id: {cursor}\nevent: {kind}\ndata: " : $"event: {kind}\ndata: ";
+        var header = frame.Position is { } cursor ? $"id: {cursor}\nevent: {frame.Kind}\ndata: " : $"event: {frame.Kind}\ndata: ";
         await response.Body.WriteAsync(Encoding.UTF8.GetBytes(header), token).ConfigureAwait(false);
         await response.Body.WriteAsync(payload.GetBuffer().AsMemory(0, checked((int)payload.Length)), token).ConfigureAwait(false);
         await response.Body.WriteAsync("\n\n"u8.ToArray(), token).ConfigureAwait(false);

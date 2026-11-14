@@ -41,9 +41,9 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                 services.RemoveAll<IMetadataV2EnvironmentSnapshotReader>();
                 services.RemoveAll<IMetadataReleasePackageStore>();
                 services.AddSingleton<IMetadataV2EnvironmentSnapshotReader>(
-                    new StaticEnvironmentReader(
-                        BuildGraph("dev", 41),
-                        BuildGraph("staging", 7, includeSchemaField: false)));
+                    new Honua.TestKit.TestMetadataEnvironmentSnapshotReader(
+                        [BuildGraph("dev", 41), BuildGraph("staging", 7, includeSchemaField: false)],
+                        DateTimeOffset.UtcNow));
                 services.AddSingleton<IMetadataReleasePackageStore, CancellationAwareReleasePackageStore>();
             });
     }
@@ -1020,64 +1020,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
         ];
     }
 
-    private sealed class StaticEnvironmentReader : IMetadataV2EnvironmentSnapshotReader
-    {
-        private readonly Dictionary<string, MetadataV2GraphSnapshot> _snapshots;
 
-        public StaticEnvironmentReader(params MetadataV2Graph[] graphs)
-        {
-            _snapshots = graphs.ToDictionary(
-                static graph => graph.Environment,
-                static graph => new MetadataV2GraphSnapshot(
-                    graph,
-                    $"etag-{graph.Environment}-{graph.Revision}",
-                    DateTimeOffset.UtcNow),
-                StringComparer.OrdinalIgnoreCase);
-        }
-
-        public ValueTask<MetadataV2GraphSnapshot?> GetCurrentAsync(
-            string environment,
-            CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(
-                _snapshots.TryGetValue(environment, out var snapshot) ? snapshot : null);
-
-        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
-            string environment,
-            long revision,
-            CancellationToken cancellationToken = default)
-        {
-            var snapshot = _snapshots.TryGetValue(environment, out var current) && current.Revision == revision
-                ? current
-                : null;
-            return ValueTask.FromResult(snapshot);
-        }
-
-        public async ValueTask<MetadataV2GraphSnapshot?> GetByEtagAsync(
-            string environment,
-            string etag,
-            CancellationToken cancellationToken = default)
-        {
-            var snapshot = await GetCurrentAsync(environment, cancellationToken).ConfigureAwait(false);
-            return snapshot is not null && string.Equals(snapshot.Etag, etag, StringComparison.Ordinal) ? snapshot : null;
-        }
-
-        public async IAsyncEnumerable<MetadataV2EnvironmentRevision> ListCurrentRevisionsAsync(
-            IReadOnlyList<string> environments,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            await Task.Yield();
-            foreach (var snapshot in (environments.Where(_snapshots.ContainsKey)).Select(environment => _snapshots[environment]))
-            {
-                yield return new MetadataV2EnvironmentRevision
-                {
-                    Environment = snapshot.Graph.Environment,
-                    Revision = snapshot.Revision,
-                    ETag = snapshot.Etag,
-                    ActivatedAt = snapshot.LoadedAt,
-                };
-            }
-        }
-    }
 
     private sealed class CancellationAwareReleasePackageStore : IMetadataReleasePackageStore
     {

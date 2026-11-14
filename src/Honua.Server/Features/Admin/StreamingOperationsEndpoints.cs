@@ -120,20 +120,8 @@ internal static class StreamingOperationsEndpoints
                         return;
                     }
 
-                    using var payload = new MemoryStream();
-                    using (var writer = new Utf8JsonWriter(payload))
-                    {
-                        writer.WriteStartObject();
-                        var envelope = JsonSerializer.SerializeToElement(alertEvent,
-                            StreamingOperationsJsonContext.Default.AlertEventEnvelope);
-                        foreach (var property in envelope.EnumerateObject())
-                        {
-                            property.WriteTo(writer);
-                        }
-                        writer.WriteString("cursor", position.ToString());
-                        writer.WriteEndObject();
-                    }
-                    await webSocket.SendAsync(payload.ToArray(), WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+                    await webSocket.SendAsync(SerializeAlertFrame(alertEvent, position),
+                        WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -202,6 +190,25 @@ internal static class StreamingOperationsEndpoints
         }
 
         return Results.Empty;
+    }
+
+    private static byte[] SerializeAlertFrame(Honua.Core.Features.Alerts.Domain.AlertEventEnvelope alertEvent,
+        Honua.Core.Features.Realtime.RealtimePosition position)
+    {
+        using var payload = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(payload))
+        {
+            writer.WriteStartObject();
+            var envelope = JsonSerializer.SerializeToElement(alertEvent,
+                StreamingOperationsJsonContext.Default.AlertEventEnvelope);
+            foreach (var property in envelope.EnumerateObject())
+            {
+                property.WriteTo(writer);
+            }
+            writer.WriteString("cursor", position.ToString());
+            writer.WriteEndObject();
+        }
+        return payload.ToArray();
     }
 
     private static IResult HandleDisconnectSubscriber(

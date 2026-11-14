@@ -16,10 +16,6 @@ public interface IMetadataV2EnvironmentSnapshotReader
         long revision,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets an environment snapshot by its exact ETag, or null when it is unavailable.
-    /// Providers without retained history may only resolve the current snapshot.
-    /// </summary>
     ValueTask<MetadataV2GraphSnapshot?> GetByEtagAsync(
         string environment,
         string etag,

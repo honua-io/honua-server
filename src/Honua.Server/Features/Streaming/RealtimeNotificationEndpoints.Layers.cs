@@ -35,50 +35,57 @@ internal static partial class RealtimeNotificationEndpoints
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
         var environment = initial.Graph.Environment;
-        await StreamAsync(context, provider, RealtimeFamily.Catalog, [environment], after, async (item, token) =>
-        {
-            if (item.Kind != "catalog.changed" || item.ScopeKey != environment)
-            {
-                return true;
-            }
-            var etag = item.Payload.GetProperty("etag").GetString()!;
-            var previousEtag = item.Payload.GetProperty("previousEtag").GetString();
-            var next = await history.GetByEtagAsync(environment, etag, token).ConfigureAwait(false);
-            var previous = previousEtag is null ? null :
-                await history.GetByEtagAsync(environment, previousEtag, token).ConfigureAwait(false);
-            if (next is null || (previousEtag is not null && previous is null))
-            {
-                await WriteFrameAsync(context.Response, null, "reset", writer =>
-                {
-                    writer.WriteStartObject();
-                    writer.WriteString("reason", "retention");
-                    writer.WriteNumber("head", item.Sequence);
-                    writer.WriteEndObject();
-                }, token).ConfigureAwait(false);
-                return false;
-            }
-            var changed = ChangedLayers(previous, next, serviceId);
-            // Resolve current permissions even when replaying older definitions.
-            var current = await graphs.GetCurrentAsync(token).ConfigureAwait(false);
-            var readable = ReadableLayers(context, current, serviceId).ToHashSet();
-            var visibleChanges = changed.Where(readable.Contains).ToArray();
-            for (var i = 0; i < visibleChanges.Length; i++)
-            {
-                // Commit the catalog cursor only after its final layer frame. A disconnect
-                // midway through a catalog change can repeat frames, but cannot skip layers.
-                RealtimePosition? cursor = i == visibleChanges.Length - 1 ? item.Position : null;
-                await WriteFrameAsync(context.Response, cursor, "layer.changed", writer =>
-                {
-                    writer.WriteStartObject();
-                    writer.WriteString("serviceId", serviceId);
-                    writer.WriteNumber("layerId", visibleChanges[i]);
-                    writer.WriteString("etag", etag);
-                    writer.WriteEndObject();
-                }, token).ConfigureAwait(false);
-            }
-            return true;
-        }).ConfigureAwait(false);
+        var state = new LayerStreamState(context, serviceId, environment, graphs, history);
+        await StreamAsync(context, provider, new StreamRequest(RealtimeFamily.Catalog, [environment], after,
+            (item, token) => DeliverLayerAsync(state, item, token))).ConfigureAwait(false);
         return Results.Empty;
+    }
+
+    private sealed record LayerStreamState(HttpContext Context, string ServiceId, string Environment,
+        IMetadataV2GraphProvider Graphs, IMetadataV2EnvironmentSnapshotReader History);
+
+    private static async Task<bool> DeliverLayerAsync(LayerStreamState state, RealtimeEvent item, CancellationToken token)
+    {
+        if (item.Kind != "catalog.changed" || item.ScopeKey != state.Environment)
+        {
+            return true;
+        }
+        var etag = item.Payload.GetProperty("etag").GetString()!;
+        var previousEtag = item.Payload.GetProperty("previousEtag").GetString();
+        var next = await state.History.GetByEtagAsync(state.Environment, etag, token).ConfigureAwait(false);
+        var previous = previousEtag is null ? null :
+            await state.History.GetByEtagAsync(state.Environment, previousEtag, token).ConfigureAwait(false);
+        if (next is null || (previousEtag is not null && previous is null))
+        {
+            await WriteFrameAsync(state.Context.Response, new StreamFrame(null, "reset", writer =>
+            {
+                writer.WriteStartObject();
+                writer.WriteString("reason", "retention");
+                writer.WriteNumber("head", item.Sequence);
+                writer.WriteEndObject();
+            }), token).ConfigureAwait(false);
+            return false;
+        }
+        var changed = ChangedLayers(previous, next, state.ServiceId);
+        // Resolve current permissions even when replaying older definitions.
+        var current = await state.Graphs.GetCurrentAsync(token).ConfigureAwait(false);
+        var readable = ReadableLayers(state.Context, current, state.ServiceId).ToHashSet();
+        var visibleChanges = changed.Where(readable.Contains).ToArray();
+        for (var i = 0; i < visibleChanges.Length; i++)
+        {
+            // Commit the catalog cursor only after its final layer frame. A disconnect
+            // midway through a catalog change can repeat frames, but cannot skip layers.
+            RealtimePosition? cursor = i == visibleChanges.Length - 1 ? item.Position : null;
+            await WriteFrameAsync(state.Context.Response, new StreamFrame(cursor, "layer.changed", writer =>
+            {
+                writer.WriteStartObject();
+                writer.WriteString("serviceId", state.ServiceId);
+                writer.WriteNumber("layerId", visibleChanges[i]);
+                writer.WriteString("etag", etag);
+                writer.WriteEndObject();
+            }), token).ConfigureAwait(false);
+        }
+        return true;
     }
 
     internal static int[] ChangedLayers(MetadataV2GraphSnapshot? previous,

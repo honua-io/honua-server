@@ -34,10 +34,9 @@ internal static class McpRealtimeStream
         Stream output,
         ChannelReader<string> local,
         RealtimeStreamSubscription subscription,
-        IRealtimeStreamLease lease,
         CancellationToken cancellationToken)
     {
-        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, subscription.Closed, lease.LostToken);
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, subscription.Closed, subscription.Lease.LostToken);
         var frames = Channel.CreateBounded<string>(256);
         var localPump = CopyLocalAsync(local, frames.Writer, lifetime.Token);
         var remotePump = CopyRealtimeAsync(subscription.Reader, frames.Writer, lifetime.Token);
@@ -46,7 +45,7 @@ internal static class McpRealtimeStream
         {
             await foreach (var frame in frames.Reader.ReadAllAsync(lifetime.Token).ConfigureAwait(false))
             {
-                if (!lease.IsHeld)
+                if (!subscription.Lease.IsHeld)
                 {
                     return;
                 }
@@ -138,12 +137,14 @@ internal sealed class RealtimeStreamSubscription : IAsyncDisposable
     private readonly IRealtimeSubscription _subscription;
     private readonly Channel<RealtimeDelivery> _channel = Channel.CreateBounded<RealtimeDelivery>(256);
 
-    internal RealtimeStreamSubscription(IRealtimeFanoutProvider provider, string sessionId, long after)
+    internal RealtimeStreamSubscription(IRealtimeFanoutProvider provider, string sessionId, long after, IRealtimeStreamLease lease)
     {
+        Lease = lease;
         _subscription = provider.Subscribe(new RealtimeSubscriptionRequest(
             RealtimeFamily.Mcp, [sessionId, "*"], after, new ClosingWriter(_channel.Writer, _closed)));
     }
 
+    internal IRealtimeStreamLease Lease { get; }
     internal ChannelReader<RealtimeDelivery> Reader => _channel.Reader;
     internal CancellationToken Closed => _closed.Token;
 

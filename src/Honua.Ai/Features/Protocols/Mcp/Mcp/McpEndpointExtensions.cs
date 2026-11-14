@@ -409,6 +409,13 @@ internal static class McpEndpointExtensions
             return;
         }
 
+        await OpenNotificationStreamAsync(context, sessionId, reader, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task OpenNotificationStreamAsync(HttpContext context, string sessionId,
+        System.Threading.Channels.ChannelReader<string> reader, CancellationToken cancellationToken)
+    {
+        var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
         if (!McpRealtimeStream.TryParsePosition(context.Request.Headers["Last-Event-ID"].ToString(), out var after))
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -430,7 +437,7 @@ internal static class McpEndpointExtensions
             : (await provider.GetWindowAsync(RealtimeFamily.Mcp, cancellationToken).ConfigureAwait(false)).Head;
         await using var subscription = provider is null
             ? null
-            : new RealtimeStreamSubscription(provider, sessionId, after ?? head);
+            : new RealtimeStreamSubscription(provider, sessionId, after ?? head, streamLease!);
         using var watch = sessions.AcquireSessionWatch(sessionId);
         await BindTokenReplayContinuationAsync(context, sessionId).ConfigureAwait(false);
         StartEventStream(context);
@@ -450,7 +457,7 @@ internal static class McpEndpointExtensions
             }
             else
             {
-                await McpRealtimeStream.PumpAsync(context.Response.Body, reader, subscription, streamLease!, linked.Token).ConfigureAwait(false);
+                await McpRealtimeStream.PumpAsync(context.Response.Body, reader, subscription, linked.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
