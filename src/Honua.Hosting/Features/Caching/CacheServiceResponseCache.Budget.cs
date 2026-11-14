@@ -63,11 +63,15 @@ internal sealed partial class CacheServiceResponseCache
 
     private void ReleaseExcessBytes(ResponseReservation reservation)
     {
-        if (reservation.Writes.Pending == 0 && reservation.Writes.CompletedBytes > 0)
+        if (reservation.Writes.Pending == 0 && reservation.Writes.HasPayload)
         {
             // Overlapping backend writes can finish in either order, so retain their largest successful payload.
-            _reservedBytes -= reservation.Bytes - reservation.Writes.CompletedBytes;
-            reservation.Bytes = reservation.Writes.CompletedBytes;
+            var settledBytes = reservation.Writes.CompletedBytes > 0
+                ? reservation.Writes.CompletedBytes
+                : reservation.Writes.SettledBytes;
+            _reservedBytes -= reservation.Bytes - settledBytes;
+            reservation.Bytes = settledBytes;
+            reservation.Writes.SettledBytes = settledBytes;
         }
     }
 
@@ -215,6 +219,7 @@ internal sealed partial class CacheServiceResponseCache
     {
         public int Pending { get; set; }
         public long CompletedBytes { get; set; }
+        public long SettledBytes { get; set; }
         public bool HasPayload { get; set; }
         public bool Reclaiming { get; set; }
     }

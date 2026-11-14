@@ -91,6 +91,25 @@ public sealed partial class CacheServiceResponseCacheBudgetTests
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task SetAsync_LargerReplacementFails_ReleasesUnusedByteCapacity()
+    {
+        var backend = new RecordingCache();
+        var cache = ResponseCache(backend, maxBytes: 11_000);
+        var small = new CachedResponse(new byte[32], "application/json");
+        var large = new CachedResponse(new byte[10_000], "application/json");
+        await cache.SetAsync("shared", small, Lifetime);
+        backend.BeforeResponseWrite = _ => throw new IOException("Injected replacement failure");
+
+        await Assert.ThrowsAsync<IOException>(() => cache.SetAsync("shared", large, Lifetime));
+        backend.BeforeResponseWrite = null;
+        await cache.SetAsync("another", large, Lifetime);
+
+        Assert.Same(small, await cache.GetAsync<CachedResponse>("shared"));
+        Assert.Same(large, await cache.GetAsync<CachedResponse>("another"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task SetAsync_SmallerReplacementFails_RetainsExistingPayloadCapacity()
     {
         var backend = new RecordingCache();
