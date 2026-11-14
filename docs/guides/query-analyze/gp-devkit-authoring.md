@@ -153,6 +153,13 @@ reads the way a local one does. `honua gp run` writes the same shape under
 jq -c 'select(.kind=="failure" or .kind=="terminal")' .honua/runs/*/events.jsonl
 ```
 
+The **GP Installed Authoring** CI workflow validates the Python and .NET local
+test journals from the installed package on Linux, Windows, and macOS. It checks
+the v1 envelope, known event payloads, and agreement between the final event and
+the receipt. Unknown event kinds remain accepted for forward compatibility. The
+`gp-installed-events-<os>` artifacts retain the validated fixture journals and
+receipts; this candidate check does not certify package publication.
+
 The journal holds at most 1000 records and 256 KiB; a `truncated` record discloses
 anything dropped, and the receipt repeats it as `eventsTruncated` / `eventsDropped`.
 The job step view labels a duration `measured` only when it comes from these events;

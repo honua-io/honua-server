@@ -1,5 +1,12 @@
 # Redis Fallback Patterns
 
+> Historical reference: the standardized leader-election, job-queue and fallback
+> APIs described below were unregistered in production and have been removed.
+> These examples are not current integration instructions. Active Redis stores,
+> production health checks and post-idle recovery use separate implementations;
+> see [ADR-0082](../contributor/adr/0082-postgres-control-plane-state.md) for the
+> control-plane migration plan.
+
 This document describes the standardized Redis fallback behaviors implemented in Honua Server to ensure consistent behavior across all Redis-dependent services and prevent split-brain scenarios in multi-node deployments.
 
 ## Overview
