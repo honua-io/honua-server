@@ -375,16 +375,13 @@ internal sealed partial class GeoservicesImportService
 
             await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
 
-            if (request.CommitParticipant is { } participant)
+            await JoinCommitAsync(request.CommitParticipant, new ImportCommitScope
             {
-                await participant(new ImportCommitScope
-                {
-                    Transaction = transaction,
-                    Schema = targetSchema,
-                    PhysicalTable = request.TableName,
-                    FeatureCount = featuresProcessed
-                }, cancellationToken).ConfigureAwait(false);
-            }
+                Transaction = transaction,
+                Schema = targetSchema,
+                PhysicalTable = request.TableName,
+                FeatureCount = featuresProcessed
+            }, cancellationToken).ConfigureAwait(false);
 
             stage = ImportFailureStage.Committing;
             await transaction.CommitSafelyAsync(cancellationToken);
@@ -1143,4 +1140,11 @@ internal sealed partial class GeoservicesImportService
     /// </summary>
     internal static bool IsGeometryField(GeoservicesFieldInfo field)
         => field.Type.Equals("esriFieldTypeGeometry", StringComparison.OrdinalIgnoreCase);
+    private static Task JoinCommitAsync(
+        ImportCommitParticipant? participant,
+        ImportCommitScope scope,
+        CancellationToken cancellationToken) => participant is null
+            ? Task.CompletedTask
+            : participant(scope, cancellationToken);
+
 }

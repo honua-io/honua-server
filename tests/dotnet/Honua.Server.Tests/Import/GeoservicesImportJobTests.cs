@@ -36,36 +36,14 @@ public sealed class GeoservicesImportJobTests(DatabaseFixtureAdapter database)
         var tableName = $"replica_import_{Guid.NewGuid():N}"[..28];
         const string sourceUrl = "https://example.com/arcgis/rest/services/Replica/FeatureServer";
         var observed = new TaskCompletionSource<GeoservicesImportRequest>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var importService = Substitute.For<IGeoservicesImportService>();
-        importService.ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(),
-                Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var request = call.ArgAt<GeoservicesImportRequest>(0);
-                observed.TrySetResult(request);
-                return GeoservicesImportResult.CreateFailure(request.TableName, request.ServiceUrl,
-                    request.LayerId, "Test source deliberately has no data.");
-            });
+        var importService = ObserveImport(observed);
 
         WebAppFixture? producer = CreateHost().ConfigureServices(RemoveExecutionWorker);
         WebAppFixture? consumer = null;
         try
         {
             await producer.InitializeAsync();
-            string jobId;
-            using (var response = await producer.Client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", new
-            {
-                ServiceUrl = sourceUrl,
-                LayerId = 3,
-                TableName = tableName,
-                AutoPublish = false
-            }))
-            {
-                var body = await response.Content.ReadAsStringAsync();
-                response.StatusCode.Should().Be(HttpStatusCode.Accepted, body);
-                using var document = JsonDocument.Parse(body);
-                jobId = document.RootElement.GetProperty("jobId").GetString()!;
-            }
+            var jobId = await SubmitAsync(producer, sourceUrl, tableName);
 
             var queued = await producer.GetService<IExecutionJobStore>().GetAsync(jobId);
             queued.Should().NotBeNull("accepted imports must persist their request before acknowledging submission");
@@ -96,6 +74,38 @@ public sealed class GeoservicesImportJobTests(DatabaseFixtureAdapter database)
 
             await database.DataSource.ClearJobSubstrateAsync();
         }
+    }
+
+    private static IGeoservicesImportService ObserveImport(
+        TaskCompletionSource<GeoservicesImportRequest> observed)
+    {
+        var importService = Substitute.For<IGeoservicesImportService>();
+        importService.ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(),
+                Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var request = call.ArgAt<GeoservicesImportRequest>(0);
+                observed.TrySetResult(request);
+                return GeoservicesImportResult.CreateFailure(request.TableName, request.ServiceUrl,
+                    request.LayerId, "Test source deliberately has no data.");
+            });
+
+        return importService;
+    }
+
+    private static async Task<string> SubmitAsync(WebAppFixture host, string sourceUrl, string tableName)
+    {
+        using var response = await host.Client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", new
+        {
+            ServiceUrl = sourceUrl,
+            LayerId = 3,
+            TableName = tableName,
+            AutoPublish = false
+        });
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, body);
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("jobId").GetString()!;
     }
 
     private static WebAppFixture CreateHost() => new WebAppFixture()
