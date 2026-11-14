@@ -10,8 +10,8 @@ Whole-class selections are retained except the GP/NAS routing class, whose
 methods are partitioned with a residual fallback for future tests. Method-union,
 future-method and mutation checks enforce complete, disjoint selection and
 unchanged projects, source triggers and budgets. Historical TRX interval weights
-guide the cuts; they are not measured child elapsed runtimes. Dispatch ranks stay
-inherited until complete child runs provide measurements.
+guide the cuts; they are not measured child elapsed runtimes. The 14 Nov rank
+refresh measured 23 of those 26 children (see "Measured ranks" below).
 
 Server Features Packages and Temporal measured 12.7 minutes (full runs
 `43612492209` and `43580101834`), above the 10-minute PR shard budget, so PR Gate
@@ -918,9 +918,12 @@ measured rank, else its contract estimate, else its parent's rank. Unmeasured:
 Operator Eval Harness 2 and STAC Protocol 2 and 4 (cancelled in 43612492209) keep
 their parent's rank; the two Packages and Temporal children carry estimates. Ranks
 sum to 1,603 runner-minutes (was 1,818.5); 98 of 164 shards fit the 10-minute PR
-shard budget (was 95 of 163). Many unsplit shards measured slower than on 11 Nov
-(for example Core Endpoint Mutations 9.8 to 14.5), so 20 shards move to
-trunk-only coverage and 32, most of them split children, move into PR Gate.
+shard budget (was 84 of 163). Many unsplit shards measured slower than on 11 Nov
+(for example Core Endpoint Mutations 9.8 to 14.5): 20 shards, the replaced Packages
+and Temporal parent among them, leave the budget and 34, most of them split
+children, enter it. Of 794 shard source paths, 666 now have an owner that fits the
+budget (was 583): 140 gained one and 57 lost their last one, all owned by 15 shards
+now above 10 minutes, whose split is tracked in #7678.
 
 ### Standalone tooling in affected producer builds
 

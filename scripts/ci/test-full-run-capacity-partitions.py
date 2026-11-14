@@ -39,13 +39,15 @@ def verify(original, children, estimates):
     return selected
 
 
+MUTATIONS = ("lost", "duplicate", "foreign", "budget", "trigger", "report", "odata", "rank")
+
 for contract in CONTRACTS:
     original = contract["originalShard"]
     names = contract["children"]
     children = [next(shard for shard in CONFIG["shards"] if shard["name"] == name) for name in names]
     estimates = contract.get("estimatedRanks", {}).get("ranks", {})
     selected = verify(original, children, estimates)
-    for mutation in ("lost", "duplicate", "foreign", "budget", "trigger", "report", "odata", "rank"):
+    for mutation in MUTATIONS:
         broken = copy.deepcopy(children)
         if mutation == "lost":
             broken[0]["filter"] += "&FullyQualifiedName!=" + min(selected[0])
@@ -77,7 +79,7 @@ for contract in CONTRACTS:
         assert original["name"] not in override["shards"]
         if set(names) & set(override["shards"]):
             assert set(names) <= set(override["shards"])
-    print(f"full-run-capacity=ok parent={original['name']} methods={list(map(len, selected))} negatives=8")
+    print(f"full-run-capacity=ok parent={original['name']} methods={list(map(len, selected))} negatives={len(MUTATIONS)}")
 
 print(f"measured-ranks=ok shards={check_measured_ranks(CONFIG)}")
 

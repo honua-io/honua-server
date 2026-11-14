@@ -761,10 +761,9 @@ def test_miscellaneous_partition_detects_missing_moved_methods() -> None:
         fqn, methods, partition["granularity"]) == []
     moved = "Server Features Packages and Temporal 1"
     broken = dict(parsed)
-    broken[moved] = MODULE._FilterParser("|".join(
-        clause for clause in shards[moved]["filter"].split("|")
-        if clause != f"FullyQualifiedName~{fqn}."
-    )).parse()
+    broken[moved] = MODULE._FilterParser(
+        f"({shards[moved]['filter']})&FullyQualifiedName!~{fqn}."
+    ).parse()
     errors = MODULE.partition_claim_errors(partition["name"], parent, children, broken,
         fqn, methods, partition["granularity"])
     assert len(errors) == len(methods), errors

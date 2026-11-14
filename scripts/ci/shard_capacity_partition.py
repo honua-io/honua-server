@@ -7,8 +7,7 @@ from typing import NamedTuple
 
 
 REPORT_UPLOAD_FIELDS = ("upload_operator_eval_report", "upload_odata_evidence")
-MEASURED_RANKS = json.loads(
-    (Path(__file__).resolve().parent / "fixtures/measured-dispatch-ranks.json").read_text())["ranks"]
+MEASURED_RANKS_PATH = Path(__file__).resolve().parent / "fixtures/measured-dispatch-ranks.json"
 
 
 class PartitionSource(NamedTuple):
@@ -80,18 +79,27 @@ def capacity_split_names(config, name):
     return sorted(children, key=lambda candidate: int(candidate[len(name) + 1:]))
 
 
+def measured_ranks():
+    """The recorded median passing job minutes per shard (gate-model.md, "Measured ranks")."""
+    return json.loads(MEASURED_RANKS_PATH.read_text())["ranks"]
+
+
 def expected_rank(name, inherited, estimates=None):
     """A split child's dispatch_rank: its measured rank, else its contract estimate, else its parent's."""
-    if name in MEASURED_RANKS:
-        return MEASURED_RANKS[name]
+    measured = measured_ranks()
+    stale = sorted(set(estimates or {}) & set(measured))
+    assert not stale, f"Estimated rank kept after measurement: {stale}"
+    if name in measured:
+        return measured[name]
     return (estimates or {}).get(name, inherited)
 
 
 def check_measured_ranks(config):
     """Every recorded measurement names a current shard and equals its dispatch_rank."""
+    measured = measured_ranks()
     ranks = {shard["name"]: shard["dispatch_rank"] for shard in config["shards"]}
-    stale = sorted(name for name in MEASURED_RANKS if name not in ranks)
+    stale = sorted(name for name in measured if name not in ranks)
     assert not stale, f"Measured rank for a removed shard: {stale}"
-    drift = sorted(name for name, rank in MEASURED_RANKS.items() if ranks[name] != rank)
+    drift = sorted(name for name, rank in measured.items() if ranks[name] != rank)
     assert not drift, f"dispatch_rank differs from its measurement: {drift}"
-    return len(MEASURED_RANKS)
+    return len(measured)
