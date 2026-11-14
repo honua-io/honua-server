@@ -31,10 +31,15 @@ public sealed class PortalTokenSourceValidatorTests
         (await second.IsStillValidAsync(source, CancellationToken.None)).Should().BeFalse();
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task IsStillValidAsync_AfterSuccessfulRead_MissingOrUnavailableAuthorityRefuses(bool unavailable)
+    [Fact]
+    public Task IsStillValidAsync_AfterSuccessfulRead_MissingAuthorityRefuses() =>
+        AssertAuthorityRefusesAsync(() => Task.FromResult<AdminApiKeyRecord?>(null));
+
+    [Fact]
+    public Task IsStillValidAsync_AfterSuccessfulRead_UnavailableAuthorityRefuses() =>
+        AssertAuthorityRefusesAsync(() => Task.FromException<AdminApiKeyRecord?>(new InvalidOperationException("unavailable")));
+
+    private static async Task AssertAuthorityRefusesAsync(Func<Task<AdminApiKeyRecord?>> resolveAuthority)
     {
         var seed = await new InMemoryAdminApiKeyStore().CreateAsync("worker", [], null, "test", CancellationToken.None);
         var store = Substitute.For<IAdminApiKeyStore>();
@@ -44,9 +49,7 @@ public sealed class PortalTokenSourceValidatorTests
         var source = SourceFor(seed.Record);
         (await validator.IsStillValidAsync(source, CancellationToken.None)).Should().BeTrue();
 
-        store.GetAsync(seed.Record.Id, Arg.Any<CancellationToken>()).Returns(_ => unavailable
-            ? Task.FromException<AdminApiKeyRecord?>(new InvalidOperationException("unavailable"))
-            : Task.FromResult<AdminApiKeyRecord?>(null));
+        store.GetAsync(seed.Record.Id, Arg.Any<CancellationToken>()).Returns(_ => resolveAuthority());
 
         (await validator.IsStillValidAsync(source, CancellationToken.None)).Should().BeFalse();
     }

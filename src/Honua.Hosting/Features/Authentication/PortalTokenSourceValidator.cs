@@ -59,7 +59,7 @@ internal sealed class PortalTokenSourceValidator(
         }
     }
 
-    private async ValueTask<bool> MatchesAsync(
+    private static async ValueTask<bool> MatchesAsync(
         string? recordedVersion,
         Func<CancellationToken, Task<string?>> resolveLiveVersion,
         CancellationToken cancellationToken)
