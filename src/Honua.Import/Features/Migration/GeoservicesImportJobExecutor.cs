@@ -198,7 +198,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
             : result.NeedsReview ? GeoservicesImportStatus.NeedsReview : GeoservicesImportStatus.Failed;
         return new GeoservicesImportProgress
         {
-            JobId = request.JobId,
+            JobId = run.JobId,
             Status = finalStatus,
             FeaturesProcessed = result.FeatureCount,
             FailedFeatures = result.FailedFeatures,
