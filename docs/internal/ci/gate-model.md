@@ -1,5 +1,14 @@
 # CI Gate Model
 
+FeatureServer Replica now uses three whole-class shards: `FeatureServer Replica
+Management` (conflict review, ownership and management), `FeatureServer Replica
+Sync` (the sync class), and the residual `FeatureServer Replica` catch-all.
+The original project, path triggers, exclusions, tier rules and 28-minute test /
+38-minute job budgets are retained. The coverage validator enforces the legacy
+parent inventory exactly once. This addresses repeated 28-minute capacity
+exhaustion with active output; complete child timings are still needed before
+claiming a speedup or replacing the conservative 18.3-minute parent dispatch rank.
+
 OData Core is partitioned into `OData Core Endpoints` (the whole
 `ODataEndpointTests` class) and the residual `OData Core` catch-all. Both retain
 the original project, path triggers, tier filters and 29-minute test / 39-minute
@@ -78,7 +87,10 @@ Full runs use off-hour minutes to reduce schedule-delivery contention. The
 half-hourly `trunk-signal-watchdog.yml` reports a missing scheduled start after
 14 hours, independently of affected CI activity. It also reports outstanding work without a usable
 result for 2 hours, runs queued over 45 minutes, and excessive cancellations;
-its issue closes only when all signals recover.
+its issue closes only when all signals recover. GitHub can report a workflow as queued
+while its children execute. For these runs the watchdog checks paginated, latest-attempt
+job evidence: runner assignment proves a scheduled start, while child jobs waiting
+over 45 minutes still alert. A queued job's `started_at` alone does not prove execution.
 
 Stage 3 details:
 
