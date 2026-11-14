@@ -4,6 +4,8 @@ Status: proposed contract, 2026-11-10. Scope: approved rc.3 core loop; implement
 starts after rc.2 ships. [ADR-0084](../adr/0084-task-first-asset-management.md)
 records the architecture. Unsettled policies below require a main ruling before
 contract freeze. Names and paths here describe proposed APIs, not shipped ones.
+The [evaluation contract](asset-management-evaluation.md) maps the acceptance
+criteria to deterministic fixtures and required evidence; it records no passes.
 
 ## People, jobs and scope
 
