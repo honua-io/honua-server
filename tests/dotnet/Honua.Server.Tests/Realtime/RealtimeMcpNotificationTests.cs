@@ -9,6 +9,7 @@ using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Realtime;
 
@@ -54,8 +55,10 @@ public sealed class RealtimeMcpNotificationTests(DatabaseFixtureAdapter database
         await publisher.PublishProgress("session-b", "job-b", 50, 100, "Running");
         await publisher.BroadcastToolsListChanged();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var lease = Substitute.For<IRealtimeStreamLease>();
+        lease.IsHeld.Returns(true);
         long resume;
-        await using (var subscription = new RealtimeStreamSubscription(consumerProvider, "session-a", 0))
+        await using (var subscription = new RealtimeStreamSubscription(consumerProvider, "session-a", 0, lease))
         {
             var first = (RealtimeDelivery.Event)await subscription.Reader.ReadAsync(timeout.Token);
             var second = (RealtimeDelivery.Event)await subscription.Reader.ReadAsync(timeout.Token);
@@ -66,7 +69,7 @@ public sealed class RealtimeMcpNotificationTests(DatabaseFixtureAdapter database
         }
 
         await publisher.PublishProgress("session-a", "job-a", 100, 100, "Complete");
-        await using var resumed = new RealtimeStreamSubscription(consumerProvider, "session-a", resume);
+        await using var resumed = new RealtimeStreamSubscription(consumerProvider, "session-a", resume, lease);
         var next = (RealtimeDelivery.Event)await resumed.Reader.ReadAsync(timeout.Token);
         next.Value.Sequence.Should().BeGreaterThan(resume);
         next.Value.Payload.GetProperty("params").GetProperty("progress").GetDouble().Should().Be(100);
