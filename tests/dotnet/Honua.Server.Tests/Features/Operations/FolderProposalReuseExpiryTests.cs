@@ -16,18 +16,22 @@ public sealed class FolderProposalReuseExpiryTests
     private const string Payload = "{\"operationId\":\"folder.create\"}";
     private static readonly DateTimeOffset ExpiresAt = new(2026, 11, 12, 12, 0, 0, TimeSpan.Zero);
 
-    [UnitTheory]
-    [InlineData(-1, true)]
-    [InlineData(0, false)]
-    [InlineData(1, false)]
-    public void MatchesExisting_ComparesExpiryWithTheSuppliedTime(int secondsFromExpiry, bool expected)
+    [UnitTest]
+    public void MatchesExisting_BeforeExpiry_AcceptsTheMatchingProposal()
     {
-        var existing = Proposal(Authorization());
+        FolderApprovalAuthorization.MatchesExisting(Proposal(Authorization()),
+                Candidate(Requester, Plan(Authorization()), ExpiresAt.AddSeconds(-1)))
+            .Should().BeTrue();
+    }
 
-        var matches = FolderApprovalAuthorization.MatchesExisting(
-            existing, Candidate(Requester, Plan(Authorization()), ExpiresAt.AddSeconds(secondsFromExpiry)));
-
-        matches.Should().Be(expected);
+    [UnitTheory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void MatchesExisting_AtOrAfterExpiry_RejectsTheMatchingProposal(int secondsFromExpiry)
+    {
+        FolderApprovalAuthorization.MatchesExisting(Proposal(Authorization()),
+                Candidate(Requester, Plan(Authorization()), ExpiresAt.AddSeconds(secondsFromExpiry)))
+            .Should().BeFalse();
     }
 
     [UnitTest]

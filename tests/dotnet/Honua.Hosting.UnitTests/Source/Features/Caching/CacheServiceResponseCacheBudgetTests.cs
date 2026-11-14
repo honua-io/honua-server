@@ -52,11 +52,17 @@ public sealed class CacheServiceResponseCacheBudgetTests
         Assert.Empty(backend.Responses);
     }
 
-    [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task RemoveByPatternAsync_NamespaceChanges_RetainsBudgetForStoredPayloads(bool bindKeys)
+    public Task RemoveByPatternAsync_RawKeys_RetainsBudgetForStoredPayloads()
+        => AssertNamespaceChangeRetainsBudgetAsync((_, key) => Task.FromResult(key));
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public Task RemoveByPatternAsync_BoundKeys_RetainsBudgetForStoredPayloads()
+        => AssertNamespaceChangeRetainsBudgetAsync((cache, key) => cache.BindKeyAsync(key));
+
+    private static async Task AssertNamespaceChangeRetainsBudgetAsync(Func<CacheServiceResponseCache, string, Task<string>> bindKey)
     {
         var backend = new RecordingCache();
         var cache = ResponseCache(backend, maxBytes: 21_000);
@@ -64,14 +70,14 @@ public sealed class CacheServiceResponseCacheBudgetTests
         const string alpha = "query:featureserver:service:alpha:layer:1:first";
         const string beta = "query:featureserver:service:beta:layer:1:first";
         const string nextAlpha = "query:featureserver:service:alpha:layer:1:next";
-        var first = bindKeys ? await cache.BindKeyAsync(alpha) : alpha;
-        var second = bindKeys ? await cache.BindKeyAsync(beta) : beta;
+        var first = await bindKey(cache, alpha);
+        var second = await bindKey(cache, beta);
         await cache.SetAsync(first, payload, Lifetime);
         await cache.SetAsync(second, payload, Lifetime);
         Assert.Equal(2, backend.ResponseWrites);
 
         await cache.RemoveByPatternAsync("query:featureserver:service:alpha:layer:1:*");
-        await cache.SetAsync(bindKeys ? await cache.BindKeyAsync(nextAlpha) : nextAlpha, payload, Lifetime);
+        await cache.SetAsync(await bindKey(cache, nextAlpha), payload, Lifetime);
 
         Assert.Equal(2, backend.ResponseWrites);
         Assert.Equal(2, backend.Responses.Count);
