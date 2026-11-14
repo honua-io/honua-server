@@ -27,21 +27,17 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Integration coverage for honua-server#1378 (#1254): an Esri subtype set (a
-/// <c>subtypeField</c> plus <c>subtypes</c> with per-subtype labels, default values,
-/// and value domains) captured on import must persist through publish into the
-/// Metadata v2 graph and survive the compat-compile (activated current snapshot), so
-/// the FeatureServer layer metadata can serve <c>subtypeField</c> / <c>subtypes</c> /
-/// <c>defaultSubtypeCode</c> (see <see cref="MetadataV2Resource.Subtypes"/>).
-/// </summary>
+// An Esri subtype set (subtypeField plus subtypes with per-subtype labels, default values and
+// value domains) captured on import must persist through publish into the Metadata v2 graph and
+// survive the compat-compile, so FeatureServer layer metadata can serve subtypeField, subtypes
+// and defaultSubtypeCode.
 [Collection("Database")]
 public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFixture fixture)
 {
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ImportLayerAsync_WithSubtypeMetadata_PersistsThemOntoPublishedMetadataV2Resource(bool featureTypes)
+    public async Task ImportLayerAsync_WithSubtypeMetadata_PersistsThemOntoPublishedMetadataV2Object(bool featureTypes)
     {
         const string tableName = "geoservices_import_subtypes";
         var serviceName = $"subtypes_{Guid.NewGuid():N}";

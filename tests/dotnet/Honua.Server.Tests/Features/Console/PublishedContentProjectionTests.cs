@@ -308,7 +308,7 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
             Publications = [graph.Publications[0], graph.Publications[0] with
             {
                 Metadata = graph.Publications[0].Metadata with { Id = "secondary-publication" },
-                PublicationType = MetadataV2PublicationType.StacCollection,
+                PublicationType = MetadataV2LayerType.StacCollection,
                 IsPrimary = false
             }]
         });

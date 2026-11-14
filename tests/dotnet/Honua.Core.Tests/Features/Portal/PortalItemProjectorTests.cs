@@ -100,12 +100,12 @@ public sealed class PortalItemProjectorTests
     [Operation(Operations.Metadata)]
     public void ProjectVisibleItems_ProjectsExtentFromResourceBbox()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             AccessPolicy = AnonymousPolicy(),
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Polygon,
@@ -369,10 +369,10 @@ public sealed class PortalItemProjectorTests
 
     private static MetadataV2GraphSnapshot BuildSnapshot(MetadataV2Service service, AccessPolicy? resourceAccess)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             AccessPolicy = resourceAccess,
         };
         return BuildSnapshotWithResource(service, resource);
@@ -391,7 +391,7 @@ public sealed class PortalItemProjectorTests
 
     private static MetadataV2GraphSnapshot BuildSnapshotWithResource(
         MetadataV2Service service,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var graph = new MetadataV2Graph
         {
@@ -407,14 +407,14 @@ public sealed class PortalItemProjectorTests
             Services = [service],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels", Name = "parcels" },
                     Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     ResourceId = resource.Metadata.Id,
                     ServiceId = service.Metadata.Id,
-                    PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
-                    Identifier = new MetadataV2PublicationIdentifier { Value = "0", IsNumeric = true },
+                    PublicationType = MetadataV2LayerType.EsriFeatureLayer,
+                    Identifier = new MetadataV2LayerIdentifier { Value = "0", IsNumeric = true },
                 }
             ],
         };
@@ -438,8 +438,8 @@ public sealed class PortalItemProjectorTests
     /// </summary>
     private sealed class FakePortalReadAuthorizer : IPortalResourceReadAuthorizer
     {
-        public AccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Resource? resource, MetadataV2Service service,
-            MetadataV2Publication? publication = null)
+        public AccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Object? resource, MetadataV2Service service,
+            MetadataV2Layer? publication = null)
             => new FakeAccessPolicyEvaluator().Evaluate(principal, resource?.AccessPolicy, service.AccessPolicy);
 
         public bool HasServiceAudience(ClaimsPrincipal principal, MetadataV2Service service) => false;

@@ -2643,15 +2643,15 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, IAsy
         // so this throwing test stub must satisfy them explicitly. Only the
         // ValidateServiceV2Async path is exercised by these tests; the rest forward
         // the same simulated failure for completeness.
-        public Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(
+        public Task<ResourceValidationResult<MetadataV2Object>> ValidateStorageLayerV2Async(
             int storageLayerId, CancellationToken cancellationToken = default) => throw exception;
 
-        public Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
+        public Task<ResourceValidationResult<MetadataV2Object>> ValidateLayerV2Async(
             int layerId,
             CancellationToken cancellationToken = default)
             => throw exception;
 
-        public Task<ResourceValidationResult<MetadataV2Resource>> ValidateCollectionV2Async(
+        public Task<ResourceValidationResult<MetadataV2Object>> ValidateCollectionV2Async(
             string collectionId,
             CancellationToken cancellationToken = default)
             => throw exception;

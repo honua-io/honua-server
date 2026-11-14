@@ -782,7 +782,7 @@ internal sealed class FeatureStreamConformanceService
         int Srid,
         string RunIdField,
         string? LabelField,
-        MetadataV2Resource Resource);
+        MetadataV2Object Resource);
 }
 
 internal sealed class FeatureStreamConformanceStore

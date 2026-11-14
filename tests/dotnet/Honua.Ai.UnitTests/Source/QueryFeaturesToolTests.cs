@@ -238,7 +238,7 @@ public sealed class QueryFeaturesToolTests
     private static ServiceProvider BuildServices(IFeatureReader reader)
     {
         var sql = Substitute.For<ISqlFilterTranslator>();
-        sql.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+        sql.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Object>())
             .Returns(new SqlFragment("TRUE", []));
         var services = new ServiceCollection();
         services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(BuildGraph()));

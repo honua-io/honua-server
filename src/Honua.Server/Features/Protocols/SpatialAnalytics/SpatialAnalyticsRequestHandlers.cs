@@ -332,7 +332,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             contentType: "application/geo+json");
     }
 
-    private static async Task<(int LayerId, MetadataV2Resource? Resource, MetadataV2Service? Service, IResult? Error)> ValidateRestResourceAsync(
+    private static async Task<(int LayerId, MetadataV2Object? Resource, MetadataV2Service? Service, IResult? Error)> ValidateRestResourceAsync(
         HttpContext context, string serviceId, int layerId, CancellationToken cancellationToken)
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
@@ -367,7 +367,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return (layerId, resource, service, null);
     }
 
-    private static async Task<(int LayerId, MetadataV2Resource? Resource, IResult? Error)> ValidateOgcResourceAsync(
+    private static async Task<(int LayerId, MetadataV2Object? Resource, IResult? Error)> ValidateOgcResourceAsync(
         HttpContext context, string collectionId, CancellationToken cancellationToken)
     {
         var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(

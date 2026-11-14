@@ -170,17 +170,17 @@ public sealed class TemporalExtentHelpersTests
         range.Should().BeNull();
     }
 
-    private static MetadataV2Resource BuildResourceWithIntervalTemporal()
+    private static MetadataV2Object BuildResourceWithIntervalTemporal()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-0", Name = "interval_layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = "start_time", Type = MetadataV2FieldType.DateTime },
                 new MetadataV2Field { Name = "end_time", Type = MetadataV2FieldType.DateTime },
             ],
-            Temporal = new MetadataV2ResourceTemporal
+            Temporal = new MetadataV2ObjectTemporal
             {
                 StartTimeField = "start_time",
                 EndTimeField = "end_time",

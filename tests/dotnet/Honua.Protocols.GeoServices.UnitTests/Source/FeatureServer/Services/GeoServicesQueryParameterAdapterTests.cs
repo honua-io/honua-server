@@ -33,7 +33,7 @@ public sealed class GeoServicesQueryParameterAdapterTests
                 DefaultRecordCount = 1000
             }
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -65,7 +65,7 @@ public sealed class GeoServicesQueryParameterAdapterTests
                 DefaultRecordCount = 100
             }
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -99,7 +99,7 @@ public sealed class GeoServicesQueryParameterAdapterTests
                 DefaultRecordCount = 100
             }
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -210,14 +210,14 @@ public sealed class GeoServicesQueryParameterAdapterTests
             }
         };
 
-    private static MetadataV2Resource PointResource()
+    private static MetadataV2Object PointResource()
         => new()
         {
             SchemaFields =
             [
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = new MetadataV2SpatialReference { Srid = 2263 },
                 GeometryType = MetadataV2GeometryType.Point

@@ -14,6 +14,7 @@ using Honua.Db.DuckDB.Features.FeatureStore;
 using Honua.Db.DuckDB.Features.FeatureStore.Services;
 using Honua.Db.DuckDB.Features.Infrastructure;
 using Honua.Db.DuckDB.Queries.Filters;
+using Honua.Tests.ProviderUnitSupport;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.DuckDB.Tests;
@@ -31,7 +32,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     private string _connectionString = null!;
     private DuckDBSpatialBootstrap _spatialBootstrap = null!;
     private DuckDbSqlFilterTranslator _filterTranslator = null!;
-    private MetadataV2Resource _resource = null!;
+    private MetadataV2Object _resource = null!;
     private const int LayerId = 0;
 
     public async Task InitializeAsync()
@@ -105,11 +106,11 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         _createStore = readSecurity => new DuckDBFeatureStore(queryBuilder, dataAccess, cacheManager, readSecurity: readSecurity);
         _store = _createStore(null);
         _filterTranslator = new DuckDbSqlFilterTranslator();
-        _resource = new MetadataV2Resource
+        _resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "duckdb.parcels", Name = "parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 PrimaryGeometryField = "geom",
@@ -208,7 +209,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
                 new FileDuckDBConnectionProvider(_connectionString, _spatialBootstrap), _registry,
                 null, NullLogger<DuckDBFeatureDataAccess>.Instance),
             new DuckDBFeatureCacheManager(_registry),
-            v2Provider: new StubV2Provider(LayerId, "id >= 3 AND id <= 7"),
+            v2Provider: CreateV2Provider("id >= 3 AND id <= 7"),
             filterExpressionService: new FilterExpressionService(new TemporalFilterTranslator()),
             readSecurity: CreateResolver());
 
@@ -221,17 +222,26 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 
     private sealed class TemporalFilterTranslator : IFilterExpressionTranslator
     {
-        public FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource) => expression;
+        public FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource) => expression;
 
-        public SqlFragment Translate(FilterExpression expression, MetadataV2Resource resource)
+        public SqlFragment Translate(FilterExpression expression, MetadataV2Object resource)
             => new DuckDbSqlFilterTranslator().Translate(expression, resource);
     }
+
+    private static StubV2Provider CreateV2Provider(string? permanentFilterExpression) => new(LayerId, permanentFilterExpression)
+    {
+        SchemaFields =
+        [
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },
+            new MetadataV2Field { Name = "start_time", Type = MetadataV2FieldType.DateTime }
+        ]
+    };
 
     private static LayerReadSecurityResolver CreateResolver(
         Honua.Core.Queries.Filters.SqlFragment? rowFilter = null,
         string[]? maskedFields = null)
         => new(
-            new StubV2Provider(LayerId, permanentFilterExpression: null),
+            CreateV2Provider(permanentFilterExpression: null),
             filterExpressionService: null,
             new StubRowFilterSource(rowFilter),
             new StubFieldMaskSource(maskedFields ?? []));
@@ -279,73 +289,6 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         }
     }
 
-    private sealed class StubV2Provider(int storageLayerId, string? permanentFilterExpression) :
-        Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider
-    {
-        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-        {
-            var resource = new MetadataV2Resource
-            {
-                Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-                Type = MetadataV2ResourceType.FeatureDataset,
-                SchemaFields =
-                [
-                    new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },
-                    new MetadataV2Field { Name = "start_time", Type = MetadataV2FieldType.DateTime }
-                ],
-                PermanentFilter = permanentFilterExpression == null ? null : new MetadataV2PermanentFilter
-                {
-                    Expression = permanentFilterExpression,
-                    Language = MetadataV2PermanentFilterLanguages.GeoServicesSql
-                }
-            };
-            var storageBinding = new MetadataV2StorageBinding
-            {
-                Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels", Name = "binding-parcels" },
-                ResourceId = resource.Metadata.Id,
-                StorageLayerId = storageLayerId,
-                StorageType = MetadataV2StorageType.RelationalTable,
-                Locator = "gis.parcels"
-            };
-            var graph = new MetadataV2Graph
-            {
-                Revision = 1,
-                Environment = "test",
-                Resources = [resource],
-                StorageBindings = [storageBinding]
-            };
-            return ValueTask.FromResult(new MetadataV2GraphSnapshot(graph, "etag-stub", DateTimeOffset.UtcNow));
-        }
-
-        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(null);
-    }
-
-    private sealed class StubRowFilterSource(Honua.Core.Queries.Filters.SqlFragment? fragment) :
-        Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource
-    {
-        public string? LastResourceId { get; private set; }
-
-        public Task<Honua.Core.Queries.Filters.SqlFragment?> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
-        {
-            LastResourceId = resource.Metadata.Id;
-            return Task.FromResult(fragment);
-        }
-    }
-
-    private sealed class StubFieldMaskSource(string[] maskedFields) :
-        Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource
-    {
-        public string? LastResourceId { get; private set; }
-
-        public Task<System.Collections.Immutable.ImmutableArray<string>> ResolveAsync(
-            MetadataV2Resource resource, CancellationToken cancellationToken = default)
-        {
-            LastResourceId = resource.Metadata.Id;
-            return Task.FromResult(System.Collections.Immutable.ImmutableArray.Create(maskedFields));
-        }
-    }
-
     [Fact]
     public async Task QueryAsync_ReturnsAllFeatures()
     {
@@ -369,10 +312,10 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task QueryAsync_PagedUnifiedQueryWithNonObjectIdPrimaryKey_ReturnsPrimaryKeyOrder()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res.parcels", Name = "parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field
@@ -391,7 +334,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
                 },
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = MetadataV2SpatialReference.Wgs84
@@ -795,10 +738,10 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 
     private sealed class UnusedFilterExpressionTranslator : IFilterExpressionTranslator
     {
-        public FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
+        public FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource)
             => throw new InvalidOperationException("The ordering regression does not use filters.");
 
-        public SqlFragment Translate(FilterExpression expression, MetadataV2Resource resource)
+        public SqlFragment Translate(FilterExpression expression, MetadataV2Object resource)
             => throw new InvalidOperationException("The ordering regression does not use filters.");
     }
 

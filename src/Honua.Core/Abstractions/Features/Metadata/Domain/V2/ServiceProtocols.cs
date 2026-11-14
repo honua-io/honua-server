@@ -81,7 +81,7 @@ public static class ServiceProtocols
         return service.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase));
     }
 
-    public static bool IsPreferredPublicationType(string? protocol, MetadataV2PublicationType publicationType)
+    public static bool IsPreferredPublicationType(string? protocol, MetadataV2LayerType publicationType)
     {
         if (string.IsNullOrWhiteSpace(protocol))
         {
@@ -90,58 +90,58 @@ public static class ServiceProtocols
 
         if (string.Equals(protocol, OgcFeatures, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.OgcCollection;
+            return publicationType == MetadataV2LayerType.OgcCollection;
         }
 
         if (string.Equals(protocol, Stac, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.StacCollection;
+            return publicationType == MetadataV2LayerType.StacCollection;
         }
 
         if (string.Equals(protocol, Wfs20, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.WfsFeatureType;
+            return publicationType == MetadataV2LayerType.WfsFeatureType;
         }
 
         if (string.Equals(protocol, FeatureServer, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.EsriFeatureLayer;
+            return publicationType == MetadataV2LayerType.EsriFeatureLayer;
         }
 
         if (string.Equals(protocol, MapServer, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.EsriMapLayer;
+            return publicationType == MetadataV2LayerType.EsriMapLayer;
         }
 
         if (string.Equals(protocol, ImageServer, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.EsriImageLayer;
+            return publicationType == MetadataV2LayerType.EsriImageLayer;
         }
 
         if (string.Equals(protocol, VectorTileServer, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.EsriVectorTileLayer;
+            return publicationType == MetadataV2LayerType.EsriVectorTileLayer;
         }
 
         if (string.Equals(protocol, OData, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.ODataEntitySet;
+            return publicationType == MetadataV2LayerType.ODataEntitySet;
         }
 
         if (string.Equals(protocol, SensorThings, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.SensorThingsDatastream;
+            return publicationType == MetadataV2LayerType.SensorThingsDatastream;
         }
 
         if (string.Equals(protocol, Wms, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.WmsLayer;
+            return publicationType == MetadataV2LayerType.WmsLayer;
         }
 
         if (string.Equals(protocol, Wmts, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(protocol, OgcApiTiles, StringComparison.OrdinalIgnoreCase))
         {
-            return publicationType == MetadataV2PublicationType.WmtsLayer;
+            return publicationType == MetadataV2LayerType.WmtsLayer;
         }
 
         return false;

@@ -200,7 +200,7 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         var authorizedSnapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = authorizedSnapshot.Graph.Publications.First(candidate =>
             candidate.LayerIndex == WebAppFixture.TestLayerId &&
-            candidate.PublicationType == MetadataV2PublicationType.StacCollection);
+            candidate.PublicationType == MetadataV2LayerType.StacCollection);
         var authorizedBinding = authorizedSnapshot.Index.StorageBindingsById[publication.StorageBindingId!];
         var activatedBinding = authorizedBinding with
         {

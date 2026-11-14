@@ -337,7 +337,7 @@ public sealed class MapServerDynamicJoinTests
             .AddResource(
                 "res-left",
                 "left_parcels",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: leftFields,
                 accessPolicy: openAccessPolicy)
             .AddStorageBinding(
@@ -354,11 +354,11 @@ public sealed class MapServerDynamicJoinTests
                 layerIndex: LeftLayerId,
                 storageBindingId: "binding-left",
                 serviceLocalId: LeftLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2LayerType.EsriMapLayer)
             .AddResource(
                 "res-right",
                 "right_parcels",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: rightFields,
                 accessPolicy: rightAccessPolicy)
             .AddStorageBinding(
@@ -375,7 +375,7 @@ public sealed class MapServerDynamicJoinTests
                 layerIndex: RightLayerId,
                 storageBindingId: "binding-right",
                 serviceLocalId: RightLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2LayerType.EsriMapLayer)
             .BuildProvider();
     }
 

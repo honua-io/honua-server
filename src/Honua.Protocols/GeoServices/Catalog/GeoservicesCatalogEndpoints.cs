@@ -734,13 +734,13 @@ internal static class GeoservicesCatalogEndpoints
                 continue;
             }
 
-            var visibleResources = new List<MetadataV2Resource>();
+            var visibleResources = new List<MetadataV2Object>();
             foreach (var resource in snapshot.PublicationsForService(service.Metadata.Id)
                 .Where(snapshot.IsRoutable)
                 .Where(publication => TenantScopeHelpers.IsPublicationVisible(
                     context, publication, snapshot.ResolveResource(publication), service))
                 .Select(snapshot.ResolveResource)
-                .OfType<MetadataV2Resource>())
+                .OfType<MetadataV2Object>())
             {
                 var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
                     context, resource, service, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
@@ -1212,7 +1212,7 @@ internal static class GeoservicesCatalogEndpoints
     private readonly record struct ImageServerProbeRequest(
         MetadataV2GraphSnapshot Snapshot,
         MetadataV2Service Service,
-        IReadOnlyCollection<MetadataV2Resource> VisibleResources,
+        IReadOnlyCollection<MetadataV2Object> VisibleResources,
         string? TenantId);
 
     private static async Task<ImageServerProbeResult> GetImageServerLayerIdAsync(
@@ -1279,7 +1279,7 @@ internal static class GeoservicesCatalogEndpoints
 
     private sealed record ImageServerProbeCandidate(
         MetadataV2Service Service,
-        IReadOnlyCollection<MetadataV2Resource> VisibleResources);
+        IReadOnlyCollection<MetadataV2Object> VisibleResources);
 
     private sealed record ImageServerProbeResult(int? LayerId, bool AllLookupsFailed);
 

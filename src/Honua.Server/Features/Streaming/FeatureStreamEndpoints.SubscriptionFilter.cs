@@ -424,7 +424,7 @@ internal static partial class FeatureStreamEndpoints
             {
                 // Raster and other non-feature publications may reuse a numeric layer ID.
                 // They cannot supply feature events and must not contribute read policies.
-                if (layer.Resource.Type is not (MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table))
+                if (layer.Resource.Type is not (MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table))
                 {
                     continue;
                 }
@@ -525,7 +525,7 @@ internal static partial class FeatureStreamEndpoints
 
     private static bool TryBuildStreamTemporalFilter(
         string? datetime,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out StreamTemporalFilter? temporalFilter,
         out string? errorMessage)
     {
@@ -667,7 +667,7 @@ internal static partial class FeatureStreamEndpoints
 
     private static IResult? RequireStreamLayerAccess(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service)
         => AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
 
@@ -752,7 +752,7 @@ internal static partial class FeatureStreamEndpoints
 
     private static StreamLayerDescriptor? CreateStreamLayer(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Service? service)
     {
         var resource = snapshot.ResolveResource(publication);
@@ -777,9 +777,9 @@ internal static partial class FeatureStreamEndpoints
             publication.LayerIndex);
     }
 
-    private static MetadataV2Publication? ResolvePrimaryStreamPublication(
+    private static MetadataV2Layer? ResolvePrimaryStreamPublication(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
         => snapshot.Graph.Publications
             .Where(publication =>
                 string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
@@ -793,9 +793,9 @@ internal static partial class FeatureStreamEndpoints
             .FirstOrDefault();
 
     internal sealed record StreamLayerDescriptor(
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         MetadataV2Service? Service,
-        MetadataV2Publication? Publication,
+        MetadataV2Layer? Publication,
         int LayerId,
         int? PublicLayerId);
 

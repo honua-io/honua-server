@@ -193,7 +193,7 @@ internal sealed class PbfQueryFormatter
 
     public (byte[] response, string contentType) FormatAsPbf(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -261,7 +261,7 @@ internal sealed class PbfQueryFormatter
     private static void WriteFeatureResult(
         ref ProtobufWriter writer,
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string objectIdFieldName,
         int srid,
         bool returnGeometry,

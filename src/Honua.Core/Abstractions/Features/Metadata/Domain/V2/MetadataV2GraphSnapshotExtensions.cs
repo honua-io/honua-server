@@ -9,7 +9,7 @@ public static class MetadataV2GraphSnapshotExtensions
 {
     public static bool IsRoutable(
         this MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication)
+        MetadataV2Layer publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
@@ -31,7 +31,7 @@ public static class MetadataV2GraphSnapshotExtensions
     public static bool IsRoutable(
         this MetadataV2GraphSnapshot snapshot,
         MetadataV2StorageBinding binding,
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
         => binding.IsRoutable(resource) && IsUnderstoodConnection(snapshot.ResolveConnection(binding));
 
     public static bool IsRoutable(this MetadataV2Service service)
@@ -43,26 +43,26 @@ public static class MetadataV2GraphSnapshotExtensions
 
     // Retired entries stay addressable for administration and must not be served.
     public static bool IsRoutable(
-        this MetadataV2Publication publication,
-        MetadataV2Resource? resource)
+        this MetadataV2Layer publication,
+        MetadataV2Object? resource)
     {
         ArgumentNullException.ThrowIfNull(publication);
-        return IsKnownEnumValue(publication.PublicationType, MetadataV2PublicationType.Unknown) &&
+        return IsKnownEnumValue(publication.PublicationType, MetadataV2LayerType.Unknown) &&
                IsServingStatus(publication.Status) && IsServingResource(resource);
     }
 
     private static bool IsRoutable(
         this MetadataV2StorageBinding binding,
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
     {
         ArgumentNullException.ThrowIfNull(binding);
         return IsKnownEnumValue(binding.StorageType, MetadataV2StorageType.Unknown) &&
                IsServingStatus(binding.Status) && IsServingResource(resource);
     }
 
-    private static bool IsServingResource(MetadataV2Resource? resource)
+    private static bool IsServingResource(MetadataV2Object? resource)
         => resource is not null &&
-           IsKnownEnumValue(resource.Type, MetadataV2ResourceType.Unknown) && IsServingStatus(resource.Status) &&
+           IsKnownEnumValue(resource.Type, MetadataV2ObjectType.Unknown) && IsServingStatus(resource.Status) &&
            MetadataV2FieldSemantics.HasSupportedReferences(resource);
 
     private static bool IsUnderstoodConnection(MetadataV2Connection? connection)
@@ -92,15 +92,15 @@ public static class MetadataV2GraphSnapshotExtensions
         return snapshot.Index.ServicesByName.TryGetValue(serviceName, out var service) ? service : null;
     }
 
-    public static IReadOnlyList<MetadataV2Publication> PublicationsForService(
+    public static IReadOnlyList<MetadataV2Layer> PublicationsForService(
         this MetadataV2GraphSnapshot snapshot, string serviceId)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         return snapshot.Index.PublicationsByService[serviceId].ToArray();
     }
 
-    public static MetadataV2Resource? ResolveResource(
-        this MetadataV2GraphSnapshot snapshot, MetadataV2Publication publication)
+    public static MetadataV2Object? ResolveResource(
+        this MetadataV2GraphSnapshot snapshot, MetadataV2Layer publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(publication);
@@ -108,7 +108,7 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     public static MetadataV2StorageBinding? ResolveStorageBinding(
-        this MetadataV2GraphSnapshot snapshot, MetadataV2Publication publication)
+        this MetadataV2GraphSnapshot snapshot, MetadataV2Layer publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(publication);
@@ -135,7 +135,7 @@ public static class MetadataV2GraphSnapshotExtensions
 
     public static int? ResolveStorageLayerId(
         this MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication)
+        MetadataV2Layer publication)
     {
         var binding = snapshot.ResolveStorageBinding(publication);
         return binding?.StorageLayerId;
@@ -144,8 +144,8 @@ public static class MetadataV2GraphSnapshotExtensions
     // The storage handle is resolved from the binding before the service-local index, because those numbers name different resources when they diverge.
     public static int? ResolveStorageLayerId(
         this MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
-        MetadataV2Resource? resource)
+        MetadataV2Layer publication,
+        MetadataV2Object? resource)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(publication);
@@ -180,7 +180,7 @@ public static class MetadataV2GraphSnapshotExtensions
 
     public static int? ResolveStorageLayerId(
         this MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(resource);
@@ -193,7 +193,7 @@ public static class MetadataV2GraphSnapshotExtensions
         return any?.StorageLayerId;
     }
 
-    public static IEnumerable<MetadataV2Publication> PublicationsForStorageLayer(
+    public static IEnumerable<MetadataV2Layer> PublicationsForStorageLayer(
         this MetadataV2GraphSnapshot snapshot,
         int storageLayerId)
     {
@@ -206,14 +206,14 @@ public static class MetadataV2GraphSnapshotExtensions
     public static MetadataV2StorageResourceResolution ResolveStorageResource(
         this MetadataV2GraphSnapshot snapshot,
         int storageLayerId,
-        Func<MetadataV2Publication, bool>? includePublication = null)
+        Func<MetadataV2Layer, bool>? includePublication = null)
     {
         var publications = snapshot.PublicationsForStorageLayer(storageLayerId)
             .Where(publication => includePublication?.Invoke(publication) ?? true).ToArray();
         var resources = publications.Select(publication => snapshot.ResolveResource(publication)!)
             .DistinctBy(static resource => resource.Metadata.Id).ToArray();
         var featureResources = resources.Where(static resource =>
-            resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table).ToArray();
+            resource.Type is MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table).ToArray();
         var candidates = featureResources.Length > 0 ? featureResources : resources;
         if (candidates.Length < 2)
         {
@@ -241,7 +241,7 @@ public static class MetadataV2GraphSnapshotExtensions
         return snapshot.Index.ConnectionsById.TryGetValue(binding.ConnectionId, out var c) ? c : null;
     }
 
-    public static MetadataV2Publication? FindPublicationOnService(
+    public static MetadataV2Layer? FindPublicationOnService(
         this MetadataV2GraphSnapshot snapshot,
         string serviceId,
         string serviceLocalIdOrPath)
@@ -263,7 +263,7 @@ public static class MetadataV2GraphSnapshotExtensions
         return null;
     }
 
-    public static MetadataV2Publication? FindPublicationByLayerIndex(
+    public static MetadataV2Layer? FindPublicationByLayerIndex(
         this MetadataV2GraphSnapshot snapshot,
         string serviceId,
         int layerIndex)
@@ -296,7 +296,7 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     public static IEnumerable<MetadataV2Field> FieldsWithSemanticRole(
-        this MetadataV2Resource resource, string semanticRole)
+        this MetadataV2Object resource, string semanticRole)
     {
         ArgumentNullException.ThrowIfNull(resource);
         if (string.IsNullOrEmpty(semanticRole))
@@ -318,7 +318,7 @@ public static class MetadataV2GraphSnapshotExtensions
 }
 
 public readonly record struct MetadataV2StorageResourceResolution(
-    MetadataV2Resource? Resource,
+    MetadataV2Object? Resource,
     string? ConflictDetail)
 {
     public bool IsAmbiguous => ConflictDetail is not null;

@@ -33,7 +33,7 @@ public sealed class OwnerMaskEditPreservationTests
             NullLogger<GeoServicesEditParameterAdapter>.Instance);
         var converted = await adapter.ConvertAsync(
             new GeoServicesEditRequest { Updates = ImmutableArray.Create(update) },
-            new MetadataV2Resource());
+            new MetadataV2Object());
 
         converted.IsSuccess.Should().BeTrue();
         if (converted.EditRequest is not { } request)
@@ -51,7 +51,7 @@ public sealed class OwnerMaskEditPreservationTests
         edit.Attributes!.Keys.Should().NotContain("owner");
 
         var batch = new EditProcessor(NullLogger<EditProcessor>.Instance)
-            .ToFeatureEditBatch(request, new MetadataV2Resource());
+            .ToFeatureEditBatch(request, new MetadataV2Object());
         var stored = batch.Updates.Should().ContainSingle().Subject;
         stored.PreserveOmittedMaskedAttributes.Should().BeTrue();
         stored.Attributes.ContainsKey("owner").Should().BeFalse();

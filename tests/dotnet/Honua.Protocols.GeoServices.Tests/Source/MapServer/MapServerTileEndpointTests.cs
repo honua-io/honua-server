@@ -52,7 +52,7 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
     {
         var masks = ImmutableArray.Create("classification");
         var source = Substitute.For<IFieldMaskSource>();
-        source.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>()).Returns(_ => masks);
+        source.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>()).Returns(_ => masks);
         var storage = Substitute.For<ICloudFileStorage>();
         storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ =>
         {
@@ -130,7 +130,7 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
                 "resource-binding-lifecycle",
                 layerIndex: 0,
                 storageBindingId: "binding-lifecycle",
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2LayerType.EsriMapLayer)
             .Build();
         graph = graph with
         {
@@ -164,13 +164,13 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
                 "resource-tile-scale",
                 layerIndex: 0,
                 storageBindingId: "binding-tile-scale",
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2LayerType.EsriMapLayer)
             .Build();
         graph = graph with
         {
             Resources = graph.Resources.Select(resource => resource with
             {
-                Display = new MetadataV2ResourceDisplay { MinScale = 50_000 }
+                Display = new MetadataV2ObjectDisplay { MinScale = 50_000 }
             }).ToArray()
         };
         var snapshot = await new TestMetadataV2GraphProvider(graph).GetCurrentAsync();

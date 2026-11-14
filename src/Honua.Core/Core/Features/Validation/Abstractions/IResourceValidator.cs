@@ -8,15 +8,15 @@ namespace Honua.Core.Features.Validation.Abstractions;
 
 public interface IResourceValidator
 {
-    Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(
+    Task<ResourceValidationResult<MetadataV2Object>> ValidateStorageLayerV2Async(
         int storageLayerId,
         CancellationToken cancellationToken = default);
 
-    Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
+    Task<ResourceValidationResult<MetadataV2Object>> ValidateLayerV2Async(
         int layerId,
         CancellationToken cancellationToken = default);
 
-    Task<ResourceValidationResult<MetadataV2Resource>> ValidateCollectionV2Async(
+    Task<ResourceValidationResult<MetadataV2Object>> ValidateCollectionV2Async(
         string collectionId,
         CancellationToken cancellationToken = default);
 
@@ -43,8 +43,8 @@ public interface IResourceValidator
 
 public readonly record struct MetadataV2ServiceLayerTriple(
     MetadataV2Service Service,
-    MetadataV2Publication Publication,
-    MetadataV2Resource Resource)
+    MetadataV2Layer Publication,
+    MetadataV2Object Resource)
 {
     public int? StorageLayerId { get; init; }
 

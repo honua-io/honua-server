@@ -13,7 +13,7 @@ internal static class CapabilitiesExtentFixture
     internal const int ProjectedSrid = 32618;
 
     internal static TestMetadataV2GraphProvider PublishedLayers(
-        string protocol, MetadataV2PublicationType publicationType, int healthyLayerSrid = 4326)
+        string protocol, MetadataV2LayerType publicationType, int healthyLayerSrid = 4326)
     {
         const string ServiceId = "svc-capabilities-extents";
         var builder = new TestMetadataV2GraphBuilder().AddService(
@@ -30,7 +30,7 @@ internal static class CapabilitiesExtentFixture
                         new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = false }
                     ],
                     accessPolicy: new AccessPolicy { AllowAnonymous = true },
-                    spatial: new MetadataV2ResourceSpatial
+                    spatial: new MetadataV2ObjectSpatial
                     {
                         SpatialReference = new MetadataV2SpatialReference { Srid = srid, Crs = $"EPSG:{srid}", IsGeographic = srid == 4326 },
                         GeometryType = MetadataV2GeometryType.Point,

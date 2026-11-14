@@ -14,7 +14,7 @@ public sealed class OgcCollectionPublicationSelectionTests
     public void AdvertisedCollectionId_PrefersServiceLocalIdOverTitle()
     {
         var publication = Publication("pub-a", "parcels", title: "Something else", isPrimary: false);
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-a", Name = "resource-name", Title = "parcels" }
         };
@@ -59,11 +59,11 @@ public sealed class OgcCollectionPublicationSelectionTests
         selected!.Metadata.Id.Should().Be("pub-b");
     }
 
-    private static MetadataV2Publication Publication(string id, string serviceLocalId, string title, bool isPrimary)
+    private static MetadataV2Layer Publication(string id, string serviceLocalId, string title, bool isPrimary)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id, Title = title },
-            Identifier = new MetadataV2PublicationIdentifier { Value = serviceLocalId },
+            Identifier = new MetadataV2LayerIdentifier { Value = serviceLocalId },
             IsPrimary = isPrimary,
             ResourceId = id,
             ServiceId = "svc"

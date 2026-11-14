@@ -178,7 +178,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             layerIdText,
             graphLayerKey,
             request.LayerName.Trim(),
-            MetadataV2PublicationType.EsriFeatureLayer,
+            MetadataV2LayerType.EsriFeatureLayer,
             isPrimary: true,
             idPrefix: "pub",
             request.Enabled,
@@ -191,7 +191,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             layerIdText,
             graphLayerKey,
             request.LayerName.Trim(),
-            MetadataV2PublicationType.StacCollection,
+            MetadataV2LayerType.StacCollection,
             isPrimary: false,
             idPrefix: "pub-stac",
             request.Enabled,
@@ -547,8 +547,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                HasStorageBindingBeenRepurposed(currentBinding, persistedBinding);
 
         static string? ResolveBindingId(
-            MetadataV2Publication publication,
-            IReadOnlyDictionary<string, MetadataV2Resource> resources,
+            MetadataV2Layer publication,
+            IReadOnlyDictionary<string, MetadataV2Object> resources,
             IReadOnlyDictionary<string, MetadataV2StorageBinding> bindings)
         {
             if (!string.IsNullOrEmpty(publication.StorageBindingId) &&
@@ -572,13 +572,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))?.Metadata.Id;
         }
 
-        string? ResolveCurrentBindingId(MetadataV2Publication publication)
+        string? ResolveCurrentBindingId(MetadataV2Layer publication)
             => ResolveBindingId(
                 publication,
                 currentResourcesForPublicationCleanup,
                 currentBindingsForPublicationCleanup);
 
-        bool UsesRepurposedFailedDataTarget(MetadataV2Publication publication)
+        bool UsesRepurposedFailedDataTarget(MetadataV2Layer publication)
         {
             currentResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var currentResource);
             persistedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var persistedResource);
@@ -599,7 +599,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                        addedBindingIdsForPublicationCleanup);
         }
 
-        bool UsesUnrepurposedFailedDataTarget(MetadataV2Publication publication)
+        bool UsesUnrepurposedFailedDataTarget(MetadataV2Layer publication)
         {
             currentResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var currentResource);
             persistedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var persistedResource);
@@ -619,7 +619,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return usesFailedResource || usesFailedBinding;
         }
 
-        var replacedPublicationsByPersistedId = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);
+        var replacedPublicationsByPersistedId = new Dictionary<string, MetadataV2Layer>(StringComparer.Ordinal);
         foreach (var previous in previousGraph.Publications.Where(previous =>
                      !persistedPublicationsById.ContainsKey(previous.Metadata.Id)))
         {
@@ -632,7 +632,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             }
         }
 
-        var publications = new List<MetadataV2Publication>(currentGraph.Publications.Count);
+        var publications = new List<MetadataV2Layer>(currentGraph.Publications.Count);
         foreach (var current in currentGraph.Publications)
         {
             if (addedPublicationIds.Contains(current.Metadata.Id) &&
@@ -669,7 +669,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ToHashSet(StringComparer.Ordinal);
 
         bool RepairedTargetSurvives(
-            MetadataV2Publication publication,
+            MetadataV2Layer publication,
             string? previousEffectiveBindingId)
         {
             if (!rebasedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var resource))
@@ -918,15 +918,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
     }
 
     private static bool HasSamePublicationSlot(
-        MetadataV2Publication left,
-        MetadataV2Publication right)
+        MetadataV2Layer left,
+        MetadataV2Layer right)
         => string.Equals(left.ServiceId, right.ServiceId, StringComparison.Ordinal) &&
            left.LayerIndex == right.LayerIndex &&
            left.PublicationTypeValue == right.PublicationTypeValue;
 
     private static bool StillUsesFailedPublicationDataTarget(
-        MetadataV2Publication current,
-        MetadataV2Publication persisted)
+        MetadataV2Layer current,
+        MetadataV2Layer persisted)
         => string.Equals(current.ResourceId, persisted.ResourceId, StringComparison.Ordinal) ||
            string.Equals(current.StorageBindingId, persisted.StorageBindingId, StringComparison.Ordinal);
 
@@ -957,8 +957,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             MetadataV2JsonContext.Default.MetadataV2Service);
 
     private static bool HasResourceBeenRepurposed(
-        MetadataV2Resource current,
-        MetadataV2Resource persisted,
+        MetadataV2Object current,
+        MetadataV2Object persisted,
         HashSet<string> addedBindingIds)
     {
         var failedBindingIds = persisted.StorageBindingIds
@@ -1033,10 +1033,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         JsonTypeInfo<T> typeInfo)
         => !JsonEquivalent(current, persisted, typeInfo);
 
-    private static MetadataV2Publication RestorePublicationMutation(
-        MetadataV2Publication current,
-        MetadataV2Publication previous,
-        MetadataV2Publication persisted)
+    private static MetadataV2Layer RestorePublicationMutation(
+        MetadataV2Layer current,
+        MetadataV2Layer previous,
+        MetadataV2Layer persisted)
         => current with
         {
             Metadata = RestoreObjectMetadataMutation(current.Metadata, previous.Metadata, persisted.Metadata),
@@ -1058,7 +1058,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.Identifier,
                 previous.Identifier,
                 persisted.Identifier,
-                static value => new MetadataV2Publication { Identifier = value }),
+                static value => new MetadataV2Layer { Identifier = value }),
             LayerIndex = RestoreMutationValue(current.LayerIndex, previous.LayerIndex, persisted.LayerIndex),
             Path = RestoreMutationValue(current.Path, previous.Path, persisted.Path),
             ServiceLocalId = RestoreMutationValue(
@@ -1111,10 +1111,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
         };
 
-    private static MetadataV2Resource RestoreResourceMutation(
-        MetadataV2Resource current,
-        MetadataV2Resource previous,
-        MetadataV2Resource persisted)
+    private static MetadataV2Object RestoreResourceMutation(
+        MetadataV2Object current,
+        MetadataV2Object previous,
+        MetadataV2Object persisted)
         => current with
         {
             Metadata = RestoreObjectMetadataMutation(current.Metadata, previous.Metadata, persisted.Metadata),
@@ -1139,7 +1139,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.Relationships,
                 previous.Relationships,
                 persisted.Relationships,
-                static value => new MetadataV2Resource { Relationships = value },
+                static value => new MetadataV2Object { Relationships = value },
                 static resource => resource.Relationships),
             AccessPolicy = RestoreAccessPolicyMutation(
                 current.AccessPolicy,
@@ -1154,13 +1154,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.PermanentFilter,
                 previous.PermanentFilter,
                 persisted.PermanentFilter,
-                static value => new MetadataV2Resource { PermanentFilter = value },
+                static value => new MetadataV2Object { PermanentFilter = value },
                 static resource => resource.PermanentFilter),
             Subtypes = RestoreResourceMutationValue(
                 current.Subtypes,
                 previous.Subtypes,
                 persisted.Subtypes,
-                static value => new MetadataV2Resource { Subtypes = value },
+                static value => new MetadataV2Object { Subtypes = value },
                 static resource => resource.Subtypes),
             AttributeRules = RestoreAttributeRulesMutation(
                 current.AttributeRules,
@@ -1170,25 +1170,25 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.ContingentValueGroups,
                 previous.ContingentValueGroups,
                 persisted.ContingentValueGroups,
-                static value => new MetadataV2Resource { ContingentValueGroups = value },
+                static value => new MetadataV2Object { ContingentValueGroups = value },
                 static resource => resource.ContingentValueGroups),
             OwnerEditPolicy = RestoreResourceMutationValue(
                 current.OwnerEditPolicy,
                 previous.OwnerEditPolicy,
                 persisted.OwnerEditPolicy,
-                static value => new MetadataV2Resource { OwnerEditPolicy = value },
+                static value => new MetadataV2Object { OwnerEditPolicy = value },
                 static resource => resource.OwnerEditPolicy),
             Extrusion = RestoreResourceMutationValue(
                 current.Extrusion,
                 previous.Extrusion,
                 persisted.Extrusion,
-                static value => new MetadataV2Resource { Extrusion = value },
+                static value => new MetadataV2Object { Extrusion = value },
                 static resource => resource.Extrusion),
             Symbology3D = RestoreResourceMutationValue(
                 current.Symbology3D,
                 previous.Symbology3D,
                 persisted.Symbology3D,
-                static value => new MetadataV2Resource { Symbology3D = value },
+                static value => new MetadataV2Object { Symbology3D = value },
                 static resource => resource.Symbology3D),
             StyleResourceIds = RestoreMutationSequence(
                 current.StyleResourceIds,
@@ -1198,19 +1198,19 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.Style,
                 previous.Style,
                 persisted.Style,
-                static value => new MetadataV2Resource { Style = value },
+                static value => new MetadataV2Object { Style = value },
                 static resource => resource.Style),
             Display = RestoreResourceMutationValue(
                 current.Display,
                 previous.Display,
                 persisted.Display,
-                static value => new MetadataV2Resource { Display = value },
+                static value => new MetadataV2Object { Display = value },
                 static resource => resource.Display),
             Editing = RestoreResourceMutationValue(
                 current.Editing,
                 previous.Editing,
                 persisted.Editing,
-                static value => new MetadataV2Resource { Editing = value },
+                static value => new MetadataV2Object { Editing = value },
                 static resource => resource.Editing),
             Status = RestoreStatusMutation(current.Status, previous.Status, persisted.Status),
             Extensions = RestoreJsonMapMutation(
@@ -1957,18 +1957,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     private readonly record struct RestoredMetadataLink(MetadataV2Link Link, int? PreviousIndex);
 
-    private static MetadataV2ResourceSpatial? RestoreResourceSpatialMutation(
-        MetadataV2ResourceSpatial? current,
-        MetadataV2ResourceSpatial? previous,
-        MetadataV2ResourceSpatial? persisted)
+    private static MetadataV2ObjectSpatial? RestoreResourceSpatialMutation(
+        MetadataV2ObjectSpatial? current,
+        MetadataV2ObjectSpatial? previous,
+        MetadataV2ObjectSpatial? persisted)
     {
         if (current is null)
         {
             return persisted is null && previous is not null ? previous : null;
         }
 
-        var previousValue = previous ?? new MetadataV2ResourceSpatial();
-        var persistedValue = persisted ?? new MetadataV2ResourceSpatial();
+        var previousValue = previous ?? new MetadataV2ObjectSpatial();
+        var persistedValue = persisted ?? new MetadataV2ObjectSpatial();
         var restored = current with
         {
             SpatialReference = RestoreSpatialReferenceMutation(
@@ -2097,18 +2097,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static bool NullableSequenceEqual<T>(IReadOnlyList<T>? left, IReadOnlyList<T>? right)
         => left is null ? right is null : right is not null && left.SequenceEqual(right);
 
-    private static MetadataV2ResourceTemporal? RestoreResourceTemporalMutation(
-        MetadataV2ResourceTemporal? current,
-        MetadataV2ResourceTemporal? previous,
-        MetadataV2ResourceTemporal? persisted)
+    private static MetadataV2ObjectTemporal? RestoreResourceTemporalMutation(
+        MetadataV2ObjectTemporal? current,
+        MetadataV2ObjectTemporal? previous,
+        MetadataV2ObjectTemporal? persisted)
     {
         if (current is null)
         {
             return persisted is null && previous is not null ? previous : null;
         }
 
-        var previousValue = previous ?? new MetadataV2ResourceTemporal();
-        var persistedValue = persisted ?? new MetadataV2ResourceTemporal();
+        var previousValue = previous ?? new MetadataV2ObjectTemporal();
+        var persistedValue = persisted ?? new MetadataV2ObjectTemporal();
         var restored = current with
         {
             StartTimeField = RestoreMutationValue(
@@ -2161,10 +2161,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         T current,
         T previous,
         T persisted,
-        Func<T, MetadataV2Resource> containerFactory,
-        Func<MetadataV2Resource, T> valueSelector)
+        Func<T, MetadataV2Object> containerFactory,
+        Func<MetadataV2Object, T> valueSelector)
     {
-        var typeInfo = MetadataV2JsonContext.Default.MetadataV2Resource;
+        var typeInfo = MetadataV2JsonContext.Default.MetadataV2Object;
         var currentNode = JsonSerializer.SerializeToNode(containerFactory(current), typeInfo);
         var previousNode = JsonSerializer.SerializeToNode(containerFactory(previous), typeInfo);
         var persistedNode = JsonSerializer.SerializeToNode(containerFactory(persisted), typeInfo);
@@ -2469,13 +2469,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         T current,
         T previous,
         T persisted,
-        Func<T, MetadataV2Publication> containerFactory)
+        Func<T, MetadataV2Layer> containerFactory)
         => RestoreJsonMutationValue(
             current,
             previous,
             persisted,
             containerFactory,
-            MetadataV2JsonContext.Default.MetadataV2Publication);
+            MetadataV2JsonContext.Default.MetadataV2Layer);
 
     private static T RestoreSchemaFieldMutationValue<T>(
         T current,
@@ -2902,8 +2902,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
             string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
             string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal) &&
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
-        MetadataV2Publication featurePublication;
+            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
+        MetadataV2Layer featurePublication;
         if (existingFeaturePublication is not null)
         {
             featurePublication = existingFeaturePublication with
@@ -2915,7 +2915,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             var collidingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
                 string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
                 publication.LayerIndex == layerId &&
                 (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
                  !string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal)));
@@ -2935,7 +2935,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 layerIdText,
                 BuildLayerGraphId("layer", layerId, storageScope?.ManagedLayerIds?.Contains(layerId) == true ? null : storageScope?.ConnectionId),
                 layerName,
-                MetadataV2PublicationType.EsriFeatureLayer,
+                MetadataV2LayerType.EsriFeatureLayer,
                 isPrimary: true,
                 idPrefix: "pub",
                 enabled,
@@ -3132,7 +3132,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
            service.Protocols.Contains(MetadataV2ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase) ||
            graph.Publications.Any(publication =>
                string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-               publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+               publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
 
     // Loads the active Metadata v2 graph for mutation, tolerating a fresh-DB
     // container where no snapshot has been activated yet (e.g. migration 031 ran
@@ -3249,7 +3249,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                         North = extent.MaxY,
                     };
 
-                var spatial = (resource.Spatial ?? new MetadataV2ResourceSpatial()) with { Bbox = bbox };
+                var spatial = (resource.Spatial ?? new MetadataV2ObjectSpatial()) with { Bbox = bbox };
                 return resource with { Spatial = spatial };
             })
             .ToArray();
@@ -3345,7 +3345,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return serviceId;
     }
 
-    private static MetadataV2Resource BuildPublishedResource(
+    private static MetadataV2Object BuildPublishedResource(
         LayerPublishRequest request,
         int layerId,
         Guid? connectionId,
@@ -3360,7 +3360,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         DateTimeOffset now)
     {
         var bindingId = BuildStorageBindingId(layerId, connectionId);
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -3375,7 +3375,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 CreatedAt = now,
                 UpdatedAt = now
             },
-            Type = string.IsNullOrWhiteSpace(geometryColumn) ? MetadataV2ResourceType.Table : MetadataV2ResourceType.FeatureDataset,
+            Type = string.IsNullOrWhiteSpace(geometryColumn) ? MetadataV2ObjectType.Table : MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = [bindingId],
             PrimaryStorageBindingId = bindingId,
             SchemaFields = fields
@@ -3388,7 +3388,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                         : mapped;
                 })
                 .ToArray(),
-            Spatial = string.IsNullOrWhiteSpace(geometryColumn) ? null : new MetadataV2ResourceSpatial
+            Spatial = string.IsNullOrWhiteSpace(geometryColumn) ? null : new MetadataV2ObjectSpatial
             {
                 SpatialReference = CreateSpatialReference(srid),
                 GeometryType = MapMetadataV2GeometryType(geometryType),
@@ -3405,7 +3405,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 StorageCrs = CreateSpatialReference(storageSrid),
                 StorageCrsCoordinateEpoch = storageCoordinateEpoch
             },
-            Display = new MetadataV2ResourceDisplay
+            Display = new MetadataV2ObjectDisplay
             {
                 DisplayField = fields
                     .FirstOrDefault(field =>
@@ -3430,7 +3430,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    private static MetadataV2ResourceEditing? ResolveEditingForPublish(
+    private static MetadataV2ObjectEditing? ResolveEditingForPublish(
         LayerPublishRequest request, IReadOnlyList<LayerFieldInsert> fields)
     {
         if (string.IsNullOrWhiteSpace(request.GlobalIdField) && !request.SupportsAttachments && !request.CreateEditableCopy)
@@ -3446,7 +3446,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 "GlobalIdField must reference a published UUID column.");
         }
 
-        return new MetadataV2ResourceEditing
+        return new MetadataV2ObjectEditing
         {
             GlobalIdField = globalId?.Name,
             SupportsAttachments = request.SupportsAttachments,
@@ -3627,21 +3627,21 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    private static MetadataV2Publication BuildPublishedPublication(
+    private static MetadataV2Layer BuildPublishedPublication(
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2StorageBinding binding,
         string layerIdText,
         string graphLayerKey,
         string layerTitle,
-        MetadataV2PublicationType publicationType,
+        MetadataV2LayerType publicationType,
         bool isPrimary,
         string idPrefix,
         bool enabled,
         DateTimeOffset now,
         IReadOnlyList<string>? capabilities = null)
     {
-        return new MetadataV2Publication
+        return new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -3655,7 +3655,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             ServiceId = service.Metadata.Id,
             StorageBindingId = binding.Metadata.Id,
             PublicationType = publicationType,
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerIdText,
                 IsNumeric = true
@@ -3846,11 +3846,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return result;
     }
 
-    private static List<MetadataV2Publication> UpsertPublication(
-        IReadOnlyList<MetadataV2Publication> publications,
-        MetadataV2Publication publication)
+    private static List<MetadataV2Layer> UpsertPublication(
+        IReadOnlyList<MetadataV2Layer> publications,
+        MetadataV2Layer publication)
     {
-        var result = new List<MetadataV2Publication>(publications.Count + 1);
+        var result = new List<MetadataV2Layer>(publications.Count + 1);
         var replaced = false;
 
         foreach (var existing in publications)
@@ -3892,21 +3892,21 @@ internal sealed partial class PostgreSqlLayerPublishingService
     // empty when the style catalog is unavailable or the layer has no associations
     // (e.g. a freshly published, not-yet-styled layer), so the publish path degrades
     // gracefully and the data resource simply carries no StyleResourceIds.
-    private async Task<(IReadOnlyList<MetadataV2Resource> Styles, IReadOnlyList<string> StyleResourceIds)>
+    private async Task<(IReadOnlyList<MetadataV2Object> Styles, IReadOnlyList<string> StyleResourceIds)>
         BuildStyleResourcesForLayerAsync(int layerId, DateTimeOffset now, CancellationToken cancellationToken)
     {
         if (_styleCatalog is null)
         {
-            return (Array.Empty<MetadataV2Resource>(), Array.Empty<string>());
+            return (Array.Empty<MetadataV2Object>(), Array.Empty<string>());
         }
 
         var styles = await _styleCatalog.GetStylesForLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         if (styles.Count == 0)
         {
-            return (Array.Empty<MetadataV2Resource>(), Array.Empty<string>());
+            return (Array.Empty<MetadataV2Object>(), Array.Empty<string>());
         }
 
-        var resources = new List<MetadataV2Resource>(styles.Count);
+        var resources = new List<MetadataV2Object>(styles.Count);
         var ids = new List<string>(styles.Count);
         foreach (var style in styles)
         {

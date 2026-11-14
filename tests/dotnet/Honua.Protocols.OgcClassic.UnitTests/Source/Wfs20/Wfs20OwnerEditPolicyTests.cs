@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Edit;
@@ -14,15 +13,14 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
-using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.Protocols.Ogc.Common;
 using Honua.TestKit.Attributes;
+using Honua.Tests.OwnerEdit;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -39,12 +37,7 @@ public sealed class Wfs20OwnerEditPolicyTests
     private const string AnonymousDenial =
         "Anonymous edits are not permitted while an owner-based edit policy is active.";
 
-    private static readonly MetadataV2OwnerEditPolicy Policy = new()
-    {
-        Enabled = true,
-        OwnerField = "owner",
-        StampOwnerOnInsert = true
-    };
+    private static readonly MetadataV2OwnerEditPolicy Policy = OwnerEditTestFixtures.Policy;
 
     [UnitTest]
     public async Task ExecutePreparedEditAsync_NonOwnerUpdateAndDelete_AreDeniedBeforeTheWrite()
@@ -160,38 +153,11 @@ public sealed class Wfs20OwnerEditPolicyTests
         return (result, writer, reader);
     }
 
-    private static MetadataV2Resource Resource(MetadataV2OwnerEditPolicy? policy)
-        => new()
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "cities", Name = "cities" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            OwnerEditPolicy = policy,
-            SchemaFields =
-            [
-                new MetadataV2Field
-                {
-                    Name = "objectid",
-                    Type = MetadataV2FieldType.Integer,
-                    Nullable = false,
-                    SemanticRoles = ["id.primary"]
-                },
-                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Editable = true }
-            ]
-        };
+    private static MetadataV2Object Resource(MetadataV2OwnerEditPolicy? policy)
+        => OwnerEditTestFixtures.CitiesResource(policy);
 
     private static DefaultHttpContext Principal(string subject, bool admin)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
-        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, subject),
-            new(ClaimTypes.Role, admin ? "admin" : "editor")
-        };
-        context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
-        return context;
-    }
+        => OwnerEditTestFixtures.Principal(subject, admin ? "admin" : "editor");
 
     private static Wfs20Handler CreateHandler(IFeatureReader reader, IFeatureWriter writer)
     {

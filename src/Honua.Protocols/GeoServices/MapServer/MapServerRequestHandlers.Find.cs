@@ -39,7 +39,7 @@ internal static partial class MapServerEndpoints
         int PublicLayerId,
         int StorageLayerId,
         string Name,
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         string? DefinitionExpression);
 
     private static async Task<IResult> HandleFind(HttpContext context)
@@ -460,7 +460,7 @@ internal static partial class MapServerEndpoints
 
     // Publisher-hidden fields are never searched, and when searchFields is omitted the caller's masked fields are dropped too, so a match cannot disclose a hidden value.
     private static MetadataV2Field[] ResolveSearchFields(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         HashSet<string>? requestedFields,
         HashSet<string> maskedFields)
     {
@@ -478,7 +478,7 @@ internal static partial class MapServerEndpoints
 
     private static async Task<HashSet<string>> ResolveFindMaskedFieldsAsync(
         IFieldMaskSource? fieldMaskSource,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         if (fieldMaskSource is null)
@@ -493,7 +493,7 @@ internal static partial class MapServerEndpoints
     }
 
     private static bool TryFindExplicitMaskedSearchField(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         HashSet<string> requestedFields,
         HashSet<string> maskedFields,
         out string fieldName)
@@ -591,7 +591,7 @@ internal static partial class MapServerEndpoints
 
     private static bool TryTranslateFindFilter(
         IFilterExpressionService filterExpressionService,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string whereClause,
         out SqlFragment? sqlFilter)
     {
@@ -651,7 +651,7 @@ internal static partial class MapServerEndpoints
         return false;
     }
 
-    private static bool HasFindGeometry(MetadataV2Resource resource)
+    private static bool HasFindGeometry(MetadataV2Object resource)
     {
         var geometryType = resource.ReadGeometryType();
         return geometryType != MetadataV2GeometryType.None ||

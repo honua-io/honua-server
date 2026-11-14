@@ -255,7 +255,7 @@ public sealed class PostgresStorageMappedFeatureReaderConnectionTests
         var reader = new PostgresStorageMappedFeatureReader(
             Substitute.For<IAdoNetDatabaseConnectionProvider>(),
             DictionaryPool,
-            new MetadataV2Resource(),
+            new MetadataV2Object(),
             new FeatureStorageMapping(TableName: "maui_features", PrimaryKeyColumn: "objectid"),
             connection,
             connectionEncryptionService,

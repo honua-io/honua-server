@@ -168,7 +168,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
         .AddService("svc-parcels", "default")
         .AddPublication("pub-parcels", "svc-parcels", "res-parcels",
             layerIndex: 3, storageBindingId: "bind-parcels",
-            publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+            publicationType: MetadataV2LayerType.EsriFeatureLayer)
         .BuildProvider();
 
     private void AssertCanonicalDirectPublish(JsonElement output)

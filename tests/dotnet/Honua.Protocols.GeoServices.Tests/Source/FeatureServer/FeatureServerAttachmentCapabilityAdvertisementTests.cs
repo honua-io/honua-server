@@ -136,7 +136,7 @@ public sealed class FeatureServerAttachmentCapabilityAdvertisementTests
                     ],
                     accessPolicy: anonymous,
                     annotations: annotations,
-                    spatial: new MetadataV2ResourceSpatial
+                    spatial: new MetadataV2ObjectSpatial
                     {
                         GeometryType = MetadataV2GeometryType.Point,
                         SpatialReference = new MetadataV2SpatialReference { Srid = 4326, Crs = "EPSG:4326", IsGeographic = true },
@@ -145,7 +145,7 @@ public sealed class FeatureServerAttachmentCapabilityAdvertisementTests
                 .AddStorageBinding(bindingId, resourceId, $"test.layers.{item.LayerId}", storageLayerId: item.LayerId)
                 .AddPublication($"attachment-publication-{item.LayerId}", "attachment-service", resourceId,
                     layerIndex: item.LayerId, storageBindingId: bindingId,
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer);
         }
 
         var graph = builder.Build();
@@ -154,7 +154,7 @@ public sealed class FeatureServerAttachmentCapabilityAdvertisementTests
             Resources = graph.Resources.Select((resource, index) => resource with
             {
                 Editing = Cases[index].TypedFlag is bool enabled
-                    ? new MetadataV2ResourceEditing { SupportsAttachments = enabled }
+                    ? new MetadataV2ObjectEditing { SupportsAttachments = enabled }
                     : null
             }).ToArray()
         };

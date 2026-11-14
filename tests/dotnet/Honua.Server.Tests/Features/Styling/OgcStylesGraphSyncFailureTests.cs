@@ -166,7 +166,7 @@ public sealed class OgcStyleProjectionGraphSyncTests
             CreatedAt = DateTimeOffset.UnixEpoch,
             UpdatedAt = DateTimeOffset.UnixEpoch
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -238,7 +238,7 @@ public sealed class OgcStyleProjectionGraphSyncTests
             Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
         await layerStyleService.DidNotReceive().UpdateStyleAsync(
-            Arg.Any<MetadataV2Resource>(),
+            Arg.Any<MetadataV2Object>(),
             Arg.Any<int>(),
             Arg.Any<JsonElement?>(),
             Arg.Any<JsonElement?>(),

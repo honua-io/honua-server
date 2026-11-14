@@ -11,7 +11,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 public sealed class Issue5505CountAllStatisticsTests
 {
-    private static readonly MetadataV2Resource Layer = new()
+    private static readonly MetadataV2Object Layer = new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "layer" },
         SchemaFields =
@@ -63,7 +63,7 @@ public sealed class Issue5505CountAllStatisticsTests
     public void Issue5505_CountOnWildcard_UsesDefaultIdColumnWhenObjectIdIsAbsent()
     {
         // DuckDB ObjectIdColumn and Databricks PrimaryKeyColumn both default to "id".
-        var layer = new MetadataV2Resource
+        var layer = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "layer" },
             SchemaFields =
@@ -92,7 +92,7 @@ public sealed class Issue5505CountAllStatisticsTests
     [UnitTest]
     public void Issue5505_CountOnWildcard_UsesDeclaredPrimaryKeyInsteadOfCanonicalObjectId()
     {
-        var layer = new MetadataV2Resource
+        var layer = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "layer" },
             SchemaFields =

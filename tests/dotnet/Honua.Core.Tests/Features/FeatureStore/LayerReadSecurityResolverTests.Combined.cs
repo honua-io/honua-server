@@ -45,8 +45,8 @@ public sealed partial class LayerReadSecurityResolverTests
         joint.Verify(
             source => source.ResolveCombinedAsync(resource, masks.Object, It.IsAny<CancellationToken>()),
             Times.Exactly(2));
-        rows.Verify(source => source.ResolveAsync(It.IsAny<MetadataV2Resource>(), It.IsAny<CancellationToken>()), Times.Never);
-        masks.Verify(source => source.ResolveAsync(It.IsAny<MetadataV2Resource>(), It.IsAny<CancellationToken>()), Times.Never);
+        rows.Verify(source => source.ResolveAsync(It.IsAny<MetadataV2Object>(), It.IsAny<CancellationToken>()), Times.Never);
+        masks.Verify(source => source.ResolveAsync(It.IsAny<MetadataV2Object>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Trait("Tier", "Fast")]
@@ -71,7 +71,7 @@ public sealed partial class LayerReadSecurityResolverTests
         result.EnforcedSqlFilter!.Sql.Should().Be(hasRowFilter ? "FALSE" : "TRUE");
         result.EnforcedMaskedFields.Should().Equal(ImmutableArray.Create(hasRowFilter ? "secret" : "existing"));
         joint.Verify(
-            source => source.ResolveCombinedAsync(It.IsAny<MetadataV2Resource>(), It.IsAny<IFieldMaskSource>(), It.IsAny<CancellationToken>()),
+            source => source.ResolveCombinedAsync(It.IsAny<MetadataV2Object>(), It.IsAny<IFieldMaskSource>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -91,7 +91,7 @@ public sealed partial class LayerReadSecurityResolverTests
         result.EnforcedSqlFilter!.Sql.Should().Be("FALSE");
         result.EnforcedMaskedFields.Should().Equal(ImmutableArray.Create("secret"));
         joint.Verify(
-            source => source.ResolveCombinedAsync(It.IsAny<MetadataV2Resource>(), It.IsAny<IFieldMaskSource>(), It.IsAny<CancellationToken>()),
+            source => source.ResolveCombinedAsync(It.IsAny<MetadataV2Object>(), It.IsAny<IFieldMaskSource>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 

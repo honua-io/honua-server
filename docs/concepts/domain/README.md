@@ -64,7 +64,7 @@ Moving from another system? Use [Coming from ArcGIS](coming-from-arcgis.md) or [
 
 ## Implementation transition
 
-The canonical names are Dataset, Layer, Map, App, and each other named Studio kind throughout the system. Existing code and persisted metadata still contain `MetadataV2Resource`, `MetadataV2Publication`, and Studio content-item names. These are legacy names scheduled for migration, not a second vocabulary. Until that migration lands, use the current API reference for literal routes and fields. This glossary changes no runtime contract. A forward migration will convert existing databases after a verified backup and draining pending Proposals; steady-state readers will use only canonical shapes. Protocol wire names required by clients remain unchanged.
+The canonical names are Dataset, Layer, Map, App, and each other named Studio kind throughout the system. In code, the Metadata v2 graph types are `MetadataV2Object`, the envelope that carries every kind with an explicit discriminator, and `MetadataV2Layer`. Persisted metadata, JSON field names, OpenAPI schema names and Studio content-item names still use legacy spellings scheduled for migration, not a second vocabulary. Until that migration lands, use the current API reference for literal routes and fields. This glossary changes no runtime contract. A forward migration will convert existing databases after a verified backup and draining pending Proposals; steady-state readers will use only canonical shapes. Protocol wire names required by clients remain unchanged.
 
 ## Vocabulary review rules
 

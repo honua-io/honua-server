@@ -42,7 +42,7 @@ public static class FilterPlanCompiler
     /// <param name="plan">The filter plan to compile.</param>
     /// <param name="resource">The Metadata v2 resource providing schema metadata.</param>
     /// <returns>A result containing either the compiled expression or an error.</returns>
-    public static FilterPlanCompileResult Compile(FilterPlan plan, MetadataV2Resource resource)
+    public static FilterPlanCompileResult Compile(FilterPlan plan, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(resource);
@@ -93,7 +93,7 @@ public static class FilterPlanCompiler
     private static FilterExpression CompileClauses(
         FilterPlanCombinator combinator,
         FilterPlanClause[] clauses,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         EnsureClauseStructure(clauses);
         if (clauses.Length == 0)
@@ -135,7 +135,7 @@ public static class FilterPlanCompiler
         }
     }
 
-    private static FilterExpression CompileClause(FilterPlanClause clause, MetadataV2Resource resource)
+    private static FilterExpression CompileClause(FilterPlanClause clause, MetadataV2Object resource)
     {
         if (clause.Type is null)
         {
@@ -160,7 +160,7 @@ public static class FilterPlanCompiler
         };
     }
 
-    private static BinaryExpression CompileComparison(ComparisonClause clause, MetadataV2Resource resource)
+    private static BinaryExpression CompileComparison(ComparisonClause clause, MetadataV2Object resource)
     {
         if (!AllowedComparisonOperators.Contains(clause.Operator))
         {
@@ -182,7 +182,7 @@ public static class FilterPlanCompiler
         return new BinaryExpression(property, op, literal);
     }
 
-    private static FilterExpression CompileSpatial(SpatialClause clause, MetadataV2Resource resource)
+    private static FilterExpression CompileSpatial(SpatialClause clause, MetadataV2Object resource)
     {
         if (!AllowedSpatialOperators.Contains(clause.Operator))
         {
@@ -213,7 +213,7 @@ public static class FilterPlanCompiler
         return new SpatialPredicate(spatialOp, propertyRef, geometryLiteral);
     }
 
-    private static TemporalPredicate CompileTemporal(TemporalClause clause, MetadataV2Resource resource)
+    private static TemporalPredicate CompileTemporal(TemporalClause clause, MetadataV2Object resource)
     {
         if (!AllowedTemporalOperators.Contains(clause.Operator))
         {
@@ -253,7 +253,7 @@ public static class FilterPlanCompiler
         }
     }
 
-    private static FilterExpression CompileNested(NestedClause clause, MetadataV2Resource resource)
+    private static FilterExpression CompileNested(NestedClause clause, MetadataV2Object resource)
     {
         if (clause.Clauses.Length == 0)
         {
@@ -263,10 +263,10 @@ public static class FilterPlanCompiler
         return CompileClauses(clause.Combinator, clause.Clauses, resource);
     }
 
-    private static void ValidatePropertyExists(string propertyName, MetadataV2Resource resource)
+    private static void ValidatePropertyExists(string propertyName, MetadataV2Object resource)
         => _ = FindField(propertyName, resource);
 
-    private static MetadataV2Field FindField(string propertyName, MetadataV2Resource resource)
+    private static MetadataV2Field FindField(string propertyName, MetadataV2Object resource)
     {
         if (string.IsNullOrWhiteSpace(propertyName))
         {

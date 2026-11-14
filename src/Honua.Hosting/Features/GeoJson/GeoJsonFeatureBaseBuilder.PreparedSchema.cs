@@ -10,12 +10,12 @@ internal static partial class GeoJsonFeatureBaseBuilder
     // Prepared metadata lives only as long as its response. Never cache it across
     // resources or requests: visibility can differ with the authorized resource.
     internal static GeoJsonFeatureBuildOptions PrepareOptions(
-        MetadataV2Resource resource, GeoJsonFeatureBuildOptions options = default)
+        MetadataV2Object resource, GeoJsonFeatureBuildOptions options = default)
         => options with { Schema = new PreparedSchema(resource, options.IncludeAdditionalAttributes) };
 
     internal sealed class PreparedSchema
     {
-        internal PreparedSchema(MetadataV2Resource resource, bool includeAdditionalAttributes)
+        internal PreparedSchema(MetadataV2Object resource, bool includeAdditionalAttributes)
         {
             Resource = resource;
             IncludeAdditionalAttributes = includeAdditionalAttributes;
@@ -45,7 +45,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
             }
         }
 
-        internal MetadataV2Resource Resource { get; }
+        internal MetadataV2Object Resource { get; }
         internal bool IncludeAdditionalAttributes { get; }
         internal string ObjectIdFieldName { get; }
         internal MetadataV2Field[] VisibleFields { get; }

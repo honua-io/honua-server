@@ -61,7 +61,7 @@ internal static partial class MapServerEndpoints
         int PublicLayerId,
         int StorageLayerId,
         string Name,
-        MetadataV2Resource Resource);
+        MetadataV2Object Resource);
 
     private sealed record IdentifyRenderLayer(
         IdentifyLayerDescriptor Layer,
@@ -907,7 +907,7 @@ internal static partial class MapServerEndpoints
             ?? layers.Select(static layer => layer.Resource.ReadSrid()).FirstOrDefault(static srid => srid.HasValue)
             ?? SpatialReference.WGS84.Wkid;
 
-    private static bool HasIdentifyGeometry(MetadataV2Resource resource)
+    private static bool HasIdentifyGeometry(MetadataV2Object resource)
     {
         var geometryType = resource.ReadGeometryType();
         return geometryType != MetadataV2GeometryType.None ||

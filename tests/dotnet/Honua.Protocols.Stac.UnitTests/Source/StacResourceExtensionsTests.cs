@@ -15,18 +15,18 @@ public sealed class StacResourceExtensionsTests
     public void ResolveLicense_PrefersEveryResourceDeclarationBeforeServiceFallback()
     {
         var stacExtension = JsonElement.Parse("""{ "license": "CC0-1.0" }""");
-        var extensionResource = new MetadataV2Resource
+        var extensionResource = new MetadataV2Object
         {
             Extensions = new Dictionary<string, JsonElement> { ["stac"] = stacExtension },
         };
-        var linkResource = new MetadataV2Resource
+        var linkResource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
                 Links = [new MetadataV2Link { Rel = "license", Href = "https://example.test/license" }],
             },
         };
-        var undeclaredResource = new MetadataV2Resource();
+        var undeclaredResource = new MetadataV2Object();
         var serviceMetadata = new MetadataV2ObjectMetadata
         {
             License = "MIT",

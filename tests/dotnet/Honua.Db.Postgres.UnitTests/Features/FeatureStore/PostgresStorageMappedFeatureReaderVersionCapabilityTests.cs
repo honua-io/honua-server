@@ -132,7 +132,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderVersionCapabilityT
         provider.GetConnectionString().Returns(ManagedConnection);
         var pool = new DefaultObjectPoolProvider().Create(
             new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy());
-        return (new PostgresStorageMappedFeatureReader(provider, pool, new MetadataV2Resource(), mapping,
+        return (new PostgresStorageMappedFeatureReader(provider, pool, new MetadataV2Object(), mapping,
             connection, encryption, managedFeatureSchema: "honua"), provider);
     }
 

@@ -130,11 +130,11 @@ public sealed class CompositeRelationshipSqlReplayTests(PostgresFixture fixture)
             new MetadataV2Graph
             {
                 Revision = 1,
-                Resources = new[] { 10, 11 }.Select(id => new MetadataV2Resource
+                Resources = new[] { 10, 11 }.Select(id => new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = $"res-layer-{id}", Name = $"layer-{id}" },
                     SchemaFields = [new MetadataV2Field { Name = "Join_ID", Type = MetadataV2FieldType.Integer }],
-                    Editing = new MetadataV2ResourceEditing { CanModify = false }
+                    Editing = new MetadataV2ObjectEditing { CanModify = false }
                 }).ToArray()
             }, "initial", DateTimeOffset.UnixEpoch);
 

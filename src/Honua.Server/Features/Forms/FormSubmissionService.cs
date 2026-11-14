@@ -706,7 +706,7 @@ internal sealed class FormSubmissionService
     private static UnifiedEditRequest BuildEditRequest(
         FormPackageDocument package,
         FormSubmissionRequest request,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var attributes = BuildAttributes(package, request, resource);
         var geometry = BuildGeometryWkb(request.Geometry, resource);
@@ -724,7 +724,7 @@ internal sealed class FormSubmissionService
     private static ImmutableDictionary<string, object?> BuildAttributes(
         FormPackageDocument package,
         FormSubmissionRequest request,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var targetFields = resource.SchemaFields.ToDictionary(static field => field.Name, StringComparer.OrdinalIgnoreCase);
         var builder = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -770,7 +770,7 @@ internal sealed class FormSubmissionService
         };
     }
 
-    private static byte[]? BuildGeometryWkb(JsonElement? geometry, MetadataV2Resource resource)
+    private static byte[]? BuildGeometryWkb(JsonElement? geometry, MetadataV2Object resource)
     {
         if (geometry is null)
         {

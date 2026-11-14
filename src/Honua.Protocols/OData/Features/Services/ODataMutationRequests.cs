@@ -8,16 +8,16 @@ namespace Honua.Protocols.OData.Services;
 
 internal sealed record ODataCreateRequest(
     int LayerId, ParsedFeaturePayload Payload, string BaseUrl, int StorageLayerId,
-    MetadataV2Resource? Resource, IFeatureReader Reader);
+    MetadataV2Object? Resource, IFeatureReader Reader);
 
 internal sealed record ODataMutationTarget(
-    int StorageLayerId, MetadataV2Resource Resource, IFeatureReader Reader);
+    int StorageLayerId, MetadataV2Object Resource, IFeatureReader Reader);
 
 internal sealed record ODataUpdateRequest(
     int LayerId, long ObjectId, ParsedFeaturePayload Payload, string BaseUrl,
     string? IfMatch, string? IfNoneMatch, int StorageLayerId, bool Replace,
-    MetadataV2Resource? Resource, IFeatureReader Reader);
+    MetadataV2Object? Resource, IFeatureReader Reader);
 
 internal sealed record ODataDeleteRequest(
     int LayerId, long ObjectId, string? IfMatch, string? IfNoneMatch,
-    int StorageLayerId, MetadataV2Resource? Resource, IFeatureReader Reader);
+    int StorageLayerId, MetadataV2Object? Resource, IFeatureReader Reader);

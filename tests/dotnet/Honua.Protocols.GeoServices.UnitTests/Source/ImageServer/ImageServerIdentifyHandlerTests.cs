@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerIdentifyHandlerTests
 {
-    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
+    private readonly TestMetadataV2GraphProvider _graphProvider = ImageServerTestFixtures.BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly IZarrPointSliceReader _zarrPointSliceReader = Substitute.For<IZarrPointSliceReader>();
     private readonly ImageServerIdentifyHandler _handler;
@@ -1135,18 +1135,12 @@ public class ImageServerIdentifyHandlerTests
 
     private static DefaultHttpContext CreateImageServerContext()
     {
-        var services = new ServiceCollection();
-        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray<string>.Empty);
-        services.AddSingleton(masks);
-
-        var context = new DefaultHttpContext();
-        context.RequestServices = services.BuildServiceProvider();
-        context.Request.Path = "/rest/services/1/ImageServer/identify";
-        context.Response.Body = new MemoryStream();
-        return context;
+        return ImageServerTestFixtures.CreateContext(
+            "/rest/services/1/ImageServer/identify",
+            services => services.AddSingleton(masks));
     }
 
     private void SetupSuccessfulIdentify()
@@ -1172,31 +1166,5 @@ public class ImageServerIdentifyHandlerTests
         F = "json"
     };
 
-    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
-        => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
-            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication(
-                $"publication-{layerIndex}",
-                $"service-{layerIndex}",
-                $"resource-{layerIndex}",
-                layerIndex: layerIndex,
-                serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
-            .BuildProvider();
-
-    private static RasterInfo CreateTestRasterInfo() => new()
-    {
-        Id = 100,
-        LayerId = 1,
-        Name = "test-raster",
-        Width = 1024,
-        Height = 1024,
-        BandCount = 3,
-        PixelType = "uint8",
-        Srid = 4326,
-        GeoTransform = [0, 1, 0, 0, 0, -1],
-        Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
-        CreatedAt = DateTime.UtcNow
-    };
+    private static RasterInfo CreateTestRasterInfo() => ImageServerTestFixtures.CreateWorldRgbRasterInfo();
 }

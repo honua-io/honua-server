@@ -128,10 +128,10 @@ public sealed class MetadataCompatibilityPrevalidationServiceTests
             GeneratedAt = GeneratedAt,
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res.parcels", Name = "parcels" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     StorageBindingIds = ["storage.parcels"],
                     PrimaryStorageBindingId = "storage.parcels",
                     SchemaFields = includeField

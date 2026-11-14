@@ -975,7 +975,7 @@ public sealed class LayerReconciliationServiceTests
 
     private static LayerReconciliationService NewFilteredService(StubFeatureReader reader, Action<FilterExpression>? translated = null)
     {
-        var resource = new MetadataV2Resource { Metadata = new() { Id = "target" } };
+        var resource = new MetadataV2Object { Metadata = new() { Id = "target" } };
         var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph
         {
             Resources = [resource],
@@ -987,7 +987,7 @@ public sealed class LayerReconciliationServiceTests
         filters.Setup(service => service.Parse(FilterLanguage.GeoServicesSql, It.IsAny<string>()))
             .Returns((FilterLanguage _, string filter) => FilterParseResult.Success(new GeoServicesSqlParser().Parse(filter)));
         filters.Setup(service => service.Translate(It.IsAny<FilterExpression>(), resource))
-            .Returns((FilterExpression expression, MetadataV2Resource _) =>
+            .Returns((FilterExpression expression, MetadataV2Object _) =>
             {
                 translated?.Invoke(expression);
                 return FilterTranslationResult.Success(expression, new SqlFragment("status = @p0", ["open"]));

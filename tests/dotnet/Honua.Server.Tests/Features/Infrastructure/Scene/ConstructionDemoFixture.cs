@@ -78,10 +78,10 @@ internal static class ConstructionDemoFixture
             GeneratedAt = DateTimeOffset.UtcNow,
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = LayerName },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     StorageBindingIds = [bindingId],
                     SchemaFields =
                     [
@@ -92,7 +92,7 @@ internal static class ConstructionDemoFixture
                         new MetadataV2Field { Name = "phase", Type = MetadataV2FieldType.String, Nullable = false, Length = 32 },
                         new MetadataV2Field { Name = "work_package_id", Type = MetadataV2FieldType.String, Nullable = false, Length = 32 }
                     ],
-                    Spatial = new MetadataV2ResourceSpatial
+                    Spatial = new MetadataV2ObjectSpatial
                     {
                         SpatialReference = MetadataV2SpatialReference.Wgs84,
                         GeometryType = MetadataV2GeometryType.Polygon,

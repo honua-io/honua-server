@@ -118,7 +118,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 .AddResource(
                     resourceId,
                     GetSeededLayerName(layerIndex),
-                    MetadataV2ResourceType.FeatureDataset,
+                    MetadataV2ObjectType.FeatureDataset,
                     fields: GetSeededLayerSchemaFields(layerIndex),
                     spatial: GetSeededLayerSpatial(layerIndex),
                     temporal: GetSeededLayerTemporal(layerIndex))
@@ -147,7 +147,7 @@ internal static class WebAppFixtureMetadataV2Mixin
         // ImageServer publications for the canonical raster test layer (TestServiceId/TestLayerId).
         // ImageServer handler tests resolve their layer index against this snapshot.
         builder
-            .AddResource("res-image-test", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddResource("res-image-test", "test-layer", MetadataV2ObjectType.RasterDataset)
             .AddStorageBinding(
                 "binding-image-test",
                 "res-image-test",
@@ -160,7 +160,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 resourceId: "res-image-test",
                 layerIndex: TestLayerId,
                 serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer);
+                publicationType: MetadataV2LayerType.EsriImageLayer);
 
         // VectorTileServer publication for the canonical "test" service. The
         // GeoServices VectorTileServer adapter resolves the service by NAME against
@@ -174,7 +174,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 resourceId: "res-layer-0",
                 layerIndex: 0,
                 serviceLocalId: "0",
-                publicationType: MetadataV2PublicationType.EsriVectorTileLayer);
+                publicationType: MetadataV2LayerType.EsriVectorTileLayer);
 
         // FeatureServer and MapServer publications for the canonical "test" service.
         // The GeoServices REST catalog endpoint enumerates these directly from the V2
@@ -196,21 +196,21 @@ internal static class WebAppFixtureMetadataV2Mixin
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer)
                 .AddPublication(
                     id: $"pub-map-{layerIndex}",
                     serviceId: "svc-test-map",
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriMapLayer)
+                    publicationType: MetadataV2LayerType.EsriMapLayer)
                 .AddPublication(
                     id: $"pub-stac-{layerIndex}",
                     serviceId: "svc-test-stac",
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.StacCollection);
+                    publicationType: MetadataV2LayerType.StacCollection);
         }
 
         var graph = builder.Build();
@@ -283,7 +283,7 @@ internal static class WebAppFixtureMetadataV2Mixin
         }
 
         resources = resources
-            .Append(new MetadataV2Resource
+            .Append(new MetadataV2Object
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -291,8 +291,8 @@ internal static class WebAppFixtureMetadataV2Mixin
                     Name = "Test Layer Drawing Info",
                     Description = "Default GeoServices drawingInfo for the seeded test layer",
                 },
-                Type = MetadataV2ResourceType.Style,
-                Style = new MetadataV2ResourceStyle
+                Type = MetadataV2ObjectType.Style,
+                Style = new MetadataV2ObjectStyle
                 {
                     Title = "Test Layer Drawing Info",
                     Encodings =
@@ -417,7 +417,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                      SpatialReferenceTestLayerCatalog.PolygonLayerId
                  })
         {
-            publications.Add(new MetadataV2Publication
+            publications.Add(new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -428,14 +428,14 @@ internal static class WebAppFixtureMetadataV2Mixin
                 ServiceId = "svc-srid-feature",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     IsNumeric = true
                 },
-                PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+                PublicationType = MetadataV2LayerType.EsriFeatureLayer
             });
-            publications.Add(new MetadataV2Publication
+            publications.Add(new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -446,14 +446,14 @@ internal static class WebAppFixtureMetadataV2Mixin
                 ServiceId = "svc-srid-odata",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     IsNumeric = true
                 },
-                PublicationType = MetadataV2PublicationType.ODataEntitySet
+                PublicationType = MetadataV2LayerType.ODataEntitySet
             });
-            publications.Add(new MetadataV2Publication
+            publications.Add(new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -464,14 +464,14 @@ internal static class WebAppFixtureMetadataV2Mixin
                 ServiceId = "svc-srid-stac",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     IsNumeric = true
                 },
-                PublicationType = MetadataV2PublicationType.StacCollection
+                PublicationType = MetadataV2LayerType.StacCollection
             });
-            publications.Add(new MetadataV2Publication
+            publications.Add(new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -482,12 +482,12 @@ internal static class WebAppFixtureMetadataV2Mixin
                 ServiceId = "svc-srid-ogc-features",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     IsNumeric = true
                 },
-                PublicationType = MetadataV2PublicationType.OgcCollection
+                PublicationType = MetadataV2LayerType.OgcCollection
             });
         }
 
@@ -515,7 +515,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 .AddResource(
                     resourceId,
                     GetAdminSampleLayerName(layerIndex),
-                    MetadataV2ResourceType.FeatureDataset,
+                    MetadataV2ObjectType.FeatureDataset,
                     fields: GetAdminSampleSchemaFields(layerIndex),
                     accessPolicy: new AccessPolicy { AllowAnonymous = true },
                     spatial: GetAdminSampleSpatial(layerIndex))
@@ -531,7 +531,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer);
         }
 
         return builder.Build();
@@ -557,7 +557,7 @@ internal static class WebAppFixtureMetadataV2Mixin
             .AddResource(
                 resourceId,
                 name,
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: GetSeededLayerSchemaFields(layerIndex))
             .AddStorageBinding(
                 bindingId,
@@ -572,7 +572,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 layerIndex: layerIndex,
                 storageBindingId: bindingId,
                 serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.ODataEntitySet);
+                publicationType: MetadataV2LayerType.ODataEntitySet);
     }
 
     /// <summary>
@@ -731,10 +731,10 @@ internal static class WebAppFixtureMetadataV2Mixin
             _ => $"admin-sample-{layerIndex}",
         };
 
-    private static MetadataV2ResourceSpatial GetAdminSampleSpatial(int layerIndex)
+    private static MetadataV2ObjectSpatial GetAdminSampleSpatial(int layerIndex)
         => layerIndex switch
         {
-            3000 => new MetadataV2ResourceSpatial
+            3000 => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
@@ -748,7 +748,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 },
                 SupportedCrs = [MetadataV2SpatialReference.Wgs84],
             },
-            3001 => new MetadataV2ResourceSpatial
+            3001 => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
                 StorageCrs = MetadataV2SpatialReference.WebMercator,
@@ -763,7 +763,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 },
                 SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
             },
-            3002 => new MetadataV2ResourceSpatial
+            3002 => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Polygon,
@@ -777,7 +777,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 },
                 SupportedCrs = [MetadataV2SpatialReference.Wgs84],
             },
-            _ => new MetadataV2ResourceSpatial
+            _ => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
@@ -798,10 +798,10 @@ internal static class WebAppFixtureMetadataV2Mixin
             _ => $"layer-{layerIndex}",
         };
 
-    private static MetadataV2ResourceSpatial? GetSeededLayerSpatial(int layerIndex)
+    private static MetadataV2ObjectSpatial? GetSeededLayerSpatial(int layerIndex)
         => layerIndex switch
         {
-            0 => new MetadataV2ResourceSpatial
+            0 => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
@@ -815,14 +815,14 @@ internal static class WebAppFixtureMetadataV2Mixin
                 },
                 SupportedCrs = [MetadataV2SpatialReference.Wgs84],
             },
-            1 or 2 => new MetadataV2ResourceSpatial
+            1 or 2 => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
                 PrimaryGeometryField = "shape",
                 SupportedCrs = [MetadataV2SpatialReference.Wgs84],
             },
-            SpatialReferenceTestLayerCatalog.PointLayerId => new MetadataV2ResourceSpatial
+            SpatialReferenceTestLayerCatalog.PointLayerId => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
                 StorageCrs = MetadataV2SpatialReference.WebMercator,
@@ -830,7 +830,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 PrimaryGeometryField = "shape",
                 SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
             },
-            SpatialReferenceTestLayerCatalog.LineLayerId => new MetadataV2ResourceSpatial
+            SpatialReferenceTestLayerCatalog.LineLayerId => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
                 StorageCrs = MetadataV2SpatialReference.WebMercator,
@@ -838,7 +838,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 PrimaryGeometryField = "shape",
                 SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
             },
-            SpatialReferenceTestLayerCatalog.PolygonLayerId => new MetadataV2ResourceSpatial
+            SpatialReferenceTestLayerCatalog.PolygonLayerId => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
                 StorageCrs = MetadataV2SpatialReference.WebMercator,
@@ -849,9 +849,9 @@ internal static class WebAppFixtureMetadataV2Mixin
             _ => null,
         };
 
-    private static MetadataV2ResourceTemporal? GetSeededLayerTemporal(int layerIndex)
+    private static MetadataV2ObjectTemporal? GetSeededLayerTemporal(int layerIndex)
         => layerIndex == 0
-            ? new MetadataV2ResourceTemporal
+            ? new MetadataV2ObjectTemporal
             {
                 StartTimeField = "timestamp",
                 EndTimeField = "event_date",

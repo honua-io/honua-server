@@ -29,5 +29,5 @@ public interface IFieldMaskSource
     /// </summary>
     /// <param name="resource">The resource (layer) being queried.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<ImmutableArray<string>> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default);
+    Task<ImmutableArray<string>> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default);
 }

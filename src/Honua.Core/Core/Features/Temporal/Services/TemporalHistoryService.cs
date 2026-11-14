@@ -287,8 +287,8 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
 
     private sealed record ResolvedLayer(
         MetadataV2Service Service,
-        MetadataV2Publication Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Layer Publication,
+        MetadataV2Object Resource,
         FeatureStorageMapping? StorageMapping,
         int? StorageLayerId);
 }

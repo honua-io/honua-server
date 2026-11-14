@@ -77,7 +77,7 @@ public sealed partial class LayerReadSecurityResolverTests
     [Trait("Tier", "Fast")]
     public async Task ApplyAsync_FeatureAndRasterShareNumericLayer_EnforcesFeaturePolicy()
     {
-        var (resolver, _) = CreateCollisionResolver("row-mask", MetadataV2ResourceType.RasterDataset, "honua.rasters");
+        var (resolver, _) = CreateCollisionResolver("row-mask", MetadataV2ObjectType.RasterDataset, "honua.rasters");
 
         var read = await resolver.ApplyAsync(LayerId, new FeatureQuery(), CancellationToken.None);
         var write = await resolver.ResolveRowLevelSecurityFilterAsync(LayerId, CancellationToken.None);
@@ -97,7 +97,7 @@ public sealed partial class LayerReadSecurityResolverTests
     [InlineData("file:/raster.tif")]
     public async Task ApplyAsync_RasterTableIsSharedOrUnreadable_FailsClosed(string rasterLocator)
     {
-        var (resolver, _) = CreateCollisionResolver("row-mask", MetadataV2ResourceType.RasterDataset, rasterLocator);
+        var (resolver, _) = CreateCollisionResolver("row-mask", MetadataV2ObjectType.RasterDataset, rasterLocator);
 
         await Assert.ThrowsAsync<ResourceAccessDeniedException>(() =>
             resolver.ApplyAsync(LayerId, new FeatureQuery(), CancellationToken.None));
@@ -109,7 +109,7 @@ public sealed partial class LayerReadSecurityResolverTests
     [Trait("Tier", "Fast")]
     public async Task ApplyAsync_UnreadableRasterTableWithoutPolicies_PreservesReadAndWriteCompatibility()
     {
-        var (resolver, _) = CreateCollisionResolver("none", MetadataV2ResourceType.RasterDataset, "https://example.invalid/raster");
+        var (resolver, _) = CreateCollisionResolver("none", MetadataV2ObjectType.RasterDataset, "https://example.invalid/raster");
 
         var read = await resolver.ApplyAsync(LayerId, new FeatureQuery(), CancellationToken.None);
         var write = await resolver.ResolveRowLevelSecurityFilterAsync(LayerId, CancellationToken.None);
@@ -124,7 +124,7 @@ public sealed partial class LayerReadSecurityResolverTests
     public async Task ApplyAsync_OnlyRasterCandidate_PreservesReadAndWritePolicies()
     {
         var (resolver, _) = CreateCollisionResolver("row-mask", firstResourceType: null,
-            restrictedResourceType: MetadataV2ResourceType.RasterDataset);
+            restrictedResourceType: MetadataV2ObjectType.RasterDataset);
 
         var read = await resolver.ApplyAsync(LayerId, new FeatureQuery(), CancellationToken.None);
         var write = await resolver.ResolveRowLevelSecurityFilterAsync(LayerId, CancellationToken.None);
@@ -147,10 +147,10 @@ public sealed partial class LayerReadSecurityResolverTests
         }
     }
 
-    private static (LayerReadSecurityResolver Resolver, MetadataV2Resource Resource) CreateCollisionResolver(
-        string policy, MetadataV2ResourceType? firstResourceType = MetadataV2ResourceType.FeatureDataset,
+    private static (LayerReadSecurityResolver Resolver, MetadataV2Object Resource) CreateCollisionResolver(
+        string policy, MetadataV2ObjectType? firstResourceType = MetadataV2ObjectType.FeatureDataset,
         string firstLocator = "honua.features",
-        MetadataV2ResourceType restrictedResourceType = MetadataV2ResourceType.FeatureDataset)
+        MetadataV2ObjectType restrictedResourceType = MetadataV2ObjectType.FeatureDataset)
     {
         var restricted = CreateResource(withPermanentFilter: policy == "permanent") with { Type = restrictedResourceType };
         var first = restricted with
@@ -160,7 +160,7 @@ public sealed partial class LayerReadSecurityResolverTests
             StorageBindingIds = ["first-binding"],
             PermanentFilter = null
         };
-        MetadataV2Resource[] resources = firstResourceType.HasValue ? [first, restricted] : [restricted];
+        MetadataV2Object[] resources = firstResourceType.HasValue ? [first, restricted] : [restricted];
         var bindings = resources.Select(resource => new MetadataV2StorageBinding
         {
             Metadata = new MetadataV2ObjectMetadata { Id = resource.StorageBindingIds![0], Name = resource.Metadata.Name },
@@ -172,10 +172,10 @@ public sealed partial class LayerReadSecurityResolverTests
         var graph = new MetadataV2Graph { Revision = 1, Resources = resources, StorageBindings = bindings };
         MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeTrue();
         var rows = new Mock<IRowLevelSecurityFilterSource>();
-        rows.Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Resource>(), It.IsAny<CancellationToken>()))
+        rows.Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Object>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((SqlFragment?)null);
         var restrictedRow = rows.Setup(source => source.ResolveAsync(
-            It.Is<MetadataV2Resource>(resource => resource.Metadata.Id == restricted.Metadata.Id), It.IsAny<CancellationToken>()));
+            It.Is<MetadataV2Object>(resource => resource.Metadata.Id == restricted.Metadata.Id), It.IsAny<CancellationToken>()));
         if (policy == "row-failure")
         {
             restrictedRow.ThrowsAsync(new InvalidOperationException("Policy source unavailable."));
@@ -185,10 +185,10 @@ public sealed partial class LayerReadSecurityResolverTests
             restrictedRow.ReturnsAsync(policy is "row" or "row-mask" ? new SqlFragment("region = @p0", ["north"]) : null);
         }
         var masks = new Mock<IFieldMaskSource>();
-        masks.Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Resource>(), It.IsAny<CancellationToken>()))
+        masks.Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Object>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(ImmutableArray<string>.Empty);
         var restrictedMask = masks.Setup(source => source.ResolveAsync(
-            It.Is<MetadataV2Resource>(resource => resource.Metadata.Id == restricted.Metadata.Id), It.IsAny<CancellationToken>()));
+            It.Is<MetadataV2Object>(resource => resource.Metadata.Id == restricted.Metadata.Id), It.IsAny<CancellationToken>()));
         if (policy == "mask-failure")
         {
             restrictedMask.ThrowsAsync(new InvalidOperationException("Policy source unavailable."));

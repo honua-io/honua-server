@@ -12,10 +12,10 @@ namespace Honua.Protocols.GeoServices;
 internal static class GeoServicesObjectIdFieldResolver
 {
     // A nonnumeric primary key may use a numeric objectid surrogate, but never an unrelated id or fid attribute.
-    public static string ResolveObjectIdFieldName(MetadataV2Resource resource)
+    public static string ResolveObjectIdFieldName(MetadataV2Object resource)
         => ResolveObjectIdField(resource)?.Name ?? FieldNames.ObjectId;
 
-    public static MetadataV2Field? ResolveObjectIdField(MetadataV2Resource resource)
+    public static MetadataV2Field? ResolveObjectIdField(MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -35,7 +35,7 @@ internal static class GeoServicesObjectIdFieldResolver
         return surrogate ?? FindNumericV2Field(resource, "id") ?? FindNumericV2Field(resource, "fid");
     }
 
-    private static MetadataV2Field? FindNumericV2Field(MetadataV2Resource resource, string fieldName)
+    private static MetadataV2Field? FindNumericV2Field(MetadataV2Object resource, string fieldName)
         => resource.SchemaFields.FirstOrDefault(field =>
             field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
             IsObjectIdCompatible(field));

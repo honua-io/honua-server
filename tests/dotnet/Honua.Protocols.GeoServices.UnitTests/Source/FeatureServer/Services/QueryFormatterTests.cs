@@ -716,7 +716,7 @@ public sealed class QueryFormatterTests
         geoJson.Features[0].Geometry!.Type.Should().Be("Polygon");
     }
 
-    private async Task<GeoJsonFeatureSet> FormatGeoJsonGeometryAsync(byte[] wkb, MetadataV2Resource resource)
+    private async Task<GeoJsonFeatureSet> FormatGeoJsonGeometryAsync(byte[] wkb, MetadataV2Object resource)
     {
         var limitsOptions = Options.Create(new LimitsOptions());
         var formatter = new QueryFormatter(
@@ -773,43 +773,43 @@ public sealed class QueryFormatterTests
         return new WKBWriter().Write(collection);
     }
 
-    private static MetadataV2Resource CreatePointLayer()
+    private static MetadataV2Object CreatePointLayer()
         => CreatePointResource(
             "test-layer",
             new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
 
-    private static MetadataV2Resource CreatePointResourceWithExtraField()
+    private static MetadataV2Object CreatePointResourceWithExtraField()
         => CreatePointResource(
             "field-test-layer",
             new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 },
             new MetadataV2Field { Name = "secret", Type = MetadataV2FieldType.String, Length = 128 });
 
-    private static MetadataV2Resource CreateIdBackedPointLayer()
+    private static MetadataV2Object CreateIdBackedPointLayer()
         => CreatePointResource(
             "id-backed-test-layer",
             new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
 
-    private static MetadataV2Resource CreateStringIdPointLayer()
+    private static MetadataV2Object CreateStringIdPointLayer()
         => CreatePointResource(
             "string-id-test-layer",
             new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.String, Length = 64, Nullable = false },
             new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
 
-    private static MetadataV2Resource CreatePolygonLayer()
+    private static MetadataV2Object CreatePolygonLayer()
         => CreateResource(
             "polygon-test-layer",
             MetadataV2GeometryType.Polygon,
             new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
 
-    private static MetadataV2Resource CreatePointResource(string name, params MetadataV2Field[] fields)
+    private static MetadataV2Object CreatePointResource(string name, params MetadataV2Field[] fields)
         => CreateResource(name, MetadataV2GeometryType.Point, fields);
 
-    private static MetadataV2Resource CreateResource(
+    private static MetadataV2Object CreateResource(
         string name,
         MetadataV2GeometryType geometryType,
         params MetadataV2Field[] fields)
@@ -831,7 +831,7 @@ public sealed class QueryFormatterTests
                     SemanticRoles = ["geometry.primary"]
                 }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = geometryType,

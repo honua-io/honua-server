@@ -9,7 +9,7 @@ namespace Honua.Core.Features.Scene.Abstractions;
 public interface ISceneFeatureSource
 {
     IAsyncEnumerable<SceneFeature> StreamAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IReadOnlyList<string> includeAttributes,
         CancellationToken cancellationToken = default);

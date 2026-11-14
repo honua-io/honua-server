@@ -25,7 +25,7 @@ internal sealed class GeoArrowQueryFormatter
 
     public static async Task<(byte[] response, string contentType)> FormatAsGeoArrowAsync(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -102,7 +102,7 @@ internal sealed class GeoArrowQueryFormatter
     private static Apache.Arrow.Schema BuildSchema(
         List<MetadataV2Field> selectedFields,
         bool includeGeometry,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int srid,
         bool returnZ,
         List<(string name, IArrowType type)> runtimeFields,
@@ -565,7 +565,7 @@ internal sealed class GeoArrowQueryFormatter
     }
 
     private static Dictionary<string, string> BuildSchemaMetadata(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool includeGeometry,
         int srid,
         IReadOnlyCollection<string> geometryTypes,

@@ -11,6 +11,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.MySql.Features.FeatureStore;
 using Honua.Db.MySql.Features.FeatureStore.Services;
 using Honua.Db.MySql.Features.Infrastructure;
+using Honua.Tests.ProviderUnitSupport;
 
 namespace Honua.Db.MySql.Tests;
 
@@ -302,78 +303,16 @@ public class MySqlFeatureStoreTests
             => Honua.Core.Queries.Filters.FilterParseResult.Success(_expression);
 
         public Honua.Core.Queries.Filters.FilterParseResult ParseAndNormalize(
-            Honua.Core.Queries.Filters.FilterLanguage language, string? filter, MetadataV2Resource resource)
+            Honua.Core.Queries.Filters.FilterLanguage language, string? filter, MetadataV2Object resource)
             => Honua.Core.Queries.Filters.FilterParseResult.Success(_expression);
 
         public Honua.Core.Queries.Filters.FilterExpression Normalize(
-            Honua.Core.Queries.Filters.FilterExpression expression, MetadataV2Resource resource)
+            Honua.Core.Queries.Filters.FilterExpression expression, MetadataV2Object resource)
             => expression;
 
         public Honua.Core.Queries.Filters.FilterTranslationResult Translate(
-            Honua.Core.Queries.Filters.FilterExpression? expression, MetadataV2Resource resource)
+            Honua.Core.Queries.Filters.FilterExpression? expression, MetadataV2Object resource)
             => Honua.Core.Queries.Filters.FilterTranslationResult.Success(expression, fragment);
-    }
-
-    private sealed class StubV2Provider(int storageLayerId, string? permanentFilterExpression) :
-        Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider
-    {
-        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-        {
-            var resource = new MetadataV2Resource
-            {
-                Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-                Type = MetadataV2ResourceType.FeatureDataset,
-                PermanentFilter = permanentFilterExpression == null ? null : new MetadataV2PermanentFilter
-                {
-                    Expression = permanentFilterExpression,
-                    Language = MetadataV2PermanentFilterLanguages.GeoServicesSql
-                }
-            };
-            var storageBinding = new MetadataV2StorageBinding
-            {
-                Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels", Name = "binding-parcels" },
-                ResourceId = resource.Metadata.Id,
-                StorageLayerId = storageLayerId,
-                StorageType = MetadataV2StorageType.RelationalTable,
-                Locator = "gis.parcels"
-            };
-            var graph = new MetadataV2Graph
-            {
-                Revision = 1,
-                Environment = "test",
-                Resources = [resource],
-                StorageBindings = [storageBinding]
-            };
-            return ValueTask.FromResult(new MetadataV2GraphSnapshot(graph, "etag-stub", DateTimeOffset.UtcNow));
-        }
-
-        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(null);
-    }
-
-    private sealed class StubRowFilterSource(Honua.Core.Queries.Filters.SqlFragment? fragment) :
-        Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource
-    {
-        public string? LastResourceId { get; private set; }
-
-        public Task<Honua.Core.Queries.Filters.SqlFragment?> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
-        {
-            LastResourceId = resource.Metadata.Id;
-            return Task.FromResult(fragment);
-        }
-    }
-
-    private sealed class StubFieldMaskSource(string[] maskedFields) :
-        Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource
-    {
-        public string? LastResourceId { get; private set; }
-
-        public Task<System.Collections.Immutable.ImmutableArray<string>> ResolveAsync(
-            MetadataV2Resource resource, CancellationToken cancellationToken = default)
-        {
-            LastResourceId = resource.Metadata.Id;
-            return Task.FromResult(System.Collections.Immutable.ImmutableArray.Create(maskedFields));
-        }
     }
 
     private sealed class RecordingFeatureDataAccess : IFeatureDataAccess

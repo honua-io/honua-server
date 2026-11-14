@@ -68,7 +68,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         // listing only stored styles left every advertised link on an unstyled collection 404
         // (#4993). Other resource types (rasters, tables) have no meaningful vector default and
         // project only when a MapLibre style is genuinely stored.
-        var storedOnlyCandidates = new List<(string StyleId, MetadataV2Resource Resource, int StorageLayerId)>();
+        var storedOnlyCandidates = new List<(string StyleId, MetadataV2Object Resource, int StorageLayerId)>();
         foreach (var resource in snapshot.Graph.Resources)
         {
             var styleId = resource.Metadata.Name;
@@ -208,7 +208,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
         var isAssociatedCatalogStyle = resource.StyleResourceIds.Any(styleResourceId =>
             snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource) &&
-            styleResource.Type == MetadataV2ResourceType.Style &&
+            styleResource.Type == MetadataV2ObjectType.Style &&
             string.Equals(styleResource.Metadata.Name, styleId, StringComparison.Ordinal));
 
         return isAssociatedCatalogStyle
@@ -217,7 +217,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     }
 
     private async Task<OgcStylesheet?> ProjectLayerStylesheetAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         string mapLibreJson,
         OgcStyleEncoding encoding,
@@ -250,14 +250,14 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return sld;
     }
 
-    internal static bool PublishesLayerDefault(MetadataV2Resource resource)
-        => resource.Type == MetadataV2ResourceType.FeatureDataset;
+    internal static bool PublishesLayerDefault(MetadataV2Object resource)
+        => resource.Type == MetadataV2ObjectType.FeatureDataset;
 
     // The default a feature collection renders with before its first PUT, built exactly
     // as LayerStyleService builds it for the per-layer style routes. Computed in memory only:
     // persisting it would stamp a style revision on a read path.
     private static OgcStylesheet ProjectLayerDefaultStylesheet(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         OgcStyleEncoding encoding)
     {
@@ -518,7 +518,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     // per-layer defaults are stored as "style-layer-{id}" at ordinal zero and listed
     // through this surface. Only that reserved mirror writes through to the canonical per-layer
     // store; ordinary associated styles remain independently editable catalog records.
-    private async Task<(MetadataV2Resource Resource, int StorageLayerId)?> ResolveMirroredLayerStyleAsync(
+    private async Task<(MetadataV2Object Resource, int StorageLayerId)?> ResolveMirroredLayerStyleAsync(
         string styleId,
         CancellationToken cancellationToken)
     {
@@ -988,7 +988,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
     private static OgcStylesheet DeriveSld(
         string mapLibreJson,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         OgcStyleEncoding encoding)
     {
@@ -1079,7 +1079,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         }
     }
 
-    private async Task<(MetadataV2Resource? Resource, int? StorageLayerId, MetadataV2GraphSnapshot Snapshot)> ResolveResourceAsync(
+    private async Task<(MetadataV2Object? Resource, int? StorageLayerId, MetadataV2GraphSnapshot Snapshot)> ResolveResourceAsync(
         string styleId,
         CancellationToken cancellationToken)
     {
@@ -1097,7 +1097,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return (null, null, snapshot);
     }
 
-    private async Task<(MetadataV2Resource? Resource, int? StorageLayerId, MetadataV2GraphSnapshot Snapshot)> ResolveStyledResourceAsync(
+    private async Task<(MetadataV2Object? Resource, int? StorageLayerId, MetadataV2GraphSnapshot Snapshot)> ResolveStyledResourceAsync(
         string styleId,
         CancellationToken cancellationToken)
     {
@@ -1115,7 +1115,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             : (null, null, resolved.Snapshot);
     }
 
-    private static string ResolveTitle(MetadataV2Resource resource)
+    private static string ResolveTitle(MetadataV2Object resource)
         => resource.Metadata.Title
             ?? (string.IsNullOrWhiteSpace(resource.Metadata.Name) ? "Style" : resource.Metadata.Name);
 }

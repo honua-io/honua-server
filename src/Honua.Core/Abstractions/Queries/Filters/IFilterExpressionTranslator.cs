@@ -7,7 +7,7 @@ namespace Honua.Core.Queries.Filters;
 
 public interface IFilterExpressionTranslator
 {
-    FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource);
+    FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource);
 
-    SqlFragment Translate(FilterExpression expression, MetadataV2Resource resource);
+    SqlFragment Translate(FilterExpression expression, MetadataV2Object resource);
 }

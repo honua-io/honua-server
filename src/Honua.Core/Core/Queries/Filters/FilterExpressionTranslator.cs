@@ -14,10 +14,10 @@ public sealed class FilterExpressionTranslator : IFilterExpressionTranslator
         _sqlFilterTranslator = sqlFilterTranslator ?? throw new ArgumentNullException(nameof(sqlFilterTranslator));
     }
 
-    public FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
+    public FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource)
         => FilterExpressionNormalizer.Normalize(expression, resource);
 
-    public SqlFragment Translate(FilterExpression expression, MetadataV2Resource resource)
+    public SqlFragment Translate(FilterExpression expression, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var normalized = FilterExpressionNormalizer.Normalize(expression, resource);

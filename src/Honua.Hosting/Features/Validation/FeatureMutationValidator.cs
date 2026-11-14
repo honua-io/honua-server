@@ -26,7 +26,7 @@ internal sealed class FeatureMutationValidator
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Kept as an instance method for the validator service API.")]
     public ValidationResult<ImmutableDictionary<string, object?>> ValidateAttributes(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyDictionary<string, object?>? attributes,
         ValidationExtensions.AttributeValidationMode mode,
         bool isUpdate = false)
@@ -35,7 +35,7 @@ internal sealed class FeatureMutationValidator
     }
 
     public Task<GeometryMutationResult> ValidateGeometryAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         byte[]? geometry,
         CancellationToken cancellationToken)
     {
@@ -102,7 +102,7 @@ internal sealed class FeatureMutationValidator
             validationResult.GeometryTypeChanged);
     }
 
-    public static MetadataV2GeometryType ResolveLayerGeometryType(MetadataV2Resource resource)
+    public static MetadataV2GeometryType ResolveLayerGeometryType(MetadataV2Object resource)
         => resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
 
     private static byte[] CutAntimeridian(byte[] wkb, int layerSrid)
@@ -361,7 +361,7 @@ internal sealed record GeometryMutationResult
 internal static class MetadataV2AttributeValidation
 {
     public static ValidationResult<ImmutableDictionary<string, object?>> ValidateAttributesV2(
-        this MetadataV2Resource resource,
+        this MetadataV2Object resource,
         IReadOnlyDictionary<string, object?>? attributes,
         ValidationExtensions.AttributeValidationMode mode = ValidationExtensions.AttributeValidationMode.Strict,
         bool isUpdate = false)

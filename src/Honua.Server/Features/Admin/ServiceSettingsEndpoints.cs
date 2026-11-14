@@ -300,7 +300,7 @@ internal static partial class ServiceSettingsEndpoints
     {
         // GAP (#1035 cutover 72/N): the v1 admin path exposed a service-scope time-info
         // editor that was actually applied to every layer on the service. In the V2
-        // graph temporal metadata lives on MetadataV2Resource.Temporal — there is no
+        // graph temporal metadata lives on MetadataV2Object.Temporal — there is no
         // service-level slot. Rather than silently fan-out across resources (which
         // would mask field-typed validation gaps) we refuse the operation and direct
         // callers to the per-layer endpoint until a service-level temporal extension
@@ -520,7 +520,7 @@ internal static partial class ServiceSettingsEndpoints
            service.Protocols.Contains(ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase) ||
            graph.Publications.Any(publication =>
                string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-               publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+               publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
 
     private static ServiceSettingsResponse BuildSettingsResponse(
         string serviceName,
@@ -576,9 +576,9 @@ internal static partial class ServiceSettingsEndpoints
         string layerName,
         MetadataV2ObjectMetadata metadata,
         AccessPolicy? accessPolicy,
-        MetadataV2ResourceTemporal? timeInfo,
+        MetadataV2ObjectTemporal? timeInfo,
         RasterMosaicResponse? rasterMosaic,
-        MetadataV2ResourceEditing? editing)
+        MetadataV2ObjectEditing? editing)
     {
         return new LayerMetadataResponse
         {
@@ -855,12 +855,12 @@ internal static partial class ServiceSettingsEndpoints
     /// FeatureServer publication is revalidated before each attempt so a relink cannot
     /// redirect or orphan the patch.
     /// </summary>
-    private static async Task<(MetadataV2Resource? Resource, bool BindingConflict)> MutateResourceByIdAsync(
+    private static async Task<(MetadataV2Object? Resource, bool BindingConflict)> MutateResourceByIdAsync(
         IMetadataV2GraphStore graphStore,
         string serviceName,
         int serviceLayerIndex,
         string resourceId,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate,
+        Func<MetadataV2Object, MetadataV2Object> mutate,
         MetadataV2EditingPatch? editingPatch,
         CancellationToken cancellationToken)
     {
@@ -906,7 +906,7 @@ internal static partial class ServiceSettingsEndpoints
                     .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
                 var publicationIds = snapshot.Graph.Publications.Where(publication =>
                         publication.ResourceId == resourceId && serviceIds.Contains(publication.ServiceId) &&
-                        publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                        publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
                         publication.LayerIndex == serviceLayerIndex && snapshot.IsRoutable(publication))
                     .Select(publication => publication.Metadata.Id).ToHashSet(StringComparer.Ordinal);
                 updated = MetadataV2EditingConfiguration.Apply(updated, resourceId, publicationIds, editingPatch);
@@ -970,17 +970,15 @@ internal static partial class ServiceSettingsEndpoints
         Conflict,
     }
 
-    /// <summary>
-    /// Creates the V2 <see cref="MetadataV2ResourceTemporal"/> block. Treats an entirely-empty time info as
-    /// "clear temporal" — returns null so the resource turns non-temporal — to preserve
-    /// clear-on-empty-PUT semantics. Preserves an existing declared extent when
-    /// only the field names are changing.
-    /// </summary>
-    private static MetadataV2ResourceTemporal? ToV2Temporal(
+    // Creates the V2 MetadataV2ObjectTemporal block. Treats an entirely-empty time info as
+    // "clear temporal" — returns null so the resource turns non-temporal — to preserve
+    // clear-on-empty-PUT semantics. Preserves an existing declared extent when
+    // only the field names are changing.
+    private static MetadataV2ObjectTemporal? ToV2Temporal(
         string? startTimeField,
         string? endTimeField,
         string? trackIdField,
-        MetadataV2ResourceTemporal? existing)
+        MetadataV2ObjectTemporal? existing)
     {
         if (string.IsNullOrEmpty(startTimeField)
             && string.IsNullOrEmpty(endTimeField)
@@ -989,7 +987,7 @@ internal static partial class ServiceSettingsEndpoints
             return null;
         }
 
-        return new MetadataV2ResourceTemporal
+        return new MetadataV2ObjectTemporal
         {
             StartTimeField = startTimeField,
             EndTimeField = endTimeField,

@@ -61,7 +61,7 @@ public sealed class FilterExpressionService : IFilterExpressionService
     }
 
     /// <inheritdoc />
-    public FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Resource resource)
+    public FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var parseResult = Parse(language, filter);
@@ -81,14 +81,14 @@ public sealed class FilterExpressionService : IFilterExpressionService
     }
 
     /// <inheritdoc />
-    public FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
+    public FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return _translator.Normalize(expression, resource);
     }
 
     /// <inheritdoc />
-    public FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Resource resource)
+    public FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 

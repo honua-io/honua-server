@@ -21,16 +21,16 @@ public sealed class MetadataV2ModelTests
     [InlineData("{\"identifier\":null,\"status\":{}}")]
     public void DeserializePublication_NullIdentifier_PreservesNullWireShape(string json)
     {
-        var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Publication)!;
+        var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Layer)!;
 
         publication.Identifier.Should().BeNull();
         publication.LayerIndex.Should().BeNull();
         publication.Path.Should().BeNull();
         publication.ServiceLocalId.Should().BeNull();
-        var roundTrip = JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Publication);
+        var roundTrip = JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Layer);
         using var document = JsonDocument.Parse(roundTrip);
         document.RootElement.GetProperty("identifier").ValueKind.Should().Be(JsonValueKind.Null);
-        JsonSerializer.Deserialize(roundTrip, MetadataV2JsonContext.Default.MetadataV2Publication)!
+        JsonSerializer.Deserialize(roundTrip, MetadataV2JsonContext.Default.MetadataV2Layer)!
             .Identifier.Should().Be(publication.Identifier);
     }
 
@@ -39,13 +39,13 @@ public sealed class MetadataV2ModelTests
     [InlineData("{\"identifier\":null,\"layerIndex\":7,\"path\":\"parcels\",\"serviceLocalId\":\"local\",\"status\":{}}")]
     public void DeserializePublication_LegacyIdentifiers_PreservesValues(string json)
     {
-        var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Publication)!;
+        var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Layer)!;
 
         publication.Identifier.Should().BeNull();
         publication.LayerIndex.Should().Be(7);
         publication.Path.Should().Be("parcels");
         publication.ServiceLocalId.Should().Be("local");
-        JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Publication)
+        JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Layer)
             .Should().Contain("\"layerIndex\":7").And.Contain("\"identifier\":null");
     }
 
@@ -109,7 +109,7 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Query)]
     public void Records_WithExpression_PreservesOriginalValues()
     {
-        var original = new MetadataV2Resource
+        var original = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -120,7 +120,7 @@ public sealed class MetadataV2ModelTests
                     ["domain"] = "cadastre"
                 }
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds =
             [
                 "storage.parcels.postgis",
@@ -160,7 +160,7 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Query)]
     public void Publication_LinksCanonicalResourceToService()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -178,7 +178,7 @@ public sealed class MetadataV2ModelTests
             Protocols = [ServiceProtocols.OgcFeatures]
         };
 
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -187,8 +187,8 @@ public sealed class MetadataV2ModelTests
             ResourceId = resource.Metadata.Id,
             ServiceId = service.Metadata.Id,
             StorageBindingId = "storage.parcels.postgis",
-            PublicationType = MetadataV2PublicationType.OgcCollection,
-            Identifier = new MetadataV2PublicationIdentifier
+            PublicationType = MetadataV2LayerType.OgcCollection,
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = "0",
                 IsNumeric = true,
@@ -205,7 +205,7 @@ public sealed class MetadataV2ModelTests
 
         graph.Publications.Single().ResourceId.Should().Be("resource.parcels");
         graph.Publications.Single().ServiceId.Should().Be("service.public");
-        graph.Publications.Single().PublicationType.Should().Be(MetadataV2PublicationType.OgcCollection);
+        graph.Publications.Single().PublicationType.Should().Be(MetadataV2LayerType.OgcCollection);
         graph.Publications.Single().Path.Should().Be("/collections/parcels");
     }
 
@@ -213,7 +213,7 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Query)]
     public void GeoServicesServiceLayers_AreServiceLocalPublicationSlots()
     {
-        var parcels = new MetadataV2Resource
+        var parcels = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -234,7 +234,7 @@ public sealed class MetadataV2ModelTests
             ]
         };
 
-        var hydrants = new MetadataV2Resource
+        var hydrants = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -255,7 +255,7 @@ public sealed class MetadataV2ModelTests
             ]
         };
 
-        var parcelsPublication = new MetadataV2Publication
+        var parcelsPublication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -264,8 +264,8 @@ public sealed class MetadataV2ModelTests
             },
             ResourceId = parcels.Metadata.Id,
             ServiceId = "service.public-works-feature-server",
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
-            Identifier = new MetadataV2PublicationIdentifier
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer,
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = "0",
                 IsNumeric = true,
@@ -273,7 +273,7 @@ public sealed class MetadataV2ModelTests
             }
         };
 
-        var hydrantsPublication = new MetadataV2Publication
+        var hydrantsPublication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -282,8 +282,8 @@ public sealed class MetadataV2ModelTests
             },
             ResourceId = hydrants.Metadata.Id,
             ServiceId = "service.public-works-feature-server",
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
-            Identifier = new MetadataV2PublicationIdentifier
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer,
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = "1",
                 IsNumeric = true,
@@ -326,7 +326,7 @@ public sealed class MetadataV2ModelTests
         graph.Services.Single().PrimaryProtocol.Should().Be(ServiceProtocols.FeatureServer);
         graph.Publications.Should().OnlyContain(publication =>
             publication.ServiceId == "service.public-works-feature-server" &&
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
         graph.Publications.Select(publication => publication.LayerIndex).Should().BeEquivalentTo(
             new int?[] { 0, 1 });
         graph.Publications.Select(publication => publication.ResourceId).Should().BeEquivalentTo(
@@ -367,7 +367,7 @@ public sealed class MetadataV2ModelTests
     public void StorageTypes_AreSeparateFromPublicationTypes()
     {
         var storageNames = Enum.GetNames<MetadataV2StorageType>();
-        var publicationNames = Enum.GetNames<MetadataV2PublicationType>();
+        var publicationNames = Enum.GetNames<MetadataV2LayerType>();
 
         storageNames.Should().Contain(nameof(MetadataV2StorageType.GeoParquet));
         storageNames.Should().Contain(nameof(MetadataV2StorageType.CloudOptimizedGeoTiff));
@@ -378,37 +378,37 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Query)]
     public void ResourceAndPublicationTypes_MatchCanonicalBacklogVocabulary()
     {
-        Enum.GetNames<MetadataV2ResourceType>().Should().BeEquivalentTo(
-            nameof(MetadataV2ResourceType.Unknown),
-            nameof(MetadataV2ResourceType.FeatureDataset),
-            nameof(MetadataV2ResourceType.Table),
-            nameof(MetadataV2ResourceType.RasterDataset),
-            nameof(MetadataV2ResourceType.TileDataset),
-            nameof(MetadataV2ResourceType.Process),
-            nameof(MetadataV2ResourceType.Style),
-            nameof(MetadataV2ResourceType.Document),
-            nameof(MetadataV2ResourceType.ExternalResource),
-            nameof(MetadataV2ResourceType.Map),
-            nameof(MetadataV2ResourceType.Dashboard),
-            nameof(MetadataV2ResourceType.Form),
-            nameof(MetadataV2ResourceType.App),
-            nameof(MetadataV2ResourceType.Workflow),
-            nameof(MetadataV2ResourceType.GeoprocessingService),
-            nameof(MetadataV2ResourceType.EtlPipeline));
+        Enum.GetNames<MetadataV2ObjectType>().Should().BeEquivalentTo(
+            nameof(MetadataV2ObjectType.Unknown),
+            nameof(MetadataV2ObjectType.FeatureDataset),
+            nameof(MetadataV2ObjectType.Table),
+            nameof(MetadataV2ObjectType.RasterDataset),
+            nameof(MetadataV2ObjectType.TileDataset),
+            nameof(MetadataV2ObjectType.Process),
+            nameof(MetadataV2ObjectType.Style),
+            nameof(MetadataV2ObjectType.Document),
+            nameof(MetadataV2ObjectType.ExternalResource),
+            nameof(MetadataV2ObjectType.Map),
+            nameof(MetadataV2ObjectType.Dashboard),
+            nameof(MetadataV2ObjectType.Form),
+            nameof(MetadataV2ObjectType.App),
+            nameof(MetadataV2ObjectType.Workflow),
+            nameof(MetadataV2ObjectType.GeoprocessingService),
+            nameof(MetadataV2ObjectType.EtlPipeline));
 
-        Enum.GetNames<MetadataV2PublicationType>().Should().Contain(
+        Enum.GetNames<MetadataV2LayerType>().Should().Contain(
             [
-                nameof(MetadataV2PublicationType.OgcCollection),
-                nameof(MetadataV2PublicationType.WfsFeatureType),
-                nameof(MetadataV2PublicationType.WmsLayer),
-                nameof(MetadataV2PublicationType.WmtsLayer),
-                nameof(MetadataV2PublicationType.EsriFeatureLayer),
-                nameof(MetadataV2PublicationType.EsriMapLayer),
-                nameof(MetadataV2PublicationType.EsriImageLayer),
-                nameof(MetadataV2PublicationType.StacCollection),
-                nameof(MetadataV2PublicationType.DcatDistribution),
-                nameof(MetadataV2PublicationType.OgcRecord),
-                nameof(MetadataV2PublicationType.ODataEntitySet)
+                nameof(MetadataV2LayerType.OgcCollection),
+                nameof(MetadataV2LayerType.WfsFeatureType),
+                nameof(MetadataV2LayerType.WmsLayer),
+                nameof(MetadataV2LayerType.WmtsLayer),
+                nameof(MetadataV2LayerType.EsriFeatureLayer),
+                nameof(MetadataV2LayerType.EsriMapLayer),
+                nameof(MetadataV2LayerType.EsriImageLayer),
+                nameof(MetadataV2LayerType.StacCollection),
+                nameof(MetadataV2LayerType.DcatDistribution),
+                nameof(MetadataV2LayerType.OgcRecord),
+                nameof(MetadataV2LayerType.ODataEntitySet)
             ]);
     }
 
@@ -440,7 +440,7 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Query)]
     public void JsonContext_SerializesResourceSymbology3D()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource.buildings" },
             SchemaFields =
@@ -464,8 +464,8 @@ public sealed class MetadataV2ModelTests
             }
         };
 
-        var json = JsonSerializer.Serialize(resource, MetadataV2JsonContext.Default.MetadataV2Resource);
-        var roundTrip = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Resource);
+        var json = JsonSerializer.Serialize(resource, MetadataV2JsonContext.Default.MetadataV2Object);
+        var roundTrip = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Object);
 
         json.Should().Contain("\"symbology3D\"");
         json.Should().Contain("\"defaultOpacity\":0.75");
@@ -957,7 +957,7 @@ public sealed class MetadataV2ModelTests
         {
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata
                     {
@@ -989,7 +989,7 @@ public sealed class MetadataV2ModelTests
         {
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata
                     {
@@ -1044,7 +1044,7 @@ public sealed class MetadataV2ModelTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata
                     {
@@ -1071,7 +1071,7 @@ public sealed class MetadataV2ModelTests
         {
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.buildings" },
                     SchemaFields =
@@ -1149,24 +1149,24 @@ public sealed class MetadataV2ModelTests
     public void IsPreferredPublicationType_MatchesCanonicalSurfacePerProtocol()
     {
         ServiceProtocols.IsPreferredPublicationType(
-            ServiceProtocols.OgcFeatures, MetadataV2PublicationType.OgcCollection).Should().BeTrue();
+            ServiceProtocols.OgcFeatures, MetadataV2LayerType.OgcCollection).Should().BeTrue();
         ServiceProtocols.IsPreferredPublicationType(
-            ServiceProtocols.OgcFeatures, MetadataV2PublicationType.EsriImageLayer).Should().BeFalse();
+            ServiceProtocols.OgcFeatures, MetadataV2LayerType.EsriImageLayer).Should().BeFalse();
 
         ServiceProtocols.IsPreferredPublicationType(
-            ServiceProtocols.Stac, MetadataV2PublicationType.StacCollection).Should().BeTrue();
+            ServiceProtocols.Stac, MetadataV2LayerType.StacCollection).Should().BeTrue();
         ServiceProtocols.IsPreferredPublicationType(
-            ServiceProtocols.FeatureServer, MetadataV2PublicationType.EsriFeatureLayer).Should().BeTrue();
+            ServiceProtocols.FeatureServer, MetadataV2LayerType.EsriFeatureLayer).Should().BeTrue();
         ServiceProtocols.IsPreferredPublicationType(
-            ServiceProtocols.ImageServer, MetadataV2PublicationType.EsriImageLayer).Should().BeTrue();
+            ServiceProtocols.ImageServer, MetadataV2LayerType.EsriImageLayer).Should().BeTrue();
         ServiceProtocols.IsPreferredPublicationType(
-            ServiceProtocols.Wfs20, MetadataV2PublicationType.WfsFeatureType).Should().BeTrue();
+            ServiceProtocols.Wfs20, MetadataV2LayerType.WfsFeatureType).Should().BeTrue();
 
         // Unknown / unspecified protocols leave callers on their generic match order.
         ServiceProtocols.IsPreferredPublicationType(
-            null, MetadataV2PublicationType.OgcCollection).Should().BeFalse();
+            null, MetadataV2LayerType.OgcCollection).Should().BeFalse();
         ServiceProtocols.IsPreferredPublicationType(
-            "Grpc", MetadataV2PublicationType.OgcCollection).Should().BeFalse();
+            "Grpc", MetadataV2LayerType.OgcCollection).Should().BeFalse();
     }
 
     private static MetadataV2Graph CreateValidGraph()
@@ -1175,7 +1175,7 @@ public sealed class MetadataV2ModelTests
         {
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata
                     {
@@ -1222,7 +1222,7 @@ public sealed class MetadataV2ModelTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata
                     {

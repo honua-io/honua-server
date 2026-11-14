@@ -319,10 +319,10 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
             .Where(publication =>
                 publication.LayerIndex == WebAppFixture.TestLayerId &&
                 publication.PublicationType is (
-                    MetadataV2PublicationType.EsriMapLayer or
-                    MetadataV2PublicationType.EsriFeatureLayer))
+                    MetadataV2LayerType.EsriMapLayer or
+                    MetadataV2LayerType.EsriFeatureLayer))
             .OrderBy(publication =>
-                publication.PublicationType == MetadataV2PublicationType.EsriMapLayer ? 0 : 1)
+                publication.PublicationType == MetadataV2LayerType.EsriMapLayer ? 0 : 1)
             .ThenBy(publication => publication.Metadata.Id, StringComparer.Ordinal)
             .First();
         var stacPublication = esriPublication with
@@ -332,7 +332,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
                 Id = $"{esriPublication.Metadata.Id}-stac",
                 Name = $"{esriPublication.Metadata.Name}-stac",
             },
-            PublicationType = MetadataV2PublicationType.StacCollection,
+            PublicationType = MetadataV2LayerType.StacCollection,
         };
         var danglingMapPublication = esriPublication with
         {
@@ -343,7 +343,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
             },
             ResourceId = "missing-mapserver-resource",
             StorageBindingId = "missing-mapserver-binding",
-            PublicationType = MetadataV2PublicationType.EsriMapLayer,
+            PublicationType = MetadataV2LayerType.EsriMapLayer,
         };
 
         provider.SetGraph(snapshot.Graph with

@@ -113,7 +113,7 @@ internal sealed class UpdateTimeInfoRequest
 internal sealed class LayerMetadataResponse
 {
     /// <summary>Persisted editing and attachment bindings for the canonical resource.</summary>
-    public MetadataV2ResourceEditing? Editing { get; init; }
+    public MetadataV2ObjectEditing? Editing { get; init; }
 
     public required int ServiceLayerIndex { get; init; }
 

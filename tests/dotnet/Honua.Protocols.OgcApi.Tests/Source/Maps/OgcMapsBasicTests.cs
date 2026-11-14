@@ -174,7 +174,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resource = snapshot.Graph.Resources.Single(candidate => candidate.Metadata.Id == "res-layer-1");
         var original = resource.Spatial;
-        _fixture.UpdateV2ResourceMetadata(1, spatial: new MetadataV2ResourceSpatial
+        _fixture.UpdateV2ResourceMetadata(1, spatial: new MetadataV2ObjectSpatial
         {
             SpatialReference = new MetadataV2SpatialReference { Srid = 27700, Crs = "EPSG:27700" },
             GeometryType = MetadataV2GeometryType.Point,

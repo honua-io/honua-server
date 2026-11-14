@@ -335,7 +335,7 @@ public sealed class QueryProcessor : IQueryProcessor
 
     private static bool IsSystemField(string fieldName) => SystemFields.Contains(fieldName);
 
-    public QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Resource resource)
+    public QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -459,7 +459,7 @@ public sealed class QueryProcessor : IQueryProcessor
         return QueryValidationResult.Success(warnings.Count > 0 ? warnings : null);
     }
 
-    public UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Resource resource)
+    public UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -514,7 +514,7 @@ public sealed class QueryProcessor : IQueryProcessor
         return query;
     }
 
-    public FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Resource resource)
+    public FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -598,7 +598,7 @@ public sealed class QueryProcessor : IQueryProcessor
         return featureQuery;
     }
 
-    public string BuildCacheKey(UnifiedQuery query, MetadataV2Resource resource, string protocol)
+    public string BuildCacheKey(UnifiedQuery query, MetadataV2Object resource, string protocol)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -624,7 +624,7 @@ public sealed class QueryProcessor : IQueryProcessor
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    public bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Resource resource, string outputFormat)
+    public bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Object resource, string outputFormat)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -671,7 +671,7 @@ public sealed class QueryProcessor : IQueryProcessor
 
     public async Task<long> EstimateResultCountAsync(
         UnifiedQuery query,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -724,7 +724,7 @@ public sealed class QueryProcessor : IQueryProcessor
 
     private static ImmutableArray<string>? CanonicalizeOutFields(
         ImmutableArray<string>? outFields,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         if (!outFields.HasValue || outFields.Value.IsDefaultOrEmpty)
         {
@@ -757,7 +757,7 @@ public sealed class QueryProcessor : IQueryProcessor
         return rewritten is null ? outFields : rewritten.ToImmutableArray();
     }
 
-    private static Dictionary<string, MetadataV2Field> BuildV2FieldIndex(MetadataV2Resource resource)
+    private static Dictionary<string, MetadataV2Field> BuildV2FieldIndex(MetadataV2Object resource)
     {
         var index = new Dictionary<string, MetadataV2Field>(StringComparer.OrdinalIgnoreCase);
         foreach (var field in resource.SchemaFields)
@@ -773,7 +773,7 @@ public sealed class QueryProcessor : IQueryProcessor
         return index;
     }
 
-    private static string? ResolvePublicIdAttributeName(MetadataV2Resource resource)
+    private static string? ResolvePublicIdAttributeName(MetadataV2Object resource)
     {
         var objectIdFieldName = resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId;
         return resource.SchemaFields.Any(field => field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))

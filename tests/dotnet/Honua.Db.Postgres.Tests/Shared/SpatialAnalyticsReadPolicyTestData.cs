@@ -58,19 +58,19 @@ internal static class SpatialAnalyticsReadPolicyTestData
         private readonly RecordingFeatureDataAccess _dataAccess = new();
         private readonly IRowLevelSecurityFilterSource _rowPolicies = Substitute.For<IRowLevelSecurityFilterSource>();
         private readonly IFieldMaskSource _fieldMasks = Substitute.For<IFieldMaskSource>();
-        private readonly Dictionary<int, MetadataV2Resource> _resources;
+        private readonly Dictionary<int, MetadataV2Object> _resources;
 
         public Harness(string? schemaName = null)
         {
-            _resources = new Dictionary<int, MetadataV2Resource>
+            _resources = new Dictionary<int, MetadataV2Object>
             {
                 [TargetLayerId] = CreateResource(TargetLayerId),
                 [JoinLayerId] = CreateResource(JoinLayerId),
             };
 
-            _rowPolicies.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            _rowPolicies.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
                 .Returns((SqlFragment?)null);
-            _fieldMasks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            _fieldMasks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
                 .Returns(ImmutableArray<string>.Empty);
             var cacheManager = Substitute.For<IFeatureCacheManager>();
             cacheManager.GetGeometryStorageTypeAsync(Arg.Any<CancellationToken>())
@@ -134,12 +134,12 @@ internal static class SpatialAnalyticsReadPolicyTestData
         public void AssertNoDatabaseAccess()
             => _dataAccess.StatisticsCallCount.Should().Be(0);
 
-        internal static MetadataV2Resource CreateResource(int layerId)
+        internal static MetadataV2Object CreateResource(int layerId)
             => new()
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = $"res-{layerId}", Name = $"layer-{layerId}" },
                 Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-                Spatial = new MetadataV2ResourceSpatial { StorageCrs = new MetadataV2SpatialReference { Srid = 4326 } },
+                Spatial = new MetadataV2ObjectSpatial { StorageCrs = new MetadataV2SpatialReference { Srid = 4326 } },
             };
     }
 

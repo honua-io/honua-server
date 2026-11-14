@@ -27,7 +27,7 @@ internal static class SharedCacheResponse
         => context.Items[SubjectKey] = subject;
 
     // A publication resolved without its service leaves the subject to the route.
-    internal static void UsePublication(HttpContext context, MetadataV2Service? service, MetadataV2Publication publication)
+    internal static void UsePublication(HttpContext context, MetadataV2Service? service, MetadataV2Layer publication)
     {
         if (service is not null)
         {
@@ -192,7 +192,7 @@ internal sealed record SharedCacheSubject(string ServiceId, string? LayerId = nu
     internal string? LayerKey => LayerId is null ? null : $"{ServiceId}/{LayerId}";
 
     // The same service and layer an operator sees in /rest/services/{serviceId}/FeatureServer/{layerId}, whichever surface serves the response.
-    internal static SharedCacheSubject ForPublication(MetadataV2Service service, MetadataV2Publication publication)
+    internal static SharedCacheSubject ForPublication(MetadataV2Service service, MetadataV2Layer publication)
         => new(service.EffectivePublicName, publication.LayerIndex?.ToString(CultureInfo.InvariantCulture));
 
     // Most routes name their service and layer in the address, so a handler only declares a subject when the route does not.

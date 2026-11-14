@@ -284,7 +284,7 @@ internal sealed partial class Wfs20Handler
             _ => GeneralizedValidationErrorMessage,
         };
 
-    private SqlFragment? TranslateFesFilter(MetadataV2Resource resource, string? filter)
+    private SqlFragment? TranslateFesFilter(MetadataV2Object resource, string? filter)
     {
         if (string.IsNullOrWhiteSpace(filter))
         {
@@ -402,7 +402,7 @@ internal sealed partial class Wfs20Handler
         return true;
     }
 
-    private static ImmutableArray<string>? ResolveProjectedFields(MetadataV2Resource resource, string? propertyName)
+    private static ImmutableArray<string>? ResolveProjectedFields(MetadataV2Object resource, string? propertyName)
     {
         var requestedProperties = ParseQualifiedList(propertyName);
         if (requestedProperties.Length == 0)
@@ -463,7 +463,7 @@ internal sealed partial class Wfs20Handler
         return resolved.ToImmutable();
     }
 
-    private static ImmutableArray<OrderByClause>? ParseSortBy(MetadataV2Resource resource, string? sortBy)
+    private static ImmutableArray<OrderByClause>? ParseSortBy(MetadataV2Object resource, string? sortBy)
     {
         if (string.IsNullOrWhiteSpace(sortBy))
         {
@@ -503,7 +503,7 @@ internal sealed partial class Wfs20Handler
         return clauses.Count == 0 ? null : clauses.ToImmutable();
     }
 
-    private static SpatialFilter? ParseBboxFilterForResource(string? bbox, MetadataV2Resource resource, string? wfsVersion = null)
+    private static SpatialFilter? ParseBboxFilterForResource(string? bbox, MetadataV2Object resource, string? wfsVersion = null)
         => ParseBboxFilterCore(bbox, resource.ReadSrid() ?? SpatialReference.WGS84.Wkid, wfsVersion);
 
     private static SpatialFilter? ParseBboxFilterCore(string? bbox, int layerSrid, string? wfsVersion = null)
@@ -704,7 +704,7 @@ internal sealed partial class Wfs20Handler
     }
 
     private async ValueTask<int> ResolveRequestedOutputSridAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? srsName,
         CancellationToken cancellationToken)
     {
@@ -1348,7 +1348,7 @@ internal sealed partial class Wfs20Handler
     }
 
     private static bool TryGetGmlNameValue(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableDictionary<string, object?> attributes,
         out string? gmlName)
     {
@@ -1361,7 +1361,7 @@ internal sealed partial class Wfs20Handler
     }
 
     private static bool TryGetGmlDescriptionValue(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableDictionary<string, object?> attributes,
         out string? gmlDescription)
     {
@@ -1395,7 +1395,7 @@ internal sealed partial class Wfs20Handler
     }
 
     private static bool TryGetTransactionMappedValue(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableDictionary<string, object?> attributes,
         string fieldName,
         string reservedAttributeName,
@@ -1439,7 +1439,7 @@ internal sealed partial class Wfs20Handler
 
     private GeoJsonFeature CreateGeoJsonFeature(
         EncodedGeoJsonFeature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         AxisOrder axisOrder,
         GeoJsonFeatureBuildOptions buildOptions)
     {
@@ -1453,7 +1453,7 @@ internal sealed partial class Wfs20Handler
 
     private GeoJsonFeature CreateGeoJsonFeature(
         Feature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         AxisOrder axisOrder,
         GeoJsonFeatureBuildOptions buildOptions)
     {
@@ -1465,7 +1465,7 @@ internal sealed partial class Wfs20Handler
             .ToOgcGeoJsonFeature(geometry);
     }
 
-    private static bool ShouldIncludePublicIdentifierProperty(MetadataV2Resource resource)
+    private static bool ShouldIncludePublicIdentifierProperty(MetadataV2Object resource)
     {
         var objectIdFieldName = resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId;
         return !objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
@@ -1608,7 +1608,7 @@ internal sealed partial class Wfs20Handler
 
     private static bool IsAnonymousWriteAllowed(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service)
     {
         var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
@@ -1677,7 +1677,7 @@ internal sealed partial class Wfs20Handler
         };
     }
 
-    private static IEnumerable<MetadataV2Field> GetProjectedAttributeFields(MetadataV2Resource resource, FeatureQuery query)
+    private static IEnumerable<MetadataV2Field> GetProjectedAttributeFields(MetadataV2Object resource, FeatureQuery query)
     {
         var fields = GetVisibleAttributeFields(resource);
         if (query.OutFields is not { } outFields)
@@ -1694,17 +1694,17 @@ internal sealed partial class Wfs20Handler
             outFields.Any(candidate => candidate.Equals(field.Name, StringComparison.OrdinalIgnoreCase)));
     }
 
-    private static IEnumerable<MetadataV2Field> GetVisibleAttributeFields(MetadataV2Resource resource)
+    private static IEnumerable<MetadataV2Field> GetVisibleAttributeFields(MetadataV2Object resource)
         => resource.SchemaFields.Where(field =>
             !field.Hidden && field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography));
 
-    private static bool HasGeometry(MetadataV2Resource resource)
+    private static bool HasGeometry(MetadataV2Object resource)
         => resource.FindPrimaryGeometryField() is not null ||
            resource.ReadGeometryType() != MetadataV2GeometryType.None;
 
     private const string DefaultGeometryPropertyName = "geometry";
 
-    private static string? ResolveGeometryPropertyName(MetadataV2Resource resource)
+    private static string? ResolveGeometryPropertyName(MetadataV2Object resource)
     {
         var geometryField = resource.FindPrimaryGeometryField();
         if (geometryField is not null)
@@ -1933,8 +1933,8 @@ internal sealed partial class Wfs20Handler
         => totalCount?.ToString(CultureInfo.InvariantCulture) ?? "unknown";
 
     private sealed record WfsFeatureTypeDescriptor(
-        MetadataV2Resource Resource,
-        MetadataV2Publication Publication,
+        MetadataV2Object Resource,
+        MetadataV2Layer Publication,
         MetadataV2Service? Service,
         int StorageLayerId,
         string QualifiedName,

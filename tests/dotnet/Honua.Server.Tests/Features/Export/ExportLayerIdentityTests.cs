@@ -90,7 +90,7 @@ public sealed class ExportLayerIdentityTests : IAsyncLifetime
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
             snapshot.ResolveStorageLayerId(candidate) == WebAppFixture.TestLayerId &&
-            snapshot.ResolveResource(candidate)?.Type == MetadataV2ResourceType.FeatureDataset);
+            snapshot.ResolveResource(candidate)?.Type == MetadataV2ObjectType.FeatureDataset);
         var binding = snapshot.ResolveStorageBinding(publication)!;
         _serviceName = snapshot.Index.ServicesById[publication.ServiceId].Metadata.Name;
         var graph = snapshot.Graph with
@@ -100,7 +100,7 @@ public sealed class ExportLayerIdentityTests : IAsyncLifetime
                 ? candidate with
                 {
                     LayerIndex = ServiceLayerIndex,
-                    Identifier = new MetadataV2PublicationIdentifier
+                    Identifier = new MetadataV2LayerIdentifier
                     {
                         Value = ServiceLayerIndex.ToString(CultureInfo.InvariantCulture),
                         IsNumeric = true,

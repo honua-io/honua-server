@@ -248,7 +248,7 @@ public sealed partial class PostgresStorageMappedSpatialCountSerialIntegrationTe
         var store = services.GetRequiredService<IFeatureDataProvider>();
         var resource = CreateResource(shape != "unknown-geometry",
             shape == "line-metadata" ? MetadataV2GeometryType.LineString : MetadataV2GeometryType.Point);
-        var binding = new FeatureProviderBinding(new MetadataV2Service(), resource, new MetadataV2Publication(),
+        var binding = new FeatureProviderBinding(new MetadataV2Service(), resource, new MetadataV2Layer(),
             new MetadataV2StorageBinding { ResourceId = resource.Metadata.Id }, CreateMapping(shape != "managed"),
             1, store, Connection: null);
         return ((IBindableFeatureDataProvider)store).CreateReaderForBinding(binding);

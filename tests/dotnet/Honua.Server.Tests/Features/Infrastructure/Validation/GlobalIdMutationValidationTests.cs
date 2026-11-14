@@ -18,7 +18,7 @@ public sealed class GlobalIdMutationValidationTests
     public void BoundGlobalId_AllowsCreationButRejectsUpdatesAcrossMutationAdapters(
         ValidationExtensions.AttributeValidationMode mode)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Editing = new() { GlobalIdField = "STABLE_ID" },
             SchemaFields =

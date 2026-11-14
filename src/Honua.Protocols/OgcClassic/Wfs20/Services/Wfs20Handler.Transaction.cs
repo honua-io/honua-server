@@ -744,7 +744,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<Feature> BuildTransactionInsertFeatureAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         XElement featureElement,
         CancellationToken cancellationToken)
     {
@@ -762,7 +762,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<Feature> BuildTransactionReplaceFeatureAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         long objectId,
         XElement featureElement,
         CancellationToken cancellationToken)
@@ -792,7 +792,7 @@ internal sealed partial class Wfs20Handler
 
     internal async Task<Feature> BuildTransactionUpdatedFeatureAsync(
         Feature existing,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         TransactionFeatureChanges changes,
         CancellationToken cancellationToken)
     {
@@ -829,7 +829,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<Feature> CreateTransactionFeatureAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         long objectId,
         byte[]? geometry,
         ImmutableDictionary<string, object?> attributes,
@@ -868,7 +868,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<TransactionFeaturePayload> ReadTransactionFeaturePayloadAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         XElement featureElement,
         CancellationToken cancellationToken)
     {
@@ -943,7 +943,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<TransactionFeatureChanges> ParseTransactionUpdateChangesAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         XElement updateElement,
         CancellationToken cancellationToken)
     {
@@ -1266,13 +1266,13 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static bool IsFallbackTransactionGeometryProperty(MetadataV2Resource resource, string rawName)
+    private static bool IsFallbackTransactionGeometryProperty(MetadataV2Object resource, string rawName)
         => ResolveGeometryPropertyName(resource) is { } geometryProperty &&
            WfsPropertyNameResolver.MatchesGeometryProperty(rawName, geometryProperty) &&
            WfsPropertyNameResolver.Resolve(resource, rawName, allowGeometryAlias: true, includeHiddenFields: true) is null;
 
     private static TransactionFieldResolution? ResolveTransactionField(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string rawName,
         string? namespaceName = null)
     {
@@ -1338,7 +1338,7 @@ internal sealed partial class Wfs20Handler
 
 
     private static bool TryResolveReservedGmlTransactionAttributeName(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string rawName,
         string? namespaceName,
         [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? attributeName)
@@ -1369,7 +1369,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static bool HasTransactionAttributeField(MetadataV2Resource resource, string fieldName)
+    private static bool HasTransactionAttributeField(MetadataV2Object resource, string fieldName)
     {
         return resource.SchemaFields.Any(candidate =>
             candidate.Type is not MetadataV2FieldType.Geometry and not MetadataV2FieldType.Geography &&
@@ -1378,7 +1378,7 @@ internal sealed partial class Wfs20Handler
 
 
     private static bool TryResolveGmlTransactionField(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string normalizedName,
         string rawName,
         string? namespaceName,
@@ -1484,7 +1484,7 @@ internal sealed partial class Wfs20Handler
 
     private async Task<byte[]?> ParseTransactionGeometryPropertyAsync(
         XElement propertyElement,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         if (HasNilAttribute(propertyElement))
@@ -1546,7 +1546,7 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static string GetResourceFeatureTypeName(MetadataV2Resource resource)
+    private static string GetResourceFeatureTypeName(MetadataV2Object resource)
     {
         if (!string.IsNullOrWhiteSpace(resource.Metadata.Name))
         {
@@ -2435,7 +2435,7 @@ internal sealed partial class Wfs20Handler
     internal async Task<FeatureEditResult> ExecutePreparedEditAsync(
         HttpContext context,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableArray<Wfs20EditOperation> operations,
         ImmutableArray<bool> requestGeometryChangedFlags,
         bool rollbackOnFailure,

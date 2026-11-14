@@ -40,7 +40,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
     {
         var style = JsonSerializer.Deserialize<JsonElement>(
             """{"version":8,"name":"publication-style","sources":{},"layers":[]}""");
-        _styles.GetStyleAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _styles.GetStyleAsync(Arg.Any<MetadataV2Object>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new LayerStyleSnapshot(style, null));
         _fixture.ReplaceRequestService(_styles);
         await _fixture.InitializeAsync();
@@ -105,7 +105,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
             Revision = graph.Revision + 1,
             Publications = graph.Publications.Select(publication => publication with
             {
-                Identifier = new MetadataV2PublicationIdentifier(),
+                Identifier = new MetadataV2LayerIdentifier(),
                 ServiceLocalId = "0",
                 LayerIndex = 0,
             }).ToArray(),
@@ -129,7 +129,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
             Publications = [.. graph.Publications, primary with
             {
                 Metadata = primary.Metadata with { Id = "roads-map-view", Name = "roads-map-view" },
-                PublicationType = MetadataV2PublicationType.EsriMapLayer,
+                PublicationType = MetadataV2LayerType.EsriMapLayer,
                 IsPrimary = false,
             }],
         });
@@ -328,7 +328,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
             snapshot.ResolveStorageLayerId(candidate) == WebAppFixture.TestLayerId &&
-            snapshot.ResolveResource(candidate)?.Type == MetadataV2ResourceType.FeatureDataset);
+            snapshot.ResolveResource(candidate)?.Type == MetadataV2ObjectType.FeatureDataset);
         var resource = snapshot.ResolveResource(publication)!;
         var binding = snapshot.ResolveStorageBinding(publication)!;
         var service = snapshot.Index.ServicesById[publication.ServiceId];
@@ -336,7 +336,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
         {
             Metadata = publication.Metadata with { Id = PublicationId, Name = PublicationId },
             LayerIndex = 0,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "0", IsNumeric = true },
+            Identifier = new MetadataV2LayerIdentifier { Value = "0", IsNumeric = true },
             IsPrimary = true,
         };
         var secondService = service with

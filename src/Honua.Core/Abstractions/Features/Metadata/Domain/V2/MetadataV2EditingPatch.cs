@@ -41,7 +41,7 @@ public static class MetadataV2EditingConfiguration
         }
         var resource = graph.Resources.SingleOrDefault(candidate => candidate.Metadata.Id == resourceId)
             ?? throw new ArgumentException("The selected resource no longer exists.", nameof(resourceId));
-        var editing = resource.Editing ?? new MetadataV2ResourceEditing
+        var editing = resource.Editing ?? new MetadataV2ObjectEditing
         {
             CanModify = false,
             SupportsAttachments = ReadAttachmentAnnotation(resource, "honua.io/attachments") ??
@@ -149,7 +149,7 @@ public static class MetadataV2EditingConfiguration
            capability.Equals(MetadataV2EditCapabilities.Delete, StringComparison.OrdinalIgnoreCase) ||
            capability.Equals(MetadataV2EditCapabilities.Editing, StringComparison.OrdinalIgnoreCase);
 
-    private static bool? ReadAttachmentAnnotation(MetadataV2Resource resource, string key)
+    private static bool? ReadAttachmentAnnotation(MetadataV2Object resource, string key)
         => resource.Metadata.Annotations.TryGetValue(key, out var value) && bool.TryParse(value, out var parsed)
             ? parsed : null;
 }

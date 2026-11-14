@@ -12,8 +12,8 @@ namespace Honua.Protocols.OData.Services;
 internal static class ODataV2Lookups
 {
     internal readonly record struct ResolvedODataPublication(
-        MetadataV2Publication Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Layer Publication,
+        MetadataV2Object Resource,
         MetadataV2Service Service,
         int LayerIndex,
         int StorageLayerId);
@@ -83,8 +83,8 @@ internal static class ODataV2Lookups
 
     public static async Task<int?> ResolveStorageLayerIdAsync(
         HttpContext context,
-        MetadataV2Publication? publication,
-        MetadataV2Resource resource,
+        MetadataV2Layer? publication,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -96,14 +96,14 @@ internal static class ODataV2Lookups
 
     internal static int? ResolveStorageLayerId(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication? publication,
-        MetadataV2Resource resource)
+        MetadataV2Layer? publication,
+        MetadataV2Object resource)
         => publication is null
             ? snapshot.ResolveStorageLayerId(resource)
             : snapshot.ResolveStorageLayerId(publication, resource);
 
     private static bool IsPrimaryPublicationForLayer(
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Service service,
         IReadOnlyDictionary<int, MetadataV2Service> primaryServices)
     {
@@ -115,7 +115,7 @@ internal static class ODataV2Lookups
     private static HashSet<string> SelectODataPublicationIds(
         MetadataV2GraphSnapshot snapshot,
         IReadOnlyDictionary<int, MetadataV2Service> primaryServices,
-        IEnumerable<MetadataV2Publication> publications)
+        IEnumerable<MetadataV2Layer> publications)
     {
         return publications
             .Where(publication => publication.LayerIndex.HasValue)

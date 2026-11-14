@@ -88,7 +88,7 @@ internal sealed partial class ODataCrudService
         string baseUrl,
         IFeatureReader reader,
         int storageLayerId,
-        MetadataV2Resource? resolvedResource,
+        MetadataV2Object? resolvedResource,
         CancellationToken cancellationToken = default)
     {
         try
@@ -558,7 +558,7 @@ internal sealed partial class ODataCrudService
             : ODataCrudResult<T>.Error(fallback);
 
     private static ODataCrudResult<T> CreateLayerErrorResult<T>(
-        ResourceValidationResult<MetadataV2Resource> result,
+        ResourceValidationResult<MetadataV2Object> result,
         int layerId)
     {
         var message = result.ErrorMessage ?? $"Layer {layerId} not found";
@@ -568,7 +568,7 @@ internal sealed partial class ODataCrudService
     }
 
     private async Task<GeometryProcessingResult> ProcessGeometryAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ODataSpatialGeometry? geometry,
         int defaultSrid,
         CancellationToken cancellationToken)

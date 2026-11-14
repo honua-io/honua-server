@@ -8,19 +8,19 @@ namespace Honua.Core.Features.Edit;
 
 public interface IEditProcessor
 {
-    EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource);
+    EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Object resource);
 
-    UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource);
+    UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Object resource);
 
-    FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource);
+    FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Object resource);
 
-    TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource);
+    TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Object resource);
 
-    EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Resource resource);
+    EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Object resource);
 
     Task<EditPerformanceEstimate> EstimatePerformanceAsync(
         UnifiedEditRequest editRequest,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken);
 }
 

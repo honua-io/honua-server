@@ -19,13 +19,13 @@ public sealed class PublishedLayerFieldRewriteTests
     public void ApplyReplacementFieldMetadata_UnknownDatasetKind_RetainsToken(string token)
     {
         var resource = JsonSerializer.Deserialize("{\"metadata\":{},\"status\":{},\"type\":" + token + "}",
-            MetadataV2JsonContext.Default.MetadataV2Resource)!;
+            MetadataV2JsonContext.Default.MetadataV2Object)!;
         var request = new LayerPublishRequest { Schema = "public", Table = "source", LayerName = "Source" };
 
         var updated = PostgreSqlLayerPublishingService.ApplyReplacementFieldMetadata(
             resource, [], request, "objectid", null, null, DateTimeOffset.UnixEpoch);
 
-        using var json = JsonDocument.Parse(JsonSerializer.Serialize(updated, MetadataV2JsonContext.Default.MetadataV2Resource));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(updated, MetadataV2JsonContext.Default.MetadataV2Object));
         json.RootElement.GetProperty("type").GetRawText().Should().Be(token);
     }
 
@@ -48,7 +48,7 @@ public sealed class PublishedLayerFieldRewriteTests
             new() { Name = "global_id", Type = MetadataV2FieldType.Uuid },
             new() { Name = "geom", Type = MetadataV2FieldType.Geometry }
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -56,16 +56,16 @@ public sealed class PublishedLayerFieldRewriteTests
                 Name = "parcels",
                 UpdatedAt = DateTimeOffset.UnixEpoch
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields = [new MetadataV2Field { Name = "zoning", Type = MetadataV2FieldType.String }],
-            Display = new MetadataV2ResourceDisplay { DisplayField = "zoning", HasZ = false, HasM = false },
-            Spatial = new MetadataV2ResourceSpatial
+            Display = new MetadataV2ObjectDisplay { DisplayField = "zoning", HasZ = false, HasM = false },
+            Spatial = new MetadataV2ObjectSpatial
             {
                 PrimaryGeometryField = "shape",
                 GeometryType = MetadataV2GeometryType.Point
             },
-            Temporal = new MetadataV2ResourceTemporal { StartTimeField = "observed", EndTimeField = "zoning" },
-            Editing = new MetadataV2ResourceEditing
+            Temporal = new MetadataV2ObjectTemporal { StartTimeField = "observed", EndTimeField = "zoning" },
+            Editing = new MetadataV2ObjectEditing
             {
                 GlobalIdField = "global_id",
                 CreatorField = "created_by",
@@ -125,7 +125,7 @@ public sealed class PublishedLayerFieldRewriteTests
 
         updated.Metadata.Id.Should().Be("res-layer-7");
         updated.Metadata.UpdatedAt.Should().Be(now);
-        updated.Type.Should().Be(MetadataV2ResourceType.FeatureDataset);
+        updated.Type.Should().Be(MetadataV2ObjectType.FeatureDataset);
         updated.SchemaFields.Select(field => field.Name).Should().Equal("objectid", "name", "status", "observed", "global_id", "geom");
         updated.SchemaFields.Should().NotContain(field => field.Name == "zoning");
         updated.SchemaFields.Single(field => field.Name == "status").Domain.Should().BeSameAs(statusDomain);

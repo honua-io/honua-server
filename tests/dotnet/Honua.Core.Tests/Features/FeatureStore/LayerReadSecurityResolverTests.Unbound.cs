@@ -76,10 +76,10 @@ public sealed partial class LayerReadSecurityResolverTests
     {
         var snapshot = CreateUnboundSnapshot(ambiguous);
         var rows = new Mock<IRowLevelSecurityFilterSource>();
-        rows.Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Resource>(), It.IsAny<CancellationToken>()))
+        rows.Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Object>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(policy == "row" ? new SqlFragment("region = @p0", ["north"]) : null);
         var masks = new Mock<IFieldMaskSource>();
-        masks.Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Resource>(), It.IsAny<CancellationToken>()))
+        masks.Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Object>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(policy == "mask" ? ImmutableArray.Create("secret") : ImmutableArray<string>.Empty);
         return new LayerReadSecurityResolver(new StubGraphProvider(snapshot), null, rows.Object, masks.Object);
     }
@@ -87,7 +87,7 @@ public sealed partial class LayerReadSecurityResolverTests
     private static MetadataV2GraphSnapshot CreateUnboundSnapshot(bool ambiguous)
     {
         var resource = CreateResource(withPermanentFilter: false) with { StorageBindingIds = [], PrimaryStorageBindingId = null };
-        MetadataV2Resource[] resources = ambiguous
+        MetadataV2Object[] resources = ambiguous
             ? [resource, resource with { Metadata = resource.Metadata with { Id = "other-resource", Name = "other-resource" } }]
             : [resource];
         var services = resources.Select(item => new MetadataV2Service
@@ -96,12 +96,12 @@ public sealed partial class LayerReadSecurityResolverTests
             Protocols = [ServiceProtocols.OData],
             SpatialReference = MetadataV2SpatialReference.Wgs84
         }).ToArray();
-        var publications = resources.Select((item, index) => new MetadataV2Publication
+        var publications = resources.Select((item, index) => new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"pub-{item.Metadata.Id}", Name = item.Metadata.Name },
             ServiceId = services[index].Metadata.Id,
             ResourceId = item.Metadata.Id,
-            PublicationType = MetadataV2PublicationType.ODataEntitySet,
+            PublicationType = MetadataV2LayerType.ODataEntitySet,
             LayerIndex = LayerId
         }).ToArray();
         var graph = new MetadataV2Graph { Revision = 1, Resources = resources, Services = services, Publications = publications };

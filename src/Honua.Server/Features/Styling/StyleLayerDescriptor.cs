@@ -13,7 +13,7 @@ internal readonly record struct StyleLayerDescriptor(
     string? SourceName = null,
     string? SourceLayer = null)
 {
-    public static StyleLayerDescriptor FromResource(MetadataV2Resource resource, int storageLayerId)
+    public static StyleLayerDescriptor FromResource(MetadataV2Object resource, int storageLayerId)
     {
         ArgumentNullException.ThrowIfNull(resource);
 

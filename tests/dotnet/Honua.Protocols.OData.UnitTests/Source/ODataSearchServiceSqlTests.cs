@@ -29,13 +29,13 @@ public sealed class ODataSearchServiceSqlTests
     public async Task ProcessExpandAsync_GroupsRequestedParentsAndKeepsStampInternal(bool stamped)
     {
         var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
-        var parent = new MetadataV2Resource
+        var parent = new MetadataV2Object
         {
             Metadata = new() { Id = "parents" },
             Status = active,
             Relationships = [new() { Id = "rel", Name = "Children", RelatedResourceId = "children", OriginField = "join_id", DestinationField = "join_id" }]
         };
-        var child = new MetadataV2Resource { Metadata = new() { Id = "children" }, Status = active, StorageBindingIds = ["binding"] };
+        var child = new MetadataV2Object { Metadata = new() { Id = "children" }, Status = active, StorageBindingIds = ["binding"] };
         var graph = Substitute.For<IMetadataV2GraphProvider>();
         graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new MetadataV2GraphSnapshot(new MetadataV2Graph
         {
@@ -76,10 +76,10 @@ public sealed class ODataSearchServiceSqlTests
             new MetadataV2Field { Name = "O'Reilly", Type = MetadataV2FieldType.String }
         };
 
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-test", Name = "Test" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields = fields
         };
 
