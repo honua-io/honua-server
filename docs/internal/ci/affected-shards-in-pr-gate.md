@@ -180,7 +180,7 @@ The founder authorized enforcement after real selected-shard failures merged
 through report mode. The retained false-red audit still contains unresolved
 classifications; this policy decision does not claim that its historical
 promotion threshold passed. The evidence and disposition remain in
-[the enforcement and promotion record](../../ci/affected-shards-promotion.md).
+[the enforcement and promotion record](affected-shards-promotion.md).
 
 The verdict tool retains explicit `report` mode for historical replay. In that
 mode red or unavailable evidence can publish a successful check, but
