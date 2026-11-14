@@ -21,7 +21,7 @@ HEAVY_JOBS = {
 HOSTED_JOBS = {
     "pr-template-check", "pr-readiness", "supersede-trailing-runs", "changes", "targeted-shards",
     "producer-runner", "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
-    "merge-queue-gate", "ci-gate", "doctor-notify",
+    "merge-queue-gate", "ci-gate",
 }
 REUSABLE_JOBS = {
     "store-image-proofs": "./.github/workflows/store-image-size.yml",
