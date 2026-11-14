@@ -66,6 +66,7 @@ internal static class ObservabilityServiceCollectionExtensions
         ConfigureResponseCompression(services);
 
         AddOperateObservability(services);
+        services.AddOpsSelfChecks(configuration);
 
         // Ops-health snapshot composer + deterministic ops-findings engine (ADR-0060 WS4 / #2457).
         // Both are scoped because they compose the scoped deploy-preflight probe.
@@ -90,6 +91,7 @@ internal static class ObservabilityServiceCollectionExtensions
             CollectionLedger = sp.GetRequiredService<OpsFindingsCollectionLedger>(),
             TimeProvider = sp.GetService<TimeProvider>(),
             ManagedComposeObserver = sp.GetService<IManagedComposeObserver>(),
+            SelfChecks = sp.GetRequiredService<OpsSelfChecks>(),
         });
         // One scoped instance behind both seams: callers that only need findings keep the domain
         // abstraction, while the read/proposal surfaces resolve the evidence-carrying view.

@@ -58,6 +58,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     private readonly OpsFindingsCollectionLedger _collectionLedger;
     private readonly TimeProvider _clock;
     private readonly IManagedComposeObserver? _managedComposeObserver;
+    private readonly OpsSelfChecks? _selfChecks;
 
     // A signal older than this window cannot authorize a proposal.
     private static readonly TimeSpan SignalValidity = TimeSpan.FromMinutes(5);
@@ -75,6 +76,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         OpsFindingsExtendedSignals? extendedSignals = null)
     {
         _managedComposeObserver = extendedSignals?.ManagedComposeObserver;
+        _selfChecks = extendedSignals?.SelfChecks;
         _options = options;
         _controlPlaneOptions = controlPlaneOptions;
         _alertHealth = alertHealth;
@@ -124,6 +126,10 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         await EvaluateDeployManualInterventionAsync(now, findings, workflowCollection, cancellationToken).ConfigureAwait(false);
         var rollupDegraded = await EvaluateServingLatencySloAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
         await EvaluatePlatformReleaseRuntimeDivergenceAsync(now, findings, workflowCollection, managedTargets, cancellationToken).ConfigureAwait(false);
+        if (_selfChecks is not null)
+        {
+            findings.AddRange(await _selfChecks.EvaluateAsync(cancellationToken).ConfigureAwait(false));
+        }
         var workflowSource = workflowCollection?.Publish(_collectionLedger, SignalValidity)
             ?? EvidencePostureFactory.NotConfigured(
                 EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,

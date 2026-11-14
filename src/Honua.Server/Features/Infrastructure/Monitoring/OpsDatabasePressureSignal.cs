@@ -50,6 +50,8 @@ internal sealed class AdmissionGateDatabasePressureSignal(IRuntimeTunableAdmissi
 
 internal sealed class OpsFindingsExtendedSignals
 {
+    public OpsSelfChecks? SelfChecks { get; init; }
+
     public IManagedComposeObserver? ManagedComposeObserver { get; init; }
 
     public IOpsDatabasePressureSignal? DatabasePressureSignal { get; init; }

@@ -34,6 +34,28 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpsFindingsServiceTests
 {
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ScheduledSelfChecks_AppearOnSharedFindingsSurface()
+    {
+        var source = Substitute.For<IOpsSelfCheckSource>();
+        source.CertificateExpiresAt.Returns(DateTimeOffset.UtcNow.AddDays(10));
+        source.CurrentVersion.Returns("2026.1");
+        source.ReadIdentityProvidersAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsIdentityProviderHealth>());
+        source.ReadLatestReleaseAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<OpsPublishedRelease?>(null));
+        var service = new OpsFindingsService(
+            new StaticOptionsMonitor<OpsFindingsOptions>(new()),
+            new StaticOptionsMonitor<ControlPlaneOptions>(new()),
+            new FakeAlertDispatchHealth(), new FakeDeployPreflightProbe(BuildDeploySnapshot()),
+            extendedSignals: new OpsFindingsExtendedSignals { SelfChecks = new(TimeProvider.System, source) });
+
+        var evaluation = await service.EvaluateWithEvidenceAsync();
+
+        var finding = Assert.Single(evaluation.Findings.Where(finding => finding.Rule == OpsSelfChecks.CertificateRule));
+        Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
+        Assert.Null(finding.RecommendedAction);
+    }
+
     [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
