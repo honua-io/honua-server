@@ -16,24 +16,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.WorkflowPackages;
 
-/// <summary>
-/// honua-server#3585: publishing a workflow package to a <c>Schedule</c> target used to return
-/// <c>200 OK</c> on a Redis-less install while silently skipping the one durable write that makes
-/// the publication real — the compiled <c>WorkflowDefinition</c> in
-/// <c>IWorkflowDefinitionStore</c>. The response advertised a <c>workflowDefinitionId</c> and an
-/// <c>Active</c> status for a definition that was never persisted and that no scheduler existed to
-/// fire, which is a fabricated success under the 2026.1 arc invariant (a skipped write cannot
-/// satisfy a write step). The publish must instead refuse with the machine-readable
-/// capability-unavailable receipt (honua-release#202) that geoprocessing submission and the
-/// proposal control plane already emit.
-/// </summary>
-/// <remarks>
-/// <see cref="WebAppFixture"/> runs without Redis, so
-/// <c>OrchestrationServiceCollectionExtensions.AddOrchestration</c> registers no
-/// <see cref="IWorkflowDefinitionStore"/> — exactly the degraded composition under test. The
-/// durable path (store present, definition actually persisted) is covered by
-/// <c>WorkflowPackageEndpointsTests</c>, which supplies the store a Redis-backed deployment has.
-/// </remarks>
+// A Schedule publication is real only once its compiled WorkflowDefinition reaches
+// IWorkflowDefinitionStore. A host without that store must refuse with the capability-unavailable
+// receipt that geoprocessing submission and the proposal control plane emit, rather than return
+// 200 with a workflowDefinitionId and an Active status that no scheduler would ever fire.
+// A WebAppFixture test host registers its data source after the feature graph, so AddOrchestration
+// sees no system database and registers no store: the degraded composition under test.
+// WorkflowPackageEndpointsTests covers the durable path.
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ProcessExecution)]
@@ -60,7 +49,7 @@ public sealed class WorkflowPackagePublishDegradedTests : IAsyncLifetime
     [Endpoint("POST /api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/publish")]
     public async Task PublishVersion_ScheduleTargetWithoutDurableWorkflowStore_ReturnsTypedCapabilityUnavailableRefusal()
     {
-        // The fixture composes no IWorkflowDefinitionStore, which is the Redis-less posture.
+        // The fixture composes no IWorkflowDefinitionStore, the posture of a host without a system database.
         _fixture.Services.GetService<IWorkflowDefinitionStore>().Should().BeNull(
             "this test asserts the refusal that fires precisely when the durable workflow store is absent");
 
@@ -87,17 +76,17 @@ public sealed class WorkflowPackagePublishDegradedTests : IAsyncLifetime
         root.GetProperty("title").GetString().Should().Be(CapabilityUnavailableCodes.Title);
         root.GetProperty("status").GetInt32().Should().Be(503);
         root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
-        // The workflow definition store is not in the system database yet, so the refusal names the
-        // store itself and must not send an operator to a connection string the host already has.
+        // The refusal names the workflow definition store and sends the operator to the system
+        // database connection that composes it.
         root.GetProperty("missingDependency").GetString().Should().Be("workflow-definition-store");
         root.GetProperty("capability").GetString().Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
         var remediation = root.GetProperty("remediation").GetString();
-        remediation.Should().Contain("ConnectionStrings__Redis").And.NotContain("DefaultConnection");
+        remediation.Should().Contain("ConnectionStrings__DefaultConnection").And.NotContain("Redis");
         root.GetProperty("remediationRef").GetString().Should().NotBe(CapabilityUnavailableCodes.SystemDatabaseRemediationRef);
         root.GetProperty("detail").GetString()
             .Should().Be(CapabilityUnavailableCodes.DurableWorkflowPublicationDetail);
         root.TryGetProperty("missingEntitlement", out _).Should().BeFalse(
-            "no Redis connection string is configured, so a dependency is missing rather than a licence");
+            "no system database is composed, so a dependency is missing rather than a licence");
 
         // A refused publish must leave no trace: the fabricated-success bug was visible precisely
         // because a publication record existed for a definition that did not.
