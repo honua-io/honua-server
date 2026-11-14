@@ -73,7 +73,7 @@ producing a clear operational signal (e.g. `503` on affected admin endpoints).
 - **Use case**: Durable stores and background services that have no meaningful
   in-memory or local alternative
 - **Behavior**: Services are not registered; dependent features are unavailable
-- **Example**: Workflow orchestration (`AddOrchestration` / `AddOrchestrationBackgroundServices`)
+- **Example**: The source watermark store (`RedisSourceWatermarkStore`, registered by `AddOrchestration`)
 
 ### RedisServiceBase
 

@@ -25,18 +25,7 @@ public sealed class AotNativeLibraryRuntimeTests
 
     private static void AssertNativeLinkGate(string runtimeStage, string relativePath)
     {
-        if (relativePath == "docker/Dockerfile.lambda.aot")
-        {
-            runtimeStage.Should().Contain("ldd -r /var/task/libSkiaSharp.so", relativePath);
-            runtimeStage.Should().Contain("for native in ParquetSharpNative.so libduckdb.so", relativePath);
-            runtimeStage.Should().Contain("ldd -r \"/var/task/${native}\"", relativePath);
-            runtimeStage.Should().Contain("not found|undefined symbol|not a dynamic executable", relativePath);
-            runtimeStage.Should().Contain("exit 1", relativePath);
-        }
-        else
-        {
-            runtimeStage.Should().Contain("sh docker/runtime/verify-native.sh", relativePath);
-        }
+        runtimeStage.Should().Contain("sh docker/runtime/verify-native.sh", relativePath);
     }
 
     [ArchitectureTest]

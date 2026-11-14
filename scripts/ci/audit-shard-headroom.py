@@ -15,7 +15,8 @@ Use it to re-base budgets. The rule recorded in `shard_budget_policy` is:
 
 Examples::
 
-    # after `gh run download <run-id> -p 'server-test-results-*'`
+    # after `gh run download <run-id> -p 'server-test-results-*'`; after a rerun keep
+    # only each shard's highest `-attempt-<n>` directory
     scripts/ci/audit-shard-headroom.py --timings-dir ./artifacts --markdown
 
     # gate a collection of runs: non-zero exit if any shard is over the warn line

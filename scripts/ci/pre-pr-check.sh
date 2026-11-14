@@ -950,12 +950,16 @@ select_pre_pr_format_timeout() {
     return 0
 }
 
+# Keep format aligned with CI: builds enforce these baseline-aware rules.
+# dotnet format does not load DiagnosticSuppressor (dotnet/sdk#51364).
+review_build_diagnostics=(CA2000 IDE0063 RS0030 S1244 S2486 S108 CA1508 CA1851)
+
 run_bounded_dotnet_format() {
     if [[ -n "${format_timeout_command}" ]]; then
-        "${format_timeout_command}" 20m dotnet format "$@"
+        "${format_timeout_command}" 20m dotnet format "$@" --exclude-diagnostics "${review_build_diagnostics[@]}"
     else
         echo "   (no GNU timeout or gtimeout on PATH; running dotnet format without a time cap)"
-        dotnet format "$@"
+        dotnet format "$@" --exclude-diagnostics "${review_build_diagnostics[@]}"
     fi
 }
 
@@ -1046,9 +1050,9 @@ else
     # on a 76-project solution that is minutes of pure console I/O. The
     # failure output at normal verbosity still names each unformatted file.
     if [[ "${FULL}" == "1" ]]; then
-        if ! dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore --verify-no-changes; then
+        if ! dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore --verify-no-changes --exclude-diagnostics "${review_build_diagnostics[@]}"; then
             echo "❌ Format check failed. Running 'dotnet format' to fix..."
-            dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore
+            dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --no-restore --exclude-diagnostics "${review_build_diagnostics[@]}"
             echo "✅ Code formatted. Please review changes and commit if needed."
             exit 1
         fi
