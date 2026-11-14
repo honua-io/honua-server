@@ -103,6 +103,21 @@ class RetiredCacheTests(unittest.TestCase):
     def test_invalid_base_fails_closed(self):
         self.assertNotEqual(self.check("missing-ref").returncode, 0)
 
+    def test_trunk_removals_do_not_count_as_branch_additions(self):
+        self.write("existing.txt", "removed on trunk\n")
+        self.commit()
+        trunk = self.git("rev-parse", "HEAD").strip()
+        self.git("checkout", "-q", "--detach", self.base)
+        self.write("unrelated.txt", "allowed\n")
+        self.commit()
+        self.assertEqual(self.check(trunk).returncode, 0)
+        self.write("new.txt", "Redis\n")
+        self.commit()
+        result = self.check(trunk)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("new.txt:1:", result.stdout)
+        self.assertNotIn("existing.txt", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

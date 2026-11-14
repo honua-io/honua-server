@@ -72,6 +72,20 @@ class RetiredCacheWorkflowTests(unittest.TestCase):
         self.check(base, clean, 0)
         self.check(base, forbidden, 1)
 
+    def test_trusted_policy_allows_cleanup_on_diverged_trunk(self):
+        self.install_policy()
+        (self.root / "existing.txt").write_text("Redis\n")
+        ancestor = self.commit()
+        (self.root / "existing.txt").write_text("removed\n")
+        base = self.commit()
+        self.git("checkout", "-q", "--detach", ancestor)
+        (self.root / "unrelated.txt").write_text("allowed\n")
+        clean = self.commit()
+        self.check(base, clean, 0)
+        (self.root / "new.txt").write_text("Redis\n")
+        forbidden = self.commit()
+        self.assertIn("new.txt", self.check(base, forbidden, 1).stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

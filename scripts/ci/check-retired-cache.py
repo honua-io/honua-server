@@ -48,7 +48,10 @@ def main() -> int:
     parser.add_argument("--base", required=True)
     parser.add_argument("--head", default="HEAD")
     args = parser.parse_args()
-    revisions = [args.base, args.head, "--"]
+    common_base = subprocess.check_output(
+        ["git", "merge-base", args.base, args.head], text=True,
+    ).strip()
+    revisions = [common_base, args.head, "--"]
     paths = git_diff(revisions, ["--name-only", "-z"]).decode("utf-8").split("\0")
     failures = [failure for path in paths if path and not exempt(path)
                 for failure in violations([*revisions, path], path)]
