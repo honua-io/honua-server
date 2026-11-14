@@ -215,18 +215,21 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
     {
         public int Received { get; private set; }
 
-        // Strictly ascending generations rule out duplicates and reordering; with that, a full
-        // count rules out loss. Per-subscriber sets of 30,000 ids would cost far more memory.
         public async Task ReadAsync(DeliveryContext context, int expected, CancellationToken cancellationToken)
         {
             using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(cancellationToken));
             var lastGeneration = long.MinValue;
+            var receivedOrdinals = new bool[expected];
             var stream = new MarkedFeatureStream(context.Marker);
             await foreach (var frame in stream.ReadAsync(reader, cancellationToken))
             {
                 frame.Generation.Should().BeGreaterThan(lastGeneration, "delivery is once and in commit order");
                 lastGeneration = frame.Generation;
                 var ordinal = int.Parse(frame.Name.AsSpan(context.Marker.Length + 1), CultureInfo.InvariantCulture);
+                ordinal.Should().BeInRange(0, expected - 1);
+                receivedOrdinals[ordinal].Should().BeFalse("each marked edit is delivered exactly once");
+                receivedOrdinals[ordinal] = true;
+                context.StartedAt[ordinal].Should().BeGreaterThan(0, "an edit is issued before it is delivered");
                 context.Latencies.Record(Stopwatch.GetElapsedTime(Volatile.Read(ref context.StartedAt[ordinal]), frame.ReceivedAt));
                 if (++Received == expected)
                 {
@@ -250,7 +253,7 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
 
         public void Record(TimeSpan latency)
         {
-            var milliseconds = Math.Clamp((long)latency.TotalMilliseconds, 0, _buckets.Length - 1);
+            var milliseconds = Math.Clamp((long)Math.Ceiling(latency.TotalMilliseconds), 0, _buckets.Length - 1);
             Interlocked.Increment(ref _buckets[milliseconds]);
             Interlocked.Increment(ref _count);
             var seen = Interlocked.Read(ref _max);
