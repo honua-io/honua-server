@@ -6,11 +6,11 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Features.Admin.TileOperations;
 
 internal sealed partial class TileCacheWarmingHostedService(
-    ITileOperationJobService jobService,
+    ITileCacheJobService jobService,
     IOptions<TileCacheWarmingOptions> options,
     ILogger<TileCacheWarmingHostedService> logger) : IHostedService
 {
-    private readonly ITileOperationJobService _jobService = jobService ?? throw new ArgumentNullException(nameof(jobService));
+    private readonly ITileCacheJobService _jobService = jobService ?? throw new ArgumentNullException(nameof(jobService));
     private readonly TileCacheWarmingOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly ILogger<TileCacheWarmingHostedService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -38,22 +38,27 @@ internal sealed partial class TileCacheWarmingHostedService(
                 continue;
             }
 
-            var request = new TileOperationStartRequest
-            {
-                Operation = operation,
-                ServiceId = target.ServiceId,
-                LayerId = target.LayerId,
-                MinZoom = target.MinZoom,
-                MaxZoom = target.MaxZoom,
-                TileMatrixSetId = target.TileMatrixSetId,
-                Bbox = target.Bbox,
-                MaxTiles = target.MaxTiles
-            };
+            var request = CreateRequest(target, operation);
 
-            var jobId = await _jobService.StartAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var jobId = await _jobService.SubmitAsync(
+                    new TileOperationSubmission(request, TileCacheJobService.SchedulerIdentityName),
+                    cancellationToken).ConfigureAwait(false);
             Log.WarmTargetQueued(_logger, jobId, operation, target.ServiceId, target.LayerId, target.MinZoom, target.MaxZoom);
         }
     }
+
+    private static TileOperationStartRequest CreateRequest(TileCacheWarmingTarget target, string operation)
+        => new()
+        {
+            Operation = operation,
+            ServiceId = target.ServiceId,
+            LayerId = target.LayerId,
+            MinZoom = target.MinZoom,
+            MaxZoom = target.MaxZoom,
+            TileMatrixSetId = target.TileMatrixSetId,
+            Bbox = target.Bbox,
+            MaxTiles = target.MaxTiles
+        };
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

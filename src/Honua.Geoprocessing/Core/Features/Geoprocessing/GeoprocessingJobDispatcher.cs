@@ -561,8 +561,7 @@ internal sealed class GeoprocessingJobDispatcher
 
         var stampedJob = stampResult.Job!;
         var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
-        var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, stampedJob, observation, cancellationToken).ConfigureAwait(false);
+        var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (stampedJob, observation), cancellationToken).ConfigureAwait(false);
 
         switch (applyResult.Outcome)
         {

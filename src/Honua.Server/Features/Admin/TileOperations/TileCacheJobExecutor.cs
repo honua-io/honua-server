@@ -1,7 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
+using Honua.ControlPlane;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -15,17 +18,18 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-// The serving-process tile cap is lifted here because the work runs on dedicated compute.
 internal sealed partial class TileCacheJobExecutor : IJobExecutor
 {
+    // The local backend runs the job inside a serving process, so it keeps that process's tile ceiling;
+    // a remote backend runs on dedicated compute and is bounded by TileCacheBatchOptions.MaxTiles.
+    internal const int LocalMaxTiles = 5_000;
+
     private readonly IUniversalProgressStore _progressStore;
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IOptions<TileOptions> _tileOptions;
     private readonly IOptions<LimitsOptions> _limitsOptions;
     private readonly IOptionsMonitor<TileCacheBatchOptions> _batchOptions;
     private readonly ILogger<TileCacheJobExecutor> _logger;
-
-    private static readonly TimeSpan ProgressRetention = TimeSpan.FromHours(24);
 
     public TileCacheJobExecutor(
         IUniversalProgressStore progressStore,
@@ -60,23 +64,44 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 out var parseError))
         {
             Log.InvalidSpec(_logger, job.OperationId, parseError);
-            return JobExecutionResult.Failed($"Invalid tile-cache job spec: {parseError}");
+            return JobExecutionResult.Failed($"Invalid tile-cache job spec: {parseError}") with
+            { IsRetryable = false };
         }
 
-        // Anchor the resumable generation (issue #2661) to the execution job's operation id when
-        // the spec did not carry one. Durable retries rerun the SAME operation id (AttemptCount++),
-        // so this preserves the generation checkpoint across attempts instead of forking a new one.
+        // A spec without a generation id resumes under the operation id, which durable retries keep,
+        // so a retried attempt continues the same generation checkpoint.
         if (string.IsNullOrWhiteSpace(request.GenerationId))
         {
-            request = request with { GenerationId = job.OperationId };
+            request = request with
+            { GenerationId = job.OperationId };
         }
 
-        await context.ReportProgressAsync(0, $"Starting {request.Operation}", cancellationToken).ConfigureAwait(false);
+        var run = new TileCacheRun(job, request, schemaName)
+        { Progress = new TileCacheAttemptProgress(_progressStore, context) };
+        var started = await StartAsync(run, context, cancellationToken).ConfigureAwait(false);
+        var finalProgress = await RunAsync(run, started, cancellationToken).ConfigureAwait(false);
+        await run.Progress.WriteAsync(finalProgress, cancellationToken)
+            .ConfigureAwait(false);
+        await ReportAsync(finalProgress, context, cancellationToken).ConfigureAwait(false);
 
-        // Seed a TileOperationProgress so GET /admin/tile-operations/jobs/{id} returns
-        // the rich tile-shaped status for batch jobs exactly as for in-process jobs.
+        // A failure is already reported on the tile progress; an operator retries it explicitly.
+        return finalProgress.Status == OperationStatus.Completed
+            ? JobExecutionResult.Succeeded(finalProgress.Warnings)
+            : JobExecutionResult.Failed(finalProgress.ErrorMessage ?? "Tile operation failed.", finalProgress.Warnings)
+                with
+            { IsRetryable = false };
+    }
+
+    // GET /admin/tile-operations/jobs/{id} reads the tile-shaped progress, not the job record.
+    private static async Task<TileOperationProgress> StartAsync(
+        TileCacheRun run,
+        IJobExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var request = run.Request;
+        await context.ReportProgressAsync(0, $"Starting {request.Operation}", cancellationToken).ConfigureAwait(false);
         var started = TileOperationProgress.CreateInitial(
-            job.OperationId,
+            run.Job.OperationId,
             request.Operation,
             request.ServiceId,
             request.LayerId,
@@ -85,47 +110,30 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
             Status = OperationStatus.Processing,
             CurrentPhase = $"Running {request.Operation} operation"
         };
-        await _progressStore.SetProgressAsync(job.OperationId, started, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await run.Progress.StartAsync(started, cancellationToken).ConfigureAwait(false);
+        return started;
+    }
 
-        var maxTilesCeiling = Math.Max(1, _batchOptions.CurrentValue.MaxTiles);
-
+    private async Task<TileOperationProgress> RunAsync(
+        TileCacheRun run,
+        TileOperationProgress started,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
         TileOperationProgress finalProgress;
-        using var scope = _serviceScopeFactory.CreateScope();
-        var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
-        var previousSchema = schemaContext?.CurrentSchema;
         try
         {
-            if (!string.IsNullOrWhiteSpace(schemaName) && schemaContext != null)
-            {
-                schemaContext.CurrentSchema = schemaName;
-            }
-
-            var core = new TileOperationExecutionCore(
-                _progressStore,
-                scope.ServiceProvider.GetRequiredService<OutputCacheInvalidationService>(),
-                _tileOptions,
-                _limitsOptions,
-                _logger,
-                maxTilesCeiling,
-                scope.ServiceProvider.GetService<ITileCacheGenerationCheckpointStore>());
-
-            finalProgress = await core.ExecuteAsync(
-                    started,
-                    request,
-                    scope.ServiceProvider,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            finalProgress = await RunCoreAsync(run, started, cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
             throw;
         }
-        // Intentional broad catch: this is the tile cache job's execution boundary; any failure from
-        // the operation core is logged and recorded as a Failed job status below rather than
-        // propagated, so the job runner always observes a terminal outcome.
+        // The job's execution boundary: a failure becomes a Failed progress, so the worker always
+        // observes a terminal outcome.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            Log.ExecutionFailed(_logger, job.OperationId, request.Operation, ex);
+            Log.ExecutionFailed(_logger, run.Job.OperationId, run.Request.Operation, ex);
             finalProgress = started with
             {
                 Status = OperationStatus.Failed,
@@ -134,6 +142,43 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 CurrentPhase = "Failed"
             };
         }
+
+        var operation = new TagList { { "operation", run.Request.Operation } };
+        TileOperationMetrics.JobDurationMs.Record(stopwatch.Elapsed.TotalMilliseconds, operation);
+        operation.Add("status", finalProgress.Status.ToString().ToLowerInvariant());
+        TileOperationMetrics.JobCount.Add(1, operation);
+        return finalProgress;
+    }
+
+    private async Task<TileOperationProgress> RunCoreAsync(
+        TileCacheRun run,
+        TileOperationProgress started,
+        CancellationToken cancellationToken)
+    {
+        // Generated tiles are served to every reader of the layer, so the layer is read as the system.
+        using var systemRead = JobSecurityScope.BeginSystem();
+        using var scope = _serviceScopeFactory.CreateScope();
+        var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
+        var previousSchema = schemaContext?.CurrentSchema;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(run.SchemaName) && schemaContext != null)
+            {
+                schemaContext.CurrentSchema = run.SchemaName;
+            }
+
+            var core = new TileOperationExecutionCore(
+                _progressStore,
+                scope.ServiceProvider.GetRequiredService<OutputCacheInvalidationService>(),
+                _tileOptions,
+                _limitsOptions,
+                _logger,
+                MaxTilesFor(run.Job),
+                scope.ServiceProvider.GetService<ITileCacheGenerationCheckpointStore>())
+            { ProgressWriter = run.Progress.WriteAsync };
+            return await core.ExecuteAsync(started, run.Request, scope.ServiceProvider, cancellationToken)
+                .ConfigureAwait(false);
+        }
         finally
         {
             if (schemaContext != null)
@@ -141,30 +186,37 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 schemaContext.CurrentSchema = previousSchema;
             }
         }
+    }
 
-        await _progressStore.SetProgressAsync(job.OperationId, finalProgress, ProgressRetention, cancellationToken)
+    private int MaxTilesFor(ExecutionJobRecord job)
+        => string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+            ? LocalMaxTiles
+            : Math.Max(1, _batchOptions.CurrentValue.MaxTiles);
+
+    private static async Task ReportAsync(
+        TileOperationProgress finalProgress,
+        IJobExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        await context.ReportProgressAsync(finalProgress.PercentComplete, finalProgress.CurrentPhase, cancellationToken)
             .ConfigureAwait(false);
-
-        var percent = finalProgress.PercentComplete;
-        await context.ReportProgressAsync(percent, finalProgress.CurrentPhase, cancellationToken).ConfigureAwait(false);
-
-        if (finalProgress.PublishedArtifact is { } published && !string.IsNullOrWhiteSpace(published.AccessUrl))
+        var accessUrl = finalProgress.PublishedArtifact?.AccessUrl;
+        var artifact = string.IsNullOrWhiteSpace(accessUrl) ? finalProgress.DownloadUrl : accessUrl;
+        if (!string.IsNullOrWhiteSpace(artifact))
         {
-            await context.PublishArtifactAsync(published.AccessUrl, cancellationToken).ConfigureAwait(false);
+            if (!await context.TryPublishArtifactAsync(artifact, cancellationToken).ConfigureAwait(false))
+            {
+                throw new OperationCanceledException("The tile execution attempt no longer owns publication.", cancellationToken);
+            }
         }
-        else if (!string.IsNullOrWhiteSpace(finalProgress.DownloadUrl))
-        {
-            await context.PublishArtifactAsync(finalProgress.DownloadUrl, cancellationToken).ConfigureAwait(false);
-        }
+    }
 
-        if (finalProgress.Status == OperationStatus.Completed)
-        {
-            return JobExecutionResult.Succeeded(finalProgress.Warnings);
-        }
-
-        return JobExecutionResult.Failed(
-            finalProgress.ErrorMessage ?? "Tile operation failed.",
-            finalProgress.Warnings);
+    private sealed record TileCacheRun(
+        ExecutionJobRecord Job,
+        TileOperationStartRequest Request,
+        string? SchemaName)
+    {
+        public required TileCacheAttemptProgress Progress { get; init; }
     }
 
     private static partial class Log

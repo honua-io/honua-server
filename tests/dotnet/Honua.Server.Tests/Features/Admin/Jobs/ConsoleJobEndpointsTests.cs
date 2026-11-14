@@ -584,6 +584,7 @@ public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
         retry.StatusCode.Should().Be(HttpStatusCode.OK);
         var retried = await _jobStore.GetAsync("job-failed");
         retried!.Status.Should().Be(ExecutionJobStatus.Queued);
+        retried.ManualRetryGeneration.Should().Be(1);
         retried.ErrorMessage.Should().BeNull();
         _jobQueue.Requeued.Should().Contain("job-failed");
     }
@@ -602,6 +603,7 @@ public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
         failed.CompletedAt.Should().NotBeNull();
         failed.ErrorMessage.Should().Be("Geometry validation failed.");
         failed.CurrentPhase.Should().Be("Failed");
+        failed.ManualRetryGeneration.Should().Be(1);
     }
 
     [IntegrationTest]
@@ -623,6 +625,7 @@ public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
         retry.StatusCode.Should().Be(HttpStatusCode.OK);
         var retried = await _jobStore.GetAsync("job-remote-failed");
         retried!.Status.Should().Be(ExecutionJobStatus.Queued);
+        retried.ManualRetryGeneration.Should().Be(1);
         retried.AttemptCount.Should().Be(1);
         retried.NextRetryAt.Should().NotBeNull();
         retried.NextRetryAt!.Value.Should().BeOnOrBefore(DateTimeOffset.UtcNow.AddSeconds(1));

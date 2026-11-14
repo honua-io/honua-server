@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -108,27 +106,16 @@ internal static class ImportExportTileOperationsRegistration
         services.TryAddScoped<IMigrationRunCheckpointStore>(sp =>
             sp.GetRequiredService<InMemoryMigrationRunCheckpointStore>());
 
-        // Export background service with durable request persistence and a bounded scheduler.
-        services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<string>(
-            new System.Threading.Channels.BoundedChannelOptions(4)
-            {
-                FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
-            }));
-        services.AddSingleton<IExportJobService>(sp =>
-            new ExportJobService(
-                sp.GetRequiredService<IUniversalProgressStore>(),
-                sp.GetService<IDistributedCache>(),
-                sp.GetRequiredService<System.Threading.Channels.Channel<string>>(),
-                sp.GetRequiredService<IServiceScopeFactory>(),
-                sp.GetRequiredService<ILogger<ExportJobService>>(),
-                sp.GetService<IConnectionMultiplexer>(),
-                licensePolicy: sp.GetRequiredService<ILicenseOperationPolicy>()));
-        services.AddSingleton<IJobCancellationNotifier>(sp =>
-            (ExportJobService)sp.GetRequiredService<IExportJobService>());
-        if (hostPollingLoops)
-        {
-            services.AddHostedService<ExportBackgroundService>();
-        }
+        // Exports above the synchronous threshold run as Export execution jobs.
+        services.AddSingleton<IExportJobService>(sp => new ExportJobService(
+            sp.GetRequiredService<IUniversalProgressStore>(),
+            sp.GetRequiredService<ILogger<ExportJobService>>(),
+            sp.GetService<IExecutionJobStore>(),
+            sp.GetService<IJobQueue>()));
+        services.TryAddEnumerable(
+            Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<IJobExecutor, ExportJobExecutor>());
+        services.TryAddEnumerable(
+            Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<IJobTerminalCallback, ExportJobTerminalCallback>());
 
         // Resumable generated tile-cache seed/warm generation checkpoint store (#2661). Durable
         // cross-request resume state must not live only on a serving pod's memory. The in-memory
@@ -148,25 +135,27 @@ internal static class ImportExportTileOperationsRegistration
         services.TryAddSingleton<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>(sp =>
             sp.GetRequiredService<Honua.Core.Features.Tiles.InMemoryTileCacheGenerationCheckpointStore>());
 
-        // Tile operations (cache warming + reseed + invalidation orchestration).
-        services.AddSingleton<ITileOperationJobService>(sp =>
-            new TileOperationJobService(
-                sp.GetRequiredService<IUniversalProgressStore>(),
-                sp.GetService<IDistributedCache>(),
-                sp.GetRequiredService<OutputCacheInvalidationService>(),
-                sp.GetRequiredService<IServiceScopeFactory>(),
-                sp.GetRequiredService<IOptions<Honua.Core.Features.Tiles.TileOptions>>(),
-                sp.GetRequiredService<IOptions<LimitsOptions>>(),
-                sp.GetRequiredService<ILogger<TileOperationJobService>>(),
-                sp.GetService<IConnectionMultiplexer>(),
-                sp.GetService<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>(),
-                sp.GetRequiredService<ILicenseOperationPolicy>()));
+        // Tile operations run as TileCache execution jobs: the record and its queue position are
+        // rows in the system database, so an accepted operation runs once on whichever node claims it.
+        services.Configure<TileCacheBatchOptions>(
+            configuration.GetSection(TileCacheBatchOptions.SectionName));
+        services.TryAddSingleton<ITileCacheJobService>(sp => new TileCacheJobService(
+            sp.GetService<IExecutionJobStore>(),
+            sp.GetRequiredService<IUniversalProgressStore>(),
+            sp.GetServices<IBatchComputeBackend>(),
+            sp.GetRequiredService<IOptionsMonitor<TileCacheBatchOptions>>(),
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<ILogger<TileCacheJobService>>(),
+            sp.GetService<IJobQueue>()));
+        services.TryAddEnumerable(
+            Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<IJobExecutor, TileCacheJobExecutor>());
+        services.TryAddEnumerable(
+            Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<IJobTerminalCallback, TileCacheJobTerminalCallback>());
         services.Configure<TileCacheWarmingOptions>(
             configuration.GetSection(TileCacheWarmingOptions.SectionName));
         if (hostPollingLoops)
         {
             services.AddHostedService<TileCacheWarmingHostedService>();
-            services.AddHostedService<TileOperationBackgroundService>();
         }
 
         // Scheduled tile-cache expiry/invalidation (#1837): the time-based complement to the
@@ -183,30 +172,6 @@ internal static class ImportExportTileOperationsRegistration
         if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
         {
             services.AddHostedService(sp => sp.GetRequiredService<TileCacheExpiryHostedService>());
-        }
-
-        // Batch-dispatched tile-cache / PMTiles execution jobs (issue #1697).
-        // The worker-side executor is registered unconditionally so any worker host
-        // can claim ExecutionJobKind.TileCache jobs; it is only invoked when the
-        // execution-job substrate routes a tile-cache job to it. The submission
-        // service and its config are bound here too — the admin endpoint consults
-        // ITileCacheJobService only when TileOperations:Batch:Enabled is set,
-        // keeping the in-process channel as the zero-config default.
-        services.Configure<TileCacheBatchOptions>(
-            configuration.GetSection(TileCacheBatchOptions.SectionName));
-        services.TryAddEnumerable(
-            Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<
-                Honua.Core.Features.ControlPlane.Abstractions.IJobExecutor,
-                TileCacheJobExecutor>());
-
-        // The submission service depends on the durable execution-job store and queue, which are
-        // present when the system database is. Mirrors AddGeoprocessing by keying on the store itself.
-        // Gating registration on the store keeps GetService<ITileCacheJobService>() from
-        // throwing on a missing dependency in stores-less dev/test profiles; in those
-        // profiles the admin endpoint simply uses the in-process channel path.
-        if (services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
-        {
-            services.TryAddSingleton<ITileCacheJobService, TileCacheJobService>();
         }
 
         Honua.Server.Features.Import.DurableImportServiceCollectionExtensions.AddDurableBackgroundImports(services);

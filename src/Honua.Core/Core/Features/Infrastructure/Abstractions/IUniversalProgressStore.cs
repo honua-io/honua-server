@@ -12,8 +12,8 @@ public interface IUniversalProgressStore
     // The status check and the write are atomic, so a cancellation cannot overwrite a terminal state that landed at the same time.
     Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default);
 
-    // A store that cannot compare the whole snapshot must refuse the write instead of falling back to a status check.
-    Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress expectedProgress, CancellationToken cancellationToken = default)
+    // A null expected snapshot creates only when absent. A store that cannot compare the whole snapshot must refuse the write instead of falling back to a status check.
+    Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Atomic progress snapshot comparison is required.");
 
     Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
