@@ -15,12 +15,25 @@ internal sealed class AuthenticationResponseCacheMiddleware(RequestDelegate next
         context.Response.OnStarting(static state =>
         {
             var context = (HttpContext)state;
-            AuthenticationResponseCachePolicy.Apply(context);
-            OutputCacheStatus.Apply(context);
-            SharedCacheGuard.Apply(context);
+            ApplyFinalPolicy(context);
             return Task.CompletedTask;
         }, context);
 
         return next(context);
+    }
+
+    internal static void ApplyFinalPolicy(HttpContext context)
+    {
+        // Streaming endpoints forbid intermediaries from buffering or transforming frames.
+        // Storage restrictions below may replace Cache-Control, but must retain this directive.
+        var noTransform = context.Response.GetTypedHeaders().CacheControl?.NoTransform == true;
+        AuthenticationResponseCachePolicy.Apply(context);
+        OutputCacheStatus.Apply(context);
+        SharedCacheGuard.Apply(context);
+        if (noTransform && context.Response.GetTypedHeaders().CacheControl is { } cacheControl)
+        {
+            cacheControl.NoTransform = true;
+            context.Response.GetTypedHeaders().CacheControl = cacheControl;
+        }
     }
 }
