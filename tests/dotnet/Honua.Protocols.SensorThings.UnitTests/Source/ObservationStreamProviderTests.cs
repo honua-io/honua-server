@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Text.Json;
 using Honua.Core.Features.Realtime;
 using Honua.Protocols.SensorThings.Streaming;
@@ -41,26 +42,21 @@ public sealed class ObservationStreamProviderTests
     [InlineData("WebSocket")]
     public async Task CreateSession_WaitsForInitialWindowAndPinsReplayBeforeHandshake(string transport)
     {
-        var provider = Substitute.For<IRealtimeFanoutProvider>();
         var window = new TaskCompletionSource<RealtimeLogWindow>(TaskCreationOptions.RunContinuationsAsynchronously);
-        provider.GetWindowAsync(RealtimeFamily.Observations, Arg.Any<CancellationToken>())
-            .Returns(_ => new ValueTask<RealtimeLogWindow>(window.Task));
-        RealtimeSubscriptionRequest? subscribed = null;
-        provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(value => subscribed = value))
-            .Returns(Substitute.For<IRealtimeSubscription>());
+        var provider = new DelayedWindowProvider(window.Task);
         await using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider);
         var opening = manager.CreateSessionAsync(new(transport, 7, new("a", null), "alice", null),
             CancellationToken.None).AsTask();
         Assert.False(opening.IsCompleted);
-        Assert.Null(subscribed);
+        Assert.Null(provider.Subscribed);
         window.SetResult(new(RealtimeFamily.Observations, 1, 42));
         var (session, rejectedBy) = await opening.WaitAsync(TimeSpan.FromSeconds(5));
         await using var lease = session;
         Assert.NotNull(session);
         Assert.Equal(ObservationStreamAdmissionLimit.None, rejectedBy);
-        Assert.NotNull(subscribed);
-        Assert.Equal(42, subscribed.After);
+        Assert.NotNull(provider.Subscribed);
+        Assert.Equal(42, provider.Subscribed.After);
     }
 
     [UnitTest]
@@ -133,6 +129,33 @@ public sealed class ObservationStreamProviderTests
         Assert.Equal(7, json.RootElement.GetProperty("datastreamId").GetInt64());
         Assert.Equal(1, json.RootElement.GetProperty("observations").GetArrayLength());
         Assert.False(json.RootElement.TryGetProperty("scope", out _));
+    }
+
+    private sealed class DelayedWindowProvider(Task<RealtimeLogWindow> window) : IRealtimeFanoutProvider
+    {
+        public RealtimeSubscriptionRequest? Subscribed { get; private set; }
+
+        public RealtimeProviderCapabilities Capabilities => new(true, true, true);
+
+        public ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken)
+            => new(window.WaitAsync(cancellationToken));
+
+        public IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request)
+        {
+            Subscribed = request;
+            return Substitute.For<IRealtimeSubscription>();
+        }
+
+        public ValueTask<RealtimePosition> AppendAsync(RealtimeEventDraft draft, DbTransaction? transaction, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
+        public void Enqueue(RealtimeEventDraft draft) => throw new NotSupportedException();
+
+        public ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(string scopeKey, long after, long through, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
+        public ValueTask<IRealtimeStreamLease?> TryAcquireMcpStreamAsync(string sessionId, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
     }
 
     private sealed class FailingSubscription : IRealtimeSubscription
