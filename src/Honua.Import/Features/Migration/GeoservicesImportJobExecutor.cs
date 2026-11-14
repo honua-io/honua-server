@@ -160,25 +160,21 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
     private async Task<JobExecutionResult> CompleteAsync(ImportRun run, GeoservicesImportResult result)
     {
         var jobId = run.JobId;
-        if (result.DataCommitted)
-        {
-            await RecordCommitAsync(run).ConfigureAwait(false);
-        }
-
         if (run.LicenseCancellation.IsCancellationRequested)
         {
-            var message = result.DataCommitted ? "license expired; imported rows were already committed" : LicenseExpiredMessage;
-            await run.Progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, message,
-                result.DataCommitted
-                    ? "Failed: license expired after data was committed"
-                    : "Failed: license expired; partial import is incomplete") with
+            return await FailExpiredLicenseAsync(run, result).ConfigureAwait(false);
+        }
+
+        if (result.DataCommitted)
+        {
+            try
             {
-                DataCommitted = result.DataCommitted,
-                FeaturesProcessed = result.FeatureCount,
-                FailedFeatures = result.FailedFeatures
-            }, CancellationToken.None).ConfigureAwait(false);
-            Log.JobFailed(_logger, jobId, message, run.Stopwatch.Elapsed.TotalSeconds);
-            return NotRetryable(message);
+                await RecordCommitAsync(run).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (run.LicenseCancellation.IsCancellationRequested)
+            {
+                return await FailExpiredLicenseAsync(run, result).ConfigureAwait(false);
+            }
         }
 
         // The cancel endpoint writes Cancelled first. That wins only when the import had not yet
@@ -199,6 +195,23 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
         return finalProgress.Status == GeoservicesImportStatus.Failed
             ? NotRetryable(result.ErrorMessage ?? ImportFailedMessage, result.Warnings)
             : JobExecutionResult.Succeeded(result.Warnings) with { CompletedWithCommittedEffects = result.DataCommitted };
+    }
+
+    private async Task<JobExecutionResult> FailExpiredLicenseAsync(ImportRun run, GeoservicesImportResult result)
+    {
+        var message = result.DataCommitted ? "license expired; imported rows were already committed" : LicenseExpiredMessage;
+        await run.Progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, message,
+            result.DataCommitted
+                ? "Failed: license expired after data was committed"
+                : "Failed: license expired; partial import is incomplete") with
+        {
+            DataCommitted = result.DataCommitted,
+            FeaturesProcessed = result.FeatureCount,
+            FailedFeatures = result.FailedFeatures,
+            PublishedLayerId = result.PublishedLayerId
+        }, CancellationToken.None).ConfigureAwait(false);
+        Log.JobFailed(_logger, run.JobId, message, run.Stopwatch.Elapsed.TotalSeconds);
+        return NotRetryable(message);
     }
 
     private static GeoservicesImportProgress BuildFinalProgress(ImportRun run, GeoservicesImportResult result)
