@@ -4,7 +4,7 @@ name: capacity-soak-candidate
 # honua.capacity-observations/v1. Dispatch at the manifest candidate commit;
 # the workflow source, checkout, image and observed deployment must all agree.
 # The release checker recomputes the signals and binds the ZIP attestation.
-# See docs/internal/operations/capacity-soak-receipt.md.
+# See docs/internal/operations/capacity-soak-runbook.md.
 
 on:
   workflow_dispatch:

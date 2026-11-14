@@ -1,9 +1,9 @@
 ---
 type: reference
-title: "Candidate capacity-soak receipt"
+title: "Candidate capacity-soak runbook"
 description: "Producing and verifying candidate-bound capacity observations and their attested evidence ZIP."
 ---
-# Candidate capacity-soak receipt
+# Candidate capacity-soak runbook
 
 The release gate consumes an attested **ZIP**, containing
 `capacity-soak-receipt.json` (schema version 2) and the exact raw files it cites.

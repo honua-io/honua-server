@@ -37,11 +37,9 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         _fixture = fixture ?? throw new ArgumentNullException(nameof(fixture));
     }
 
-    /// <summary>
-    /// Runs every scenario discovered under <c>tests/fixtures/eval/</c> so that adding
-    /// a new JSON scenario automatically contributes to <c>eval-report.json</c> without
-    /// requiring a code change here.
-    /// </summary>
+    // Runs every scenario discovered under tests/fixtures/eval/ so that adding
+    // a new JSON scenario automatically contributes to eval-report.json without
+    // requiring a code change here.
     [Theory]
     [MemberData(nameof(DiscoveredScenarioIds))]
     [Operation(Operations.ContractTesting)]
@@ -247,10 +245,8 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    /// <summary>
-    /// Enumerates every scenario id under <c>tests/fixtures/eval/</c> so the harness
-    /// suite expands automatically as the corpus grows.
-    /// </summary>
+    // Enumerates every scenario id under tests/fixtures/eval/ so the harness
+    // suite expands automatically as the corpus grows.
     public static IEnumerable<object[]> DiscoveredScenarioIds()
     {
         foreach (var id in EvalScenarioLoader.DiscoverScenarioIds())

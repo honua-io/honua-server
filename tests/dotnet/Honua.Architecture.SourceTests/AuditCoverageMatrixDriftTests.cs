@@ -11,12 +11,10 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards against silent drift between <c>DefaultAuditActionResolver</c> and
-/// <c>docs/internal/operations/audit-coverage-matrix.md</c>. The resolver is
-/// the code form for auth route handling, so these row-level claims need a hard
-/// join check.
-/// </summary>
+// Guards against silent drift between DefaultAuditActionResolver and
+// docs/internal/operations/audit-coverage-matrix.md. The resolver is
+// the code form for auth route handling, so these row-level claims need a hard
+// join check.
 [Trait("Category", "Architecture")]
 public sealed class AuditCoverageMatrixDriftTests
 {

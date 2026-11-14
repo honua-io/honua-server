@@ -12,7 +12,7 @@ This page records server-side evidence production; it does not amend its numbers
 `capacity-soak-candidate.yml` emits one attested ZIP containing a version-2
 receipt and `honua.capacity-observations/v1`. The workflow source must be the
 manifest-pinned candidate, and the candidate must already contain this producer.
-The [operator runbook](internal/operations/capacity-soak-receipt.md) describes dispatch, actual
+The [operator runbook](internal/operations/capacity-soak-runbook.md) describes dispatch, actual
 measurement definitions, failure handling and verification.
 
 The release promise is a post-freeze, full-envelope, single-tenant local-Docker
@@ -77,7 +77,7 @@ workflow conclusion. A fresh run must meet all four bindings together.
 1. Release engineering builds and pins an immutable candidate image whose source
    contains #5332. Record the new release commit containing the matching manifest
    and lock; re-read both instead of reusing the historical pins above.
-2. Dispatch the approved workflow using the [operator runbook](internal/operations/capacity-soak-receipt.md)
+2. Dispatch the approved workflow using the [operator runbook](internal/operations/capacity-soak-runbook.md)
    from a ref at exactly that candidate commit, with its manifest SHA, image
    digest and the resolved release commit. Collect the complete post-freeze
    window for at least the frozen minimum duration.
