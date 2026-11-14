@@ -9,6 +9,41 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ProtobufWriterTests
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(120)]
+    [InlineData(128)]
+    [InlineData(16384)]
+    public void NestedMessages_MatchSeparateWritersAcrossLengthBoundaries(int length)
+    {
+        var text = new string('x', length);
+        var body = new ProtobufWriter(16);
+        var nested = new ProtobufWriter(16);
+        var expected = new ProtobufWriter(16);
+        var actual = new ProtobufWriter(16);
+        try
+        {
+            body.WriteString(1, text);
+            nested.WriteMessage(1, ref body);
+            expected.WriteString(1, "1.0");
+            expected.WriteMessage(2, ref nested);
+            actual.WriteString(1, "1.0");
+            var outerPosition = actual.BeginMessage(2);
+            var innerPosition = actual.BeginMessage(1);
+            actual.WriteString(1, text);
+            actual.EndMessage(innerPosition);
+            actual.EndMessage(outerPosition);
+            actual.WrittenMemory.ToArray().Should().Equal(expected.WrittenMemory.ToArray());
+        }
+        finally
+        {
+            body.Dispose();
+            nested.Dispose();
+            expected.Dispose();
+            actual.Dispose();
+        }
+    }
+
     // ── Varint encoding ────────────────────────────────────────
 
     [Theory]

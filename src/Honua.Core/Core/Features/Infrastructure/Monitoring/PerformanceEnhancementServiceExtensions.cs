@@ -82,62 +82,6 @@ public static class PerformanceEnhancementServiceExtensions
         return services;
     }
 
-    public static IServiceCollection AddDatabaseQueryPerformanceMonitoring(
-        this IServiceCollection services,
-        Action<QueryPerformanceMonitoringOptions>? configureOptions = null)
-    {
-        if (configureOptions != null)
-        {
-            services.Configure(configureOptions);
-        }
-
-        services.AddSingleton<IDatabaseQueryPerformanceMonitor, DatabaseQueryPerformanceMonitor>();
-
-        return services;
-    }
-
-    public static IServiceCollection AddResourceLeakDetection(
-        this IServiceCollection services,
-        Action<ResourceLeakDetectionOptions>? configureOptions = null)
-    {
-        if (configureOptions != null)
-        {
-            services.Configure(configureOptions);
-        }
-
-        services.AddSingleton<IResourceLeakDetector>(serviceProvider =>
-        {
-            var logger = serviceProvider.GetRequiredService<ILogger<ResourceLeakDetector>>();
-            var environment = serviceProvider.GetRequiredService<IHostEnvironment>();
-            var options = serviceProvider.GetRequiredService<IOptions<ResourceLeakDetectionOptions>>();
-
-            if (environment.IsProduction())
-            {
-                return new NullResourceLeakDetector();
-            }
-
-            return new ResourceLeakDetector(logger, environment, options);
-        });
-
-        services.AddHostedService<ResourceLeakDetectorHostedService>();
-
-        return services;
-    }
-
-    public static IServiceCollection AddEnhancedExceptionTelemetry(
-        this IServiceCollection services,
-        Action<ExceptionTelemetryOptions>? configureOptions = null)
-    {
-        if (configureOptions != null)
-        {
-            services.Configure(configureOptions);
-        }
-
-        services.AddSingleton<IEnhancedExceptionTelemetry, EnhancedExceptionTelemetry>();
-
-        return services;
-    }
-
     // Query result caching methods moved to Server level
 }
 
