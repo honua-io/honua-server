@@ -12,6 +12,7 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 public sealed partial class GrpcIntegrationTests
 {
     [IntegrationTheory]
+    [Operation(Operations.ContractTesting)]
     [InlineData("AbortAttachmentUpload")]
     [InlineData("BeginAttachmentUpload")]
     [InlineData("CommitAttachmentUpload")]
