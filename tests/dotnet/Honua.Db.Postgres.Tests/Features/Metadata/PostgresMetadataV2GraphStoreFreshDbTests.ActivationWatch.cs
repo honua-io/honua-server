@@ -80,6 +80,29 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         (await store.GetCurrentAsync()).Etag.Should().Be(candidate.Etag);
     });
 
+    [IntegrationTest]
+    public Task ActivationWatch_ElapsedDeadlineWithoutExpiryPass_CannotRollBack() => WithWatchSchemaAsync(async schema =>
+    {
+        var store = WatchStore(schema);
+        var original = await store.SaveAsync(WatchGraph("original"), null);
+        var candidate = await store.SaveAsync(WatchGraph("candidate"), original.Etag);
+        var watch = (await store.ReadPendingAsync()).Single();
+        await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+        await using (var command = new NpgsqlCommand($"""
+            UPDATE "{schema}".catalog_activation_watches
+               SET activated_at = clock_timestamp() - interval '31 minutes'
+             WHERE id = @id
+            """, connection))
+        {
+            command.Parameters.AddWithValue("id", watch.Id);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().BeFalse();
+        (await store.GetCurrentAsync()).Etag.Should().Be(candidate.Etag);
+        (await store.ReadPendingAsync()).Should().ContainSingle().Which.RollbackRevision.Should().BeNull();
+    });
+
     private PostgresMetadataV2GraphStore WatchStore(string schema) => new(
         new TestConnectionProvider(fixture.DataSource, schema), "Test",
         FixtureBypassDatabaseSchemaGuard.Instance, schema);

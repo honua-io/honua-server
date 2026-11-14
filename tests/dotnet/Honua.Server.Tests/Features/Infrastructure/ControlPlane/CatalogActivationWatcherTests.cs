@@ -7,9 +7,11 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.SharedCaching;
+using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -79,10 +81,32 @@ public sealed class CatalogActivationWatcherTests
         await _cdn.Received(1).InvalidateAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
     }
 
-    private CatalogActivationWatcher Watcher()
+    [UnitTheory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task RunOnceAsync_NonpositiveTelemetryWindow_IgnoresSnapshotsContainingPreactivationTraffic(int seconds)
+    {
+        var watch = Watch() with { ActivatedAt = Now.AddMinutes(-3) };
+        _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { watch });
+        _health.ReadLatencyAsync(default, default, default, default)
+            .ReturnsForAnyArgs(new[]
+            {
+                Row(-2, 0) with { BucketStart = watch.ActivatedAt.AddMinutes(-2) },
+                Row(1, 40) with { BucketStart = watch.ActivatedAt.AddMinutes(1) },
+                Row(2, 40) with { BucketStart = watch.ActivatedAt.AddMinutes(2) },
+            });
+
+        await Watcher(seconds).RunOnceAsync(default);
+
+        await _store.DidNotReceiveWithAnyArgs().TryRollbackAsync(default!, default);
+    }
+
+    private CatalogActivationWatcher Watcher(int seconds = 300)
     {
         var services = new ServiceCollection().AddSingleton(_store).AddSingleton(_health)
-            .AddSingleton<TimeProvider>(new FixedTimeProvider()).BuildServiceProvider();
+            .AddSingleton<TimeProvider>(new FixedTimeProvider())
+            .AddSingleton(Options.Create(new TracingOptions { ServingLatencyWindowSeconds = seconds }))
+            .BuildServiceProvider();
         return new(services, new CdnInvalidationService(_cdn, NullLogger<CdnInvalidationService>.Instance),
             NullLogger<CatalogActivationWatcher>.Instance);
     }

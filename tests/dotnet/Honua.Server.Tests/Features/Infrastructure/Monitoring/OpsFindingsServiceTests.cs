@@ -1679,6 +1679,38 @@ public sealed class OpsFindingsServiceTests
         Assert.Null(first.RecommendedAction);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_CatalogRollbackHistoryUnavailable_PreservesOtherFindingsAndReportsMissingEvidence()
+    {
+        var store = Substitute.For<Honua.Core.Features.Metadata.Abstractions.ICatalogActivationWatchStore>();
+        store.ReadRecentRollbacksAsync(default).ReturnsForAnyArgs(
+            Task.FromException<IReadOnlyList<Honua.Core.Features.Metadata.Abstractions.CatalogActivationWatch>>(
+                new InvalidOperationException("Catalog history unavailable.")));
+        var observer = Substitute.For<IManagedComposeObserver>();
+        observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(new OpsManagedTargetHealthView[]
+        {
+            new() { TargetId = "compose-local", Available = true, Status = "Unhealthy", ObservedAt = DateTimeOffset.UtcNow,
+                Services = [new() { Name = "honua", Status = "Unhealthy", DurationMs = 0 }] }
+        });
+        var service = new OpsFindingsService(
+            new StaticOptionsMonitor<OpsFindingsOptions>(new OpsFindingsOptions()),
+            new StaticOptionsMonitor<ControlPlaneOptions>(new ControlPlaneOptions()),
+            new FakeAlertDispatchHealth(), new FakeDeployPreflightProbe(BuildDeploySnapshot()),
+            extendedSignals: new OpsFindingsExtendedSignals
+            {
+                CatalogActivationWatches = store, ManagedComposeObserver = observer
+            });
+
+        var evaluation = await service.EvaluateWithEvidenceAsync();
+
+        Assert.Contains(evaluation.Findings, finding => finding.Rule == OpsFindingsService.RuleManagedComposeService);
+        var source = Assert.Single(evaluation.Posture.Sources,
+            item => item.SourceId == OpsFindingsService.CatalogRollbackSourceId);
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Unavailable, source.Completeness);
+        Assert.Contains(EvidencePostureVocabulary.ReasonCodes.SourceUnavailable, source.ReasonCodes);
+    }
+
     private static OpsFindingsService CreateService(
         OpsFindingsOptions? options = null,
         ControlPlaneOptions? controlPlaneOptions = null,

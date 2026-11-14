@@ -102,10 +102,12 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
               JOIN {_currentTable} current ON current.environment = watch.environment
              WHERE watch.id = @id AND watch.environment = @environment AND watch.state = 'watching'
                AND current.revision = watch.revision AND current.etag = watch.expected_etag
+               AND watch.activated_at >= clock_timestamp() - @bake_seconds * interval '1 second'
              FOR UPDATE OF watch
             """, transaction.Connection, transaction);
         command.Parameters.AddWithValue("id", activationId);
         command.Parameters.AddWithValue("environment", _environment);
+        command.Parameters.AddWithValue("bake_seconds", CatalogActivationErrorWatch.BakePeriod.TotalSeconds);
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
     }
 

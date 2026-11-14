@@ -76,7 +76,7 @@ internal sealed partial class CatalogActivationWatcher(
         var rows = await health.ReadLatencyAsync(OpsHealthRollupTier.OneMinute,
             watch.ActivatedAt.AddMinutes(-3), now, cancellationToken).ConfigureAwait(false);
         var seconds = scoped.GetService<IOptions<TracingOptions>>()?.Value.ServingLatencyWindowSeconds ?? 300;
-        var evidence = new CatalogActivationEvidence(watch.ActivatedAt, TimeSpan.FromSeconds(Math.Max(1, seconds)));
+        var evidence = new CatalogActivationEvidence(watch.ActivatedAt, TimeSpan.FromSeconds(seconds > 0 ? seconds : 300));
         var reason = CatalogActivationErrorWatch.Evaluate(evidence, now, rows);
         if (reason is not null && await store.TryRollbackAsync(new(watch.Id, reason), cancellationToken).ConfigureAwait(false))
         {

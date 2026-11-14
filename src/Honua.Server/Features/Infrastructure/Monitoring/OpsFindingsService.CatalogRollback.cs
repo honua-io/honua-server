@@ -9,15 +9,30 @@ namespace Honua.Infrastructure.Monitoring;
 internal sealed partial class OpsFindingsService
 {
     private readonly ICatalogActivationWatchStore? _catalogActivationWatches;
+    internal const string CatalogRollbackSourceId = "honua_ops_findings.catalog_rollbacks";
+    private const string CatalogRollbackBackendId = "catalog-activation-watch-store";
 
-    private async Task EvaluateCatalogRollbacksAsync(List<OpsFinding> findings, CancellationToken cancellationToken)
+    private async Task<EvidenceSourceEnvelope> EvaluateCatalogRollbacksAsync(List<OpsFinding> findings, CancellationToken cancellationToken)
     {
         if (_catalogActivationWatches is null)
         {
-            return;
+            return EvidencePostureFactory.NotConfigured(CatalogRollbackSourceId,
+                EvidencePostureVocabulary.BackendKinds.DurableStore, CatalogRollbackBackendId);
         }
 
-        foreach (var watch in await _catalogActivationWatches.ReadRecentRollbacksAsync(cancellationToken).ConfigureAwait(false))
+        IReadOnlyList<CatalogActivationWatch> watches;
+        try
+        {
+            watches = await _catalogActivationWatches.ReadRecentRollbacksAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
+        {
+            return EvidencePostureFactory.Unavailable(CatalogRollbackSourceId,
+                EvidencePostureVocabulary.BackendKinds.DurableStore, CatalogRollbackBackendId,
+                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable, maximumAge: SignalValidity);
+        }
+
+        foreach (var watch in watches)
         {
             const string rule = "catalog-activation-rolled-back";
             var subject = new OpsFindingSubject { OperationId = watch.ChangeId };
@@ -33,5 +48,9 @@ internal sealed partial class OpsFindingsService
                 EvidenceRefs = [$"catalog-activation:{watch.Id}", $"admin-change:{watch.ChangeId}"],
             });
         }
+
+        return EvidencePostureFactory.Complete(CatalogRollbackSourceId,
+            EvidencePostureVocabulary.BackendKinds.DurableStore, CatalogRollbackBackendId,
+            _clock.GetUtcNow(), SignalValidity);
     }
 }
