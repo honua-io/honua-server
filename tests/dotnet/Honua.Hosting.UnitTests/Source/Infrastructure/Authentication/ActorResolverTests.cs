@@ -14,18 +14,20 @@ public sealed class ActorResolverTests
 {
     [UnitTheory]
     [Operation(Operations.Security)]
-    [InlineData(null, null, null, "anonymous", "anonymous", "admin", "anonymous")]
-    [InlineData("display", "subject", "key", "display", "subject", "display", "api-key:key")]
-    [InlineData("display", null, null, "display", "display", "display", "display")]
-    [InlineData("", null, null, "", "", "admin", "")]
-    [InlineData(" ", null, null, " ", " ", " ", " ")]
-    [InlineData("display", "", "", "display", "", "display", "display")]
-    [InlineData("display", " ", " ", "display", " ", "display", "display")]
-    [InlineData(null, "subject", "key", "anonymous", "subject", "admin", "api-key:key")]
+    [InlineData(new string?[] { null, null, null }, new string[] { "anonymous", "anonymous", "admin", "anonymous" })]
+    [InlineData(new string?[] { "display", "subject", "key" }, new string[] { "display", "subject", "display", "api-key:key" })]
+    [InlineData(new string?[] { "display", null, null }, new string[] { "display", "display", "display", "display" })]
+    [InlineData(new string?[] { "", null, null }, new string[] { "", "", "admin", "" })]
+    [InlineData(new string?[] { " ", null, null }, new string[] { " ", " ", " ", " " })]
+    [InlineData(new string?[] { "display", "", "" }, new string[] { "display", "", "display", "display" })]
+    [InlineData(new string?[] { "display", " ", " " }, new string[] { "display", " ", "display", "display" })]
+    [InlineData(new string?[] { null, "subject", "key" }, new string[] { "anonymous", "subject", "admin", "api-key:key" })]
     public void Resolve_IdentityClaims_PreservesEachPolicy(
-        string? name, string? subject, string? apiKey,
-        string expectedName, string expectedSubject, string expectedAdmin, string expectedApiKey)
+        string?[] claimValues, string[] expectedActors)
     {
+        var name = claimValues[0];
+        var subject = claimValues[1];
+        var apiKey = claimValues[2];
         var claims = new List<Claim>();
         if (name != null)
         {
@@ -47,10 +49,10 @@ public sealed class ActorResolverTests
                 User = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType)),
             };
 
-            Assert.Equal(expectedName, ActorResolver.Resolve(context, ActorResolution.Name));
-            Assert.Equal(expectedSubject, ActorResolver.Resolve(context, ActorResolution.SubjectOrName));
-            Assert.Equal(expectedAdmin, ActorResolver.Resolve(context, ActorResolution.AdminName));
-            Assert.Equal(expectedApiKey, ActorResolver.Resolve(context, ActorResolution.ApiKeyOrName));
+            Assert.Equal(expectedActors[0], ActorResolver.Resolve(context, ActorResolution.Name));
+            Assert.Equal(expectedActors[1], ActorResolver.Resolve(context, ActorResolution.SubjectOrName));
+            Assert.Equal(expectedActors[2], ActorResolver.Resolve(context, ActorResolution.AdminName));
+            Assert.Equal(expectedActors[3], ActorResolver.Resolve(context, ActorResolution.ApiKeyOrName));
         }
     }
 }
