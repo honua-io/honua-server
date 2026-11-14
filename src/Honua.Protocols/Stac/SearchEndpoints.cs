@@ -9,6 +9,7 @@ using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Federation.Services;
+using Honua.Core.Features.Metadata.Caching;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Validation;
@@ -51,6 +52,7 @@ internal static class SearchEndpoints
         // filter parameters as a JSON document — and is gated downstream by the
         // per-publication access policy via StacV2Lookups.ResolveVisibleStacPublicationsAsync.
         endpoints.MapPost("/stac/search", HandleSearchPost)
+            .WithMetadata(ReadOnlyRequestMetadata.Instance)
             .WithDisplayName("STAC Search (POST)")
             .WithName("StacSearchPost")
             .WithSummary("Search STAC items via POST")

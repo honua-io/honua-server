@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <Import Project="..\..\eng\Honua.BuildProfiles.props" />
+
   <PropertyGroup>
     <TargetFramework>$(HonuaTargetFramework)</TargetFramework>
     <OutputType>Library</OutputType>
@@ -26,9 +28,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Packages required by the carved Authentication sub-area. Mirrors the
-         Server csproj's auth-related references so the hosting surface
-         (JWT bearer, OIDC, JWT handler) compiles standalone. -->
+    <!-- Packages required by the carved Authentication sub-area so the hosting
+         surface (JWT bearer, OIDC, JWT handler) compiles standalone. -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
     <!-- Microsoft.AspNetCore.OpenApi provides the IOpenApiDocumentTransformer seam
@@ -49,7 +50,7 @@
     <PackageReference Include="NetTopologySuite" />
     <!-- BouncyCastle.Cryptography is required by the carved Licensing sub-area
          (BouncyCastleEd25519Verifier + FileBackedLicenseService signature
-         verification). Mirrors the corresponding Server csproj package ref. -->
+         verification). -->
     <PackageReference Include="BouncyCastle.Cryptography" />
     <!-- Grpc.AspNetCore brings Grpc.Core.Api transitively for LicenseGate's
          RpcException factory (carved Licensing sub-area). Mirrors Server. -->
@@ -65,7 +66,6 @@
          cluster depends only on Honua.Core's Redis abstractions (no Jobs/Server
          dependency, so no Hosting->Jobs cycle). -->
     <PackageReference Include="StackExchange.Redis" />
-    <PackageReference Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" />
     <!-- Apache.Arrow + ParquetSharp back the shared GeoParquet feature writer
          (GeoParquetFeatureWriter), lifted here so both the GeoServices
          (f=parquet) and OData ($format=parquet) protocol adapters share a single
@@ -80,8 +80,9 @@
          deliveries to a dead-letter topic. The dependency is isolated behind
          the ConfluentKafkaEventProducer wrapper; the sink itself depends only
          on the IKafkaEventProducer abstraction so it stays unit-testable
-         without a live broker. -->
-    <PackageReference Include="Confluent.Kafka" />
+         without a live broker. Excluded from the PostGIS-only default image
+         (HonuaIncludeEventBrokers=false). -->
+    <PackageReference Include="Confluent.Kafka" Condition="'$(HonuaIncludeEventBrokers)' == 'true'" />
     <!-- NATS.Net backs the enterprise event-bus NATS sink (#357): the
          broker-agnostic IFeatureChangeEventSink NATS adapter publishes committed
          feature-change events to a configurable JetStream subject with optional
@@ -89,8 +90,15 @@
          deliveries to a dead-letter subject. The dependency is isolated behind
          the NatsJetStreamEventProducer wrapper; the sink itself depends only on
          the INatsEventProducer abstraction so it stays unit-testable without a
-         live JetStream server. -->
-    <PackageReference Include="NATS.Net" />
+         live JetStream server. Excluded with Confluent.Kafka above. -->
+    <PackageReference Include="NATS.Net" Condition="'$(HonuaIncludeEventBrokers)' == 'true'" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HonuaIncludeEventBrokers)' != 'true'">
+    <!-- Only the concrete broker clients need the packages; the sinks, options and
+         producer abstractions stay compiled so configuration validation is unchanged. -->
+    <Compile Remove="Features/Events/Sinks/Kafka/ConfluentKafkaEventProducer.cs" />
+    <Compile Remove="Features/Events/Sinks/Nats/NatsJetStreamEventProducer.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -39,6 +39,12 @@ internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
             }
         }
 
+        if (context.HttpContext.RequestServices.GetService<IConfigurationGenerationSource>() is { } generations)
+        {
+            context.CacheVaryByRules.VaryByValues["honua-configuration-generation"] =
+                (await generations.GetGenerationAsync(cancellationToken).ConfigureAwait(false)).ToString(CultureInfo.InvariantCulture);
+        }
+
         if (snapshot is not null)
         {
             context.CacheVaryByRules.VaryByValues[CatalogRevisionKey] = snapshot.Etag;

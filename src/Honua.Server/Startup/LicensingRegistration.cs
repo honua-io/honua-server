@@ -8,7 +8,6 @@ using Honua.Infrastructure.Extensions;
 using Honua.Infrastructure.Licensing;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 
 namespace Honua.Server.Startup;
 
@@ -21,8 +20,6 @@ internal static class LicensingRegistration
     {
         services.Configure<LicenseOptions>(
             configuration.GetSection(LicenseOptions.SectionName));
-        services.Configure<LicenseCapacityOptions>(
-            configuration.GetSection(LicenseCapacityOptions.SectionName));
         var mode = LicenseOptions.ParseMode(configuration[$"{LicenseOptions.SectionName}:Mode"]);
         var devGrantEdition = configuration[$"{LicenseOptions.SectionName}:DevGrantEdition"];
         // The production dev-grant guard applies in every mode, including Disabled.
@@ -41,7 +38,6 @@ internal static class LicensingRegistration
             services.AddSingleton<ILicenseEntitlementService>(sp => sp.GetRequiredService<DisabledLicenseService>());
             services.AddSingleton<ILicenseStatusProvider>(sp => sp.GetRequiredService<DisabledLicenseService>());
             services.AddSingleton<ILicenseManager>(sp => sp.GetRequiredService<DisabledLicenseService>());
-            services.AddSingleton<ILicenseCapacityMeter, DisabledLicenseCapacityMeter>();
         }
         else
         {
@@ -103,17 +99,5 @@ internal static class LicensingRegistration
             sp.GetRequiredService<FileBackedLicenseService>());
         services.AddHostedService(sp =>
             sp.GetRequiredService<FileBackedLicenseService>());
-
-        services.AddSingleton<LicenseCapacityMeter>(sp =>
-            new LicenseCapacityMeter(
-                sp.GetRequiredService<ILicenseEntitlementService>(),
-                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<LicenseCapacityOptions>>(),
-                sp.GetService<TimeProvider>() ?? TimeProvider.System,
-                sp.GetRequiredService<ILogger<LicenseCapacityMeter>>(),
-                sp.GetService<IConnectionMultiplexer>()));
-        services.AddSingleton<ILicenseCapacityMeter>(sp =>
-            sp.GetRequiredService<LicenseCapacityMeter>());
-        services.AddHostedService(sp =>
-            sp.GetRequiredService<LicenseCapacityMeter>());
     }
 }

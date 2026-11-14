@@ -21,7 +21,7 @@ on:
         type: string
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   BASE_URL: 'http://localhost:5000'
   DB_NAME: honua_load
   DB_USER: honua

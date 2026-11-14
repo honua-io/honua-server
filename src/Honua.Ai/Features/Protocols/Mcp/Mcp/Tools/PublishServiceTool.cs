@@ -1,9 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Claims;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -75,7 +75,7 @@ internal sealed class PublishServiceTool : IMcpTool
             TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
             SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
             AuthorizationOutcome = authorizationOutcome,
-            Roles = principal.FindAll(ClaimTypes.Role).Select(claim => claim.Value).ToArray(),
+            Roles = AgentPrincipal.EffectiveRoles(principal),
             ScopeGoverned = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog.IsScopeGoverned(principal),
             RecognizedScopes = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog
                 .CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
