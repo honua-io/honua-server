@@ -1127,14 +1127,17 @@ conditions would skip them. Router fixtures check the bound against the workflow
 including matrix expansion; new dynamic or reusable jobs require an explicit bound.
 
 There is no newest-merge narrowing or arbitrary shard truncation. Missing history,
-router full-coverage escalation, API failure, a larger bound or active PR Gate
+router full-coverage escalation, API failure or a larger bound
 leaves coverage to the unchanged twice-daily full runs. A deferred dispatcher does
 not launch CI. A previously queued execution rechecks admission and cancels itself
 before publishing change outputs; neither cancellation nor a failed cancellation request can advance the successful CI base.
-Admitted affected runs use two concurrent server shards. The separate
-`PR Gate priority` workflow handles requested and in-progress PR Gate events using
-trusted trunk code and cancels only same-repository affected trunk dispatches.
-Scheduled full runs, manual full runs and branch runs are excluded.
+Admitted affected runs use two concurrent server shards, so one holds at most
+one heavy runner while PR Gate runs. An active PR Gate does not defer or cancel
+an affected run: with up to ten open PRs a PR Gate is almost always active, and
+from 05:52 to 17:02 UTC on 14 Nov that rule admitted 0 of 32 dispatches, leaving
+trunk with only the twice-daily full runs. Before it, completed affected runs
+took 4-62 minutes and PR Gate hosted jobs waited a median 4 s (p90 292 s) while
+one ran, against 3 s (p90 60 s) with no trunk CI, at the wider pre-cap width.
 
 Before this change, run 43544071705 expanded to roughly 170 jobs, queued for about
 120 minutes and occupied seven of eight heavy runners (founder incident report).

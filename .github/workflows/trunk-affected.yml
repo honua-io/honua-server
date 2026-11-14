@@ -65,7 +65,7 @@ jobs:
           echo "completed_base=${completed_base}" >> "$GITHUB_OUTPUT"
           echo "last_green=$(latest_ancestor "${green_heads}")" >> "$GITHUB_OUTPUT"
 
-      - name: Bound affected CI and reserve PR capacity
+      - name: Bound affected CI fanout
         id: admission
         if: steps.base.outputs.superseded == 'false'
         env:
