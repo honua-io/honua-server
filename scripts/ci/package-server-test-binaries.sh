@@ -8,8 +8,8 @@ DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 REPO_ROOT="${HONUA_SERVER_TEST_ARTIFACT_REPO_ROOT:-${DEFAULT_REPO_ROOT}}"
 REGISTRY="${HONUA_SERVER_TEST_ARTIFACT_REGISTRY:-${REPO_ROOT}/.github/server-test-artifact-projects.json}"
 CONFIGURATION="${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}"
-# 320 MiB / 768 MiB since #4453 staged hosted Blazor content roots; measured basis in
-# docs/internal/ci/server-test-binary-artifacts.md ("Bounds and integrity").
+# 320 MiB / 768 MiB leave about twice the largest measured project (server: 158 MiB archive,
+# 415 MiB staged); see docs/internal/ci/server-test-binary-artifacts.md ("Bounds and integrity").
 MAX_ARCHIVE_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_ARCHIVE_BYTES:-335544320}"
 MAX_UNPACKED_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_UNPACKED_BYTES:-805306368}"
 MAX_PACKAGE_MILLISECONDS="${HONUA_SERVER_TEST_ARTIFACT_MAX_PACKAGE_MILLISECONDS:-120000}"
