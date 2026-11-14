@@ -98,14 +98,22 @@ public sealed class TwoTaskCollaborationTests(DatabaseFixtureAdapter database) :
                 OriginInstanceId = "retained-peer",
                 Presence = new CollaborationParticipantPresence
                 {
-                    SessionId = id, ParticipantId = id.ToString("N"), DisplayName = "alice",
-                    JoinedAt = now, LastSeenAt = now, Cursor = new CollaborationCursor { X = n, Y = 34 }
+                    SessionId = id,
+                    ParticipantId = id.ToString("N"),
+                    DisplayName = "alice",
+                    JoinedAt = now,
+                    LastSeenAt = now,
+                    Cursor = new CollaborationCursor { X = n, Y = 34 }
                 },
                 Event = new CollaborationEventEnvelope
                 {
-                    MapId = "map-a", EventId = Guid.NewGuid().ToString("N"), Sequence = n,
-                    Cursor = n.ToString(System.Globalization.CultureInfo.InvariantCulture), ServerTime = now,
-                    SessionId = id.ToString("N"), Event = new CollaborationSessionEvent { Type = CollaborationSessionEventTypes.Cursor }
+                    MapId = "map-a",
+                    EventId = Guid.NewGuid().ToString("N"),
+                    Sequence = n,
+                    Cursor = n.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ServerTime = now,
+                    SessionId = id.ToString("N"),
+                    Event = new CollaborationSessionEvent { Type = CollaborationSessionEventTypes.Cursor }
                 }
             }, CollaborationSessionJsonContext.Default.CollaborationPresenceMessage))).ToArray();
         await harness.Log.AppendAsync(RealtimeLogFamilies.CollabPresence, rows, null, CancellationToken.None);
