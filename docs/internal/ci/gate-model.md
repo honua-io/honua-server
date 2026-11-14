@@ -827,8 +827,10 @@ outputs under disk pressure. The existing free-space thresholds and active-run
 protections remain; queued outputs may still be evicted as a fallback.
 
 [Stage 0 reuse assessment](stage-zero-reuse.md) records live queue/build timings,
-the five-run cache observation, and the protected issuer requirements for any
-future gate skip. Local receipts do not currently skip hosted tests. Compiled
+the five-run cache observation, completed affected-run job counts and queue
+timings, and the protected issuer requirements for any future gate skip. The
+completed samples have different selected work; green runs that skip managed
+tests do not establish a test speedup or resolve the comparable-run evidence gap. Local receipts do not currently skip hosted tests. Compiled
 output caching remains opt-in; no cross-phase promotion is authorized by the
 observational sample.
 
