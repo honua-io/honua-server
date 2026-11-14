@@ -49,31 +49,8 @@ internal static partial class FeatureStreamEndpoints
         // generation when claiming send-time deliveries through the session manager.
         long defaultSubscriptionGeneration = sessionManager.GetDefaultSubscriptionGeneration(session.SessionId);
 
-        await SendWebSocketStatusAsync(
-            webSocket,
-            session.WriteLock,
-            new FeatureStreamStatusFrame
-            {
-                Status = "connected",
-                Message = "Feature stream connected.",
-                SessionId = session.SessionId
-            },
-            context.RequestAborted).ConfigureAwait(false);
-
-        if (requested.Kind == FeatureStreamCursorKind.Epoch)
-        {
-            await SendWebSocketJsonAsync(
-                webSocket,
-                session.WriteLock,
-                JsonSerializer.SerializeToUtf8Bytes(
-                    new FeatureStreamResetFrame
-                    {
-                        Reason = RealtimeResetReasons.CursorEpoch,
-                        Head = FeatureStreamCursor.Format(initialLiveCursor)
-                    },
-                    FeatureStreamJsonContext.Default.FeatureStreamResetFrame),
-                context.RequestAborted).ConfigureAwait(false);
-        }
+        await AnnounceWebSocketConnectionAsync(webSocket, session, requested, initialLiveCursor, context.RequestAborted)
+            .ConfigureAwait(false);
 
         if (announceInitialSubscription)
         {
@@ -1608,6 +1585,40 @@ internal static partial class FeatureStreamEndpoints
         finally
         {
             writeLock.Release();
+        }
+    }
+
+    private static async Task AnnounceWebSocketConnectionAsync(
+        WebSocket webSocket,
+        FeatureStreamSession session,
+        FeatureStreamCursor requested,
+        long initialLiveCursor,
+        CancellationToken cancellationToken)
+    {
+        await SendWebSocketStatusAsync(
+            webSocket,
+            session.WriteLock,
+            new FeatureStreamStatusFrame
+            {
+                Status = "connected",
+                Message = "Feature stream connected.",
+                SessionId = session.SessionId
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        if (requested.Kind == FeatureStreamCursorKind.Epoch)
+        {
+            await SendWebSocketJsonAsync(
+                webSocket,
+                session.WriteLock,
+                JsonSerializer.SerializeToUtf8Bytes(
+                    new FeatureStreamResetFrame
+                    {
+                        Reason = RealtimeResetReasons.CursorEpoch,
+                        Head = FeatureStreamCursor.Format(initialLiveCursor)
+                    },
+                    FeatureStreamJsonContext.Default.FeatureStreamResetFrame),
+                cancellationToken).ConfigureAwait(false);
         }
     }
 }

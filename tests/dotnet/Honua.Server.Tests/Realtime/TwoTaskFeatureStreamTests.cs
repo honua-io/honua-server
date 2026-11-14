@@ -107,6 +107,12 @@ public sealed class TwoTaskFeatureStreamTests(FeatureChangeDatabaseFixture datab
         var expected = (await layer.GenerationsAsync()).Skip(1).ToArray();
         var live = await ReadThroughAsync(subscriberOnB, layerId, expected[^1]);
 
+        AssertResumedGenerations(fromA, replayed, live, expected);
+    }
+
+    private static void AssertResumedGenerations(
+        IReadOnlyList<Frame> fromA, IReadOnlyList<long> replayed, IReadOnlyList<Frame> live, long[] expected)
+    {
         var union = fromA.Select(frame => frame.Generation)
             .Concat(replayed)
             .Concat(live.Select(frame => frame.Generation))

@@ -126,22 +126,7 @@ internal static partial class FeatureStreamEndpoints
                     .ConfigureAwait(false);
             }
 
-            if (subscriptionFilter is not null)
-            {
-                await WriteSseEventAsync(
-                    context.Response,
-                    "status",
-                    new FeatureStreamStatusFrame
-                    {
-                        Status = "subscribed",
-                        Message = "Initial subscription accepted.",
-                        SessionId = session.SessionId,
-                        SubscriptionId = FeatureStreamSessionManager.DefaultSubscriptionId
-                    },
-                    FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
-                    null,
-                    context.RequestAborted).ConfigureAwait(false);
-            }
+            await AnnounceSseSubscriptionAsync(context, session, subscriptionFilter).ConfigureAwait(false);
 
             await context.Response.Body.FlushAsync(context.RequestAborted).ConfigureAwait(false);
         }
@@ -574,6 +559,29 @@ internal static partial class FeatureStreamEndpoints
         }
     }
 
+    private static async Task AnnounceSseSubscriptionAsync(
+        HttpContext context,
+        FeatureStreamSession session,
+        IStreamSubscriptionFilter? subscriptionFilter)
+    {
+        if (subscriptionFilter is not null)
+        {
+            await WriteSseEventAsync(
+                context.Response,
+                "status",
+                new FeatureStreamStatusFrame
+                {
+                    Status = "subscribed",
+                    Message = "Initial subscription accepted.",
+                    SessionId = session.SessionId,
+                    SubscriptionId = FeatureStreamSessionManager.DefaultSubscriptionId
+                },
+                FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
+                null,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+    }
+
     private sealed record SseReplayRecovery(
         FeatureStreamDependencies Dependencies,
         ILogger Logger,
@@ -603,28 +611,7 @@ internal static partial class FeatureStreamEndpoints
                 return;
             }
 
-            if (recovery.Filter is StreamSubscriptionFilter { LayerIds: not null } filter)
-            {
-                var snapshotResult = await EmitSnapshotAsync(
-                    deps,
-                    recovery.Logger,
-                    CreateSseSnapshotSink(recovery.Mode, response),
-                    recovery.Session.SessionId,
-                    FeatureStreamSessionManager.DefaultSubscriptionId,
-                    deps.SessionManager.GetDefaultSubscriptionGeneration(recovery.Session.SessionId),
-                    filter,
-                    FeatureStreamSnapshotReasons.CursorExpired,
-                    cancellationToken).ConfigureAwait(false);
-                if (!snapshotResult.Complete)
-                {
-                    await WriteSseTerminalErrorAsync(
-                        response,
-                        recovery.Session.SessionId,
-                        FeatureStreamSessionManager.DefaultSubscriptionId,
-                        "The baseline snapshot was incomplete; reconnect without a cursor to take a fresh snapshot.",
-                        cancellationToken).ConfigureAwait(false);
-                }
-            }
+            await EmitSseRecoverySnapshotAsync(recovery, cancellationToken).ConfigureAwait(false);
 
             await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -645,6 +632,34 @@ internal static partial class FeatureStreamEndpoints
                 FeatureStreamSessionManager.DefaultSubscriptionId,
                 "The baseline snapshot could not be completed. Reconnect to take a fresh snapshot.",
                 cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task EmitSseRecoverySnapshotAsync(SseReplayRecovery recovery, CancellationToken cancellationToken)
+    {
+        var deps = recovery.Dependencies;
+        var response = recovery.Context.Response;
+        if (recovery.Filter is StreamSubscriptionFilter { LayerIds: not null } filter)
+        {
+            var snapshotResult = await EmitSnapshotAsync(
+                deps,
+                recovery.Logger,
+                CreateSseSnapshotSink(recovery.Mode, response),
+                recovery.Session.SessionId,
+                FeatureStreamSessionManager.DefaultSubscriptionId,
+                deps.SessionManager.GetDefaultSubscriptionGeneration(recovery.Session.SessionId),
+                filter,
+                FeatureStreamSnapshotReasons.CursorExpired,
+                cancellationToken).ConfigureAwait(false);
+            if (!snapshotResult.Complete)
+            {
+                await WriteSseTerminalErrorAsync(
+                    response,
+                    recovery.Session.SessionId,
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    "The baseline snapshot was incomplete; reconnect without a cursor to take a fresh snapshot.",
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 }

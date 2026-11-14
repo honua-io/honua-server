@@ -51,25 +51,7 @@ public static class PostgresComponentServices
         // object storage; a storage-aware host can register its real provider first.
         builder.Services.TryAddSingleton<ICloudFileStorage, UnconfiguredComponentFileStorage>();
         builder.Services.AddPostgreSqlServices(builder.Configuration, ServerCoreSchemaMigrations.Manifest);
-        builder.Services.AddSingleton<IGeometryService, GeometryService>();
-        builder.Services.AddScoped<IGeometryValidator>(sp => new WkbGeometryValidator(
-            sp.GetRequiredService<IOptions<LimitsOptions>>(),
-            sp.GetRequiredService<IGeometryTopologyValidator>(),
-            sp.GetRequiredService<ILogger<WkbGeometryValidator>>()));
-        builder.Services.AddValidationServices();
-        builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
-        builder.Services.AddScoped<IRowLevelSecurityFilterSource, RowLevelSecurityFilterSource>();
-        builder.Services.AddScoped<IFieldMaskSource, FieldMaskSource>();
-        builder.Services.AddSingleton<IETagService, ETagService>();
-        builder.Services.AddSingleton<IResponseCache, MemoryResponseCache>();
-        builder.Services.AddSingleton(sp => new OutputCacheInvalidationService(
-            null, sp.GetRequiredService<IResponseCache>(), null,
-            sp.GetRequiredService<IServiceScopeFactory>(), null,
-            sp.GetRequiredService<ILogger<OutputCacheInvalidationService>>()));
-        // Streaming transports, webhooks and background outbox delivery are verified by the full
-        // host lanes; edits here reach the change log through the trigger alone.
-        builder.Services.AddSingleton<IFeatureChangeEventPublisher, ChangeLogOnlyFeatureChangeEventPublisher>();
-        builder.Services.AddSingleton<FeatureMutationEventService>();
+        PostgresComponentEventServices.Configure(builder);
         builder.Services.AddApiKeyAuthentication(builder.Configuration);
         builder.Services.Configure<ApiKeyAuthenticationOptions>(options =>
         {

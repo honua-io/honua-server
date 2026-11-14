@@ -160,11 +160,7 @@ internal sealed partial class RealtimeDispatcher(
         {
             var batch = await ReadAfterAsync(family, dispatched, null, options.Value.ReadBatchSize, cancellationToken)
                 .ConfigureAwait(false);
-            RealtimeSubscription[] subscribers;
-            lock (_gate)
-            {
-                subscribers = _subscriptions.GetValueOrDefault(family) ?? [];
-            }
+            var subscribers = GetSubscribers(family);
 
             if (batch.Count == 0 && !IsContiguous(family))
             {
@@ -194,6 +190,14 @@ internal sealed partial class RealtimeDispatcher(
             _dispatched[family] = Math.Max(_dispatched.GetValueOrDefault(family), dispatched);
         }
         return delivered;
+    }
+
+    private RealtimeSubscription[] GetSubscribers(string family)
+    {
+        lock (_gate)
+        {
+            return _subscriptions.GetValueOrDefault(family) ?? [];
+        }
     }
 
     private long GetDispatchStart(string family, long head)

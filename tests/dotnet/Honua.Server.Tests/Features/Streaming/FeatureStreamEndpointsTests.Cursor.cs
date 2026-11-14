@@ -220,12 +220,7 @@ public sealed partial class FeatureStreamEndpointsTests
             AdvanceRetention();
         }
 
-        System.Text.Json.JsonElement reset;
-        do
-        {
-            reset = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
-        }
-        while (reset.GetProperty("type").GetString() == "status");
+        var reset = await ReadWebSocketAfterStatusesAsync(socket, timeout.Token);
         reset.GetProperty("type").GetString().Should().Be("reset");
         reset.GetProperty("reason").GetString().Should().Be("retention");
         reset.GetProperty("head").GetString().Should().Be("features:100");
@@ -239,12 +234,7 @@ public sealed partial class FeatureStreamEndpointsTests
     {
         var store = FakeFeatureChangeEventStore.WithRetentionWindow(
             FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50));
-        store.Append(new FeatureChangeEventRequest
-        {
-            ServiceId = "test", LayerId = 0, ObjectId = 9001, Operation = "update", Protocol = "rest",
-            RequestId = "retention-sse-nonempty-page"
-        }, cursorGap: 40);
-        store.SetRetentionWindow(FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50));
+        SeedRetentionReplayPage(store);
         store.QueryCompleted = () =>
         {
             store.QueryCompleted = null;
@@ -276,6 +266,28 @@ public sealed partial class FeatureStreamEndpointsTests
             error.Data.GetProperty("status").GetString().Should().Be("error");
             error.Data.GetProperty("message").GetString().Should().Contain("cannot be combined");
         }
+    }
+
+    private static async Task<System.Text.Json.JsonElement> ReadWebSocketAfterStatusesAsync(
+        System.Net.WebSockets.WebSocket socket, CancellationToken cancellationToken)
+    {
+        System.Text.Json.JsonElement reset;
+        do
+        {
+            reset = await ReceiveWebSocketJsonAsync(socket, cancellationToken);
+        }
+        while (reset.GetProperty("type").GetString() == "status");
+        return reset;
+    }
+
+    private static void SeedRetentionReplayPage(FakeFeatureChangeEventStore store)
+    {
+        store.Append(new FeatureChangeEventRequest
+        {
+            ServiceId = "test", LayerId = 0, ObjectId = 9001, Operation = "update", Protocol = "rest",
+            RequestId = "retention-sse-nonempty-page"
+        }, cursorGap: 40);
+        store.SetRetentionWindow(FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50));
     }
 
 }

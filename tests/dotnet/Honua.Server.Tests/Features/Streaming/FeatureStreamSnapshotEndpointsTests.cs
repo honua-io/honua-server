@@ -179,37 +179,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     {
         await StartDefaultApplicationAsync();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
-        async Task<(int Bytes, JsonElement Frame)> ReadSnapshotAsync(HttpClient client)
-        {
-            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot-then-delta");
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(timeout.Token), Encoding.UTF8);
-            var bytes = 0;
-            var snapshot = false;
-            JsonElement frame = default;
-            while (await reader.ReadLineAsync(timeout.Token) is { } line)
-            {
-                bytes += Encoding.UTF8.GetByteCount(line) + 1;
-                snapshot |= line == "event: snapshot";
-                if (snapshot && line.StartsWith("data: ", StringComparison.Ordinal))
-                {
-                    using var json = JsonDocument.Parse(line[6..]);
-                    frame = json.RootElement.Clone();
-                }
-                if (line.Length == 0)
-                {
-                    if (snapshot)
-                    {
-                        return (bytes, frame);
-                    }
-                    bytes = 0;
-                }
-            }
-            throw new InvalidOperationException("No batched snapshot received.");
-        }
-
-        var full = await ReadSnapshotAsync(_client);
+        var full = await ReadSnapshotAsync(_client, timeout.Token);
         full.Frame.GetProperty("complete").GetBoolean().Should().BeTrue();
         full.Frame.GetProperty("featureCount").GetInt64().Should().BeGreaterThan(0);
         var budget = full.Bytes - 1;
@@ -219,7 +189,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         });
         await boundedFixture.InitializeAsync();
         using var boundedClient = boundedFixture.CreateAdminClient();
-        var bounded = await ReadSnapshotAsync(boundedClient);
+        var bounded = await ReadSnapshotAsync(boundedClient, timeout.Token);
         bounded.Bytes.Should().BeLessThanOrEqualTo(budget);
         bounded.Frame.GetProperty("complete").GetBoolean().Should().BeFalse();
     }
@@ -2001,5 +1971,35 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
         using var document = JsonDocument.Parse(builder.ToString());
         return document.RootElement.Clone();
+    }
+
+    private static async Task<(int Bytes, JsonElement Frame)> ReadSnapshotAsync(HttpClient client, CancellationToken cancellationToken)
+    {
+        using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot-then-delta");
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(cancellationToken), Encoding.UTF8);
+        var bytes = 0;
+        var snapshot = false;
+        JsonElement frame = default;
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+        {
+            bytes += Encoding.UTF8.GetByteCount(line) + 1;
+            snapshot |= line == "event: snapshot";
+            if (snapshot && line.StartsWith("data: ", StringComparison.Ordinal))
+            {
+                using var json = JsonDocument.Parse(line[6..]);
+                frame = json.RootElement.Clone();
+            }
+            if (line.Length == 0)
+            {
+                if (snapshot)
+                {
+                    return (bytes, frame);
+                }
+                bytes = 0;
+            }
+        }
+        throw new InvalidOperationException("No batched snapshot received.");
     }
 }

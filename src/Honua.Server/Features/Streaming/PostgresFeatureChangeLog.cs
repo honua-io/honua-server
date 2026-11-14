@@ -175,6 +175,27 @@ internal sealed class PostgresFeatureChangeLog(
 
     private string SelectChanges(FeatureChangeLogQuery query)
     {
+        return $"""
+            SELECT changes.generation, changes.layer_id, changes.objectid, changes.operation, changes.changed_at,
+                   changes.event_id, changes.operation_instance_id, changes.correlation_id, changes.audit_id,
+                   changes.proposal_id, COALESCE(changes.source_id, outbox.source_id),
+                   outbox.service_id, outbox.protocol, outbox.request_id,
+                   changes.pre_attributes::text, changes.committed_attributes::text,
+                   ST_AsEWKB(CASE WHEN changes.operation = 3 THEN changes.pre_geometry ELSE changes.committed_geometry END),
+                   changes.operation = 2
+                       AND ST_AsEWKB(changes.pre_geometry) IS DISTINCT FROM ST_AsEWKB(changes.committed_geometry)
+            FROM {_changes} AS changes
+            LEFT JOIN LATERAL (
+                SELECT entry.service_id, entry.protocol, entry.request_id, entry.source_id
+                FROM {_outbox} AS entry WHERE entry.event_id = changes.event_id LIMIT 1) AS outbox ON true
+            WHERE {BuildFilters(query)}
+            ORDER BY changes.generation
+            LIMIT @limit
+            """;
+    }
+
+    private static string BuildFilters(FeatureChangeLogQuery query)
+    {
         var filters = new List<string> { "changes.generation > @after", "changes.version_id IS NULL" };
         if (query.From is not null)
         {
@@ -196,23 +217,7 @@ internal sealed class PostgresFeatureChangeLog(
             filters.Add("changes.event_id = @event_id");
         }
 
-        return $"""
-            SELECT changes.generation, changes.layer_id, changes.objectid, changes.operation, changes.changed_at,
-                   changes.event_id, changes.operation_instance_id, changes.correlation_id, changes.audit_id,
-                   changes.proposal_id, COALESCE(changes.source_id, outbox.source_id),
-                   outbox.service_id, outbox.protocol, outbox.request_id,
-                   changes.pre_attributes::text, changes.committed_attributes::text,
-                   ST_AsEWKB(CASE WHEN changes.operation = 3 THEN changes.pre_geometry ELSE changes.committed_geometry END),
-                   changes.operation = 2
-                       AND ST_AsEWKB(changes.pre_geometry) IS DISTINCT FROM ST_AsEWKB(changes.committed_geometry)
-            FROM {_changes} AS changes
-            LEFT JOIN LATERAL (
-                SELECT entry.service_id, entry.protocol, entry.request_id, entry.source_id
-                FROM {_outbox} AS entry WHERE entry.event_id = changes.event_id LIMIT 1) AS outbox ON true
-            WHERE {string.Join(" AND ", filters)}
-            ORDER BY changes.generation
-            LIMIT @limit
-            """;
+        return string.Join(" AND ", filters);
     }
 
     private static void AddOptional(NpgsqlCommand command, string name, NpgsqlDbType type, DateTimeOffset? value)
