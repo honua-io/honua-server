@@ -16,7 +16,8 @@ public sealed partial class GeoservicesImportReplacementTests
         try
         {
             await SeedPriorTargetAsync(schema);
-            var service = CreateService(new ReplacementFeatureServerHandler(["CCC"]), schema);
+            using var handler = new ReplacementFeatureServerHandler(["CCC"]);
+            var service = CreateService(handler, schema);
             var request = BuildRequest(schema, overwrite: true) with
             {
                 CommitParticipant = (_, _) => throw new InvalidOperationException("Execution lease lost")
@@ -43,7 +44,8 @@ public sealed partial class GeoservicesImportReplacementTests
             await SeedPriorTargetAsync(schema);
             await CreateReceiptTableAsync(schema);
 
-            var service = CreateService(new ReplacementFeatureServerHandler(["CCC"]), schema);
+            using var handler = new ReplacementFeatureServerHandler(["CCC"]);
+            var service = CreateService(handler, schema);
             var request = BuildRequest(schema, overwrite: true) with
             {
                 CommitParticipant = PersistReceiptAsync
@@ -73,7 +75,8 @@ public sealed partial class GeoservicesImportReplacementTests
             await SeedPriorTargetAsync(schema);
             await CreateReceiptTableAsync(schema);
 
-            var service = CreateService(new ReplacementFeatureServerHandler(["CCC"]), schema);
+            using var handler = new ReplacementFeatureServerHandler(["CCC"]);
+            var service = CreateService(handler, schema);
             var request = BuildRequest(schema, overwrite: true) with
             {
                 CommitParticipant = async (scope, cancellationToken) =>

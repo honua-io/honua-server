@@ -1140,11 +1140,11 @@ internal sealed partial class GeoservicesImportService
     /// </summary>
     internal static bool IsGeometryField(GeoservicesFieldInfo field)
         => field.Type.Equals("esriFieldTypeGeometry", StringComparison.OrdinalIgnoreCase);
-    private static Task JoinCommitAsync(
+    private static ValueTask JoinCommitAsync(
         ImportCommitParticipant? participant,
         ImportCommitScope scope,
         CancellationToken cancellationToken) => participant is null
-            ? Task.CompletedTask
+            ? ValueTask.CompletedTask
             : participant(scope, cancellationToken);
 
 }
