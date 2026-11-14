@@ -17,6 +17,40 @@ public sealed class ExecutionJobCancellationHelperTests
     private const string TransitionTestBackendNoOp = "execution-cancel-noop-test";
     private const string TransitionTestBackendCancelled = "execution-cancel-terminal-test";
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancellationCasLosesToRetry_DoesNotModifySuccessor(bool remoteStamp)
+    {
+        var original = CreateJobRecord("cancel-retry", ExecutionJobStatus.Running) with
+        { AttemptCount = 1, ClaimedBy = "worker", ClaimedAt = DateTimeOffset.UtcNow };
+        var successor = original with
+        {
+            Status = ExecutionJobStatus.Queued,
+            Version = original.Version + 1,
+            ClaimedBy = null,
+            ClaimedAt = null,
+            NextRetryAt = DateTimeOffset.UtcNow
+        };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+        store.GetAsync(original.OperationId, Arg.Any<CancellationToken>()).Returns(successor);
+
+        if (remoteStamp)
+        {
+            var result = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(store, original);
+            result.Outcome.Should().Be(RemoteCancelStampOutcome.Unconfirmed);
+        }
+        else
+        {
+            var result = await ExecutionJobCancellationHelper.TryApplyAsync(store, original.OperationId, original, "Cancelled");
+            result.State.Should().Be(ExecutionJobCancellationState.Unconfirmed);
+        }
+
+        await store.Received(1).TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task TryApplyBackendCancelAsync_RetryWinsBeforeReread_DoesNotCancelRetry()
     {

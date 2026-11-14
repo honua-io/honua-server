@@ -66,22 +66,25 @@ public sealed partial class TileCacheJobExecutorPublishTests
         var job = ControlJob(ExecutionJobStatus.Queued);
         var store = Substitute.For<IExecutionJobStore>();
         store.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(_ => job);
+        var cancelling = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(call => { job = call.Arg<ExecutionJobRecord>(); return true; });
+            .Returns(async call =>
+            {
+                job = call.Arg<ExecutionJobRecord>();
+                if (job.Status == ExecutionJobStatus.Cancelled)
+                {
+                    cancelling.TrySetResult();
+                    await resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                }
+                return true;
+            });
         var progress = new ComparingInMemoryProgressStore();
         await progress.SetProgressAsync(job.OperationId,
             TileOperationProgress.CreateInitial(job.OperationId, "archive", null, 1, "WebMercatorQuad"));
-        var cancelling = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var backend = Substitute.For<IBatchComputeBackend>();
         backend.BackendName.Returns(LocalBatchComputeBackend.BackendId);
         backend.TargetKind.Returns(job.Spec.TargetKind);
-        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>()).Returns(async _ =>
-        {
-            cancelling.TrySetResult();
-            await resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
-            return new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled };
-        });
         using var controls = ControlServices(store, backend: backend);
         var options = Substitute.For<IOptionsMonitor<TileCacheBatchOptions>>();
         options.CurrentValue.Returns(new TileCacheBatchOptions());
@@ -106,6 +109,52 @@ public sealed partial class TileCacheJobExecutorPublishTests
             (await cancel).Should().BeTrue();
         }
         (await progress.GetProgressAsync<TileOperationProgress>(job.OperationId)).Should().Be(successor);
+    }
+
+    [UnitTest]
+    public async Task ConsoleCancel_BackendResponseArrivesAfterRetry_DoesNotCancelSuccessor()
+    {
+        var original = ControlJob(ExecutionJobStatus.Running) with
+        {
+            ProviderOperationId = "old-provider",
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        var successor = original with
+        {
+            Status = ExecutionJobStatus.Queued,
+            Version = original.Version + 1,
+            ProviderOperationId = null,
+            CancellationRequestedAt = null,
+            NextRetryAt = DateTimeOffset.UtcNow
+        };
+        var current = original;
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(original.OperationId, Arg.Any<CancellationToken>()).Returns(_ => current);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var candidate = call.Arg<ExecutionJobRecord>();
+                if (candidate.Version != current.Version) return false;
+                current = candidate with { Version = candidate.Version + 1 };
+                return true;
+            });
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns(original.Spec.Backend);
+        backend.TargetKind.Returns(original.Spec.TargetKind);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities { SupportsCancellation = true });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            current = successor;
+            return new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled };
+        });
+        using var controls = ControlServices(store, backend: backend);
+
+        var cancel = () => CreateConsole(controls).CancelAsync(new DefaultHttpContext(), original.OperationId, CancellationToken.None);
+
+        await cancel.Should().ThrowAsync<ConsoleJobConflictException>();
+        current.Should().BeSameAs(successor);
+        await store.Received(1).TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTheory]
