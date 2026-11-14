@@ -29,7 +29,7 @@ def changed_existing_pins(ancestor, head, trunk):
     candidate = set(git_paths("ls-tree", "-r", "--name-only", "-z", head, "--", root))
     # Ignore pins added only on newer trunk, which a stale branch need not carry.
     # Any trunk pin present on the branch must retain its trusted contents.
-    changed = git_paths("diff", "--no-renames", "--diff-filter=MD", "--name-only", "-z", trunk, head, "--", root)
+    changed = git_paths("diff", "--no-renames", "--diff-filter=MDTT", "--name-only", "-z", trunk, head, "--", root)
     return sorted(path for path in changed if path and path in inherited | candidate)
 
 
@@ -42,7 +42,7 @@ def check(base, head, trunk):
     if changed_pins:
         failures.append("Existing migration hash pins are immutable: " + ", ".join(changed_pins))
     claim_root = "eng/schema/migration-numbers"
-    claims = git_paths("diff", "--no-renames", "--diff-filter=MD", "--name-only", "-z", ancestor, head, "--", claim_root)
+    claims = git_paths("diff", "--no-renames", "--diff-filter=MDTT", "--name-only", "-z", ancestor, head, "--", claim_root)
     changed_claims = [path for path in claims if re.fullmatch(r"\d+\.txt", PurePosixPath(path).name)]
     if changed_claims:
         failures.append("Migration number claims are immutable: " + ", ".join(changed_claims))
