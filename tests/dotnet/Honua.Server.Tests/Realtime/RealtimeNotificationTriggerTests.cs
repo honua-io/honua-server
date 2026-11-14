@@ -16,7 +16,7 @@ public sealed class RealtimeNotificationTriggerTests(DatabaseFixtureAdapter data
     [UnitTest]
     public void Migration_IsAcceptedAsAdditiveByProductionSafetyClassifier()
     {
-        const string resource = "Honua.Server.Migrations.168_CreateRealtimeJobCatalogTriggers.sql";
+        const string resource = "Honua.Server.Migrations.175_CreateRealtimeJobCatalogTriggers.sql";
         using var stream = typeof(Program).Assembly.GetManifestResourceStream(resource)!;
         using var reader = new StreamReader(stream);
         var classification = MigrationSafetyClassifier.Classify(resource, reader.ReadToEnd());
@@ -100,9 +100,9 @@ public sealed class RealtimeNotificationTriggerTests(DatabaseFixtureAdapter data
     {
         var harness = await RealtimeLogHarness.CreateAsync(database);
         await harness.ApplyMigrationAsync("Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql");
-        await harness.ApplyMigrationAsync("Honua.Server.Migrations.168_CreateRealtimeJobCatalogTriggers.sql");
+        await harness.ApplyMigrationAsync("Honua.Server.Migrations.175_CreateRealtimeJobCatalogTriggers.sql");
         // Reapplying the additive DDL preserves the triggers without duplicating delivery.
-        await harness.ApplyMigrationAsync("Honua.Server.Migrations.168_CreateRealtimeJobCatalogTriggers.sql");
+        await harness.ApplyMigrationAsync("Honua.Server.Migrations.175_CreateRealtimeJobCatalogTriggers.sql");
         return harness;
     }
 
