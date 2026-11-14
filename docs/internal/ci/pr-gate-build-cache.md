@@ -12,7 +12,7 @@ longer controls this workflow.
 
 Promote only when **PR Gate p90 is strictly better over one week** against a
 comparable cache-off window. Use the workflow-duration population and percentile
-method in the [CI baseline](baseline-2026-08-29.md), with one-week windows. Cache-hit
+method in the [CI measurement method](ci-measurement-method.md), with one-week windows. Cache-hit
 rate is not the acceptance criterion: the #2708 lesson was that a good hit rate
 can still regress time to first test. Include cache restore/save overhead on
 hits and misses, disk usage, and key churn when interpreting the result. If p90
