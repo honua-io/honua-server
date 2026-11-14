@@ -5,6 +5,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
@@ -38,7 +39,7 @@ public sealed partial class FeatureServerSpatialReferenceTests
                          $"?where=objectid%20%3D%20{_pointObjectId}&outSR=4269&datumTransformation=108190&coordinateEpoch={Uri.EscapeDataString(epoch)}&f=json";
         using var response = await _fixture.Client.GetAsync(requestUri);
         var body = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest, body);
+        await response.AssertGeoServicesErrorAsync(400);
         body.Should().Contain("coordinateEpoch");
     }
 }
