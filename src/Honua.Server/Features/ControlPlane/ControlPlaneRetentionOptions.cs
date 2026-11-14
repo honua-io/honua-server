@@ -21,4 +21,7 @@ internal sealed class ControlPlaneRetentionOptions
 
     [Range(typeof(TimeSpan), ShortestRetention, LongestRetention)]
     public TimeSpan WorkflowOperations { get; set; } = TimeSpan.FromDays(7);
+
+    [Range(typeof(TimeSpan), ShortestRetention, LongestRetention)]
+    public TimeSpan WorkflowRuns { get; set; } = TimeSpan.FromDays(7);
 }

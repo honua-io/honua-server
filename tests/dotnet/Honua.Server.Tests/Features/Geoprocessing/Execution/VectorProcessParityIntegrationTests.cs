@@ -29,7 +29,6 @@ using Microsoft.Extensions.DependencyInjection;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Npgsql;
-using StackExchange.Redis;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
@@ -48,8 +47,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter database, RedisFixture redis)
-    : IClassFixture<RedisFixture>
+public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter database)
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
 
@@ -223,7 +221,7 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
             artifact.Metadata.Values.Should().NotContain(value => value.Contains("Host=", StringComparison.Ordinal));
 
             // Recreate the actual host and its DI graph while retaining only the
-            // owned Redis and Postgres substrate. Publication must consume the
+            // owned PostgreSQL substrate. Publication must consume the
             // committed job/package from those stores, not an in-memory handle.
             await fixture.RestartHostAsync();
             var restoredRun = await fixture.GetService<IWorkflowRunStore>().GetAsync(run.RunId);
@@ -990,13 +988,9 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     private static WebAppFixture BuildFixture()
         => new WebAppFixture().WithProductionJobSubstrate();
 
-    // The workflow definition and run stores live in Redis, and the orchestration engine is composed only when a multiplexer is registered.
+    // The workflow stores live in the system database, so the engine is composed once the host's data source is registered.
     private WebAppFixture BuildWorkflowFixture()
-        => BuildFixture().ConfigureServices(services =>
-        {
-            services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis.ConnectionString));
-            services.AddOrchestration();
-        });
+        => BuildFixture().ConfigureServices(services => services.AddOrchestration());
 
     private static Polygon BuildBoxPolygon(double minX, double minY, double maxX, double maxY)
     {
