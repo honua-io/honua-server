@@ -38,6 +38,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RenderMapTool>());
     }).ConfigureWebHost(builder =>
     {
+        builder.UseSetting("HONUA_DEV_AUTH", "false");
         builder.UseSetting("Operations:Policy:Enabled", "true");
         builder.UseSetting("Operations:Policy:Rules:0:OperationId", "style.apply-preset");
         builder.UseSetting("Operations:Policy:Rules:0:Decision", "RequireApproval");

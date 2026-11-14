@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -34,7 +35,8 @@ internal static class HumanApprovedOperation
         approved.IsSuccessStatusCode.Should().BeTrue(body);
         using var approval = JsonDocument.Parse(body);
         approval.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", body);
-        var operationId = approval.RootElement.GetProperty("executionOperationId").GetString();
+        var proposal = await fixture.Services.GetRequiredService<IOperationProposalStore>().GetAsync(proposalId);
+        var operationId = proposal!.Audit.OperationInstanceId;
         operationId.Should().NotBeNullOrWhiteSpace();
         using var readback = await human.GetAsync($"/api/v1/operations/handles/{operationId}");
         readback.EnsureSuccessStatusCode();
