@@ -19,7 +19,7 @@ import pr_gate_priority as priority
 class AdmissionTests(unittest.TestCase):
     def test_total_job_boundary_includes_side_jobs(self):
         for count, allowed in ((0, True), (7, True), (8, False), (139, False)):
-            result, _ = admission.decision({"shards": list(range(count)), "run_all": False}, False)
+            result, _ = admission.decision({"shards": list(range(count)), "run_all": False}, pr_busy=False)
             self.assertEqual(result, allowed, count)
 
     def test_full_routing_and_pr_backlog_defer_even_a_small_selection(self):
