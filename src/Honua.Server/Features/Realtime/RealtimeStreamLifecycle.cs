@@ -101,11 +101,13 @@ internal sealed class RealtimeStreamLifecycle(TimeProvider clock, IOptions<Realt
             await stagger.CancelAsync().ConfigureAwait(false);
             try
             {
-                await AwaitSignalsAsync(signals, stagger.Token).ConfigureAwait(false);
+                // A close callback may wait for its transport to abort. Enforce the
+                // deadline before waiting for those callbacks to complete.
+                AbortRemaining();
             }
             finally
             {
-                AbortRemaining();
+                await AwaitSignalsAsync(signals, stagger.Token).ConfigureAwait(false);
             }
         }
     }

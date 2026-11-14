@@ -44,6 +44,33 @@ public sealed class RealtimeStreamLifecycleTests
     }
 
     [UnitTest]
+    public async Task DrainAsync_CloseCallbackWaitsForAbort_EnforcesDeadline()
+    {
+        using var entered = new ManualResetEventSlim();
+        using var aborted = new ManualResetEventSlim();
+        var lifecycle = CreateLifecycle();
+        using var session = lifecycle.TryOpen(new(RealtimeFamily.Mcp, "sse", aborted.Set));
+        using var callback = session!.DrainingToken.Register(() =>
+        {
+            entered.Set();
+            aborted.Wait();
+        });
+
+        var drain = lifecycle.DrainAsync(CancellationToken.None);
+        try
+        {
+            (await Task.Run(() => entered.Wait(TimeSpan.FromSeconds(5)))).Should().BeTrue();
+            await drain.WaitAsync(TimeSpan.FromSeconds(5));
+            aborted.IsSet.Should().BeTrue("the transport must abort before waiting for close callbacks");
+        }
+        finally
+        {
+            aborted.Set();
+            await drain.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [UnitTest]
     public async Task DrainAsync_ReleasedStream_DoesNotAbort()
     {
         var aborted = false;
@@ -216,10 +243,10 @@ public sealed class RealtimeStreamLifecycleTests
     {
         foreach (var histogram in new[] { RealtimeMetrics.DeliveryLatency, RealtimeMetrics.DispatchLagSeconds })
         {
-            var boundaries = histogram.Advice?.HistogramBucketBoundaries;
+            var boundaries = histogram.Advice?.HistogramBucketBoundaries
+                ?? throw new InvalidOperationException($"Missing histogram boundaries for {histogram.Name}");
 
-            boundaries.Should().NotBeNull(histogram.Name);
-            boundaries!.Should().BeInAscendingOrder();
+            boundaries.Should().BeInAscendingOrder();
             boundaries.Should().Contain([1, 5], "the operator guide alarms at one and five seconds");
             boundaries.Count(boundary => boundary < 1).Should().BeGreaterThanOrEqualTo(5);
         }
