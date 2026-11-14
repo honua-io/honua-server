@@ -309,9 +309,11 @@ internal sealed record CollaborationFanOutResult
     public required int DeliveredCount { get; init; }
 }
 
-internal sealed record CollaborationBackplaneMessage
+internal sealed record CollaborationPresenceMessage
 {
     public required string OriginInstanceId { get; init; }
+
+    public CollaborationParticipantPresence? Presence { get; init; }
 
     public required CollaborationEventEnvelope Event { get; init; }
 }
