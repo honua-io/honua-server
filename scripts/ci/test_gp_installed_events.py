@@ -14,7 +14,8 @@ class InstalledEventTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.receipt = {'eventsSchema': SCHEMA, 'events': 'events.jsonl',
-                        'status': 'succeeded', 'exitCode': 0}
+                        'status': 'succeeded', 'exitCode': 0,
+                        'eventsTruncated': False, 'eventsDropped': 0}
         self.records = [
             self.event('phase', phase='setup'),
             self.event('progress', phase='execute', percent=50),
@@ -48,8 +49,34 @@ class InstalledEventTests(unittest.TestCase):
         self.records.insert(-1, self.event('failure', error={'type': 'ToolError', 'message': 'failed'}))
         self.records.insert(-1, self.event('truncated', dropped=3, maxEvents=1000, maxBytes=262144))
         self.records[-1].update(status='failed', exitCode=1)
-        self.receipt.update(status='failed', exitCode=1)
+        self.receipt.update(status='failed', exitCode=1, eventsTruncated=True, eventsDropped=3)
         self.validate()
+
+    def test_decreasing_elapsed_time_is_rejected(self):
+        self.records[0]['elapsedMs'] = 100
+        with self.assertRaisesRegex(AssertionError, 'Decreasing'):
+            self.validate()
+
+    def test_inconsistent_truncation_is_rejected(self):
+        disclosure = self.event('truncated', dropped=3, maxEvents=1000, maxBytes=262144)
+        self.records.insert(-1, disclosure)
+        with self.assertRaisesRegex(AssertionError, 'flag'):
+            self.validate()
+        self.receipt.update(eventsTruncated=True, eventsDropped=2)
+        with self.assertRaisesRegex(AssertionError, 'count'):
+            self.validate()
+        self.receipt['eventsDropped'] = 3
+        self.records.insert(0, self.records.pop(-2))
+        with self.assertRaisesRegex(AssertionError, 'immediately'):
+            self.validate()
+        self.records.insert(-1, disclosure)
+        with self.assertRaisesRegex(AssertionError, 'immediately'):
+            self.validate()
+
+    def test_missing_truncation_disclosure_is_rejected(self):
+        self.receipt.update(eventsTruncated=True, eventsDropped=3)
+        with self.assertRaisesRegex(AssertionError, 'Missing truncation'):
+            self.validate()
 
     def test_invalid_known_fields_are_rejected(self):
         cases = [(0, 'v', 2), (0, 'v', True), (0, 'elapsedMs', -1),

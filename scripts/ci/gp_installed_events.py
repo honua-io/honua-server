@@ -29,6 +29,7 @@ def validate_journal(receipt_path):
         assert re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z', record['at']), 'Invalid UTC timestamp'
         datetime.fromisoformat(record['at'].replace('Z', '+00:00'))
         validate_payload(record, receipt, seq == len(records) - 1)
+    validate_journal_order(records, receipt)
     assert records[-1]['kind'] == 'terminal', 'Missing terminal event'
     return records
 
@@ -57,3 +58,18 @@ def validate_payload(record, receipt, is_last):
         assert type(record['exitCode']) is int, 'Invalid terminal exit code'
         assert record['status'] == receipt['status'], 'Terminal status disagrees with receipt'
         assert record['exitCode'] == receipt['exitCode'], 'Terminal exit code disagrees with receipt'
+
+
+def validate_journal_order(records, receipt):
+    """Check measured time and truncation disclosure across the complete run."""
+    elapsed = [record['elapsedMs'] for record in records]
+    assert elapsed == sorted(elapsed), 'Decreasing elapsedMs'
+    disclosures = [index for index, record in enumerate(records) if record['kind'] == 'truncated']
+    assert type(receipt['eventsTruncated']) is bool, 'Invalid receipt truncation flag'
+    assert type(receipt['eventsDropped']) is int and receipt['eventsDropped'] >= 0, 'Invalid receipt dropped count'
+    if disclosures:
+        assert disclosures == [len(records) - 2], 'Truncation disclosure must immediately precede terminal'
+        assert receipt['eventsTruncated'], 'Missing receipt truncation flag'
+        assert records[disclosures[0]]['dropped'] == receipt['eventsDropped'], 'Truncation count disagrees with receipt'
+    else:
+        assert not receipt['eventsTruncated'] and receipt['eventsDropped'] == 0, 'Missing truncation disclosure'
