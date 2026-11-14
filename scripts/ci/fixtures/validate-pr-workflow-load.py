@@ -90,11 +90,32 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=name):
                 self.assertIn("github.event.pull_request.number", concurrency.get("group", ""))
                 cancellation = concurrency.get("cancel-in-progress")
-                if name in ("normalize-derived-artifacts.yml", "auto-merge-ready.yml"):
+                if name == "auto-merge-ready.yml":
                     self.assertEqual(cancellation, "false")
                     self.assertEqual(concurrency.get("queue"), "max")
                 else:
                     self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
+
+    def test_normalization_cancels_only_eligible_pr_work(self):
+        definition = workflow("normalize-derived-artifacts.yml")
+        group = definition["concurrency"]["group"]
+        self.assertEqual(definition["concurrency"]["cancel-in-progress"], "true")
+        self.assertIn("!github.event.pull_request.draft", group)
+        self.assertIn("github.event.changes.base.ref.from != null", group)
+        self.assertIn("format('ignored-{0}', github.run_id)", group)
+        condition = definition["jobs"]["generate"]["if"]
+        for draft, action, changes, admitted in (
+            (True, "synchronize", {}, False),
+            (False, "synchronize", {}, True),
+            (False, "ready_for_review", {}, True),
+            (False, "edited", {"base": {"ref": {"from": "old-base"}}}, True),
+            (False, "edited", {"base": {"ref": {"from": None}}}, False),
+        ):
+            with self.subTest(draft=draft, action=action, changes=changes):
+                event = {"event_name": "pull_request", "event": {
+                    "pull_request": {"draft": draft}, "action": action, "changes": changes,
+                }}
+                self.assertEqual(evaluate(condition, event), admitted)
 
     def test_required_checks_keep_draft_admission_and_names(self):
         gate = workflow("pr-gate.yml")
@@ -253,7 +274,7 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=path.name):
                 types = definition["on"]["pull_request"].get("types", [])
                 self.assertIn("ready_for_review", types)
-                if definition.get("concurrency", {}).get("cancel-in-progress") != "false":
+                if path.name != "normalize-derived-artifacts.yml" and definition.get("concurrency", {}).get("cancel-in-progress") != "false":
                     self.assertIn("converted_to_draft", types)
             for key, job in definition["jobs"].items():
                 with self.subTest(workflow=path.name, job=key):
