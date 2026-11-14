@@ -8,6 +8,7 @@ using Honua.Server.Features.Realtime;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Npgsql;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Realtime;
@@ -91,9 +92,20 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
         var subscribers = new List<Subscriber>(_profile.Subscribers);
         for (var i = 0; i < _profile.Subscribers; i++)
         {
-            var response = await TwoHostFeatureHarness.OpenStreamAsync(i % 2 == 0 ? clientA : clientB, null, run.Token);
+            HttpResponseMessage response;
+            try
+            {
+                response = await TwoHostFeatureHarness.OpenStreamAsync(i % 2 == 0 ? clientA : clientB, null, run.Token);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                throw new InvalidOperationException(
+                    $"Opening subscriber {i} of {_profile.Subscribers} failed; database sessions: {await DescribeDatabaseSessionsAsync()}",
+                    exception);
+            }
             subscribers.Add(new Subscriber(response));
         }
+        _output.WriteLine($"after opening subscribers: {await DescribeDatabaseSessionsAsync()}");
         var context = new DeliveryContext(_marker, startedAt, latencies);
         var reading = subscribers.Select(subscriber => subscriber.ReadAsync(context, total, run.Token)).ToArray();
 
@@ -133,6 +145,32 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
         listeners.Should().OnlyContain(listener => listener.IsConnected);
         listeners.Select(listener => listener.ProcessId).Should().OnlyHaveUniqueItems();
         listeners.Select(listener => listener.Reconnects).Should().Equal(reconnectsBefore);
+    }
+
+    // Who holds database connections: a subscriber that keeps one, or a pool that grows with
+    // subscribers, shows up here directly.
+    private async Task<string> DescribeDatabaseSessionsAsync()
+    {
+        try
+        {
+            await using var connection = new NpgsqlConnection(_taskA.DatabaseConnectionProvider.GetConnectionString());
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand(
+                "SELECT coalesce(application_name, '') || '/' || coalesce(state, '') || '=' || count(*) " +
+                "FROM pg_stat_activity WHERE backend_type = 'client backend' GROUP BY application_name, state " +
+                "UNION ALL SELECT 'max_connections=' || current_setting('max_connections')", connection);
+            var rows = new List<string>();
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                rows.Add(reader.GetString(0));
+            }
+            return string.Join(", ", rows);
+        }
+        catch (NpgsqlException exception)
+        {
+            return $"unavailable ({exception.Message})";
+        }
     }
 
     // Edits alternate between the two tasks at the profile rate. Each edit is issued on its own
