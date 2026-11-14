@@ -29,15 +29,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsRedisOff;
 
-/// <summary>
-/// Owner decision 20 (2026-10-10), host composition: the real composition root booted in
-/// <c>Production</c> with NO Redis connection. The terminal journey's operator publishes through
-/// <c>honua_publish_service</c>; before the ruling stage 3 of honua-release run 38066103745
-/// (aws-serverless/redis-off) recorded <c>code=unavailable; missingDependency=redis</c> for an
-/// <c>admin:write</c> key, so nothing was ever published on a Redis-off cell. A policy-allowed
-/// admin publish now completes with the canonical handle fields; a layer write key is still
-/// refused, and a proposal-requiring path keeps the typed Redis refusal.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Create)]
@@ -87,6 +78,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
             {
                 // Deliberately no ConnectionStrings:redis.
                 builder.UseSetting("Licensing:Mode", "Disabled");
+                builder.UseSetting("Public:BaseUrl", "https://localhost");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
 
@@ -115,10 +107,11 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
         UnavailableOperationProposalStore.IsDurable(_fixture.Services.GetService<IOperationProposalStore>())
             .Should().BeTrue("the system database carries the control plane");
 
-        using var admin = ApiKeyClient(AdminPassword);
+        var key = await CreateKeyAsync("redis-off-admin", ["admin:*"]);
+        using var admin = ApiKeyClient(key);
         var output = await CallToolAsync(admin, PublishArguments("admin-parcels"));
 
-        AssertCanonicalDirectPublish(output);
+        await AssertApprovedPublishAsync(output);
     }
 
     [IntegrationTest]
@@ -130,7 +123,19 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
 
         var output = await CallToolAsync(operatorClient, PublishArguments("operator-parcels"));
 
-        AssertCanonicalDirectPublish(output);
+        await AssertApprovedPublishAsync(output);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp tools/call honua_publish_service")]
+    public async Task RedisOffProduction_BootstrapPublish_RequiresApprovalWithoutPublishing()
+    {
+        using var admin = ApiKeyClient(AdminPassword);
+        var output = await CallToolAsync(admin, PublishArguments("bootstrap-parcels"));
+
+        output.GetProperty("status").GetString().Should().Be("RequiresApproval", output.GetRawText());
+        await _publishing.DidNotReceive().PublishLayerAsync(
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
     }
 
     [IntegrationTest]
@@ -171,9 +176,20 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
             publicationType: MetadataV2PublicationType.EsriFeatureLayer)
         .BuildProvider();
 
-    private void AssertCanonicalDirectPublish(JsonElement output)
+    private async Task AssertApprovedPublishAsync(JsonElement proposal)
     {
-        output.TryGetProperty("policyOutcome", out _).Should().BeTrue(output.GetRawText());
+        proposal.GetProperty("status").GetString().Should().Be("RequiresApproval", proposal.GetRawText());
+        await _publishing.DidNotReceive().PublishLayerAsync(
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+        var output = await HumanApprovedOperation.ApproveAndReadHandleAsync(
+            _fixture, proposal.GetProperty("proposalId").GetString()!);
+        await _publishing.Received(1).PublishLayerAsync(
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+        AssertCanonicalPublish(output);
+    }
+
+    private static void AssertCanonicalPublish(JsonElement output)
+    {
         output.GetProperty("status").GetString().Should().Be("Completed", output.GetRawText());
         output.GetProperty("operationId").GetString().Should().Be(ServicePublishOperation.OperationId);
         var operationInstanceId = output.GetProperty("operationInstanceId").GetString();
@@ -181,14 +197,15 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
         output.GetProperty("handleId").GetString().Should().Be(operationInstanceId);
         output.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
         output.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace();
-        output.GetProperty("policyOutcome").GetString().Should().Be("Allow");
+        output.GetProperty("policyDecision").GetString().Should().Be("Allow");
         output.GetProperty("authorizationOutcome").GetString().Should().NotBeNullOrWhiteSpace();
         output.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString())
             .Should().NotContain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
-        output.GetProperty("storageLayerId").GetString().Should().Be("321");
-        output.TryGetProperty("serviceLayerIndex", out var serviceLayerIndex).Should().BeTrue(output.GetRawText());
+        var details = output.GetProperty("result").GetProperty("details");
+        details.GetProperty("storageLayerId").GetString().Should().Be("321");
+        details.TryGetProperty("serviceLayerIndex", out var serviceLayerIndex).Should().BeTrue(output.GetRawText());
         serviceLayerIndex.GetString().Should().Be("3");
-        output.TryGetProperty("layerId", out _).Should().BeFalse();
+        details.TryGetProperty("layerId", out _).Should().BeFalse();
     }
 
     private static string PublishArguments(string layerName)

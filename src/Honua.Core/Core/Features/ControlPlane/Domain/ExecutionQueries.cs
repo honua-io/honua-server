@@ -45,6 +45,8 @@ public sealed record ExecutionJobQuery
     /// </summary>
     public string? TenantId { get; init; }
 
+    public bool IncludeUnassignedTenant { get; init; }
+
     /// <summary>
     /// Optional correlation identifier filter.
     /// </summary>
