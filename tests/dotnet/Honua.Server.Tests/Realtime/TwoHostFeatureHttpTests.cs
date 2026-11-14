@@ -220,7 +220,7 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
                 // Edits keep committing on task A while task B shuts down underneath an open
                 // stream, so the break lands at whatever point delivery had reached.
                 _taskBStopped = true;
-                stopping = _taskB.DisposeAsync().AsTask();
+                stopping = _taskB.DisposeAsync();
             }
             committed.Add(await AddAsync(writer, i, timeout.Token));
         }
