@@ -261,8 +261,15 @@ public sealed class CapabilityRegistryConformanceTests
     public void RegistryResourceUris_MatchLiveResourceUris()
     {
         var resources = BuildLiveResources();
-        var liveUris = resources.SelectMany(r => r.Describe()).Select(d => d.Uri)
-            .Concat(resources.SelectMany(r => r.DescribeTemplates()).Select(d => d.UriTemplate))
+        var skills = OperatingSkillsResource.Instance;
+        skills.Describe().Should().NotBeEmpty();
+        skills.Describe().Should().OnlyContain(d => skills.CanHandle(d.Uri)
+            && d.Uri.StartsWith("skill://", StringComparison.Ordinal),
+            "the embedded skill bundle owns the concrete files in its registered URI family");
+        var fixedResources = resources.Where(r => r is not OperatingSkillsResource).ToArray();
+        var liveUris = fixedResources.SelectMany(r => r.Describe()).Select(d => d.Uri)
+            .Concat(fixedResources.SelectMany(r => r.DescribeTemplates()).Select(d => d.UriTemplate))
+            .Append("skill://{skill}/{path}")
             .ToHashSet(StringComparer.Ordinal);
 
         var registryUris = Registry.All
@@ -428,7 +435,7 @@ public sealed class CapabilityRegistryConformanceTests
         var drafts = new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System);
         return
         [
-            new OperatingSkillsResource(),
+            OperatingSkillsResource.Instance,
             new TemporaryFileResource(Substitute.For<IGeoprocessingJobService>(), Options.Create(new TemporaryFileOptions()), NullLogger<TemporaryFileResource>.Instance),
             new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
             new JobResultsResource(jobService, NullLogger<JobResultsResource>.Instance),

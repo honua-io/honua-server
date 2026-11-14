@@ -45,6 +45,8 @@ docker/compose/
 # Documentation
 *.md
 !THIRD-PARTY-NOTICES.md
+# Runtime MCP resources embed the canonical operating skill bundle.
+!skills/**/*.md
 docs/
 !docs/developer/
 !docs/developer/api-specs/
