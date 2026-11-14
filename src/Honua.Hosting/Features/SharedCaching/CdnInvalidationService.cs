@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Infrastructure.Middleware;
@@ -31,10 +32,11 @@ internal sealed partial class CdnInvalidationService(
     // While the emergency setting is on, edits reach the CDN sooner.
     internal static readonly TimeSpan EmergencyCoalescingWindow = TimeSpan.FromSeconds(5);
 
-    // Above this many wildcard paths one invalidation of everything is cheaper for the CDN than naming them.
-    internal const int MaxWildcardPathsPerInvalidation = 6;
+    // Above this many wildcard paths one invalidation of everything is cheaper for the CDN than naming them. Two edits of
+    // different layers of one service fit, and two such requests stay within the CDN's 15 wildcard paths in progress.
+    internal const int MaxWildcardPathsPerInvalidation = 7;
 
-    // Tags are not wildcards, but a request names at most 3000 items; well before that, everything is cheaper.
+    // Bound tag requests below the provider limit without widening a scoped purge to every object.
     internal const int MaxTagsPerInvalidation = 1000;
 
     // A lease ends this much before the window does, so the task's own timer, started a database round trip earlier, finds it expired.
@@ -64,8 +66,8 @@ internal sealed partial class CdnInvalidationService(
         CdnPurgeCause? cause = null)
     {
         var result = await SendWithinLimitsAsync([.. paths], cause ?? CauseOfCurrentRequest(), cancellationToken).ConfigureAwait(false);
-        ReportOnCurrentResponse(result);
-        return result;
+        ReportOnCurrentResponse(result.Result);
+        return result.Result;
     }
 
     internal Task InvalidateAfterEditAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken)
@@ -139,7 +141,8 @@ internal sealed partial class CdnInvalidationService(
 
         var result = await SendAfterEditAsync(paths, CdnPurgeCause.Edit(CdnPurgeCause.CoalescedEdits), CancellationToken.None)
             .ConfigureAwait(false);
-        if (result is { Failed: true })
+        // A busy CDN has already been handed the paths again for the next window.
+        if (result is { Outcome: CdnInvalidationOutcome.Failed })
         {
             Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
         }
@@ -163,7 +166,14 @@ internal sealed partial class CdnInvalidationService(
                 return null;
             }
 
-            result = await SendWithinLimitsAsync(claimed, cause, cancellationToken).ConfigureAwait(false);
+            var batches = await SendWithinLimitsAsync(claimed, cause, cancellationToken).ConfigureAwait(false);
+            result = batches.Result;
+
+            // This task holds the leases, so no other task will send these; a CDN still busy after the retries gets them next window.
+            if (batches.BusyPaths.Count > 0)
+            {
+                DeferToNextWindow(batches.BusyPaths, CurrentCoalescingWindow());
+            }
         }
         catch (OperationCanceledException)
         {
@@ -246,27 +256,105 @@ internal sealed partial class CdnInvalidationService(
             ? EmergencyCoalescingWindow
             : CoalescingWindow;
 
-    private async Task<CdnInvalidationResult> SendWithinLimitsAsync(
+    private sealed record BatchInvalidationResult(CdnInvalidationResult Result, IReadOnlyCollection<string> BusyPaths);
+
+    private async Task<BatchInvalidationResult> SendWithinLimitsAsync(
         string[] paths,
         CdnPurgeCause cause,
         CancellationToken cancellationToken)
     {
+        var busyPaths = new List<string>();
         var distinctPaths = paths.Distinct(StringComparer.Ordinal).ToArray();
-        // A tag is not a wildcard: it does not count toward the wildcard paths the CDN allows in progress.
-        var tags = distinctPaths.Count(CdnCacheTags.IsTagInvalidation);
-        var withinBudget = distinctPaths.Length - tags > MaxWildcardPathsPerInvalidation || tags > MaxTagsPerInvalidation
-            ? CdnPaths.Everything
-            : distinctPaths;
-        var result = await SendWithRetriesAsync(withinBudget, cancellationToken).ConfigureAwait(false);
-        if (result.Outcome is not CdnInvalidationOutcome.NotConfigured)
+        var tags = distinctPaths.Where(CdnCacheTags.IsTagInvalidation).ToArray();
+        var wildcardPaths = distinctPaths.Where(path => !CdnCacheTags.IsTagInvalidation(path)).ToArray();
+        if (wildcardPaths.Length > MaxWildcardPathsPerInvalidation)
+        {
+            return new(await SendBatchAsync(CdnPaths.Everything).ConfigureAwait(false), busyPaths);
+        }
+
+        if (tags.Length <= MaxTagsPerInvalidation)
+        {
+            return new(await SendBatchAsync(distinctPaths).ConfigureAwait(false), busyPaths);
+        }
+
+        var combined = CdnInvalidationResult.NotConfigured;
+        foreach (var batch in tags.Chunk(MaxTagsPerInvalidation))
+        {
+            var result = await SendBatchAsync(batch).ConfigureAwait(false);
+            combined = CombineBatchResults(combined, result);
+        }
+
+        if (wildcardPaths.Length > 0)
+        {
+            var result = await SendBatchAsync(wildcardPaths).ConfigureAwait(false);
+            combined = CombineBatchResults(combined, result);
+        }
+
+        return new(combined, busyPaths);
+
+        async Task<CdnInvalidationResult> SendBatchAsync(IReadOnlyCollection<string> batch)
+        {
+            var result = await SendAndRecordAsync(batch, cause, cancellationToken).ConfigureAwait(false);
+            if (result.Outcome is CdnInvalidationOutcome.Busy)
+            {
+                busyPaths.AddRange(batch);
+            }
+
+            return result;
+        }
+    }
+
+    private static CdnInvalidationResult CombineBatchResults(CdnInvalidationResult combined, CdnInvalidationResult next)
+        => combined.Outcome is CdnInvalidationOutcome.Failed ? combined
+            : next.Outcome is CdnInvalidationOutcome.Failed ? next
+            : combined.Failed ? combined : next;
+
+    private async Task<CdnInvalidationResult> SendAndRecordAsync(
+        IReadOnlyCollection<string> paths,
+        CdnPurgeCause cause,
+        CancellationToken cancellationToken)
+    {
+        var result = await SendAndMeasureAsync(paths, cause, cancellationToken).ConfigureAwait(false);
+        if (result.Outcome is CdnInvalidationOutcome.NotConfigured)
+        {
+            return result;
+        }
+
+        if (logger.IsEnabled(LogLevel.Information))
         {
             var outcome = result.Outcome.ToString();
-            var purgedPaths = string.Join(' ', withinBudget);
+            var recordedPaths = string.Join(' ', paths);
             Log.PurgeRecorded(
-                logger, cause.Reason, cause.ChangeId, Environment.MachineName, outcome, result.Detail ?? string.Empty, purgedPaths);
+                logger, cause.Reason, cause.ChangeId, Environment.MachineName, outcome,
+                result.Detail ?? string.Empty, recordedPaths);
         }
 
         return result;
+    }
+
+    private async Task<CdnInvalidationResult> SendAndMeasureAsync(
+        IReadOnlyCollection<string> paths, CdnPurgeCause cause, CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var outcome = "failed";
+        try
+        {
+            var result = await SendWithRetriesAsync(paths, cancellationToken).ConfigureAwait(false);
+            outcome = result.Outcome.ToString().ToLowerInvariant();
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            outcome = "canceled";
+            throw;
+        }
+        finally
+        {
+            if (outcome != "notconfigured")
+            {
+                SharedCacheMetrics.RecordPurge(cause, new CdnPurgeSample(paths, outcome, Stopwatch.GetElapsedTime(started)));
+            }
+        }
     }
 
     private async Task<CdnInvalidationResult> SendWithRetriesAsync(IReadOnlyCollection<string> withinBudget, CancellationToken cancellationToken)

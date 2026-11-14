@@ -267,6 +267,9 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     ErrorCode = result.ErrorCode,
                     Warnings = result.Warnings,
                     DetectedSrid = result.DetectedSrid,
+                    SourceSrid = result.SourceSrid,
+                    StoredSrid = result.StoredSrid,
+                    Reprojected = result.Reprojected,
                     CurrentPhase = result.Success ? "Import completed" : "Import failed"
                 };
                 state.Result = result.Success ? result : result with { ErrorMessage = clientErrorMessage };

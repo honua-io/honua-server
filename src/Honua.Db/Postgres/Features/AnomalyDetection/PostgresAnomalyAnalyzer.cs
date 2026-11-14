@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Features.AnomalyDetection.Abstractions;
 using Honua.Core.Features.AnomalyDetection.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -561,7 +562,7 @@ internal sealed partial class PostgresAnomalyAnalyzer(
             throw new ArgumentException($"Invalid SQL identifier: '{identifier}'.");
         }
 
-        return $"\"{identifier.Replace("\"", "\"\"")}\"";
+        return SqlIdentifier.QuoteIdentifier(identifier);
     }
 
     [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]

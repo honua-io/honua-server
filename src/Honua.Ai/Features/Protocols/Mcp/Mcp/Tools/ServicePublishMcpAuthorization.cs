@@ -32,6 +32,13 @@ internal static class ServicePublishMcpAuthorization
                 message: "Caller is not authorized to invoke admin operations.");
         }
 
+        // An agent's publish is routed to approval by the dispatcher's agent rule, which files a
+        // proposal for a person to approve rather than refusing the call.
+        if (AgentPrincipal.IsAgent(principal))
+        {
+            return authorization.AuthorizationOutcome;
+        }
+
         var gate = httpContext.RequestServices.GetService<OperatorApprovalGate>()
             ?? throw new InvalidOperationException(
                 "The operator approval gate is unavailable in this composition.");

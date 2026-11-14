@@ -974,7 +974,7 @@ class PostGISFixture:
                     (layer_id, layer_id, layer_id),
                 )
 
-                self._seed_metadata_v2_snapshot(conn)
+                self._seed_metadata_and_configuration(conn)
 
                 conn.commit()
             finally:
@@ -985,10 +985,16 @@ class PostGISFixture:
         with self.get_connection(schema) as conn:
             conn.execute("SELECT pg_advisory_lock(%s);", (self.CATALOG_LOCK_KEY,))
             try:
-                self._seed_metadata_v2_snapshot(conn)
+                self._seed_metadata_and_configuration(conn)
                 conn.commit()
             finally:
                 conn.execute("SELECT pg_advisory_unlock(%s);", (self.CATALOG_LOCK_KEY,))
+
+    def _seed_metadata_and_configuration(self, conn: psycopg.Connection) -> None:
+        self._seed_metadata_v2_snapshot(conn)
+        # Configuration triggers require the metadata baseline to exist first.
+        configuration_sql = (MIGRATIONS_DIR / "156_CreateConfigurationDocuments.sql").read_text()
+        conn.execute(configuration_sql.replace("$HonuaSchema$", "honua"))
 
     @staticmethod
     def _metadata_id_part(value: object) -> str:

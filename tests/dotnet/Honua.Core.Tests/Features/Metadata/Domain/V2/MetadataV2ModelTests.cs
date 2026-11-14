@@ -18,9 +18,8 @@ public sealed class MetadataV2ModelTests
 {
     [UnitTheory]
     [Operation(Operations.Metadata)]
-    [InlineData("{\"status\":{}}")]
     [InlineData("{\"identifier\":null,\"status\":{}}")]
-    public void DeserializePublication_MissingOrNullIdentifier_PreservesNullWireShape(string json)
+    public void DeserializePublication_NullIdentifier_PreservesNullWireShape(string json)
     {
         var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Publication)!;
 
@@ -37,7 +36,6 @@ public sealed class MetadataV2ModelTests
 
     [UnitTheory]
     [Operation(Operations.Metadata)]
-    [InlineData("{\"layerIndex\":7,\"path\":\"parcels\",\"serviceLocalId\":\"local\",\"status\":{}}")]
     [InlineData("{\"identifier\":null,\"layerIndex\":7,\"path\":\"parcels\",\"serviceLocalId\":\"local\",\"status\":{}}")]
     public void DeserializePublication_LegacyIdentifiers_PreservesValues(string json)
     {
@@ -49,6 +47,42 @@ public sealed class MetadataV2ModelTests
         publication.ServiceLocalId.Should().Be("local");
         JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Publication)
             .Should().Contain("\"layerIndex\":7").And.Contain("\"identifier\":null");
+    }
+
+    // An absent identifier member keeps the property initializer (an empty identifier); only an
+    // explicit null stays null. The empty identifier derives nothing, so legacy layerIndex, path
+    // and serviceLocalId values still win, exactly as with a null identifier.
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void DeserializePublication_MissingIdentifier_UsesEmptyIdentifier()
+    {
+        AssertMissingIdentifierPreservesLegacyValues("{\"status\":{}}", new MetadataV2Publication());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void DeserializePublication_MissingIdentifier_PreservesLegacyValues()
+    {
+        AssertMissingIdentifierPreservesLegacyValues(
+            "{\"layerIndex\":7,\"path\":\"parcels\",\"serviceLocalId\":\"local\",\"status\":{}}",
+            new MetadataV2Publication { LayerIndex = 7, Path = "parcels", ServiceLocalId = "local" });
+    }
+
+    private static void AssertMissingIdentifierPreservesLegacyValues(string json, MetadataV2Publication expected)
+    {
+        var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Publication)!;
+
+        publication.Identifier.Should().Be(new MetadataV2PublicationIdentifier());
+        publication.LayerIndex.Should().Be(expected.LayerIndex);
+        publication.Path.Should().Be(expected.Path);
+        publication.ServiceLocalId.Should().Be(expected.ServiceLocalId);
+        var roundTrip = JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Publication),
+            MetadataV2JsonContext.Default.MetadataV2Publication)!;
+        roundTrip.Identifier.Should().Be(publication.Identifier);
+        roundTrip.LayerIndex.Should().Be(expected.LayerIndex);
+        roundTrip.Path.Should().Be(expected.Path);
+        roundTrip.ServiceLocalId.Should().Be(expected.ServiceLocalId);
     }
 
     [UnitTest]

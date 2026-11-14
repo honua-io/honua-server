@@ -460,7 +460,7 @@ public sealed partial class CapabilityManifestEndpointTests
             .Select(provider => provider.GetString()).Should().Contain(
                 "postgis");
         stores.GetProperty("fullImageTagSuffix").GetString().Should().Be("-full");
-        stores.GetProperty("documentationHref").GetString().Should().EndWith("/docs/ops/nightly-images.md#data-store-variants");
+        stores.GetProperty("documentationHref").GetString().Should().EndWith("/docs/guides/operate/nightly-images.md#data-store-variants");
     }
 
     [IntegrationTest]

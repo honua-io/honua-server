@@ -25,6 +25,8 @@ public interface IStudioPackageStore
     /// <summary>Deletes a mutable package draft.</summary>
     Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
+    Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default);
+
     /// <summary>Creates an immutable package content version.</summary>
     Task<StudioContentVersion> CreateVersionAsync(StudioPackageDraft draft, string? changeNote, string? actorId, CancellationToken cancellationToken = default);
 
@@ -241,6 +243,8 @@ public interface IStudioPackageLifecycleService
 
     /// <summary>Deletes a mutable package draft.</summary>
     Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
+
+    Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default);
 
     /// <summary>Validates a mutable package draft and persists the validation summary.</summary>
     Task<StudioValidationSummary?> ValidateDraftAsync(Guid draftId, string? actorId, CancellationToken cancellationToken = default);

@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />
+    <!-- Pin the patched PKCS dependency selected by the database client (CVE-2026-84008 / CVE-2026-70162). -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />

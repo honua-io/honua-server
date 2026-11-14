@@ -50,6 +50,16 @@ Every invalidation is logged once as a purge record (event 10311): the reason (`
 
 Pro editions also keep cached metadata, tiles and styles in each task's memory. Each entry is keyed by the catalog revision, so after a change on any task every other task stops replaying its entries within the revision check interval (`Cache__MetadataGraphRevalidationSeconds`, default 2 s). An entry for a layer, service, collection or scene is stored only after its access check allowed an anonymous caller, and no entry lives longer than the CDN lifetime of its response, so a task never hands the CDN an older copy after a purge.
 
+The exported `Honua` meter includes these origin cache instruments:
+
+| Instrument | Dimensions | Meaning |
+| --- | --- | --- |
+| `honua_shared_cache_output_requests_total` | `cache_class`, `outcome` | One hit, miss, or bypass per response on a declared cache route. |
+| `honua_shared_cache_purge_requests_total` | `reason`, `scope`, `outcome` | One logical CDN submission per batch, after bounded retries. |
+| `honua_shared_cache_purge_duration_seconds` | `reason`, `scope`, `outcome` | Submission duration, including retries. |
+
+Purge outcomes include submitted, failed, busy, and canceled; an unconfigured CDN emits no purge measurements. A submitted purge is accepted by the provider; its completion is asynchronous. Scope is `all`, `tags`, or `paths`. Dimensions never include resource names, paths, tenant identifiers, or change IDs. Use purge records to investigate a specific change. These counters describe the origin cache and submissions; CDN edge hit ratios come from distribution telemetry.
+
 Responses on cached routes carry an RFC 9211 `Cache-Status` header for this cache:
 
 | Value | Meaning |

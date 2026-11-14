@@ -200,7 +200,7 @@ jobs:
       - name: Set up .NET
         uses: ./.github/actions/setup-dotnet-ci
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '11.0.x'
 
       - name: Set up Go (gpq / go-pmtiles)
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

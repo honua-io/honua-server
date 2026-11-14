@@ -28,7 +28,7 @@ internal static class ImportObjectStoreCoordinator
 
         public int? SourceSrid { get; init; }
 
-        public int TargetSrid { get; init; } = 4326;
+        public int? TargetSrid { get; init; }
 
         public bool OverwriteExisting { get; init; }
 

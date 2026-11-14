@@ -11,5 +11,8 @@ public interface ICrsRegistry
 
     ValueTask<CrsDefinition?> ResolveBySridAsync(int srid, CancellationToken cancellationToken = default);
 
+    ValueTask<CoordinateSystemSearchResult> SearchAsync(string query, int limit, CancellationToken cancellationToken = default)
+        => ValueTask.FromException<CoordinateSystemSearchResult>(new NotSupportedException("The coordinate-system catalog is unavailable."));
+
     ValueTask<bool> IsSridSupportedAsync(int srid, CancellationToken cancellationToken = default);
 }

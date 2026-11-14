@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
@@ -325,8 +326,6 @@ internal sealed partial class FeatureQueryBuilder
 
     private static string SanitizeAlias(string alias)
     {
-        // Use double-quoting for safe SQL identifiers
-        var escaped = alias.Replace("\"", "\"\"");
-        return $"\"{escaped}\"";
+        return SqlIdentifier.QuoteIdentifier(alias);
     }
 }
