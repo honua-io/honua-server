@@ -17,7 +17,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Import;
 
 [Collection("Unit")]
-public sealed class ImportExecutionJobQueueTests
+public sealed partial class ImportExecutionJobQueueTests
 {
     [UnitTest]
     public async Task SubmitAsync_EnqueueFails_RetainsRequestForDispatchRepairAndProgressRecovery()
@@ -32,10 +32,10 @@ public sealed class ImportExecutionJobQueueTests
         await acceptingNode.SubmitAsync(request, Initial(request));
 
         var recoveringNode = Manager(jobs, queue);
-        var record = (await jobs.GetAsync(request.JobId))!;
+        var record = (await jobs.GetAsync(request.JobId!))!;
         recoveringNode.ReadRequest(record).Should().BeEquivalentTo(request);
-        (await recoveringNode.ProgressStore.GetProgressAsync(request.JobId))!.Status.Should().Be(GeoservicesImportStatus.Queued);
-        (await recoveringNode.ProgressStore.GetActiveJobIdsAsync()).Should().Contain(request.JobId);
+        (await recoveringNode.ProgressStore.GetProgressAsync(request.JobId!))!.Status.Should().Be(GeoservicesImportStatus.Queued);
+        (await recoveringNode.ProgressStore.GetActiveJobIdsAsync()).Should().Contain(request.JobId!);
     }
 
     [UnitTest]
@@ -46,7 +46,7 @@ public sealed class ImportExecutionJobQueueTests
         var request = Request();
         var initial = Initial(request);
         await manager.SubmitAsync(request, initial);
-        await manager.ProgressStore.SetProgressAsync(request.JobId, initial with
+        await manager.ProgressStore.SetProgressAsync(request.JobId!, initial with
         {
             Status = GeoservicesImportStatus.InsertingFeatures,
             FeaturesProcessed = 42
@@ -54,9 +54,9 @@ public sealed class ImportExecutionJobQueueTests
 
         await manager.SubmitAsync(request with { TableName = "changed_on_retry" }, initial);
 
-        var record = (await jobs.GetAsync(request.JobId))!;
+        var record = (await jobs.GetAsync(request.JobId!))!;
         manager.ReadRequest(record).Should().BeEquivalentTo(request);
-        var progress = await manager.ProgressStore.GetProgressAsync(request.JobId);
+        var progress = await manager.ProgressStore.GetProgressAsync(request.JobId!);
         progress!.Status.Should().Be(GeoservicesImportStatus.InsertingFeatures);
         progress.FeaturesProcessed.Should().Be(42);
     }
@@ -70,13 +70,13 @@ public sealed class ImportExecutionJobQueueTests
         var request = Request();
         await manager.SubmitAsync(request, Initial(request));
 
-        await manager.RequestCancellationAsync(request.JobId);
+        await manager.RequestCancellationAsync(request.JobId!);
 
-        (await jobs.GetAsync(request.JobId))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
-        var progress = await manager.ProgressStore.GetProgressAsync(request.JobId);
+        (await jobs.GetAsync(request.JobId!))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        var progress = await manager.ProgressStore.GetProgressAsync(request.JobId!);
         progress!.Status.Should().Be(GeoservicesImportStatus.Cancelled);
         progress.CompletedAt.Should().NotBeNull();
-        await queue.Received(1).RemoveAsync(request.JobId, Arg.Any<CancellationToken>());
+        await queue.Received(1).RemoveAsync(request.JobId!, Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -87,12 +87,12 @@ public sealed class ImportExecutionJobQueueTests
         var manager = Manager(jobs, queue);
         var request = Request();
         await manager.SubmitAsync(request, Initial(request));
-        var record = (await jobs.GetAsync(request.JobId))!;
+        var record = (await jobs.GetAsync(request.JobId!))!;
         (await jobs.TrySetAsync(record with { Status = ExecutionJobStatus.Running, ClaimedBy = "worker" })).Should().BeTrue();
 
-        await manager.RequestCancellationAsync(request.JobId);
+        await manager.RequestCancellationAsync(request.JobId!);
 
-        var cancelling = (await jobs.GetAsync(request.JobId))!;
+        var cancelling = (await jobs.GetAsync(request.JobId!))!;
         cancelling.Status.Should().Be(ExecutionJobStatus.Running);
         cancelling.ClaimedBy.Should().Be("worker");
         cancelling.CancellationRequestedAt.Should().NotBeNull();
@@ -107,11 +107,11 @@ public sealed class ImportExecutionJobQueueTests
         var request = Request();
         var initial = Initial(request);
         await manager.SubmitAsync(request, initial);
-        await manager.ProgressStore.SetProgressAsync(request.JobId, initial with { Status = GeoservicesImportStatus.Cancelled });
+        await manager.ProgressStore.SetProgressAsync(request.JobId!, initial with { Status = GeoservicesImportStatus.Cancelled });
 
-        await manager.ProgressStore.SetProgressAsync(request.JobId, initial with { Status = GeoservicesImportStatus.InsertingFeatures });
+        await manager.ProgressStore.SetProgressAsync(request.JobId!, initial with { Status = GeoservicesImportStatus.InsertingFeatures });
 
-        (await manager.ProgressStore.GetProgressAsync(request.JobId))!.Status.Should().Be(GeoservicesImportStatus.Cancelled);
+        (await manager.ProgressStore.GetProgressAsync(request.JobId!))!.Status.Should().Be(GeoservicesImportStatus.Cancelled);
     }
 
     [Theory]
@@ -126,9 +126,9 @@ public sealed class ImportExecutionJobQueueTests
         var request = Request();
         var initial = Initial(request);
         await manager.SubmitAsync(request, initial);
-        await manager.ProgressStore.SetProgressAsync(request.JobId, initial with { Status = GeoservicesImportStatus.Cancelled });
+        await manager.ProgressStore.SetProgressAsync(request.JobId!, initial with { Status = GeoservicesImportStatus.Cancelled });
 
-        await manager.ProgressStore.SetProgressAsync(request.JobId, initial with
+        await manager.ProgressStore.SetProgressAsync(request.JobId!, initial with
         {
             Status = status,
             DataCommitted = true,
@@ -136,7 +136,7 @@ public sealed class ImportExecutionJobQueueTests
             ErrorMessage = "Import was cancelled after the data was committed"
         });
 
-        var progress = (await manager.ProgressStore.GetProgressAsync(request.JobId))!;
+        var progress = (await manager.ProgressStore.GetProgressAsync(request.JobId!))!;
         progress.Status.Should().Be(status);
         progress.FeaturesProcessed.Should().Be(42);
     }
@@ -148,7 +148,7 @@ public sealed class ImportExecutionJobQueueTests
         var manager = Manager(jobs, Substitute.For<IJobQueue>());
         var request = Request();
         await manager.SubmitAsync(request, Initial(request));
-        var record = (await jobs.GetAsync(request.JobId))!;
+        var record = (await jobs.GetAsync(request.JobId!))!;
         (await jobs.TrySetAsync(record with
         {
             Status = ExecutionJobStatus.Failed,
@@ -156,7 +156,7 @@ public sealed class ImportExecutionJobQueueTests
             CompletedAt = DateTimeOffset.UtcNow
         })).Should().BeTrue();
 
-        var progress = (await manager.ProgressStore.GetProgressAsync(request.JobId))!;
+        var progress = (await manager.ProgressStore.GetProgressAsync(request.JobId!))!;
 
         progress.Status.Should().Be(GeoservicesImportStatus.Failed);
         progress.ErrorMessage.Should().Be("Worker timed out");
@@ -170,10 +170,10 @@ public sealed class ImportExecutionJobQueueTests
         var manager = Manager(jobs, Substitute.For<IJobQueue>());
         var request = Request();
         await manager.SubmitAsync(request, Initial(request));
-        var record = (await jobs.GetAsync(request.JobId))!;
+        var record = (await jobs.GetAsync(request.JobId!))!;
         (await jobs.TrySetAsync(record with { Status = ExecutionJobStatus.Succeeded })).Should().BeTrue();
 
-        (await manager.ProgressStore.GetProgressAsync(request.JobId)).Should().BeNull();
+        (await manager.ProgressStore.GetProgressAsync(request.JobId!)).Should().BeNull();
     }
 
     [UnitTest]
@@ -189,11 +189,11 @@ public sealed class ImportExecutionJobQueueTests
             GeoServerRestUrl = "https://example.com/geoserver/rest",
             TargetHonuaUrl = "https://honua.example.com"
         };
-        await manager.SubmitAsync(request, GeoServerImportProgress.CreateInitial(request.JobId, request.GeoServerRestUrl, request.TargetHonuaUrl), CancellationToken.None);
-        var record = (await jobs.GetAsync(request.JobId))!;
+        await manager.SubmitAsync(request, GeoServerImportProgress.CreateInitial(request.JobId!, request.GeoServerRestUrl, request.TargetHonuaUrl), CancellationToken.None);
+        var record = (await jobs.GetAsync(request.JobId!))!;
         (await jobs.TrySetAsync(record with { Status = ExecutionJobStatus.Succeeded })).Should().BeTrue();
 
-        (await manager.ProgressStore.GetProgressAsync(request.JobId)).Should().BeNull();
+        (await manager.ProgressStore.GetProgressAsync(request.JobId!)).Should().BeNull();
     }
 
     private static GeoservicesImportJobManager Manager(IExecutionJobStore jobs, IJobQueue queue)
@@ -209,5 +209,5 @@ public sealed class ImportExecutionJobQueueTests
     };
 
     private static GeoservicesImportProgress Initial(GeoservicesImportRequest request)
-        => GeoservicesImportProgress.CreateInitial(request.JobId, request.ServiceUrl, request.LayerId, request.TableName);
+        => GeoservicesImportProgress.CreateInitial(request.JobId!, request.ServiceUrl, request.LayerId, request.TableName);
 }

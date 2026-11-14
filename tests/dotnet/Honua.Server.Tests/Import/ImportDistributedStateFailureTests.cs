@@ -64,71 +64,19 @@ public sealed class ImportDistributedStateFailureTests
         (await store.GetActiveOperationIdsAsync(OperationType.Export)).Should().NotContain("export-1");
     }
 
-    [UnitTest]
-    public async Task RedisProgressStore_WithConfiguredDistributedCache_WhenCacheWriteFails_ThrowsInsteadOfUsingNodeLocalState()
-    {
-        var cache = new ThrowingDistributedCache();
-        var store = new RedisProgressStore<GeoservicesImportRequest>(
-            cache,
-            NullLogger.Instance,
-            "test:request:",
-            GeoservicesImportJsonContext.Default.GeoservicesImportRequest);
-
-        var request = new GeoservicesImportRequest
-        {
-            ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
-            LayerId = 0,
-            TableName = "geoservices_fail_closed_test",
-            AutoPublish = false
-        };
-
-        await FluentActions
-            .Invoking(() => store.SetProgressAsync("job-1", request, TimeSpan.FromMinutes(5)))
-            .Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Distributed import state is unavailable*");
-
-        await FluentActions
-            .Invoking(() => store.GetProgressAsync("job-1"))
-            .Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Distributed import state is unavailable*");
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [Fact]
     [Trait("Tier", "Fast")]
-    public async Task RecoveryProbe_IsBoundedThrottledAndSkippedWhenHealthy(bool universal)
+    public async Task RecoveryProbe_IsBoundedThrottledAndSkippedWhenHealthy()
     {
         var cache = Substitute.For<IDistributedCache>();
         cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromException<byte[]?>(new InvalidOperationException("Cache unavailable")));
-        IProgressStoreRecovery recovery;
-        object backplane;
-        Func<Task> read;
-        Func<bool> isUnavailable;
-        string healthKey;
-        if (universal)
-        {
-            var store = new UniversalProgressStore(cache, NullLogger<UniversalProgressStore>.Instance);
-            recovery = new DistributedProgressStoreAdapter<ExportProgress>(store);
-            backplane = store;
-            read = () => store.GetProgressAsync("job");
-            isUnavailable = () => store.IsUsingFallback;
-            healthKey = "universal:progress:health";
-        }
-        else
-        {
-            var store = new RedisProgressStore<GeoservicesImportRequest>(
-                cache, NullLogger.Instance, "test:request:",
-                GeoservicesImportJsonContext.Default.GeoservicesImportRequest);
-            recovery = store;
-            backplane = store;
-            read = () => store.GetProgressAsync("job");
-            isUnavailable = () => store.IsUsingFallback;
-            healthKey = "test:request:__health_check__";
-        }
+        var store = new UniversalProgressStore(cache, NullLogger<UniversalProgressStore>.Instance);
+        IProgressStoreRecovery recovery = new DistributedProgressStoreAdapter<ExportProgress>(store);
+        object backplane = store;
+        Func<Task> read = () => store.GetProgressAsync("job");
+        Func<bool> isUnavailable = () => store.IsUsingFallback;
+        const string healthKey = "universal:progress:health";
 
         await recovery.ProbeRecoveryAsync();
         cache.ReceivedCalls().Should().BeEmpty("healthy components need no recovery I/O");

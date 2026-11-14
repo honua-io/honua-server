@@ -218,10 +218,22 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
             return progress;
         }
 
-        // Successful outcomes cannot be reconstructed from the admission snapshot after expiry.
-        if (progress is null && job.Status == ExecutionJobStatus.Succeeded)
+        if (job.Status.IsTerminal())
         {
-            return null;
+            // The worker may have persisted final progress after our first read, before ending the job.
+            var latest = await inner.GetProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (latest is not null && _spec.IsTerminal(latest))
+            {
+                return latest;
+            }
+
+            // A successful outcome cannot be reconstructed from a working or expired snapshot.
+            if (job.Status == ExecutionJobStatus.Succeeded)
+            {
+                return null;
+            }
+
+            progress = latest ?? progress;
         }
 
         if (progress is null && job.Spec.Parameters.TryGetValue("honua.import.initialProgress", out var json))

@@ -83,6 +83,12 @@ internal sealed partial class GeoservicesImportService
         var failedFeatures = 0;
         try
         {
+            var committed = await ReadCommittedImportAsync(connection, transaction, request, targetSchema, cancellationToken);
+            if (committed is not null)
+            {
+                return committed;
+            }
+
             // Phase 1: Discover layer metadata
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Discovering, request,
                 "Discovering layer metadata", 0, null);
@@ -375,6 +381,8 @@ internal sealed partial class GeoservicesImportService
 
             await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
 
+            await RecordImportCommitAsync(connection, transaction, request, targetSchema,
+                featuresProcessed, failedFeatures, cancellationToken);
             await JoinCommitAsync(request.CommitParticipant, new ImportCommitScope
             {
                 Transaction = transaction,
