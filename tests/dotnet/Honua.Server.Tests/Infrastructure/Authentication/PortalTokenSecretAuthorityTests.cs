@@ -15,12 +15,12 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
 [Collection("Security")]
-[UnitTest]
 public sealed class PortalTokenSecretAuthorityTests
 {
     private const string Password = "Initial-Password-829!";
 
     [Theory]
+    [UnitTest]
     [InlineData("aws", "rotated")]
     [InlineData("aws", "removed")]
     [InlineData("aws", "unavailable")]
