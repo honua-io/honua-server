@@ -75,7 +75,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
     // The in-process eviction and the CDN purge of a storage edit must reach the same publications, including those that name
     // their storage only through their resource or their layer index.
-    private static IEnumerable<MetadataV2Publication> PublicationsEditedWithStorageLayer(MetadataV2GraphSnapshot snapshot, int storageLayerId)
+    private static IEnumerable<MetadataV2Layer> PublicationsEditedWithStorageLayer(MetadataV2GraphSnapshot snapshot, int storageLayerId)
         => snapshot.Graph.Publications.Where(publication =>
             snapshot.IsRoutable(publication)
             && snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication)) == storageLayerId);

@@ -56,7 +56,7 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Metadata)]
     public void DeserializePublication_MissingIdentifier_UsesEmptyIdentifier()
     {
-        AssertMissingIdentifierPreservesLegacyValues("{\"status\":{}}", new MetadataV2Publication());
+        AssertMissingIdentifierPreservesLegacyValues("{\"status\":{}}", new MetadataV2Layer());
     }
 
     [UnitTest]
@@ -65,20 +65,20 @@ public sealed class MetadataV2ModelTests
     {
         AssertMissingIdentifierPreservesLegacyValues(
             "{\"layerIndex\":7,\"path\":\"parcels\",\"serviceLocalId\":\"local\",\"status\":{}}",
-            new MetadataV2Publication { LayerIndex = 7, Path = "parcels", ServiceLocalId = "local" });
+            new MetadataV2Layer { LayerIndex = 7, Path = "parcels", ServiceLocalId = "local" });
     }
 
-    private static void AssertMissingIdentifierPreservesLegacyValues(string json, MetadataV2Publication expected)
+    private static void AssertMissingIdentifierPreservesLegacyValues(string json, MetadataV2Layer expected)
     {
-        var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Publication)!;
+        var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Layer)!;
 
-        publication.Identifier.Should().Be(new MetadataV2PublicationIdentifier());
+        publication.Identifier.Should().Be(new MetadataV2LayerIdentifier());
         publication.LayerIndex.Should().Be(expected.LayerIndex);
         publication.Path.Should().Be(expected.Path);
         publication.ServiceLocalId.Should().Be(expected.ServiceLocalId);
         var roundTrip = JsonSerializer.Deserialize(
-            JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Publication),
-            MetadataV2JsonContext.Default.MetadataV2Publication)!;
+            JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Layer),
+            MetadataV2JsonContext.Default.MetadataV2Layer)!;
         roundTrip.Identifier.Should().Be(publication.Identifier);
         roundTrip.LayerIndex.Should().Be(expected.LayerIndex);
         roundTrip.Path.Should().Be(expected.Path);
