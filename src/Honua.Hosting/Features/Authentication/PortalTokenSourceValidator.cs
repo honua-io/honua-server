@@ -134,10 +134,17 @@ internal sealed class PortalTokenSourceValidator(
             return null;
         }
 
-        var resolved = await PortalCredentialSourceVersion.ResolveAdminPasswordAsync(
-            options.Value,
-            _serviceProvider.GetService<IConnectionSecretResolver>(),
-            cancellationToken).ConfigureAwait(false);
+        var configured = options.Value.AdminPassword;
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return null;
+        }
+
+        var resolver = _serviceProvider.GetService<IConnectionSecretResolver>();
+        var resolved = resolver is not null && await resolver.CanResolveSecretAsync(configured, cancellationToken).ConfigureAwait(false)
+            ? await resolver.ResolveSecretFreshAsync(configured, cancellationToken).ConfigureAwait(false)
+            : configured;
+        AdminPasswordValidation.ValidateRefreshedPassword(resolved, options.Value.EnvironmentName);
 
         return string.IsNullOrEmpty(resolved) ? null : PortalCredentialSourceVersion.ForAdminPassword(resolved);
     }

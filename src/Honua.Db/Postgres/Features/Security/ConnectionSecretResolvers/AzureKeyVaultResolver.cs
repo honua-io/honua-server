@@ -60,6 +60,18 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
             return cached;
         }
 
+        return await ResolveSecretFreshAsync(secretKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<string?> ResolveSecretFreshAsync(string secretKey, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
+
+        if (!secretKey.StartsWith(KeyVaultPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException($"Invalid Azure secret reference. Expected '{KeyVaultPrefix}<vault>:<secret>[:<version>]'.", nameof(secretKey));
+        }
+
         var (vaultName, secretName, version) = ParseSecretReference(secretKey);
         var token = await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
