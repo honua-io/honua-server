@@ -210,8 +210,11 @@ internal static partial class LayerPublishJobWork
         try
         {
             var notifications = services.GetService<IMcpNotificationPublisher>();
-            notifications?.BroadcastResourcesListChanged();
-            notifications?.BroadcastToolsListChanged();
+            if (notifications is not null)
+            {
+                await notifications.BroadcastResourcesListChanged().ConfigureAwait(false);
+                await notifications.BroadcastToolsListChanged().ConfigureAwait(false);
+            }
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {

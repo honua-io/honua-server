@@ -1032,18 +1032,19 @@ public sealed partial class McpWorkflowViewTests
     // ------------------------------------------------------------------
 
     [UnitTest]
-    public void ProfileChange_BroadcastsToolsListChanged()
+    public async Task ProfileChange_BroadcastsToolsListChanged()
     {
         var sessions = new McpSessionManager();
         sessions.CreateSession();
-        var publisher = new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance);
+        var publisher = Substitute.For<IMcpNotificationPublisher>();
+        publisher.BroadcastToolsListChanged().Returns(new ValueTask<int>(1));
         var monitor = new StubOptionsMonitor(new McpWorkflowViewOptions());
-        var notifier = new McpWorkflowViewChangeNotifier(monitor, publisher);
-        notifier.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        var notifier = new McpWorkflowViewChangeNotifier(monitor, publisher, NullLogger<McpWorkflowViewChangeNotifier>.Instance);
+        await notifier.StartAsync(CancellationToken.None);
 
-        notifier.OnOptionsChanged(new McpWorkflowViewOptions { DefaultView = "setup" })
+        (await notifier.OnOptionsChangedAsync(new McpWorkflowViewOptions { DefaultView = "setup" }))
             .Should().Be(1, "every live session must be told to re-read its tool list");
-        notifier.OnOptionsChanged(new McpWorkflowViewOptions { DefaultView = "setup" })
+        (await notifier.OnOptionsChangedAsync(new McpWorkflowViewOptions { DefaultView = "setup" }))
             .Should().Be(0, "an unchanged profile must not churn the client's prompt cache");
 
         notifier.Dispose();

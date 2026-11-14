@@ -103,4 +103,6 @@ internal static partial class McpLog
 
     [LoggerMessage(8191, LogLevel.Information, "MCP batch refused: Length={Length}, MaxBatchSize={MaxBatchSize}")]
     public static partial void BatchTooLarge(ILogger logger, int length, int maxBatchSize);
+    [LoggerMessage(EventId = 7750, Level = LogLevel.Warning, Message = "MCP workflow notification publication failed")]
+    public static partial void WorkflowNotificationFailed(ILogger logger, Exception exception);
 }

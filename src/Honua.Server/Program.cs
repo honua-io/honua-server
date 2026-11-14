@@ -2003,6 +2003,7 @@ app.MapGeocodingOperationsEndpoints();
 
 // Configure feature-change streaming transport (#501)
 app.MapFeatureStreamEndpoints();
+app.MapRealtimeNotificationEndpoints();
 app.MapFeatureStreamConformanceEndpoints();
 
 // Configure security endpoints (CSP violation reporting)

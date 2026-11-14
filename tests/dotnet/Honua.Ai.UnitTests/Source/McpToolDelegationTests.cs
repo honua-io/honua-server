@@ -189,7 +189,7 @@ public sealed class McpToolDelegationTests
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         scopeFactory.CreateScope().Returns(scope);
         var bridge = new McpJobProgressBridge(
-            new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance),
+            Substitute.For<IMcpNotificationPublisher>(),
             sessions,
             scopeFactory,
             NullLogger<McpJobProgressBridge>.Instance,
