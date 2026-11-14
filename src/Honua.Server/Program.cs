@@ -1713,6 +1713,9 @@ app.UseWhen(
     });
 #endif
 
+// Runs after every credential type is hydrated and before tenant and schema resolution.
+app.UseMiddleware<AnonymousPressureAdmissionMiddleware>();
+
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
 // before any downstream feature handler reads ITenantContext (#1144).
