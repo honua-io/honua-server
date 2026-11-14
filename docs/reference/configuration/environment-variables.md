@@ -266,7 +266,7 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 | `FeatureChangeEvents__Webhook__Url` / `FeatureChangeEvents__Webhook__Secret` | — | Webhook target URL and HMAC signing secret. |
 | `FeatureChangeEvents__Webhook__MaxAttempts` | `5` | Delivery attempts per event (exponential backoff). |
 
-Application-level rate limiting is opt-in (`RateLimiting__Enabled=true`, off by default) and supplements edge enforcement; enforce rate limits at your edge proxy, load balancer, or WAF. Its counters are per node: a limit of N admits up to N requests per window on each replica.
+Application-level rate limiting is opt-in (`RateLimiting__Enabled=true`, off by default) and supplements edge enforcement; enforce rate limits at your edge proxy, load balancer, or WAF. With PostgreSQL configured, policies persist across restarts and counters enforce one budget across replicas. The limiter uses database time for fixed windows and returns HTTP 503 with `Retry-After` when its shared policy or counter store is unavailable. Deployments without PostgreSQL use process-local policies and counters.
 
 ## Admission and pooling
 

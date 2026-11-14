@@ -31,7 +31,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.149_CreateSecurityState.sql",
         "Honua.Server.Migrations.150_CreateOAuthClientsAndOperationProgress.sql",
         "Honua.Server.Migrations.154_CreatePackageDraftsAndMcpSessions.sql",
-        "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql"
+        "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql",
+        "Honua.Server.Migrations.176_CreateRateLimitCounters.sql"
     ];
 
     private readonly PostgresJobSubstrateHarness _jobs;
@@ -99,6 +100,7 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public PostgresConfigurationDocuments CreateConfigurationDocuments() => new(_jobs.Database, _sharedKeyRing);
     public PostgresConfigurationDocuments CreateConfigurationDocuments(IDataProtectionProvider keyRing) => new(_jobs.Database, keyRing);
     public PostgresOidcProviderStore CreateOidcStore() => new(CreateConfigurationDocuments());
+    public Honua.Infrastructure.RateLimiting.PostgresRateLimitCounterStore CreateRateCounterStore() => new(_jobs.Database);
     public PostgresRateLimitPolicyStore CreateRateStore() => new(CreateConfigurationDocuments());
     public PostgresClientCertificateTrustStore CreateTrustStore() => new(CreateConfigurationDocuments());
 

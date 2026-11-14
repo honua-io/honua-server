@@ -7,6 +7,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.RateLimiting;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Infrastructure.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -29,6 +30,8 @@ internal static class PostgresConfigurationStoreRegistration
             ? provider.GetRequiredService<RequestConfigurationGeneration>() : null!);
         services.TryAddSingleton<PostgresOidcProviderStore>();
         services.TryAddSingleton<PostgresRateLimitPolicyStore>();
+        services.TryAddSingleton<PostgresRateLimitCounterStore>(provider => HasDatabase(provider)
+            ? new PostgresRateLimitCounterStore(provider.GetRequiredService<JobStoreDatabase>()) : null!);
         services.TryAddSingleton<PostgresClientCertificateTrustStore>();
         services.TryAddSingleton<OidcRuntimeProviderRegistry>();
         services.TryAddSingleton<ConfigurationRuntimeRefresh>();

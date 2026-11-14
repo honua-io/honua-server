@@ -45,7 +45,8 @@ public static class RateLimitingMiddlewareExtensions
                     services.GetRequiredService<IRateLimitPolicyStore>(),
                     services.GetRequiredService<IOptions<RateLimitingOptions>>(),
                     services.GetRequiredService<ILogger<RateLimitingMiddleware>>(),
-                    services.GetService<TimeProvider>() ?? TimeProvider.System);
+                    services.GetService<TimeProvider>() ?? TimeProvider.System,
+                    services.GetService<PostgresRateLimitCounterStore>());
             });
             return context => middleware.Value.InvokeAsync(context);
         });

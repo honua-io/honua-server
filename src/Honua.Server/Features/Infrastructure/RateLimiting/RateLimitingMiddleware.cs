@@ -45,19 +45,22 @@ internal sealed partial class RateLimitingMiddleware
     private readonly RateLimitingOptions _options;
     private readonly ILogger<RateLimitingMiddleware> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly PostgresRateLimitCounterStore? _counterStore;
 
     public RateLimitingMiddleware(
         RequestDelegate next,
         IRateLimitPolicyStore policyStore,
         IOptions<RateLimitingOptions> options,
         ILogger<RateLimitingMiddleware> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        PostgresRateLimitCounterStore? counterStore = null)
     {
         _next = next;
         _policyStore = policyStore;
         _options = options.Value;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _counterStore = counterStore;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -90,7 +93,18 @@ internal sealed partial class RateLimitingMiddleware
         }
 
         // Check if request exceeds rate limit
-        var rateLimitResult = await CheckRateLimitAsync(rateLimitKey, context);
+        RateLimitResult rateLimitResult;
+        try
+        {
+            rateLimitResult = await CheckRateLimitAsync(rateLimitKey, context);
+        }
+        catch (Exception exception) when (_counterStore is not null && exception is not OperationCanceledException and not OutOfMemoryException)
+        {
+            var (keyFamily, keyHash) = SplitRateLimitKey(rateLimitKey);
+            RateLimitingLog.RateLimitCheckFailed(_logger, keyFamily, keyHash, exception);
+            await BackpressureResponseWriter.WriteAsync(context, BackpressureKind.Saturated, 1, context.RequestAborted);
+            return;
+        }
 
         if (rateLimitResult.IsAllowed)
         {
@@ -198,10 +212,9 @@ internal sealed partial class RateLimitingMiddleware
         {
             // Always meter the subject's shared tier/global counter: the ceiling that bounds total
             // traffic for the subject across every endpoint. Tier resolution (api-key > tenant >
-            // plan, else global default) feeds the same unscoped counter. Counters are per node,
-            // so a limit of N admits up to N per window on each node.
+            // plan, else global default) feeds the same unscoped counter across tasks.
             var subjectLimit = await ResolveSubjectLimitAsync(context);
-            var subjectResult = CheckRateLimitMemory(rateLimitKey, subjectLimit);
+            var subjectResult = await CheckCounterAsync(rateLimitKey, subjectLimit, context.RequestAborted);
 
             // When an endpoint declares an explicit per-endpoint limit, additionally meter a
             // counter partitioned by the endpoint's policy scope (issue #2779) so that limit meters
@@ -216,14 +229,13 @@ internal sealed partial class RateLimitingMiddleware
             }
 
             var scopedKey = $"{rateLimitKey}|policy:{endpointLimit.Value.Scope}";
-            var endpointResult = CheckRateLimitMemory(scopedKey, endpointLimit.Value);
+            var endpointResult = await CheckCounterAsync(scopedKey, endpointLimit.Value, context.RequestAborted);
 
             return CombineResults(subjectResult, endpointResult);
         }
-        // Intentional catch-all: this is the request-handling boundary for the rate-limit
-        // check (policy-store faults, etc.); allow the request through on failure rather
-        // than blocking legitimate traffic.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        // Process-local deployments retain their existing fail-open behavior. Shared-store
+        // failures propagate to the request boundary, which refuses admission.
+        catch (Exception ex) when (_counterStore is null && ex is not OperationCanceledException and not OutOfMemoryException)
         {
             var (keyFamily, keyHash) = SplitRateLimitKey(rateLimitKey);
             RateLimitingLog.RateLimitCheckFailed(_logger, keyFamily, keyHash, ex);
@@ -236,6 +248,11 @@ internal sealed partial class RateLimitingMiddleware
             };
         }
     }
+
+    private Task<RateLimitResult> CheckCounterAsync(string key, ResolvedRateLimit limit, CancellationToken cancellationToken)
+        => _counterStore is null
+            ? Task.FromResult(CheckRateLimitMemory(key, limit))
+            : _counterStore.AdmitAsync(key, limit, cancellationToken);
 
     private static RateLimitResult CombineResults(RateLimitResult subject, RateLimitResult endpoint)
     {
@@ -408,8 +425,8 @@ internal sealed partial class RateLimitingMiddleware
         {
             policies = await _policyStore.ListPoliciesAsync(context.RequestAborted);
         }
-        // A policy store outage must not disable limiting: fall back to the global default below.
-        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        // A process-local policy store falls back to the global default on failure.
+        catch (Exception ex) when (_counterStore is null && ex is not OperationCanceledException and not OutOfMemoryException)
         {
             RateLimitingLog.PolicyStoreUnavailable(_logger, ex);
             policies = null;
