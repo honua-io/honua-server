@@ -7,30 +7,6 @@ using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Authorization;
 
-/// <summary>
-/// Default <see cref="PortalAccessProjection"/> (#1370): a pure projection from
-/// the canonical RBAC decision and the coarse <see cref="AccessPolicy"/> seam onto
-/// the ArcGIS Portal <see cref="PortalAccessLevel"/> and per-item visibility.
-/// </summary>
-/// <remarks>
-/// <para>Access-level rules (most-open wins between layer and service policy):</para>
-/// <list type="bullet">
-/// <item>Anonymous read allowed (<see cref="AccessPolicy.AllowAnonymous"/>) projects
-/// to <see cref="PortalAccessLevel.Public"/>.</item>
-/// <item>Authenticated access with no role restriction
-/// (<see cref="AccessPolicy.AllowedRoles"/> empty/absent) projects to
-/// <see cref="PortalAccessLevel.Organization"/> — any signed-in org member.</item>
-/// <item>Access restricted to specific roles (or no policy at all) projects to
-/// <see cref="PortalAccessLevel.Private"/>.</item>
-/// </list>
-/// <para>
-/// Visibility folds the per-operation grant over the coarse decision: an explicit
-/// <see cref="PermissionResult.Allow"/> grant makes the item visible; otherwise the
-/// coarse <see cref="AccessDecision"/> governs, mapping
-/// <see cref="AccessDecision.RequiresAuthentication"/> to an authentication
-/// challenge so anonymous callers can sign in rather than silently losing the item.
-/// </para>
-/// </remarks>
 public sealed class PortalAccessProjection
 {
     private readonly bool _enabled;

@@ -9,20 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Canonical replica-upload synchronization pipeline (#1272). See <see cref="ReplicaSyncService"/>.
-/// </summary>
-/// <remarks>
-/// Conflict detection compares each uploaded update/delete against the server change log since the
-/// replica's base generation: a server-side mutation of the same <c>(layerId, objectId)</c> indicates
-/// a concurrent server edit and produces a conflict candidate. Non-conflicting edits (and, under
-/// last-write-wins, conflicting edits) are applied through <see cref="IReplicaEditApplier"/>, which
-/// the protocol adapter backs with the shared edit pipeline. Durable conflict records are written
-/// through <see cref="IReplicaConflictRepository"/> when <see cref="IReplicaConflictRepository.SupportsConflictReview"/>
-/// is true; when conflict review is unsupported the service falls back to last-write-wins so existing
-/// non-manual strategy behavior is preserved (conflict-record creation + resolution API is owned by
-/// #1287).
-/// </remarks>
 public sealed partial class ReplicaSyncService
 {
     // PA-020: replica conflict detection / edit application is a hot path (every replica

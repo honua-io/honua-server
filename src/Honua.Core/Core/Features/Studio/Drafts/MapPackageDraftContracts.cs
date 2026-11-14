@@ -45,10 +45,6 @@ public sealed record MapPackageDraftRequest
     public MapInitialViewInput? InitialView { get; init; }
 }
 
-/// <summary>
-/// Wire-shaped source binding input validated and mapped onto the canonical
-/// <see cref="SourceBinding"/> by <see cref="MapPackageDraftFactory"/>.
-/// </summary>
 public sealed record SourceBindingInput
 {
     /// <summary>

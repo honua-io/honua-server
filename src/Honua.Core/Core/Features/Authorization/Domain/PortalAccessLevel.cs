@@ -5,21 +5,6 @@ using Honua.Core.Features.Authorization;
 
 namespace Honua.Core.Features.Authorization.Domain;
 
-/// <summary>
-/// The ArcGIS Portal/Sharing notion of item and service <c>access</c> (#1370).
-/// This is a projection of the canonical RBAC decision
-/// (<see cref="PermissionDecision"/>) and the coarse
-/// <c>AccessPolicy</c> seam onto the three values Esri clients expect from a
-/// Portal facade; it is <b>not</b> a new access-control model.
-/// </summary>
-/// <remarks>
-/// The string forms (<see cref="PortalAccessLevelExtensions.ToWireName"/>) are
-/// the exact lowercase tokens ArcGIS Pro / Field Maps expect in
-/// <c>content/items/{id}</c> and <c>search</c> responses. The shared
-/// <c>PortalAccessProjection</c> is the single helper the Portal read surface
-/// (#1243) and the OAuth2 bridge (#1242) consume so the reported access never
-/// drifts from the real authorization decision.
-/// </remarks>
 public enum PortalAccessLevel
 {
     /// <summary>
