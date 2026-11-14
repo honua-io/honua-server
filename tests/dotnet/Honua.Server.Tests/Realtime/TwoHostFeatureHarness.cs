@@ -29,7 +29,12 @@ internal static class TwoHostFeatureHarness
         var configuration = new Dictionary<string, string?>
         {
             ["Deployment:Mode"] = "MultiNode",
-            ["Realtime:Provider"] = "auto"
+            ["Realtime:Provider"] = "auto",
+            // Multi-node startup refuses local file storage. These edits carry no attachments,
+            // so the object store is configured but never reached (as in the multi-node startup tests).
+            ["FileStorage:Provider"] = "AwsS3",
+            ["FileStorage:AwsS3:BucketName"] = "honua-two-host-realtime",
+            ["FileStorage:AwsS3:Region"] = "us-west-2"
         };
         foreach (var (key, value) in overrides ?? new Dictionary<string, string?>())
         {
