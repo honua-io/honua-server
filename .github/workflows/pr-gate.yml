@@ -31,7 +31,7 @@ permissions:
   statuses: read
 
 concurrency:
-  group: pr-gate-${{ github.event.pull_request.number || github.ref }}
+  group: pr-gate-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.draft && 'draft' || 'ready' }}
   cancel-in-progress: true
 
 env:
