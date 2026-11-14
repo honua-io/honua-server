@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 public sealed class OperatorJourneyMcpRosterTests
 {
-    private static readonly IReadOnlyDictionary<string, OperationApprovalModel> WriteApprovalModels =
+    private static readonly Dictionary<string, OperationApprovalModel> WriteApprovalModels =
         new Dictionary<string, OperationApprovalModel>(StringComparer.Ordinal)
         {
             ["admin.connections.create"] = OperationApprovalModel.None,
