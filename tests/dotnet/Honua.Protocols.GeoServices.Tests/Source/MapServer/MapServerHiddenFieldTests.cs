@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
@@ -18,20 +19,32 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 /// Left layer 0 hides <c>category</c>; right layer 1 hides <c>name</c>.
 /// </summary>
 [Protocol(TestProtocols.MapServer)]
-public sealed class MapServerHiddenFieldTests
+public sealed class MapServerHiddenFieldTests : IClassFixture<MapServerHiddenFieldTests.Fixture>
 {
     private const string ServicePath = $"/rest/services/{MapServerDynamicJoinTests.ServiceName}/MapServer";
     private const string IdentifyQuery =
         "?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90" +
         "&imageDisplay=800,600,96&tolerance=10&returnGeometry=false";
 
+    private readonly Fixture _hosts;
+
+    public MapServerHiddenFieldTests(Fixture hosts) => _hosts = hosts;
+
+    // Every case only reads, so the class shares one hidden-field host.
+    public sealed class Fixture : IDisposable
+    {
+        public WebApplicationFactory<Program> HiddenFields { get; } =
+            MapServerDynamicJoinTests.CreateFactory(rightLayerAnonymous: true, hiddenFields: true);
+
+        public void Dispose() => HiddenFields.Dispose();
+    }
+
     [IntegrationTest]
     [Operation(Operations.Identify)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
     public async Task Identify_OmitsHiddenFields()
     {
-        using var factory = MapServerDynamicJoinTests.CreateFactory(rightLayerAnonymous: true, hiddenFields: true);
-        using var client = factory.CreateClient();
+        using var client = _hosts.HiddenFields.CreateClient();
 
         using var response = await client.GetAsync($"{ServicePath}/identify{IdentifyQuery}&layers=all:0&f=json");
         var content = await response.Content.ReadAsStringAsync();
@@ -53,8 +66,7 @@ public sealed class MapServerHiddenFieldTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
     public async Task Identify_WithJoin_OmitsHiddenLeftAndRightFields()
     {
-        using var factory = MapServerDynamicJoinTests.CreateFactory(rightLayerAnonymous: true, hiddenFields: true);
-        using var client = factory.CreateClient();
+        using var client = _hosts.HiddenFields.CreateClient();
 
         var dynamicLayers = Uri.EscapeDataString(
             MapServerDynamicJoinTests.BuildJoinDynamicLayers("esriLeftOuterJoin"));
@@ -80,8 +92,7 @@ public sealed class MapServerHiddenFieldTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
     public async Task Identify_JoinOnHiddenKey_Returns400(string leftKey, string rightKey)
     {
-        using var factory = MapServerDynamicJoinTests.CreateFactory(rightLayerAnonymous: true, hiddenFields: true);
-        using var client = factory.CreateClient();
+        using var client = _hosts.HiddenFields.CreateClient();
 
         var dynamicLayers = Uri.EscapeDataString(
             MapServerDynamicJoinTests.BuildJoinDynamicLayers("esriInnerJoin", leftKey, rightKey));
@@ -96,8 +107,7 @@ public sealed class MapServerHiddenFieldTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
     public async Task Find_DoesNotSearchOrReturnHiddenFields()
     {
-        using var factory = MapServerDynamicJoinTests.CreateFactory(rightLayerAnonymous: true, hiddenFields: true);
-        using var client = factory.CreateClient();
+        using var client = _hosts.HiddenFields.CreateClient();
 
         // "sample" occurs only in the hidden category column.
         using var hiddenOnly = await client.GetAsync($"{ServicePath}/find?searchText=sample&layers=0&f=json");
@@ -129,8 +139,7 @@ public sealed class MapServerHiddenFieldTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/generateKml")]
     public async Task GenerateKml_OmitsHiddenFieldsFromExtendedData()
     {
-        using var factory = MapServerDynamicJoinTests.CreateFactory(rightLayerAnonymous: true, hiddenFields: true);
-        using var client = factory.CreateClient();
+        using var client = _hosts.HiddenFields.CreateClient();
 
         using var response = await client.GetAsync($"{ServicePath}/generateKml?layers=0&f=kml");
         var content = await response.Content.ReadAsStringAsync();

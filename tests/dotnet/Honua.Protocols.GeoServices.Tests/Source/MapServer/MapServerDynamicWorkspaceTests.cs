@@ -32,21 +32,41 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 /// non-allowlisted workspaces, unpublished tables, and disabled servers are rejected.
 /// </summary>
 [Protocol(TestProtocols.MapServer)]
-public sealed class MapServerDynamicWorkspaceTests
+public sealed class MapServerDynamicWorkspaceTests : IClassFixture<MapServerDynamicWorkspaceTests.Fixture>
 {
     private const int WorkspaceLayerId = 0;
     private const string ServiceName = "workspace-map";
     private const string WorkspaceId = "analytics-workspace";
+    private const string OtherWorkspaceId = "some-other-workspace";
     private const string TableName = "parcels";
     private const string SchemaName = "public";
+
+    private readonly Fixture _hosts;
+
+    public MapServerDynamicWorkspaceTests(Fixture hosts) => _hosts = hosts;
+
+    // Every case only reads, so cases with the same dynamic-layer options share one host.
+    public sealed class Fixture : IDisposable
+    {
+        public WebApplicationFactory<Program> Allowlisted { get; } =
+            CreateFactory(workspaceLayersEnabled: true, allowlist: [WorkspaceId]);
+
+        public WebApplicationFactory<Program> OtherWorkspaceAllowlisted { get; } =
+            CreateFactory(workspaceLayersEnabled: true, allowlist: [OtherWorkspaceId]);
+
+        public void Dispose()
+        {
+            Allowlisted.Dispose();
+            OtherWorkspaceAllowlisted.Dispose();
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
     public async Task DynamicLayer_WithAllowlistedWorkspaceDataLayer_ResolvesPublishedLayer()
     {
-        using var factory = CreateFactory(workspaceLayersEnabled: true, allowlist: [WorkspaceId]);
-        using var client = factory.CreateClient();
+        using var client = _hosts.Allowlisted.CreateClient();
 
         var layer = Uri.EscapeDataString(BuildDataLayerJson(TableName, SchemaName));
         var response = await client.GetAsync(
@@ -64,8 +84,7 @@ public sealed class MapServerDynamicWorkspaceTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
     public async Task DynamicLayer_WithNonAllowlistedWorkspace_ReturnsBadRequest()
     {
-        using var factory = CreateFactory(workspaceLayersEnabled: true, allowlist: ["some-other-workspace"]);
-        using var client = factory.CreateClient();
+        using var client = _hosts.OtherWorkspaceAllowlisted.CreateClient();
 
         var layer = Uri.EscapeDataString(BuildDataLayerJson(TableName, SchemaName));
         var response = await client.GetAsync(
@@ -102,8 +121,7 @@ public sealed class MapServerDynamicWorkspaceTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
     public async Task DynamicLayer_WithUnpublishedTable_ReturnsBadRequest()
     {
-        using var factory = CreateFactory(workspaceLayersEnabled: true, allowlist: [WorkspaceId]);
-        using var client = factory.CreateClient();
+        using var client = _hosts.Allowlisted.CreateClient();
 
         var layer = Uri.EscapeDataString(BuildDataLayerJson("not_published", SchemaName));
         var response = await client.GetAsync(
@@ -121,8 +139,7 @@ public sealed class MapServerDynamicWorkspaceTests
     public async Task DynamicLayer_WithQueryTableDataSource_ReturnsBadRequest()
     {
         // queryTable (raw SQL query table) remains deferred (#1866) and must be rejected.
-        using var factory = CreateFactory(workspaceLayersEnabled: true, allowlist: [WorkspaceId]);
-        using var client = factory.CreateClient();
+        using var client = _hosts.Allowlisted.CreateClient();
 
         // A queryTable carries a raw SQL string; it is rejected either by the request-level
         // injection guard or by the dataSource type check. Either way it must never resolve.
@@ -143,8 +160,7 @@ public sealed class MapServerDynamicWorkspaceTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
     public async Task DynamicLayer_WithJoinTableMissingRightSource_ReturnsBadRequest()
     {
-        using var factory = CreateFactory(workspaceLayersEnabled: true, allowlist: [WorkspaceId]);
-        using var client = factory.CreateClient();
+        using var client = _hosts.Allowlisted.CreateClient();
 
         var layer = Uri.EscapeDataString(
             "{\"id\":42,\"source\":{\"type\":\"dataLayer\",\"dataSource\":{\"type\":\"joinTable\","
@@ -164,8 +180,7 @@ public sealed class MapServerDynamicWorkspaceTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task Export_WithNonAllowlistedWorkspaceDataLayer_ReturnsBadRequest()
     {
-        using var factory = CreateFactory(workspaceLayersEnabled: true, allowlist: ["some-other-workspace"]);
-        using var client = factory.CreateClient();
+        using var client = _hosts.OtherWorkspaceAllowlisted.CreateClient();
 
         var dynamicLayers = Uri.EscapeDataString(
             $"[{BuildDataLayerJson(TableName, SchemaName)}]");
