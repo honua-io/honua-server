@@ -131,7 +131,6 @@ public sealed class FeatureLockCapabilityManifestTests
         {
             fixture = fixture.ConfigureServices(services =>
             {
-                services.RemoveAll<IFeatureLockService>();
                 services.AddSingleton<IFeatureLockService, InMemoryFeatureLockService>();
             });
         }
