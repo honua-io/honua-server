@@ -303,52 +303,7 @@ internal sealed partial class ConsoleJobService(
         var backend = backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
         if (backend != null && ExecutionJobCancellationHelper.HasSubmittedProviderMarker(job))
         {
-            var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
-            if (!capabilities.SupportsCancellation)
-            {
-                throw new ConsoleJobConflictException("The selected job backend does not support cancellation.");
-            }
-
-            var stamp = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
-                    jobStore,
-                    job,
-                    cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-            if (stamp.Outcome is RemoteCancelStampOutcome.TerminalConflict)
-            {
-                throw new ConsoleJobConflictException("Terminal jobs cannot be cancelled.");
-            }
-
-            if (stamp.Outcome is not (RemoteCancelStampOutcome.Stamped or RemoteCancelStampOutcome.AlreadyStamped))
-            {
-                throw new ConsoleJobConflictException("Job cancellation could not be confirmed.");
-            }
-
-            var stampedJob = stamp.Job ?? job;
-            var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
-            var applied = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-                    jobStore,
-                    stampedJob,
-                    observation,
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            if (applied.Outcome == BackendCancelApplyOutcome.Applied && applied.Job != null)
-            {
-                if (applied.Job.Status.IsTerminal())
-                {
-                    await RemoveFromQueueIfPresentAsync(applied.Job.OperationId, cancellationToken).ConfigureAwait(false);
-                    if (applied.TerminalTransition != null)
-                    {
-                        await NotifyTerminalCallbacksAsync(applied.TerminalTransition).ConfigureAwait(false);
-                    }
-                }
-
-                JobControlAction(logger, "cancel", job.OperationId, applied.Job.Status.ToString());
-                return ControlResponse(applied.Job, "cancel", "Job cancellation requested.");
-            }
-
-            throw new ConsoleJobConflictException("Job cancellation could not be confirmed.");
+            return await CancelSubmittedJobAsync(job, backend, cancellationToken).ConfigureAwait(false);
         }
 
         var result = await ExecutionJobCancellationHelper.TryApplyAsync(
@@ -367,6 +322,64 @@ internal sealed partial class ConsoleJobService(
             ExecutionJobCancellationState.TerminalConflict => throw new ConsoleJobConflictException("Terminal jobs cannot be cancelled."),
             _ => throw new ConsoleJobConflictException("Job cancellation could not be confirmed.")
         };
+    }
+
+    private async Task<ConsoleJobControlResponse> CancelSubmittedJobAsync(
+        ExecutionJobRecord job, IBatchComputeBackend backend, CancellationToken cancellationToken)
+    {
+        var jobStore = RequireJobStore();
+        var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        if (!capabilities.SupportsCancellation)
+        {
+            throw new ConsoleJobConflictException("The selected job backend does not support cancellation.");
+        }
+
+        var stamp = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
+                jobStore,
+                job,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        if (stamp.Outcome is RemoteCancelStampOutcome.TerminalConflict)
+        {
+            throw new ConsoleJobConflictException("Terminal jobs cannot be cancelled.");
+        }
+
+        if (stamp.Outcome is not (RemoteCancelStampOutcome.Stamped or RemoteCancelStampOutcome.AlreadyStamped))
+        {
+            throw new ConsoleJobConflictException("Job cancellation could not be confirmed.");
+        }
+
+        return await ApplyBackendCancelAsync(stamp.Job ?? job, backend, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ConsoleJobControlResponse> ApplyBackendCancelAsync(
+        ExecutionJobRecord stampedJob, IBatchComputeBackend backend, CancellationToken cancellationToken)
+    {
+        var jobStore = RequireJobStore();
+        var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
+        var applied = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
+                jobStore,
+                stampedJob,
+                observation,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (applied.Outcome == BackendCancelApplyOutcome.Applied && applied.Job != null)
+        {
+            if (applied.Job.Status.IsTerminal())
+            {
+                await RemoveFromQueueIfPresentAsync(applied.Job.OperationId, cancellationToken).ConfigureAwait(false);
+                if (applied.TerminalTransition != null)
+                {
+                    await NotifyTerminalCallbacksAsync(applied.TerminalTransition).ConfigureAwait(false);
+                }
+            }
+
+            JobControlAction(logger, "cancel", stampedJob.OperationId, applied.Job.Status.ToString());
+            return ControlResponse(applied.Job, "cancel", "Job cancellation requested.");
+        }
+
+        throw new ConsoleJobConflictException("Job cancellation could not be confirmed.");
     }
 
     private static Task<bool> AdmitRetryAsync(IExecutionJobStore store, ExecutionJobRecord job, CancellationToken cancellationToken)

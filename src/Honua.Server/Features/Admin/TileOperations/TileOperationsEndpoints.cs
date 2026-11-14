@@ -132,7 +132,7 @@ internal static class TileOperationsEndpoints
         bool activeOnly = true,
         CancellationToken cancellationToken = default)
     {
-        var jobs = await jobService.ListAsync(activeOnly, cancellationToken).ConfigureAwait(false);
+        var jobs = await jobService.ListAsync(activeOnly ? TileOperationListScope.Active : TileOperationListScope.All, cancellationToken).ConfigureAwait(false);
         var response = new TileOperationListResponse
         {
             Jobs = jobs.ToArray(),

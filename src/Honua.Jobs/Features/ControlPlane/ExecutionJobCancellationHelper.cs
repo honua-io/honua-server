@@ -338,6 +338,15 @@ internal static class ExecutionJobCancellationHelper
             };
         }
 
+        return await RetryBackendCancelAsync(jobStore, new BackendCancelRetry(job, observation), cancellationToken).ConfigureAwait(false);
+    }
+
+    private sealed record BackendCancelRetry(ExecutionJobRecord Job, BatchComputeObservation Observation);
+
+    private static async Task<BackendCancelApplyResult> RetryBackendCancelAsync(
+        IExecutionJobStore jobStore, BackendCancelRetry retry, CancellationToken cancellationToken)
+    {
+        var (job, observation) = retry;
         var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
         if (fresh == null)
         {
@@ -354,9 +363,7 @@ internal static class ExecutionJobCancellationHelper
             return new(BackendCancelApplyOutcome.TerminalConflict, fresh, fresh.Status);
         }
 
-        // A console retry can reset a cancelled record before this delayed backend
-        // response is applied. Heartbeats may advance the version, but the request
-        // and execution attempt must still be the ones sent to the backend.
+        // Delayed backend responses must still match the requested execution attempt.
         if (!IsSameExecutionAttempt(job, fresh)
             || fresh.CancellationRequestedAt != job.CancellationRequestedAt)
         {
@@ -376,10 +383,15 @@ internal static class ExecutionJobCancellationHelper
             return new(BackendCancelApplyOutcome.Unconfirmed, fresh);
         }
 
-        ControlPlaneTelemetry.RecordExecutionTransition(fresh, retryMerged);
-        return new(BackendCancelApplyOutcome.Applied, retryMerged)
+        return AppliedBackendCancel(fresh, retryMerged);
+    }
+
+    private static BackendCancelApplyResult AppliedBackendCancel(ExecutionJobRecord previous, ExecutionJobRecord current)
+    {
+        ControlPlaneTelemetry.RecordExecutionTransition(previous, current);
+        return new(BackendCancelApplyOutcome.Applied, current)
         {
-            TerminalTransition = !fresh.Status.IsTerminal() && retryMerged.Status.IsTerminal() ? retryMerged : null
+            TerminalTransition = !previous.Status.IsTerminal() && current.Status.IsTerminal() ? current : null
         };
     }
 

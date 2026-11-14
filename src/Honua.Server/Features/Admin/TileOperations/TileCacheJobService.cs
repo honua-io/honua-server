@@ -88,7 +88,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         => await new ExecutionJobProgressReader(_progressStore, _jobStore).ReadAsync(jobId, cancellationToken)
             .ConfigureAwait(false) as TileOperationProgress;
 
-    public async Task<IReadOnlyList<TileOperationProgress>> ListAsync(bool activeOnly, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<TileOperationProgress>> ListAsync(TileOperationListScope scope, CancellationToken cancellationToken = default)
     {
         var operationIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var type in TileOperationTypes)
@@ -101,7 +101,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         {
             var progress = await GetAsync(operationId, cancellationToken).ConfigureAwait(false);
             if (progress == null
-                || (activeOnly && progress.Status is not (OperationStatus.Queued or OperationStatus.Processing)))
+                || (scope == TileOperationListScope.Active && progress.Status is not (OperationStatus.Queued or OperationStatus.Processing)))
             {
                 continue;
             }
@@ -176,15 +176,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
 
         var targetLayerIds = await ResolveTargetLayerIdsAsync(request, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
-        var spec = TileCacheExecutionSpecBuilder.Build(request, submission.SchemaName, _options.CurrentValue);
-        spec = spec with
-        {
-            Parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal)
-            {
-                [ExecutionJobProgressReader.InitialProgressParameter] = OperationProgressSerializer.Serialize(
-                    TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId))
-            }
-        };
+        var spec = CreateSpec(jobId, request, submission.SchemaName);
         return new ExecutionJobRecord
         {
             OperationId = jobId,
@@ -201,6 +193,19 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
                 RequiresExclusiveLease = true
             },
             Spec = spec
+        };
+    }
+
+    private ExecutionJobSpec CreateSpec(string jobId, TileOperationStartRequest request, string? schemaName)
+    {
+        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName, _options.CurrentValue);
+        return spec with
+        {
+            Parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal)
+            {
+                [ExecutionJobProgressReader.InitialProgressParameter] = OperationProgressSerializer.Serialize(
+                    TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId))
+            }
         };
     }
 
@@ -362,7 +367,7 @@ internal interface ITileCacheJobService
 
     Task<TileOperationProgress?> GetAsync(string jobId, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<TileOperationProgress>> ListAsync(bool activeOnly, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TileOperationProgress>> ListAsync(TileOperationListScope scope, CancellationToken cancellationToken = default);
 
     Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default);
 
@@ -374,3 +379,5 @@ internal sealed record TileOperationSubmission(
     TileOperationStartRequest Request,
     string? RequestedBy,
     string? SchemaName = null);
+
+internal enum TileOperationListScope { All, Active }

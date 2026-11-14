@@ -61,19 +61,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
 
         if (expectedProgress is null)
         {
-            var created = await WriteAsync(
-                $"""
-                INSERT INTO {_progress} AS snapshot (operation_id, operation_type, status, payload, expires_at)
-                VALUES (@operation_id, @operation_type, @status, @payload, now() + @lifetime)
-                ON CONFLICT (operation_id) DO UPDATE SET {SnapshotAssignments}
-                WHERE snapshot.expires_at <= now()
-                """,
-                new SnapshotWrite(write.OperationId, write.Progress, write.Ttl ?? _defaultLifetime),
-                guard: null,
-                cancellationToken).ConfigureAwait(false);
-            return created
-                ? ProgressCompareAndSetResult.Updated
-                : await DescribeRefusalAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
+            return await TryCreateProgressAsync(write, cancellationToken).ConfigureAwait(false);
         }
 
         var storedPayload = await ReadPayloadAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
@@ -94,6 +82,24 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             storedPayload,
             cancellationToken).ConfigureAwait(false);
         return updated
+            ? ProgressCompareAndSetResult.Updated
+            : await DescribeRefusalAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ProgressCompareAndSetResult> TryCreateProgressAsync(
+        OperationProgressWrite write, CancellationToken cancellationToken)
+    {
+        var created = await WriteAsync(
+            $"""
+            INSERT INTO {_progress} AS snapshot (operation_id, operation_type, status, payload, expires_at)
+            VALUES (@operation_id, @operation_type, @status, @payload, now() + @lifetime)
+            ON CONFLICT (operation_id) DO UPDATE SET {SnapshotAssignments}
+            WHERE snapshot.expires_at <= now()
+            """,
+            new SnapshotWrite(write.OperationId, write.Progress, write.Ttl ?? _defaultLifetime),
+            guard: null,
+            cancellationToken).ConfigureAwait(false);
+        return created
             ? ProgressCompareAndSetResult.Updated
             : await DescribeRefusalAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
     }

@@ -71,21 +71,27 @@ internal sealed partial class PostgresExecutionJobStore
                 return false;
             }
 
-            await using var command = new NpgsqlCommand($"""
-                {_compareAndSet}
-                AND kind = @kind AND status IN ('Failed', 'Cancelled')
-                """, connection, transaction);
-            AddAttemptStateParameters(command, job);
-            row.AddRecordParameters(command);
-            command.Parameters.AddWithValue("expected_version", NpgsqlDbType.Bigint, job.Version);
-            command.Parameters.AddWithValue("retry_delay", NpgsqlDbType.Interval, RetryDelay(job));
-            command.Parameters.Add(IsTerminalParameter(job));
-            command.Parameters.Add(RetentionParameter(null));
+            await using var command = CreateRetryCommand(transaction, job, row);
             var updated = await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
             token.ThrowIfCancellationRequested();
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             return updated;
         }, StatementRepeat.SafeToRepeat, cancellationToken).ConfigureAwait(false);
+    }
+
+    private NpgsqlCommand CreateRetryCommand(NpgsqlTransaction transaction, ExecutionJobRecord job, ExecutionJobRow row)
+    {
+        var command = new NpgsqlCommand($"""
+            {_compareAndSet}
+            AND kind = @kind AND status IN ('Failed', 'Cancelled')
+            """, transaction.Connection, transaction);
+        AddAttemptStateParameters(command, job);
+        row.AddRecordParameters(command);
+        command.Parameters.AddWithValue("expected_version", NpgsqlDbType.Bigint, job.Version);
+        command.Parameters.AddWithValue("retry_delay", NpgsqlDbType.Interval, RetryDelay(job));
+        command.Parameters.Add(IsTerminalParameter(job));
+        command.Parameters.Add(RetentionParameter(null));
+        return command;
     }
 
     private async Task LockCapacityAsync(NpgsqlTransaction transaction, string kind, CancellationToken cancellationToken)

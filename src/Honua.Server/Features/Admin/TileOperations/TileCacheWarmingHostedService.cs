@@ -38,17 +38,7 @@ internal sealed partial class TileCacheWarmingHostedService(
                 continue;
             }
 
-            var request = new TileOperationStartRequest
-            {
-                Operation = operation,
-                ServiceId = target.ServiceId,
-                LayerId = target.LayerId,
-                MinZoom = target.MinZoom,
-                MaxZoom = target.MaxZoom,
-                TileMatrixSetId = target.TileMatrixSetId,
-                Bbox = target.Bbox,
-                MaxTiles = target.MaxTiles
-            };
+            var request = CreateRequest(target, operation);
 
             var jobId = await _jobService.SubmitAsync(
                     new TileOperationSubmission(request, TileCacheJobService.SchedulerIdentityName),
@@ -56,6 +46,19 @@ internal sealed partial class TileCacheWarmingHostedService(
             Log.WarmTargetQueued(_logger, jobId, operation, target.ServiceId, target.LayerId, target.MinZoom, target.MaxZoom);
         }
     }
+
+    private static TileOperationStartRequest CreateRequest(TileCacheWarmingTarget target, string operation)
+        => new()
+        {
+            Operation = operation,
+            ServiceId = target.ServiceId,
+            LayerId = target.LayerId,
+            MinZoom = target.MinZoom,
+            MaxZoom = target.MaxZoom,
+            TileMatrixSetId = target.TileMatrixSetId,
+            Bbox = target.Bbox,
+            MaxTiles = target.MaxTiles
+        };
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

@@ -139,16 +139,7 @@ internal sealed class ExportJobExecutor(
             throw new OperationCanceledException("The export attempt can no longer publish its result.");
         }
 
-        var done = run.Processing with
-        {
-            Status = OperationStatus.Completed,
-            ProcessedFeatures = output.WrittenCount,
-            Warnings = output.Warnings,
-            OutputSizeBytes = new FileInfo(output.Path).Length,
-            DownloadUrl = downloadUrl,
-            CompletedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Export completed"
-        };
+        var done = CompletedProgress(run, output, downloadUrl);
 
         // Cancellation and replacement attempts must both win over this attempt's completion.
         var completion = await progressStore.TryReplaceProgressAsync(
@@ -168,6 +159,18 @@ internal sealed class ExportJobExecutor(
         ExportLog.AsyncExportCompleted(logger, request.JobId, request.TotalFeatures, done.OutputSizeBytes);
         return JobExecutionResult.Succeeded(output.Warnings);
     }
+
+    private static ExportProgress CompletedProgress(ExportRun run, ExportFileResult output, string? downloadUrl)
+        => run.Processing with
+        {
+            Status = OperationStatus.Completed,
+            ProcessedFeatures = output.WrittenCount,
+            Warnings = output.Warnings,
+            OutputSizeBytes = new FileInfo(output.Path).Length,
+            DownloadUrl = downloadUrl,
+            CompletedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Export completed"
+        };
 
     private static async Task<string?> UploadAsync(
         ExportUpload upload,
@@ -240,10 +243,7 @@ internal sealed class ExportJobExecutor(
         var srsName = crs.HasValue ? $"EPSG:{job.OutputSrid}" : null;
         var srsWkt = crs?.Wkt;
 
-        // SanitizeExportFilename strips path separators, drive/colon characters, and
-        // traversal segments (FileUploadSecurity.SanitizeFileName), so baseName cannot be
-        // rooted and the Path.Join calls below cannot silently drop the scratch directory.
-        var basePath = Path.Join(run.ScratchDir, ExportEndpoints.SanitizeExportFilename(job.ServiceName, job.LayerName));
+        var basePath = ExportBasePath(run);
 
         switch (BuiltInExportFormats.Resolve(job.Format))
         {
@@ -269,6 +269,12 @@ internal sealed class ExportJobExecutor(
             default:
                 throw new InvalidOperationException($"Unsupported export format: {job.Format}");
         }
+    }
+
+    private static string ExportBasePath(ExportRun run)
+    {
+        // Sanitizing path separators and traversal segments keeps output inside this attempt's directory.
+        return Path.Join(run.ScratchDir, ExportEndpoints.SanitizeExportFilename(run.Request.ServiceName, run.Request.LayerName));
     }
 
     private async Task DeleteArtifactBestEffortAsync(ICloudFileStorage storage, string jobId, string fileId)

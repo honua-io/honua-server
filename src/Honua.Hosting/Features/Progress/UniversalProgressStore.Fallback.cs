@@ -20,7 +20,7 @@ internal sealed partial class UniversalProgressStore
 
     private FallbackProgress? GetFallbackEntry(string key)
     {
-        CleanupFallbackIfNeeded(enforceMax: false);
+        CleanupFallbackPeriodically();
         while (_fallbackStore.TryGetValue(key, out var current))
         {
             if (current.ExpiresAt > DateTime.UtcNow)
@@ -58,7 +58,7 @@ internal sealed partial class UniversalProgressStore
             : _fallbackStore.TryUpdate(key, replacement, current);
         if (updated)
         {
-            CleanupFallbackIfNeeded(enforceMax: true);
+            EnforceFallbackCapacity();
             return ProgressCompareAndSetResult.Updated;
         }
 
@@ -85,29 +85,39 @@ internal sealed partial class UniversalProgressStore
 
             if (_fallbackStore.TryUpdate(key, new FallbackProgress(write.Progress, DateTime.UtcNow.Add(ttl)), current))
             {
-                CleanupFallbackIfNeeded(enforceMax: true);
+                EnforceFallbackCapacity();
                 return ProgressCompareAndSetResult.Updated;
             }
         }
     }
 
-    private void CleanupFallbackIfNeeded(bool enforceMax)
+    private void CleanupFallbackPeriodically()
     {
         var nowTick = Environment.TickCount64;
-        var intervalMs = (long)_fallbackCleanupInterval.TotalMilliseconds;
-        if (!enforceMax || _fallbackStore.Count <= MaxFallbackEntries)
+        var last = Interlocked.Read(ref _lastCleanupTick);
+        if (nowTick - last < (long)_fallbackCleanupInterval.TotalMilliseconds
+            || Interlocked.CompareExchange(ref _lastCleanupTick, nowTick, last) != last)
         {
-            var last = Interlocked.Read(ref _lastCleanupTick);
-            if (nowTick - last < intervalMs || Interlocked.CompareExchange(ref _lastCleanupTick, nowTick, last) != last)
-            {
-                return;
-            }
-        }
-        else
-        {
-            Interlocked.Exchange(ref _lastCleanupTick, nowTick);
+            return;
         }
 
+        SweepFallback();
+    }
+
+    private void EnforceFallbackCapacity()
+    {
+        if (_fallbackStore.Count <= MaxFallbackEntries)
+        {
+            CleanupFallbackPeriodically();
+            return;
+        }
+
+        Interlocked.Exchange(ref _lastCleanupTick, Environment.TickCount64);
+        SweepFallback();
+    }
+
+    private void SweepFallback()
+    {
         var now = DateTime.UtcNow;
         foreach (var entry in _fallbackStore.Where(entry => entry.Value.ExpiresAt <= now))
         {
@@ -130,7 +140,7 @@ internal sealed partial class UniversalProgressStore
     private void CacheFallback(string operationId, IOperationProgress progress, TimeSpan ttl)
     {
         _fallbackStore[$"{KeyPrefix}{operationId}"] = new FallbackProgress(progress, DateTime.UtcNow.Add(ttl));
-        CleanupFallbackIfNeeded(enforceMax: true);
+        EnforceFallbackCapacity();
     }
 
     private void RemoveFallbackEntry(string key)
@@ -138,7 +148,7 @@ internal sealed partial class UniversalProgressStore
 
     private List<string> GetActiveOperationIdsFromFallback(OperationType? operationType)
     {
-        CleanupFallbackIfNeeded(enforceMax: false);
+        CleanupFallbackPeriodically();
         var now = DateTime.UtcNow;
         return _fallbackStore
             .Where(entry => entry.Key.StartsWith(KeyPrefix, StringComparison.Ordinal) && entry.Value.ExpiresAt > now)

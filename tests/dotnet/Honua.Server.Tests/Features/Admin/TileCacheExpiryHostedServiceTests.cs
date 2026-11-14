@@ -234,7 +234,7 @@ public sealed class TileCacheExpiryHostedServiceTests
         public Task<TileOperationProgress?> GetAsync(string jobId, CancellationToken cancellationToken = default)
             => Task.FromResult<TileOperationProgress?>(null);
 
-        public Task<IReadOnlyList<TileOperationProgress>> ListAsync(bool activeOnly, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<TileOperationProgress>> ListAsync(TileOperationListScope scope, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<TileOperationProgress>>([]);
 
         public Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default)

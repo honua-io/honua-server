@@ -508,7 +508,7 @@ public sealed partial class TileOperationJobTests
 
         await submit.Should().ThrowAsync<InvalidOperationException>().WithMessage("database unavailable");
         (await progressStore.GetActiveOperationIdsAsync()).Should().BeEmpty();
-        (await service.ListAsync(activeOnly: true)).Should().BeEmpty();
+        (await service.ListAsync(TileOperationListScope.Active)).Should().BeEmpty();
     }
 
     private static async Task MarkRunningAsync(
