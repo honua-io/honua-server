@@ -517,8 +517,8 @@ jobs:
           context: .
           file: docker/Dockerfile.aot
           build-args: |
-            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-aot
-            DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0-aot
+            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-11.0-aot
+            DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-11.0-aot
             VERSION=${{ needs.select-candidate.outputs.version }}
             HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}
           platforms: ${{ matrix.platform }}
@@ -690,8 +690,8 @@ jobs:
           context: .
           file: docker/Dockerfile.lambda.aot
           build-args: |
-            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-lambda
-            DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0
+            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-11.0-lambda
+            DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-11.0
             LAMBDA_ADAPTER_IMAGE=${{ env.BASE_REPO }}:lambda-adapter-0.9.1
             VERSION=${{ needs.select-candidate.outputs.version }}
             HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}
@@ -1144,8 +1144,8 @@ jobs:
           context: .
           file: Dockerfile
           build-args: |
-            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0
-            DOTNET_ASPNET_IMAGE=${{ env.BASE_REPO }}:aspnet-10.0
+            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-11.0
+            DOTNET_ASPNET_IMAGE=${{ env.BASE_REPO }}:aspnet-11.0
             VERSION=${{ needs.select-candidate.outputs.version }}
             HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}
             HONUA_STORE_PROFILE=${{ matrix.store_profile }}
