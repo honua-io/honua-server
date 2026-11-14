@@ -14,19 +14,16 @@ internal sealed class ExecutionJobCancellationTokens : IJobCancellationNotifier
     private readonly ConcurrentDictionary<string, CancellationEntry> _tokens = new(StringComparer.Ordinal);
 
     public CancellationTokenSource CreateLinkedTokenSource(string jobId, string claimHandle, params CancellationToken[] linkedTokens)
-        => CreateLinkedTokenSourceCore(jobId, claimHandle, null, linkedTokens);
+        => CreateLinkedTokenSource(jobId, (claimHandle, null), linkedTokens);
 
-    public CancellationTokenSource CreateLinkedTokenSource(string jobId, string claimHandle, int attemptCount, params CancellationToken[] linkedTokens)
-        => CreateLinkedTokenSourceCore(jobId, claimHandle, attemptCount, linkedTokens);
-
-    private CancellationTokenSource CreateLinkedTokenSourceCore(string jobId, string claimHandle, int? attemptCount, CancellationToken[] linkedTokens)
+    public CancellationTokenSource CreateLinkedTokenSource(string jobId, (string Handle, int? AttemptCount) claim, params CancellationToken[] linkedTokens)
     {
         // CreateLinkedTokenSource rejects an empty token list. Callers that only need the
         // tracked source, with no host or timeout token, still have to be able to register one.
         var cts = linkedTokens is { Length: > 0 }
             ? CancellationTokenSource.CreateLinkedTokenSource(linkedTokens)
             : new CancellationTokenSource();
-        var newEntry = new CancellationEntry(cts, claimHandle, attemptCount);
+        var newEntry = new CancellationEntry(cts, claim.Handle, claim.AttemptCount);
         _tokens.AddOrUpdate(jobId, newEntry, (_, existing) =>
         {
             try { existing.Cts.Cancel(); }

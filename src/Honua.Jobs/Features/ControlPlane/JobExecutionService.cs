@@ -343,7 +343,7 @@ internal sealed partial class JobExecutionService(
         using var timeoutCts = new CancellationTokenSource(timeoutPolicy.MaxDuration);
         var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
         using var jobCts = cancellationTokens.CreateLinkedTokenSource(
-            operationId, workerId, job.AttemptCount, stoppingToken, timeoutCts.Token, licenseCancellation);
+            operationId, (workerId, job.AttemptCount), stoppingToken, timeoutCts.Token, licenseCancellation);
 
         // Re-read before promoting to Running to catch cancellations that arrived
         // after the claim but before the worker registered its CTS.
