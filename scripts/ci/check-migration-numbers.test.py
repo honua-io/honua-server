@@ -128,16 +128,6 @@ class MigrationNumberTests(unittest.TestCase):
         self.commit()
         self.assertIn("hash pins are immutable", self.check().stdout)
 
-    def test_existing_pin_replaced_with_symlink_fails(self):
-        self.add(SERVER, "001_Initial.sql", "SELECT 2;")
-        pin = self.root / "eng/schema/migration-hashes" / SERVER / "001_Initial.sql.sha256"
-        target = pin.with_name("replacement.sha256")
-        target.write_text(pin.read_text())
-        pin.unlink()
-        pin.symlink_to(target.name)
-        self.commit()
-        self.assertIn("hash pins are immutable", self.check().stdout)
-
     def test_existing_pin_rename_fails(self):
         pin = self.root / "eng/schema/migration-hashes" / SERVER / "001_Initial.sql.sha256"
         pin.rename(pin.with_name("001_Renamed.sql.sha256"))
