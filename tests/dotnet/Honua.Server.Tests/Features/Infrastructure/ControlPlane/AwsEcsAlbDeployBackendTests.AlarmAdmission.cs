@@ -6,12 +6,13 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed partial class AwsEcsAlbDeployBackendTests
 {
-    [Fact]
+    [UnitTest]
     public async Task PlanAsync_AlarmAdmissionBlocked_ReportsBlockingReason()
     {
         var (backend, admission, clients) = CreateAlarmBlockedBackend();
@@ -25,7 +26,7 @@ public sealed partial class AwsEcsAlbDeployBackendTests
         clients.Ecs.ReceivedCalls().Should().BeEmpty();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("start")]
     [InlineData("promote")]
     [InlineData("prepare")]

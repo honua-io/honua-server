@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -12,7 +13,7 @@ public sealed class AwsDeploymentAlarmAdmissionTests
 {
     private const string TargetId = "prod-ecs";
 
-    [Fact]
+    [UnitTest]
     public async Task GetBlockingReasonAsync_Disabled_DoesNotReadProvider()
     {
         var client = Substitute.For<IAwsDeploymentAlarmClient>();
@@ -22,7 +23,7 @@ public sealed class AwsDeploymentAlarmAdmissionTests
         client.ReceivedCalls().Should().BeEmpty();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("ALARM")]
     [InlineData("INSUFFICIENT_DATA")]
     [InlineData("")]
@@ -34,7 +35,7 @@ public sealed class AwsDeploymentAlarmAdmissionTests
         (await guard.GetBlockingReasonAsync(TargetId, CancellationToken.None)).Should().NotBeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GetBlockingReasonAsync_AllRegionsOk_Allows()
     {
         var (guard, client) = CreateGuard(Snapshot(new AwsDeploymentAlarmState("regional", "OK")));
@@ -49,7 +50,7 @@ public sealed class AwsDeploymentAlarmAdmissionTests
         await client.Received(1).ReadAsync("us-east-1", Arg.Is<IReadOnlyList<string>>(n => n.SequenceEqual(new[] { "edge" })), Arg.Any<CancellationToken>());
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GetBlockingReasonAsync_UnknownTarget_BlocksWithoutProviderCall()
     {
         var (guard, client) = CreateGuard(Snapshot(new AwsDeploymentAlarmState("regional", "OK")));
@@ -58,7 +59,7 @@ public sealed class AwsDeploymentAlarmAdmissionTests
         client.ReceivedCalls().Should().BeEmpty();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("incomplete")]
     [InlineData("missing")]
     [InlineData("duplicate")]
@@ -72,7 +73,7 @@ public sealed class AwsDeploymentAlarmAdmissionTests
         (await guard.GetBlockingReasonAsync(TargetId, CancellationToken.None)).Should().NotBeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GetBlockingReasonAsync_ProviderFailure_BlocksWithoutExceptionDetails()
     {
         var (guard, client) = CreateGuard(Snapshot(new AwsDeploymentAlarmState("regional", "OK")));
@@ -84,7 +85,7 @@ public sealed class AwsDeploymentAlarmAdmissionTests
         reason.Should().NotBeNull().And.NotContain("private-provider-detail");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GetBlockingReasonAsync_StateChangesAfterPlanning_ReadsAgain()
     {
         var (guard, client) = CreateGuard(Snapshot(new AwsDeploymentAlarmState("regional", "OK")));
@@ -95,7 +96,7 @@ public sealed class AwsDeploymentAlarmAdmissionTests
         (await guard.GetBlockingReasonAsync(TargetId, CancellationToken.None)).Should().NotBeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GetBlockingReasonAsync_CallerCancelled_PropagatesCancellation()
     {
         var (guard, _) = CreateGuard(Snapshot(new AwsDeploymentAlarmState("regional", "OK")));
@@ -107,7 +108,7 @@ public sealed class AwsDeploymentAlarmAdmissionTests
         await action.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GetBlockingReasonAsync_ConfigurationMutates_UsesStartupSnapshot()
     {
         var (_, client) = CreateGuard(Snapshot(new AwsDeploymentAlarmState("regional", "OK")));
@@ -121,7 +122,7 @@ public sealed class AwsDeploymentAlarmAdmissionTests
         await client.Received(1).ReadAsync("us-west-2", Arg.Is<IReadOnlyList<string>>(n => n.SequenceEqual(new[] { "regional" })), Arg.Any<CancellationToken>());
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(0)]
     [InlineData(2)]
     public async Task GetBlockingReasonAsync_EmptyOrDuplicateConfiguration_BlocksWithoutProviderCalls(int alarmCount)

@@ -5,12 +5,13 @@ using System.Collections.Concurrent;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed partial class DeployTelemetrySignalEvaluatorTests
 {
-    [Fact]
+    [UnitTest]
     public async Task EvaluateAsync_DuringBakeHealthFails_RecommendsRollbackWithoutGoldenQuery()
     {
         var (decision, probe, queries) = await EvaluateBakeAsync(
@@ -24,7 +25,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         queries.Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task EvaluateAsync_DuringBakeGoldenQueryMismatches_RecommendsRollback()
     {
         var (decision, probe, queries) = await EvaluateBakeAsync(
@@ -38,7 +39,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         queries.Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task EvaluateAsync_DuringBakeHealthy_ProbesBeforeHoldingPromotion()
     {
         var (decision, probe, queries) = await EvaluateBakeAsync(
@@ -52,7 +53,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         queries.Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task EvaluateAsync_DuringBakeFirstBreach_WaitsForDebounce()
     {
         var (decision, probe) = await EvaluateBakeBreachAsync("0");
@@ -63,7 +64,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         probe.Invocations.Should().Be(1);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task EvaluateAsync_DuringBakeRepeatedBreach_RecommendsRollback()
     {
         var (decision, probe) = await EvaluateBakeBreachAsync("1");
@@ -74,7 +75,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         probe.Invocations.Should().Be(1);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task EvaluateAsync_DuringBake_HealthyProbesResetBreachStreakWithoutPromoting()
     {
         var probe = new FakeHealthProbe(

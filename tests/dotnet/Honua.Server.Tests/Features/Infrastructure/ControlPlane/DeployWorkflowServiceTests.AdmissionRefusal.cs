@@ -6,12 +6,13 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using NSubstitute;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed partial class DeployWorkflowServiceTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("create")]
     [InlineData("submit")]
     public async Task SubmitAsync_AdmissionRefusedAfterPlanning_PreservesRetry(string entryPoint)
@@ -45,7 +46,7 @@ public sealed partial class DeployWorkflowServiceTests
         await backend.Received(2).StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
     }
 
-    [Fact]
+    [UnitTest]
     public async Task AdvanceOrPromoteAsync_AdmissionRefused_KeepsObservedStateAndRecordsReason()
     {
         var backend = Substitute.For<IDeployBackend>();
@@ -66,7 +67,7 @@ public sealed partial class DeployWorkflowServiceTests
         advanced.CompletedAt.Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PromoteAsync_AdmissionRefusedDuringCanary_PreservesRollback()
     {
         var store = new TestWorkflowOperationStore();
@@ -90,7 +91,7 @@ public sealed partial class DeployWorkflowServiceTests
         await backend.Received(1).RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(ICheckpointedDeployBackend.PendingPhase, WorkflowOperationStatus.Submitted)]
     [InlineData(ICheckpointedDeployBackend.PendingPhase, WorkflowOperationStatus.Reconciling)]
     [InlineData(ICheckpointedDeployBackend.PreparedPhase, WorkflowOperationStatus.Reconciling)]
@@ -135,7 +136,7 @@ public sealed partial class DeployWorkflowServiceTests
         await backend.Received(1).RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Reconciler_PreparationAdmittedAfterRefusal_ClearsRefusalMessage()
     {
         var store = new TestWorkflowOperationStore();
