@@ -253,7 +253,7 @@ internal sealed record FeatureStreamStatusFrame
 
     public string? SubscriptionId { get; init; }
 
-    public JsonElement Cursor { get; init; }
+    public long? Cursor { get; init; }
 }
 
 internal sealed record FeatureStreamErrorFrame
