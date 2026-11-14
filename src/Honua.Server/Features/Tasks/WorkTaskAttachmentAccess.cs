@@ -16,7 +16,7 @@ internal sealed class WorkTaskAttachmentAccess(IWorkTaskStore tasks, AssetFormLo
     public async Task<WorkTask?> FindTaskAsync(HttpContext context, Guid taskId)
     {
         var task = await tasks.GetAsync(taskId, context.RequestAborted).ConfigureAwait(false);
-        return task is not null && (await AssetServiceAccess.RequireEditorAsync(context, task.ServiceId).ConfigureAwait(false)).Denied is null
+        return task is not null && (await WorkTaskAccess.RequireAsync(context, task.ServiceId, task.ProfileId).ConfigureAwait(false)).Denied is null
             ? task : null;
     }
 

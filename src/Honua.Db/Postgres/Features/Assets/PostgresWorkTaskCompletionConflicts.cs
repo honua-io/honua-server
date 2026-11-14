@@ -29,7 +29,14 @@ internal sealed class PostgresWorkTaskCompletionConflicts
         };
         var body = JsonSerializer.Serialize(conflict, AssetsJsonContext.Default.WorkTaskCompletionConflict);
         var stored = await _receipts.RecordAsync(transaction,
-            new AssetCommandReceipt(command, AssetCommandSubject.WorkTask, current.TaskId, 409, body),
+            new AssetCommandReceipt
+            {
+                Command = command,
+                SubjectKind = AssetCommandSubject.WorkTask,
+                SubjectId = current.TaskId,
+                StatusCode = 409,
+                ResponseJson = body,
+            },
             cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return new AssetCommandResult(AssetCommandStatus.VersionConflict, stored);
