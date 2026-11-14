@@ -163,7 +163,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
         string jobId, string serviceId, string taskName, ClaimsPrincipal principal, TimeSpan timeout)
     {
         ValidateTimeout(timeout);
-        var principalSnapshot = new ClaimsPrincipal(principal.Identities.Select(identity => new ClaimsIdentity(identity)));
+        var principalSnapshot = _jobs.CaptureOrphanCleanupPrincipal(jobId, principal);
         _ = Task.Run(() => CancelOrphanedInBackgroundAsync(
             jobId, principalSnapshot, timeout, serviceId, taskName), CancellationToken.None);
     }
@@ -187,7 +187,7 @@ internal sealed partial class GeoprocessingJobTerminalService : IGeoprocessingJo
         // This service and its collaborators are singletons. Clone the request principal,
         // then leave the response path before starting cleanup so a slow cancellation cannot
         // extend the synchronous request deadline.
-        var principalSnapshot = new ClaimsPrincipal(principal);
+        var principalSnapshot = _jobs.CaptureOrphanCleanupPrincipal(jobId, principal);
         _ = Task.Run(
             () => CancelOrphanedInBackgroundAsync(jobId, principalSnapshot, timeout),
             CancellationToken.None);

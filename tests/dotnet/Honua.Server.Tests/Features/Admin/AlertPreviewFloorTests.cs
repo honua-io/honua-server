@@ -34,6 +34,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [Operation(Operations.Configuration)]
 public sealed class AlertPreviewFloorTests : IAsyncLifetime
 {
+    private const string ExpectedAdminActor = "apikey:api-key:" + WebAppFixture.SharedAdminActorId;
     private readonly WebAppFixture _fixture = CreateFixture();
     private HttpClient _client = null!;
     private readonly string _service = $"alert-floor-{Guid.NewGuid():N}";
@@ -96,8 +97,8 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
         {
             var action = reader.GetString(0);
             actions.Add(action);
-            // The authenticated fixture key is seeded with this fixed principal ID.
-            reader.GetString(1).Should().Be(WebAppFixture.SharedAdminActorId);
+            // Audit records use the scheme-qualified actor for the fixture's bootstrap key.
+            reader.GetString(1).Should().Be(ExpectedAdminActor);
             reader.GetString(2).Should().Be("ApiKey");
             reader.GetString(3).Should().Be("ConfigChange");
             reader.GetString(4).Should().Be("Success");
@@ -269,7 +270,7 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
                 AND actor = @actor AND actor_type = 'ApiKey' AND outcome = 'Success'
             """, connection);
         command.Parameters.AddWithValue("rule", rule.RuleId.ToString(CultureInfo.InvariantCulture));
-        command.Parameters.AddWithValue("actor", WebAppFixture.SharedAdminActorId);
+        command.Parameters.AddWithValue("actor", ExpectedAdminActor);
         (await command.ExecuteScalarAsync()).Should().Be(1L);
         var resources = fixture.GetService<ReviewConnectionResources>();
         resources.ObservedAmbientTransaction.Should().BeFalse();
