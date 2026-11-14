@@ -24,23 +24,7 @@ public sealed class VersionJobRunnerPersistenceTests
         var invalidator = Substitute.For<IQueryResponseCacheInvalidator>();
         var completion = new TaskCompletionSource<VersionJob>(TaskCreationOptions.RunContinuationsAsynchronously);
         var store = Substitute.For<IVersionJobStore>();
-        var terminalAttempts = 0;
-        store.SaveAsync(Arg.Any<VersionJob>(), Arg.Any<CancellationToken>()).Returns(call =>
-        {
-            var job = call.Arg<VersionJob>();
-            if (job.Status is VersionJobStatus.Pending or VersionJobStatus.Running)
-            {
-                return Task.CompletedTask;
-            }
-
-            if (Interlocked.Increment(ref terminalAttempts) == 1)
-            {
-                return Task.FromException(new InvalidOperationException("Store unavailable"));
-            }
-
-            completion.TrySetResult(job);
-            return Task.CompletedTask;
-        });
+        FailFirstCompletionSave(store, completion);
         var services = new ServiceCollection();
         services.AddSingleton(manager);
         services.AddSingleton(store);
@@ -59,5 +43,27 @@ public sealed class VersionJobRunnerPersistenceTests
         await invalidator.Received(1).InvalidateQueryResponsesAsync(Arg.Any<CancellationToken>());
         await store.DidNotReceive().SaveAsync(
             Arg.Is<VersionJob>(job => job.Status == VersionJobStatus.Failed), Arg.Any<CancellationToken>());
+    }
+
+    private static void FailFirstCompletionSave(
+        IVersionJobStore store, TaskCompletionSource<VersionJob> completion)
+    {
+        var terminalAttempts = 0;
+        store.SaveAsync(Arg.Any<VersionJob>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            var job = call.Arg<VersionJob>();
+            if (job.Status is VersionJobStatus.Pending or VersionJobStatus.Running)
+            {
+                return Task.CompletedTask;
+            }
+
+            if (Interlocked.Increment(ref terminalAttempts) == 1)
+            {
+                return Task.FromException(new InvalidOperationException("Store unavailable"));
+            }
+
+            completion.TrySetResult(job);
+            return Task.CompletedTask;
+        });
     }
 }
