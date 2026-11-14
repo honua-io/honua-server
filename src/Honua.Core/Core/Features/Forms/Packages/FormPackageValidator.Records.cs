@@ -65,6 +65,8 @@ public sealed partial class FormPackageValidator
                 CultureInfo.InvariantCulture, out number),
             _ => false
         };
-        return parsed && TryReadFiniteDouble(value, out var original) && ((double)number).Equals(original) ? number : null;
+        // Use decimal only when conversion preserves the original double representation.
+        return parsed && TryReadFiniteDouble(value, out var original) &&
+            BitConverter.DoubleToInt64Bits((double)number) == BitConverter.DoubleToInt64Bits(original) ? number : null;
     }
 }
