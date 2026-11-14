@@ -22,7 +22,7 @@ using Npgsql;
 namespace Honua.Db.Postgres.Tests.Features.Studio;
 
 [Collection("Database")]
-public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
+public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
     public async Task AcceptedMapPublication_CommitsCanonicalDeploymentWithPointer_AndRepublishSupersedes()

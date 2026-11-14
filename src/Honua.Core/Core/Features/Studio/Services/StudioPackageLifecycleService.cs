@@ -215,13 +215,13 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         using var activity = ActivitySource.StartActivity("studio.package.preview-plan");
         activity?.SetTag("studio.draft.id", draftId.ToString("D"));
 
-        var validation = await ValidateDraftAsync(draftId, actorId, cancellationToken).ConfigureAwait(false);
         var draft = await _store.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
-        if (draft is null || validation is null)
+        if (draft is null)
         {
             return null;
         }
 
+        var validation = _validator.Validate(draft.Envelope);
         var requiresJob = RequiresBackgroundJob(draft.Family);
         var steps = requiresJob
             ? new[] { "validate-envelope", "plan-background-preview-job" }
@@ -238,17 +238,6 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         };
     }
 
-    /// <summary>
-    /// Whether <paramref name="family"/> requires a background job to preview
-    /// (gp/etl/workflow) rather than an inline preview. Extracted as a pure,
-    /// non-persisting helper so callers that need this classification without
-    /// the mutating side effects of <see cref="PreviewPlanAsync"/> (which
-    /// persists a refreshed validation summary through
-    /// <see cref="ValidateDraftAsync"/>) — e.g. a genuinely read-only MCP tool
-    /// — can compute it without going through the store (honua-server#3002 PR
-    /// review: preview/validate must not silently mutate draft state behind a
-    /// <c>readOnlyHint: true</c> advertisement).
-    /// </summary>
     public static bool RequiresBackgroundJob(StudioPackageFamily family)
         => family is StudioPackageFamily.Geoprocessing or StudioPackageFamily.Etl or StudioPackageFamily.Workflow;
 
