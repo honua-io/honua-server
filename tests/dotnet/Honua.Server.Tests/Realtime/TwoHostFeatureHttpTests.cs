@@ -13,6 +13,7 @@ using Honua.Server.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -73,7 +74,13 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task HttpEditsOnTaskA_ReachTaskBSse_OnceInOrderWithinTarget()
-        => await VerifyHttpDeliveryAsync(TimeSpan.FromMilliseconds(500));
+        => await VerifyDeliveryAsync(TimeSpan.FromMilliseconds(500));
+
+    [IntegrationTest(Timeout = 240000)]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task DirectSqlEdits_ReachTaskBSse_OnceInOrderWithinTarget()
+        => await VerifyDeliveryAsync(TimeSpan.FromMilliseconds(500),
+            edit: (_, ordinal, cancellationToken) => AddSqlAsync(ordinal, cancellationToken));
 
     [IntegrationTest(Timeout = 240000)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
@@ -90,7 +97,7 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         var processId = listener.ProcessId;
         processId.Should().BeGreaterThan(0);
 
-        await VerifyHttpDeliveryAsync(TimeSpan.FromMilliseconds(1500), async (ordinal, cancellationToken) =>
+        await VerifyDeliveryAsync(TimeSpan.FromMilliseconds(1500), async (ordinal, cancellationToken) =>
         {
             if (ordinal != Edits / 2)
             {
@@ -109,9 +116,11 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         }
     }
 
-    private async Task VerifyHttpDeliveryAsync(
-        TimeSpan latencyTarget, Func<int, CancellationToken, Task>? beforeEdit = null)
+    private async Task VerifyDeliveryAsync(
+        TimeSpan latencyTarget, Func<int, CancellationToken, Task>? beforeEdit = null,
+        Func<HttpClient, int, CancellationToken, Task<long>>? edit = null)
     {
+        edit ??= AddAsync;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
         using var writer = _taskA.CreateAdminClient();
         using var subscriber = _taskB.CreateAdminClient();
@@ -126,7 +135,7 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
                 await beforeEdit(i, timeout.Token);
             }
             var startedAt = Stopwatch.GetTimestamp();
-            committed.Add(await AddAsync(writer, i, timeout.Token), startedAt);
+            committed.Add(await edit(writer, i, timeout.Token), startedAt);
         }
 
         var frames = await reading;
@@ -205,6 +214,11 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         return result.GetProperty("objectId").GetInt64();
     }
 
+    // The shared fixture helper writes SQL in the isolated schema, with no HTTP request
+    // or local publish. The database trigger is the only source of this event.
+    private Task<long> AddSqlAsync(int ordinal, CancellationToken cancellationToken)
+        => _taskA.InsertFeatureAsync(0, $"{_marker}-{ordinal}", cancellationToken);
+
     private static async Task<HttpResponseMessage> OpenStreamAsync(
         HttpClient client, string? lastEventId, CancellationToken cancellationToken)
     {
@@ -272,7 +286,7 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
 
     private static void AssertCompleteOrderedDelivery(IReadOnlyList<Frame> frames, IEnumerable<long> committed)
     {
-        frames.Select(frame => frame.ObjectId).Should().Equal(committed, "every HTTP edit must arrive once in commit order");
+        frames.Select(frame => frame.ObjectId).Should().Equal(committed, "every edit must arrive once in commit order");
         frames.Select(frame => frame.Generation).Should().OnlyHaveUniqueItems().And.BeInAscendingOrder();
     }
 
