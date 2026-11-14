@@ -290,6 +290,11 @@ public sealed partial class CacheServiceResponseCacheBudgetTests
                         await afterWrite(key);
                     }
                 });
+            ConfigureResponseWritesAndRemovals();
+        }
+
+        private void ConfigureResponseWritesAndRemovals()
+        {
             Service.SetAsync(Arg.Any<string>(), Arg.Any<CachedResponse>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
                 .Returns(async call =>
                 {

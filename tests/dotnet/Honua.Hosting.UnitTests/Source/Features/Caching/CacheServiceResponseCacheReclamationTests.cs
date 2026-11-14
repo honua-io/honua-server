@@ -96,26 +96,26 @@ public sealed partial class CacheServiceResponseCacheBudgetTests
         Assert.Null(await cache.GetAsync<CachedResponse>("overflow"));
     }
 
-    [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task RemoveByPatternAsync_BackendFailure_RetainsBudgetAndUnlocksBoundKey(bool failVersionWrite)
+    public Task RemoveByPatternAsync_VersionWriteFailure_RetainsBudgetAndUnlocksBoundKey()
+        => AssertInvalidationFailureRetainsBudget(backend => backend.AfterVersionWrite = FailInvalidation);
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public Task RemoveByPatternAsync_ResponseRemovalFailure_RetainsBudgetAndUnlocksBoundKey()
+        => AssertInvalidationFailureRetainsBudget(backend => backend.BeforeResponseRemove = FailInvalidation);
+
+    private static Task FailInvalidation(string _) => throw new IOException("Injected invalidation failure");
+
+    private static async Task AssertInvalidationFailureRetainsBudget(Action<RecordingCache> configureFailure)
     {
         var backend = new RecordingCache();
         var cache = ResponseCache(backend, maxEntries: 1);
         var payload = new CachedResponse(new byte[32], "application/json");
         var boundKey = await cache.BindKeyAsync(AlphaLayer + "first");
         await cache.SetAsync(boundKey, payload, Lifetime);
-        static Task Fail(string _) => throw new IOException("Injected invalidation failure");
-        if (failVersionWrite)
-        {
-            backend.AfterVersionWrite = Fail;
-        }
-        else
-        {
-            backend.BeforeResponseRemove = Fail;
-        }
+        configureFailure(backend);
 
         await Assert.ThrowsAsync<IOException>(() => cache.RemoveByPatternAsync(AlphaLayer + "*"));
         await cache.SetAsync("overflow", payload, Lifetime);
