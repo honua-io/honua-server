@@ -69,7 +69,7 @@ public static partial class GeoParquetFeatureWriter
     }
 
     private sealed class BoundedParquetStream(int maxBytes) : FileStream(
-        Path.Combine(Path.GetTempPath(), $"honua-parquet-{Guid.NewGuid():N}"), CreateOptions())
+        Path.Join(Path.GetTempPath(), $"honua-parquet-{Guid.NewGuid():N}"), CreateOptions())
     {
         private static FileStreamOptions CreateOptions()
         {

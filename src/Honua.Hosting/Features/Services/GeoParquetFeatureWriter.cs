@@ -176,7 +176,7 @@ public static partial class GeoParquetFeatureWriter
     // wrapped in TypeInitializationException).
     // Translate that into a typed ParquetRuntimeUnavailableException so protocol adapters can
     // return a clean 501 capability response instead of an unhandled 500 (honua-server#1942).
-    private static Stream WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
+    private static BoundedParquetStream WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
     {
         var stream = new BoundedParquetStream(limits.MaxResponseBytes);
         try
