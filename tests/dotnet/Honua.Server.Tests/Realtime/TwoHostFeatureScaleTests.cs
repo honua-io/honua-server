@@ -46,7 +46,9 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
         var perTask = Math.Max(1, (_profile.Subscribers + 1) / 2);
         var overrides = new Dictionary<string, string?>
         {
-            ["FeatureStreaming:MaxConcurrentSessions"] = (perTask + 16).ToString(CultureInfo.InvariantCulture)
+            ["FeatureStreaming:MaxConcurrentSessions"] = (perTask + 16).ToString(CultureInfo.InvariantCulture),
+            // One admin key writes every edit; keep the limiter on but sized above the offered rate.
+            ["RateLimiting:GlobalRequestsPerMinute"] = "100000"
         };
         _taskA = TwoHostFeatureHarness.NewHost(overrides);
         await _taskA.InitializeAsync();
@@ -103,7 +105,16 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
         using (var settle = CancellationTokenSource.CreateLinkedTokenSource(run.Token))
         {
             settle.CancelAfter(SettleTimeout);
-            await Task.WhenAll(reading).WaitAsync(settle.Token);
+            try
+            {
+                await Task.WhenAll(reading).WaitAsync(settle.Token);
+            }
+            catch (OperationCanceledException exception)
+            {
+                throw new TimeoutException(
+                    $"Subscribers received between {subscribers.Min(subscriber => subscriber.Received)} and " +
+                    $"{subscribers.Max(subscriber => subscriber.Received)} of {total} edits.", exception);
+            }
         }
 
         _output.WriteLine(string.Create(CultureInfo.InvariantCulture,
@@ -168,7 +179,8 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
         {
             using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(cancellationToken));
             var lastGeneration = long.MinValue;
-            await foreach (var frame in TwoHostFeatureHarness.ReadFramesAsync(reader, context.Marker, cancellationToken))
+            var stream = new MarkedFeatureStream(context.Marker);
+            await foreach (var frame in stream.ReadAsync(reader, cancellationToken))
             {
                 frame.Generation.Should().BeGreaterThan(lastGeneration, "delivery is once and in commit order");
                 lastGeneration = frame.Generation;
@@ -179,7 +191,7 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
                     return;
                 }
             }
-            throw new EndOfStreamException($"The feature stream ended after {Received} of {expected} edits.");
+            throw new EndOfStreamException($"The feature stream ended after {Received} of {expected} edits; {stream.Describe()}");
         }
 
         public void Dispose() => response.Dispose();

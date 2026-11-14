@@ -95,13 +95,24 @@ internal static class TwoHostFeatureHarness
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
         return response;
     }
+}
 
-    /// <summary>
-    /// Yields this run's feature-change frames until the stream ends. Other database tests share
-    /// the operational log, so only committed images whose name starts with the marker count.
-    /// </summary>
-    public static async IAsyncEnumerable<FeatureFrame> ReadFramesAsync(
-        StreamReader reader, string marker, [EnumeratorCancellation] CancellationToken cancellationToken)
+/// <summary>
+/// Reads this run's feature-change frames from one SSE stream until it ends. Other database
+/// tests share the operational log, so only committed images whose name starts with the marker
+/// count. Every event is tallied so a stalled read can say what the stream did deliver.
+/// </summary>
+internal sealed class MarkedFeatureStream(string marker)
+{
+    private readonly Dictionary<string, int> _events = new(StringComparer.Ordinal);
+    private string? _lastUnmatched;
+
+    public string Describe()
+        => $"events [{string.Join(", ", _events.Select(pair => $"{pair.Key}={pair.Value}"))}], " +
+           $"last unmatched data: {_lastUnmatched ?? "none"}";
+
+    public async IAsyncEnumerable<FeatureFrame> ReadAsync(
+        StreamReader reader, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         string? eventName = null;
         string? id = null;
@@ -111,10 +122,18 @@ internal static class TwoHostFeatureHarness
             if (line.Length == 0)
             {
                 eventName.Should().NotBe("reset", "the run stays within the retained feature window");
-                if (eventName == "feature-change" && data is not null &&
-                    TryReadMarkedFrame(data, marker, id) is { } frame)
+                var name = eventName ?? "message";
+                _events[name] = _events.GetValueOrDefault(name) + 1;
+                if (eventName == "feature-change" && data is not null)
                 {
-                    yield return frame;
+                    if (TryReadMarkedFrame(data, id) is { } frame)
+                    {
+                        yield return frame;
+                    }
+                    else
+                    {
+                        _lastUnmatched = data.Length > 400 ? data[..400] : data;
+                    }
                 }
                 eventName = id = data = null;
             }
@@ -133,11 +152,11 @@ internal static class TwoHostFeatureHarness
         }
     }
 
-    private static FeatureFrame? TryReadMarkedFrame(string data, string marker, string? id)
+    private FeatureFrame? TryReadMarkedFrame(string data, string? id)
     {
         using var document = JsonDocument.Parse(data);
         var envelope = document.RootElement;
-        if (envelope.GetProperty("serviceId").GetString() != "test" ||
+        if (!envelope.TryGetProperty("serviceId", out var serviceId) || serviceId.GetString() != "test" ||
             !envelope.TryGetProperty("attributes", out var attributes) ||
             attributes.ValueKind != JsonValueKind.Object ||
             !attributes.TryGetProperty("name", out var nameElement) ||

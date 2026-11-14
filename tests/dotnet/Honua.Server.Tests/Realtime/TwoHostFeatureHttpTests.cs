@@ -249,15 +249,24 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         StreamReader reader, int count, CancellationToken cancellationToken)
     {
         var frames = new List<FeatureFrame>(count);
-        await foreach (var frame in TwoHostFeatureHarness.ReadFramesAsync(reader, _marker, cancellationToken))
+        var stream = new MarkedFeatureStream(_marker);
+        try
         {
-            frames.Add(frame);
-            if (frames.Count == count)
+            await foreach (var frame in stream.ReadAsync(reader, cancellationToken))
             {
-                return frames;
+                frames.Add(frame);
+                if (frames.Count == count)
+                {
+                    return frames;
+                }
             }
         }
-        throw new EndOfStreamException("The feature SSE stream ended before all committed edits arrived.");
+        catch (OperationCanceledException exception)
+        {
+            throw new TimeoutException($"Received {frames.Count} of {count} marked edits; {stream.Describe()}", exception);
+        }
+        throw new EndOfStreamException(
+            $"The feature SSE stream ended after {frames.Count} of {count} marked edits; {stream.Describe()}");
     }
 
     // Reads until the serving task goes away. The client only knows what it received, so
@@ -268,7 +277,7 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         var frames = new List<FeatureFrame>();
         try
         {
-            await foreach (var frame in TwoHostFeatureHarness.ReadFramesAsync(reader, _marker, cancellationToken))
+            await foreach (var frame in new MarkedFeatureStream(_marker).ReadAsync(reader, cancellationToken))
             {
                 frames.Add(frame);
             }
