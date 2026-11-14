@@ -185,6 +185,49 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
     }
 
     [IntegrationTest]
+    public async Task ExecutionJobStore_LegacyTenantScope_FiltersBeforePagination()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var owner = $"legacy-owner-{Guid.NewGuid():N}";
+        var created = DateTimeOffset.UtcNow;
+        var expected = new List<string>();
+        foreach (var (tenant, offset) in new (string?, int)[] { ("foreign", 0), (null, 1), ("public", 2), (null, 3) })
+        {
+            var job = CreateQueuedJob($"legacy-list-{Guid.NewGuid():N}") with
+            {
+                CreatedAt = created.AddMinutes(-offset),
+                Audit = new OperationAuditInfo
+                {
+                    RequestedBy = owner,
+                    SubmitterSecurityContext = new JobSecurityContext(owner, tenant, [], "roles")
+                }
+            };
+            (await harness.JobStore.TryCreateAsync(job)).Should().BeTrue();
+            if (tenant != "foreign")
+            {
+                expected.Add(job.OperationId);
+            }
+        }
+
+        var query = new ExecutionJobQuery
+        {
+            RequestedBy = owner,
+            ApplyTenantScope = true,
+            TenantId = "public",
+            IncludeUnassignedTenant = true,
+            Limit = 1
+        };
+        foreach (var id in expected)
+        {
+            var page = await harness.JobStore.QueryAsync(query);
+            page.Items.Should().ContainSingle().Which.OperationId.Should().Be(id);
+            query = query with { Cursor = page.NextCursor };
+        }
+
+        query.Cursor.Should().BeNull();
+    }
+
+    [IntegrationTest]
     public async Task ExecutionJobStore_SupportsCasUpdatesAndActiveIndexes()
     {
         await using var harness = await CreateHarnessAsync();

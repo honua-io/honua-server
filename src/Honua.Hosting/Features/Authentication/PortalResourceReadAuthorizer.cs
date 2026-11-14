@@ -8,6 +8,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 using Honua.Infrastructure.Validation;
+using Honua.Infrastructure.MultiTenancy;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -43,7 +44,12 @@ internal sealed class PortalResourceReadAuthorizer(
         }
 
         var state = sharing.Get(service.Metadata.Id);
-        var membership = groups.GetGroupIdsForUser(username, tenantId);
+        var scope = TenantReadScope.For(context.RequestServices.GetService<ITenantContext>());
+        var membership = groups.GetGroupIdsForUser(username, tenantId).AsEnumerable();
+        if (tenantId is not null && scope.Contains(null))
+        {
+            membership = membership.Concat(groups.GetGroupIdsForUser(username, null));
+        }
         // Everyone/org are deliberately unsupported; only exact live group membership grants access.
         return state.GroupIds.Any(id => membership.Contains(id, StringComparer.Ordinal));
     }
@@ -57,8 +63,8 @@ internal sealed class PortalResourceReadAuthorizer(
     }
 
     internal static bool IsGroupTenantVisible(HttpContext context, PortalGroupRecord group)
-        => TryGetTrustedTenant(context, out var tenantId)
-            && string.Equals(group.TenantId, tenantId, StringComparison.Ordinal);
+        => TryGetTrustedTenant(context, out _)
+            && TenantReadScope.For(context.RequestServices.GetService<ITenantContext>()).Contains(group.TenantId);
 
     public AccessDecision Evaluate(
         ClaimsPrincipal principal, MetadataV2Resource? resource, MetadataV2Service service,
