@@ -180,6 +180,7 @@ public sealed class TwoTaskCollaborationTests(DatabaseFixtureAdapter database) :
             registrations.AddSingleton<ICollaborationSessionClock, SystemCollaborationSessionClock>();
             registrations.AddSingleton<ISavedMapCollaborationAuthorizer, AllowAuthorizer>();
             registrations.AddSingleton(sp => new CollaborationRealtimeRelay(provider, sp, NullLogger<CollaborationRealtimeRelay>.Instance));
+            registrations.AddSingleton<CollaborationSessionRealtimeServices>();
             registrations.AddSingleton<InMemoryCollaborationSessionService>();
             _services = registrations.BuildServiceProvider();
             Sessions = _services.GetRequiredService<InMemoryCollaborationSessionService>();
