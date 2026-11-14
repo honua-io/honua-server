@@ -67,16 +67,31 @@ internal sealed partial class InMemoryCollaborationSessionService
         }
 
         _remotePresence.TryGetValue(key, out var previous);
+        if (!TryStoreRemotePresence(key, presence, previous))
+        {
+            return;
+        }
+        DeliverRemotePresenceChanges(message, presence, previous);
+    }
+
+    private bool TryStoreRemotePresence((string Map, Guid Session) key,
+        CollaborationParticipantPresence presence, CollaborationParticipantPresence? previous)
+    {
         if (previous is null && _remotePresence.Count >= MaxRemoteParticipants)
         {
             PruneRemotePresence();
             if (_remotePresence.Count >= MaxRemoteParticipants)
             {
-                return;
+                return false;
             }
         }
-
         _remotePresence[key] = presence;
+        return true;
+    }
+
+    private void DeliverRemotePresenceChanges(CollaborationPresenceMessage message,
+        CollaborationParticipantPresence presence, CollaborationParticipantPresence? previous)
+    {
         if (previous is null)
         {
             Deliver(new CollaborationSessionEvent
@@ -150,13 +165,14 @@ internal sealed partial class InMemoryCollaborationSessionService
         }
     }
 
-    internal void RequireResync(bool clearPresence)
+    internal void ResetRemotePresence()
     {
-        if (clearPresence)
-        {
-            _remotePresence.Clear();
-        }
+        _remotePresence.Clear();
+        RequireResync();
+    }
 
+    internal void RequireResync()
+    {
         foreach (var channel in _channels.Values)
         {
             lock (channel.Sync)

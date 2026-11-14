@@ -29,30 +29,7 @@ internal sealed partial class CollaborationRealtimeRelay(
         try
         {
             var window = await provider.GetWindowAsync(RealtimeFamily.CollabPresence, cancellationToken).ConfigureAwait(false);
-            var latest = new Dictionary<Guid, RealtimeEvent>();
-            var after = 0L;
-            while (after < window.Head)
-            {
-                var page = await provider.ReadPresencePageAsync(mapId, after, window.Head, cancellationToken).ConfigureAwait(false);
-                if (page.Count == 0)
-                {
-                    break;
-                }
-
-                foreach (var value in page)
-                {
-                    var message = value.Payload.Deserialize(CollaborationSessionJsonContext.Default.CollaborationPresenceMessage);
-                    if (message is not null && Guid.TryParse(message.Event.SessionId, out var session))
-                    {
-                        latest[session] = value;
-                        if (latest.Count > MaxSnapshotParticipants)
-                        {
-                            throw new InvalidOperationException("The retained collaboration snapshot exceeds participant capacity.");
-                        }
-                    }
-                }
-                after = page[^1].Sequence;
-            }
+            var latest = await ReadLatestPresenceAsync(mapId, window.Head, cancellationToken).ConfigureAwait(false);
 
             // Live delivery shares this gate. Only the last retained state per session is applied,
             // so an earlier page cannot roll back an update already delivered by the live tail.
@@ -71,6 +48,34 @@ internal sealed partial class CollaborationRealtimeRelay(
         {
             _presenceGate.Release();
         }
+    }
+
+    private async Task<Dictionary<Guid, RealtimeEvent>> ReadLatestPresenceAsync(string mapId, long head, CancellationToken cancellationToken)
+    {
+        var latest = new Dictionary<Guid, RealtimeEvent>();
+        var after = 0L;
+        while (after < head)
+        {
+            var page = await provider.ReadPresencePageAsync(mapId, after, head, cancellationToken).ConfigureAwait(false);
+            if (page.Count == 0)
+            {
+                break;
+            }
+            foreach (var value in page)
+            {
+                var message = value.Payload.Deserialize(CollaborationSessionJsonContext.Default.CollaborationPresenceMessage);
+                if (message is not null && Guid.TryParse(message.Event.SessionId, out var session))
+                {
+                    latest[session] = value;
+                    if (latest.Count > MaxSnapshotParticipants)
+                    {
+                        throw new InvalidOperationException("The retained collaboration snapshot exceeds participant capacity.");
+                    }
+                }
+            }
+            after = page[^1].Sequence;
+        }
+        return latest;
     }
 
     private static void ApplyPresence(InMemoryCollaborationSessionService sessions, RealtimeEvent value)
@@ -107,7 +112,7 @@ internal sealed partial class CollaborationRealtimeRelay(
     {
         if (family != RealtimeFamily.CollabPresence)
         {
-            sessions.RequireResync(clearPresence: false);
+            sessions.RequireResync();
             return;
         }
 
@@ -115,7 +120,7 @@ internal sealed partial class CollaborationRealtimeRelay(
         try
         {
             _snapshotHeads.Clear();
-            sessions.RequireResync(clearPresence: true);
+            sessions.ResetRemotePresence();
         }
         finally
         {
@@ -137,17 +142,15 @@ internal sealed partial class CollaborationRealtimeRelay(
         }
     }
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        var sessions = services.GetRequiredService<InMemoryCollaborationSessionService>();
-        var operations = services.GetRequiredService<ISavedMapOperationLogRepository>();
-        return Task.WhenAll(
-            ConsumeAsync(RealtimeFamily.CollabOps, sessions, operations, stoppingToken),
-            ConsumeAsync(RealtimeFamily.CollabPresence, sessions, operations, stoppingToken));
-    }
+    private InMemoryCollaborationSessionService Sessions => services.GetRequiredService<InMemoryCollaborationSessionService>();
 
-    private async Task ConsumeAsync(RealtimeFamily family, InMemoryCollaborationSessionService sessions,
-        ISavedMapOperationLogRepository operations, CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.WhenAll(
+        ConsumeAsync(RealtimeFamily.CollabOps, stoppingToken),
+        ConsumeAsync(RealtimeFamily.CollabPresence, stoppingToken));
+
+    private sealed record DeliveryBatch(RealtimeFamily Family, ChannelReader<RealtimeDelivery> Reader, long? After);
+
+    private async Task ConsumeAsync(RealtimeFamily family, CancellationToken stoppingToken)
     {
         long? after = null;
         while (!stoppingToken.IsCancellationRequested)
@@ -167,7 +170,7 @@ internal sealed partial class CollaborationRealtimeRelay(
                     await MarkPresenceReadyAsync(after.Value, stoppingToken).ConfigureAwait(false);
                 }
 
-                after = await ReadDeliveriesAsync(family, deliveries.Reader, after, sessions, operations, stoppingToken).ConfigureAwait(false);
+                after = await ReadDeliveriesAsync(new DeliveryBatch(family, deliveries.Reader, after), stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -180,21 +183,20 @@ internal sealed partial class CollaborationRealtimeRelay(
                 {
                     after = null;
                 }
-                await ResetAsync(sessions, family, stoppingToken).ConfigureAwait(false);
+                await ResetAsync(Sessions, family, stoppingToken).ConfigureAwait(false);
                 await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
             }
         }
     }
 
-    private async Task<long?> ReadDeliveriesAsync(RealtimeFamily family, ChannelReader<RealtimeDelivery> deliveries,
-        long? after, InMemoryCollaborationSessionService sessions, ISavedMapOperationLogRepository operations,
-        CancellationToken stoppingToken)
+    private async Task<long?> ReadDeliveriesAsync(DeliveryBatch batch, CancellationToken stoppingToken)
     {
+        var (family, deliveries, after) = batch;
         await foreach (var delivery in deliveries.ReadAllAsync(stoppingToken).ConfigureAwait(false))
         {
             if (delivery is RealtimeDelivery.Reset)
             {
-                await ResetAsync(sessions, family, stoppingToken).ConfigureAwait(false);
+                await ResetAsync(Sessions, family, stoppingToken).ConfigureAwait(false);
                 return null;
             }
 
@@ -205,20 +207,21 @@ internal sealed partial class CollaborationRealtimeRelay(
 
             if (family == RealtimeFamily.CollabPresence)
             {
-                await DeliverPresenceAsync(sessions, value, stoppingToken).ConfigureAwait(false);
+                await DeliverPresenceAsync(Sessions, value, stoppingToken).ConfigureAwait(false);
             }
             else
             {
-                await DeliverOperationAsync(sessions, operations, value, stoppingToken).ConfigureAwait(false);
+                await DeliverOperationAsync(value, stoppingToken).ConfigureAwait(false);
             }
             after = value.Sequence;
         }
         return after;
     }
 
-    private static async Task DeliverOperationAsync(InMemoryCollaborationSessionService sessions,
-        ISavedMapOperationLogRepository operations, RealtimeEvent value, CancellationToken stoppingToken)
+    private async Task DeliverOperationAsync(RealtimeEvent value, CancellationToken stoppingToken)
     {
+        var sessions = Sessions;
+        var operations = services.GetRequiredService<ISavedMapOperationLogRepository>();
         var cursor = value.Payload.GetProperty("serverCursor").GetInt64();
         var id = value.Payload.GetProperty("operationId").GetString();
         var replay = await operations.ReplayAsync(new SavedMapId(value.ScopeKey),
@@ -226,7 +229,7 @@ internal sealed partial class CollaborationRealtimeRelay(
         var operation = replay.Operations.FirstOrDefault(op => op.ServerCursor.Value == cursor && op.OperationId.Value == id);
         if (operation is null)
         {
-            sessions.RequireResync(clearPresence: false);
+            sessions.RequireResync();
         }
         else
         {
