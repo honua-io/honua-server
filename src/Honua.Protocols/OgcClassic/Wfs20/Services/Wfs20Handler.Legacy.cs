@@ -46,7 +46,8 @@ internal sealed partial class Wfs20Handler
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, IsWfs10(version) ? "WFS-1.0.0" : "WFS-1.1.0");
         activity?.SetTag(HonuaTelemetry.Tags.Operation, Wfs20Utilities.Operations.GetCapabilities);
 
-        var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
+        var descriptors = SelectAdvertisedFeatureTypes(
+            await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false));
         var featureTypes = await BuildFeatureTypesAsync(descriptors, cancellationToken).ConfigureAwait(false);
         var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl.TrimEnd('/')}/wfs");
 
