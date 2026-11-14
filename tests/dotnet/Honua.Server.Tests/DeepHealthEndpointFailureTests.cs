@@ -128,9 +128,12 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
     public async Task DeepHealthEndpoint_NonGetMethods_ReturnsMethodNotAllowed()
     {
         using var client = factory.CreateClient();
-        foreach (var method in new[] { HttpMethod.Post, HttpMethod.Put, HttpMethod.Delete, HttpMethod.Patch })
+        using var post = new HttpRequestMessage(HttpMethod.Post, "/healthz/deep");
+        using var put = new HttpRequestMessage(HttpMethod.Put, "/healthz/deep");
+        using var delete = new HttpRequestMessage(HttpMethod.Delete, "/healthz/deep");
+        using var patch = new HttpRequestMessage(HttpMethod.Patch, "/healthz/deep");
+        foreach (var request in new[] { post, put, delete, patch })
         {
-            using var request = new HttpRequestMessage(method, "/healthz/deep");
             using var response = await client.SendAsync(request);
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
         }
