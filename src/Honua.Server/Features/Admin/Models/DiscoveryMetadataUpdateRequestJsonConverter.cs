@@ -28,7 +28,7 @@ public sealed class DiscoveryMetadataUpdateRequestJsonConverter : JsonConverter<
         {
             throw new JsonException("A discovery metadata etag is required.");
         }
-        var context = DiscoveryMetadataJsonContext.Default;
+        var context = new DiscoveryMetadataJsonContext(new JsonSerializerOptions(options));
         var request = new DiscoveryMetadataUpdateRequest
         {
             Etag = etag.Deserialize(context.String)!,
@@ -36,15 +36,14 @@ public sealed class DiscoveryMetadataUpdateRequestJsonConverter : JsonConverter<
             Description = ReadValue(fields, "description", context.String),
             Keywords = fields.TryGetValue("keywords", out var keywords) ? keywords.Deserialize(context.StringArray)! : []
         };
-        return ReadOptional(fields, request);
+        return ReadOptional(fields, request, context);
     }
 
     private static T? ReadValue<T>(IReadOnlyDictionary<string, JsonElement> fields, string name, JsonTypeInfo<T> typeInfo) =>
         fields.TryGetValue(name, out var value) ? value.Deserialize(typeInfo) : default;
 
-    private static DiscoveryMetadataUpdateRequest ReadOptional(IReadOnlyDictionary<string, JsonElement> fields, DiscoveryMetadataUpdateRequest request)
+    private static DiscoveryMetadataUpdateRequest ReadOptional(IReadOnlyDictionary<string, JsonElement> fields, DiscoveryMetadataUpdateRequest request, DiscoveryMetadataJsonContext context)
     {
-        var context = DiscoveryMetadataJsonContext.Default;
         if (fields.TryGetValue("themes", out var themes))
         {
             request = request with { Themes = themes.Deserialize(context.StringArray) };

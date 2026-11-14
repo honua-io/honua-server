@@ -48,6 +48,20 @@ public sealed class DiscoveryMetadataSerializationTests
         json.RootElement.GetProperty("links").GetArrayLength().Should().Be(0);
     }
 
+    [UnitTest]
+    public void WebOptions_NestedPascalCaseMembers_PopulateCanonicalFields()
+    {
+        var context = new DiscoveryMetadataJsonContext(new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var request = JsonSerializer.Deserialize("""
+            {"ETAG":"revision","ContactPoint":{"Name":"GIS","Email":"gis@example.com"},
+             "Links":[{"Href":"https://example.com/data","Rel":"describedby"}]}
+            """, context.DiscoveryMetadataUpdateRequest)!;
+        request.ContactPoint!.Name.Should().Be("GIS");
+        request.ContactPoint.Email.Should().Be("gis@example.com");
+        request.Links.Should().ContainSingle().Which.Href.Should().Be("https://example.com/data");
+        request.Links![0].Rel.Should().Be("describedby");
+    }
+
     private static JsonDocument RoundTrip(DiscoveryMetadataUpdateRequest request)
     {
         var typeInfo = DiscoveryMetadataJsonContext.Default.DiscoveryMetadataUpdateRequest;
