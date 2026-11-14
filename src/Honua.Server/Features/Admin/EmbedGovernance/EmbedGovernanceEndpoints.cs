@@ -1,15 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.EmbedGovernance.Abstractions;
 using Honua.Core.Features.EmbedGovernance.Domain;
-using Honua.Server.Features.Admin.EmbedGovernance.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.EmbedGovernance.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 
 namespace Honua.Server.Features.Admin.EmbedGovernance;
 
@@ -81,7 +81,7 @@ internal static partial class EmbedGovernanceEndpoints
             return TypedResults.BadRequest(ApiResponse<object>.Failure(validationMessage));
         }
 
-        var creator = ResolveActor(context);
+        var creator = ActorResolver.Resolve(context, ActorResolution.ApiKeyOrName);
         var result = await store.CreateAsync(request.Name.Trim(), scope, request.ExpiresAt, creator, context.RequestAborted);
 
         LogKeyCreated(logger, result.Record.Id, result.Record.Name);
@@ -129,7 +129,7 @@ internal static partial class EmbedGovernanceEndpoints
 
         LogKeyRotated(logger, id);
         await EmitAuditAsync(auditLog, context, AuditEventType.AdminAction, "embed_key.rotate",
-            id.ToString(), AuditOutcome.Success, ResolveActor(context));
+            id.ToString(), AuditOutcome.Success, ActorResolver.Resolve(context, ActorResolution.ApiKeyOrName));
 
         var response = new EmbedKeySecretResponse
         {
@@ -155,7 +155,7 @@ internal static partial class EmbedGovernanceEndpoints
 
         LogKeyRevoked(logger, id);
         await EmitAuditAsync(auditLog, context, AuditEventType.AdminAction, "embed_key.revoke",
-            id.ToString(), AuditOutcome.Success, ResolveActor(context));
+            id.ToString(), AuditOutcome.Success, ActorResolver.Resolve(context, ActorResolution.ApiKeyOrName));
 
         return TypedResults.Ok(ApiResponse<EmbedKeyResponse>.CreateSuccess(ToResponse(record, DateTimeOffset.UtcNow)));
     }
@@ -316,17 +316,6 @@ internal static partial class EmbedGovernanceEndpoints
 
     private static bool TryParseEventType(string value, out EmbedAnalyticsEventType eventType) =>
         Enum.TryParse(value, ignoreCase: true, out eventType) && Enum.IsDefined(eventType);
-
-    private static string ResolveActor(HttpContext context)
-    {
-        var apiKeyId = context.User.FindFirst("api_key_id")?.Value;
-        if (!string.IsNullOrWhiteSpace(apiKeyId))
-        {
-            return $"api-key:{apiKeyId}";
-        }
-
-        return context.User.Identity?.Name ?? AuditEvent.AnonymousActor;
-    }
 
     private static Task<string?> EmitAuditAsync(
         IAuditLog auditLog,
