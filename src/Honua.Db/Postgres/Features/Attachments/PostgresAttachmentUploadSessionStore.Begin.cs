@@ -32,13 +32,14 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         await using var command = database.Command($"""
             INSERT INTO {_sessions} (session_id, owner_id, service_id, layer_id, feature_id, operation,
                 idempotency_key, request_sha256, filename, content_type, keywords, expected_size,
-                content_sha256, replace_attachment_id, max_chunk_bytes, expires_at)
+                content_sha256, replace_attachment_id, max_chunk_bytes, expires_at, published_layer_id)
             VALUES (@session, @owner, @service, @layer, @feature, @operation, @key, @requestDigest,
-                @filename, @contentType, @keywords, @size, @contentDigest, @replace, @chunkLimit, now() + @lifetime)
+                @filename, @contentType, @keywords, @size, @contentDigest, @replace, @chunkLimit, now() + @lifetime, @publishedLayer)
             ON CONFLICT (owner_id, service_id, layer_id, feature_id, operation, idempotency_key) DO NOTHING
             """);
         BindScope(command, request);
         command.Parameters.AddWithValue("session", Guid.NewGuid());
+        command.Parameters.AddWithValue("publishedLayer", NpgsqlDbType.Integer, (object?)request.PublishedLayerId ?? DBNull.Value);
         command.Parameters.AddWithValue("requestDigest", digest);
         command.Parameters.AddWithValue("filename", request.Filename);
         command.Parameters.AddWithValue("contentType", request.ContentType);

@@ -8,6 +8,7 @@ public sealed record AttachmentUploadRequest
     public required string OwnerId { get; init; }
     public required string ServiceId { get; init; }
     public required int LayerId { get; init; }
+    public int? PublishedLayerId { get; init; }
     public required long FeatureId { get; init; }
     public required string Operation { get; init; }
     public required string IdempotencyKey { get; init; }

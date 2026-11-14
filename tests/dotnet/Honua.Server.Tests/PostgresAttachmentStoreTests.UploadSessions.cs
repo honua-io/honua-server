@@ -129,7 +129,7 @@ public partial class PostgresAttachmentStoreTests
     private async Task<PostgresAttachmentUploadSessionStore> CreateUploadSessionStoreAsync()
     {
         var assembly = typeof(Program).Assembly;
-        foreach (var filename in new[] { "162_CreateAttachmentUploadSessions.sql", "163_CreateAttachmentNativeMetadata.sql", "164_CreateAttachmentUploadCleanupLedger.sql" })
+        foreach (var filename in new[] { "162_CreateAttachmentUploadSessions.sql", "163_CreateAttachmentNativeMetadata.sql", "165_AddAttachmentPublicationScope.sql", "164_CreateAttachmentUploadCleanupLedger.sql" })
         {
             var name = Assert.Single(assembly.GetManifestResourceNames(), name => name.EndsWith(filename, StringComparison.Ordinal));
             await using var stream = assembly.GetManifestResourceStream(name)!;
