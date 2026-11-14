@@ -51,6 +51,7 @@ internal static class HealthEndpoints
 
         _ = endpoints.MapMethods("/healthz/deep", [HttpMethods.Get], HandleDeepProbe)
             .WithDisplayName("Deep Health Probe")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))
             .AllowAnonymous()
             .CacheOutput(static policy => policy.NoCache())
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
@@ -89,16 +90,15 @@ internal static class HealthEndpoints
         await WriteHealthCheckResponse(context, result);
     }
 
-    private static async Task HandleDeepProbe(
-        HttpContext context,
-        IDatabaseHealthChecker database,
-        IMetadataV2GraphProvider catalog)
+    private static async Task HandleDeepProbe(HttpContext context)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         deadline.CancelAfter(DeepProbeTimeout);
         ReadinessResult result;
         try
         {
+            var database = context.RequestServices.GetRequiredService<IDatabaseHealthChecker>();
+            var catalog = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             if (!context.RequestServices.GetRequiredService<MigrationState>().IsReady ||
                 !await database.IsDatabaseHealthyAsync(deadline.Token).WaitAsync(deadline.Token))
             {

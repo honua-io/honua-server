@@ -30,6 +30,12 @@ internal sealed class TenantSchemaRoutingMiddleware(
 
     public async Task InvokeAsync(HttpContext context)
     {
+        if (context.GetEndpoint()?.Metadata.GetMetadata<TenantIndependentControlPlaneMetadata>() is not null)
+        {
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
         var tenantContext = context.RequestServices.GetService<ITenantContext>();
         if (tenantContext is null || !tenantContext.RequireTenantId(out var tenantId, out _))
         {

@@ -12,6 +12,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
 
 namespace Honua.Server.Tests;
@@ -165,6 +166,24 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
         response.Content.Headers.Allow.Should().Contain("GET");
         await checker.DidNotReceive().IsDatabaseHealthyAsync(Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ReadinessCheck)]
+    [Endpoint("GET /healthz/deep")]
+    public async Task DeepHealthEndpoint_CatalogNotRegistered_ReportsUnavailableWithoutBreakingLiveness()
+    {
+        using var host = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            services.RemoveAll<IMetadataV2GraphProvider>()));
+        using var client = host.CreateClient();
+
+        using var deep = await client.GetAsync("/healthz/deep");
+        using var liveness = await client.GetAsync("/healthz/live");
+
+        deep.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await deep.Content.ReadAsStringAsync()).Should().Be("Not Ready");
+        liveness.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await liveness.Content.ReadAsStringAsync()).Should().Be("Healthy");
     }
 
     private WebApplicationFactory<Program> Configure(IDatabaseHealthChecker checker, IMetadataV2GraphProvider catalog)
