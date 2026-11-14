@@ -617,6 +617,10 @@ if (hostHasSystemDatabase)
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
         .GetValue<Honua.ControlPlane.ControlPlaneTriggerMode>("TriggerMode", Honua.ControlPlane.ControlPlaneTriggerMode.Poll);
 
+    builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler>(
+        static provider => provider.GetRequiredService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>());
+
     if (!isTestEnvironment)
     {
         // All reconcile families are mode-selected (Phase 1: execution jobs; Phase 2: deploy +
@@ -647,6 +651,11 @@ if (hostHasSystemDatabase)
             // route auto-safe remediation findings back through the operation gateway. It is
             // only hosted with the Redis-backed operation gateway; no-Redis hosts stay inert.
             builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
+            if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
+            {
+                builder.Services.AddHostedService(static provider =>
+                    provider.GetRequiredService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>());
+            }
         }
     }
 

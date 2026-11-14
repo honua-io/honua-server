@@ -75,7 +75,10 @@ public enum ScheduledTickKind
     // Job store retention sweep (JobStoreRetentionSweeper.SweepAsync): deletes terminal jobs, job
     // logs, result packages and leases past their retention. Cadence minutes. Every delete is
     // bounded and skips locked rows, so duplicate or concurrent sweeps delete nothing extra.
-    JobStoreRetention
+    JobStoreRetention,
+
+    /// <summary>Leased operational reminders and approval expiry. Cadence one minute.</summary>
+    OpsNotifications
 }
 
 /// <summary>

@@ -6,6 +6,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -61,6 +62,16 @@ public sealed class ControlPlaneLambdaEventRedisOffHostTests(ITestOutputHelper o
         ((ControlPlaneLambdaEventTargets)targets!).DurableControlPlaneComposed
             .Should().BeTrue("the system database carries the control plane");
         _fixture.Services.GetService<IScheduledTickDispatcher>().Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /events")]
+    public void RedisOffEventHost_RegistersReminderTickWithoutHostingItsTimer()
+    {
+        _fixture.Services.GetServices<IScheduledTickHandler>()
+            .Should().ContainSingle(handler => handler.Kind == ScheduledTickKind.OpsNotifications);
+        _fixture.Services.GetServices<IHostedService>()
+            .Should().NotContain(service => service is OpsNotificationReminderService);
     }
 
     [IntegrationTest]

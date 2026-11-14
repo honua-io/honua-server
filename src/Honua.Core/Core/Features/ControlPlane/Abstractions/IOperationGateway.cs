@@ -167,6 +167,8 @@ public sealed record OperationGatewayRequest
 /// </summary>
 public sealed record OperationGatewayAutonomyContext
 {
+    public Honua.Core.Features.Observability.Domain.OpsFindingSeverity? Severity { get; init; }
+
     /// <summary>Gets the deterministic finding identifier used as the idempotency key.</summary>
     public required string FindingId { get; init; }
 

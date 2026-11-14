@@ -34,31 +34,52 @@ internal sealed partial class OpsNotificationService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    // When no channel is deliverable the event is still stored without a dispatch row so the evidence survives circuit breaking.
+    // Preserve evidence even if ordinary event delivery has no available channel.
     public async Task NotifyAsync(OpsNotification notification, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(notification);
+        var channels = ResolveEligibleChannels(notification);
+        if (channels.HasValue)
+        {
+            await PersistNotificationAsync(notification, channels.Value, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
+    public async Task<bool> TryNotifyAsync(OpsNotification notification, CancellationToken cancellationToken)
+    {
+        var channels = ResolveEligibleChannels(notification);
+        if (!channels.HasValue || channels.Value.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+        await PersistNotificationAsync(notification, channels.Value, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    private ImmutableArray<AlertChannelType>? ResolveEligibleChannels(OpsNotification notification)
+    {
+        ArgumentNullException.ThrowIfNull(notification);
         var ops = _options.Ops;
         if (!ops.Enabled)
         {
             _metrics.RecordOpsNotification(notification.Source, notification.Severity, "disabled");
-            return;
+            return null;
         }
-
         if ((int)notification.Severity < (int)ops.MinSeverity)
         {
             _metrics.RecordOpsNotification(notification.Source, notification.Severity, "below_min_severity");
             LogBelowMinSeverity(_logger, notification.Source, notification.Severity, ops.MinSeverity);
-            return;
+            return null;
         }
+        return ResolveChannels(ops.Channels, notification.Source, DateTimeOffset.UtcNow);
+    }
 
-        var channels = ResolveChannels(ops.Channels, notification.Source, DateTimeOffset.UtcNow);
+    private async Task PersistNotificationAsync(OpsNotification notification, ImmutableArray<AlertChannelType> channels,
+        CancellationToken cancellationToken)
+    {
         var envelope = BuildEnvelope(notification);
         await _dispatchWriter
             .PersistAsync([], [new PendingAlertDispatch(envelope, channels)], cancellationToken)
             .ConfigureAwait(false);
-
         if (channels.IsDefaultOrEmpty)
         {
             _metrics.RecordOpsNotification(notification.Source, notification.Severity, "persisted_no_channel");

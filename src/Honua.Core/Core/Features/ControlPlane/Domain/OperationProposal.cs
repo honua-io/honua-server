@@ -67,6 +67,8 @@ public enum OperationProposalStatus
     /// the original request carried an idempotency key.
     /// </summary>
     Cancelled = 9,
+
+    Expired = 10,
 }
 
 /// <summary>
@@ -157,6 +159,8 @@ public sealed record FolderRequesterAuthorization
 /// </summary>
 public sealed record OperationProposalAutonomyMetadata
 {
+    public Honua.Core.Features.Observability.Domain.OpsFindingSeverity? Severity { get; init; }
+
     /// <summary>Gets the stable deterministic finding identifier.</summary>
     public required string FindingId { get; init; }
 
@@ -325,4 +329,6 @@ public sealed record OperationProposal
     /// Time when the proposal reached a terminal state.
     /// </summary>
     public DateTimeOffset? ResolvedAt { get; init; }
+
+    public DateTimeOffset? ApprovalExpiresAt { get; init; }
 }
