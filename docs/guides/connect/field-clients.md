@@ -7,7 +7,7 @@ description: "Validate feature access, editing, conflict handling, and offline h
 
 Use a client that supports OGC API Features for discovery and reading. Editing requires a client that also supports the advertised transaction operations, or WFS transactions. Read access alone does not establish edit or offline-sync support. Validate the exact client version against your deployment before collecting production data.
 
-Honua first-party clients use gRPC and cloud-native files as described in the [native gRPC protocol](../../reference/protocols/grpc.md). This guide covers third-party compatibility through OGC API Features and WFS.
+Honua first-party clients use gRPC and cloud-native files as recorded in [ADR-0087](https://github.com/honua-io/honua-server/pull/7555); see the [gRPC reference](../../reference/protocols/grpc.md) for the supported surface. This guide covers third-party compatibility through OGC API Features and WFS.
 
 ## Connect and verify capabilities
 
