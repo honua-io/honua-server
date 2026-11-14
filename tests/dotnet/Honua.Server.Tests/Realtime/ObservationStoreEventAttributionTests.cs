@@ -42,24 +42,30 @@ public sealed class ObservationStoreEventAttributionTests
             tenant.TenantId.Returns("tenant-b");
             var second = await store.CreateEntityAsync("Observations", observation.RootElement, default);
 
-            await using var command = fixture.Postgres.DataSource.CreateCommand($"""
-                SELECT payload->'scope'->>'tenantId', payload->'scope'->>'schema'
-                FROM "{fixture.CurrentSchema}".realtime_events
-                WHERE family='observations' AND EXISTS (
-                    SELECT 1 FROM jsonb_array_elements(payload->'observations') AS observation
-                    WHERE (observation->>'id')::bigint = ANY(@ids))
-                ORDER BY seq
-                """);
-            command.Parameters.AddWithValue("ids", new[] { first, second });
-            await using var reader = await command.ExecuteReaderAsync();
-            var scopes = new List<(string Tenant, string Schema)>();
-            while (await reader.ReadAsync()) scopes.Add((reader.GetString(0), reader.GetString(1)));
+            var scopes = await ReadScopesAsync(fixture, [first, second]);
             scopes.Should().Equal(("tenant-a", fixture.CurrentSchema!), ("tenant-b", fixture.CurrentSchema!));
         }
         finally
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static async Task<List<(string Tenant, string Schema)>> ReadScopesAsync(WebAppFixture fixture, long[] ids)
+    {
+    await using var command = fixture.Postgres.DataSource.CreateCommand($"""
+        SELECT payload->'scope'->>'tenantId', payload->'scope'->>'schema'
+        FROM "{fixture.CurrentSchema}".realtime_events
+        WHERE family='observations' AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(payload->'observations') AS observation
+            WHERE (observation->>'id')::bigint = ANY(@ids))
+        ORDER BY seq
+        """);
+    command.Parameters.AddWithValue("ids", ids);
+    await using var reader = await command.ExecuteReaderAsync();
+    var scopes = new List<(string Tenant, string Schema)>();
+    while (await reader.ReadAsync()) scopes.Add((reader.GetString(0), reader.GetString(1)));
+    return scopes;
     }
 
     private static async Task ApplyCaptureMigrationsAsync(WebAppFixture fixture)
