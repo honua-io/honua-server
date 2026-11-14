@@ -159,7 +159,6 @@ public sealed partial class LayerPublishingIntegrationTests
         serverFeatures[0].GetProperty("attributes").GetProperty("population").GetInt64().Should().Be(2);
         serverFeatures[0].GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Object);
         serverFeatures[1].GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Object);
-        using var sourceSrid = new StringContent("4326");
         if (scenario == "PointCsv")
         {
             var pointGeometry = serverFeatures[0].GetProperty("geometry");
@@ -182,8 +181,7 @@ public sealed partial class LayerPublishingIntegrationTests
         await using (var connection = await _fixture.Postgres.GetConnectionAsync())
         {
             var relation = $"\"{imported.Schema}\".\"{imported.PhysicalTableName}\"";
-            using var sourceSrid = new StringContent("4326");
-        if (scenario == "PointCsv")
+            if (scenario == "PointCsv")
             {
                 // Point-layer edits have historically accepted multipart points too.
                 await using var multipart = new Npgsql.NpgsqlCommand(
