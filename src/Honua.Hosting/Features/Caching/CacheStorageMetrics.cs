@@ -14,7 +14,4 @@ internal sealed record CacheStorageMetrics
     public required bool IsUsingFallback { get; init; }
     public required int LocalKeyCount { get; init; }
     public long? DistributedKeyCount { get; init; }
-    public long? RedisDatabaseSize { get; init; }
-    public long? RedisUsedMemoryBytes { get; init; }
-    public string? RedisUsedMemoryHuman { get; init; }
 }

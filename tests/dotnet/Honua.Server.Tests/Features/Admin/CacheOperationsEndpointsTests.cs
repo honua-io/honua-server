@@ -81,16 +81,11 @@ public sealed class CacheOperationsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
-    public async Task GetRedisMetrics_WhenRedisNotConfigured_ReturnsCommunitySafeStatus()
+    public async Task GetRetiredRedisMetrics_ReturnsNotFound()
     {
         var response = await _client.GetAsync("/api/v1/admin/operations/cache/redis");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var data = document.RootElement.GetProperty("data");
-        data.GetProperty("isConfigured").GetBoolean().Should().BeFalse();
-        data.GetProperty("isConnected").GetBoolean().Should().BeFalse();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -163,7 +158,7 @@ public sealed class CacheOperationsEndpointsTests : IAsyncLifetime
     {
         var cacheService = Substitute.For<ICacheService>();
         cacheService.RemoveByPatternAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns<Task>(_ => throw new InvalidOperationException("redis://secret/internal"));
+            .Returns<Task>(_ => throw new InvalidOperationException("https://private-cache.invalid/secret"));
 
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>
@@ -182,7 +177,7 @@ public sealed class CacheOperationsEndpointsTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             var body = await response.Content.ReadAsStringAsync();
             body.Should().Contain("Cache invalidation failed.");
-            body.Should().NotContain("redis://secret/internal");
+            body.Should().NotContain("https://private-cache.invalid/secret");
         }
         finally
         {

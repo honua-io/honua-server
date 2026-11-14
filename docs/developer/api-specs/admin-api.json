@@ -120,7 +120,7 @@
     },
     {
       "name": "Operations",
-      "description": "Operational monitoring and control: cache health/statistics/invalidation, Redis connection metrics, geocoding provider health and configuration, streaming subscribers, and unified operation progress/cancellation."
+      "description": "Operational monitoring and control: cache health/statistics/invalidation, geocoding provider health and configuration, streaming subscribers, and unified operation progress/cancellation."
     },
     {
       "name": "Performance",
@@ -11524,34 +11524,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseOpsCacheStatisticsResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/operations/cache/redis": {
-      "get": {
-        "tags": [
-          "Operations"
-        ],
-        "summary": "Get Redis Connection Metrics",
-        "description": "Returns Redis connection state and server info. When no Redis connection multiplexer is registered the call still succeeds with `isConfigured` and `isConnected` both false.",
-        "operationId": "getOperationsCacheRedisMetrics",
-        "responses": {
-          "200": {
-            "description": "Redis connection metrics.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseOpsRedisConnectionMetricsResponse"
                 }
               }
             }
@@ -39798,40 +39770,6 @@
           }
         }
       },
-      "OpsRedisServerInfo": {
-        "type": "object",
-        "description": "Redis server connection and statistics information.",
-        "properties": {
-          "isConnected": {
-            "type": "boolean"
-          },
-          "redisVersion": {
-            "type": "string",
-            "nullable": true
-          },
-          "usedMemory": {
-            "type": "string",
-            "nullable": true,
-            "description": "Human-readable memory usage reported by Redis."
-          },
-          "connectedClients": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "databaseSize": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "description": "Number of keys in the current database."
-          },
-          "uptimeSeconds": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
-          }
-        }
-      },
       "OpsCacheHealthResponse": {
         "type": "object",
         "description": "Cache health and effective cache configuration.",
@@ -39853,14 +39791,6 @@
           "defaultTtlSeconds": {
             "type": "integer",
             "format": "int32"
-          },
-          "redisServerInfo": {
-            "nullable": true,
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/OpsRedisServerInfo"
-              }
-            ]
           },
           "metricsEndpoint": {
             "type": "string",
@@ -39962,20 +39892,6 @@
             "format": "int64",
             "nullable": true
           },
-          "redisDatabaseSize": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
-          },
-          "redisUsedMemoryBytes": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
-          },
-          "redisUsedMemoryHuman": {
-            "type": "string",
-            "nullable": true
-          },
           "types": {
             "type": "object",
             "description": "Per-cache-type counters keyed by cache type name.",
@@ -39993,63 +39909,6 @@
           },
           "data": {
             "$ref": "#/components/schemas/OpsCacheStatisticsResponse"
-          },
-          "message": {
-            "type": "string",
-            "nullable": true
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "OpsRedisConnectionMetricsResponse": {
-        "type": "object",
-        "description": "Redis connection metrics. When Redis is not configured only `generatedAt`, `isConfigured` and `isConnected` are present.",
-        "properties": {
-          "generatedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "isConfigured": {
-            "type": "boolean"
-          },
-          "isConnected": {
-            "type": "boolean"
-          },
-          "clientName": {
-            "type": "string",
-            "nullable": true
-          },
-          "totalOutstanding": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
-          },
-          "endpointCount": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "serverInfo": {
-            "nullable": true,
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/OpsRedisServerInfo"
-              }
-            ]
-          }
-        }
-      },
-      "ApiResponseOpsRedisConnectionMetricsResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/OpsRedisConnectionMetricsResponse"
           },
           "message": {
             "type": "string",
