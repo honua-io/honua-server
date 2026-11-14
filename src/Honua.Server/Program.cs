@@ -331,8 +331,8 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
                     "Redis durable coordination is required in this environment, but the Redis multiplexer did not establish an active startup connection.");
             }
 
-            var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
-            ProgramLog.RedisStartupConnectionInactive(startupLogger);
+            using var startupLoggerFactory = LoggerFactory.Create(static logging => logging.AddConsole());
+            ProgramLog.RedisStartupConnectionInactive(startupLoggerFactory.CreateLogger<Program>());
         }
     }
     catch (Exception ex)
@@ -344,8 +344,8 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
                 ex);
         }
 
-        var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
-        ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
+        using var startupLoggerFactory = LoggerFactory.Create(static logging => logging.AddConsole());
+        ProgramLog.RedisStartupConnectionFailed(startupLoggerFactory.CreateLogger<Program>(), ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
     }
 }
