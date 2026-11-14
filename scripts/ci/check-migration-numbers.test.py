@@ -75,6 +75,33 @@ class MigrationNumberTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("002.txt", self.git("diff", "--name-only", "--diff-filter=U"))
 
+    def test_cutover_reservation_blocks_reuse_before_old_pr_lands(self):
+        marker = self.root / "eng/schema/migration-numbers" / SERVER / "002.txt"
+        marker.write_text(f"{SERVER}/002_AlreadyOpen.sql\n")
+        self.base = self.commit()
+        self.git("branch", "-f", "trunk", self.base)
+        self.add(SERVER, "002_Competing.sql")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("claims are immutable", result.stdout)
+
+    def test_atomic_cutover_forces_old_ledger_writers_to_resolve(self):
+        ledger = self.root / "eng/schema/schema-migration-hashes.v1.json"
+        ledger.write_text('{"old": "hash"}\n')
+        old_base = self.commit()
+        ledger.unlink()
+        cutover = self.commit()
+        self.git("checkout", "-q", "--detach", old_base)
+        ledger.write_text('{"old": "hash", "new": "hash"}\n')
+        self.commit()
+        result = subprocess.run(["git", "-c", "user.name=Fixture", "-c",
+                                 "user.email=fixture@example.test", "merge", "--no-commit",
+                                 "--no-ff", cutover], cwd=self.root, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(str(ledger.relative_to(self.root)),
+                      self.git("diff", "--name-only", "--diff-filter=U"))
+
     def test_existing_modification_is_left_to_immutability_guard(self):
         self.add(SERVER, "001_Initial.sql", "SELECT 2;")
         self.commit()

@@ -13,3 +13,13 @@ number conflict in Git even if both checks passed before either PR landed. Renum
 the pending migration, its claim, and its hash pin after the first PR merges.
 The Server and Postgres SQL directories have separate number sequences. Existing
 migrations do not need backfilled claims; hash immutability remains a separate gate.
+
+## Atomic policy cutover
+
+This change removes the old shared hash manifest while installing the number guard.
+Existing migration PRs that modify that manifest must resolve its deletion before
+merging and adopt individual pins and number claims. An audit on 14 November 2026
+found one open migration PR without a manifest edit: #7692 adds
+`168_AddAgentAuditActor.sql`. Its number is reserved here so a newly admitted PR
+cannot reuse it while that older PR retains its successful checks. The reservation
+is immutable like every other claim; it does not certify the migration's hash.
