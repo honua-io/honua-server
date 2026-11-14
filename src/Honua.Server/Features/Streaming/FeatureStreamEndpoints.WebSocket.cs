@@ -876,7 +876,7 @@ internal static partial class FeatureStreamEndpoints
         var pauseForReplay = replayCursor.HasValue || emitSnapshot;
 
         long preAddCursor = 0;
-        if (!pauseForReplay)
+        if (!pauseForReplay || requested.Kind == FeatureStreamCursorKind.Epoch)
         {
             try
             {
