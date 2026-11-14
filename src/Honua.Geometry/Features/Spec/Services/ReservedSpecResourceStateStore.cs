@@ -23,6 +23,7 @@ internal sealed class ReservedSpecResourceStateStore
 
     public SpecResourceKind Kind { get; }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the injected instance API after removing its single-implementation interface.")]
     public Task<SpecResourceState?> ReadCurrentAsync(string resourceName, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(resourceName);
