@@ -72,7 +72,7 @@ public sealed class ImportDistributedStateFailureTests
         cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromException<byte[]?>(new InvalidOperationException("Cache unavailable")));
         var store = new UniversalProgressStore(cache, NullLogger<UniversalProgressStore>.Instance);
-        IProgressStoreRecovery recovery = new DistributedProgressStoreAdapter<ExportProgress>(store);
+        var recovery = new DistributedProgressStoreAdapter<ExportProgress>(store);
         object backplane = store;
         Func<Task> read = () => store.GetProgressAsync("job");
         Func<bool> isUnavailable = () => store.IsUsingFallback;
