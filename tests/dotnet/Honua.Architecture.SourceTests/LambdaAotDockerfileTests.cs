@@ -114,7 +114,9 @@ public sealed class LambdaAotDockerfileTests
         dockerfile.Should().Contain("sh docker/runtime/verify-native.sh /runtime-root /var/task");
         dockerfile.Should().Contain("test -f /runtime-root/var/task/libduckdb.so");
         verification.Should().Contain("test -f \"$runtime_root$app_directory/libSkiaSharp.so\"");
-        verification.Should().Contain("LD_TRACE_LOADED_OBJECTS=1 LD_WARN=yes LD_BIND_NOW=yes");
+        verification.Should().Contain("chroot \"$runtime_root\" /.verify-env \"$loader\"");
+        var verificationEnvironment = File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/verify-env.c"));
+        verificationEnvironment.Should().Contain("\"LD_TRACE_LOADED_OBJECTS=1\", \"LD_WARN=yes\", \"LD_BIND_NOW=yes\"");
         verification.Should().Contain("grep -Eq 'not found|undefined symbol|not a dynamic executable'");
         typefaceProvider.Should().Contain("SKTypeface.FromFile(configuredPath)");
 
