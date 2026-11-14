@@ -200,7 +200,7 @@ def check_temporal_source_survives_the_cap(config: dict[str, Any]) -> None:
         "src/Honua.Server/Hosting/Probe.cs",
         "src/Honua.Server/Features/Security/Probe.cs",
     ]
-    owner = "Server Features Packages and Temporal"
+    owners = capacity_split_names(config, "Server Features Packages and Temporal")
     catch_all = set(capacity_split_names(config, "Server Features Miscellaneous"))
 
     def require_owner(shards: dict[str, Any]) -> None:
@@ -213,10 +213,10 @@ def check_temporal_source_survives_the_cap(config: dict[str, Any]) -> None:
         deferred = {entry["name"] for entry in result["deferred_to_trunk"]}
         if result["candidate_count"] <= len(result["shards"]):
             raise FixtureError("temporal probe must leave some candidates unselected")
-        if owner not in result["shards"]:
-            raise FixtureError(f"changed temporal source lost its executing owner: {result['shards']}")
+        if not set(owners) <= set(result["shards"]):
+            raise FixtureError(f"changed temporal source lost an executing owner: {result['shards']}")
         if catch_all & (candidates(result) | deferred):
-            raise FixtureError(f"{catch_all!r} competes with {owner!r} for temporal source")
+            raise FixtureError(f"{catch_all!r} competes with {owners!r} for temporal source")
 
     require_owner(config)
     copied = copy.deepcopy(config)
