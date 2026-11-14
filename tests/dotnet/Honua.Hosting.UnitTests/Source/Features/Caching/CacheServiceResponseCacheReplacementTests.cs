@@ -17,77 +17,47 @@ public sealed partial class CacheServiceResponseCacheBudgetTests
     {
         var backend = new RecordingCache();
         var cache = ResponseCache(backend, maxBytes: 11_000);
-        var large = new CachedResponse(new byte[10_000], "application/json");
-        var small = new CachedResponse(new byte[32], "application/json");
-        await cache.SetAsync("shared", large, Lifetime);
+        await cache.SetAsync("shared", LargeResponse, Lifetime);
 
-        await cache.SetAsync("shared", small, Lifetime);
-        await cache.SetAsync("another", large, Lifetime);
+        await cache.SetAsync("shared", SmallResponse, Lifetime);
+        await cache.SetAsync("another", LargeResponse, Lifetime);
 
-        Assert.Same(small, await cache.GetAsync<CachedResponse>("shared"));
-        Assert.Same(large, await cache.GetAsync<CachedResponse>("another"));
+        Assert.Same(SmallResponse, await cache.GetAsync<CachedResponse>("shared"));
+        Assert.Same(LargeResponse, await cache.GetAsync<CachedResponse>("another"));
     }
 
-    [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task SetAsync_LargeWriteOverlapsSmallReplacement_RetainsCapacityUntilWritesSettle(bool failLargeWrite)
+    public async Task SetAsync_LargeWriteSucceedsAfterSmallReplacement_RetainsCapacityUntilReplaced()
     {
         var backend = new RecordingCache();
         var cache = ResponseCache(backend, maxBytes: 11_000);
-        var large = new CachedResponse(new byte[10_000], "application/json");
-        var small = new CachedResponse(new byte[32], "application/json");
-        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var writes = 0;
-        backend.BeforeResponseWrite = async _ =>
-        {
-            if (Interlocked.Increment(ref writes) == 1)
-            {
-                started.TrySetResult();
-                await finish.Task;
-                if (failLargeWrite)
-                {
-                    throw new IOException("Injected large write failure");
-                }
-            }
-        };
-        var largeWrite = cache.SetAsync("shared", large, Lifetime);
-        try
-        {
-            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            await cache.SetAsync("shared", small, Lifetime);
-            await cache.SetAsync("another", large, Lifetime);
-            Assert.Null(await cache.GetAsync<CachedResponse>("another"));
-        }
-        finally
-        {
-            finish.TrySetResult();
-            if (failLargeWrite)
-            {
-                await Assert.ThrowsAsync<IOException>(() => largeWrite);
-            }
-            else
-            {
-                await largeWrite;
-            }
-        }
 
-        await cache.SetAsync("another", large, Lifetime);
-        if (failLargeWrite)
-        {
-            Assert.Same(small, await cache.GetAsync<CachedResponse>("shared"));
-            Assert.Same(large, await cache.GetAsync<CachedResponse>("another"));
-        }
-        else
-        {
-            Assert.Same(large, await cache.GetAsync<CachedResponse>("shared"));
-            Assert.Null(await cache.GetAsync<CachedResponse>("another"));
-            await cache.SetAsync("shared", small, Lifetime);
-            await cache.SetAsync("another", large, Lifetime);
-            Assert.Same(large, await cache.GetAsync<CachedResponse>("another"));
-        }
+        var largeWrite = await OverlapLargeWriteWithSmallReplacementAsync(cache, backend, largeWriteFailure: null);
+        await largeWrite;
+        await cache.SetAsync("another", LargeResponse, Lifetime);
+
+        Assert.Same(LargeResponse, await cache.GetAsync<CachedResponse>("shared"));
+        Assert.Null(await cache.GetAsync<CachedResponse>("another"));
+        await cache.SetAsync("shared", SmallResponse, Lifetime);
+        await cache.SetAsync("another", LargeResponse, Lifetime);
+        Assert.Same(LargeResponse, await cache.GetAsync<CachedResponse>("another"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task SetAsync_LargeWriteFailsAfterSmallReplacement_ReleasesItsCapacity()
+    {
+        var backend = new RecordingCache();
+        var cache = ResponseCache(backend, maxBytes: 11_000);
+
+        var largeWrite = await OverlapLargeWriteWithSmallReplacementAsync(
+            cache, backend, new IOException("Injected large write failure"));
+        await Assert.ThrowsAsync<IOException>(() => largeWrite);
+        await cache.SetAsync("another", LargeResponse, Lifetime);
+
+        Assert.Same(SmallResponse, await cache.GetAsync<CachedResponse>("shared"));
+        Assert.Same(LargeResponse, await cache.GetAsync<CachedResponse>("another"));
     }
 
     [UnitTest]
@@ -96,17 +66,15 @@ public sealed partial class CacheServiceResponseCacheBudgetTests
     {
         var backend = new RecordingCache();
         var cache = ResponseCache(backend, maxBytes: 11_000);
-        var small = new CachedResponse(new byte[32], "application/json");
-        var large = new CachedResponse(new byte[10_000], "application/json");
-        await cache.SetAsync("shared", small, Lifetime);
+        await cache.SetAsync("shared", SmallResponse, Lifetime);
         backend.BeforeResponseWrite = _ => throw new IOException("Injected replacement failure");
 
-        await Assert.ThrowsAsync<IOException>(() => cache.SetAsync("shared", large, Lifetime));
+        await Assert.ThrowsAsync<IOException>(() => cache.SetAsync("shared", LargeResponse, Lifetime));
         backend.BeforeResponseWrite = null;
-        await cache.SetAsync("another", large, Lifetime);
+        await cache.SetAsync("another", LargeResponse, Lifetime);
 
-        Assert.Same(small, await cache.GetAsync<CachedResponse>("shared"));
-        Assert.Same(large, await cache.GetAsync<CachedResponse>("another"));
+        Assert.Same(SmallResponse, await cache.GetAsync<CachedResponse>("shared"));
+        Assert.Same(LargeResponse, await cache.GetAsync<CachedResponse>("another"));
     }
 
     [UnitTest]
@@ -115,16 +83,53 @@ public sealed partial class CacheServiceResponseCacheBudgetTests
     {
         var backend = new RecordingCache();
         var cache = ResponseCache(backend, maxBytes: 11_000);
-        var large = new CachedResponse(new byte[10_000], "application/json");
-        await cache.SetAsync("shared", large, Lifetime);
+        await cache.SetAsync("shared", LargeResponse, Lifetime);
         backend.BeforeResponseWrite = _ => throw new IOException("Injected replacement failure");
 
-        await Assert.ThrowsAsync<IOException>(() => cache.SetAsync("shared",
-            new CachedResponse(new byte[32], "application/json"), Lifetime));
+        await Assert.ThrowsAsync<IOException>(() => cache.SetAsync("shared", SmallResponse, Lifetime));
         backend.BeforeResponseWrite = null;
-        await cache.SetAsync("another", large, Lifetime);
+        await cache.SetAsync("another", LargeResponse, Lifetime);
 
-        Assert.Same(large, await cache.GetAsync<CachedResponse>("shared"));
+        Assert.Same(LargeResponse, await cache.GetAsync<CachedResponse>("shared"));
         Assert.Null(await cache.GetAsync<CachedResponse>("another"));
+    }
+
+    private static readonly CachedResponse LargeResponse = new(new byte[10_000], "application/json");
+    private static readonly CachedResponse SmallResponse = new(new byte[32], "application/json");
+
+    private static async Task<Task> OverlapLargeWriteWithSmallReplacementAsync(
+        CacheServiceResponseCache cache, RecordingCache backend, Exception? largeWriteFailure)
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writes = 0;
+        backend.BeforeResponseWrite = async _ =>
+        {
+            if (Interlocked.Increment(ref writes) != 1)
+            {
+                return;
+            }
+
+            started.TrySetResult();
+            await finish.Task;
+            if (largeWriteFailure is not null)
+            {
+                throw largeWriteFailure;
+            }
+        };
+        var largeWrite = cache.SetAsync("shared", LargeResponse, Lifetime);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await cache.SetAsync("shared", SmallResponse, Lifetime);
+            await cache.SetAsync("another", LargeResponse, Lifetime);
+            Assert.Null(await cache.GetAsync<CachedResponse>("another"));
+        }
+        finally
+        {
+            finish.TrySetResult();
+        }
+
+        return largeWrite;
     }
 }
