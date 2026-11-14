@@ -13,6 +13,17 @@ unchanged projects, source triggers and budgets. Historical TRX interval weights
 guide the cuts; they are not measured child elapsed runtimes. The 14 Nov rank
 refresh measured 23 of those 26 children (gate-model.md, "Measured ranks").
 
+OGC Classic WMTS exhausted its 20-minute test budget in full run `43612492209`
+(job 132511815046) while producing output three seconds before termination; its
+passing samples took 14.9 to 18.4 job minutes. Two children replace it, cut by the
+serial class spans of run `43580101834` (12.2 minutes): child 1 owns
+`OgcClassicWmtsTests` (7.7 minutes) and child 2 is the exact complement of the
+parent filter (`OgcClassicWmtsTemporalTests` 3.1 minutes, six small classes and any
+future Wmts class). Both inherit the parent's paths and the shared
+`WmtsTileMatrixFormatting.cs` override. Initial ranks 12.8 and 9.6 are 5.1 minutes of
+job overhead plus each child's spans (`estimatedRanks`). Budgets and source
+triggers are unchanged.
+
 Server Features Packages and Temporal measured 12.7 minutes (full runs
 `43612492209` and `43580101834`), above the 10-minute PR shard budget, so PR Gate
 would have deferred the executing owner of temporal, form and package sources to
