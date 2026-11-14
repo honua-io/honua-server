@@ -1,11 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Reporting;
 using Honua.Infrastructure.Security.Admission;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Honua.Server.Features.Reporting;
 
@@ -25,7 +28,17 @@ internal static class ReportingServiceCollectionExtensions
             return services;
         }
 
+        var hasCustomStore = services.Any(descriptor => descriptor.ServiceType == typeof(IAnalysisReportStore));
         services.AddAnalysisReportingCore(configuration);
+        if (!hasCustomStore)
+        {
+            var localStore = services.Last(descriptor => descriptor.ServiceType == typeof(IAnalysisReportStore));
+            services.Replace(ServiceDescriptor.Singleton<IAnalysisReportStore>(sp =>
+                sp.GetService<NpgsqlDataSource>() is not null
+                    ? new PostgresAnalysisReportStore(sp.GetRequiredService<JobStoreDatabase>(),
+                        sp.GetRequiredService<IOptions<ReportingConfiguration>>())
+                    : (IAnalysisReportStore)localStore.ImplementationFactory!(sp)));
+        }
         services.AddMemoryCache();
 
         services.TryAddSingleton<IAnalysisReportService, AnalysisReportService>();

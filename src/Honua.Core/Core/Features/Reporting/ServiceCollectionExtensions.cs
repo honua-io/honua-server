@@ -48,7 +48,8 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<IAnalysisReportTemplateRegistry, AnalysisReportTemplateRegistry>();
         services.TryAddSingleton<IAnalysisReportBuilder, AnalysisReportBuilder>();
-        services.TryAddSingleton<IAnalysisReportStore, InMemoryAnalysisReportStore>();
+        services.TryAddSingleton<IAnalysisReportStore>(sp =>
+            new InMemoryAnalysisReportStore(sp.GetRequiredService<IOptions<ReportingConfiguration>>()));
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAnalysisReportRenderer, MarkdownReportRenderer>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAnalysisReportRenderer, HtmlReportRenderer>());
