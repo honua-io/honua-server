@@ -52,8 +52,8 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
     public StudioAiHttpInvocation Prepare(StudioAiProxyProviderOptions options, StudioAiChatRequest request,
         AiExecutionContext? executionContext = null)
-        => new(options, request, "/chat/completions", (snapshot, original, model) =>
-            JsonSerializer.SerializeToUtf8Bytes(BuildRequest(snapshot, original, model),
+        => new(options, request, "/chat/completions", invocation =>
+            JsonSerializer.SerializeToUtf8Bytes(BuildRequest(invocation.CopyOptions(), invocation.Request, invocation.Model),
                 StudioAiProxyJsonContext.Default.OpenAiProxyRequest), executionContext);
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedAsync(
