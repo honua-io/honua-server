@@ -28,13 +28,13 @@ def validate_journal(receipt_path):
         assert isinstance(record['kind'], str) and record['kind'], 'Missing kind'
         assert re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z', record['at']), 'Invalid UTC timestamp'
         datetime.fromisoformat(record['at'].replace('Z', '+00:00'))
-        validate_payload(record, receipt, seq == len(records) - 1)
+        validate_payload(record, receipt)
     validate_journal_order(records, receipt)
     assert records[-1]['kind'] == 'terminal', 'Missing terminal event'
     return records
 
 
-def validate_payload(record, receipt, is_last):
+def validate_payload(record, receipt):
     """Validate known payloads while allowing future event kinds."""
     kind = record['kind']
     if kind in ('phase', 'progress'):
@@ -53,7 +53,6 @@ def validate_payload(record, receipt, is_last):
     elif kind == 'truncated':
         assert all(type(record[key]) is int and record[key] > 0 for key in ('dropped', 'maxEvents', 'maxBytes')), 'Invalid truncation disclosure'
     elif kind == 'terminal':
-        assert is_last, 'Terminal event must be last'
         assert record['status'] in ('succeeded', 'failed', 'setupFailed', 'cancelled'), 'Invalid terminal status'
         assert type(record['exitCode']) is int, 'Invalid terminal exit code'
         assert record['status'] == receipt['status'], 'Terminal status disagrees with receipt'
@@ -64,6 +63,8 @@ def validate_journal_order(records, receipt):
     """Check measured time and truncation disclosure across the complete run."""
     elapsed = [record['elapsedMs'] for record in records]
     assert elapsed == sorted(elapsed), 'Decreasing elapsedMs'
+    terminals = [index for index, record in enumerate(records) if record['kind'] == 'terminal']
+    assert terminals == [len(records) - 1], 'Terminal event must be last'
     disclosures = [index for index, record in enumerate(records) if record['kind'] == 'truncated']
     assert type(receipt['eventsTruncated']) is bool, 'Invalid receipt truncation flag'
     assert type(receipt['eventsDropped']) is int and receipt['eventsDropped'] >= 0, 'Invalid receipt dropped count'
