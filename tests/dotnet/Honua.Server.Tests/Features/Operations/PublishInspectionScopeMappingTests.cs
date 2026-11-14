@@ -7,7 +7,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 using Honua.TestKit.Attributes;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationsToolset;
 
 // OAuth callers reach the read-only Publish inspection tools with read authority; an unmapped
 // operation is refused for every scope-governed caller.
