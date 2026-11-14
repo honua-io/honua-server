@@ -122,18 +122,8 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
                 return;
             }
 
-            var now = DateTimeOffset.UtcNow;
             var claimed = !string.IsNullOrEmpty(job.ClaimedBy);
-            var updated = claimed
-                ? job with { CancellationRequestedAt = now, UpdatedAt = now, CurrentPhase = "Cancelling" }
-                : job with
-                {
-                    Status = ExecutionJobStatus.Cancelled,
-                    CancellationRequestedAt = now,
-                    UpdatedAt = now,
-                    CompletedAt = now,
-                    CurrentPhase = "Cancelled"
-                };
+            var updated = Cancel(job, claimed);
             if (await _jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
                 if (!claimed && _jobQueue is not null)
@@ -147,6 +137,21 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
 
         ImportExecutionJobQueueLog.CancellationNotRecorded(_logger, jobId);
         throw new InvalidOperationException("Import cancellation conflicted with concurrent updates. Retry the cancellation.");
+    }
+
+    private static ExecutionJobRecord Cancel(ExecutionJobRecord job, bool claimed)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return claimed
+            ? job with { CancellationRequestedAt = now, UpdatedAt = now, CurrentPhase = "Cancelling" }
+            : job with
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                CancellationRequestedAt = now,
+                UpdatedAt = now,
+                CompletedAt = now,
+                CurrentPhase = "Cancelled"
+            };
     }
 
     // The record is durable, so the import is accepted: the next reconciliation sweep queues a

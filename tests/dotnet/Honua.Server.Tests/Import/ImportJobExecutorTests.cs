@@ -31,20 +31,11 @@ public sealed partial class ImportJobExecutorTests
     public async Task GeoservicesJobExecutor_PersistsResultFields_WhenImportCompletes()
     {
         using var provider = CreateGeoservicesProvider(new SuccessfulGeoservicesImportService());
-        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var jobs = ImportExecutionTestJobs.Create();
-        var jobManager = new GeoservicesImportJobManager(
-            universalProgressStore, NullLogger<GeoservicesImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
-        var service = new GeoservicesImportJobExecutor(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            jobManager,
-            NullLogger<GeoservicesImportJobExecutor>.Instance);
+        var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
 
         const string jobId = "geoservices-result";
-        var request = new GeoservicesImportRequest
+        var request = GeoservicesRequest(jobId) with
         {
-            JobId = jobId,
-            ServiceUrl = "https://8.8.8.8/arcgis/rest/services/Test/FeatureServer",
             LayerId = 2,
             TableName = "geoservices_result_test",
             AutoPublish = true,
@@ -89,20 +80,11 @@ public sealed partial class ImportJobExecutorTests
     public async Task GeoservicesJobExecutor_PersistsNeedsReviewVerdictAndDifferences_WhenFidelityGateBlocks()
     {
         using var provider = CreateGeoservicesProvider(new NeedsReviewGeoservicesImportService());
-        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var jobs = ImportExecutionTestJobs.Create();
-        var jobManager = new GeoservicesImportJobManager(
-            universalProgressStore, NullLogger<GeoservicesImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
-        var service = new GeoservicesImportJobExecutor(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            jobManager,
-            NullLogger<GeoservicesImportJobExecutor>.Instance);
+        var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
 
         const string jobId = "geoservices-needs-review";
-        var request = new GeoservicesImportRequest
+        var request = GeoservicesRequest(jobId) with
         {
-            JobId = jobId,
-            ServiceUrl = "https://8.8.8.8/arcgis/rest/services/Test/FeatureServer",
             LayerId = 3,
             TableName = "geoservices_review_test",
             AutoPublish = true,
@@ -146,20 +128,11 @@ public sealed partial class ImportJobExecutorTests
     {
         var importer = new CommittedCancelGeoservicesImportService();
         using var provider = CreateGeoservicesProvider(importer);
-        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var jobs = ImportExecutionTestJobs.Create();
-        var jobManager = new GeoservicesImportJobManager(
-            universalProgressStore, NullLogger<GeoservicesImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
-        var service = new GeoservicesImportJobExecutor(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            jobManager,
-            NullLogger<GeoservicesImportJobExecutor>.Instance);
+        var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
 
         const string jobId = "geoservices-cancel-after-commit";
-        var request = new GeoservicesImportRequest
+        var request = GeoservicesRequest(jobId) with
         {
-            JobId = jobId,
-            ServiceUrl = "https://8.8.8.8/arcgis/rest/services/Test/FeatureServer",
             LayerId = 4,
             TableName = "geoservices_cancel_after_commit",
             AutoPublish = true,
@@ -215,20 +188,11 @@ public sealed partial class ImportJobExecutorTests
     public async Task GeoservicesJobExecutor_DoesNotReprocessTerminalFailedJob_WhenDuplicateDeliveryOccurs()
     {
         using var provider = CreateGeoservicesProvider(new ThrowingGeoservicesImportService(ThrowingBehavior.FailImmediately));
-        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var jobs = ImportExecutionTestJobs.Create();
-        var jobManager = new GeoservicesImportJobManager(
-            universalProgressStore, NullLogger<GeoservicesImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
-        var service = new GeoservicesImportJobExecutor(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            jobManager,
-            NullLogger<GeoservicesImportJobExecutor>.Instance);
+        var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
 
         const string jobId = "geoservices-fail";
-        var request = new GeoservicesImportRequest
+        var request = GeoservicesRequest(jobId) with
         {
-            JobId = jobId,
-            ServiceUrl = "https://8.8.8.8/arcgis/rest/services/Test/FeatureServer",
             LayerId = 0,
             TableName = "geoservices_fail_test",
             AutoPublish = false
@@ -266,20 +230,11 @@ public sealed partial class ImportJobExecutorTests
     public async Task GeoservicesJobExecutor_PreservesCancelledState_WhenCancellationSurfacesAsGenericFailure()
     {
         using var provider = CreateGeoservicesProvider(new ThrowingGeoservicesImportService(ThrowingBehavior.ThrowAfterCancellation));
-        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var jobs = ImportExecutionTestJobs.Create();
-        var jobManager = new GeoservicesImportJobManager(
-            universalProgressStore, NullLogger<GeoservicesImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
-        var service = new GeoservicesImportJobExecutor(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            jobManager,
-            NullLogger<GeoservicesImportJobExecutor>.Instance);
+        var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
 
         const string jobId = "geoservices-cancel";
-        var request = new GeoservicesImportRequest
+        var request = GeoservicesRequest(jobId) with
         {
-            JobId = jobId,
-            ServiceUrl = "https://8.8.8.8/arcgis/rest/services/Test/FeatureServer",
             LayerId = 0,
             TableName = "geoservices_cancel_test",
             AutoPublish = false
@@ -329,20 +284,11 @@ public sealed partial class ImportJobExecutorTests
         var policy = Substitute.For<ILicenseOperationPolicy>();
         policy.OperationCancellation.Returns(expiry.Token);
         using var provider = CreateGeoservicesProvider(new ThrowingGeoservicesImportService(ThrowingBehavior.ThrowAfterCancellation));
-        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var jobs = ImportExecutionTestJobs.Create();
-        var jobManager = new GeoservicesImportJobManager(
-            universalProgressStore, NullLogger<GeoservicesImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
-        var service = new GeoservicesImportJobExecutor(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            jobManager,
-            NullLogger<GeoservicesImportJobExecutor>.Instance, licensePolicy: policy);
+        var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider, policy);
 
         const string jobId = "geoservices-cancel";
-        var request = new GeoservicesImportRequest
+        var request = GeoservicesRequest(jobId) with
         {
-            JobId = jobId,
-            ServiceUrl = "https://8.8.8.8/arcgis/rest/services/Test/FeatureServer",
             LayerId = 0,
             TableName = "geoservices_cancel_test",
             AutoPublish = false

@@ -58,36 +58,45 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
             finalProgressTtl: ImportExecutionJobQueue<GeoServerImportRequest, GeoServerImportProgress>.Retention);
         var run = new ImportRun(jobId, request, progress, stopwatch, licenseCancellation, linked.Token);
 
+        return await ExecuteRunAsync(run).ConfigureAwait(false);
+    }
+
+    private async Task<JobExecutionResult> ExecuteRunAsync(ImportRun run)
+    {
         try
         {
             return await RunAsync(run).ConfigureAwait(false);
         }
-        catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
+        catch (Exception ex) when (run.LicenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
-            await progress.SetFinalProgressAsync(run.Terminal(GeoServerImportStatus.Failed, "license expired",
+            await run.Progress.SetFinalProgressAsync(run.Terminal(GeoServerImportStatus.Failed, "license expired",
                 "Failed: license expired; partial import is incomplete"), CancellationToken.None).ConfigureAwait(false);
             return Failed("license expired");
         }
-        catch (Exception ex) when (linked.IsCancellationRequested && ex is not OutOfMemoryException)
+        catch (Exception ex) when (run.Token.IsCancellationRequested && ex is not OutOfMemoryException)
         {
-            // The execution worker owns recovery after shutdown or lease loss. Only operator
-            // cancellation, which is already durable, makes the import progress terminal here.
-            var stored = await _jobManager.ProgressStore.GetProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
-            if (stored?.Status == GeoServerImportStatus.Cancelled)
-            {
-                await progress.SetFinalProgressAsync(run.Terminal(GeoServerImportStatus.Cancelled, null,
-                    "Import cancelled"), CancellationToken.None).ConfigureAwait(false);
-                Log.JobCancelled(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
-            }
-
-            throw new OperationCanceledException("The import execution was interrupted.", ex, linked.Token);
+            await RecordOperatorCancellationAsync(run).ConfigureAwait(false);
+            throw new OperationCanceledException("The import execution was interrupted.", ex, run.Token);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
-            await progress.SetFinalProgressAsync(run.Terminal(GeoServerImportStatus.Failed, "Import failed.",
+            await run.Progress.SetFinalProgressAsync(run.Terminal(GeoServerImportStatus.Failed, "Import failed.",
                 "Import failed with exception"), CancellationToken.None).ConfigureAwait(false);
-            Log.JobException(_logger, jobId, ex);
+            Log.JobException(_logger, run.JobId, ex);
             return Failed("Import failed.");
+        }
+    }
+
+    private async Task RecordOperatorCancellationAsync(ImportRun run)
+    {
+        // Shutdown or lease loss leaves recovery to the worker; only durable operator cancellation
+        // makes the import progress terminal here.
+        var stored = await _jobManager.ProgressStore.GetProgressAsync(run.JobId, CancellationToken.None).ConfigureAwait(false);
+        if (stored?.Status == GeoServerImportStatus.Cancelled)
+        {
+            await run.Progress.SetFinalProgressAsync(run.Terminal(GeoServerImportStatus.Cancelled, null,
+                "Import cancelled"), CancellationToken.None).ConfigureAwait(false);
+            Log.JobCancelled(_logger, run.JobId, run.Stopwatch.Elapsed.TotalSeconds);
         }
     }
 
@@ -120,8 +129,14 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
             return Failed(validation.ErrorMessage ?? "Import failed.");
         }
 
-        var initial = progress.CurrentProgress ?? GeoServerImportProgress.CreateInitial(jobId, request.GeoServerRestUrl, request.TargetHonuaUrl);
-        await progress.SetProgressAsync(initial with
+        var result = await ImportAsync(run, request).ConfigureAwait(false);
+        return await CompleteAsync(run, result).ConfigureAwait(false);
+    }
+
+    private async Task<GeoServerImportResult> ImportAsync(ImportRun run, GeoServerImportRequest request)
+    {
+        var initial = run.Progress.CurrentProgress ?? GeoServerImportProgress.CreateInitial(run.JobId, request.GeoServerRestUrl, request.TargetHonuaUrl);
+        await run.Progress.SetProgressAsync(initial with
         {
             Status = GeoServerImportStatus.Discovering,
             CompletedAt = null,
@@ -136,10 +151,15 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
         {
             if (p.Status != GeoServerImportStatus.Queued)
             {
-                _ = progress.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None);
+                _ = run.Progress.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None);
             }
         });
-        var result = await importer.ImportConfigurationAsync(resolvedRequest, reporter, run.Token).ConfigureAwait(false);
+        return await importer.ImportConfigurationAsync(resolvedRequest, reporter, run.Token).ConfigureAwait(false);
+    }
+
+    private async Task<JobExecutionResult> CompleteAsync(ImportRun run, GeoServerImportResult result)
+    {
+        var (jobId, request, progress, stopwatch, _, _) = run;
         run.LicenseCancellation.ThrowIfCancellationRequested();
         var stored = await _jobManager.ProgressStore.GetProgressAsync(jobId, run.Token).ConfigureAwait(false);
         if (stored?.Status == GeoServerImportStatus.Cancelled)
@@ -147,7 +167,7 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
             throw new OperationCanceledException("The import was cancelled while it ran.");
         }
 
-        var final = BuildFinalProgress(progress.CurrentProgress ?? initial, result);
+        var final = BuildFinalProgress(progress.CurrentProgress!, result);
         await progress.SetFinalProgressAsync(final, run.Token).ConfigureAwait(false);
         if (result.Success)
         {

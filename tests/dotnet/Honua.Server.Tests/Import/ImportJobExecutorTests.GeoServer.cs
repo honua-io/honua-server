@@ -30,25 +30,10 @@ public sealed partial class ImportJobExecutorTests
     public async Task GeoServerJobExecutor_DoesNotReprocessTerminalFailedJob_WhenDuplicateDeliveryOccurs()
     {
         using var provider = CreateGeoServerProvider(new ThrowingGeoServerImportService(ThrowingBehavior.FailImmediately));
-        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var jobs = ImportExecutionTestJobs.Create();
-        var jobManager = new GeoServerImportJobManager(
-            universalProgressStore, NullLogger<GeoServerImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
-        var service = new GeoServerImportJobExecutor(
-            new ConfigurationBuilder().Build(),
-            new TestHostEnvironment(),
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            jobManager,
-            NullLogger<GeoServerImportJobExecutor>.Instance);
+        var (jobs, jobManager, service) = CreateGeoServerExecutor(provider);
 
         const string jobId = "geoserver-fail";
-        var request = new GeoServerImportRequest
-        {
-            JobId = jobId,
-            GeoServerRestUrl = "https://8.8.8.8/geoserver/rest",
-            TargetHonuaUrl = "https://honua.example.com",
-            DryRun = true
-        };
+        var request = GeoServerRequest(jobId);
         var progress = GeoServerImportProgress.CreateInitial(jobId, request.GeoServerRestUrl, request.TargetHonuaUrl);
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);
@@ -81,25 +66,10 @@ public sealed partial class ImportJobExecutorTests
     public async Task GeoServerJobExecutor_PreservesCancelledState_WhenCancellationSurfacesAsGenericFailure()
     {
         using var provider = CreateGeoServerProvider(new ThrowingGeoServerImportService(ThrowingBehavior.ThrowAfterCancellation));
-        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var jobs = ImportExecutionTestJobs.Create();
-        var jobManager = new GeoServerImportJobManager(
-            universalProgressStore, NullLogger<GeoServerImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
-        var service = new GeoServerImportJobExecutor(
-            new ConfigurationBuilder().Build(),
-            new TestHostEnvironment(),
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            jobManager,
-            NullLogger<GeoServerImportJobExecutor>.Instance);
+        var (jobs, jobManager, service) = CreateGeoServerExecutor(provider);
 
         const string jobId = "geoserver-cancel";
-        var request = new GeoServerImportRequest
-        {
-            JobId = jobId,
-            GeoServerRestUrl = "https://8.8.8.8/geoserver/rest",
-            TargetHonuaUrl = "https://honua.example.com",
-            DryRun = true
-        };
+        var request = GeoServerRequest(jobId);
         var progress = GeoServerImportProgress.CreateInitial(jobId, request.GeoServerRestUrl, request.TargetHonuaUrl);
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);
@@ -143,22 +113,9 @@ public sealed partial class ImportJobExecutorTests
     {
         var importer = new ThrowingGeoServerImportService(ThrowingBehavior.ThrowAfterCancellation);
         using var provider = CreateGeoServerProvider(importer);
-        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var jobs = ImportExecutionTestJobs.Create();
-        var manager = new GeoServerImportJobManager(
-            universalProgressStore, NullLogger<GeoServerImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
-        var executor = new GeoServerImportJobExecutor(
-            new ConfigurationBuilder().Build(), new TestHostEnvironment(),
-            provider.GetRequiredService<IServiceScopeFactory>(), manager,
-            NullLogger<GeoServerImportJobExecutor>.Instance);
+        var (jobs, jobManager, service) = CreateGeoServerExecutor(provider);
         const string jobId = "geoserver-worker-interrupted";
-        var request = new GeoServerImportRequest
-        {
-            JobId = jobId,
-            GeoServerRestUrl = "https://8.8.8.8/geoserver/rest",
-            TargetHonuaUrl = "https://honua.example.com",
-            DryRun = true
-        };
+        var request = GeoServerRequest(jobId);
         await manager.SubmitAsync(request,
             GeoServerImportProgress.CreateInitial(jobId, request.GeoServerRestUrl, request.TargetHonuaUrl),
             CancellationToken.None);
@@ -190,18 +147,10 @@ public sealed partial class ImportJobExecutorTests
     {
         var importer = new ThrowingGeoservicesImportService(ThrowingBehavior.ThrowAfterCancellation);
         using var provider = CreateGeoservicesProvider(importer);
-        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var jobs = ImportExecutionTestJobs.Create();
-        var manager = new GeoservicesImportJobManager(
-            universalProgressStore, NullLogger<GeoservicesImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
-        var executor = new GeoservicesImportJobExecutor(
-            provider.GetRequiredService<IServiceScopeFactory>(), manager,
-            NullLogger<GeoservicesImportJobExecutor>.Instance);
+        var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
         const string jobId = "geoservices-worker-interrupted";
-        var request = new GeoservicesImportRequest
+        var request = GeoservicesRequest(jobId) with
         {
-            JobId = jobId,
-            ServiceUrl = "https://8.8.8.8/arcgis/rest/services/Test/FeatureServer",
             LayerId = 0,
             TableName = "interrupted_import",
             AutoPublish = false
@@ -239,25 +188,10 @@ public sealed partial class ImportJobExecutorTests
         var policy = Substitute.For<ILicenseOperationPolicy>();
         policy.OperationCancellation.Returns(expiry.Token);
         using var provider = CreateGeoServerProvider(new ThrowingGeoServerImportService(ThrowingBehavior.ThrowAfterCancellation));
-        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
-        var jobs = ImportExecutionTestJobs.Create();
-        var jobManager = new GeoServerImportJobManager(
-            universalProgressStore, NullLogger<GeoServerImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
-        var service = new GeoServerImportJobExecutor(
-            new ConfigurationBuilder().Build(),
-            new TestHostEnvironment(),
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            jobManager,
-            NullLogger<GeoServerImportJobExecutor>.Instance, licensePolicy: policy);
+        var (jobs, jobManager, service) = CreateGeoServerExecutor(provider, policy);
 
         const string jobId = "geoserver-cancel";
-        var request = new GeoServerImportRequest
-        {
-            JobId = jobId,
-            GeoServerRestUrl = "https://8.8.8.8/geoserver/rest",
-            TargetHonuaUrl = "https://honua.example.com",
-            DryRun = true
-        };
+        var request = GeoServerRequest(jobId);
         var progress = GeoServerImportProgress.CreateInitial(jobId, request.GeoServerRestUrl, request.TargetHonuaUrl);
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);

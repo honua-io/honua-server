@@ -64,17 +64,22 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
             finalProgressTtl: ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
         var run = new ImportRun(request with { JobId = jobId }, progress, Stopwatch.StartNew(), licenseCancellation, jobCancellation.Token);
 
+        return await ExecuteRunAsync(run).ConfigureAwait(false);
+    }
+
+    private async Task<JobExecutionResult> ExecuteRunAsync(ImportRun run)
+    {
         try
         {
             return await RunAsync(run).ConfigureAwait(false);
         }
-        catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
+        catch (Exception ex) when (run.LicenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
-            await progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, LicenseExpiredMessage,
+            await run.Progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, LicenseExpiredMessage,
                 "Failed: license expired; partial import is incomplete"), CancellationToken.None).ConfigureAwait(false);
             return NotRetryable(LicenseExpiredMessage);
         }
-        catch (Exception ex) when (jobCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
+        catch (Exception ex) when (run.Token.IsCancellationRequested && ex is not OutOfMemoryException)
         {
             await RecordOperatorCancellationAsync(run).ConfigureAwait(false);
             if (ex is OperationCanceledException)
@@ -82,15 +87,15 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
                 throw;
             }
 
-            throw new OperationCanceledException("The import was cancelled while it ran.", ex, jobCancellation.Token);
+            throw new OperationCanceledException("The import was cancelled while it ran.", ex, run.Token);
         }
         // Intentionally generic: the import job's top-level boundary records any importer fault as a
         // failed job instead of handing it to the retry policy; the job document is already terminal.
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
-            await progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, ImportFailedMessage,
+            await run.Progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, ImportFailedMessage,
                 "Import failed with exception"), CancellationToken.None).ConfigureAwait(false);
-            Log.JobException(_logger, jobId, ex);
+            Log.JobException(_logger, run.Request.JobId, ex);
             return NotRetryable(ImportFailedMessage);
         }
     }
