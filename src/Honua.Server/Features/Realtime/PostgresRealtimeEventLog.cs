@@ -131,23 +131,29 @@ internal sealed class PostgresRealtimeEventLog(JobStoreDatabase database) : IExp
                 }
 
                 await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
-                var events = new List<RealtimeEvent>();
-                while (await reader.ReadAsync(token).ConfigureAwait(false))
-                {
-                    using var payload = JsonDocument.Parse(reader.GetString(3));
-                    events.Add(new RealtimeEvent(
-                        realtimeFamily,
-                        reader.GetInt64(0),
-                        reader.GetString(1),
-                        reader.GetString(2),
-                        payload.RootElement.Clone(),
-                        reader.GetFieldValue<DateTimeOffset>(4)));
-                }
-
-                return events;
+                return await ReadEventsAsync(reader, realtimeFamily, token).ConfigureAwait(false);
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken);
+    }
+
+    private static async Task<IReadOnlyList<RealtimeEvent>> ReadEventsAsync(
+        NpgsqlDataReader reader, RealtimeFamily realtimeFamily, CancellationToken token)
+    {
+        var events = new List<RealtimeEvent>();
+        while (await reader.ReadAsync(token).ConfigureAwait(false))
+        {
+            using var payload = JsonDocument.Parse(reader.GetString(3));
+            events.Add(new RealtimeEvent(
+                realtimeFamily,
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                payload.RootElement.Clone(),
+                reader.GetFieldValue<DateTimeOffset>(4)));
+        }
+
+        return events;
     }
 
     // The retained range of a family. With nothing retained the oldest position is head + 1.

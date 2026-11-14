@@ -99,29 +99,17 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
         {
             try
             {
-                await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-                connection.Notification += (_, _) => wake();
-                foreach (var family in RealtimeLogFamilies.Logged.Append(RealtimeLogFamilies.Features))
+                await ListenAsync(wake, () =>
                 {
-                    await using var listen = new NpgsqlCommand($"LISTEN \"{Channel(family)}\"", connection);
-                    await listen.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-                }
+                    if (failed)
+                    {
+                        Interlocked.Increment(ref _reconnects);
+                        LogReconnected(_logger);
+                    }
 
-                Volatile.Write(ref _processId, connection.ProcessID);
-                _connected = true;
-                if (failed)
-                {
-                    Interlocked.Increment(ref _reconnects);
-                    LogReconnected(_logger);
-                }
-
-                failed = false;
-                delay = options.ListenerReconnectMinDelay;
-                wake();
-                while (true)
-                {
-                    await connection.WaitAsync(cancellationToken).ConfigureAwait(false);
-                }
+                    failed = false;
+                    delay = options.ListenerReconnectMinDelay;
+                }, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -136,11 +124,7 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
                 wake();
             }
 
-            try
-            {
-                await Task.Delay(Jitter(delay), cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
+            if (!await WaitForReconnectAsync(delay, cancellationToken).ConfigureAwait(false))
             {
                 break;
             }
@@ -150,6 +134,39 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
 
         _connected = false;
         Volatile.Write(ref _processId, 0);
+    }
+
+    private static async Task<bool> WaitForReconnectAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(Jitter(delay), cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private async Task ListenAsync(Action wake, Action connected, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource!.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        connection.Notification += (_, _) => wake();
+        foreach (var family in RealtimeLogFamilies.Logged.Append(RealtimeLogFamilies.Features))
+        {
+            await using var listen = new NpgsqlCommand($"LISTEN \"{Channel(family)}\"", connection);
+            await listen.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        Volatile.Write(ref _processId, connection.ProcessID);
+        _connected = true;
+        connected();
+        wake();
+        while (true)
+        {
+            await connection.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public static string Channel(string family) => "honua_rt_" + family;

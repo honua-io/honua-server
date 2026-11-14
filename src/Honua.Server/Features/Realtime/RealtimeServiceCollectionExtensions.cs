@@ -68,13 +68,7 @@ internal static class RealtimeServiceCollectionExtensions
 
         if (crossNode)
         {
-            var listenerConnectionString = configuration.GetConnectionString(RealtimeOptions.ListenerConnectionStringName);
-            services.TryAddSingleton(provider => RealtimeListener.Create(
-                string.IsNullOrWhiteSpace(listenerConnectionString)
-                    ? provider.GetService<NpgsqlDataSource>()?.ConnectionString
-                    : listenerConnectionString,
-                provider.GetRequiredService<IOptions<RealtimeOptions>>(),
-                provider.GetRequiredService<ILogger<RealtimeListener>>()));
+            AddListener(services, configuration);
         }
 
         if (hostsDatabasePollingLoops)
@@ -93,6 +87,17 @@ internal static class RealtimeServiceCollectionExtensions
         }
 
         return services;
+    }
+
+    private static void AddListener(IServiceCollection services, IConfiguration configuration)
+    {
+        var listenerConnectionString = configuration.GetConnectionString(RealtimeOptions.ListenerConnectionStringName);
+        services.TryAddSingleton(provider => RealtimeListener.Create(
+            string.IsNullOrWhiteSpace(listenerConnectionString)
+                ? provider.GetService<NpgsqlDataSource>()?.ConnectionString
+                : listenerConnectionString,
+            provider.GetRequiredService<IOptions<RealtimeOptions>>(),
+            provider.GetRequiredService<ILogger<RealtimeListener>>()));
     }
 
     // auto follows Deployment:Mode, as the collaboration topology does.
