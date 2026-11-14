@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
@@ -682,7 +683,8 @@ internal static partial class PrintingToolsEndpoints
     private static bool CanReadJob(PrintProgress progress, HttpContext context)
     {
         if (progress.AnonymousSubmission is null ||
-            !string.Equals(progress.TenantId, CaptureSubmitter(context).TenantId, StringComparison.Ordinal))
+            !TenantReadScope.For(context.RequestServices.GetService<ITenantContext>(),
+                CaptureSubmitter(context).TenantId).Contains(progress.TenantId))
             return false;
         if (progress.AnonymousSubmission == true ||
             (context.User.Identity?.IsAuthenticated == true && context.User.IsInRole("admin")))

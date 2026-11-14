@@ -79,6 +79,7 @@ using Honua.Server.Features.Studio;
 using Honua.PackageReview;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Operations.Status;
+using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Features.Streaming.Conformance;
 using Honua.Server.Features.WorkflowPackages;
@@ -109,10 +110,8 @@ using Microsoft.AspNetCore.Server.Kestrel.Https;
 // In the Development environment ASP.NET Core loads the static-web-assets runtime manifest
 // implicitly, inside WebApplication.CreateBuilder, and eagerly opens every content root it
 // declares as a PhysicalFileProvider — which throws DirectoryNotFoundException for a root that
-// is not materialized on disk. That aborts host construction before any application code (or
-// any test assertion) runs. The explicit hosted-Blazor loader below is already hardened against
-// this, but it never runs in Development, so the guard has to happen here, ahead of the builder
-// (honua-server#2904).
+// is not materialized on disk. That aborts host construction before any application code runs,
+// so the missing roots are created here, ahead of the builder.
 StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -1132,6 +1131,13 @@ builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
 //      (Startup/FeatureEventsAndStreamingRegistration.cs)
 builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration, requiresDurableDistributedEvents);
 // ---- End extracted block
+
+// ---- Cross-node realtime: event log and fan-out provider (ADR-0085)
+//      (Features/Realtime/RealtimeServiceCollectionExtensions.cs)
+builder.Services.AddRealtimeFanout(
+    builder.Configuration,
+    Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration));
+// ---- End block
 builder.Services.AddCollaborationSessionTransport();
 
 // v1 manifest drift webhook dispatcher removed in #1035 cutover.

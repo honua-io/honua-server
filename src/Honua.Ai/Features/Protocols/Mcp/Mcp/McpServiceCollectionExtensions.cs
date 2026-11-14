@@ -4,6 +4,7 @@
 using Honua.Ai.AiBuilder;
 using Honua.Ai.AiBuilder.Planning;
 using Honua.Ai.Grounding;
+using Honua.Ai.Protocols.Mcp.Mrtr;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
@@ -38,6 +39,7 @@ internal static class McpServiceCollectionExtensions
         // database registers the shared IMcpSessionStore, so a session negotiated
         // on any instance is honoured by every instance; without one the registry
         // is in-memory on a single instance and stateless on a multi-instance host.
+        services.TryAddSingleton(McpMrtrRuntime.Create);
         services.TryAddSingleton(static sp =>
         {
             var options = sp.GetRequiredService<IOptions<McpOptions>>().Value;

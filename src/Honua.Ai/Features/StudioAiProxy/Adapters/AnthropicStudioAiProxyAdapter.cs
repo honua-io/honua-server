@@ -30,13 +30,12 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
     public AnthropicStudioAiProxyAdapter(
         IHttpClientFactory httpClientFactory,
         StudioAiProxyApiKeyResolver apiKeyResolver,
-        ILogger<AnthropicStudioAiProxyAdapter> logger,
-        TimeProvider? timeProvider = null)
+        ILogger<AnthropicStudioAiProxyAdapter> logger)
     {
         _httpClientFactory = httpClientFactory;
         _apiKeyResolver = apiKeyResolver;
         _logger = logger;
-        _continuations = new AnthropicContinuationStore(timeProvider ?? TimeProvider.System);
+        _continuations = new AnthropicContinuationStore(TimeProvider.System);
     }
 
     public string Kind => StudioAiProxyConfiguration.AnthropicKind;
@@ -74,14 +73,13 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         AiExecutionContext? executionContext = null)
     {
         string? requiredCredentialFingerprint = null;
-        var identity = executionContext ?? request.ExecutionContext;
-        return new(options, request, "/v1/messages", (snapshot, original, model) =>
+        return new(options, request, "/v1/messages", invocation =>
         {
-            var scope = new AnthropicContinuationStore.Scope(snapshot, original, model, identity);
+            var scope = new AnthropicContinuationStore.Scope(invocation.CopyOptions(), invocation.Request, invocation.Model, invocation.ExecutionContext);
             var body = JsonSerializer.SerializeToUtf8Bytes(BuildRequest(scope), StudioAiProxyJsonContext.Default.AnthropicProxyRequest);
             requiredCredentialFingerprint = scope.RestoredCredentials.SingleOrDefault();
             return body;
-        }, identity)
+        }, executionContext)
         { RequiredCredentialFingerprint = requiredCredentialFingerprint };
     }
 
@@ -254,7 +252,6 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     StudioAiStreamGrammarValidator.InvalidStreamCode);
                 yield break;
             }
-            turn.Capture(frame, payload);
 
             switch (frame.Type)
             {
@@ -287,23 +284,24 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     break;
 
                 case "content_block_delta" when frame.Delta?.Type is "thinking_delta" or "signature_delta"
-                    && frame.Index is { } thinkingIndex && state.OpenContentBlocks.GetValueOrDefault(thinkingIndex) == "thinking":
+                    && state.OpenBlockType(frame) == "thinking":
                     break;
 
-                case "content_block_delta" when frame.Index is { } blockIndex
-                    && state.OpenContentBlocks.GetValueOrDefault(blockIndex) is "thinking" or "redacted_thinking":
+                case "content_block_delta" when state.OpenBlockType(frame) is null or "thinking" or "redacted_thinking":
                     yield return state.RejectFrame(frame, payload.Length, stoppedContentBlockType);
                     yield break;
 
                 case "content_block_delta" when frame.Delta?.Type == "text_delta" && frame.Delta.Text is ""
-                    && state.SawMessageStart && frame.Index is { } emptyTextIndex && state.OpenContentBlocks.GetValueOrDefault(emptyTextIndex) == "text":
+                    && state.SawMessageStart && state.OpenBlockType(frame) == "text":
                     break;
 
-                case "content_block_delta" when frame.Delta?.Type == "text_delta" && frame.Delta.Text is { Length: > 0 } text:
+                case "content_block_delta" when frame.Delta?.Type == "text_delta" && frame.Delta.Text is { Length: > 0 } text
+                    && state.OpenBlockType(frame) == "text":
                     yield return new StudioAiChatEvent { Type = StudioAiChatEventType.TextDelta, Text = text };
                     break;
 
-                case "content_block_delta" when frame.Delta?.Type == "input_json_delta" && frame.Delta.PartialJson is { } partial:
+                case "content_block_delta" when frame.Delta?.Type == "input_json_delta" && frame.Delta.PartialJson is { } partial
+                    && state.OpenBlockType(frame) == "tool_use":
                     state.ToolArgsBuffer?.Append(partial);
                     yield return new StudioAiChatEvent
                     {
@@ -371,6 +369,8 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     yield return state.RejectFrame(frame, payload.Length, stoppedContentBlockType);
                     yield break;
             }
+
+            turn.Capture(frame, payload);
         }
 
         if (!state.SawMessageStop)
@@ -562,6 +562,9 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             return (null, stoppedType);
         }
 
+        public string? OpenBlockType(AnthropicStreamFrame frame)
+            => frame.Index is { } index ? OpenContentBlocks.GetValueOrDefault(index) : null;
+
         public Stopwatch Timer { get; } = new();
         public int? PromptTokens { get; set; }
         public int? CompletionTokens { get; set; }
@@ -588,8 +591,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             AnthropicStreamFrame frame, int payloadCharacters, string? stoppedContentBlockType)
         {
             var eventType = StreamMetadataLabel(frame.Type);
-            var blockType = StreamMetadataLabel(frame.ContentBlock?.Type ?? stoppedContentBlockType
-                ?? (frame.Index is { } index ? OpenContentBlocks.GetValueOrDefault(index) : null));
+            var blockType = StreamMetadataLabel(frame.ContentBlock?.Type ?? stoppedContentBlockType ?? OpenBlockType(frame));
             var deltaType = StreamMetadataLabel(frame.Delta?.Type);
             var errorType = StreamMetadataLabel(frame.Error?.Type);
             var (errorCode, message) = frame.Type switch

@@ -122,8 +122,8 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        try { await _fixture.DisposeAsync(); }
-        finally { _identityProvider.Dispose(); }
+        using var identityProvider = _identityProvider;
+        await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]

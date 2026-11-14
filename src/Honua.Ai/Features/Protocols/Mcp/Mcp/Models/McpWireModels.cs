@@ -461,6 +461,13 @@ internal sealed class McpToolsCallParams
 
     [JsonPropertyName("_meta")]
     public JsonElement? Meta { get; set; }
+
+    // MRTR retry fields (SEP-2322); only modern requests may carry them.
+    [JsonPropertyName("inputResponses")]
+    public JsonElement InputResponses { get; set; }
+
+    [JsonPropertyName("requestState")]
+    public JsonElement RequestState { get; set; }
 }
 
 /// <summary>
@@ -476,6 +483,10 @@ internal sealed class McpToolsCallResult
 
     [JsonPropertyName("structuredContent")]
     public JsonElement? StructuredContent { get; set; }
+
+    // Set only by McpRequestContinuation; the dispatcher writes it as an input_required result.
+    [JsonIgnore]
+    public Mrtr.McpInputRequired? InputRequired { get; init; }
 }
 
 internal sealed class McpContentBlock

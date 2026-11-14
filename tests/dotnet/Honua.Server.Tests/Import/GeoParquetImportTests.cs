@@ -439,7 +439,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         var (payload, _) = GeoParquetFeatureWriter.FormatAsGeoParquet(
             QueryResult<Feature>.Create(rowCount, features), resource, "objectid", true, 4326,
             false, false, new GeometryLimits());
-        using var content = CreateUploadContent(payload, "query-export.parquet", "geoparquet_query_roundtrip");
+        using var content = CreateUploadContent(payload.ToArray(), "query-export.parquet", "geoparquet_query_roundtrip");
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var responseJson = await response.Content.ReadAsStringAsync();
