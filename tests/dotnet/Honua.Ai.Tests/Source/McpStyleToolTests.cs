@@ -55,7 +55,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// subsequent <c>honua_render_map</c> resolves the applied style.
 /// </summary>
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpStyleToolTests
+public sealed partial class McpStyleToolTests
 {
     private const string ServiceId = "svc-parcels";
     private const string ServiceName = "Parcels";
@@ -275,7 +275,7 @@ public sealed class McpStyleToolTests
         result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be(errorCode);
         if (approvalRequired)
         {
-            result.GetProperty("structuredContent").GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+            result.GetProperty("structuredContent").TryGetProperty("proposalId", out _).Should().BeFalse();
         }
         await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
