@@ -492,7 +492,8 @@ public sealed class McpAuthorizationHelperTests
             .AddLogging()
             .AddSingleton<IAuthenticationService>(authentication)
             .AddSingleton<IOptions<OidcAuthenticationOptions>>(Options.Create(oidc));
-        serviceCollection.AddHonuaTenantContext(new ConfigurationBuilder().Build());
+        serviceCollection.AddHonuaTenantContext(new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["MultiTenancy:Enabled"] = "true" }).Build());
         var services = serviceCollection.BuildServiceProvider();
         await using var provider = services;
         var app = new ApplicationBuilder(provider);

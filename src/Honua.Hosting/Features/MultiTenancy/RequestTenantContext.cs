@@ -11,10 +11,19 @@ internal sealed class RequestTenantContext : ITenantContext
 
     public TenantContextSource Source { get; private set; } = TenantContextSource.Anonymous;
 
+    internal bool IncludesLegacyUnassigned { get; private set; }
+
+    internal void SetSingleTenantDefault(string? tenantId)
+    {
+        Set(tenantId, tenantId is null ? TenantContextSource.Anonymous : TenantContextSource.Default);
+        IncludesLegacyUnassigned = true;
+    }
+
     public void Set(string? tenantId, TenantContextSource source)
     {
         TenantId = string.IsNullOrWhiteSpace(tenantId) ? null : tenantId;
         Source = source;
+        IncludesLegacyUnassigned = false;
     }
 
     public bool RequireTenantId(out string tenantId, out string? reason)

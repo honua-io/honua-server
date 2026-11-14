@@ -482,7 +482,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         audit.ResourceType.Should().Be("studio_ai_provider");
         audit.ResourceId.Should().Be(ProviderName);
         audit.Outcome.Should().Be(AuditOutcome.Failure);
-        audit.Actor.Should().Be(adminKey.Record.Id.ToString("D"));
+        audit.Actor.Should().Be($"apikey:api-key:{adminKey.Record.Id:D}");
         audit.ActorType.Should().Be(AuditActorType.ApiKey);
         audit.Details.Should().Contain("\"kind\":\"openai\"");
     }
