@@ -50,6 +50,35 @@ public sealed class ExecutionJobCancellationHelperTests
             ClaimedBy = "worker",
             ClaimedAt = DateTimeOffset.UtcNow
         };
+        await AssertWorkerPickupCancellationAsync(original, claimed);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public async Task QueuedRetryCancellationCasLosesToWorkerPickup_RequestsDurableCancellation(long version)
+    {
+        var original = CreateJobRecord("queued-retry-pickup", ExecutionJobStatus.Queued, backend: "local") with
+        {
+            Version = 1,
+            AttemptCount = 1,
+            NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(-1)
+        };
+        var claimed = original with
+        {
+            Version = version,
+            Status = ExecutionJobStatus.Running,
+            AttemptCount = original.AttemptCount + 1,
+            ClaimedBy = "worker",
+            ClaimedAt = DateTimeOffset.UtcNow,
+            NextRetryAt = null
+        };
+        await AssertWorkerPickupCancellationAsync(original, claimed);
+    }
+
+    private static async Task AssertWorkerPickupCancellationAsync(ExecutionJobRecord original, ExecutionJobRecord claimed)
+    {
         var store = Substitute.For<IExecutionJobStore>();
         store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(false, true);

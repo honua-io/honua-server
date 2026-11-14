@@ -386,11 +386,15 @@ internal static class ExecutionJobCancellationHelper
     private static bool IsSameExecutionAttempt(ExecutionJobRecord original, ExecutionJobRecord current)
     {
         var acquiredClaim = original.ClaimedBy == null && current.ClaimedBy != null;
+        var claimedScheduledRetry = acquiredClaim
+            && current.AttemptCount == original.AttemptCount + 1
+            && original.NextRetryAt.HasValue
+            && current.NextRetryAt == null;
         return original.ManualRetryGeneration == current.ManualRetryGeneration
             && (original.AttemptCount == current.AttemptCount
                 || (acquiredClaim && current.AttemptCount == original.AttemptCount + 1))
             && (acquiredClaim || (original.ClaimedBy == current.ClaimedBy && original.ClaimedAt == current.ClaimedAt))
             && original.ProviderOperationId == current.ProviderOperationId
-            && original.NextRetryAt == current.NextRetryAt;
+            && (original.NextRetryAt == current.NextRetryAt || claimedScheduledRetry);
     }
 }
