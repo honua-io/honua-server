@@ -1013,6 +1013,91 @@ public sealed class DeployTelemetrySignalEvaluatorTests
 
     // ---- traffic-exposure anchored warmup (#4617) -------------------------
 
+    [Theory]
+    [InlineData(3, false)]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    public async Task EvaluateAsync_DuringBake_ProbesBeforeHoldingPromotion(int failures, bool goldenMatches)
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(
+            new DeployHealthProbeResult { Attempts = 3, Failures = failures },
+            new DeployGoldenQueryResult { Matched = goldenMatches, Detail = "body expectation" });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
+        var operation = CreateBakeOperation();
+
+        var decision = await evaluator.EvaluateAsync(operation);
+
+        var breached = failures > 0 || !goldenMatches;
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().Be(breached);
+        decision.WaitForMoreTelemetry.Should().Be(!breached);
+        probe.Invocations.Should().Be(1);
+        probe.GoldenInvocations.Should().Be(failures > 0 ? 0 : 1);
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("0", false, "1")]
+    [InlineData("1", true, "0")]
+    public async Task EvaluateAsync_DuringBake_PreservesRollbackDebounce(
+        string priorStreak, bool rollbackExpected, string expectedStreak)
+    {
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 3 });
+        var evaluator = CreateHealthProbeEvaluator(probe);
+        var operation = CreateBakeOperation();
+        var parameters = new Dictionary<string, string>(operation.Deploy!.Parameters)
+        {
+            ["telemetry.rollback.consecutive_breaches"] = "2",
+            ["telemetry.rollback.breach_streak"] = priorStreak
+        };
+        operation = operation with { Deploy = operation.Deploy with { Parameters = parameters } };
+
+        var decision = await evaluator.EvaluateAsync(operation);
+
+        decision!.RollbackRecommended.Should().Be(rollbackExpected);
+        decision.WaitForMoreTelemetry.Should().Be(!rollbackExpected);
+        decision.UpdatedDeployParameters!["telemetry.rollback.breach_streak"].Should().Be(expectedStreak);
+        probe.Invocations.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_DuringBake_HealthyProbesResetBreachStreakWithoutPromoting()
+    {
+        var probe = new FakeHealthProbe(
+            new DeployHealthProbeResult { Attempts = 3, Failures = 0 },
+            new DeployGoldenQueryResult { Matched = true });
+        var evaluator = CreateHealthProbeEvaluator(probe);
+        var operation = CreateBakeOperation();
+        var parameters = new Dictionary<string, string>(operation.Deploy!.Parameters)
+        {
+            ["telemetry.rollback.consecutive_breaches"] = "2",
+            ["telemetry.rollback.breach_streak"] = "1"
+        };
+        operation = operation with { Deploy = operation.Deploy with { Parameters = parameters } };
+
+        var decision = await evaluator.EvaluateAsync(operation);
+
+        decision!.RollbackRecommended.Should().BeFalse();
+        decision.WaitForMoreTelemetry.Should().BeTrue();
+        decision.UpdatedDeployParameters!["telemetry.rollback.breach_streak"].Should().Be("0");
+        probe.Invocations.Should().Be(1);
+        probe.GoldenInvocations.Should().Be(1);
+    }
+
+    private static WorkflowOperationRecord CreateBakeOperation()
+    {
+        var operation = CreateOperation(DeployTargetKind.AwsEcs, new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+            ["telemetry.golden_query.url"] = "https://example.com/query",
+            ["telemetry.golden_query.expected_contains"] = "features",
+            ["telemetry.warmup_seconds"] = "300"
+        }, createdAt: DateTimeOffset.UtcNow.AddHours(-1));
+        return operation with { Deploy = operation.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow } };
+    }
+
     [Fact]
     public async Task EvaluateAsync_WarmupAnchorsOnTrafficExposedAt_NotOperationCreation()
     {
