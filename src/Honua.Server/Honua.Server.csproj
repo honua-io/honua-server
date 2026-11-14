@@ -152,16 +152,12 @@
 
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" />
-    <PackageReference Include="BouncyCastle.Cryptography" />
     <PackageReference Include="Geospatial.Grpc" />
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.AspNetCore" />
     <PackageReference Include="Grpc.AspNetCore.Server.Reflection" />
     <PackageReference Include="Grpc.AspNetCore.Web" />
     <PackageReference Include="Grpc.AspNetCore.HealthChecks" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
-    <PackageReference Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
     <!-- Force the audited-safe MessagePack (2.5.301) over the vulnerable 2.5.187 that the SignalR Redis
          backplane pulls transitively (transitive pinning is not enabled repo-wide). See #2554. -->
@@ -189,7 +185,6 @@
                       Condition="'$(HonuaUseSkiaNoDependencies)' != 'true'" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies"
                       Condition="'$(HonuaUseSkiaNoDependencies)' == 'true'" />
-    <PackageReference Include="Apache.Arrow" />
     <EmbeddedResource Include="Migrations\*.sql" />
     <EmbeddedResource Include="MigrationContracts\attachment-schema-preamble.v1.sql.template"
                       LogicalName="Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template" />
@@ -206,7 +201,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ParquetSharp" />
     <PackageReference Include="Scalar.AspNetCore" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <Content Update="openapi.json">
