@@ -146,6 +146,17 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         var reading = ReadChangesAsync(reader, Edits, timeout.Token);
         using var sampling = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
         var relayTimes = SampleRelayAsync(TwoHostFeatureHarness.Relay(_taskB), sampling.Token);
+        // An independent LISTEN on the same database counts the feature notifications the edits
+        // raise, separating "no NOTIFY was sent" from "task B did not act on it".
+        await using var probe = new NpgsqlConnection(_taskB.DatabaseConnectionProvider.GetConnectionString());
+        await probe.OpenAsync(timeout.Token);
+        var notifications = 0;
+        probe.Notification += (_, _) => Interlocked.Increment(ref notifications);
+        await using (var listen = new NpgsqlCommand($"LISTEN \"{RealtimeListener.Channel("features")}\"", probe))
+        {
+            await listen.ExecuteNonQueryAsync(timeout.Token);
+        }
+        var probing = ProbeNotificationsAsync(probe, sampling.Token);
         var committed = new Dictionary<long, long>();
         for (var i = 0; i < Edits; i++)
         {
@@ -160,6 +171,7 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         var frames = await reading;
         await sampling.CancelAsync();
         var relayed = await relayTimes;
+        await probing;
         AssertCompleteOrderedDelivery(frames, committed.Keys);
         // Measure from before the HTTP edit, so this includes request and commit time
         // rather than understating latency when SSE beats the edit response back.
@@ -177,7 +189,8 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         latencies[p95].Should().BeLessThanOrEqualTo(latencyTarget,
             $"p95 commit-to-relay was {toRelay[p95].TotalMilliseconds:F0} ms and relay-to-frame {toFrame[p95].TotalMilliseconds:F0} ms; " +
             $"relay moved {relayed.Count} times ({DescribeRelay(relayed)}) for frame generations " +
-            $"{frames[0].Generation}..{frames[^1].Generation}; task B feature log head {logHeadB}, " +
+            $"{frames[0].Generation}..{frames[^1].Generation}; {Volatile.Read(ref notifications)} feature notifications seen by a probe; " +
+            $"task B feature log head {logHeadB}, " +
             $"listener connected {listenerB.IsConnected} (pid {listenerB.ProcessId}, reconnects {listenerB.Reconnects}, " +
             $"poll-only reason {listenerB.PollOnlyReason ?? "none"})");
     }
@@ -207,6 +220,21 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
             // Sampling ends with delivery.
         }
         return samples;
+    }
+
+    private static async Task ProbeNotificationsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (true)
+            {
+                await connection.WaitAsync(cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Probing ends with delivery.
+        }
     }
 
     private static string DescribeRelay(List<(long Position, long At)> samples)
