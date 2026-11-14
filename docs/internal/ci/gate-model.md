@@ -32,6 +32,17 @@ unchanged projects, source triggers and budgets. Historical TRX interval weights
 guide the cuts; they are not measured child elapsed runtimes. The 14 Nov rank
 refresh measured 23 of those 26 children (see "Measured ranks" below).
 
+OGC Classic WMTS exhausted its 20-minute test budget in full run `43612492209`
+(job 132511815046) while producing output three seconds before termination; its
+passing samples took 14.9 to 18.4 job minutes. Two children replace it, cut by the
+serial class spans of run `43580101834` (12.2 minutes): child 1 owns
+`OgcClassicWmtsTests` (7.7 minutes) and child 2 is the exact complement of the
+parent filter (`OgcClassicWmtsTemporalTests` 3.1 minutes, six small classes and any
+future Wmts class). Both inherit the parent's paths and the shared
+`WmtsTileMatrixFormatting.cs` override. Initial ranks 12.8 and 9.6 are 5.1 minutes of
+job overhead plus each child's spans (`estimatedRanks`). Budgets and source
+triggers are unchanged.
+
 Server Features Packages and Temporal measured 12.7 minutes (full runs
 `43612492209` and `43580101834`), above the 10-minute PR shard budget, so PR Gate
 would have deferred the executing owner of temporal, form and package sources to
@@ -124,7 +135,7 @@ The shard retry supervisor captures cancellation before spawning a test process.
 
 ## Governing Rules
 
-Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and accepts skipped heavy dependencies only on draft PR events after Format succeeds. Failure, cancellation and missing results still fail; ready PRs require all dependencies to succeed. A draft run names its aggregates `PR Gate (draft)` and `PR Gate / Affected shards (draft)`, so the required contexts stay expected until a ready run reports them; GitHub creates the ready run's aggregate checks only after their needs finish, and a draft success under the required name let a just-readied PR merge in that window. `ready_for_review` starts the complete verification. Observers classify a run with only the draft aggregate as `source-run-draft-admission`. PR Gate and native-image impact observers exclude intentional draft admission only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
+Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Optional verification cancels its previous run on conversion back to draft. PR Gate concurrency separates draft and ready events for each PR, so a delayed draft event cannot cancel the full ready gate; newer events in the same readiness state still cancel superseded runs. The stable `PR Gate` aggregate still runs with `always()` and accepts skipped heavy dependencies only on draft PR events after Format succeeds. Failure, cancellation and missing results still fail; ready PRs require all dependencies to succeed. A draft run names its aggregates `PR Gate (draft)` and `PR Gate / Affected shards (draft)`, so the required contexts stay expected until a ready run reports them; GitHub creates the ready run's aggregate checks only after their needs finish, and a draft success under the required name let a just-readied PR merge in that window. `ready_for_review` starts the complete verification. Observers classify a run with only the draft aggregate as `source-run-draft-admission`. PR Gate and native-image impact observers exclude intentional draft admission only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
 
 NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory.Build.props` lists them in `WarningsNotAsErrors` (projects append to that list), so a newly published advisory shows as a restore warning and `scripts/ci/dotnet-restore-retry.sh` treats any remaining restore failure as a retryable feed error. Advisories stay tracked by the NuGet vulnerability scan in `security-nightly.yml`, which annotates High/Critical findings and opens a tracking issue without failing the job (an unreadable report still fails); bumps are ordinary dependency work.
 

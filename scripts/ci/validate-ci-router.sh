@@ -1272,7 +1272,7 @@ assert_descriptor \
 assert_exact_shards \
   "shared-wmts-formatter-bounded-owners" \
   "src/Honua.Protocols/Ogc.Shared/Common/WmtsTileMatrixFormatting.cs" \
-  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","OGC Classic WMTS","Protocol and Host Components","Protocol Units"]'
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","OGC Classic WMTS 1","OGC Classic WMTS 2","Protocol and Host Components","Protocol Units"]'
 
 # An endpoint-ADDING feature PR touches the registration plumbing AND a feature
 # dir under a shard's paths: it runs the smoke subset PLUS that feature's owning
