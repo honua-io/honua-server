@@ -1,5 +1,13 @@
 # CI Gate Model
 
+OData Core is partitioned into `OData Core Endpoints` (the whole
+`ODataEndpointTests` class) and the residual `OData Core` catch-all. Both retain
+the original project, path triggers, tier filters and 29-minute test / 39-minute
+job budgets. Targeted overrides select both children; the coverage validator and
+`test-odata-core-capacity-partition.py` enforce the original inventory exactly
+once, including future methods. This addresses a 29-minute pre-PR capacity
+exhaustion with active output at termination; it does not extend timeouts.
+
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
 > Last updated: 2026-11-12
@@ -628,7 +636,9 @@ local files alone do not constitute a trusted release attestation.
 The founder-approved quarantine policy in [known-flakes.md](known-flakes.md#automatic-bounded-quarantine)
 allows one same-job failed-method retry within the original shard budget. Success requires
 complete passing retry evidence, retained alongside the first attempt. Ambiguous theory-row
-names are rejected so a passing sibling cannot conceal a missing failure. Infrastructure and
+names in selected failed methods (including passing siblings), or anywhere in the retry,
+are rejected so a passing sibling cannot conceal a missing failure. Duplicate display names
+in unrelated passing methods remain untouched in the merged results. Infrastructure and
 execution failures remain blocking. Tests retain the supervisor’s process group so shared deadlines clean up the full tree.
 Cancellation signals the test’s descendants, including those that leave the inherited
 process group, and escalates to SIGKILL after at most half a second. Required check names and minimum-execution checks remain
