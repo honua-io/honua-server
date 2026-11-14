@@ -79,6 +79,50 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
     }
 
     [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items?f=json")]
+    public async Task GetItems_UncachedJson_StreamsOrderedFeatures()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?limit=400&f=json&bbox=-180,-90,180,90&sortby=objectid",
+            HttpCompletionOption.ResponseHeadersRead);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TransferEncodingChunked.Should().BeTrue();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().HaveCount(400);
+        features.Select(feature => feature.GetProperty("id").GetInt64())
+            .Should().BeInAscendingOrder();
+        document.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(400);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items?f=csv")]
+    public async Task GetItems_LargeCsv_StreamsOrderedProjectedRows()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?limit=400&f=csv&properties=population&sortby=objectid",
+            HttpCompletionOption.ResponseHeadersRead);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TransferEncodingChunked.Should().BeTrue();
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/csv");
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+        (await reader.ReadLineAsync()).Should().Be("id,population,geometry");
+        for (var id = 1; id <= 400; id++)
+        {
+            var row = await reader.ReadLineAsync();
+            row.Should().StartWith($"{id},{id},");
+            if (id % 10 == 0)
+            {
+                row.Should().Be($"{id},{id},");
+            }
+        }
+
+        (await reader.ReadLineAsync()).Should().BeNull();
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items?f=gml")]
     public async Task GetItems_LargeLimit_Gml_UsesStreamingResponse()
     {

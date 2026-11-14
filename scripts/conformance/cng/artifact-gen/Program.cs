@@ -136,7 +136,7 @@ static void GenerateGeoParquet(string path)
         returnM: false,
         new GeometryLimits());
 
-    File.WriteAllBytes(path, payload);
+    File.WriteAllBytes(path, payload.Span);
     Console.WriteLine($"GeoParquet: {path} ({payload.Length} bytes, {features.Length} features)");
 
     Feature MakeFeature(long id, double lon, double lat, string name, int population, double ratio, bool active)

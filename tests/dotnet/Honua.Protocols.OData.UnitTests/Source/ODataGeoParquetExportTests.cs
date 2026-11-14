@@ -62,7 +62,7 @@ public sealed class ODataGeoParquetExportTests
             resource,
             new GeometryLimits());
 
-        using var stream = new MemoryStream(payload);
+        using var stream = new MemoryStream(payload.ToArray());
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
         using var batchReader = reader.GetRecordBatchReader();
         var batch = await batchReader.ReadNextRecordBatchAsync();
