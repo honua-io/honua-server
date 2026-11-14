@@ -139,14 +139,16 @@ internal static class StreamingOperationsEndpoints
             new SubscriptionOptions(context.Request.Query["clientLabel"].ToString(), after), context.RequestAborted).ConfigureAwait(false);
 
         var buffer = new byte[1];
+        Task<WebSocketReceiveResult>? pendingReceive = null;
         try
         {
             while (webSocket.State == WebSocketState.Open && !subscription.DisconnectToken.IsCancellationRequested)
             {
                 // Cancel the wait on a server reset without aborting the socket, so
                 // the recovery frame can still be sent before the close handshake.
-                var receive = webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), context.RequestAborted);
-                var result = await receive.WaitAsync(subscription.DisconnectToken).ConfigureAwait(false);
+                pendingReceive = webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), context.RequestAborted);
+                var result = await pendingReceive.WaitAsync(subscription.DisconnectToken).ConfigureAwait(false);
+                pendingReceive = null;
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
                     break;
@@ -159,34 +161,54 @@ internal static class StreamingOperationsEndpoints
         }
         finally
         {
-            if (webSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
-            {
-                try
-                {
-                    await SendResetAsync(webSocket, subscription.Reset, context.RequestAborted).ConfigureAwait(false);
-                    await webSocket.CloseAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        subscription.DisconnectToken.IsCancellationRequested
-                            ? "Subscription disconnected."
-                            : "Stream closed.",
-                        CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (WebSocketException)
-                {
-                    // Best-effort close; the remote peer may have already reset the connection.
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Best-effort close; the socket may already have been disposed concurrently.
-                }
-                catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
-                {
-                    // The client disconnected before receiving the recovery frame.
-                }
-            }
+            await CloseAlertStreamAsync(webSocket, pendingReceive, subscription.Reset,
+                subscription.DisconnectToken.IsCancellationRequested, context.RequestAborted).ConfigureAwait(false);
         }
 
         return Results.Empty;
+    }
+
+    private static async Task CloseAlertStreamAsync(WebSocket socket, Task<WebSocketReceiveResult>? pendingReceive,
+        Honua.Core.Features.Realtime.RealtimeDelivery.Reset? reset, bool disconnected, CancellationToken requestAborted)
+    {
+        using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
+        shutdown.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+            {
+                await SendResetAsync(socket, reset, shutdown.Token).ConfigureAwait(false);
+                await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure,
+                    disconnected ? "Subscription disconnected." : "Stream closed.", shutdown.Token).ConfigureAwait(false);
+                var buffer = new byte[1];
+                while (socket.State == WebSocketState.CloseSent)
+                {
+                    pendingReceive ??= socket.ReceiveAsync(new ArraySegment<byte>(buffer), shutdown.Token);
+                    await pendingReceive.WaitAsync(shutdown.Token).ConfigureAwait(false);
+                    pendingReceive = null;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is WebSocketException or ObjectDisposedException or OperationCanceledException)
+        {
+            // A missing close acknowledgment must not retain the request indefinitely.
+            socket.Abort();
+        }
+        finally
+        {
+            if (pendingReceive is not null)
+            {
+                socket.Abort();
+                try
+                {
+                    await pendingReceive.ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is WebSocketException or ObjectDisposedException or OperationCanceledException)
+                {
+                    // Observe the receive canceled by the shutdown deadline or request abort.
+                }
+            }
+        }
     }
 
     private static async Task SendResetAsync(WebSocket socket,
