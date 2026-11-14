@@ -37,7 +37,9 @@ Add this to `claude_desktop_config.json` (Settings -> Developer -> Edit Config):
 `HONUA_MCP_REMOTE_URL` is required and is your deployment's `/mcp` endpoint;
 `HONUA_MCP_URL` is accepted as an alias. For authentication set **exactly one**
 scheme — `HONUA_MCP_AUTH_TOKEN` for a bearer token, or `HONUA_API_KEY` (or
-`HONUA_ADMIN_KEY`) for an API key. Setting a bearer token and an API key
+`HONUA_ADMIN_KEY`) for an API key. Use a dedicated agent key with the `agent`
+grant ([agent changes need one human approval](../guides/connect/ai-agents-mcp.md#agent-changes-need-one-human-approval)),
+not the bootstrap admin password. Setting a bearer token and an API key
 together is rejected at startup, as is setting both key variables. Whenever a
 credential is configured the remote URL must be HTTPS.
 

@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Validation;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -147,6 +148,15 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         string? ambientTenantId)
     {
         ArgumentNullException.ThrowIfNull(principal);
+
+        // Middleware freezes the effective deployment/header/execution tenant on
+        // this principal. A provider directory claim must not replace it. The
+        // actor marker also distinguishes an intentionally empty tenant binding
+        // from a principal that has not passed through request resolution.
+        if (CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.CanonicalActorClaim) is not null)
+        {
+            return CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.EffectiveTenantClaim);
+        }
 
         return principal.FindFirstValue(TenantClaimType)
             ?? principal.FindFirstValue(AzureTenantClaimType)

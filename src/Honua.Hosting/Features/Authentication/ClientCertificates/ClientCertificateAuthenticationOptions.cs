@@ -24,6 +24,8 @@ internal sealed class ClientCertificateAuthenticationOptions
 
     public ForwardedClientCertificateOptions ForwardedCertificate { get; set; } = new();
 
+    public long TrustProfilesRevision { get; set; } = 1;
+
     public ClientCertificateTrustProfileOptions[] TrustProfiles { get; set; } = [];
 }
 

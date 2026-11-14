@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Ai.Protocols.Mcp.Tools;
+
 namespace Honua.Ai.Protocols.Mcp.Views;
 
 internal static class McpWorkflowViewCatalog
@@ -70,7 +72,7 @@ internal static class McpWorkflowViewCatalog
             + "layer, verify access, apply canonical style and render, run bounded geoprocessing, compose and save "
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
             + "only the descriptors that path needs; the full paginated catalog is an explicit escape hatch.",
-        Revision = "setup.v6",
+        Revision = "setup.v7",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -93,6 +95,8 @@ internal static class McpWorkflowViewCatalog
                 Description = "Bring a source dataset or connection onto the server.",
                 Rules =
                 [
+                    McpWorkflowViewMemberRule.Exact("honua_admin_connections_list"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_connection_tables_list"),
                     McpWorkflowViewMemberRule.Exact("honua_ingest_dataset"),
                     McpWorkflowViewMemberRule.Exact("honua_ingest_job_artifact"),
                 ],
@@ -211,9 +215,8 @@ internal static class McpWorkflowViewCatalog
         Title = "Configure and publish",
         Description =
             "The bounded path an admin uses to connect or ingest data, publish a layer, set access, "
-            + "style and render a map, then compose, save, read, and propose a Studio map, app, or dashboard. "
-            + "Select the folders view to organize folders or move services.",
-        Revision = "configure.v2",
+            + "style and render a map. Use the setup view for Studio authoring and publication. Select the folders view to organize folders or move services.",
+        Revision = "configure.v3",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -228,6 +231,8 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_admin_api_key_effective_permissions"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_list"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connection_tables_list"),
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.services.list")),
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("folder.list")),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_create"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_test"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_import_upload_object"),
@@ -240,9 +245,11 @@ internal static class McpWorkflowViewCatalog
             {
                 Id = "connect-import",
                 Title = "Connect and import",
-                Description = "Inline CSV or GeoJSON ingest, up to 4 MB.",
+                Description = "Job status and result discovery; inline CSV or GeoJSON ingest, up to 4 MB.",
                 Rules =
                 [
+                    McpWorkflowViewMemberRule.Exact("honua_list_jobs"),
+                    McpWorkflowViewMemberRule.Exact("honua_get_job_results"),
                     McpWorkflowViewMemberRule.Exact("honua_ingest_dataset"),
                     McpWorkflowViewMemberRule.Exact("honua_ingest_job_artifact"),
                 ],
@@ -280,46 +287,6 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_get_style"),
                     McpWorkflowViewMemberRule.Exact("honua_apply_style_preset"),
                     McpWorkflowViewMemberRule.Exact("honua_render_map"),
-                ],
-            },
-            new McpWorkflowViewStageDefinition
-            {
-                Id = "studio",
-                Title = "Studio lifecycle",
-                Description = "Create, edit, validate, save, read, reopen, and propose publication.",
-                Rules =
-                [
-                    McpWorkflowViewMemberRule.Exact("honua_studio_create_draft"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_update_draft"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_get_draft"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_validate_draft"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_preview_draft"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_save_version"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_get_version"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_list_items"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_list_versions"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_reopen_version"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication"),
-                ],
-            },
-            new McpWorkflowViewStageDefinition
-            {
-                Id = "composition",
-                Title = "Studio composition",
-                Description = "Layers, style, visibility, view, widgets, controls, and interactions.",
-                Rules =
-                [
-                    McpWorkflowViewMemberRule.Exact("honua_studio_add_layer"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_remove_layer"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_set_layer_style"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_set_layer_visibility"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_set_view"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_add_widget"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_remove_widget"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_bind_interaction"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_remove_interaction"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_add_control"),
-                    McpWorkflowViewMemberRule.Exact("honua_studio_remove_control"),
                 ],
             },
         ],
