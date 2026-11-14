@@ -1,8 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Npgsql;
 
 namespace Honua.Server.Features.Portal.Sharing;
@@ -22,7 +24,7 @@ internal sealed class PostgresPortalItemSharingStore(
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var row = await ReadAsync(connection, null, TenantKey(), itemId, forUpdate: false, cancellationToken).ConfigureAwait(false);
+        var row = await ReadAsync(connection, null, ReadScope().StorageKeys, itemId, forUpdate: false, cancellationToken).ConfigureAwait(false);
         return row is null ? PortalItemShareState.None : new PortalItemShareState(false, false, row.Value.GroupIds);
     }
 
@@ -34,7 +36,7 @@ internal sealed class PostgresPortalItemSharingStore(
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var row = await ReadAsync(connection, null, TenantKey(), itemId, forUpdate: false, cancellationToken).ConfigureAwait(false);
+        var row = await ReadAsync(connection, null, ReadScope().StorageKeys, itemId, forUpdate: false, cancellationToken).ConfigureAwait(false);
         return row?.Owner;
     }
 
@@ -62,9 +64,18 @@ internal sealed class PostgresPortalItemSharingStore(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(itemId);
-        var tenant = TenantKey();
+        var scope = ReadScope();
+        var tenant = scope.TenantId ?? string.Empty;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        // Serialize all keys for this item before inserting or locking rows. This
+        // also covers a missing default row during a concurrent share/unshare.
+        await using (var itemLock = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended(@item, 0))", connection, transaction))
+        {
+            itemLock.Parameters.AddWithValue("item", itemId);
+            await itemLock.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
         if (add)
         {
             await using var insert = new NpgsqlCommand($"""
@@ -77,7 +88,7 @@ internal sealed class PostgresPortalItemSharingStore(
             await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var current = await ReadAsync(connection, transaction, tenant, itemId, forUpdate: true, cancellationToken).ConfigureAwait(false);
+        var current = await ReadAsync(connection, transaction, scope.StorageKeys, itemId, forUpdate: true, cancellationToken).ConfigureAwait(false);
         if (current is null)
         {
             return PortalItemShareState.None;
@@ -98,10 +109,10 @@ internal sealed class PostgresPortalItemSharingStore(
         }
 
         await using var update = new NpgsqlCommand($"""
-            UPDATE {_table} SET group_ids = @groups WHERE tenant_key = @tenant AND item_id = @item
+            UPDATE {_table} SET group_ids = @groups WHERE tenant_key = ANY(@tenants) AND item_id = @item
             """, connection, transaction);
         update.Parameters.AddWithValue("groups", groups.ToArray());
-        update.Parameters.AddWithValue("tenant", tenant);
+        update.Parameters.AddWithValue("tenants", scope.StorageKeys);
         update.Parameters.AddWithValue("item", itemId);
         await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
@@ -109,29 +120,40 @@ internal sealed class PostgresPortalItemSharingStore(
     }
 
     private async Task<(string Owner, string[] GroupIds)?> ReadAsync(
-        NpgsqlConnection connection, NpgsqlTransaction? transaction, string tenant,
+        NpgsqlConnection connection, NpgsqlTransaction? transaction, string[] tenants,
         string itemId, bool forUpdate, CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand($"""
             SELECT owner_name, group_ids FROM {_table}
-            WHERE tenant_key = @tenant AND item_id = @item
+            WHERE tenant_key = ANY(@tenants) AND item_id = @item ORDER BY tenant_key
             """ + (forUpdate ? " FOR UPDATE" : string.Empty), connection, transaction);
-        command.Parameters.AddWithValue("tenant", tenant);
+        command.Parameters.AddWithValue("tenants", tenants);
         command.Parameters.AddWithValue("item", itemId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
-            ? (reader.GetString(0), reader.GetFieldValue<string[]>(1)) : null;
+        string? owner = null;
+        var groups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var rowOwner = reader.GetString(0);
+            if (owner is not null && !string.Equals(owner, rowOwner, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Conflicting Portal sharing owners require reconciliation.");
+            }
+            owner = rowOwner;
+            groups.UnionWith(reader.GetFieldValue<string[]>(1));
+        }
+        return owner is null ? null : (owner, groups.ToArray());
     }
 
-    private string TenantKey()
+    private TenantReadScope ReadScope()
     {
         var context = contextAccessor.HttpContext;
-        if (context is null || !PortalResourceReadAuthorizer.TryGetTrustedTenant(context, out var tenantId))
+        if (context is null || !PortalResourceReadAuthorizer.TryGetTrustedTenant(context, out _))
         {
             throw new InvalidOperationException("A trusted request tenant is required for Portal sharing.");
         }
 
-        return tenantId ?? string.Empty;
+        return TenantReadScope.For(context.RequestServices.GetService<ITenantContext>());
     }
 
     private static string[] Normalize(IReadOnlyList<string> values)

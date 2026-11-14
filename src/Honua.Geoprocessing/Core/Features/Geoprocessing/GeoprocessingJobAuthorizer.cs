@@ -4,11 +4,14 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Geoprocessing;
 
@@ -52,6 +55,13 @@ internal sealed class GeoprocessingJobAuthorizer
             .GetService<ITenantContext>();
         return JobSecurityContextCapture.Capture(principal, options, tenantContext, membershipManaged);
     }
+
+    internal bool CanReadJob(OperationAuditInfo audit, ClaimsPrincipal principal, RbacOptions options)
+        => JobOwnershipSecurity.CanAccess(audit, CaptureReadScope(principal, options), principal);
+
+    internal TenantReadScope CaptureReadScope(ClaimsPrincipal principal, RbacOptions options)
+        => TenantReadScope.For(_httpContextAccessor.HttpContext?.RequestServices.GetService<ITenantContext>(),
+            CaptureSecurityContext(principal, options).TenantId);
 
     // The snapshot is never taken from the orchestrator or the approval-resume principal, because one carries admin and the other matches no row policy.
     public async Task<JobSecurityContextMembershipResult> ResolveSubmitterSecurityContextAsync(
