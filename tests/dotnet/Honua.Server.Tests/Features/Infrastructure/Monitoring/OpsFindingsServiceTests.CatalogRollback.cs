@@ -31,7 +31,7 @@ public sealed partial class OpsFindingsServiceTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Evaluate_CatalogRollback_RemainsVisibleWithStableAdminChangeEvidence()
+    public async Task Evaluate_CatalogRollback_RemainsVisibleWithStableActivationEvidence()
     {
         var store = Substitute.For<Honua.Core.Features.Metadata.Abstractions.ICatalogActivationWatchStore>();
         store.ReadRecentRollbacksAsync(default).ReturnsForAnyArgs(new[]

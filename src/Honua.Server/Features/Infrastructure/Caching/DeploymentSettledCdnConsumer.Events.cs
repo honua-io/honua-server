@@ -3,7 +3,6 @@
 
 #if !HONUA_EXCLUDE_AWS
 using System.Text.Json;
-using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
@@ -41,41 +40,28 @@ internal sealed partial class DeploymentSettledCdnConsumer
         return new Deployment(cluster, address[1], service, address[2], arn[3], deploymentId);
     }
 
-    private static bool IsConfiguredTarget(Deployment deployment, ControlPlaneOptions configuration)
-        => configuration.DeployTargets.Any(target =>
+    // Targets come from the registry the deploy backends use, and parameters are read the way the ECS/ALB
+    // backend reads them: trimmed, blank as missing, the canary defaulting to the target name, the region
+    // optional (the backend then uses the SDK default, so any event region matches).
+    private static bool IsConfiguredTarget(Deployment deployment, IReadOnlyList<DeployTargetDefinition> targets)
+        => targets.Any(target =>
             target.TargetKind == DeployTargetKind.AwsEcs &&
             target.Backend is "honua-aws-ecs-alb" or "honua-gitops-aws-ecs" &&
-            Parameter(target, "aws.region") == deployment.Region &&
+            (Parameter(target, "aws.region") ?? deployment.Region) == deployment.Region &&
             Parameter(target, "aws.ecs.cluster") is { } cluster &&
             (cluster == deployment.ClusterArn || cluster == deployment.ClusterName) &&
             MatchesService(target, deployment));
 
-    private static bool MatchesService(DeployTargetOptions target, Deployment deployment)
+    private static bool MatchesService(DeployTargetDefinition target, Deployment deployment)
     {
-        var canary = Parameter(target, "aws.ecs.canary_service");
-        if (canary is null && (target.Parameters.ContainsKey("aws.ecs.canary_service") ||
-            target.ParameterEntries.Any(entry => entry.Key == "aws.ecs.canary_service")))
-        {
-            return false;
-        }
-
-        canary ??= target.TargetName;
+        var canary = Parameter(target, "aws.ecs.canary_service") ?? target.TargetName.Trim();
         var stable = Parameter(target, "aws.ecs.stable_service");
         return canary == deployment.ServiceName || canary == deployment.ServiceArn ||
             stable == deployment.ServiceName || stable == deployment.ServiceArn;
     }
 
-    private static string? Parameter(DeployTargetOptions target, string key)
-    {
-        var values = target.ParameterEntries.Where(entry => entry.Key == key).Select(entry => entry.Value).ToList();
-        if (target.Parameters.TryGetValue(key, out var value))
-        {
-            values.Add(value);
-        }
-
-        return values.Distinct(StringComparer.Ordinal).ToArray() is [var single] && !string.IsNullOrWhiteSpace(single)
-            ? single : null;
-    }
+    private static string? Parameter(DeployTargetDefinition target, string key)
+        => target.Parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
 
     private static string Text(JsonElement element, string name)
         => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) &&

@@ -138,8 +138,11 @@ When the ops event queue is enabled, the server consumes ECS
 replacement deployment settles. This removes responses that old tasks could
 have cached after the release-change purge.
 
-Only configured ECS deploy targets are eligible. Their `aws.region`,
-`aws.ecs.cluster` (name or ARN), and canary or stable service must match the event.
+Only configured ECS deploy targets are eligible. Their `aws.ecs.cluster` (name
+or ARN) and canary or stable service must match the event, and so must
+`aws.region` when it is set. Parameters are read as the deploy backend reads
+them: values are trimmed, a blank value counts as unset, and the canary service
+defaults to the target name.
 The supported backends are `honua-aws-ecs-alb` and `honua-gitops-aws-ecs`.
 The queue must receive ECS Deployment State Change events for these services,
 and the server's task role must allow describing them. Unrelated events do not
@@ -149,10 +152,13 @@ Before purging, the consumer checks the live service: the event's deployment is
 primary, its rollout is complete, running tasks match the desired count, no tasks
 are pending, and every older deployment has zero running and pending tasks.
 A completion event that arrives before this state is visible stays retryable.
-Events for an explicitly superseded deployment do not trigger a purge.
+Events for an explicitly superseded deployment do not trigger a purge, nor does
+a late event for a deployment ECS no longer lists once the current primary's
+own purge is recorded.
 
 PostgreSQL coordinates consumers across tasks and records a successful purge in
-`cdn_deployment_purges`. Repeated deliveries of that deployment do not purge
+`cdn_deployment_purges`. A task that finds another task already handling the
+same service returns the event to the queue instead of waiting for it. Repeated deliveries of that deployment do not purge
 again. Failed purges remain unrecorded and use the queue's retry and dead-letter
 policy. If a process stops after submitting a purge but before committing its
 record, retry can submit the purge again; purging is safe to repeat. The CDN

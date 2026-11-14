@@ -57,12 +57,14 @@ public sealed partial class DeploymentSettledCdnConsumerTests
     {
         var target = new DeployTargetOptions
         {
-            TargetKind = DeployTargetKind.AwsEcs, Backend = "honua-aws-ecs-alb", TargetName = "server",
+            TargetId = "server-target", TargetKind = DeployTargetKind.AwsEcs, Backend = "honua-aws-ecs-alb", TargetName = "server",
             Parameters = new() { ["aws.region"] = "us-west-2", ["aws.ecs.cluster"] = Cluster }
         };
         configure?.Invoke(target);
+        var options = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
+        options.CurrentValue.Returns(new ControlPlaneOptions { DeployTargets = [target] });
         return new(database, ecs, new CdnInvalidationService(cdn, NullLogger<CdnInvalidationService>.Instance),
-            Options.Create(new ControlPlaneOptions { DeployTargets = [target] }));
+            new ConfigurationDeployTargetRegistry(options));
     }
 
     private async Task InSchemaAsync(Func<JobStoreDatabase, Task> test)

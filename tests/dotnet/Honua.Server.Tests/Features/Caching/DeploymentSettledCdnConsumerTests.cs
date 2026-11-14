@@ -21,8 +21,11 @@ public sealed partial class DeploymentSettledCdnConsumerTests(DatabaseFixtureAda
         {
             var ecs = Ecs(Settled());
             var cdn = Cdn(CdnInvalidationOutcome.Submitted);
-            await Task.WhenAll(Host(database, ecs, cdn).HandleAsync(Event(), default),
-                Host(database, ecs, cdn).HandleAsync(Event(), default));
+            // A host that finds the service locked returns the event to the queue; its redelivery is a no-op.
+            var outcomes = await Task.WhenAll(HandleOrRequeueAsync(Host(database, ecs, cdn)),
+                HandleOrRequeueAsync(Host(database, ecs, cdn)));
+            outcomes.Should().Contain(true);
+            await Host(database, ecs, cdn).HandleAsync(Event(), default);
             await Host(database, ecs, cdn).HandleAsync(Event("duplicate"), default);
             (await CountAsync(database)).Should().Be(1);
             await cdn.Received(1).InvalidateAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
@@ -78,7 +81,7 @@ public sealed partial class DeploymentSettledCdnConsumerTests(DatabaseFixtureAda
         });
 
     [IntegrationTest]
-    public Task UnconfiguredRegionClusterAndBlankCanary_DoNotContactEcs()
+    public Task OtherRegionClusterOrService_DoNotContactEcs()
         => InSchemaAsync(async database =>
         {
             var ecs = Ecs(Settled());
@@ -87,11 +90,52 @@ public sealed partial class DeploymentSettledCdnConsumerTests(DatabaseFixtureAda
                 .HandleAsync(Event(), default);
             await Host(database, ecs, cdn, target => target.Parameters["aws.ecs.cluster"] = "other")
                 .HandleAsync(Event(), default);
-            await Host(database, ecs, cdn, target => target.Parameters["aws.ecs.canary_service"] = " ")
+            await Host(database, ecs, cdn, target => target.Parameters["aws.ecs.canary_service"] = "canary")
+                .HandleAsync(Event(), default);
+            await Host(database, ecs, cdn, target => target.ParameterEntries.Add(new() { Key = "aws.ecs.cluster", Value = "other" }))
                 .HandleAsync(Event(), default);
             (await CountAsync(database)).Should().Be(0);
             await ecs.DidNotReceiveWithAnyArgs().DescribeServiceAsync(default!, default!, default, default);
             await cdn.DidNotReceiveWithAnyArgs().InvalidateAsync(default!, default);
+        });
+
+    [IntegrationTheory]
+    [InlineData("blank-canary")]
+    [InlineData("trimmed-cluster")]
+    [InlineData("entry-overrides-parameter")]
+    [InlineData("no-region")]
+    public Task TargetParameters_AreReadAsTheDeployBackendReadsThem(string shape)
+        => InSchemaAsync(async database =>
+        {
+            Action<DeployTargetOptions> configure = shape switch
+            {
+                "blank-canary" => target => target.Parameters["aws.ecs.canary_service"] = " ",
+                "trimmed-cluster" => target => target.Parameters["aws.ecs.cluster"] = $" {Cluster} ",
+                "entry-overrides-parameter" => target =>
+                {
+                    target.Parameters["aws.ecs.cluster"] = "staging";
+                    target.ParameterEntries.Add(new() { Key = "aws.ecs.cluster", Value = Cluster });
+                },
+                _ => target => target.Parameters.Remove("aws.region"),
+            };
+            var cdn = Cdn(CdnInvalidationOutcome.Submitted);
+            await Host(database, Ecs(Settled()), cdn, configure).HandleAsync(Event(), default);
+            (await CountAsync(database)).Should().Be(1);
+            await cdn.Received(1).InvalidateAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
+        });
+
+    [IntegrationTest]
+    public Task LateEventForDeploymentEcsNoLongerLists_IsCoveredOnceTheCurrentPrimaryPurged()
+        => InSchemaAsync(async database =>
+        {
+            var ready = Settled();
+            var cdn = Cdn(CdnInvalidationOutcome.Submitted);
+            var late = () => Host(database, Ecs(ready), cdn).HandleAsync(Event("late", deployment: "ecs-svc/older"), default);
+            await late.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not yet visible*");
+            await Host(database, Ecs(ready), cdn).HandleAsync(Event(), default);
+            await late();
+            (await CountAsync(database)).Should().Be(1);
+            await cdn.Received(1).InvalidateAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
         });
 
     [IntegrationTest]
@@ -103,7 +147,9 @@ public sealed partial class DeploymentSettledCdnConsumerTests(DatabaseFixtureAda
                 ready with { TaskDefinitionArn = "wrong" }, ready with { Status = "DRAINING" },
                 ready with { Deployments = [] },
                 ready with { Deployments = [ready.Deployments[0] with { DeploymentId = "not-yet-visible" }] },
-                ready with { Deployments = [ready.Deployments[0] with { RolloutState = "IN_PROGRESS" }] } };
+                ready with { Deployments = [ready.Deployments[0] with { RolloutState = "IN_PROGRESS" }] },
+                ready with { Deployments = [ready.Deployments[0] with { TaskDefinitionArn = " " }] },
+                ready with { Deployments = [ready.Deployments[0] with { TaskDefinitionArn = null }] } };
             var cdn = Cdn(CdnInvalidationOutcome.Submitted);
             foreach (var state in states)
             {
@@ -114,5 +160,18 @@ public sealed partial class DeploymentSettledCdnConsumerTests(DatabaseFixtureAda
             (await CountAsync(database)).Should().Be(0);
             await cdn.DidNotReceiveWithAnyArgs().InvalidateAsync(default!, default);
         });
+
+    private static async Task<bool> HandleOrRequeueAsync(DeploymentSettledCdnConsumer host)
+    {
+        try
+        {
+            await host.HandleAsync(Event(), default);
+            return true;
+        }
+        catch (InvalidOperationException exception) when (exception.Message.Contains("Another task", StringComparison.Ordinal))
+        {
+            return false;
+        }
+    }
 }
 #endif

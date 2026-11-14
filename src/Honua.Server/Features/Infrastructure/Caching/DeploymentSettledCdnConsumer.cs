@@ -3,11 +3,11 @@
 
 #if !HONUA_EXCLUDE_AWS
 using Honua.ControlPlane;
-using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.SharedCaching;
-using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
@@ -15,12 +15,13 @@ namespace Honua.Server.Features.Infrastructure.Caching;
 // Queue acknowledgment follows every consumer. A failed purge therefore remains retryable.
 internal sealed partial class DeploymentSettledCdnConsumer(
     JobStoreDatabase database, IAwsEcsClient ecs, CdnInvalidationService cdn,
-    IOptions<ControlPlaneOptions> options) : IOpsExternalEventConsumer
+    IDeployTargetRegistry targets) : IOpsExternalEventConsumer
 {
     public async Task HandleAsync(OpsExternalEvent externalEvent, CancellationToken cancellationToken)
     {
         var deployment = Parse(externalEvent.Body);
-        if (deployment is null || !IsConfiguredTarget(deployment, options.Value))
+        if (deployment is null ||
+            !IsConfiguredTarget(deployment, await targets.ListAsync(cancellationToken).ConfigureAwait(false)))
         {
             return;
         }
@@ -29,12 +30,12 @@ internal sealed partial class DeploymentSettledCdnConsumer(
         {
             await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
             await LockServiceAsync(connection, transaction, deployment, token).ConfigureAwait(false);
-            if (await IsRecordedAsync(connection, transaction, deployment, token).ConfigureAwait(false))
+            if (await IsRecordedAsync(connection, transaction, deployment, deployment.DeploymentId, token).ConfigureAwait(false))
             {
                 return;
             }
 
-            var primary = await GetSettledPrimaryAsync(deployment, token).ConfigureAwait(false);
+            var primary = await GetSettledPrimaryAsync(connection, transaction, deployment, token).ConfigureAwait(false);
             if (primary is null)
             {
                 return;
@@ -53,7 +54,8 @@ internal sealed partial class DeploymentSettledCdnConsumer(
         }, StatementRepeat.SafeToRepeat, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<AwsEcsDeploymentState?> GetSettledPrimaryAsync(Deployment deployment, CancellationToken token)
+    private async Task<AwsEcsDeploymentState?> GetSettledPrimaryAsync(NpgsqlConnection connection,
+        NpgsqlTransaction transaction, Deployment deployment, CancellationToken token)
     {
         var state = await ecs.DescribeServiceAsync(deployment.ClusterArn, deployment.ServiceName,
             deployment.Region, token).ConfigureAwait(false);
@@ -68,6 +70,14 @@ internal sealed partial class DeploymentSettledCdnConsumer(
             // DescribeServices is eventually consistent. Retry unknown IDs instead of losing
             // a new completion event; an explicitly superseded deployment needs no purge.
             if (state.Deployments.Any(item => item.DeploymentId == deployment.DeploymentId))
+            {
+                return null;
+            }
+
+            // A late event for a deployment ECS no longer lists is covered once the current primary's
+            // own completion purge is recorded; until then it may be a new deployment not yet visible.
+            if (primary.DeploymentId is { Length: > 0 } current &&
+                await IsRecordedAsync(connection, transaction, deployment, current, token).ConfigureAwait(false))
             {
                 return null;
             }
@@ -95,16 +105,23 @@ internal sealed partial class DeploymentSettledCdnConsumer(
     private static async Task LockServiceAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
         Deployment deployment, CancellationToken token)
     {
-        await using var command = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended(@service, 7392))", connection, transaction);
+        // Another task handling the same service holds the lock across ECS and CDN calls. Fail fast and let
+        // the queue redeliver instead of holding a connection while waiting.
+        await using var command = new NpgsqlCommand("SELECT pg_try_advisory_xact_lock(hashtextextended(@service, 7392))", connection, transaction);
         command.Parameters.AddWithValue("service", deployment.ServiceArn);
-        await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+        if (await command.ExecuteScalarAsync(token).ConfigureAwait(false) is not true)
+        {
+            throw new InvalidOperationException("Another task is handling this service's deployment completion; retry is required.");
+        }
     }
 
     private async Task<bool> IsRecordedAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
-        Deployment deployment, CancellationToken token)
+        Deployment deployment, string deploymentId, CancellationToken token)
     {
         await using var command = new NpgsqlCommand($"SELECT EXISTS(SELECT 1 FROM {database.Table("cdn_deployment_purges")} WHERE cluster_arn = @cluster AND service_arn = @service AND deployment_id = @deployment)", connection, transaction);
-        AddAddress(command, deployment);
+        command.Parameters.AddWithValue("cluster", deployment.ClusterArn);
+        command.Parameters.AddWithValue("service", deployment.ServiceArn);
+        command.Parameters.AddWithValue("deployment", deploymentId);
         return (bool)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
     }
 

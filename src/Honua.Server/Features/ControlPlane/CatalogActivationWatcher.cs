@@ -17,14 +17,15 @@ internal sealed partial class CatalogActivationWatcher(
     CdnInvalidationService invalidation,
     ILogger<CatalogActivationWatcher> logger) : BackgroundService
 {
-    private static readonly TimeSpan FirstPurgeBackoff = TimeSpan.FromMinutes(1);
+    internal static readonly TimeSpan MinimumPurgeBackoff = TimeSpan.FromMinutes(1);
     internal static readonly TimeSpan MaximumPurgeBackoff = TimeSpan.FromMinutes(30);
 
-    // Every task runs this watcher. A purge is claimed through a lease that is held for the backoff
-    // window and kept after a failure, so a failing CDN sees one attempt per window across the fleet
-    // rather than one per task per tick; the local schedule backs off the same way without a lease store.
+    // Every task runs this watcher. The purge window grows with the rollback's age, which every task
+    // computes from the same stored activation time, so restarts and new tasks keep the schedule. A purge
+    // is claimed through a lease held for the whole window and never released early, so a failing CDN sees
+    // one attempt per window across the fleet; the local schedule applies the same window without a lease store.
     private readonly string _leaseOwner = $"catalog-watch:{Environment.MachineName}:{Guid.NewGuid():N}";
-    private readonly Dictionary<long, (int Failures, DateTimeOffset NextAttempt)> _purgeBackoff = [];
+    private readonly Dictionary<long, DateTimeOffset> _nextPurgeAttempt = [];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -56,7 +57,13 @@ internal sealed partial class CatalogActivationWatcher(
             return;
         }
 
-        foreach (var watch in await store.ReadPendingAsync(cancellationToken).ConfigureAwait(false))
+        var pending = await store.ReadPendingAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var id in _nextPurgeAttempt.Keys.Where(id => !pending.Any(watch => watch.Id == id)).ToArray())
+        {
+            _nextPurgeAttempt.Remove(id);
+        }
+
+        foreach (var watch in pending)
         {
             await EvaluateWatchAsync(scope.ServiceProvider, watch, cancellationToken).ConfigureAwait(false);
         }
@@ -103,41 +110,46 @@ internal sealed partial class CatalogActivationWatcher(
         CatalogActivationWatch watch, CancellationToken cancellationToken)
     {
         var now = (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
-        _purgeBackoff.TryGetValue(watch.Id, out var backoff);
-        if (now < backoff.NextAttempt)
+        if (_nextPurgeAttempt.TryGetValue(watch.Id, out var next) && now < next)
         {
             return;
         }
 
-        var window = PurgeBackoff(backoff.Failures);
+        var window = PurgeBackoff(now - watch.ActivatedAt);
+        _nextPurgeAttempt[watch.Id] = now + window;
         var leases = scoped.GetService<ILeaseStore>();
-        var claim = new LeaseClaim($"catalog-rollback-purge:{watch.Id}", _leaseOwner);
-        if (leases is not null && !await leases.TryAcquireAsync(claim, window, cancellationToken).ConfigureAwait(false))
+        if (leases is not null)
         {
-            return;
+            var claim = new LeaseClaim($"catalog-rollback-purge:{watch.Id}", _leaseOwner);
+            if (!await leases.TryAcquireAsync(claim, window, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            // The pending read may predate another task's completed purge; re-read under the lease.
+            var current = await store.ReadPendingAsync(cancellationToken).ConfigureAwait(false);
+            if (!current.Any(candidate => candidate.Id == watch.Id && candidate.RollbackRevision is not null))
+            {
+                return;
+            }
         }
 
         var result = await invalidation.InvalidateNowAsync(CdnPaths.Everything, cancellationToken,
             CdnPurgeCause.Admin(watch.ChangeId!)).ConfigureAwait(false);
         if (result.Failed)
         {
-            // The lease is left to expire so no task retries before the window ends.
-            _purgeBackoff[watch.Id] = (backoff.Failures + 1, now + window);
-            Log.PurgeDeferred(logger, watch.Id, backoff.Failures + 1, window);
+            Log.PurgeDeferred(logger, watch.Id, window);
             return;
         }
 
         await store.CompletePurgeAsync(watch.Id, cancellationToken).ConfigureAwait(false);
-        _purgeBackoff.Remove(watch.Id);
-        if (leases is not null)
-        {
-            await leases.ReleaseAsync(claim, cancellationToken).ConfigureAwait(false);
-        }
+        _nextPurgeAttempt.Remove(watch.Id);
     }
 
-    internal static TimeSpan PurgeBackoff(int failures)
-        => failures >= 5 ? MaximumPurgeBackoff : TimeSpan.FromTicks(Math.Min(
-            FirstPurgeBackoff.Ticks << failures, MaximumPurgeBackoff.Ticks));
+    // A quarter of the rollback's age, between one and thirty minutes: frequent while the rollback is
+    // fresh, then sparse for a CDN that keeps refusing.
+    internal static TimeSpan PurgeBackoff(TimeSpan age)
+        => TimeSpan.FromTicks(Math.Clamp(age.Ticks / 4, MinimumPurgeBackoff.Ticks, MaximumPurgeBackoff.Ticks));
 
     private static partial class Log
     {
@@ -150,7 +162,7 @@ internal sealed partial class CatalogActivationWatcher(
         public static partial void WatchUnavailable(ILogger logger, Exception exception);
 
         [LoggerMessage(EventId = 10332, Level = LogLevel.Warning,
-            Message = "CDN purge for rolled-back catalog activation {ActivationId} failed (attempt {Attempts}); retrying after {Backoff}.")]
-        public static partial void PurgeDeferred(ILogger logger, long activationId, int attempts, TimeSpan backoff);
+            Message = "CDN purge for rolled-back catalog activation {ActivationId} failed; retrying after {Backoff}.")]
+        public static partial void PurgeDeferred(ILogger logger, long activationId, TimeSpan backoff);
     }
 }
