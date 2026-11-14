@@ -23,10 +23,10 @@ public sealed class MvtTileBudgetTests
         default(MvtTileBudgetStep).IsFull.Should().BeTrue();
 
         var step = MvtTileBudgetStep.Full;
-        var seen = new List<(int Index, int? Cap, bool Omit)>();
+        var seen = new List<(int Index, double Scale, bool Omit)>();
         while (true)
         {
-            seen.Add((step.Index, step.FeatureCap, step.OmitAttributes));
+            seen.Add((step.Index, step.SimplifyScale, step.OmitAttributes));
             if (step.Next() is not { } next)
             {
                 break;
@@ -36,15 +36,13 @@ public sealed class MvtTileBudgetTests
         }
 
         seen.Should().Equal(
-            (0, (int?)null, false),
-            (1, (int?)null, false),
-            (2, (int?)4_000, true),
-            (3, (int?)800, true),
-            (4, (int?)200, true),
-            (5, (int?)40, true),
-            (6, (int?)8, true),
-            (7, (int?)1, true),
-            (8, (int?)1, true));
+            (0, 1d, false),
+            (1, 0d, true),
+            (2, 4d, true),
+            (3, 8d, true),
+            (4, 16d, true),
+            (5, 32d, true),
+            (6, 64d, true));
     }
 
     [Fact]
@@ -167,11 +165,11 @@ public sealed class MvtTileBudgetTests
                 CancellationToken.None));
 
         thrown.Should().BeSameAs(refusal);
-        seen.Should().Equal(0, 1, 2, 3, 4, 5, 6, 7, 8);
+        seen.Should().Equal(0, 1, 2, 3, 4, 5, 6);
     }
 
     [Fact]
-    public async Task ReadAsync_SnappedPassesEmpty_KeepsOneUnsnappedFeature()
+    public async Task ReadAsync_AttributeOnlyPassFits_PreservesOriginalGeometry()
     {
         var seen = new List<int>();
         var tile = await MvtTileBudgetFitter.ReadAsync(
@@ -192,14 +190,14 @@ public sealed class MvtTileBudgetTests
             },
             CancellationToken.None);
 
-        seen.Should().Equal(0, 1, 2, 3, 4, 5, 6, 7, 8);
+        seen.Should().Equal(0, 1);
         tile.Should().Equal(new byte[] { 7 });
     }
 
     [Fact]
     public void Tolerance_CustomGrid_UsesTileResolutionNotWebMercatorZoom()
     {
-        var step = MvtTileBudgetStep.Full.Next()!.Value;
+        var step = MvtTileBudgetStep.Full.Next()!.Value.Next()!.Value;
         const double span = 1_000d;
         const int extent = 4096;
         var tileUnit = span / extent;
@@ -212,7 +210,7 @@ public sealed class MvtTileBudgetTests
     }
 
     [Fact]
-    public void BuildMvtTileQuery_CustomGridThinning_SnapsToTheGridResolution()
+    public void BuildMvtTileQuery_CustomGridRetry_SimplifiesAtGridResolution()
     {
         var builder = CreateBuilder();
         var grid = new GridGeometry
@@ -226,7 +224,7 @@ public sealed class MvtTileBudgetTests
             TileHeight = 256,
             Levels = [new GridLevel(0, ScaleDenominator: 1, CellSize: 1_000d / 256d, MatrixWidth: 1, MatrixHeight: 1)]
         };
-        var step = MvtTileBudgetStep.Full.Next()!.Value;
+        var step = MvtTileBudgetStep.Full.Next()!.Value.Next()!.Value;
         var result = builder.BuildMvtTileQuery(
             1, 0, 0, 0,
             new FeatureQuery { SpatialReferenceSrid = 27700 },
@@ -238,13 +236,14 @@ public sealed class MvtTileBudgetTests
 
         var expected = (1_000d / 4096d) * step.SimplifyScale;
         var numbers = result.WhereParameters.OfType<double>().ToList();
-        result.Sql.Should().Contain("ST_SnapToGrid");
+        result.Sql.Should().NotContain("ST_SnapToGrid");
+        result.Sql.Should().Contain("ST_SimplifyPreserveTopology");
         numbers.Any(number => Math.Abs(number - expected) < 1e-6).Should().BeTrue();
         numbers.Any(number => Math.Abs(number - 4_000d) < 1e-3).Should().BeFalse();
     }
 
     [Fact]
-    public void BuildMvtTileQuery_LastPass_KeepsOneFeatureWithoutSnapping()
+    public void BuildMvtTileQuery_LastPass_PreservesAllFeaturesAndGeometryFallback()
     {
         var builder = CreateBuilder();
         var last = MvtTileBudgetStep.Full;
@@ -264,8 +263,8 @@ public sealed class MvtTileBudgetTests
 
         result.Sql.Should().NotContain("ST_SnapToGrid");
         result.Sql.Should().NotContain(DatabaseSchema.AttributesColumn);
-        result.Sql.Should().Contain("LIMIT");
-        result.Sql.Should().Contain("WHERE geom IS NOT NULL");
+        result.Sql.Should().NotContain("LIMIT");
+        result.Sql.Should().Contain("COALESCE(ST_AsMVTGeom");
     }
 
     [Fact]
@@ -285,50 +284,62 @@ public sealed class MvtTileBudgetTests
     }
 
     [Fact]
-    public void BuildMvtTileQuery_ThinningPass_SnapsAndThenDropsAttributes()
+    public void BuildMvtTileQuery_Retries_OmitAttributesWithoutAdaptiveLimits()
     {
         var builder = CreateBuilder();
         var options = new TileOptions { SimplifyZoom = 0, TileBuffer = 0, TileExtent = 4096 };
         var query = new FeatureQuery { SpatialReferenceSrid = 3857 };
         var limits = new TileLimits { MaxFeaturesPerTile = 0 };
-        var step1 = MvtTileBudgetStep.Full.Next()!.Value;
+        var step = MvtTileBudgetStep.Full.Next()!.Value;
+        while (true)
+        {
+            var retry = builder.BuildMvtTileQuery(
+                1, 0, 0, 5, query, options, limits, CoreGeometryStorageType.Geometry, null, step);
+            retry.Sql.Should().NotContain("ST_SnapToGrid");
+            retry.Sql.Should().NotContain("GREATEST");
+            retry.Sql.Should().NotContain("ORDER BY");
+            retry.Sql.Should().NotContain("LIMIT");
+            retry.Sql.Should().NotContain(DatabaseSchema.AttributesColumn);
+            retry.Sql.Should().Contain(DatabaseSchema.ObjectIdColumn);
+            if (step.Index == 1)
+            {
+                retry.Sql.Should().NotContain("ST_SimplifyPreserveTopology");
+            }
+            else
+            {
+                retry.Sql.Should().Contain("ST_SimplifyPreserveTopology");
+                retry.Sql.Should().Contain("COALESCE(ST_AsMVTGeom");
+            }
 
-        var snapped = builder.BuildMvtTileQuery(
-            1, 0, 0, 5, query, options, limits, CoreGeometryStorageType.Geometry, null, step1);
+            if (step.Next() is not { } next)
+            {
+                break;
+            }
 
-        snapped.Sql.Should().Contain("ST_SnapToGrid");
-        snapped.Sql.Should().Contain("ST_SimplifyPreserveTopology");
-        snapped.Sql.Should().Contain("GREATEST");
-        snapped.Sql.Should().NotContain("ORDER BY");
-        snapped.Sql.Should().Contain(DatabaseSchema.AttributesColumn);
-
-        var dropped = builder.BuildMvtTileQuery(
-            1, 0, 0, 5, query, options, limits, CoreGeometryStorageType.Geometry, null, step1.Next()!.Value);
-
-        dropped.Sql.Should().Contain("ST_SnapToGrid");
-        dropped.Sql.Should().Contain("ORDER BY ST_Area");
-        dropped.Sql.Should().Contain("LIMIT");
-        dropped.Sql.Should().NotContain(DatabaseSchema.AttributesColumn);
+            step = next;
+        }
     }
 
-    [Fact]
-    public void BuildH3TileQuery_ThinningPass_CapsCellsWithoutSnapping()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1000)]
+    public void BuildH3TileQuery_ConfiguredPolicy_DoesNotAddAdaptiveCellCap(int configuredLimit)
     {
         var builder = CreateBuilder();
         var options = new TileOptions { TileBuffer = 0, TileExtent = 4096 };
-        var limits = new TileLimits { MaxFeaturesPerTile = 0 };
-        var full = builder.BuildH3TileQuery(1, 0, 0, 0, 2, null, options, limits);
+        var limits = new TileLimits { MaxFeaturesPerTile = configuredLimit };
+        var tile = builder.BuildH3TileQuery(1, 0, 0, 0, 2, null, options, limits);
 
-        full.Sql.Should().NotContain("ORDER BY COUNT(*)");
-        full.Sql.Should().NotContain("ST_SnapToGrid");
-
-        var thin = builder.BuildH3TileQuery(
-            1, 0, 0, 0, 2, null, options, limits,
-            CoreGeometryStorageType.Geometry,
-            MvtTileBudgetStep.Full.Next()!.Value.Next()!.Value);
-
-        thin.Sql.Should().Contain("ORDER BY COUNT(*) DESC, _h3cell::text ASC");
-        thin.Sql.Should().NotContain("ST_SnapToGrid");
+        tile.Sql.Should().NotContain("ORDER BY COUNT(*)");
+        tile.Sql.Should().NotContain("ST_SnapToGrid");
+        if (configuredLimit == 0)
+        {
+            tile.Sql.Should().NotContain("LIMIT");
+        }
+        else
+        {
+            tile.Sql.Should().Contain("ORDER BY _h3cell LIMIT");
+        }
     }
 
     private static FeatureQueryBuilder CreateBuilder()

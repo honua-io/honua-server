@@ -189,29 +189,6 @@ internal sealed partial class FeatureQueryBuilder
         Core.Features.Tiles.TileOptions tileOptions,
         Core.Configuration.TileLimits tileLimits,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
-        => BuildH3TileQuery(
-            layerId,
-            x,
-            y,
-            z,
-            resolution,
-            query,
-            tileOptions,
-            tileLimits,
-            geometryStorageType,
-            MvtTileBudgetStep.Full);
-
-    internal CoreParameterizedQuery BuildH3TileQuery(
-        int layerId,
-        int x,
-        int y,
-        int z,
-        int resolution,
-        FeatureQuery? query,
-        Core.Features.Tiles.TileOptions tileOptions,
-        Core.Configuration.TileLimits tileLimits,
-        CoreGeometryStorageType geometryStorageType,
-        MvtTileBudgetStep budgetStep)
     {
         GuardVersionedReadSupported(query, "h3-tile");
         var sql = _stringBuilderPool.Get();
@@ -305,23 +282,11 @@ internal sealed partial class FeatureQueryBuilder
 
             // Limit the number of aggregated H3 cells per tile (not source rows).
             // Applied after GROUP BY so that counts per cell remain accurate.
-            // A thinning pass keeps the densest cells in object-id order so a low-zoom
-            // hex tile can fit the byte budget without changing the full-fidelity SQL.
-            if (budgetStep.IsFull)
-            {
-                if (tileLimits.MaxFeaturesPerTile > 0)
-                {
-                    var limitParam = $"${paramIndex}";
-                    parameters.Add(tileLimits.MaxFeaturesPerTile);
-                    sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
-                }
-            }
-            else if (MvtTileBudget.FeatureLimit(tileLimits.MaxFeaturesPerTile, budgetStep) is int featureCap)
+            if (tileLimits.MaxFeaturesPerTile > 0)
             {
                 var limitParam = $"${paramIndex}";
-                parameters.Add(featureCap);
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" ORDER BY COUNT(*) DESC, _h3cell::text ASC LIMIT {limitParam}");
+                parameters.Add(tileLimits.MaxFeaturesPerTile);
+                sql.Append(CultureInfo.InvariantCulture, $" ORDER BY _h3cell LIMIT {limitParam}");
             }
 
             sql.Append(") AS tile WHERE geom IS NOT NULL");
