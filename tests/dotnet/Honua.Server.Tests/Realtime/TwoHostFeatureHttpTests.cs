@@ -150,7 +150,7 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
     private async Task<long> AddAsync(HttpClient client, int ordinal, CancellationToken cancellationToken)
     {
         var name = ordinal < 0 ? $"warmup-{_marker}" : $"{_marker}-{ordinal}";
-        var json = $$"""{"adds":[{"attributes":{"name":"{{name}}"},"geometry":{"x":-122.4194,"y":37.7749}}]}""";
+        var json = $$$"""{"adds":[{"attributes":{"name":"{{{name}}}"},"geometry":{"x":-122.4194,"y":37.7749}}]}""";
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(EditPath, content, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
