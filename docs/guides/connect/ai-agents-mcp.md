@@ -328,6 +328,14 @@ Required-input descriptions identify caller-supplied values or their producer to
 
 Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `layerId` from `honua_list_layers`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
 
+Layer display and spatial configuration are available through the admin `full` catalog as
+`honua_admin_layer_display_get`, `honua_admin_layer_display_set`,
+`honua_admin_layer_spatial_get`, and `honua_admin_layer_spatial_set`.
+Use the storage layer ID from connection-layer discovery. Read the current configuration
+before proposing a change. Set calls preserve omitted fields and require human approval;
+spatial clear flags explicitly remove stored CRS metadata. These tools use the canonical
+Admin API validation. They do not yet offer revision-bound dry-run previews or guarded undo.
+
 A view is **discovery, not authority**:
 
 - Selecting one can only *narrow* what `tools/list` returns. Membership grants nothing, caches no prior allow decision, and never widens a principal's reach.
