@@ -99,6 +99,26 @@ public sealed class PostgresSourceWatermarkStoreTests
     }
 
     [IntegrationTest]
+    public async Task AdvanceAsync_OneTickNewerTimestamp_PreservesTheAdvance()
+    {
+        await using var host = CreateHost();
+        await host.InitializeAsync();
+        var store = host.GetService<ISourceWatermarkStore>();
+        var initial = Mark($"pipeline-{Guid.NewGuid():N}", "source", Timestamp);
+        var next = Mark(initial.PipelineId, initial.SourceId, Timestamp.AddTicks(1));
+        try
+        {
+            await store.AdvanceAsync(initial);
+            (await store.AdvanceAsync(next)).Should().BeEquivalentTo(next);
+            (await store.GetAsync(initial.PipelineId, initial.SourceId)).Should().BeEquivalentTo(next);
+        }
+        finally
+        {
+            await store.ClearAsync(initial.PipelineId, initial.SourceId);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ClearAsync_CompositeKeysWithSeparators_RemovesOnlyTheRequestedSource()
     {
         await using var host = CreateHost();
