@@ -40,7 +40,7 @@ public sealed partial class ImportDatumTransformationTests(PostgresFixture fixtu
             EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
             EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, table_name);
             EXECUTE format(
-                'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+                'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
                 schema_name, table_name, target_srid);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
         END;
@@ -56,7 +56,7 @@ public sealed partial class ImportDatumTransformationTests(PostgresFixture fixtu
         BEGIN
             EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
             EXECUTE format(
-                'CREATE TABLE IF NOT EXISTS %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+                'CREATE TABLE IF NOT EXISTS %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
                 schema_name, table_name, target_srid);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
         END;

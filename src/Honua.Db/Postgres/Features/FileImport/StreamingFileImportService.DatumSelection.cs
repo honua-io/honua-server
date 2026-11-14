@@ -8,6 +8,19 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
+    private static DatumTransformationSelection BindImportCoordinateEpoch(
+        DatumTransformationSelection selection, double? coordinateEpoch)
+    {
+        try
+        {
+            return selection.WithCoordinateEpoch(coordinateEpoch);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException(exception.Message, exception);
+        }
+    }
+
     private DatumTransformationSelection? ResolveRequestedDatumSelection(ImportRequest request, int sourceSrid)
     {
         if (!string.IsNullOrWhiteSpace(request.DatumTransformationName))
@@ -19,7 +32,7 @@ internal sealed partial class StreamingFileImportService
                 throw new InvalidOperationException("The named datumTransformation does not apply to the requested reprojection.");
             }
 
-            return named.WithCoordinateEpoch(request.CoordinateEpoch);
+            return BindImportCoordinateEpoch(named, request.CoordinateEpoch);
         }
 
         if (request.DatumTransformationWkid is not { } wkid)
@@ -27,7 +40,7 @@ internal sealed partial class StreamingFileImportService
             return sourceSrid != request.TargetSrid!.Value && _datumTransformationCatalog is not null &&
                 !_datumTransformationCatalog.HasAreaOfUse(sourceSrid, request.TargetSrid!.Value) &&
                 _datumTransformationCatalog.TryGetDefault(sourceSrid, request.TargetSrid!.Value, out var defaultSelection) && defaultSelection.RequiresCoordinateEpoch
-                ? defaultSelection.WithCoordinateEpoch(request.CoordinateEpoch)
+                ? BindImportCoordinateEpoch(defaultSelection, request.CoordinateEpoch)
                 : null;
         }
 
@@ -37,6 +50,6 @@ internal sealed partial class StreamingFileImportService
             throw new InvalidOperationException($"datumTransformation WKID {wkid} is not supported for {sourceSrid} -> {request.TargetSrid!.Value}.");
         }
 
-        return selection.WithCoordinateEpoch(request.CoordinateEpoch);
+        return BindImportCoordinateEpoch(selection, request.CoordinateEpoch);
     }
 }
