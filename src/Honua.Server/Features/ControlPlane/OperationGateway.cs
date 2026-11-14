@@ -337,6 +337,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 }
                 else
                 {
+                    var replayRoles = await ReplayRolesAsync(proposal, cancellationToken).ConfigureAwait(false);
                     canonicalDispatchStarted = true;
                     handle = await invoker.SubmitAsync(
                         replay?.Request ?? new OperationRequest
@@ -349,7 +350,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                             OperationInstanceId = proposal.Audit.OperationInstanceId,
                             CorrelationId = proposal.Audit.CorrelationId,
                             PrincipalId = proposal.RequestedBy ?? proposal.RequestedByAgent,
-                            Roles = await ReplayRolesAsync(proposal, cancellationToken).ConfigureAwait(false),
+                            Roles = replayRoles,
                             TenantId = replayTenantId,
                             SchemaName = replay?.SchemaName,
                             AuthorizationOutcome = "approved",

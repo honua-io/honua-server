@@ -20,11 +20,13 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed partial class OperationGatewayStateMachineTests
 {
-    [UnitTest]
+    [UnitTheory]
+    [InlineData(2)]
+    [InlineData(3)]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ApplyApprovedProposal_PostAuditProposerRefusal_TerminatesBothRecordsWithoutActuating()
+    public async Task ApplyApprovedProposal_PostAuditProposerRefusal_TerminatesBothRecordsWithoutActuating(int refusalAt)
     {
-        var scenario = new PostAuditRefusalScenario();
+        var scenario = new PostAuditRefusalScenario(refusalAt: refusalAt);
         Assert.True(await scenario.Instances.TryCreateAsync(scenario.Accepted));
 
         var resolved = await scenario.Gateway.ApplyApprovedProposalAsync(scenario.Proposal.ProposalId,
@@ -34,7 +36,7 @@ public sealed partial class OperationGatewayStateMachineTests
         Assert.Equal(OperationProposalStatus.Failed, resolved!.Status);
         Assert.Equal(OperationProposalStatus.Failed, persisted!.Status);
         Assert.False(scenario.Executor.Entered.Task.IsCompleted);
-        Assert.Equal(2, scenario.AuthorityChecks);
+        Assert.Equal(refusalAt, scenario.AuthorityChecks);
         Assert.Contains(scenario.Audit.Events, entry => entry.Action == "operation.approved");
         var handle = await scenario.Instances.GetAsync(scenario.Accepted.OperationInstanceId);
         Assert.Equal(OperationHandleStatus.Failed, handle!.Status);
@@ -79,7 +81,7 @@ public sealed partial class OperationGatewayStateMachineTests
         public OperationGateway Gateway { get; }
         public int AuthorityChecks { get; private set; }
 
-        public PostAuditRefusalScenario(IOperationInstanceStore? instances = null)
+        public PostAuditRefusalScenario(IOperationInstanceStore? instances = null, int refusalAt = 2)
         {
             Proposal = CreateProposal("p-post-audit-refusal", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval)
                 with
@@ -90,7 +92,7 @@ public sealed partial class OperationGatewayStateMachineTests
             Executor.Completion.SetResult("execution-id");
             var keys = Substitute.For<IAdminApiKeyStore>();
             keys.GetAsync(_keyId, Arg.Any<CancellationToken>()).Returns(_ =>
-                Task.FromResult(++AuthorityChecks == 1 ? CurrentKey() : null));
+                Task.FromResult(++AuthorityChecks < refusalAt ? CurrentKey() : null));
             Gateway = CanonicalOperationGatewayTestComposition.Build(Proposals, Substitute.For<IGuardrailLadder>(), [Executor],
                 configure: services =>
                 {
