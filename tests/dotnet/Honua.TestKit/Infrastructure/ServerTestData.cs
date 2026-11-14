@@ -27,6 +27,7 @@ public static class ServerTestData
     public static async Task SeedAsync(PostgresFixture fixture, string schemaName)
     {
         await fixture.ApplySeedAsync(ResolveSeedPath(), schemaName).ConfigureAwait(false);
+        await EnsureObservationCaptureAsync(fixture, schemaName).ConfigureAwait(false);
 
         // server.yaml owns fixed honua raster tables, while test hosts skip application migrations.
         // Read the owning migration instead of maintaining a divergent copy of its column definitions.
@@ -69,6 +70,27 @@ public static class ServerTestData
                 command.CommandText = ddl;
                 await command.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
+        });
+    }
+
+    private static Task EnsureObservationCaptureAsync(PostgresFixture fixture, string schemaName)
+    {
+        var quotedSchema = SchemaSearchPath.ValidateAndQuote(schemaName);
+        return fixture.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            const string resource = "Honua.Server.Migrations.171_CaptureObservationRealtimeEvents.sql";
+            await using var stream = typeof(PostgresFixture).Assembly.GetManifestResourceStream(resource)
+                ?? throw new InvalidOperationException($"The observation migration {resource} was not embedded.");
+            using var reader = new StreamReader(stream);
+            // Source tables are isolated per fixture; the application provider uses the shared
+            // control-plane log. Preserve the production trigger body with that binding.
+            var ddl = (await reader.ReadToEndAsync().ConfigureAwait(false))
+                .Replace("$HonuaSchema$.realtime_append", "honua.realtime_append", StringComparison.Ordinal)
+                .Replace("$HonuaSchema$", quotedSchema, StringComparison.Ordinal);
+            await using var connection = await fixture.GetConnectionAsync(schemaName).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = ddl;
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
         });
     }
 

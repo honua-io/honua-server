@@ -48,10 +48,10 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
         return new RealtimeLogHarness(jobs, fixture);
     }
 
-    public async Task ApplyMigrationAsync()
+    public async Task ApplyMigrationAsync(string migrationResource = MigrationResource)
     {
-        await using var stream = typeof(PostgresRealtimeEventLog).Assembly.GetManifestResourceStream(MigrationResource)
-            ?? throw new InvalidOperationException($"Embedded migration '{MigrationResource}' was not found.");
+        await using var stream = typeof(PostgresRealtimeEventLog).Assembly.GetManifestResourceStream(migrationResource)
+            ?? throw new InvalidOperationException($"Embedded migration '{migrationResource}' was not found.");
         using var reader = new StreamReader(stream);
         var migration = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal);
         await _fixture.ExecuteDdlUnderLockAsync(migration);
