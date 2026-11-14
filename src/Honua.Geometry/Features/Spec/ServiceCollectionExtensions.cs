@@ -87,12 +87,7 @@ public static class ServiceCollectionExtensions
                 sp.GetService<TimeProvider>(),
                 sp.GetService<ILogger<SpecApplyOrchestrator>>()));
 
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ReservedSpecResourceStateStore>(
-            new ReservedSpecResourceStateStore(SpecResourceKind.Dataset)));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ReservedSpecResourceStateStore>(
-            new ReservedSpecResourceStateStore(SpecResourceKind.Service)));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ReservedSpecResourceStateStore>(
-            new ReservedSpecResourceStateStore(SpecResourceKind.App)));
+        services.TryAddSingleton(new ReservedSpecResourceStateStore(SpecResourceKind.Dataset));
 
         return services;
     }
