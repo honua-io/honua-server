@@ -13,7 +13,7 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
     {
         if (!HasByteLength(request.OwnerId, 256) || !HasByteLength(request.ServiceId, 256)
             || !HasByteLength(request.IdempotencyKey, 256) || !HasByteLength(request.Filename, 1024)
-            || !HasByteLength(request.ContentType, 256) || request.LayerId < 0
+            || !HasByteLength(request.ContentType, 256) || request.LayerId < 0 || request.PublishedLayerId is < 0
             || request.Operation is not ("unary" or "chunked") || request.ExpectedSize < 0
             || request.Sha256 is not { Length: 32 } || request.ReplaceAttachmentId is <= 0
             || request.MaxChunkBytes <= 0 || request.Lifetime <= TimeSpan.Zero
@@ -32,10 +32,14 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         using var stream = new MemoryStream();
         using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
         {
-            writer.Write(1); // Version the canonical, length-prefixed request encoding.
+            writer.Write(request.PublishedLayerId.HasValue ? 2 : 1); // Version the canonical, length-prefixed request encoding.
             writer.Write(request.OwnerId);
             writer.Write(request.ServiceId);
             writer.Write(request.LayerId);
+            if (request.PublishedLayerId is int publishedLayerId)
+            {
+                writer.Write(publishedLayerId);
+            }
             writer.Write(request.FeatureId);
             writer.Write(request.Operation);
             writer.Write(request.IdempotencyKey);

@@ -18,6 +18,27 @@ namespace Honua.Db.Postgres.Tests.Features.Attachments;
 public sealed partial class AttachmentUploadSessionStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
+    public async Task BeginAsync_PublishedLayerBinding_SurvivesRestartAndRejectsAnotherAlias()
+    {
+        await WithStoreAsync(async (store, schema) =>
+        {
+            var request = CreateRequest() with { LayerId = 42, PublishedLayerId = 7 };
+            var first = await store.BeginAsync(request);
+            var restarted = CreateStore(schema);
+            var restored = await restarted.GetAsync(new AttachmentUploadSessionKey("owner", first.SessionId));
+            restored.Request.LayerId.Should().Be(42);
+            restored.Request.PublishedLayerId.Should().Be(7);
+            (await restarted.BeginAsync(request)).SessionId.Should().Be(first.SessionId);
+            var conflict = await Assert.ThrowsAsync<AttachmentUploadException>(() =>
+                restarted.BeginAsync(request with { PublishedLayerId = 8 }));
+            conflict.Failure.Should().Be(AttachmentUploadFailure.Conflict);
+            var invalid = await Assert.ThrowsAsync<AttachmentUploadException>(() =>
+                restarted.BeginAsync(request with { PublishedLayerId = -1 }));
+            invalid.Failure.Should().Be(AttachmentUploadFailure.InvalidContent);
+        });
+    }
+
+    [IntegrationTest]
     public async Task AppendAsync_InvalidDigestAndOversizedChunk_DoesNotAdvance()
     {
         await WithStoreAsync(async (store, schema) =>
@@ -131,6 +152,10 @@ public sealed partial class AttachmentUploadSessionStoreTests(PostgresFixture fi
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = new NpgsqlCommand(sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal), connection);
             await command.ExecuteNonQueryAsync();
+            var publicationSql = await File.ReadAllTextAsync(Path.Join(root.FullName,
+                "src", "Honua.Server", "Migrations", "165_AddAttachmentPublicationScope.sql"));
+            await using var publicationCommand = new NpgsqlCommand(publicationSql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal), connection);
+            await publicationCommand.ExecuteNonQueryAsync();
             await action(CreateStore(schema), schema);
         }
         finally

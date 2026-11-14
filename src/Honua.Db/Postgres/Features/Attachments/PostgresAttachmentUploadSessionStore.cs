@@ -37,7 +37,7 @@ internal sealed partial class PostgresAttachmentUploadSessionStore : IAttachment
             SELECT session_id, owner_id, service_id, layer_id, feature_id, operation,
                 idempotency_key, filename, content_type, keywords, expected_size,
                 content_sha256, replace_attachment_id, max_chunk_bytes, next_offset_bytes,
-                state, created_at, expires_at, request_sha256, expires_at <= clock_timestamp()
+                state, created_at, expires_at, request_sha256, expires_at <= clock_timestamp(), published_layer_id
             FROM {_sessions} WHERE session_id = @session AND owner_id = @owner {locking}
             """);
         BindKey(command, key);
@@ -58,7 +58,8 @@ internal sealed partial class PostgresAttachmentUploadSessionStore : IAttachment
         var request = new AttachmentUploadRequest
         {
             OwnerId = reader.GetString(1), ServiceId = reader.GetString(2),
-            LayerId = reader.GetInt32(3), FeatureId = reader.GetInt64(4), Operation = reader.GetString(5),
+            LayerId = reader.GetInt32(3), PublishedLayerId = reader.IsDBNull(20) ? null : reader.GetInt32(20),
+            FeatureId = reader.GetInt64(4), Operation = reader.GetString(5),
             IdempotencyKey = reader.GetString(6), Filename = reader.GetString(7), ContentType = reader.GetString(8),
             Keywords = reader.GetFieldValue<string[]>(9), ExpectedSize = reader.GetInt64(10),
             Sha256 = reader.GetFieldValue<byte[]>(11), ReplaceAttachmentId = reader.IsDBNull(12) ? null : reader.GetInt64(12),
