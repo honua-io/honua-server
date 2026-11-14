@@ -51,8 +51,14 @@ internal sealed partial class GeoservicesImportService
         };
     }
 
-    private async Task PrepareImportCommitAsync(ImportCommitReceiptContext context, CancellationToken cancellationToken)
+    private async Task PrepareImportCommitAsync(ImportCommitReceiptContext context, GeoservicesLayerInfo layerInfo, CancellationToken cancellationToken)
     {
+        // Nonspatial source tables have no geometry column to index.
+        if (!string.IsNullOrEmpty(layerInfo.GeometryType))
+        {
+            await CreateSpatialIndexAsync(context.Connection, context.Schema, context.Request.TableName, cancellationToken);
+        }
+
         await AnalyzeTableAsync(context.Connection, context.Schema, context.Request.TableName, cancellationToken);
         await RecordImportCommitAsync(context, cancellationToken);
         await JoinCommitAsync(context.Request.CommitParticipant, new ImportCommitScope

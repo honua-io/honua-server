@@ -373,18 +373,11 @@ internal sealed partial class GeoservicesImportService
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Publishing, request,
                 "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
 
-            // #4600: a nonspatial ArcGIS table is created without a geom column (BuildCreateTableSql), so
-            // indexing it unconditionally failed every table import with 42703.
-            if (!string.IsNullOrEmpty(layerInfo.GeometryType))
-            {
-                await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
-            }
-
             await PrepareImportCommitAsync(receiptContext with
             {
                 Features = featuresProcessed,
                 Failures = failedFeatures
-            }, cancellationToken);
+            }, layerInfo, cancellationToken);
 
             stage = ImportFailureStage.Committing;
             await transaction.CommitSafelyAsync(cancellationToken);
