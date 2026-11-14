@@ -141,6 +141,11 @@ internal sealed partial class StreamingFileImportService
                     // reader's geometry factory carried (#6114). CSV is the exception: an EWKT/EWKB
                     // value already carries its own SRID, and stamping the 4326 default here stored
                     // projected coordinates as degrees (#6171). An explicit SourceSrid still wins.
+                    if (format is SupportedFileFormat.Csv or SupportedFileFormat.Wkt &&
+                        !request.SourceSrid.HasValue && HasConflictingSourceSrid(feature, sourceSrid))
+                    {
+                        throw new InvalidDataException(MixedSourceCrsMessage);
+                    }
                     if (feature.Geometry != null &&
                         ShouldApplyDetectedSourceSrid(format, request.SourceSrid, feature.Geometry.SRID))
                     {
@@ -160,7 +165,7 @@ internal sealed partial class StreamingFileImportService
                             loadTableName,
                             batch,
                             sourceSrid,
-                            request.TargetSrid,
+                            request.TargetSrid!.Value,
                             wkbWriter,
                             loadMode,
                             request.KeyColumns,
@@ -212,7 +217,7 @@ internal sealed partial class StreamingFileImportService
                         loadTableName,
                         batch,
                         sourceSrid,
-                        request.TargetSrid,
+                        request.TargetSrid!.Value,
                         wkbWriter,
                         loadMode,
                         request.KeyColumns,
@@ -272,7 +277,7 @@ internal sealed partial class StreamingFileImportService
                             allowedTableName,
                             totalImported,
                             request.CommitParticipant,
-                            request.TargetSrid,
+                            request.TargetSrid!.Value,
                             coordinateEpoch,
                             target.LiveIdentity,
                             CancellationToken.None);
@@ -294,7 +299,7 @@ internal sealed partial class StreamingFileImportService
                             loadTableName,
                             totalImported,
                             request.CommitParticipant,
-                            request.TargetSrid,
+                            request.TargetSrid!.Value,
                             coordinateEpoch,
                             target.LiveIdentity,
                             !hadExistingTarget,

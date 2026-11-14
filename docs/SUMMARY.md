@@ -95,6 +95,7 @@
   - [Import from GeoServices REST services](guides/publish/import-from-geoservices-rest.md)
   - [Serve existing databases](guides/publish/serve-existing-databases.md)
   - [Publish layers](guides/publish/publish-layers.md)
+  - [Namespaced layer publication](guides/publish/namespaced-layer-publication.md)
   - [Publish rasters](guides/publish/publish-rasters.md)
   - [Imagery and raster: shipped state](guides/imagery-and-raster.md)
   - [Publish terrain & elevation](guides/publish/publish-terrain-and-elevation.md)
@@ -111,7 +112,7 @@
   - [Author a geoprocessing process](guides/query-analyze/gp-devkit-authoring.md)
   - [Local geoprocessing dev quickstart](guides/query-analyze/gp-local-dev-quickstart.md)
   - [Raster/vector GP in custom-code tools](guides/raster-gp-pattern.md)
-  - [Data enrichment API](operator/data-enrichment.md)
+  - [Data enrichment API](guides/operate/data-enrichment.md)
   - [Automate workflows](guides/query-analyze/automate-workflows.md)
   - [Work with time](guides/query-analyze/work-with-time.md)
 - Connect clients
@@ -149,6 +150,8 @@
   - [Compliance](guides/secure/compliance.md)
 - Deploy & operate
   - [Operating Honua](guides/operate/README.md)
+  - [Discover content in Console](guides/operate/console-catalog-discovery.md)
+  - [Nightly image channels and verification](guides/operate/nightly-images.md)
   - [Operate scenario: protected updates](guides/operate/scenario.md)
   - [Operate metrics and recovery evidence](guides/operate/metrics.md)
   - [Ops evidence posture](guides/operate/evidence-posture.md)

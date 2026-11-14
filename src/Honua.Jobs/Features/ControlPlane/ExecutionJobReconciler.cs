@@ -73,7 +73,7 @@ internal sealed partial class ExecutionJobReconciler(
 
             reconcileJobKind = job.Spec.Kind.ToString();
 
-            if (IsTerminal(job.Status))
+            if (job.Status.IsTerminal())
             {
                 reconcileOutcome = "terminal";
                 return;
@@ -152,7 +152,7 @@ internal sealed partial class ExecutionJobReconciler(
                 reconcileOutcome = "changed";
                 ControlPlaneTelemetry.RecordExecutionTransition(job, updated);
                 await BridgeProgressAsync(job, updated, reconciliationCancellation.Token).ConfigureAwait(false);
-                if (IsTerminal(updated.Status))
+                if (updated.Status.IsTerminal())
                 {
                     await NotifyTerminalAsync(updated).ConfigureAwait(false);
                 }
@@ -194,7 +194,7 @@ internal sealed partial class ExecutionJobReconciler(
         {
             reconcileOutcome = "error";
             var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (job != null && !IsTerminal(job.Status))
+            if (job != null && !job.Status.IsTerminal())
             {
                 var failedAt = DateTimeOffset.UtcNow;
                 var failed = job with
@@ -259,7 +259,7 @@ internal sealed partial class ExecutionJobReconciler(
     private async Task FailExpiredJobAsync(string operationId, bool replaceLateSuccess)
     {
         var job = await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false);
-        if (job is null || (IsTerminal(job.Status) && !(replaceLateSuccess && job.Status == ExecutionJobStatus.Succeeded)))
+        if (job is null || (job.Status.IsTerminal() && !(replaceLateSuccess && job.Status == ExecutionJobStatus.Succeeded)))
         {
             return;
         }
@@ -282,7 +282,7 @@ internal sealed partial class ExecutionJobReconciler(
             for (var attempt = 0; attempt < 5; attempt++)
             {
                 var current = await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false);
-                if (current is null || (IsTerminal(current.Status) &&
+                if (current is null || (current.Status.IsTerminal() &&
                     !(replaceLateSuccess && current.Status == ExecutionJobStatus.Succeeded)))
                 {
                     break;
@@ -341,7 +341,7 @@ internal sealed partial class ExecutionJobReconciler(
 
         // The helper owns the CAS and returns the original job to the outer loop, so a
         // terminal record it already persisted is notified here and only here.
-        if (!ReferenceEquals(updated, job) && IsTerminal(updated.Status))
+        if (!ReferenceEquals(updated, job) && updated.Status.IsTerminal())
         {
             await NotifyTerminalAsync(updated).ConfigureAwait(false);
         }
@@ -349,7 +349,7 @@ internal sealed partial class ExecutionJobReconciler(
         // The submission helper only bridges terminal progress; reconciliation historically
         // also reflected nonterminal phase/percent changes. Mirror that so polled progress
         // picks up "Queued on provider" etc. without waiting a full reconciler interval.
-        if (!ReferenceEquals(updated, job) && !IsTerminal(updated.Status))
+        if (!ReferenceEquals(updated, job) && !updated.Status.IsTerminal())
         {
             await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
                     progressStore, updated, ProgressRetention, logger, cancellationToken)
@@ -436,7 +436,7 @@ internal sealed partial class ExecutionJobReconciler(
             Status = observation.Status,
             AttemptCount = newAttemptCount,
             UpdatedAt = now,
-            CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
+            CompletedAt = observation.Status.IsTerminal() ? now : job.CompletedAt,
             ProviderOperationId = newProviderOpId,
             PercentComplete = newPercent,
             CurrentPhase = newPhase,
@@ -509,7 +509,7 @@ internal sealed partial class ExecutionJobReconciler(
         CancellationToken cancellationToken)
     {
         var observed = await ObserveJobAsync(job, backend, cancellationToken).ConfigureAwait(false);
-        if (!ReferenceEquals(observed, job) && IsTerminal(observed.Status))
+        if (!ReferenceEquals(observed, job) && observed.Status.IsTerminal())
         {
             return job;
         }
@@ -597,7 +597,7 @@ internal sealed partial class ExecutionJobReconciler(
 
         var workflowStatus = MapWorkflowStatus(job.Status);
         var stageStatus = MapStageStatus(job.Status);
-        var jobIsTerminal = IsTerminal(job.Status);
+        var jobIsTerminal = job.Status.IsTerminal();
         var (stepsCompleted, totalSteps) = ResolveSyntheticSteps(existing, job.PercentComplete, jobIsTerminal);
         var planId = existing?.PlanId
             ?? job.Spec.Parameters.GetValueOrDefault(ExecutionJobParameterKeys.GeoprocessingPlanId)
@@ -719,11 +719,6 @@ internal sealed partial class ExecutionJobReconciler(
             }
         }
     }
-
-    internal static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 
     internal static bool IsTransientInfrastructureFailure(Exception exception)
         => exception is StackExchange.Redis.RedisException

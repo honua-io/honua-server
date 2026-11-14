@@ -126,7 +126,7 @@ Asking the manifest for an environment that has no activated snapshot does not f
 
 ### Console workspace discovery
 
-Console can project FeatureServer and MapServer directory entries into an explicitly mapped workspace. The mapping does not publish anything, does not cover other protocols, and is not a default. An unmapped workspace is not found. Detail: [Console catalog discovery](../../user/console-catalog-discovery.md).
+Console can project FeatureServer and MapServer directory entries into an explicitly mapped workspace. The mapping does not publish anything, does not cover other protocols, and is not a default. An unmapped workspace is not found. Detail: [Console catalog discovery](../operate/console-catalog-discovery.md).
 
 ## Value domains
 

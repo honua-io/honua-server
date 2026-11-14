@@ -332,7 +332,7 @@ under-tests.
 (honua-server#2951). `honua-server-targeted-tests.sh` still decides WHICH
 shards run — that has not changed. On top of that selection,
 `scripts/ci/capability-impact.py select-local` (the same route/proving-test/
-shard crosswalk `capability-impact-comparison.yml` validates in shadow mode)
+shard crosswalk validation was observed by the retired capability comparison workflow)
 narrows a selected shard's `dotnet test --filter` down to just the proving
 tests `testsByShard` assigns to that shard, but ONLY when the crosswalk
 accounted for every changed file with zero ambiguity (not `runAll`, no

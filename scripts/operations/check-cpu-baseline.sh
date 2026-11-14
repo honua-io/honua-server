@@ -1,19 +1,20 @@
 #!/bin/sh
 # Honua Server CPU baseline preflight.
 #
-# Honua Server releases built on .NET 11 (2027.1 and later) require an x86-64-v2 CPU on x64
+# Honua Server releases built on .NET 11 (2026.1 and later) require an x86-64-v2 CPU on x64
 # (CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3, SSSE3, SSE4.1, SSE4.2) and refuse to start without it.
 # Any server CPU since about 2009 qualifies, but virtual machines that use a generic CPU model
 # (QEMU/KVM "qemu64" or "kvm64", some Proxmox defaults) hide these flags from the guest.
 #
-# Run it before installing or upgrading, on the host or inside the Honua image the host will run
-# (the CPU a container sees is the one the server will see). It needs only sh, sed, head and uname:
+# Run it before installing or upgrading, on the host or in a container on that host (a container
+# sees the host's CPU). The Honua images are chiseled and have no shell, so use any small image
+# that has sh, such as busybox or one from your own registry. It needs only sh, sed, head and uname:
 #   sh scripts/operations/check-cpu-baseline.sh
-#   docker run --rm -i --entrypoint sh <image> -s < scripts/operations/check-cpu-baseline.sh
-#   kubectl run honua-cpu-check --rm -i --restart=Never --image=<image> --command -- sh -s < scripts/operations/check-cpu-baseline.sh
+#   docker run --rm -i busybox sh -s < scripts/operations/check-cpu-baseline.sh
+#   kubectl run honua-cpu-check --rm -i --restart=Never --image=busybox --command -- sh -s < scripts/operations/check-cpu-baseline.sh
 #
 # HONUA_CPU_PREFLIGHT selects the mode:
-#   warn    (default) print what is missing and exit 0; .NET 10 releases run on any x64 CPU.
+#   warn    (default) print what is missing and exit 0; .NET 10 builds run on any x64 CPU.
 #   enforce exit 3 when a required feature is missing.
 #   off     skip the check.
 # Exit codes: 0 baseline met, not applicable, or warn; 2 bad mode; 3 enforced and missing.
@@ -59,7 +60,7 @@ if [ "$mode" = enforce ]; then
   consequence="This Honua Server release requires x86-64-v2 and will not start on this CPU."
 else
   level=WARNING
-  consequence="This release still runs, but Honua Server 2027.1 and later (.NET 11) will not start on this CPU."
+  consequence="Honua Server 2026.1 and later (.NET 11) will not start on this CPU; only older .NET 10 builds run."
 fi
 
 cat >&2 <<EOF

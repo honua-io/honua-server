@@ -67,7 +67,7 @@ public sealed class MapServerFindSerializationTests
             ["flag"] = 1,
         });
 
-        var json = JsonSerializer.Serialize(response, AotOptions.GetTypeInfo(typeof(FindResponse)));
+        var json = JsonSerializer.Serialize(response, AotOptions.GetTypeInfo<FindResponse>());
         json.Should().Contain("Test Feature");
         json.Should().Contain("results");
     }
