@@ -38,8 +38,13 @@ public sealed partial class WfsFallbackGeometryTransactionTests
             <Delete typeName="honua:{TypeName}"><Filter xmlns="http://www.opengis.net/ogc">
               <FeatureId fid="{fid}" /></Filter></Delete>
             """), HttpStatusCode.OK);
-        XDocument.Parse(deleted).Descendants().Single(element => element.Name.LocalName == "totalDeleted")
-            .Value.Should().Be("1");
+        XNamespace wfs = "http://www.opengis.net/wfs";
+        XDocument.Parse(deleted).Descendants(wfs + "SUCCESS").Should().ContainSingle();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM features WHERE layer_id = 0 AND objectid = @id";
+        command.Parameters.AddWithValue("id", id);
+        ((long)(await command.ExecuteScalarAsync())!).Should().Be(0);
 
         var changes = _publisher.ReceivedCalls()
             .Where(call => call.GetMethodInfo().Name == nameof(IFeatureChangeEventPublisher.PublishAsync))

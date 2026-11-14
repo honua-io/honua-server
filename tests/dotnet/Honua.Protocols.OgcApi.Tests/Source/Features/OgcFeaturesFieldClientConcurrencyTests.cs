@@ -100,7 +100,7 @@ public sealed class OgcFeaturesFieldClientConcurrencyTests : IAsyncLifetime
 
         var changes = PublishedChanges();
         changes.Select(change => change.Operation).Should().Equal("create", "update", "delete");
-        changes.Should().OnlyContain(change => change.ObjectId == Convert.ToInt64(feature.Id) && change.LayerId == 0);
+        changes.Should().OnlyContain(change => change.ObjectId == Convert.ToInt64(feature.Id, System.Globalization.CultureInfo.InvariantCulture) && change.LayerId == 0);
         changes.Should().OnlyContain(change => !string.IsNullOrWhiteSpace(change.RequestId));
     }
 
