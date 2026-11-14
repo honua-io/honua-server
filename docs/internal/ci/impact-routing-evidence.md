@@ -343,7 +343,7 @@ yes, because a gate step asserts their *content*:
 
 | Document | Asserted by | Gate step |
 |---|---|---|
-| `docs/internal/operator/audit-coverage-matrix.md` | `AuditCoverageMatrixDriftTests` | Architecture tests |
+| `docs/internal/operations/audit-coverage-matrix.md` | `AuditCoverageMatrixDriftTests` | Architecture tests |
 | `docs/internal/contributor/adr/0047-module-dependency-policy.md` | `ModuleDependencyPolicyTests.MatrixAndAdr_ShouldCrossReference_EachOther` | Architecture tests |
 | `docs/internal/contributor/release-bundle.md` | `ServingImageBoundaryTests` | Architecture tests |
 | `docs/internal/contributor/public-interface-quality-model.md` | `PublicInterfaceProofLedgerTests` | Architecture tests |
