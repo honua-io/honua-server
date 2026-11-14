@@ -76,7 +76,7 @@ public sealed class TwoTaskFeatureStreamTests(FeatureChangeDatabaseFixture datab
         const int beforeStop = 50;
         await using var layer = await FeatureChangeTestLayer.CreateAsync(database, layerId);
         await layer.InsertAsync("""{"warm-up":true}""");
-        var taskA = await FeatureTask.StartAsync(database, listen: true);
+        await using var taskA = await FeatureTask.StartAsync(database, listen: true);
         await using var taskB = await FeatureTask.StartAsync(database, listen: true);
 
         IReadOnlyList<Frame> fromA;
@@ -185,12 +185,32 @@ public sealed class TwoTaskFeatureStreamTests(FeatureChangeDatabaseFixture datab
         private readonly FeatureStreamRealtimeRelay _relay;
         private bool _stopped;
 
-        private FeatureTask(RealtimeTailBackgroundService tail, FeatureStreamRealtimeRelay relay, FeatureStreamSessionManager sessions, PostgresFeatureChangeEventStore store)
+        private readonly RealtimeListener _listener;
+
+        // The task owns everything it builds, the listener's connection included, and releases
+        // it when stopped, however the stop happens.
+        private FeatureTask(FeatureChangeDatabaseFixture database, bool listen)
         {
-            _tail = tail;
-            _relay = relay;
-            Sessions = sessions;
-            Store = store;
+            var options = Options.Create(new RealtimeOptions());
+            var jobs = new JobStoreDatabase(database.DataSource);
+            var log = new PostgresRealtimeEventLog(jobs);
+            var changes = new PostgresFeatureChangeLog(jobs, options, TimeProvider.System);
+            var dispatcher = new RealtimeDispatcher(log, [changes], options, NullLogger<RealtimeDispatcher>.Instance);
+            var presence = new RealtimePresenceBatcher(log);
+            _listener = RealtimeListener.Create(
+                listen ? database.ConnectionString : null,
+                options,
+                NullLogger<RealtimeListener>.Instance);
+            _tail = new RealtimeTailBackgroundService(dispatcher, presence, _listener, options, NullLogger<RealtimeTailBackgroundService>.Instance);
+            Sessions = new FeatureStreamSessionManager(
+                Options.Create(new FeatureStreamOptions()),
+                NullLogger<FeatureStreamSessionManager>.Instance,
+                TestTelemetry.CreateFeatureStreamMetrics());
+            _relay = new FeatureStreamRealtimeRelay(
+                new PostgresRealtimeFanoutProvider(log, dispatcher, presence),
+                Sessions,
+                NullLogger<FeatureStreamRealtimeRelay>.Instance);
+            Store = new PostgresFeatureChangeEventStore(changes);
         }
 
         public FeatureStreamSessionManager Sessions { get; }
@@ -199,29 +219,19 @@ public sealed class TwoTaskFeatureStreamTests(FeatureChangeDatabaseFixture datab
 
         public static async Task<FeatureTask> StartAsync(FeatureChangeDatabaseFixture database, bool listen)
         {
-            var options = Options.Create(new RealtimeOptions());
-            var jobs = new JobStoreDatabase(database.DataSource);
-            var log = new PostgresRealtimeEventLog(jobs);
-            var changes = new PostgresFeatureChangeLog(jobs, options, TimeProvider.System);
-            var dispatcher = new RealtimeDispatcher(log, [changes], options, NullLogger<RealtimeDispatcher>.Instance);
-            var presence = new RealtimePresenceBatcher(log);
-            var listener = RealtimeListener.Create(
-                listen ? database.ConnectionString : null,
-                options,
-                NullLogger<RealtimeListener>.Instance);
-            var tail = new RealtimeTailBackgroundService(dispatcher, presence, listener, options, NullLogger<RealtimeTailBackgroundService>.Instance);
-            var sessions = new FeatureStreamSessionManager(
-                Options.Create(new FeatureStreamOptions()),
-                NullLogger<FeatureStreamSessionManager>.Instance,
-                TestTelemetry.CreateFeatureStreamMetrics());
-            var relay = new FeatureStreamRealtimeRelay(
-                new PostgresRealtimeFanoutProvider(log, dispatcher, presence),
-                sessions,
-                NullLogger<FeatureStreamRealtimeRelay>.Instance);
-            await tail.StartAsync(CancellationToken.None);
-            await relay.StartAsync(CancellationToken.None);
-            await WaitUntilPositionedAsync(relay);
-            return new FeatureTask(tail, relay, sessions, new PostgresFeatureChangeEventStore(changes));
+            var task = new FeatureTask(database, listen);
+            try
+            {
+                await task._tail.StartAsync(CancellationToken.None);
+                await task._relay.StartAsync(CancellationToken.None);
+                await WaitUntilPositionedAsync(task._relay);
+                return task;
+            }
+            catch
+            {
+                await task.DisposeAsync();
+                throw;
+            }
         }
 
         // Graceful stops the services; abrupt abandons them, as a killed process does.
@@ -237,6 +247,7 @@ public sealed class TwoTaskFeatureStreamTests(FeatureChangeDatabaseFixture datab
             _relay.Dispose();
             _tail.Dispose();
             Sessions.Dispose();
+            await _listener.DisposeAsync();
         }
 
         public async ValueTask DisposeAsync()

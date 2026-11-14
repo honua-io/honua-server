@@ -83,6 +83,8 @@ internal sealed record FeatureEventReplayResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(FeatureEventReplayResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(FeatureChangeEvent))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(FeatureChangeEvent[]))]
+// Changed attributes read from the PostgreSQL change log are JSON values.
+[System.Text.Json.Serialization.JsonSerializable(typeof(System.Text.Json.JsonElement))]
 internal sealed partial class FeatureEventReplayJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }

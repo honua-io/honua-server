@@ -118,6 +118,71 @@ public sealed class FeatureStreamSessionManagerStorePollTests : IDisposable
     }
 
     [UnitTest]
+    public void UnrelayedChangeDuringPoll_RequiresStoreReadBeforeAdvancing()
+    {
+        using var session = _manager.CreateSession("SSE", null);
+        _manager.AttachRelay(() =>
+        {
+            _manager.MarkUnrelayed(51);
+            _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor: 52)));
+            _manager.MarkRelayed(52);
+            while (session.Reader.TryRead(out _))
+            {
+                // Complete delivery before the poll captures its proposed cursor.
+            }
+            return 50;
+        });
+
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 50).Should().BeNull(
+            "generation 52 cannot cover generation 51 that was never offered");
+    }
+
+    [UnitTest]
+    public void SessionDropDuringPoll_RequiresStoreReadBeforeAdvancing()
+    {
+        using var session = _manager.CreateSession("SSE", null);
+        _manager.AttachRelay(() =>
+        {
+            for (var cursor = 51; cursor <= 51 + Buffer; cursor++)
+            {
+                _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor)));
+                _manager.MarkRelayed(cursor);
+            }
+            while (session.Reader.TryRead(out _))
+            {
+                // Complete delivery before the poll captures its proposed cursor.
+            }
+            _manager.Broadcast(FeatureStreamMessage.Data(Envelope(cursor: 60)));
+            _manager.MarkRelayed(60);
+            while (session.Reader.TryRead(out _))
+            {
+                // Complete delivery before the poll captures its proposed cursor.
+            }
+            return 50;
+        });
+
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 50).Should().BeNull(
+            "a later offered generation cannot cover the change dropped during this poll");
+    }
+
+    [UnitTest]
+    public void ReattachedRelayDuringPoll_DoesNotInstallTheDetachedStart()
+    {
+        using var session = _manager.CreateSession("SSE", null);
+        _manager.AttachRelay(() =>
+        {
+            _manager.DetachRelay();
+            _manager.AttachRelay(() => 80);
+            return 50;
+        });
+
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 50).Should().BeNull();
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 50).Should().BeNull(
+            "the replacement relay began at 80, so changes 51 to 80 must be read from the store");
+        _manager.StorePollSkipCursor(session.SessionId, replayCursor: 80).Should().Be(80);
+    }
+
+    [UnitTest]
     public void SkippedRead_MovesTheCursorOnlyOnceOfferedFramesAreWritten()
     {
         using var session = _manager.CreateSession("SSE", null);

@@ -1,0 +1,38 @@
+name: Telemetry selector
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - '.github/workflows/telemetry-selector.yml'
+      - 'scripts/ci/install-promtool.sh'
+      - 'tests/python/unit/check_slo_selector.py'
+      - 'eng/telemetry/**'
+      - 'src/Honua.ServiceDefaults/**'
+  push:
+    branches: [trunk]
+    paths:
+      - '.github/workflows/telemetry-selector.yml'
+      - 'scripts/ci/install-promtool.sh'
+      - 'tests/python/unit/check_slo_selector.py'
+      - 'eng/telemetry/**'
+      - 'src/Honua.ServiceDefaults/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  selector:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install verified promtool
+        run: bash scripts/ci/install-promtool.sh "${RUNNER_TEMP}/promtool"
+      - name: Verify platform-fault selector
+        run: python3 tests/python/unit/check_slo_selector.py --promtool "${RUNNER_TEMP}/promtool/promtool"

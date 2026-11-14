@@ -127,7 +127,8 @@ public sealed class FeatureEventsAndStreamingRegistrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(new JobStoreDatabase(NpgsqlDataSource.Create("Host=localhost;Database=unused")));
+        services.AddSingleton(_ => NpgsqlDataSource.Create("Host=localhost;Database=unused"));
+        services.AddSingleton(provider => new JobStoreDatabase(provider.GetRequiredService<NpgsqlDataSource>()));
         services.AddSingleton(Options.Create(new RealtimeOptions()));
         services.AddSingleton<IRealtimeWakeSignal, NoWakeSignal>();
         services.AddHonuaFeatureEventsAndStreaming(configuration);

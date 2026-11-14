@@ -60,6 +60,15 @@ public static class JobSecurityScope
         return new ScopeReleaser(previous);
     }
 
+    // Work that fills a store shared by every reader, such as the generated tile cache, reads as the
+    // system: the same as a call chain outside any job. Disposing restores the job scope.
+    public static IDisposable BeginSystem()
+    {
+        var previous = Ambient.Value;
+        Ambient.Value = null;
+        return new ScopeReleaser(previous);
+    }
+
     private sealed class ScopeReleaser(JobSecurityScopeState? previous) : IDisposable
     {
         private bool _disposed;

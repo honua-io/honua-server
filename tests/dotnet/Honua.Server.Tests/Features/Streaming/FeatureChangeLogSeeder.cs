@@ -120,7 +120,13 @@ internal static class FeatureChangeLogSeeder
         command.Parameters.AddWithValue("layer", request.LayerId);
         command.Parameters.AddWithValue("object", request.ObjectId);
         command.Parameters.Add(new NpgsqlParameter("operation", NpgsqlDbType.Smallint) { Value = operation });
-        command.Parameters.Add(new NpgsqlParameter("changed_at", NpgsqlDbType.TimestampTz) { Value = (object?)request.Timestamp ?? DBNull.Value });
+        // An unset timestamp lets the column default stamp the change at insert.
+        var changedAt = new NpgsqlParameter("changed_at", NpgsqlDbType.TimestampTz) { Value = DBNull.Value };
+        if (request.Timestamp is { } timestamp)
+        {
+            changedAt.Value = timestamp;
+        }
+        command.Parameters.Add(changedAt);
         command.Parameters.AddWithValue("event_id", eventId);
         command.Parameters.Add(Text("operation_instance_id", request.OperationInstanceId));
         command.Parameters.Add(Text("correlation_id", request.CorrelationId));
@@ -157,7 +163,7 @@ internal static class FeatureChangeLogSeeder
         string Coordinate(double x, double y)
             => string.Create(CultureInfo.InvariantCulture, $"[{x},{y}]");
 
-        if (envelope[0] == envelope[2] && envelope[1] == envelope[3])
+        if (envelope[0].CompareTo(envelope[2]) == 0 && envelope[1].CompareTo(envelope[3]) == 0)
         {
             return $$"""{"type":"Point","coordinates":{{Coordinate(envelope[0], envelope[1])}}}""";
         }
