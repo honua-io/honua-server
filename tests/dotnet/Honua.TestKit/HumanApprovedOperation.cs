@@ -33,7 +33,7 @@ internal static class HumanApprovedOperation
         var body = await approved.Content.ReadAsStringAsync();
         approved.IsSuccessStatusCode.Should().BeTrue(body);
         using var approval = JsonDocument.Parse(body);
-        approval.RootElement.GetProperty("status").GetString().Should().Be("Submitted", body);
+        approval.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", body);
         var operationId = approval.RootElement.GetProperty("executionOperationId").GetString();
         operationId.Should().NotBeNullOrWhiteSpace();
         using var readback = await human.GetAsync($"/api/v1/operations/handles/{operationId}");
