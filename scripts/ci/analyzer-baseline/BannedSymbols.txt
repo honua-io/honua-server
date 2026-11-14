@@ -1,0 +1,6 @@
+// Path.Combine discards earlier segments when a later segment is rooted.
+M:System.IO.Path.Combine(System.String,System.String);Use Path.Join instead.
+M:System.IO.Path.Combine(System.String,System.String,System.String);Use Path.Join instead.
+M:System.IO.Path.Combine(System.String,System.String,System.String,System.String);Use Path.Join instead.
+M:System.IO.Path.Combine(System.String[]);Use Path.Join instead.
+M:System.IO.Path.Combine(System.ReadOnlySpan{System.String});Use Path.Join instead.
