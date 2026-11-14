@@ -86,17 +86,10 @@ internal static class StreamingOperationsEndpoints
                 "WebSocket upgrade required.");
         }
 
-        var cursor = context.Request.Query["cursor"].ToString();
-        long? after = null;
-        if (!string.IsNullOrEmpty(cursor))
+        if (!TryParseAlertCursor(context.Request.Query["cursor"].ToString(), out var after))
         {
-            if (!cursor.StartsWith("alerts:", StringComparison.Ordinal) ||
-                !long.TryParse(cursor.AsSpan(7), NumberStyles.None, CultureInfo.InvariantCulture, out var sequence))
-            {
-                return ProblemDetailsHelpers.CreateAdminProblem(context,
-                    StatusCodes.Status400BadRequest, "Expected cursor=alerts:<sequence>.");
-            }
-            after = sequence;
+            return ProblemDetailsHelpers.CreateAdminProblem(context,
+                StatusCodes.Status400BadRequest, "Expected cursor=alerts:<sequence>.");
         }
 
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
@@ -190,6 +183,22 @@ internal static class StreamingOperationsEndpoints
         }
 
         return Results.Empty;
+    }
+
+    private static bool TryParseAlertCursor(string cursor, out long? after)
+    {
+        after = null;
+        if (string.IsNullOrEmpty(cursor))
+        {
+            return true;
+        }
+        if (!cursor.StartsWith("alerts:", StringComparison.Ordinal) ||
+            !long.TryParse(cursor.AsSpan(7), NumberStyles.None, CultureInfo.InvariantCulture, out var sequence))
+        {
+            return false;
+        }
+        after = sequence;
+        return true;
     }
 
     private static byte[] SerializeAlertFrame(Honua.Core.Features.Alerts.Domain.AlertEventEnvelope alertEvent,
