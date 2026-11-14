@@ -35,7 +35,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 /// layer's access policy, and is parameter-safe (no raw SQL).
 /// </summary>
 [Protocol(TestProtocols.MapServer)]
-public sealed class MapServerDynamicJoinTests
+public sealed class MapServerDynamicJoinTests : IClassFixture<MapServerDynamicJoinTests.Fixture>
 {
     internal const string ServiceName = "join-map";
     private const string WorkspaceId = "analytics-workspace";
@@ -47,6 +47,20 @@ public sealed class MapServerDynamicJoinTests
     // Right layer maps to TestFeatureStore layer 99 (5 features, objectid 1..5 + string "id"/"name").
     private const int RightLayerId = 1;
     private const int RightStorageId = 99;
+
+    private readonly Fixture _hosts;
+
+    public MapServerDynamicJoinTests(Fixture hosts) => _hosts = hosts;
+
+    // Read-only cases against an anonymous right layer share one host. The temporal case
+    // rewrites stored rows and the restricted case needs a different policy, so both start their own.
+    public sealed class Fixture : IDisposable
+    {
+        public WebApplicationFactory<Program> AnonymousRightLayer { get; } =
+            CreateFactory(rightLayerAnonymous: true);
+
+        public void Dispose() => AnonymousRightLayer.Dispose();
+    }
 
     [IntegrationTest]
     [Operation(Operations.Identify)]
@@ -102,8 +116,7 @@ public sealed class MapServerDynamicJoinTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
     public async Task Identify_WithLeftOuterJoin_ReturnsQualifiedJoinedAttributes()
     {
-        using var factory = CreateFactory(rightLayerAnonymous: true);
-        using var client = factory.CreateClient();
+        using var client = _hosts.AnonymousRightLayer.CreateClient();
 
         var dynamicLayers = Uri.EscapeDataString(BuildJoinDynamicLayers("esriLeftOuterJoin"));
         var response = await client.GetAsync(
@@ -132,8 +145,7 @@ public sealed class MapServerDynamicJoinTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
     public async Task Identify_WithInnerJoinAndNoMatch_DropsUnmatchedLeftFeatures()
     {
-        using var factory = CreateFactory(rightLayerAnonymous: true);
-        using var client = factory.CreateClient();
+        using var client = _hosts.AnonymousRightLayer.CreateClient();
 
         // Join on a key that never matches (left objectid vs right "id" string values like "alpha-1").
         var dynamicLayers = Uri.EscapeDataString(BuildJoinDynamicLayers(
@@ -180,8 +192,7 @@ public sealed class MapServerDynamicJoinTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
     public async Task DynamicLayer_WithJoinTable_ReportsQualifiedJoinedFields()
     {
-        using var factory = CreateFactory(rightLayerAnonymous: true);
-        using var client = factory.CreateClient();
+        using var client = _hosts.AnonymousRightLayer.CreateClient();
 
         var layer = Uri.EscapeDataString(BuildJoinLayer("esriLeftOuterJoin"));
         var response = await client.GetAsync(
@@ -209,8 +220,7 @@ public sealed class MapServerDynamicJoinTests
         // A join key is restricted to a plain field identifier; a key that is not a bare identifier
         // (here, a qualified name with a dot) must be rejected at validation, never interpolated
         // into a query.
-        using var factory = CreateFactory(rightLayerAnonymous: true);
-        using var client = factory.CreateClient();
+        using var client = _hosts.AnonymousRightLayer.CreateClient();
 
         var dynamicLayers = Uri.EscapeDataString(BuildJoinDynamicLayers(
             "esriLeftOuterJoin",
