@@ -531,9 +531,9 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         providers.Should().Contain(provider =>
             provider.GetProperty("name").GetString() == "Example producer" &&
             provider.GetProperty("roles")[0].GetString() == "producer");
-        providers.Should().Contain(provider =>
-            provider.GetProperty("name").GetString() == "Example data contact" &&
-            !provider.TryGetProperty("roles", out _));
+        var contact = providers.Should().ContainSingle(provider =>
+            provider.GetProperty("name").GetString() == "Example data contact").Which;
+        contact.TryGetProperty("roles", out _).Should().BeFalse();
     }
 
     [IntegrationTest]

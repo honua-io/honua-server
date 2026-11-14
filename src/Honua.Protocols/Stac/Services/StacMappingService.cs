@@ -167,7 +167,7 @@ internal sealed class StacMappingService
             {
                 MetadataV2DescriptiveCodes.PublisherRole => StacConstants.ProviderRoles.Producer,
                 "processor" => StacConstants.ProviderRoles.Processor,
-                _ => StacConstants.ProviderRoles.Host,
+                _ => null,
             };
             var existing = providers.FindIndex(provider => string.Equals(provider.Name, name, StringComparison.OrdinalIgnoreCase));
             if (existing >= 0)
@@ -175,13 +175,19 @@ internal sealed class StacMappingService
                 var provider = providers[existing];
                 providers[existing] = provider with
                 {
-                    Roles = (provider.Roles ?? []).Append(role).Distinct(StringComparer.Ordinal).ToImmutableArray(),
+                    Roles = role is null ? provider.Roles
+                        : (provider.Roles ?? []).Append(role).Distinct(StringComparer.Ordinal).ToImmutableArray(),
                     Url = provider.Url ?? contact.Url,
                 };
             }
             else
             {
-                providers.Add(new StacProvider { Name = name, Roles = ImmutableArray.Create(role), Url = contact.Url });
+                providers.Add(new StacProvider
+                {
+                    Name = name,
+                    Roles = role is null ? null : ImmutableArray.Create(role),
+                    Url = contact.Url,
+                });
             }
         }
         if (metadata.Attribution is { } attribution && !providers.Any(provider =>
