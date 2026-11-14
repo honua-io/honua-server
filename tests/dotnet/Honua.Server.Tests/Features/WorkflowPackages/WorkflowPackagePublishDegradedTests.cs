@@ -16,24 +16,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.WorkflowPackages;
 
-/// <summary>
-/// honua-server#3585: publishing a workflow package to a <c>Schedule</c> target used to return
-/// <c>200 OK</c> on a host without a durable workflow store while silently skipping the one durable write that makes
-/// the publication real — the compiled <c>WorkflowDefinition</c> in
-/// <c>IWorkflowDefinitionStore</c>. The response advertised a <c>workflowDefinitionId</c> and an
-/// <c>Active</c> status for a definition that was never persisted and that no scheduler existed to
-/// fire, which is a fabricated success under the 2026.1 arc invariant (a skipped write cannot
-/// satisfy a write step). The publish must instead refuse with the machine-readable
-/// capability-unavailable receipt (honua-release#202) that geoprocessing submission and the
-/// proposal control plane already emit.
-/// </summary>
-/// <remarks>
-/// A <see cref="WebAppFixture"/> test host registers its data source after the feature graph, so
-/// <c>OrchestrationServiceCollectionExtensions.AddOrchestration</c> sees no system database and
-/// registers no <see cref="IWorkflowDefinitionStore"/> — exactly the degraded composition under
-/// test. The durable path (store present, definition actually persisted) is covered by
-/// <c>WorkflowPackageEndpointsTests</c>, which supplies the store.
-/// </remarks>
+// A Schedule publication is real only once its compiled WorkflowDefinition reaches
+// IWorkflowDefinitionStore. A host without that store must refuse with the capability-unavailable
+// receipt that geoprocessing submission and the proposal control plane emit, rather than return
+// 200 with a workflowDefinitionId and an Active status that no scheduler would ever fire.
+// A WebAppFixture test host registers its data source after the feature graph, so AddOrchestration
+// sees no system database and registers no store: the degraded composition under test.
+// WorkflowPackageEndpointsTests covers the durable path.
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ProcessExecution)]

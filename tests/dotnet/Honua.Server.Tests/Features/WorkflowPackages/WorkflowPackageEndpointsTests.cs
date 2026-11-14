@@ -73,7 +73,7 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IMetadataReleaseService>(_releaseService);
                 // Stand in for the PostgreSQL IWorkflowDefinitionStore that AddOrchestration composes
                 // only when the host has a system database. Without it a Schedule publication has no
-                // durable receipt and is refused (#3585); these tests cover the durable path.
+                // durable receipt and is refused; these tests cover the durable path.
                 // WorkflowPackagePublishDegradedTests covers the absent case.
                 services.RemoveAll<IWorkflowDefinitionStore>();
                 services.AddSingleton<IWorkflowDefinitionStore>(_definitionStore);
