@@ -22,6 +22,22 @@ contracts = json.loads((ROOT / "scripts/ci/fixtures/full-run-capacity-contracts.
 # Images the unsplit parent selected before its capacity split. Every child must keep them, and
 # every split parent must be listed, so a renamed child cannot silently lose its preparation.
 PARENT_IMAGES = {
+    "Core and Cloud Contracts": ["ryuk", "postgis16", "postgis18"],
+    "STAC and API Governance": [],
+    "Server Features Console Sessions and Access": [],
+    "Server Features Console and Alerts": [],
+    "OGC API Maps Rendering and Records": [],
+    "OGC API Tiles Coverages and Processes": ["ryuk", "redis"],
+    "OGC API Tiles Endpoints and CRS": [],
+    "GeoServices Geometry VectorTile and Versioning": [],
+    "GeoServices Versioning": [],
+    "GeoServices ImageServer": [],
+    "GeoServices Catalog and ImageServer Support": [],
+    "GeoServices ImageServer Rendering and Support": [],
+    "GeoServices ImageServer Raster Rendering": [],
+    "Raster Serving Scene Geometry and Terrain": [],
+    "Elevation and Terrain Analysis": [],
+
     "GeoServices GPServer and NAServer": ["ryuk", "redis"],
     "MCP and Sessions": ["ryuk", "redis"],
     "Migration": ["ryuk", "redis"],
@@ -39,7 +55,7 @@ PARENT_IMAGES = {
 assert {contract["originalShard"]["name"] for contract in contracts} == set(PARENT_IMAGES), "Unlisted split parent."
 cases = {child: PARENT_IMAGES[contract["originalShard"]["name"]]
          for contract in contracts for child in contract["children"]}
-cases.update({"Scene": [], "Protocol Units": [], "Core and Cloud Contracts": ["ryuk", "postgis16", "postgis18"]})
+cases.update({"Scene": [], "Protocol Units": []})
 for name, expected in cases.items():
     result = subprocess.run(["bash", "-c", script], env={**os.environ, "SERVER_SHARD": name},
                             check=True, capture_output=True, text=True)

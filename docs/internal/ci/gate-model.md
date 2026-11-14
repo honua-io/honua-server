@@ -1,5 +1,24 @@
 # CI Gate Model
 
+Fifteen additional over-budget parents now partition into 43 children to restore
+PR ownership of source paths. The cuts use the passing TRX of full run
+`43580101834`: whole-class intervals, with whole-method intervals where a class
+alone exceeds the available budget. Each estimate adds the observed parent job
+overhead (job duration minus TRX duration), rounds up to a tenth of a minute,
+and sums overlapping intervals conservatively. Initial estimates are at most
+9.5 minutes; they are not measured child runtimes. The next passing full run
+must refresh their ranks before claiming a measured improvement.
+
+Each child inherits the parent's source paths, project and execution limits.
+Explicit selections and a residual complement preserve current and future tests;
+`test-full-run-capacity-partitions.py` checks conservation and mutation rejection.
+The existing affected-shard count and aggregate time budgets still apply.
+`test-pr-owner-coverage.py` rejects any newly uncovered shard source path.
+There are still 65 older paths with no owner fitting the PR shard budget, listed
+in `scripts/ci/fixtures/pr-owner-coverage-debt.json`; this guard records that debt
+explicitly and does not claim complete PR coverage. The fifteen-parent split
+restores budgeted ownership of 63 previously uncovered paths.
+
 The latest full-run capacity audit partitions eleven additional parents into 26
 children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
 Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,

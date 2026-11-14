@@ -13,7 +13,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import expected_rank
+from shard_capacity_partition import expected_rank, capacity_split_names
 
 
 SCRIPT = Path(__file__).with_name("check-server-test-shard-coverage.py")
@@ -517,11 +517,11 @@ def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
     ]
     assert len(raster) >= 7, raster
     for fqn in raster:
-        owners = [
-            name for name, node in parsed.items()
-            if classes[fqn]["csproj"] in csprojs[name] and MODULE._eval(node, classes[fqn]["fqn"])
-        ]
-        assert owners == ["Raster Serving Scene Geometry and Terrain"], (fqn, owners)
+        for method in classes[fqn]["methods"] | {"FutureRegressionTest"}:
+            subject = classes[fqn]["fqn"] + "." + method
+            owners = [name for name, node in parsed.items()
+                      if classes[fqn]["csproj"] in csprojs[name] and MODULE._eval(node, subject)]
+            assert len(owners) == 1 and owners[0] in capacity_split_names(config, "Raster Serving Scene Geometry and Terrain"), (subject, owners)
 
 
 def test_studio_dashboard_mcp_integration_has_one_server_assembly_owner() -> None:
@@ -568,12 +568,12 @@ def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
         fqn = f"Honua.Server.Tests.{name}"
         assert classes[f"{KNOWN}::{fqn}"]["csproj"] == KNOWN
         assert classes[f"{KNOWN}::{fqn}"]["has_tests"]
-        owners = [
-            shard["name"] for shard in config["shards"]
-            if classes[f"{KNOWN}::{fqn}"]["csproj"] in MODULE.shard_projects(shard)
-            and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), fqn)
-        ]
-        assert owners == [owner], (fqn, owners)
+        for method in classes[f"{KNOWN}::{fqn}"]["methods"] | {"FutureRegressionTest"}:
+            subject = fqn + "." + method
+            owners = [shard["name"] for shard in config["shards"]
+                      if KNOWN in MODULE.shard_projects(shard)
+                      and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), subject)]
+            assert len(owners) == 1 and owners[0] in capacity_split_names(config, owner), (subject, owners)
 
 
 test_core_capacity_moves_have_exactly_one_server_assembly_owner()
