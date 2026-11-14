@@ -4,7 +4,7 @@
 CREATE OR REPLACE FUNCTION $HonuaSchema$.capture_observation_realtime_events()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $function$
+AS $$
 DECLARE
     context_text text := current_setting('honua.observation_scope', true);
     context jsonb;
@@ -69,14 +69,14 @@ BEGIN
     END IF;
     RETURN NULL;
 END;
-$function$;
+$$;
 
 -- Statement triggers are not cloned onto partitions. Partition provisioning must call this
 -- installer after CREATE/ATTACH PARTITION, in the same transaction. No superuser DDL hook is needed.
 CREATE OR REPLACE FUNCTION $HonuaSchema$.install_observation_realtime_triggers()
 RETURNS void
 LANGUAGE plpgsql
-AS $function$
+AS $$
 DECLARE
     relation regclass;
 BEGIN
@@ -93,14 +93,14 @@ BEGIN
         END IF;
     END LOOP;
 END;
-$function$;
+$$;
 
 -- This row trigger is cloned automatically onto future partitions. Fail closed until their
 -- statement capture trigger is installed, rather than committing observations with a replay gap.
 CREATE OR REPLACE FUNCTION $HonuaSchema$.require_observation_realtime_capture()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $function$
+AS $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_catalog.pg_trigger
@@ -112,11 +112,11 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$function$;
+$$;
 
 SELECT $HonuaSchema$.install_observation_realtime_triggers();
 
-DO $install$
+DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_catalog.pg_trigger
@@ -128,4 +128,4 @@ BEGIN
         FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.require_observation_realtime_capture();
     END IF;
 END;
-$install$;
+$$;
