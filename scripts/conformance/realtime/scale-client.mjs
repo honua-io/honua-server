@@ -170,9 +170,7 @@ async function writeAtRate(profile, context) {
   return performance.now() - start;
 }
 
-export async function runScale(input) {
-  const profile = { subscribers: 2000, editsPerSecond: 50, seconds: 600, settleMilliseconds: 60_000, ...input };
-  validate(profile);
+function createContext(profile) {
   const abort = new AbortController();
   setMaxListeners(0, abort.signal);
   // Native HTTP streams share no server thread pool. Run this process on a client host.
@@ -182,6 +180,46 @@ export async function runScale(input) {
     fail: error => { if (!context.stopping && !abort.signal.aborted) abort.abort(error); },
   };
   context.started = new Float64Array(context.total);
+  return context;
+}
+
+async function waitForDelivery(context, subscribers, settleMilliseconds) {
+  const settle = setTimeout(() => context.fail(new Error('Delivery settle timeout')), settleMilliseconds);
+  try {
+    await Promise.race([
+      Promise.all(subscribers.map(subscriber => subscriber.done)),
+      new Promise((_, reject) => {
+        if (context.abort.signal.aborted) reject(context.abort.signal.reason);
+        else context.abort.signal.addEventListener('abort', () => reject(context.abort.signal.reason), { once: true });
+      }),
+    ]);
+  } finally { clearTimeout(settle); }
+}
+
+function buildResult(profile, context, metrics) {
+  const p95 = percentile(context.buckets, 0.95);
+  const clientCpu = process.cpuUsage(metrics.clientCpuStart);
+  return {
+    format: 'honua.realtime-scale-client.v1', marker: context.marker,
+    subscribers: profile.subscribers, edits: context.total, seconds: profile.seconds,
+    requestedEditsPerSecond: profile.editsPerSecond, writeMilliseconds: metrics.writeMilliseconds,
+    maximumScheduleLagMilliseconds: context.maximumScheduleLag,
+    clientCpuCoreEquivalentPercent: (clientCpu.user + clientCpu.system) / ((performance.now() - metrics.clientStarted) * 10),
+    clientEventLoopP95Milliseconds: metrics.eventLoopDelay.percentile(95) / 1_000_000,
+    deliveries: metrics.subscribers.reduce((sum, subscriber) => sum + subscriber.received, 0),
+    requestToEventP95Milliseconds: profile.subscribers ? p95 : null,
+    requestToEventMaximumMilliseconds: profile.subscribers ? context.maximum : null,
+    deliveryPassed: context.maximumScheduleLag <= 1000 && (!profile.subscribers || p95 <= 1000),
+    scaleGatePassed: false,
+    missingEvidence: ['per-task listener count and reconnects', 'database CPU delta against zero-subscriber baseline', 'independent task identity'],
+  };
+}
+
+export async function runScale(input) {
+  const profile = { subscribers: 2000, editsPerSecond: 50, seconds: 600, settleMilliseconds: 60_000, ...input };
+  validate(profile);
+  const context = createContext(profile);
+  const { abort } = context;
   const subscribers = [];
   const clientCpuStart = process.cpuUsage();
   const clientStarted = performance.now();
@@ -195,34 +233,12 @@ export async function runScale(input) {
       await subscriber.ready;
     }
     const writeMilliseconds = await writeAtRate(profile, context);
-    const settle = setTimeout(() => context.fail(new Error('Delivery settle timeout')), profile.settleMilliseconds);
-    try {
-      await Promise.race([
-        Promise.all(subscribers.map(subscriber => subscriber.done)),
-        new Promise((_, reject) => {
-          if (abort.signal.aborted) reject(abort.signal.reason);
-          else abort.signal.addEventListener('abort', () => reject(abort.signal.reason), { once: true });
-        }),
-      ]);
-    } finally { clearTimeout(settle); }
+    await waitForDelivery(context, subscribers, profile.settleMilliseconds);
     await delay(500, abort.signal);
     if (abort.signal.aborted) throw abort.signal.reason;
-    const p95 = percentile(context.buckets, 0.95);
-    const clientCpu = process.cpuUsage(clientCpuStart);
-    return {
-      format: 'honua.realtime-scale-client.v1', marker: context.marker,
-      subscribers: profile.subscribers, edits: context.total, seconds: profile.seconds,
-      requestedEditsPerSecond: profile.editsPerSecond, writeMilliseconds,
-      maximumScheduleLagMilliseconds: context.maximumScheduleLag,
-      clientCpuCoreEquivalentPercent: (clientCpu.user + clientCpu.system) / ((performance.now() - clientStarted) * 10),
-      clientEventLoopP95Milliseconds: eventLoopDelay.percentile(95) / 1_000_000,
-      deliveries: subscribers.reduce((sum, subscriber) => sum + subscriber.received, 0),
-      requestToEventP95Milliseconds: profile.subscribers ? p95 : null,
-      requestToEventMaximumMilliseconds: profile.subscribers ? context.maximum : null,
-      deliveryPassed: context.maximumScheduleLag <= 1000 && (!profile.subscribers || p95 <= 1000),
-      scaleGatePassed: false,
-      missingEvidence: ['per-task listener count and reconnects', 'database CPU delta against zero-subscriber baseline', 'independent task identity'],
-    };
+    return buildResult(profile, context, {
+      subscribers, writeMilliseconds, clientCpuStart, clientStarted, eventLoopDelay,
+    });
   } finally {
     context.stopping = true;
     eventLoopDelay.disable();
