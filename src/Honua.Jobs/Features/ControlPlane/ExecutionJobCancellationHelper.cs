@@ -60,10 +60,6 @@ internal readonly record struct RemoteCancelStampResult(
 
 internal static class ExecutionJobCancellationHelper
 {
-    public static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 
     public static bool HasSubmittedProviderMarker(ExecutionJobRecord job)
         => !string.IsNullOrEmpty(job.ProviderOperationId)
@@ -102,7 +98,7 @@ internal static class ExecutionJobCancellationHelper
             return new(PreSubmissionCancelOutcome.Cancelled, fresh);
         }
 
-        if (IsTerminal(fresh.Status))
+        if (fresh.Status.IsTerminal())
         {
             return new(PreSubmissionCancelOutcome.TerminalConflict, fresh);
         }
@@ -130,7 +126,7 @@ internal static class ExecutionJobCancellationHelper
                 return new(ExecutionJobCancellationState.Cancelled, current);
             }
 
-            if (IsTerminal(current.Status))
+            if (current.Status.IsTerminal())
             {
                 return new(ExecutionJobCancellationState.TerminalConflict, current);
             }
@@ -184,7 +180,7 @@ internal static class ExecutionJobCancellationHelper
             return new(ExecutionJobCancellationState.Cancelled, current);
         }
 
-        if (IsTerminal(current.Status))
+        if (current.Status.IsTerminal())
         {
             return new(ExecutionJobCancellationState.TerminalConflict, current);
         }
@@ -210,7 +206,7 @@ internal static class ExecutionJobCancellationHelper
         var current = job;
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            if (IsTerminal(current.Status))
+            if (current.Status.IsTerminal())
             {
                 return new(RemoteCancelStampOutcome.TerminalConflict, current, current.Status);
             }
@@ -240,7 +236,7 @@ internal static class ExecutionJobCancellationHelper
             current = fresh;
         }
 
-        if (IsTerminal(current.Status))
+        if (current.Status.IsTerminal())
         {
             return new(RemoteCancelStampOutcome.TerminalConflict, current, current.Status);
         }
@@ -269,7 +265,7 @@ internal static class ExecutionJobCancellationHelper
         var errorMessage = status == ExecutionJobStatus.Failed
             ? observation.Message ?? job.ErrorMessage
             : job.ErrorMessage;
-        var terminal = IsTerminal(status);
+        var terminal = status.IsTerminal();
         var newCancellationRequestedAt = terminal
             ? job.CancellationRequestedAt
             : (job.CancellationRequestedAt ?? now);
@@ -332,7 +328,7 @@ internal static class ExecutionJobCancellationHelper
             return new(BackendCancelApplyOutcome.Applied, fresh);
         }
 
-        if (IsTerminal(fresh.Status))
+        if (fresh.Status.IsTerminal())
         {
             return new(BackendCancelApplyOutcome.TerminalConflict, fresh, fresh.Status);
         }

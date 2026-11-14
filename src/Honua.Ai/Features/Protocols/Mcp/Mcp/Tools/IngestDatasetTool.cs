@@ -36,7 +36,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
 
     public const string ImportedPrimaryKey = "id";
 
-    private const int ImportedTargetSrid = 4326;
+    private const int GeocodedSourceSrid = 4326;
 
     private const string CsvFormat = "csv";
     private const string GeoJsonFormat = "geojson";
@@ -56,18 +56,15 @@ internal sealed partial class IngestDatasetTool : IMcpTool
     {
         Name = ToolName,
         Title = "Ingest dataset",
-        Description = "Load a small inline dataset (up to 4 MB) into the server as a database table that honua_publish_service can immediately "
-            + "publish as a queryable layer. Accepts format \"geojson\" (a GeoJSON FeatureCollection; coordinates are WGS84 lon/lat per RFC 7946) "
-            + "or \"csv\" (text with a header row; point geometry is read from longitude/latitude columns — auto-detected names "
-            + "lon/lng/long/longitude/x and lat/latitude/y, or set longitudeColumn/latitudeColumn explicitly — or from a WKT column named "
-            + "wkt/geom/geometry/shape; coordinate order is lon/lat and the coordinate CRS defaults to EPSG:4326, override with sourceSrid). "
-            + "For a CSV that only has addresses, either geocode it first with honua_geocode_addresses and ingest the returned lon/lat values, or "
-            + "set addressColumn to geocode server-side during ingest (up to 100 rows). addressColumn requires the Enterprise edition "
-            + "('geocoding.batch' entitlement); on Community and Pro the call is refused, so use coordinate columns or a GeoJSON payload there. "
-            + "Returns the {connectionId, schema, table} triple plus row count and per-row errors — pass those values straight to "
-            + "honua_publish_service (with the returned geometryColumn and primaryKey) to finish the CSV → geocode → ingest → publish workflow. "
-            + "Re-ingesting the same datasetName replaces that dataset. For data larger than 4 MB use the REST upload path "
-            + "(POST /api/v1/admin/import/upload).",
+        Description = "Load inline GeoJSON or CSV (up to 4 MB) into a database table for honua_publish_service. "
+            + "GeoJSON must be a FeatureCollection with WGS84 (EPSG:4326) lon/lat coordinates per RFC 7946. "
+            + "CSV needs a header row and longitude/latitude columns (auto-detected: lon/lng/long/longitude/x and lat/latitude/y; "
+            + "override with longitudeColumn/latitudeColumn), or a WKT column named wkt/geom/geometry/shape. "
+            + "Undeclared CRS requires sourceSrid. Omit targetSrid to keep the source CRS. "
+            + "For address-only CSV, first use honua_geocode_addresses, or set addressColumn for server-side geocoding "
+            + "(up to 100 rows; addressColumn requires the Enterprise edition and 'geocoding.batch'; Community and Pro must use coordinates or GeoJSON). "
+            + "Returns row count, per-row errors, and connectionId/schema/table/geometryColumn/primaryKey for honua_publish_service. "
+            + "Re-ingesting the same datasetName replaces it. Above 4 MB, use POST /api/v1/admin/import/upload.",
         InputSchema = McpToolSchemas.IngestDatasetArgumentSchema,
         OutputSchema = McpToolOutputSchemas.IngestDatasetOutputSchema,
         // Write tool: it creates (or replaces) a table in the catalog database.
@@ -121,8 +118,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 FileName = $"{validated.DatasetName}.{validated.Format}",
                 TableName = validated.DatasetName,
                 SourceKind = "mcp-inline",
-                SourceSrid = validated.SourceSrid,
-                TargetSrid = ImportedTargetSrid,
+                SourceSrid = validated.SourceSrid ?? (validated.AddressColumn is not null ? GeocodedSourceSrid : null),
+                TargetSrid = validated.TargetSrid,
                 OverwriteExisting = true,
                 CsvOptions = csvOptions
             };
@@ -172,10 +169,15 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 "'datasetName' is required and must be 1-63 characters of letters, digits, or underscores, not starting with a digit.");
         }
 
-        var sourceSrid = argument.SourceSrid ?? 4326;
-        if (sourceSrid <= 0)
+        var sourceSrid = argument.SourceSrid;
+        if (sourceSrid is <= 0)
         {
             throw new GeoprocessingValidationException("'sourceSrid' must be a positive SRID/WKID.");
+        }
+
+        if (argument.TargetSrid is <= 0)
+        {
+            throw new GeoprocessingValidationException("'targetSrid' must be a positive SRID/WKID.");
         }
 
         var longitudeColumn = NormalizeOption(argument.LongitudeColumn);
@@ -205,6 +207,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             argument.Data,
             datasetName,
             sourceSrid,
+            argument.TargetSrid,
             longitudeColumn,
             latitudeColumn,
             addressColumn);
@@ -247,7 +250,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         var allowFailover = LicenseGate
             .CheckEntitlement(httpContext.RequestServices, GeocodeTool.FailoverEntitlementKey)
             .IsActive;
-        var sourceSrid = validated.SourceSrid;
+        var sourceSrid = validated.SourceSrid ?? GeocodedSourceSrid;
         return new CsvImportOptions
         {
             AddressColumn = validated.AddressColumn,
@@ -332,7 +335,10 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             ConnectionId = catalogConnection.ConnectionId,
             Schema = importResult.Schema,
             Table = importResult.PhysicalTableName ?? importResult.TableName,
-            Srid = ImportedTargetSrid,
+            Srid = importResult.StoredSrid,
+            SourceSrid = importResult.SourceSrid,
+            StoredSrid = importResult.StoredSrid,
+            Reprojected = importResult.Reprojected,
             GeometryColumn = ImportedGeometryColumn,
             PrimaryKey = ImportedPrimaryKey,
             Warnings = warnings,
@@ -363,7 +369,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         string Format,
         string Data,
         string DatasetName,
-        int SourceSrid,
+        int? SourceSrid,
+        int? TargetSrid,
         string? LongitudeColumn,
         string? LatitudeColumn,
         string? AddressColumn);

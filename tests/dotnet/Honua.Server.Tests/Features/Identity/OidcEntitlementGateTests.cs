@@ -4,10 +4,16 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Infrastructure.Monitoring;
+using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Identity;
 
@@ -23,16 +29,21 @@ namespace Honua.Server.Tests.Features.Identity;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]
-public sealed class OidcEntitlementGateTests
+public sealed class OidcEntitlementGateTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     private const string ProvidersRoute = "/api/v1/admin/oidc/providers";
 
-    private static WebAppFixture CreateFixture(string? devGrantEdition)
+    private static WebAppFixture CreateFixture(string? devGrantEdition, ControlPlaneStateHarness harness)
         => new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IOidcProviderStore>();
+                    services.AddSingleton<IOidcProviderStore>(harness.CreateOidcStore());
+                });
                 if (devGrantEdition is not null)
                 {
                     builder.UseSetting("Licensing:DevGrantEdition", devGrantEdition);
@@ -52,7 +63,8 @@ public sealed class OidcEntitlementGateTests
     [Endpoint("GET /api/v1/admin/oidc/providers")]
     public async Task ListProviders_WithoutEntitlement_Returns402WithEntitlementDetail()
     {
-        var fixture = CreateFixture(devGrantEdition: null);
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OidcEntitlementGateTests));
+        var fixture = CreateFixture(devGrantEdition: null, harness);
         await fixture.InitializeAsync();
         try
         {
@@ -74,7 +86,8 @@ public sealed class OidcEntitlementGateTests
     [Endpoint("POST /api/v1/admin/oidc/providers")]
     public async Task Providers_WithProEntitlement_AllowsSingleProviderButBlocksSecond()
     {
-        var fixture = CreateFixture(devGrantEdition: "Pro");
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OidcEntitlementGateTests));
+        var fixture = CreateFixture(devGrantEdition: "Pro", harness);
         await fixture.InitializeAsync();
         try
         {
@@ -86,6 +99,8 @@ public sealed class OidcEntitlementGateTests
 
             using var firstCreate = await client.PostAsJsonAsync(ProvidersRoute, CreateProviderPayload("first"));
             Assert.Equal(HttpStatusCode.Created, firstCreate.StatusCode);
+            Assert.DoesNotContain(fixture.Services.GetRequiredService<RecentErrorBuffer>().Snapshot(),
+                error => error.Path == ProvidersRoute && error.StatusCode == 402);
 
             // A second provider requires the Enterprise identity.oidc-multi-provider
             // entitlement; the 402 must name that key (not identity.oidc, which Pro has).
@@ -109,7 +124,8 @@ public sealed class OidcEntitlementGateTests
         // never fire for it — including for the equally valid trailing-slash form, which routing
         // still matches. Identifying the create route by a "/test" path suffix classified
         // `…/providers/{id}/test/` as a create and 402'd a valid test request.
-        var fixture = CreateFixture(devGrantEdition: "Pro");
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OidcEntitlementGateTests));
+        var fixture = CreateFixture(devGrantEdition: "Pro", harness);
         await fixture.InitializeAsync();
         try
         {
@@ -150,7 +166,8 @@ public sealed class OidcEntitlementGateTests
         // The provider-count check has to be atomic with the create: concurrent Pro requests could
         // otherwise all observe an empty store, all pass the preflight, and all be accepted with
         // distinct generated IDs — bypassing the Enterprise multi-provider entitlement entirely.
-        var fixture = CreateFixture(devGrantEdition: "Pro");
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OidcEntitlementGateTests));
+        var fixture = CreateFixture(devGrantEdition: "Pro", harness);
         await fixture.InitializeAsync();
         try
         {
@@ -192,7 +209,8 @@ public sealed class OidcEntitlementGateTests
     [Endpoint("POST /api/v1/admin/oidc/providers")]
     public async Task Providers_WithEnterpriseEntitlement_AllowsMultipleProviders()
     {
-        var fixture = CreateFixture(devGrantEdition: "Enterprise");
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OidcEntitlementGateTests));
+        var fixture = CreateFixture(devGrantEdition: "Enterprise", harness);
         await fixture.InitializeAsync();
         try
         {

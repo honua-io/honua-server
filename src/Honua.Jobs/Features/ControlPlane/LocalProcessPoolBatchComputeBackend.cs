@@ -164,7 +164,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             // launches cleanly instead of colliding on "already tracked". It also bounds _executions and
             // reclaims orphaned working directories. A subsequent observe after eviction falls through to
             // the not-tracked branch below, which echoes the persisted terminal status on the job record.
-            if (IsTerminal(snapshot.Status))
+            if (snapshot.Status.IsTerminal())
             {
                 EvictExecution(job.OperationId);
             }
@@ -188,7 +188,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         // Already-terminal record whose execution was observed and evicted on a prior poll: echo the
         // persisted terminal status rather than declaring the process lost (which would flip a Succeeded
         // job to Failed).
-        if (IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             return Task.FromResult(new BatchComputeObservation
             {
@@ -339,7 +339,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         // example when a reconciler requeue lands before the terminal status was observed and evicted).
         // Evict a stale terminal entry so the retry launches cleanly; a still-running entry is a genuine
         // double-launch and must fail.
-        if (_executions.TryGetValue(job.OperationId, out var existing) && IsTerminal(existing.Snapshot().Status))
+        if (_executions.TryGetValue(job.OperationId, out var existing) && existing.Snapshot().Status.IsTerminal())
         {
             EvictExecution(job.OperationId);
         }
@@ -426,9 +426,6 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             // The backend was disposed while this monitor was still finishing; nothing to release.
         }
     }
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 
     private void EvictExecution(string operationId)
     {

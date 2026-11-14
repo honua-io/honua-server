@@ -49,6 +49,7 @@ internal static partial class FieldMaskPolicyEndpoints
 
         group.MapPost("/", HandleCreatePolicy)
             .WithDisplayName("Create Field-Mask Policy")
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapGet("/{id:guid}", HandleGetPolicy)
@@ -57,7 +58,8 @@ internal static partial class FieldMaskPolicyEndpoints
 
         group.MapDelete("/{id:guid}", HandleDeletePolicy)
             .WithDisplayName("Delete Field-Mask Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
     }
 
     private static FieldMaskPolicyResponse ToResponse(FieldMaskPolicy p) => new()

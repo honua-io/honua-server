@@ -171,6 +171,13 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         return await _store.DeleteDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default)
+    {
+        using var activity = ActivitySource.StartActivity("studio.package.draft.delete");
+        activity?.SetTag("studio.draft.id", draftId.ToString("D"));
+        return await _store.DeleteDraftAsync(draftId, expectedGeneration, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <inheritdoc />
     public async Task<StudioValidationSummary?> ValidateDraftAsync(
         Guid draftId,

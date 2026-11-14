@@ -13,7 +13,7 @@ public interface IOidcProviderStore
 
     Task<OidcProviderConfiguration> CreateProviderAsync(OidcProviderConfiguration provider, CancellationToken cancellationToken = default);
 
-    Task<OidcProviderConfiguration?> UpdateProviderAsync(OidcProviderConfiguration provider, CancellationToken cancellationToken = default);
+    Task<OidcProviderConfiguration?> UpdateProviderAsync(Guid providerId, Func<OidcProviderConfiguration, OidcProviderConfiguration> update, CancellationToken cancellationToken = default);
 
     Task<bool> DeleteProviderAsync(Guid providerId, CancellationToken cancellationToken = default);
 

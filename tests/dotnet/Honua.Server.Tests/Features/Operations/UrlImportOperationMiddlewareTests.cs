@@ -58,19 +58,22 @@ public sealed class UrlImportOperationMiddlewareTests
     {
         using var fixture = new Fixture();
         var first = fixture.Context();
-        var retry = fixture.Context(body: """{"forceBackground":true,"targetSrid":4326,"overwriteExisting":false,"trackProgress":false,"tableName":"fixture","sourceUrl":"https://example.s3.amazonaws.com/fixture.geojson"}""");
+        var retry = fixture.Context(body: """{"forceBackground":true,"targetSrid":null,"overwriteExisting":false,"trackProgress":false,"tableName":"fixture","sourceUrl":"https://example.s3.amazonaws.com/fixture.geojson"}""");
         await fixture.InvokeAsync(first);
         await fixture.InvokeAsync(retry);
+        Assert.Equal(202, first.Response.StatusCode);
+        Assert.Equal(202, retry.Response.StatusCode);
         Assert.Equal(ReadBody(first), ReadBody(retry));
         Assert.Equal(1, fixture.Actuations);
     }
 
     [Theory]
-    [InlineData("", 4326)]
+    [InlineData("", null)]
+    [InlineData(",\"targetSrid\":null", null)]
     [InlineData(",\"targetSrid\":4326", 4326)]
     [InlineData(",\"targetSrid\":3857", 3857)]
     [InlineData(",\"targetSrid\":0", 0)]
-    public void UrlRequestJson_DefaultTargetSrid_PreservesExplicitValues(string property, int expected)
+    public void UrlRequestJson_DefaultTargetSrid_PreservesExplicitValues(string property, int? expected)
     {
         var input = JsonSerializer.Deserialize(Body[..^1] + property + "}", ImportJsonContext.Default.ImportUrlImportRequest);
         Assert.NotNull(input);
@@ -78,6 +81,7 @@ public sealed class UrlImportOperationMiddlewareTests
     }
 
     [Theory]
+    [InlineData(4326)]
     [InlineData(3857)]
     [InlineData(0)]
     public async Task InvokeAsync_ChangedTargetSrid_ConflictsWithoutAnotherActuation(int targetSrid)

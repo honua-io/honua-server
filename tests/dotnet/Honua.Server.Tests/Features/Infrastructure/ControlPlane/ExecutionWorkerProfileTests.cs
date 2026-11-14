@@ -855,7 +855,7 @@ public sealed class ExecutionWorkerProfileTests
         {
             lock (_gate)
             {
-                if (_interleave is { } interleave && ExecutionJobReconciler.IsTerminal(job.Status)
+                if (_interleave is { } interleave && job.Status.IsTerminal()
                     && _jobs.TryGetValue(job.OperationId, out var before))
                 {
                     _interleave = null;
@@ -883,7 +883,7 @@ public sealed class ExecutionWorkerProfileTests
             lock (_gate)
             {
                 return Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values
-                    .Where(static job => !ExecutionJobReconciler.IsTerminal(job.Status))
+                    .Where(static job => !job.Status.IsTerminal())
                     .ToArray());
             }
         }

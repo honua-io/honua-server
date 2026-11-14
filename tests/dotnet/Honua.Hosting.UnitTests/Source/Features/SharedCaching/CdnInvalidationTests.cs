@@ -24,7 +24,7 @@ public sealed class CdnInvalidationTests
         await Invalidation().InvalidateEditedLayerAsync("Parcels", 3, CancellationToken.None);
 
         _cloudFront.Accepted.Should().ContainSingle().Which.Should().BeEquivalentTo(
-            "/tiles/3/*", "/ogc/*", "/rest/services/Parcels/*", "/rest/services/parcels/*");
+            "/tiles/3/*", "/ogc/*", "/stac/*", "/rest/services/Parcels/*", "/rest/services/parcels/*");
     }
 
     [UnitTest]

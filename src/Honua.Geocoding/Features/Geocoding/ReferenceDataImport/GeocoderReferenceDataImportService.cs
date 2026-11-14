@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using Honua.Core.Queries.Filters;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geocoding.Features.Geocoding.Services;
 using Microsoft.Extensions.Configuration;
@@ -170,7 +171,7 @@ internal sealed partial class GeocoderReferenceDataImportService(
         var header = enumerator.Current;
         var mapping = BuildColumnMapping(header, request.FieldMap, report);
 
-        var qualifiedTable = $"{Quote(config.Schema)}.{Quote(config.Table)}";
+        var qualifiedTable = $"{SqlIdentifier.QuoteIdentifier(config.Schema)}.{SqlIdentifier.QuoteIdentifier(config.Table)}";
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -558,8 +559,8 @@ internal sealed partial class GeocoderReferenceDataImportService(
                 address_type   text,
                 geom           geometry(Point, 4326) NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS {Quote(indexBase + "_geom")} ON {qualifiedTable} USING gist (geom);
-            CREATE INDEX IF NOT EXISTS {Quote(indexBase + "_search_text")} ON {qualifiedTable} (search_text text_pattern_ops);
+            CREATE INDEX IF NOT EXISTS {SqlIdentifier.QuoteIdentifier(indexBase + "_geom")} ON {qualifiedTable} USING gist (geom);
+            CREATE INDEX IF NOT EXISTS {SqlIdentifier.QuoteIdentifier(indexBase + "_search_text")} ON {qualifiedTable} (search_text text_pattern_ops);
             {legacySelfHeal}
             """;
 
@@ -661,10 +662,6 @@ internal sealed partial class GeocoderReferenceDataImportService(
                 $"{MaxIdentifierBytes}-byte identifier limit.");
         }
     }
-
-    // Identifiers are validated against the same strict pattern the local provider uses and then
-    // double-quoted, so schema/table configuration cannot inject SQL.
-    private static string Quote(string identifier) => "\"" + identifier + "\"";
 
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$")]
     private static partial Regex IdentifierRegex();

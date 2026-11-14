@@ -496,7 +496,7 @@ internal sealed class GeoprocessingJobDispatcher
             return new(RemoteCancelOutcome.NotRemote);
         }
 
-        if (GeoprocessingJobService.IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
                 _progressStore, job, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);

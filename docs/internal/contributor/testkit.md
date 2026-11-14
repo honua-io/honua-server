@@ -468,7 +468,7 @@ single fixture-backed scenario suite and emits a versioned report that
 
 ### Authoring scenarios
 
-Scenarios are JSON documents under `tests/dotnet/eval/scenarios/*.json`, deserialized
+Scenarios are JSON documents under `tests/fixtures/eval/*.json`, deserialized
 through the source-generated `EvalJsonContext` (AOT-safe, no runtime
 reflection). Each scenario declares:
 
@@ -497,7 +497,7 @@ reflection). Each scenario declares:
   that currently affects stage scoping)
 
 The loader resolves scenarios (in order) from `HONUA_EVAL_SCENARIO_ROOT`, then
-the `tests/dotnet/eval/scenarios/` directory under `Honua.sln`. When
+the `tests/fixtures/eval/` directory under `Honua.sln`. When
 `HONUA_EVAL_SCENARIO_ROOT` is set but points at a directory that does not
 exist, the loader raises `EvalScenarioException` instead of silently falling
 back to the bundled corpus so a typoed override cannot mask itself as a green

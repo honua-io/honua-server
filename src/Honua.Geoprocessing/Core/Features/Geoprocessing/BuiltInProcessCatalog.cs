@@ -1272,7 +1272,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("targetSchema", "Target Schema", "Optional schema for the imported/typed data. Defaults to the configured operational-data schema (honua_data).", ProcessParameterValueType.Text),
                 Param("sourceUrl", "Source URL", "Optional originating URL when the source was fetched from a remote object, recorded in provenance.", ProcessParameterValueType.Text),
                 Param("sourceSrid", "Source SRID", "Optional source spatial reference identifier when the source lacks embedded CRS metadata.", ProcessParameterValueType.Srid),
-                Param("targetSrid", "Target SRID", "Target spatial reference identifier for the imported geometries. Defaults to 4326.", ProcessParameterValueType.Srid),
+                Param("targetSrid", "Target SRID", "Optional target spatial reference identifier. Omit it to keep the source coordinate system; set it to reproject the imported geometries.", ProcessParameterValueType.Srid),
                 // Destination, never a source: the importer tiles INTO this layer and never
                 // reads it, so the submit gate must not demand a read grant on it
                 // (honua-server#3046 review).

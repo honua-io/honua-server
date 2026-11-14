@@ -409,7 +409,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
         self.assertEqual(result["receipt"]["verdict"], "incomplete_receipts")
 
     def test_historical_report_disposition_remains_unpromoted(self) -> None:
-        record = json.loads((ROOT / "docs/ci/affected-shards-disposition-20261027.json").read_text())
+        record = json.loads((ROOT / "eng/ci/fixtures/shard-promotion/mode.json").read_text())
         self.assertEqual(record["approved_mode"], "report")
         self.assertFalse(record["promotion_ready"])
         self.assertFalse(record["configuration"]["protection_was_edited"])

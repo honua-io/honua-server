@@ -22,7 +22,7 @@ public sealed class AlertsServiceCollectionExtensionsTests
     [InlineData("true", false)]
     [InlineData("true", true)]
     [InlineData("false", true)]
-    public void AddAlerts_TenantWorkersEnabled_RejectsBeforeAnyStoreOrReceiverCanBeUsed(
+    public async Task AddAlerts_TenantWorkersEnabled_RejectsBeforeAnyStoreOrReceiverCanBeUsed(
         string? tenantResolution, bool schemaRouting)
     {
         var services = CreateServices(tenantResolution, schemaRouting, alertsEnabled: true, previewEnabled: true);
@@ -31,8 +31,8 @@ public sealed class AlertsServiceCollectionExtensionsTests
         // Execute the host's actual ValidateOnStart hook. No database or sink can be
         // invoked before this rejection; the absence of those dependencies must not
         // be the reason startup fails. Both workers resolve this same options value.
-        var validate = () => provider.GetRequiredService<IStartupValidator>().Validate();
-        validate.Should().Throw<OptionsValidationException>()
+        Func<Task> validate = () => provider.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(CancellationToken.None);
+        (await validate.Should().ThrowAsync<OptionsValidationException>())
             .Which.Failures.Should().ContainSingle()
             .Which.Should().Be("Alert processing cannot run with tenant resolution or schema routing enabled: " +
                 "alert evaluation and delivery stores are instance-wide. Set Alerts:Enabled=false " +
@@ -48,12 +48,12 @@ public sealed class AlertsServiceCollectionExtensionsTests
     [InlineData("false", false, true, true, true)]
     [InlineData("true", true, false, true, false)]
     [InlineData(null, false, true, false, false)]
-    public void AddAlerts_SafeConfiguration_PreservesExplicitWorkerState(
+    public async Task AddAlerts_SafeConfiguration_PreservesExplicitWorkerState(
         string? tenantResolution, bool schemaRouting, bool alertsEnabled, bool previewEnabled, bool expectedEnabled)
     {
         var services = CreateServices(tenantResolution, schemaRouting, alertsEnabled, previewEnabled);
         using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<IStartupValidator>().Validate();
+        await provider.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(CancellationToken.None);
         provider.GetRequiredService<IOptions<AlertOptions>>().Value.Enabled.Should().Be(expectedEnabled);
     }
 

@@ -115,7 +115,7 @@ internal sealed class McpJobProgressBridge
                 return;
             }
 
-            var terminal = IsTerminal(record.Status);
+            var terminal = record.Status.IsTerminal();
             var phase = record.CurrentPhase ?? record.Status.ToString();
             var progress = record.PercentComplete ?? (terminal ? ProgressTotal : 0d);
 
@@ -139,7 +139,4 @@ internal sealed class McpJobProgressBridge
             }
         }
     }
-
-    private static bool IsTerminal(ExecutionJobStatus status) =>
-        status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 }

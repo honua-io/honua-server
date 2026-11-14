@@ -26,8 +26,9 @@ MCP surface before proposing remote inspection, retries, or deployment actions.
 
 ## Access and execution prerequisites
 
-- Authenticate tool calls and resource reads. The local stack's admin key is
-  `quickstart-admin-password`; use the configured API key or bearer identity elsewhere.
+- Authenticate tool calls and resource reads with an agent key that carries the
+  `agent` grant and only the grants the task needs, not the bootstrap admin password.
+  See [agent changes need one human approval](../connect/ai-agents-mcp.md#agent-changes-need-one-human-approval).
 - Process execution needs `Process.Execute`. Mutating processes and custom code
   require their additional grants. Approval requirements depend on the operation
   and configured policy; the bounded buffer below is non-destructive.

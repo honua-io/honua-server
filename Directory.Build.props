@@ -28,12 +28,23 @@
     <TargetFramework>$(HonuaTargetFramework)</TargetFramework>. Set the HonuaTargetFramework
     environment variable to retarget: MSBuild reads it as this property and
     scripts/ci/honua-target-framework.sh reads it for output paths, so both move together.
-    A net11.0 trial build also needs SDK 11.
+    global.json pins the minimum .NET 11 SDK needed by this target framework.
     Not inherited by separately built trees with their own Directory.Build.props
     (docker/worker-customcode-dotnet/harness, the gp-dotnet template).
   -->
   <PropertyGroup>
-    <HonuaTargetFramework Condition="'$(HonuaTargetFramework)' == ''">net10.0</HonuaTargetFramework>
+    <HonuaTargetFramework Condition="'$(HonuaTargetFramework)' == ''">net11.0</HonuaTargetFramework>
+  </PropertyGroup>
+
+  <!--
+    Libraries that plug-in and custom-code authors compile against also build for
+    .NET 10 LTS, so an author on .NET 10 is not cut off. The server itself
+    runs only on HonuaTargetFramework. Projects say
+    <TargetFrameworks>$(HonuaPluginTargetFrameworks)</TargetFrameworks>.
+  -->
+  <PropertyGroup>
+    <HonuaPluginTargetFrameworks Condition="'$(HonuaPluginTargetFrameworks)' == '' and '$(HonuaTargetFramework)' != 'net10.0'">net10.0;$(HonuaTargetFramework)</HonuaPluginTargetFrameworks>
+    <HonuaPluginTargetFrameworks Condition="'$(HonuaPluginTargetFrameworks)' == ''">$(HonuaTargetFramework)</HonuaPluginTargetFrameworks>
   </PropertyGroup>
 
   <PropertyGroup>

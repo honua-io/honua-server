@@ -69,6 +69,12 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
 
     public int? DetectedSrid { get; init; }
 
+    public int? SourceSrid { get; init; }
+
+    public int? StoredSrid { get; init; }
+
+    public bool Reprojected { get; init; }
+
     public string? ServiceName { get; init; }
 
     public int? PublishedLayerId { get; init; }

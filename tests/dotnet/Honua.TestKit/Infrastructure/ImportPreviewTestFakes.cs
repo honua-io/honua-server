@@ -81,6 +81,8 @@ public sealed class TestFileFormatDetectionService : IFileFormatDetectionService
         return Path.GetExtension(fileName).ToLowerInvariant() switch
         {
             ".geojson" or ".json" => SupportedFileFormat.GeoJson,
+            ".esrijson" => SupportedFileFormat.GeoServicesJson,
+            ".gml" => SupportedFileFormat.Gml,
             ".kml" or ".kmz" => SupportedFileFormat.Kml,
             ".wkt" => SupportedFileFormat.Wkt,
             ".zip" => SupportedFileFormat.Shapefile,
@@ -99,6 +101,8 @@ public sealed class TestFileFormatDetectionService : IFileFormatDetectionService
         [
             ".geojson",
             ".json",
+            ".esrijson",
+            ".gml",
             ".kml",
             ".kmz",
             ".wkt",
