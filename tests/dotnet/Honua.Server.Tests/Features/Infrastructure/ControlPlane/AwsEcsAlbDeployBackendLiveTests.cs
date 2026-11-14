@@ -38,8 +38,10 @@ public sealed class AwsEcsAlbDeployBackendLiveTests
     public async Task ObserveAsync_AgainstProvisionedEcsAlbStack_ReturnsState()
     {
         var operation = BuildOperation();
+        using var alb = new AwsSdkAlbClient();
+        using var ecs = new AwsSdkEcsClient();
         var backend = new AwsEcsAlbDeployBackend(
-            new AwsEcsAlbDeployClients(new AwsSdkAlbClient(), new AwsSdkEcsClient()),
+            new AwsEcsAlbDeployClients(alb, ecs),
             NullLogger<AwsEcsAlbDeployBackend>.Instance);
 
         var observation = await backend.ObserveAsync(operation);
@@ -64,8 +66,10 @@ public sealed class AwsEcsAlbDeployBackendLiveTests
     public async Task PlanAsync_AgainstProvisionedEcsAlbStack_IsReadyToSubmit()
     {
         var operation = BuildOperation();
+        using var alb = new AwsSdkAlbClient();
+        using var ecs = new AwsSdkEcsClient();
         var backend = new AwsEcsAlbDeployBackend(
-            new AwsEcsAlbDeployClients(new AwsSdkAlbClient(), new AwsSdkEcsClient()),
+            new AwsEcsAlbDeployClients(alb, ecs),
             NullLogger<AwsEcsAlbDeployBackend>.Instance);
 
         var plan = await backend.PlanAsync(operation.Deploy!);
