@@ -370,7 +370,11 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         var result = document.RootElement.GetProperty("result");
         result.TryGetProperty("isError", out var isError);
         (isError.ValueKind == JsonValueKind.True).Should().BeFalse(body);
-        var proposal = result.GetProperty("structuredContent");
+        return await ApproveAndReadAcceptedHandleAsync(result.GetProperty("structuredContent"), body);
+    }
+
+    private async Task<JsonElement> ApproveAndReadAcceptedHandleAsync(JsonElement proposal, string body)
+    {
         proposal.GetProperty("status").GetString().Should().Be("RequiresApproval", body);
         var proposalId = proposal.GetProperty("proposalId").GetString();
         proposalId.Should().NotBeNullOrWhiteSpace();
