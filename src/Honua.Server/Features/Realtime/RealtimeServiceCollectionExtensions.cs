@@ -81,6 +81,7 @@ internal static class RealtimeServiceCollectionExtensions
 
     private static void AddTailService(IServiceCollection services, IConfiguration configuration)
     {
+        var crossNode = UsesPostgresProvider(configuration);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeTailBackgroundService>(
             provider =>
             {
@@ -88,7 +89,7 @@ internal static class RealtimeServiceCollectionExtensions
                 return new RealtimeTailBackgroundService(
                     hasDatabase ? provider.GetRequiredService<RealtimeDispatcher>() : null,
                     hasDatabase ? provider.GetRequiredService<RealtimePresenceBatcher>() : null,
-                    hasDatabase && UsesPostgresProvider(configuration) ? provider.GetRequiredService<RealtimeListener>() : null,
+                    hasDatabase && crossNode ? provider.GetRequiredService<RealtimeListener>() : null,
                     provider.GetRequiredService<IOptions<RealtimeOptions>>(),
                     provider.GetRequiredService<ILogger<RealtimeTailBackgroundService>>());
             }));
