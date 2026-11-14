@@ -8,6 +8,32 @@ namespace Honua.Server.Tests;
 public partial class PostgresAttachmentStoreTests
 {
     [Fact]
+    public async Task NativeMetadata_QueryPage_BoundsAndScopesExactKeywordMatches()
+    {
+        var sessions = await CreateUploadSessionStoreAsync();
+        var first = await sessions.CommitAsync(await PrepareCommitSessionAsync(sessions,
+            CreateSessionRequest() with { IdempotencyKey = "first", Keywords = ["a,b"] }), "first-object");
+        var second = await sessions.CommitAsync(await PrepareCommitSessionAsync(sessions,
+            CreateSessionRequest() with { IdempotencyKey = "second", Keywords = ["a,b"] }), "second-object");
+        await sessions.CommitAsync(await PrepareCommitSessionAsync(sessions,
+            CreateSessionRequest() with { IdempotencyKey = "third", Keywords = ["a", "b"] }), "third-object");
+        var query = new AttachmentPageQuery
+        {
+            LayerId = TestLayerId, FeatureId = TestFeatureId, Limit = 1,
+            ContentTypes = [first.ContentType], Keywords = ["a,b"]
+        };
+        var page = Assert.Single(await _attachmentStore.QueryPageAsync(query));
+        Assert.Equal(first.Id, page.Attachment.Id);
+        Assert.Equal(["a,b"], page.Metadata!.Keywords);
+        var next = Assert.Single(await _attachmentStore.QueryPageAsync(query with { AfterId = first.Id }));
+        Assert.Equal(second.Id, next.Attachment.Id);
+        Assert.Empty(await _attachmentStore.QueryPageAsync(query with { AfterId = second.Id }));
+        Assert.Empty(await _attachmentStore.QueryPageAsync(query with { FeatureId = TestFeatureId + 1 }));
+        Assert.Empty(await _attachmentStore.QueryPageAsync(query with { ContentTypes = ["nonexistent/type"] }));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _attachmentStore.QueryPageAsync(query with { Limit = 502 }));
+    }
+
+    [Fact]
     public async Task NativeMetadata_CommitAndReplacement_PreserveExactKeywordsAndIdentity()
     {
         var sessions = await CreateUploadSessionStoreAsync();

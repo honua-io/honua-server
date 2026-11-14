@@ -31,7 +31,7 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
-internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceBase
+internal sealed partial class HonuaFeatureService : Proto.FeatureService.FeatureServiceBase
 {
     private const string GrpcProtocolName = "Grpc";
 

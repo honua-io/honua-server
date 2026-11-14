@@ -44,7 +44,7 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.Query)]
-public sealed class GrpcFeatureServiceTests
+public sealed partial class GrpcFeatureServiceTests
 {
     private const string GrpcProtocolName = "Grpc";
     private const string FeatureServerProtocolName = "FeatureServer";

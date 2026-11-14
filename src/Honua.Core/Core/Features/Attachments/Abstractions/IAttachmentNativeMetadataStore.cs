@@ -7,6 +7,9 @@ namespace Honua.Core.Features.Attachments.Abstractions;
 
 public interface IAttachmentNativeMetadataStore
 {
+    Task<IReadOnlyList<AttachmentPageItem>> QueryPageAsync(
+        AttachmentPageQuery query, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyDictionary<long, AttachmentNativeMetadata>> GetNativeMetadataAsync(
         AttachmentNativeMetadataQuery query, CancellationToken cancellationToken = default);
 }

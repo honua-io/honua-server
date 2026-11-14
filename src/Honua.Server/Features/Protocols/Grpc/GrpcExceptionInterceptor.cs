@@ -4,6 +4,7 @@
 using Grpc.Core;
 using Grpc.Core.Interceptors;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Backpressure;
 using Honua.Infrastructure.Models;
 
@@ -101,6 +102,18 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
 
     private RpcException CreateMappedRpcException(Exception exception, ServerCallContext context)
     {
+        if (exception is AttachmentUploadException upload)
+        {
+            var status = upload.Failure switch
+            {
+                AttachmentUploadFailure.NotFound or AttachmentUploadFailure.Expired => StatusCode.NotFound,
+                AttachmentUploadFailure.Conflict => StatusCode.AlreadyExists,
+                AttachmentUploadFailure.InvalidState => StatusCode.FailedPrecondition,
+                AttachmentUploadFailure.InvalidContent => StatusCode.InvalidArgument,
+                _ => StatusCode.Internal
+            };
+            return new RpcException(new Status(status, "The attachment operation could not be completed."));
+        }
         var mapping = ExceptionMapper.Map(exception);
         var grpcStatusCode = MapStatusCode(mapping.StatusCode, exception, context.CancellationToken);
 
