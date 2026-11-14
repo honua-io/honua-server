@@ -33,7 +33,7 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 /// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Grpc)]
-public sealed class GrpcIntegrationTests : IAsyncLifetime
+public sealed partial class GrpcIntegrationTests : IAsyncLifetime
 {
     /// <summary>Rows the seed publishes on the test layer.</summary>
     private const long SeededFeatureCount = 5;
