@@ -4,6 +4,7 @@
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Exceptions;
 using Honua.Alerts.Ops;
+using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -641,6 +642,32 @@ internal sealed partial class OperationGateway : IOperationGateway
         if (hasIdempotencyKey)
         {
             var existing = await FindActiveByIdempotencyKeyAsync(request.Kind, request.OperationId, request.IdempotencyKey!, request.TenantId, cancellationToken)
+                .ConfigureAwait(false);
+            if (existing != null)
+            {
+                return FolderProposalResult(existing, request, plan, decision);
+            }
+        }
+
+        if (hasIdempotencyKey && request.ActionDiscriminator == OpsActionNames.RedriveDeadLetters
+            && request.AutonomyContext?.FindingId != null)
+        {
+            if (_proposalStore is not IOperationProposalBatchStore batches)
+            {
+                return new OperationGatewayResult
+                {
+                    Outcome = OperationGatewayOutcome.Failed, Decision = decision,
+                    Message = "Durable approval batch storage is unavailable."
+                };
+            }
+
+            var batchKey = DeriveProposalId(request.Kind, request.OperationId, request.IdempotencyKey!, request.TenantId);
+            var candidateKey = $"{request.IdempotencyKey}:batch:{Guid.NewGuid():N}";
+            var candidateId = DeriveProposalId(request.Kind, request.OperationId, candidateKey, request.TenantId);
+            var reservedKey = await batches.ReserveBatchAsync(new(batchKey, candidateKey, candidateId), cancellationToken)
+                .ConfigureAwait(false);
+            request = request with { IdempotencyKey = reservedKey };
+            var existing = await FindActiveByIdempotencyKeyAsync(request.Kind, request.OperationId, reservedKey, request.TenantId, cancellationToken)
                 .ConfigureAwait(false);
             if (existing != null)
             {

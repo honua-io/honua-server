@@ -31,7 +31,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.149_CreateSecurityState.sql",
         "Honua.Server.Migrations.150_CreateOAuthClientsAndOperationProgress.sql",
         "Honua.Server.Migrations.154_CreatePackageDraftsAndMcpSessions.sql",
-        "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql"
+        "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql",
+        "Honua.Server.Migrations.162_CreateOperationProposalBatches.sql"
     ];
 
     private readonly PostgresJobSubstrateHarness _jobs;
