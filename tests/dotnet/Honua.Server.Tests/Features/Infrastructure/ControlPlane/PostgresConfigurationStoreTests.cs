@@ -327,8 +327,14 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         services.AddOpsSelfChecks(new ConfigurationBuilder().Build());
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         var source = provider.GetRequiredService<IOpsSelfCheckSource>();
-        var configured = Provider(true);
-        configured.Authority = "https://127.0.0.1";
+        var configured = new OidcProviderConfiguration
+        {
+            Name = "Background provider",
+            ProviderType = "Generic",
+            Authority = "https://127.0.0.1",
+            ClientId = "background-client",
+            Enabled = true
+        };
         var store = CreateOidcStore(harness);
         await store.CreateProviderAsync(configured);
 
