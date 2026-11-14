@@ -139,6 +139,7 @@ internal static class OperationsServiceCollectionExtensions
 
         services.TryAddDeferredOperationExecutor<StylePresetExecutor>(StylePresetOperation.OperationId);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, StylePresetApprovalMapper>());
+        AddStagedImportOperations(services);
 
         // Enumerate operation identities without resolving unrelated actuator dependencies.
         services.TryAddDeferredOperationExecutor<DeferredServicePublishExecutor>(ServicePublishOperation.OperationId);
@@ -336,4 +337,17 @@ internal static class OperationsServiceCollectionExtensions
     internal sealed class AdminConnectImportRegistrationMarker;
     internal sealed class AdminApiOperationRegistrationMarker;
     internal sealed class WorkflowRollbackApprovalRegistrationMarker;
+
+    // Preview a job artifact, then import it into fresh server-owned staging after approval.
+    private static void AddStagedImportOperations(IServiceCollection services)
+    {
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationDescriptorProvider, StagedImportOperationDescriptorProvider>());
+        services.TryAddDeferredOperationExecutor<Honua.Geoprocessing.StagedImportPreviewExecutor>(
+            Honua.Geoprocessing.StagedImportOperation.PreviewOperationId);
+        services.TryAddDeferredOperationExecutor<Honua.Geoprocessing.StagedImportExecutor>(
+            Honua.Geoprocessing.StagedImportOperation.ImportOperationId);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper,
+            Honua.Geoprocessing.StagedImportApprovalMapper>());
+        services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+    }
 }

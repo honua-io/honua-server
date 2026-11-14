@@ -235,6 +235,12 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         var mode = progress == null ? "sync" : "background";
         var jobId = Guid.NewGuid().ToString("N")[..8];
         string[] warnings = [];
+        if (request.EffectiveLoadMode == ImportLoadMode.CreateOnly && format != SupportedFileFormat.GeoJson)
+        {
+            // Refuse before any staging table exists: only GeoJSON has complete create-only validation.
+            return ImportResult.CreateFailure(request.TableName, format ?? SupportedFileFormat.GeoJson,
+                "Create-only imports require GeoJSON with complete input validation.", stopwatch.Elapsed, warnings);
+        }
 
         // Handle cloud storage file download if needed
         Stream fileStream;

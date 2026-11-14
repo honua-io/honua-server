@@ -27,6 +27,10 @@ internal sealed partial class StreamingFileImportService
 
         var existed = await ImportTableExistsAsync(connection, schema, table, cancellationToken, transaction);
         var mode = request.EffectiveLoadMode;
+        if (existed && mode == ImportLoadMode.CreateOnly)
+        {
+            throw new InvalidDataException("Create-only import requires a new target table.");
+        }
         // A replace drops the live table. Prove ownership before resolving geometry:
         // an unowned table may have no geometry column, and that lookup would report
         // a missing identity instead of IMPORT_TARGET_NOT_OWNED. The swap rechecks
@@ -42,7 +46,7 @@ internal sealed partial class StreamingFileImportService
             identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
                 connection, transaction, schema, table, "geometry", cancellationToken);
         }
-        if (mode != ImportLoadMode.Replace)
+        if (mode is not (ImportLoadMode.Replace or ImportLoadMode.CreateOnly))
         {
             if (!existed)
             {
@@ -68,13 +72,15 @@ internal sealed partial class StreamingFileImportService
 
         var stagedAppend = mode == ImportLoadMode.Append &&
             await TargetIsImporterOwnedAsync(connection, schema, table, cancellationToken, transaction);
-        if (request.CommitParticipant is not null && mode != ImportLoadMode.Replace && !stagedAppend)
+        if (request.CommitParticipant is not null && mode is not (ImportLoadMode.Replace or ImportLoadMode.CreateOnly) && !stagedAppend)
         {
             // Keep the direct-mode refusal inside preparation so new schema/facts roll back too.
             throw new InvalidDataException(
                 "This import must commit its receipt with the rows. The target is not an importer-owned table.");
         }
-        var loadTable = mode == ImportLoadMode.Replace || stagedAppend
+        var loadTable = mode == ImportLoadMode.CreateOnly
+            ? await CreateFreshStagingAsync(transaction, (schema, request.TargetSrid!.Value), cancellationToken)
+            : mode == ImportLoadMode.Replace || stagedAppend
             ? await CreateStagingTableAsync(connection, schema, table, request.TargetSrid!.Value, cancellationToken, transaction)
             : table;
         await transaction.CommitSafelyAsync(cancellationToken);

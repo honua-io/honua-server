@@ -139,6 +139,39 @@
         "allowedWriteRoles",
         "serviceName"
       ]
+    },
+    {
+      "toolName": "honua_op_dataset_stage_preview",
+      "operationId": "dataset.stage.preview",
+      "mode": "read",
+      "inputFields": [
+        "artifactId",
+        "intentId",
+        "jobId",
+        "referenceSha256",
+        "resultPackageId",
+        "schema",
+        "sourceSrid",
+        "targetId",
+        "targetSrid"
+      ]
+    },
+    {
+      "toolName": "honua_op_dataset_stage_import",
+      "operationId": "dataset.stage.import",
+      "mode": "execute",
+      "inputFields": [
+        "artifactId",
+        "intentId",
+        "jobId",
+        "previewFingerprint",
+        "referenceSha256",
+        "resultPackageId",
+        "schema",
+        "sourceSrid",
+        "targetId",
+        "targetSrid"
+      ]
     }
   ]
 }

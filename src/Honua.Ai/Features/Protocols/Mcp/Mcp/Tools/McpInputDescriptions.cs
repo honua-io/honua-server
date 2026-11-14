@@ -32,6 +32,10 @@ internal static class McpInputDescriptions
         ("admin.rls-policy.create", "claimType"), ("admin.role.create", "name"),
         ("admin.role.permissions.set", "permissions"), ("admin.services.protocols.set", "enabledProtocols"),
         ("admin.tenant.create", "tenantId"), ("folder.create", "name"),
+        ("dataset.stage.preview", "intentId"), ("dataset.stage.preview", "schema"),
+        ("dataset.stage.preview", "targetSrid"), ("dataset.stage.preview", "sourceSrid"),
+        ("dataset.stage.import", "intentId"), ("dataset.stage.import", "schema"),
+        ("dataset.stage.import", "targetSrid"), ("dataset.stage.import", "sourceSrid"),
     ];
 
     internal static string Describe(string operationId, string parameter, string description)
@@ -44,6 +48,16 @@ internal static class McpInputDescriptions
     private static string? ReadSource(string operationId, string parameter)
     {
         if (parameter == "id") return IdentitySource(operationId);
+        if (operationId.StartsWith("dataset.stage.", StringComparison.Ordinal))
+        {
+            return parameter switch
+            {
+                "targetId" or "jobId" or "resultPackageId" or "artifactId" or "referenceSha256"
+                    => "honua_get_job_results (server artifact reference)",
+                "previewFingerprint" => PublishedOperationTool.ProjectName("dataset.stage.preview"),
+                _ => null,
+            };
+        }
         return parameter switch
         {
             "connectionId" => "honua_admin_connections_list",
