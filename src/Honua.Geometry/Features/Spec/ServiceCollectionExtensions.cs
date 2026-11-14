@@ -65,13 +65,13 @@ public static class ServiceCollectionExtensions
             .AddOptions<SpecCostEstimatorOptions>()
             .Bind(configuration.GetSection("Spec:CostEstimator"));
 
-        services.TryAddSingleton<ISpecCostEstimator>(sp =>
+        services.TryAddSingleton<SpecCostEstimator>(sp =>
             new SpecCostEstimator(
                 sp.GetRequiredService<IProcessCatalog>(),
                 sp.GetRequiredService<IOptions<SpecCostEstimatorOptions>>().Value));
 
         services.TryAddSingleton<ISpecPlanner>(sp =>
-            new SpecPlanner(sp.GetRequiredService<ISpecCostEstimator>()));
+            new SpecPlanner(sp.GetRequiredService<SpecCostEstimator>()));
 
         services.TryAddSingleton<IContentHashArtifactCache>(sp =>
             new InMemoryContentHashArtifactCache(sp.GetService<TimeProvider>()));
@@ -87,11 +87,11 @@ public static class ServiceCollectionExtensions
                 sp.GetService<TimeProvider>(),
                 sp.GetService<ILogger<SpecApplyOrchestrator>>()));
 
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISpecResourceStateStore>(
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ReservedSpecResourceStateStore>(
             new ReservedSpecResourceStateStore(SpecResourceKind.Dataset)));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISpecResourceStateStore>(
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ReservedSpecResourceStateStore>(
             new ReservedSpecResourceStateStore(SpecResourceKind.Service)));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISpecResourceStateStore>(
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ReservedSpecResourceStateStore>(
             new ReservedSpecResourceStateStore(SpecResourceKind.App)));
 
         return services;

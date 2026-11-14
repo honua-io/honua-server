@@ -14,7 +14,7 @@ namespace Honua.Core.Features.Spec.Services;
 /// raise <see cref="SpecExecutionException"/> with
 /// <see cref="SpecDiagnosticCodes.SpecKindNotInS1"/>.
 /// </summary>
-internal sealed class ReservedSpecResourceStateStore : ISpecResourceStateStore
+internal sealed class ReservedSpecResourceStateStore
 {
     public ReservedSpecResourceStateStore(SpecResourceKind kind)
     {

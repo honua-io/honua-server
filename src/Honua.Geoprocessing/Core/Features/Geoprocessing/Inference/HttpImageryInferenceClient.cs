@@ -8,7 +8,7 @@ using Honua.Core.Features.Security;
 
 namespace Honua.Geoprocessing.Inference;
 
-internal sealed partial class HttpImageryInferenceClient : IImageryInferenceClient
+internal sealed partial class HttpImageryInferenceClient
 {
     internal const string HttpClientName = "honua-imagery-inference";
 

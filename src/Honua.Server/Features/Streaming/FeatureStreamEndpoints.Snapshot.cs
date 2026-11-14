@@ -401,7 +401,7 @@ internal static partial class FeatureStreamEndpoints
 
     private static string? ValidateSnapshotScope(
         FeatureStreamSubscriptionMode mode,
-        IStreamSubscriptionFilter? filter)
+        StreamSubscriptionFilter? filter)
     {
         if (!IsSnapshotMode(mode))
         {
@@ -434,7 +434,7 @@ internal static partial class FeatureStreamEndpoints
         HttpContext context,
         bool isSse,
         FeatureStreamSubscriptionMode mode,
-        IStreamSubscriptionFilter? subscriptionFilter)
+        StreamSubscriptionFilter? subscriptionFilter)
     {
         if (!IsSnapshotMode(mode) ||
             subscriptionFilter is not StreamSubscriptionFilter filter ||

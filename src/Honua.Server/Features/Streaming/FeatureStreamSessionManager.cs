@@ -267,7 +267,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     public FeatureStreamSession CreateSession(string transport, string? clientLabel)
         => CreateSession(transport, clientLabel, filter: null);
 
-    public FeatureStreamSession CreateSession(string transport, string? clientLabel, IStreamSubscriptionFilter? filter = null)
+    public FeatureStreamSession CreateSession(string transport, string? clientLabel, StreamSubscriptionFilter? filter = null)
         => TryCreateSession(transport, clientLabel, filter)
             ?? throw new InvalidOperationException(
                 $"Feature stream session limit of {_options.Value.MaxConcurrentSessions} concurrent sessions reached.");
@@ -275,7 +275,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     public FeatureStreamSession? TryCreateSession(
         string transport,
         string? clientLabel,
-        IStreamSubscriptionFilter? filter = null,
+        StreamSubscriptionFilter? filter = null,
         bool addDefaultSubscription = true,
         string? admissionPartition = null)
     {
@@ -780,7 +780,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     }
 
     // The caller must pin the generation, and live fan-out waits until replay finishes so the two do not interleave.
-    public AddSubscriptionOutcome TryAddSubscription(Guid sessionId, string subscriptionId, IStreamSubscriptionFilter? filter, bool paused = false)
+    public AddSubscriptionOutcome TryAddSubscription(Guid sessionId, string subscriptionId, StreamSubscriptionFilter? filter, bool paused = false)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
         {
@@ -944,7 +944,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             DateTimeOffset connectedAt,
             string? clientLabel,
             string transport,
-            IStreamSubscriptionFilter? subscriptionFilter = null,
+            StreamSubscriptionFilter? subscriptionFilter = null,
             bool addDefaultSubscription = true,
             string admissionPartition = "anonymous")
         {
@@ -965,7 +965,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         private sealed record SubscriptionState(
-            IStreamSubscriptionFilter? Filter,
+            StreamSubscriptionFilter? Filter,
             bool Paused,
             long Generation,
             long LastPolledCursor,
@@ -1086,7 +1086,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
         public bool TryAddSubscription(
             string subscriptionId,
-            IStreamSubscriptionFilter? filter,
+            StreamSubscriptionFilter? filter,
             bool paused,
             int maxSubscriptions,
             out long generation)
@@ -1287,7 +1287,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     internal readonly record struct PollableSubscription(
         string SubscriptionId,
         long Generation,
-        IStreamSubscriptionFilter? Filter,
+        StreamSubscriptionFilter? Filter,
         long LastPolledCursor);
 }
 

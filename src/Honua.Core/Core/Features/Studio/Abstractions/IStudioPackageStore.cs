@@ -201,18 +201,6 @@ public sealed class StudioPublicationRouteConflictException : InvalidOperationEx
 }
 
 /// <summary>
-/// Provides package-family capability descriptors.
-/// </summary>
-public interface IStudioPackageFamilyRegistry
-{
-    /// <summary>Returns package-family capability data for the current deployment context.</summary>
-    StudioPackageFamilyCapabilities GetCapabilities();
-
-    /// <summary>Gets a package-family descriptor, or null when the family is unknown.</summary>
-    StudioPackageFamilyDescriptor? GetDescriptor(StudioPackageFamily family);
-}
-
-/// <summary>
 /// Validates Studio package envelopes.
 /// </summary>
 public interface IStudioPackageValidator

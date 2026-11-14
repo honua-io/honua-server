@@ -22,7 +22,7 @@ internal static partial class FeatureStreamEndpoints
         ILogger logger,
         HttpContext context,
         FeatureStreamSession session,
-        IStreamSubscriptionFilter? subscriptionFilter,
+        StreamSubscriptionFilter? subscriptionFilter,
         bool addDefaultSubscription,
         bool announceInitialSubscription,
         FeatureStreamSubscriptionMode mode)
@@ -1152,7 +1152,7 @@ internal static partial class FeatureStreamEndpoints
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<(IStreamSubscriptionFilter? Filter, string? Error)> BuildControlSubscriptionFilterAsync(
+    private static async Task<(StreamSubscriptionFilter? Filter, string? Error)> BuildControlSubscriptionFilterAsync(
         FeatureStreamDependencies deps,
         HttpContext context,
         FeatureStreamControlMessage control,

@@ -69,7 +69,7 @@ internal static partial class FeatureStreamEndpoints
         ILogger logger,
         HttpContext context,
         FeatureStreamSession session,
-        IStreamSubscriptionFilter? subscriptionFilter,
+        StreamSubscriptionFilter? subscriptionFilter,
         FeatureStreamSubscriptionMode mode)
     {
         var sessionManager = deps.SessionManager;
