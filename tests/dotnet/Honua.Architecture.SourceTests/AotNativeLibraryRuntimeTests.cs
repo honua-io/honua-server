@@ -25,18 +25,7 @@ public sealed class AotNativeLibraryRuntimeTests
 
     private static void AssertNativeLinkGate(string runtimeStage, string relativePath)
     {
-        if (relativePath == "docker/Dockerfile.lambda.aot")
-        {
-            runtimeStage.Should().Contain("ldd -r /var/task/libSkiaSharp.so", relativePath);
-            runtimeStage.Should().Contain("for native in ParquetSharpNative.so libduckdb.so", relativePath);
-            runtimeStage.Should().Contain("ldd -r \"/var/task/${native}\"", relativePath);
-            runtimeStage.Should().Contain("not found|undefined symbol|not a dynamic executable", relativePath);
-            runtimeStage.Should().Contain("exit 1", relativePath);
-        }
-        else
-        {
-            runtimeStage.Should().Contain("sh docker/runtime/verify-native.sh", relativePath);
-        }
+        runtimeStage.Should().Contain("sh docker/runtime/verify-native.sh", relativePath);
     }
 
     [ArchitectureTest]
@@ -168,10 +157,10 @@ public sealed class AotNativeLibraryRuntimeTests
         var mirrors = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/base-image-mirrors.sh"));
         var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"));
 
-        mirrors.Should().Contain("\"sdk-10.0-aot|docker/Dockerfile.aot|DOTNET_SDK_IMAGE\"");
-        mirrors.Should().Contain("\"runtime-deps-10.0-aot|docker/Dockerfile.aot|DOTNET_RUNTIME_DEPS_IMAGE\"");
-        nightly.Should().Contain("DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-aot");
-        nightly.Should().Contain("DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0-aot");
+        mirrors.Should().Contain("\"sdk-11.0-aot|docker/Dockerfile.aot|DOTNET_SDK_IMAGE\"");
+        mirrors.Should().Contain("\"runtime-deps-11.0-aot|docker/Dockerfile.aot|DOTNET_RUNTIME_DEPS_IMAGE\"");
+        nightly.Should().Contain("DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-11.0-aot");
+        nightly.Should().Contain("DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-11.0-aot");
         nightly.Should().NotContain("10.0-alpine");
     }
 }

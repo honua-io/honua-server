@@ -14,8 +14,10 @@ using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Operations;
+using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Infrastructure.SecurityState;
 using Honua.Server.Features.Infrastructure.McpSessions;
+using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Studio.Drafts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
@@ -80,6 +82,7 @@ internal static class PostgresSharedStateRegistration
         services.AddFeatureLockStore();
 
         services.AddRetentionSweeps();
+        services.AddRealtimeEventLog(configuration);
         return services;
     }
 
@@ -113,6 +116,8 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresPackageDraftBacking>();
         services.AddRetentionSweep<PostgresMcpSessionStore>();
         services.AddRetentionSweep<PostgresFeatureLockService>();
+        services.TryAddSingleton<PostgresWorkflowRunStore>();
+        services.AddRetentionSweep<PostgresWorkflowRunStore>();
     }
 
     // The lease store needs the system database; a host without one has no shared leases.
