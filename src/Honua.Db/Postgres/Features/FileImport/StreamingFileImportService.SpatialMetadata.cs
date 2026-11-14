@@ -31,12 +31,7 @@ internal sealed partial class StreamingFileImportService
     private async Task<ImportTargetPreparation> PrepareImportTargetAsync(
         NpgsqlConnection connection, ImportTargetOptions options, CancellationToken cancellationToken)
     {
-        var request = options.Request;
-        var schema = options.Schema;
-        var table = options.Table;
-        var sourceSrid = options.SourceSrid;
-        var coordinateEpoch = options.CoordinateEpoch;
-        var storageSrid = request.TargetSrid ?? sourceSrid;
+        var storageSrid = options.Request.TargetSrid ?? options.SourceSrid;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         if (!await ImportedDatasetSpatialMetadata.IsAvailableAsync(
                 connection, transaction, _schemaConfiguration.MetadataSchema, cancellationToken))
@@ -44,64 +39,58 @@ internal sealed partial class StreamingFileImportService
             throw new NotSupportedException("Imported dataset spatial metadata migration is required before importing.");
         }
 
-        var existed = await ImportTableExistsAsync(connection, schema, table, cancellationToken, transaction);
-        var mode = request.EffectiveLoadMode;
-        // A replace drops the live table. Prove ownership before resolving geometry:
-        // an unowned table may have no geometry column, and that lookup would report
+        var existed = await ImportTableExistsAsync(connection, options.Schema, options.Table, cancellationToken, transaction);
+        var mode = options.Request.EffectiveLoadMode;
+        // A replace drops the live options.Table. Prove ownership before resolving geometry:
+        // an unowned options.Table may have no geometry column, and that lookup would report
         // a missing identity instead of IMPORT_TARGET_NOT_OWNED. The swap rechecks
         // under its own lock.
         if (existed && mode == ImportLoadMode.Replace &&
-            !await TargetIsImporterOwnedAsync(connection, schema, table, cancellationToken, transaction))
+            !await TargetIsImporterOwnedAsync(connection, options.Schema, options.Table, cancellationToken, transaction))
         {
-            throw new ImportTableOwnershipException(schema, table);
+            throw new ImportTableOwnershipException(options.Schema, options.Table);
         }
         ImportedDatasetSpatialMetadata.Identity? identity = null;
         if (existed)
         {
             identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
-                connection, transaction, schema, table, "geometry", cancellationToken);
+                connection, transaction, options.Schema, options.Table, "geometry", cancellationToken);
         }
         if (mode != ImportLoadMode.Replace)
         {
             if (!existed)
             {
-                await EnsureTableAsync(connection, schema, table, storageSrid, cancellationToken, transaction);
+                await EnsureTableAsync(connection, options.Schema, options.Table, storageSrid, cancellationToken, transaction);
                 identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
-                    connection, transaction, schema, table, "geometry", cancellationToken);
+                    connection, transaction, options.Schema, options.Table, "geometry", cancellationToken);
                 await ImportedDatasetSpatialMetadata.WriteAsync(
-                    connection, transaction, _schemaConfiguration.MetadataSchema, schema, table, "geometry",
-                    identity.Value, storageSrid, coordinateEpoch, cancellationToken);
+                    connection, transaction, _schemaConfiguration.MetadataSchema, options.Schema, options.Table, "geometry",
+                    identity.Value, storageSrid, options.CoordinateEpoch, cancellationToken);
             }
             else
             {
                 var facts = await ImportedDatasetSpatialMetadata.ReadAsync(
-                    connection, transaction, _schemaConfiguration.MetadataSchema, schema, table, "geometry",
+                    connection, transaction, _schemaConfiguration.MetadataSchema, options.Schema, options.Table, "geometry",
                     identity!.Value, cancellationToken);
-                storageSrid = request.TargetSrid ?? facts?.StorageSrid ?? sourceSrid;
-                ImportedDatasetSpatialMetadata.ValidateAppend(facts, storageSrid, coordinateEpoch);
-                if (coordinateEpoch.HasValue && sourceSrid != storageSrid)
-                {
-                    throw new InvalidDataException(
-                        "Coordinate epoch cannot be preserved through a CRS transformation; use the source storage CRS.");
-                }
+                storageSrid = ResolveAppendStorageSrid(facts, options);
             }
             if (mode == ImportLoadMode.Upsert)
             {
-                await EnsureUpsertKeyAsync(connection, schema, table, request.KeyColumns, cancellationToken, transaction);
+                await EnsureUpsertKeyAsync(connection, options.Schema, options.Table, options.Request.KeyColumns, cancellationToken, transaction);
             }
         }
 
         var stagedAppend = mode == ImportLoadMode.Append &&
-            await TargetIsImporterOwnedAsync(connection, schema, table, cancellationToken, transaction);
-        if (request.CommitParticipant is not null && mode != ImportLoadMode.Replace && !stagedAppend)
+            await TargetIsImporterOwnedAsync(connection, options.Schema, options.Table, cancellationToken, transaction);
+        if (options.Request.CommitParticipant is not null && mode != ImportLoadMode.Replace && !stagedAppend)
         {
-            // Keep the direct-mode refusal inside preparation so new schema/facts roll back too.
+            // Keep the direct-mode refusal inside preparation so new options.Schema/facts roll back too.
             throw new InvalidDataException(
-                "This import must commit its receipt with the rows. The target is not an importer-owned table.");
+                "This import must commit its receipt with the rows. The target is not an importer-owned options.Table.");
         }
         var loadTable = mode == ImportLoadMode.Replace || stagedAppend
-            ? await CreateStagingTableAsync(connection, schema, table, storageSrid, cancellationToken, transaction)
-            : table;
+            ? await CreateStagingTableAsync(connection, options.Schema, options.Table, storageSrid, cancellationToken, transaction)
+            : options.Table;
         await transaction.CommitSafelyAsync(cancellationToken);
         return new ImportTargetPreparation
         {
@@ -111,6 +100,19 @@ internal sealed partial class StreamingFileImportService
             LiveIdentity = identity,
             StorageSrid = storageSrid
         };
+    }
+
+    private static int ResolveAppendStorageSrid(
+        ImportedDatasetSpatialMetadata.Facts? facts, ImportTargetOptions options)
+    {
+        var storageSrid = options.Request.TargetSrid ?? facts?.StorageSrid ?? options.SourceSrid;
+        ImportedDatasetSpatialMetadata.ValidateAppend(facts, storageSrid, options.CoordinateEpoch);
+        if (options.CoordinateEpoch.HasValue && options.SourceSrid != storageSrid)
+        {
+            throw new InvalidDataException(
+                "Coordinate epoch cannot be preserved through a CRS transformation; use the source storage CRS.");
+        }
+        return storageSrid;
     }
 
     private async Task ValidateDirectImportAsync(
