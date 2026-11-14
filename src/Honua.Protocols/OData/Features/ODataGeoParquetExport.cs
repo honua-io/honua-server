@@ -20,9 +20,26 @@ internal static class ODataGeoParquetExport
         ILogger? logger = null,
         GeoParquetLimits? encodingLimits = null)
     {
+        var (payload, contentType) = FormatPageStream(result, resource, geometryLimits, outFields, logger, encodingLimits);
+        using (payload)
+        using (var copy = new MemoryStream())
+        {
+            payload.CopyTo(copy);
+            return (copy.ToArray(), contentType);
+        }
+    }
+
+    internal static (Stream Payload, string ContentType) FormatPageStream(
+        QueryResult<Feature> result,
+        MetadataV2Resource resource,
+        GeometryLimits geometryLimits,
+        string[]? outFields = null,
+        ILogger? logger = null,
+        GeoParquetLimits? encodingLimits = null)
+    {
         var objectIdFieldName = resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId;
         var layerSrid = resource.ReadSrid() ?? 4326;
-        return GeoParquetFeatureWriter.FormatAsGeoParquet(
+        return GeoParquetFeatureWriter.FormatAsGeoParquetStream(
             result,
             resource,
             objectIdFieldName,

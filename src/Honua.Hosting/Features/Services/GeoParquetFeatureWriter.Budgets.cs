@@ -68,8 +68,26 @@ public static partial class GeoParquetFeatureWriter
         return batches;
     }
 
-    private sealed class BoundedParquetStream(int maxBytes) : MemoryStream
+    private sealed class BoundedParquetStream(int maxBytes) : FileStream(
+        Path.Combine(Path.GetTempPath(), $"honua-parquet-{Guid.NewGuid():N}"), CreateOptions())
     {
+        private static FileStreamOptions CreateOptions()
+        {
+            var options = new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.ReadWrite,
+                Share = FileShare.None,
+                BufferSize = 64 * 1024,
+                Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+            };
+            if (!OperatingSystem.IsWindows())
+            {
+                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            }
+            return options;
+        }
+
         public bool LimitExceeded { get; private set; }
 
         private void Reserve(long end)
@@ -79,12 +97,7 @@ public static partial class GeoParquetFeatureWriter
                 LimitExceeded = true;
                 throw new GeoParquetLimitExceededException();
             }
-            if (end > Capacity)
-            {
-                // MemoryStream normally doubles capacity past the requested size. Clamp the
-                // capacity itself, so a successful payload cannot retain more than the budget.
-                Capacity = (int)Math.Min(maxBytes, Math.Max(end, Math.Max(256L, Capacity * 2L)));
-            }
+
         }
 
         public override void Write(byte[] buffer, int offset, int count)

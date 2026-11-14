@@ -67,6 +67,29 @@ public static partial class GeoParquetFeatureWriter
         ILogger? logger = null,
         GeoParquetLimits? encodingLimits = null)
     {
+        var (payload, contentType) = FormatAsGeoParquetStream(result, resource, objectIdFieldName,
+            returnGeometry, outputSrid, returnZ, returnM, geometryLimits, outFields, logger, encodingLimits);
+        using (payload)
+        using (var copy = new MemoryStream())
+        {
+            payload.CopyTo(copy);
+            return (copy.ToArray(), contentType);
+        }
+    }
+
+    public static (Stream response, string contentType) FormatAsGeoParquetStream(
+        QueryResult<Feature> result,
+        MetadataV2Resource resource,
+        string objectIdFieldName,
+        bool returnGeometry,
+        int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits geometryLimits,
+        string[]? outFields = null,
+        ILogger? logger = null,
+        GeoParquetLimits? encodingLimits = null)
+    {
         ArgumentNullException.ThrowIfNull(resource);
         encodingLimits ??= new GeoParquetLimits();
         ValidateEncodingLimits(encodingLimits);
@@ -153,9 +176,9 @@ public static partial class GeoParquetFeatureWriter
     // wrapped in TypeInitializationException).
     // Translate that into a typed ParquetRuntimeUnavailableException so protocol adapters can
     // return a clean 501 capability response instead of an unhandled 500 (honua-server#1942).
-    private static byte[] WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
+    private static Stream WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
     {
-        using var stream = new BoundedParquetStream(limits.MaxResponseBytes);
+        var stream = new BoundedParquetStream(limits.MaxResponseBytes);
         try
         {
             // Construct and dispose the builder itself explicitly (rather than chaining off
@@ -171,17 +194,25 @@ public static partial class GeoParquetFeatureWriter
                 writer.Close();
             }
 
-            return stream.ToArray();
+            stream.Position = 0;
+            return stream;
         }
         catch (Exception) when (stream.LimitExceeded)
         {
             // The native callback can wrap a managed Stream exception. Keep the shared
             // budget contract even when the refusal occurs while writing the footer.
+            stream.Dispose();
             throw new GeoParquetLimitExceededException();
         }
         catch (Exception ex) when (ParquetRuntimeUnavailableException.IsNativeLoadFailure(ex))
         {
+            stream.Dispose();
             throw new ParquetRuntimeUnavailableException(ex);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
         }
     }
 
@@ -222,7 +253,7 @@ public static partial class GeoParquetFeatureWriter
         return selectedFields;
     }
 
-    private static (byte[] response, string contentType) CreateEmptyGeoParquet(
+    private static (Stream response, string contentType) CreateEmptyGeoParquet(
         MetadataV2Resource resource,
         string objectIdFieldName,
         bool returnGeometry,

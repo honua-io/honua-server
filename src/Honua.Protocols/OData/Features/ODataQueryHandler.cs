@@ -861,7 +861,7 @@ internal sealed partial class ODataQueryHandler(
 
         try
         {
-            var (payload, contentType) = ODataGeoParquetExport.FormatPage(
+            var (payload, contentType) = ODataGeoParquetExport.FormatPageStream(
                 queryResult,
                 resource,
                 geometryLimits,
@@ -870,7 +870,7 @@ internal sealed partial class ODataQueryHandler(
                 limitsOptions?.Value?.GeoParquet);
 
             ODataUtilityService.SetODataHeaders(context);
-            return Results.Bytes(payload, contentType);
+            return Results.Stream(payload, contentType);
         }
         catch (GeoParquetLimitExceededException)
         {

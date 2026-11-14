@@ -15,7 +15,7 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-internal sealed class PbfQueryFormatter
+internal sealed partial class PbfQueryFormatter
 {
     // Esri PBF schema version
     private const string PbfVersion = "1.0";
@@ -271,6 +271,40 @@ internal sealed class PbfQueryFormatter
         string[]? outFields,
         QuantizationTransform? quantizationTransform)
     {
+        var encoding = WriteFeatureHeader(ref writer, result, resource, objectIdFieldName, srid,
+            returnGeometry, returnZ, returnM, geometryLimits, outFields, quantizationTransform);
+        foreach (var feature in result.Items)
+        {
+            var message = EncodeFeature(feature, encoding);
+            try
+            {
+                if (message.Length > 0)
+                {
+                    writer.WriteTag(15, 2);
+                    writer.WriteRawVarint((uint)message.Length);
+                    writer.WriteRawBytes(message.Buffer.AsSpan(0, message.Length));
+                }
+            }
+            finally
+            {
+                System.Buffers.ArrayPool<byte>.Shared.Return(message.Buffer);
+            }
+        }
+    }
+
+    private static FeatureEncoding WriteFeatureHeader(
+        ref ProtobufWriter writer,
+        QueryResult<Feature> result,
+        MetadataV2Resource resource,
+        string objectIdFieldName,
+        int srid,
+        bool returnGeometry,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits geometryLimits,
+        string[]? outFields,
+        QuantizationTransform? quantizationTransform)
+    {
         writer.WriteString(1, objectIdFieldName);
 
         var geometryType = resource.ReadGeometryType();
@@ -331,24 +365,8 @@ internal sealed class PbfQueryFormatter
         }
 
         double scale = ComputeScale(geometryLimits, quantizationTransform);
-        foreach (var feature in result.Items)
-        {
-            var featureMsg = new ProtobufWriter(256);
-            WriteFeature(
-                ref featureMsg,
-                feature,
-                queryFields,
-                fieldIndex,
-                objectIdFieldName,
-                returnGeometry,
-                effectiveZ,
-                effectiveM,
-                geometryLimits,
-                scale,
-                quantizationTransform);
-            writer.WriteMessage(15, ref featureMsg);
-            featureMsg.Dispose();
-        }
+        return new FeatureEncoding(queryFields, fieldIndex, objectIdFieldName, returnGeometry,
+            effectiveZ, effectiveM, geometryLimits, scale, quantizationTransform);
     }
 
     private static void WriteFeature(

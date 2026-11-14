@@ -83,7 +83,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         return format.ToLowerInvariant() switch
         {
             "pbf" => ValueTask.FromResult<(object response, string contentType)>(
-                _pbfFormatter.FormatAsPbf(result, resource, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields, quantizationTransform)),
+                _pbfFormatter.FormatAsPbfStream(result, resource, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields, quantizationTransform)),
             "geojson" => ValueTask.FromResult<(object response, string contentType)>(
                 FormatAsGeoJson(result, resource, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
             "json" => ValueTask.FromResult<(object response, string contentType)>(
@@ -121,7 +121,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits effectiveLimits,
         string[]? outFields)
     {
-        var (response, contentType) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+        var (response, contentType) = GeoParquetQueryFormatter.FormatAsGeoParquetStream(
             result,
             resource,
             returnGeometry,
@@ -133,7 +133,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             _logger,
             _geoParquetLimits);
 
-        return (response, contentType);
+        return (Results.Stream(response, contentType), contentType);
     }
 
     private static async Task<(object response, string contentType)> FormatArrowAsync(
