@@ -7,10 +7,14 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import stat
 import sys
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
+import zipfile
+import hashlib
 
 import compose_quickstart
 from package_quickstart import package
@@ -21,8 +25,34 @@ ROOT = Path(__file__).resolve().parents[2]
 SERVER = 'ghcr.io/honua-io/honua-server@sha256:' + '1' * 64
 EXECUTOR = 'ghcr.io/honua-io/honua-server@sha256:' + '2' * 64
 WORKER = 'ghcr.io/honua-io/honua-worker@sha256:' + '3' * 64
-CONSOLE = 'ghcr.io/honua-io/honua-console@sha256:' + '4' * 64
 PACKAGE_IMAGES = dict(server=SERVER, executor=EXECUTOR, worker=WORKER)
+
+
+def console_bundle(work, extra=None):
+    """A release-shaped static Console zip and its SHA-256."""
+    bundle = work / 'honua-console-static.zip'
+    with zipfile.ZipFile(bundle, 'w') as archive:
+        archive.writestr('index.html', '<html>console</html>')
+        archive.writestr('config.json', json.dumps(dict(apiBaseUrl='/', auth=dict(mode='builtin'), v4Enabled=True)))
+        archive.writestr('_framework/dotnet.wasm', 'wasm')
+        if extra == 'link.js':
+            link = zipfile.ZipInfo('link.js')
+            link.external_attr = (stat.S_IFLNK | 0o777) << 16
+            archive.writestr(link, '/etc/passwd')
+        elif extra is not None:
+            archive.writestr(zipfile.ZipInfo(extra), 'escape')
+    return bundle, hashlib.sha256(bundle.read_bytes()).hexdigest()
+
+
+def rewrite_console_config(path, **changes):
+    config_file = path / 'console/config.json'
+    config_file.write_text(json.dumps(dict(json.loads(config_file.read_text()), **changes)))
+
+
+def refresh_console_manifest(path):
+    files = sorted(item for item in (path / 'console').rglob('*') if item.is_file())
+    (path / 'console-files.sha256').write_text(''.join(
+        f'{hashlib.sha256(item.read_bytes()).hexdigest()}  {item.relative_to(path).as_posix()}\n' for item in files))
 
 
 class ComposeQuickstartTests(unittest.TestCase):
@@ -49,17 +79,30 @@ class ComposeQuickstartTests(unittest.TestCase):
                 serving = json.loads(result.stdout)['services']['honua']
                 self.assertEqual(expected, serving['environment'].get('LayerPublishing__MaterializationTimeoutSeconds'))
 
-    def test_console_profile_uses_packaged_pin_and_preserves_executor_files(self):
-        with tempfile.TemporaryDirectory() as directory:
+    def test_console_profile_serves_verified_bundle_from_the_api_origin(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as work:
             path = Path(directory)
+            bundle, digest = console_bundle(Path(work))
             package_result = subprocess.run([
                 sys.executable, str(ROOT / 'scripts/docker/package_quickstart.py'),
                 '--server-image', SERVER, '--executor-image', EXECUTOR, '--worker-image', WORKER,
-                '--console-image', CONSOLE, '--version', 'test', '--output', str(path)],
+                '--console-bundle', str(bundle), '--console-bundle-sha256', digest,
+                '--version', 'test', '--output', str(path)],
                 capture_output=True, text=True)
-            self.assertEqual(0, package_result.returncode, 'Package must accept an immutable Console pin')
+            self.assertEqual(0, package_result.returncode, package_result.stderr)
             self.assertTrue((path / 'compose.console.yaml').is_file())
-            self.assertEqual(CONSOLE, json.loads((path / 'images.json').read_text())['console'])
+            lock = json.loads((path / 'images.json').read_text())
+            self.assertEqual(digest, lock['consoleBundle'])
+            self.assertNotIn('console', lock)
+            config = json.loads((path / 'console/config.json').read_text())
+            self.assertEqual('/', config['apiBaseUrl'])
+            self.assertEqual(dict(mode='oidc', authority=None, clientId=None, scopes=[]), config['auth'])
+            self.assertTrue(config['v4Enabled'], 'Packaging keeps the release bundle settings it does not own')
+            self.assertEqual('<html>console</html>', (path / 'console/index.html').read_text())
+            self.assertEqual(0o644, (path / 'console/_framework/dotnet.wasm').stat().st_mode & 0o777)
+            with tarfile.open(path.with_suffix('.tar.gz')) as archive:
+                self.assertIn('console/index.html', archive.getnames())
+                self.assertIn('console-files.sha256', archive.getnames())
             (path / '.env').write_text('COMPOSE_FILE=compose.yaml:compose.executor.yaml:customer.yaml:compose.executor.image.yaml\n')
             (path / 'customer.yaml').write_text('services:\n  honua:\n    environment:\n      CUSTOMER_SETTING: preserved\n')
             initialized = subprocess.run([sys.executable, str(path / 'quickstart.py'),
@@ -69,16 +112,19 @@ class ComposeQuickstartTests(unittest.TestCase):
                                     cwd=path, env=self.compose_env(path), capture_output=True, text=True)
             self.assertEqual(0, result.returncode, 'Packaged Console profile must render')
             services = json.loads(result.stdout)['services']
-            self.assertEqual(CONSOLE, services['console']['image'])
-            self.assertEqual('true', services['console']['environment']['Studio__EmbedJsStudio'])
-            self.assertIn('1001', services['console']['group_add'])
-            self.assertEqual('/run/secrets/honua_admin_password', services['console']['environment'][
-                'HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY'])
+            self.assertNotIn('console', services, 'Console is static; no Console server runs')
+            honua = services['honua']
+            self.assertEqual('/opt/honua/console', honua['environment']['Console__StaticRoot'])
+            mount = next(volume for volume in honua['volumes'] if volume['target'] == '/opt/honua/console')
+            self.assertEqual(str(path / 'console'), mount['source'])
+            self.assertTrue(mount['read_only'])
+            self.assertEqual('http://localhost:18080', honua['environment']['PUBLIC_BASE_URL'],
+                             'The OIDC callback must return to the origin that serves Console')
             self.assertIn('compose-executor', services)
             self.assertIn('compose-manager', services)
-            self.assertEqual(SERVER, services['honua']['image'])
-            self.assertEqual('preserved', services['honua']['environment']['CUSTOMER_SETTING'])
-            self.assertEqual('true', services['honua']['environment']['Studio__EndUserAuthorization__Enabled'])
+            self.assertEqual(SERVER, honua['image'])
+            self.assertEqual('preserved', honua['environment']['CUSTOMER_SETTING'])
+            self.assertEqual('true', honua['environment']['Studio__EndUserAuthorization__Enabled'])
             files = self.compose_env(path)['COMPOSE_FILE']
             self.assertEqual('compose.yaml:compose.executor.yaml:customer.yaml:compose.console.yaml:compose.executor.image.yaml', files)
             self.assertEqual(files, services['compose-executor']['environment']['ControlPlane__ComposeExecutor__ComposeFileList'])
@@ -89,11 +135,23 @@ class ComposeQuickstartTests(unittest.TestCase):
             initialize(path, ('console',))
             self.assertEqual(saved, (path / '.env').read_bytes(), 'Enabling Console twice must preserve the install')
 
+    def test_console_activation_removes_console_container_settings(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as work:
+            path = self.prepare_console(directory, work)
+            env_file = path / '.env'
+            env_file.write_text(env_file.read_text() + 'COMPOSE_PROFILES=other,console\n'
+                                'HONUA_CONSOLE_IMAGE=ghcr.io/honua-io/honua-console:latest\nHONUA_CONSOLE_PORT=18083\n')
+
+            values = initialize(path, ('console',))
+
+            for key in ('HONUA_CONSOLE_IMAGE', 'HONUA_CONSOLE_PORT'):
+                self.assertNotIn(key, values)
+                self.assertNotIn(key + '=', env_file.read_text())
+            self.assertEqual('other', values['COMPOSE_PROFILES'])
+
     def test_console_compose_file_edit_survives_restart(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory)
-            package(path, dict(PACKAGE_IMAGES, console=CONSOLE), 'test')
-            initialize(path)
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as work:
+            path = self.prepare_console(directory, work)
             files = initialize(path, ('console',))['COMPOSE_FILE']
             env_file = path / '.env'
             self.assertEqual(1, sum(line.startswith('COMPOSE_FILE=') for line in env_file.read_text().splitlines()))
@@ -152,10 +210,8 @@ class ComposeQuickstartTests(unittest.TestCase):
         if not groups:
             self.skipTest('A supplementary group is needed to test group preservation')
         project_group = groups[0]
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory)
-            package(path, dict(PACKAGE_IMAGES, console=CONSOLE), 'test')
-            initialize(path)
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as work:
+            path = self.prepare_console(directory, work)
             os.chown(path, -1, project_group)
             env_file = path / '.env'
             os.chown(env_file, -1, project_group)
@@ -167,37 +223,86 @@ class ComposeQuickstartTests(unittest.TestCase):
             self.assertEqual(str(project_group), values['HONUA_PROJECT_GID'])
             self.assertEqual(project_group, env_file.stat().st_gid)
 
-    def test_console_without_release_pin_fails_before_changing_install(self):
+    def test_console_without_packaged_bundle_fails_before_changing_install(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.prepare(directory)
             saved = (path / '.env').read_bytes()
 
-            with self.assertRaisesRegex(ValueError, 'immutable Console image'):
+            with self.assertRaisesRegex(ValueError, 'Console bundle digest'):
                 initialize(path, ('console',))
 
             self.assertEqual(saved, (path / '.env').read_bytes())
 
-    def test_invalid_console_lock_pin_fails_before_changing_install(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = self.prepare(directory)
+    def test_altered_console_bundle_fails_before_changing_install(self):
+        alterations = {
+            'changed file': lambda path: (path / 'console/index.html').write_text('<html>other</html>'),
+            'added file': lambda path: (path / 'console/extra.js').write_text('alert(1)'),
+            'removed file': lambda path: (path / 'console/_framework/dotnet.wasm').unlink(),
+            'escaping manifest': lambda path: (path / 'console-files.sha256').write_text(
+                (path / 'console-files.sha256').read_text() + '0' * 64 + '  images.json\n'),
+            'cross-origin config': lambda path: rewrite_console_config(path, apiBaseUrl='https://api.example'),
+            'password sign-in config': lambda path: rewrite_console_config(path, auth=dict(mode='builtin')),
+        }
+        for name, alter in alterations.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as work:
+                path = self.prepare_console(directory, work)
+                alter(path)
+                if name.endswith('config'):
+                    # A config edit must still match the manifest to reach the setting check.
+                    refresh_console_manifest(path)
+                saved = (path / '.env').read_bytes()
+
+                with self.assertRaises(ValueError):
+                    initialize(path, ('console',))
+
+                self.assertEqual(saved, (path / '.env').read_bytes())
+
+    def test_activated_console_is_reverified_on_every_start(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as work:
+            path = self.prepare_console(directory, work)
+            initialize(path, ('console',))
+            (path / 'console/index.html').write_text('<html>other</html>')
+
+            with self.assertRaisesRegex(ValueError, 'package manifest'):
+                initialize(path)
+
+    def test_invalid_console_lock_digest_fails_before_changing_install(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as work:
+            path = self.prepare_console(directory, work)
             saved = (path / '.env').read_bytes()
             lock_file = path / 'images.json'
             lock = json.loads(lock_file.read_text())
-            for pin in (None, 42, 'ghcr.io/honua-io/honua-console:latest'):
-                with self.subTest(pin=pin):
-                    lock_file.write_text(json.dumps(dict(lock, console=pin)))
-                    with self.assertRaisesRegex(ValueError, 'immutable Console image'):
+            for digest in (None, 42, 'sha256:' + 'a' * 64, 'A' * 64):
+                with self.subTest(digest=digest):
+                    lock_file.write_text(json.dumps(dict(lock, consoleBundle=digest)))
+                    with self.assertRaisesRegex(ValueError, 'Console bundle digest'):
                         initialize(path, ('console',))
                     self.assertEqual(saved, (path / '.env').read_bytes())
 
-    def test_mutable_console_pin_is_rejected_before_writing_package(self):
-        with tempfile.TemporaryDirectory() as directory:
-            images = dict(PACKAGE_IMAGES, console='ghcr.io/honua-io/honua-console:latest')
+    def test_console_bundle_digest_mismatch_is_rejected_before_writing_package(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as work:
+            bundle, digest = console_bundle(Path(work))
+            for supplied in ('0' * 64, digest.upper(), None):
+                with self.subTest(supplied=supplied), self.assertRaises(ValueError):
+                    package(Path(directory), PACKAGE_IMAGES, 'test', (bundle, supplied))
+                self.assertEqual([], list(Path(directory).iterdir()))
 
-            with self.assertRaises(ValueError):
+    def test_console_image_pin_is_rejected_before_writing_package(self):
+        with tempfile.TemporaryDirectory() as directory:
+            images = dict(PACKAGE_IMAGES, console='ghcr.io/honua-io/honua-console@sha256:' + '4' * 64)
+
+            with self.assertRaisesRegex(ValueError, 'static bundle'):
                 package(Path(directory), images, 'test')
 
             self.assertEqual([], list(Path(directory).iterdir()))
+
+    def test_unsafe_console_bundle_entries_are_rejected(self):
+        for name in ('../escape.js', '/absolute.js', 'link.js'):
+            with self.subTest(name), tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as work:
+                bundle, digest = console_bundle(Path(work), extra=name)
+                with self.assertRaisesRegex(ValueError, 'unsafe entry'):
+                    package(Path(directory), PACKAGE_IMAGES, 'test', (bundle, digest))
+                self.assertFalse((Path(directory).parent / 'escape.js').exists())
 
     def test_missing_required_image_pin_is_rejected_before_writing_package(self):
         for missing in PACKAGE_IMAGES:
@@ -207,17 +312,13 @@ class ComposeQuickstartTests(unittest.TestCase):
                     package(Path(directory), images, 'test')
                 self.assertEqual([], list(Path(directory).iterdir()))
 
-    def test_saved_mutable_console_pin_is_rejected_on_restart(self):
+    def test_console_container_image_setting_does_not_block_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.prepare(directory)
             env_file = path / '.env'
             env_file.write_text(env_file.read_text() + 'HONUA_CONSOLE_IMAGE=ghcr.io/honua-io/honua-console:latest\n')
-            saved = env_file.read_bytes()
 
-            with self.assertRaisesRegex(ValueError, 'HONUA_CONSOLE_IMAGE must be an immutable'):
-                initialize(path)
-
-            self.assertEqual(saved, env_file.read_bytes())
+            initialize(path)
 
     def test_executor_receives_the_customer_compose_file_list(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -245,6 +346,13 @@ class ComposeQuickstartTests(unittest.TestCase):
     def prepare(self, directory):
         path = Path(directory)
         package(path, PACKAGE_IMAGES, '2026.1-rc.2')
+        initialize(path)
+        return path
+
+    def prepare_console(self, directory, work):
+        path = Path(directory)
+        bundle, digest = console_bundle(Path(work))
+        package(path, PACKAGE_IMAGES, '2026.1-rc.2', (bundle, digest))
         initialize(path)
         return path
 

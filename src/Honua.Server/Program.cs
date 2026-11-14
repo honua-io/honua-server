@@ -1429,10 +1429,11 @@ app.Use(async (context, next) =>
 app.UseResponseCompression();
 app.UseWebSockets();
 
-// The admin web UI lives in the separate `honua-console` repo and is deployed
-// as a standalone Blazor WebAssembly app. This server only exposes the backing
-// `/api/v1/admin/*` REST + gRPC surface; the `/admin` static-asset prefix is no
-// longer served in-process.
+// The admin web UI lives in the separate `honua-console` repo and ships as a static
+// WebAssembly bundle. A deployment without its own static host (the Compose
+// quickstart) may set Console:StaticRoot to serve that verified bundle beneath
+// /console/ on this origin, keeping the session cookie and OIDC callback same-origin.
+app.UseConsoleStaticBundle(app.Configuration);
 
 // Map interactive API explorer (Scalar) at /docs when enabled
 if (serveApiDocs)

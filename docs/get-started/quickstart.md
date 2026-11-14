@@ -31,6 +31,7 @@ Docker Compose, Python 3.11+, and OpenSSL 3 are required; use WSL on Windows.
 No compiler or host Docker CLI bind mounts are needed.
 
 The archive contains `compose.yaml`, `compose.executor.yaml`, `compose.console.yaml`, `quickstart.py`,
+the static Console in `console/` when the release includes it,
 `images.json`, a README, and `AGENTS.md`, the operating rules for AI coding agents
 working in the install directory (also published as
 [Work with AI coding agents](../guides/connect/working-with-ai-agents.md)). `images.json` pins the serving and executor images as
@@ -85,20 +86,39 @@ group so the executor can read them; unsupported paths fail closed.
 
 ### Add Console and embedded Studio
 
-Run `python3 quickstart.py --profile console` in the extracted install directory.
-The package must contain a `console` image digest in `images.json` from the same
-release lock as the server. Release packaging supplies it with
-`package_quickstart.py --console-image <immutable-reference>`; initialization
-refuses Console activation when that pin is missing or mutable.
+Console is a static browser application. The serving API hosts it beneath
+`/console/` on its own origin, so there is no Console container: sign-in uses the
+server's session cookie and its identity-provider broker directly.
 
-The command adds the shipped `compose.console.yaml` overlay to the saved
-`COMPOSE_FILE`, preserving customer files, the executor, and its serving-image
-override. It enables the Console profile for subsequent quickstart runs. Console
-is available at `http://localhost:18083`; set `HONUA_CONSOLE_PORT` in `.env` before
-activation to choose another local port. Console reads the serving admin key from
-`secrets/honua_admin_password` through its entrypoint; the key remains outside
-Compose interpolation and rendered configuration. The overlay enables embedded
-Studio and the server's Studio end-user authorization.
+The package must contain the static Console from the same release lock as the
+server. Release packaging supplies it with
+`package_quickstart.py --console-bundle <zip> --console-bundle-sha256 <sha256>`,
+which refuses a bundle that does not match the release digest, extracts it to
+`console/` and records each file in `console-files.sha256`. The packaged
+`console/config.json` selects same-origin identity-provider sign-in; it holds no
+secret or token.
+
+1. Configure an OIDC provider on the serving `honua` service in a customer override
+   file listed in `COMPOSE_FILE` (see [authentication](../guides/secure/authentication.md)):
+   `Oidc__Enabled`, `Oidc__Generic__Enabled`, `Oidc__Generic__Authority`,
+   `Oidc__Generic__ClientId` and `Oidc__Generic__ClientSecret`. Register
+   `http://localhost:18080/admin/auth/callback` (with your `HONUA_HTTP_PORT`) as the
+   client's redirect URI; the server derives it from `PUBLIC_BASE_URL`.
+2. Run `python3 quickstart.py --profile console` in the extracted install directory.
+   It verifies the bundle against the package manifest, adds the shipped
+   `compose.console.yaml` overlay to the saved `COMPOSE_FILE` (preserving customer
+   files, the executor and its serving-image override) and mounts `console/`
+   read-only into `honua`. Later `python3 quickstart.py` runs keep Console enabled
+   and re-verify the bundle; a changed, added or missing file stops the start.
+3. Open `http://localhost:18080/console/` and choose **Sign in** with your identity
+   provider. Use `localhost`, the origin in `PUBLIC_BASE_URL`, not `127.0.0.1`:
+   the sign-in cookies belong to that one origin.
+
+The overlay also enables the server's Studio end-user authorization for embedded
+Studio. Activation removes the Console container settings `HONUA_CONSOLE_IMAGE`
+and `HONUA_CONSOLE_PORT` from `.env`; Console does not use port `18083`. Approval of management proposals on the separate
+manager (`18082`) is not yet available from the static Console
+([honua-console#730](https://github.com/honua-io/honua-console/issues/730)).
 
 ### Install operating skills
 
@@ -543,7 +563,7 @@ a backup.
 ## Use Studio in Console without the assistant
 
 For a customer installation, follow [Add Console and embedded Studio](#add-console-and-embedded-studio)
-and open Console at `http://localhost:18083` (or your configured port).
+and open Console at `http://localhost:18080/console/` (or your configured `HONUA_HTTP_PORT`).
 
 For a separate development environment, clone the repository from this install
 directory and start its development stack on the serving image you installed:

@@ -3,6 +3,7 @@
 import argparse
 import base64
 import binascii
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -107,20 +108,58 @@ def update_environment(path, updates, removed=()):
     path.chmod(0o640)
 
 
-def console_profile_settings(lock, values):
-    image = lock.get('console', '')
-    if not isinstance(image, str) or not IMMUTABLE.fullmatch(image):
-        raise ValueError('The package must include an immutable Console image from its release lock')
+CONSOLE_BUNDLE = re.compile(r'[a-f0-9]{64}')
+# Console container settings that a static Console does not use; activation removes them.
+CONTAINER_CONSOLE_KEYS = ('HONUA_CONSOLE_IMAGE', 'HONUA_CONSOLE_PORT')
+
+
+def verify_console_bundle(directory, lock):
+    """Checks the extracted static Console against the package manifest before serving it."""
+    if not isinstance(lock.get('consoleBundle'), str) or not CONSOLE_BUNDLE.fullmatch(lock['consoleBundle']):
+        raise ValueError('The package must include the Console bundle digest from its release lock')
+    root = (directory / 'console').resolve()
+    entries = [line.split('  ', 1) for line in (directory / 'console-files.sha256').read_text().splitlines()]
+    listed = set()
+    for digest, name in entries:
+        path = (directory / name).resolve()
+        if not path.is_relative_to(root) or path.is_symlink() or not path.is_file():
+            raise ValueError('The Console bundle manifest names a file outside the bundle')
+        if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise ValueError('The Console bundle does not match its package manifest')
+        listed.add(path)
+    present = {path for path in root.rglob('*') if path.is_file() or path.is_symlink()}
+    if present != listed or root / 'index.html' not in listed or root / 'config.json' not in listed:
+        raise ValueError('The Console bundle does not match its package manifest')
+    config = json.loads((root / 'config.json').read_text())
+    if config.get('apiBaseUrl') != '/' or config.get('auth', {}).get('mode') != 'oidc':
+        raise ValueError('The packaged Console must use same-origin OIDC sign-in')
+
+
+def console_profile_settings(directory, lock, values):
+    verify_console_bundle(directory, lock)
     separator = values.get('COMPOSE_PATH_SEPARATOR', ':')
     files = [name for name in values['COMPOSE_FILE'].split(separator) if name != 'compose.console.yaml']
     managed_image = 'compose.executor.image.yaml'
     files.insert(files.index(managed_image) if managed_image in files else len(files), 'compose.console.yaml')
+    settings = dict(COMPOSE_FILE=separator.join(files))
     profiles = [name for name in values.get('COMPOSE_PROFILES', '').split(',') if name]
-    if 'console' not in profiles:
-        profiles.append('console')
-    settings = dict(COMPOSE_FILE=separator.join(files), COMPOSE_PROFILES=','.join(profiles),
-                    HONUA_CONSOLE_IMAGE=image, HONUA_CONSOLE_PORT=values.get('HONUA_CONSOLE_PORT', '18083'))
+    if 'console' in profiles:
+        settings['COMPOSE_PROFILES'] = ','.join(name for name in profiles if name != 'console')
     return {key: value for key, value in settings.items() if values.get(key) != value}
+
+
+def console_changes(directory, lock, current, profiles):
+    """Settings to add and Console container settings to remove for this start."""
+    separator = current.get('COMPOSE_PATH_SEPARATOR', ':')
+    additions = {}
+    if 'console' in profiles:
+        additions = console_profile_settings(directory, lock, current)
+    elif 'compose.console.yaml' in current['COMPOSE_FILE'].split(separator):
+        # An activated Console stays active, so every start re-verifies the bundle it serves.
+        verify_console_bundle(directory, lock)
+    if 'compose.console.yaml' not in dict(current, **additions)['COMPOSE_FILE'].split(separator):
+        return additions, ()
+    return additions, tuple(key for key in CONTAINER_CONSOLE_KEYS if key in current)
 
 
 def initialize(directory, profiles=()):
@@ -147,7 +186,7 @@ def initialize(directory, profiles=()):
         'HONUA_COMPOSE_CUSTOMER_PROBE': 'http://honua:8080/healthz/ready',
     }
     for key in ('HONUA_IMAGE', 'HONUA_EXECUTOR_IMAGE', 'HONUA_RELEASE_IMAGE',
-                'HONUA_RELEASE_WORKER_IMAGE', 'HONUA_PRIOR_IMAGE', 'HONUA_CONSOLE_IMAGE'):
+                'HONUA_RELEASE_WORKER_IMAGE', 'HONUA_PRIOR_IMAGE'):
         if key in values and not IMMUTABLE.fullmatch(values[key]):
             raise ValueError(f'{key} must be an immutable sha256 reference')
     if any(char in str(directory) for char in '\n\r$#\'"'):
@@ -175,10 +214,12 @@ def initialize(directory, profiles=()):
                 raise ValueError(f'{name} still reads secrets from .env; extract the new package files first')
 
     additions = {key: value for key, value in defaults.items() if key not in values}
-    if 'console' in profiles:
-        additions.update(console_profile_settings(lock, dict(defaults, **values)))
+    console_additions, unused = console_changes(directory, lock, dict(defaults, **values), profiles)
+    additions.update(console_additions)
     values.update(additions)
-    update_environment(env_file, additions)
+    for key in unused:
+        values.pop(key)
+    update_environment(env_file, additions, unused)
     # Only this install directory and its private group are writable by the executor.
     directory.chmod(0o770)
     env_file.chmod(0o640)
