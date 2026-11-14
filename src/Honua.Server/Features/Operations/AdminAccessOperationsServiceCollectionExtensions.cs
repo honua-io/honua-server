@@ -52,7 +52,8 @@ internal static class AdminAccessOperationsServiceCollectionExtensions
                 sp.GetRequiredService<IOperationSecretStore>()));
         }
 
-        services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);
+        services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(AdminOperationLoopbackTls.CreateHandler);
         services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         return services;
     }

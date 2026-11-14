@@ -207,6 +207,7 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor, IOpera
         using var message = new HttpRequestMessage(method, uri);
         OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
         message.Headers.Host = current.Request.Host.Value;
+        AdminOperationLoopbackTls.PinServedCertificate(message, current);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {

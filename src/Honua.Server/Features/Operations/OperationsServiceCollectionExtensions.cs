@@ -185,7 +185,8 @@ internal static class OperationsServiceCollectionExtensions
                     sp.GetRequiredService<OperationLineageAttestationStore>(),
                     sp.GetService<Honua.Core.Features.FileImport.Abstractions.IImportJobService>()));
             }
-            services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
+            services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(AdminOperationLoopbackTls.CreateHandler);
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         }
 
@@ -215,7 +216,7 @@ internal static class OperationsServiceCollectionExtensions
             services.AddHttpClient(AdminApiOperationExecutor.HttpClientName, client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(30);
-            });
+            }).ConfigurePrimaryHttpMessageHandler(AdminOperationLoopbackTls.CreateHandler);
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         }
 
@@ -260,7 +261,8 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<IOperationSecretStore>()));
         }
 
-        services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);
+        services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(AdminOperationLoopbackTls.CreateHandler);
         services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
         // One policy seam combines typed operation rules with the legacy guardrail ladder.
