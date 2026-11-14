@@ -2520,7 +2520,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "_comment": "Full-run capacity split: parent hit its 20m test budget in FULL 43612492209 (job 132511815046, output 3s before kill); passing samples 14.9-18.4 job min. TRX of run 43580101834 (12.2 min of serial class spans): child 1 = OgcClassicWmtsTests 7.7 min. Paths, budgets and policies are inherited.",
+      "_comment": "Selects OgcClassicWmtsTests; the companion WMTS shard selects every other class in the parent namespace.",
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
@@ -2540,7 +2540,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "_comment": "Full-run capacity split: parent hit its 20m test budget in FULL 43612492209 (job 132511815046, output 3s before kill); passing samples 14.9-18.4 job min. TRX of run 43580101834 (12.2 min of serial class spans): child 2 = exact complement of the parent filter: OgcClassicWmtsTemporalTests 3.1 + six small classes 1.4 = 4.5 min, and any future Wmts class. Paths, budgets and policies are inherited.",
+      "_comment": "Selects the exact complement of OgcClassicWmtsTests within the parent namespace, including future WMTS classes.",
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
