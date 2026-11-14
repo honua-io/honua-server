@@ -58,7 +58,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
 
     public McpPublishedServicePostgresDurabilityTests()
     {
-        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        _fixture = new WebAppFixture().WithProductionJobSubstrate().WithTestLicense(HonuaEdition.Pro);
         _fixture.ConfigureServices(services =>
         {
             services.RemoveAll<IMetadataV2GraphProvider>();
@@ -75,8 +75,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
                 _environment,
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 static scope => scope.GetRequiredService<IMetadataV2GraphStore>()));
-            // Test skips production infrastructure registration; this callback
-            // runs after its real graph provider is installed by the fixture.
+            // Register publication after restoring the production graph provider.
             services.AddMcpCatalogPublicationSurface();
             services.Configure<LayerPublishingOptions>(options => options.AsyncPublishRowThreshold = 1);
         });
@@ -101,7 +100,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         }
 
         await McpPublicationFixtureSetup.InstallPromotionStoresAsync(_fixture);
-        _client = _fixture.CreateAdminClient();
+        _client = await HumanApprovedOperation.CreateProposerClientAsync(_fixture);
         await CreateOwnedPublishConnectionAsync();
 
         // A private metadata environment makes the persisted baseline and
@@ -228,9 +227,13 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         var first = await PublishAsync(_firstTable, "first layer");
         first.GetProperty("status").GetString().Should().Be("Completed", "{0}{1}{2}",
             first.GetRawText(), Environment.NewLine, errors.Diagnostics);
-        var exactUri = first.GetProperty("serviceUri").GetString();
+        var firstDetails = first.GetProperty("result").GetProperty("details");
+        var advertised = await ReadResourceAsync("honua://published-services");
+        var exactUri = advertised.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("serviceId").GetString() == firstDetails.GetProperty("serviceName").GetString())
+            .GetProperty("resourceUri").GetString();
         exactUri.Should().NotBeNullOrWhiteSpace();
-        var firstStorageId = int.Parse(first.GetProperty("storageLayerId").GetString()!, CultureInfo.InvariantCulture);
+        var firstStorageId = int.Parse(firstDetails.GetProperty("storageLayerId").GetString()!, CultureInfo.InvariantCulture);
         _publishedLayerIds.Add(firstStorageId);
 
         var second = await PublishAsync(_secondTable, "second layer");
@@ -367,7 +370,17 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         var result = document.RootElement.GetProperty("result");
         result.TryGetProperty("isError", out var isError);
         (isError.ValueKind == JsonValueKind.True).Should().BeFalse(body);
-        return result.GetProperty("structuredContent").Clone();
+        var proposal = result.GetProperty("structuredContent");
+        proposal.GetProperty("status").GetString().Should().Be("RequiresApproval", body);
+        var proposalId = proposal.GetProperty("proposalId").GetString();
+        proposalId.Should().NotBeNullOrWhiteSpace();
+        var live = await HumanApprovedOperation.ApproveAndReadHandleAsync(_fixture, proposalId!);
+        // The worker may finish before HTTP readback. Assert queued admission
+        // against the persisted handle, then verify live completion separately.
+        var accepted = await _fixture.Services.GetRequiredService<IOperationInstanceStore>()
+            .GetAsync(live.GetProperty("operationInstanceId").GetString()!);
+        accepted.Should().NotBeNull();
+        return JsonSerializer.SerializeToElement(accepted!, OperationsJsonContext.Default.OperationHandle);
     }
 
     private async Task<long> CountSourceRowsAsync(string table)
