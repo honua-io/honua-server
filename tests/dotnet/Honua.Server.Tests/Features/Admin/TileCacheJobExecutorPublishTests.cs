@@ -151,15 +151,6 @@ public sealed partial class TileCacheJobExecutorPublishTests
     [UnitTest]
     public async Task Publish_PartialTileFailure_DoesNotUploadOrOverwriteDeterministicKey()
     {
-        // Background: BuildPMTilesArchiveAsync swallows per-tile exceptions and
-        // continues with whatever tiles succeeded. For the temporary `archive`
-        // path that is fine — the result writes to a random per-job key with a
-        // 24h TTL. For durable `publish`, the deterministic key may already
-        // host a valid artifact, so a partial generation must not be
-        // promoted there. ExecutePublishAsync gates the upload on
-        // build.Failed == 0; this test confirms the gate by configuring the
-        // tile provider to throw on the second of two requested tiles.
-
         var stub = new StubCloudStorage();
         var publishOptions = new PMTilesPublishOptions
         {
@@ -171,22 +162,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
             stub,
             includeCloudStorage: true,
             publishOptions: publishOptions,
-            configureTileProvider: tileProvider =>
-            {
-                tileProvider.GetMvtTileAsync(
-                        Arg.Any<int>(),
-                        Arg.Any<int>(),
-                        Arg.Any<int>(),
-                        Arg.Any<int>(),
-                        Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery?>(),
-                        Arg.Any<Honua.Core.Features.Tiles.TileOptions>(),
-                        Arg.Any<TileLimits>(),
-                        Arg.Any<Honua.Core.Features.Tiles.GridGeometry?>(),
-                        Arg.Any<CancellationToken>())
-                    .Returns(
-                        Task.FromResult<byte[]?>(MvtTileBuilder.Canonical()),
-                        Task.FromException<byte[]?>(new InvalidOperationException("simulated tile fetch failure")));
-            });
+            configureTileProvider: FailSecondTile);
         var sut = CreateSut(serviceProvider);
 
         var jobId = await sut.StartAsync(new TileOperationStartRequest
@@ -1067,4 +1043,21 @@ public sealed partial class TileCacheJobExecutorPublishTests
             return Task.FromResult<IReadOnlyList<TProgress>>(operations);
         }
     }
+    private static void FailSecondTile(ITileProvider tileProvider)
+    {
+        tileProvider.GetMvtTileAsync(
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery?>(),
+                Arg.Any<Honua.Core.Features.Tiles.TileOptions>(),
+                Arg.Any<TileLimits>(),
+                Arg.Any<Honua.Core.Features.Tiles.GridGeometry?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult<byte[]?>(MvtTileBuilder.Canonical()),
+                Task.FromException<byte[]?>(new InvalidOperationException("simulated tile fetch failure")));
+    }
+
 }
