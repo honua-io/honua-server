@@ -18,6 +18,172 @@ public sealed class MigrationReaderCompatibilityTests
     private const string Additive = "ALTER TABLE honua.layers ADD COLUMN IF NOT EXISTS future_note text;";
     private const int Reader = 135;
 
+    [UnitTheory]
+    [InlineData("'", "--")]
+    [InlineData("$sql$", "--")]
+    [InlineData("'", "/*")]
+    [InlineData("$sql$", "/*")]
+    public void Verify_QuotedCommentBeforeConcatenatedDdl_RefusesContract(string delimiter, string quotedMarker)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}SELECT 1 AS "{{quotedMarker}}"; ALTER {{delimiter}} ||
+                    {{delimiter}}/**/TABLE honua.layers DROP COLUMN legacy_name{{delimiter}};
+            END;
+            $body$;
+            """;
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
+    public void Verify_CommentsSplitAcrossDynamicLiterals_RefusesContract(string delimiter)
+    {
+        var sql = $"DO $body$ BEGIN EXECUTE {delimiter}ALTER /{delimiter} || {delimiter}* comment *{delimiter} || {delimiter}/TABLE honua.layers DROP COLUMN legacy_name{delimiter}; END $body$;";
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("'", "/**/TABLE honua.layers DROP COLUMN legacy_name")]
+    [InlineData("$sql$", "/* outer /* nested */ comment */TABLE honua.layers RENAME TO archived_layers")]
+    [InlineData("'", "-- comment\nTABLE honua.layers ALTER COLUMN name TYPE integer")]
+    public void Verify_ConcatenatedDynamicSqlAcrossComments_RefusesContract(string delimiter, string fragment)
+    {
+        var sql = $"DO $body$ BEGIN EXECUTE {delimiter}ALTER {delimiter} || {delimiter}{fragment}{delimiter}; END $body$;";
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("'", "--\"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("$sql$", "--\"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("'", "/*\"; DROP/* outer /* nested */ comment */TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("$sql$", "/*\"; DROP/* outer /* nested */ comment */TABLE honua.evidence; SELECT 1 AS \"")]
+    public void Verify_ComputedCommentContext_RefusesDrop(string delimiter, string fragment)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}SELECT 1 AS {{delimiter}} || chr(34) ||
+                    {{delimiter}}{{fragment}}{{delimiter}} || chr(34);
+            END;
+            $body$;
+            """;
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("'", "DROP/**/TABLE honua.evidence")]
+    [InlineData("$sql$", "DROP/**/TABLE honua.evidence")]
+    [InlineData("'", "DROP/* outer /* nested */ comment */TABLE honua.evidence")]
+    [InlineData("$sql$", "DROP-- comment\nTABLE honua.evidence")]
+    [InlineData("$sql$", "SELECT 1 AS \"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("'", "SELECT 1 AS \"--\"; DROP/**/TABLE honua.evidence")]
+    [InlineData("'", "SELECT 1 AS \"/*\"; DROP/**/TABLE honua.evidence")]
+    [InlineData("$sql$", "SELECT 1 AS \"--\"; DROP/**/TABLE honua.evidence")]
+    [InlineData("$sql$", "SELECT 1 AS \"/*\"; DROP/**/TABLE honua.evidence")]
+    public void Verify_ComputedDynamicComments_RefusesDrop(string delimiter, string fragment)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}{{fragment}}{{delimiter}} || '';
+            END;
+            $body$;
+            """;
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
+    public void Verify_ComputedDynamicQuotes_RefusesTruncate(string delimiter)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}SELECT 1 AS {{delimiter}} || chr(34) ||
+                    {{delimiter}}CREATE TRIGGER "; TRUNCATE honua.evidence; SELECT 1 AS " BEFORE INSERT ON{{delimiter}} ||
+                    chr(34);
+            END;
+            $body$;
+            """;
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
+    public void Verify_DynamicTriggerFragmentsInOneExecute_RefusesTruncate(string delimiter)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}CREATE TRIGGER "first{{delimiter}} || chr(34) ||
+                    {{delimiter}} BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject();
+                      TRUNCATE honua.evidence;
+                      CREATE TRIGGER {{delimiter}} || chr(34) ||
+                    {{delimiter}}second" BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject(){{delimiter}};
+            END;
+            $body$;
+            """;
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Verify_IncompleteDynamicTriggerIdentifiers_RefusesTruncate()
+    {
+        const string sql = """
+            DO $$
+            BEGIN
+                EXECUTE 'CREATE TRIGGER "first' || chr(34) ||
+                    ' BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject()';
+                TRUNCATE honua.evidence;
+                EXECUTE 'CREATE TRIGGER ' || chr(34) ||
+                    'second" BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject()';
+            END;
+            $$;
+            """;
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Verify_TruncateTriggerDeclaration_IsExpandWithTheCorrectedReader()
+    {
+        const string sql = "CREATE TRIGGER guard BEFORE TRUNCATE ON honua.evidence EXECUTE FUNCTION reject();";
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Expand);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeTrue();
+        var destructive = MigrationReaderCompatibility.Declare(Name, sql + " TRUNCATE honua.evidence;");
+        MigrationReaderCompatibility.Verify(destructive, Name, Reader).Accepted.Should().BeFalse();
+    }
+
     [UnitTest]
     public void Declare_AdditiveScript_IsExpandFromAnyReader()
     {
