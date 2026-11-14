@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Realtime;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Realtime;
@@ -16,6 +17,23 @@ internal sealed partial class RealtimeTailBackgroundService(
     IOptions<RealtimeOptions> options,
     ILogger<RealtimeTailBackgroundService> logger) : BackgroundService
 {
+    internal IRealtimeStreamLifecycle? StreamLifecycle { get; init; }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (StreamLifecycle is { } lifecycle)
+            {
+                await lifecycle.DrainAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // A host without a system database has no log to follow.
@@ -79,6 +97,11 @@ internal sealed partial class RealtimeTailBackgroundService(
                 }
 
                 active.DrainWakeups();
+            }
+            else
+            {
+                RealtimeMetrics.Wakeups.Add(1, new KeyValuePair<string, object?>("source",
+                    listener?.IsConnected == true ? "safety-poll" : "degraded-poll"));
             }
         }
     }

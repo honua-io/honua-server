@@ -348,6 +348,11 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
         }
 
         _closed = true;
+        if (error is RealtimeSubscriptionClosedException { Reason: RealtimeResetReasons.SlowConsumer })
+        {
+            RealtimeMetrics.SlowConsumerClosed.Add(1, new KeyValuePair<string, object?>("family", Family.Name));
+            RealtimeMetrics.FramesDropped.Add(1, new KeyValuePair<string, object?>("family", Family.Name));
+        }
         _handoff.Clear();
         _dispatcher.Remove(this);
         _request.Writer.TryComplete(error);

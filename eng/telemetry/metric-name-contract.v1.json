@@ -1074,6 +1074,111 @@
       "unit": null,
       "series": ["honua_upload_queue_depth"],
       "source": "src/Honua.Server/Features/Infrastructure/Monitoring/ProductionMetricsCollector.cs"
+    },
+    {
+      "instrument": "honua.realtime.subscribers",
+      "kind": "UpDownCounter",
+      "unit": null,
+      "series": ["honua_realtime_subscribers"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.log.head",
+      "kind": "Gauge",
+      "unit": null,
+      "series": ["honua_realtime_log_head"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.dispatch.position",
+      "kind": "Gauge",
+      "unit": null,
+      "series": ["honua_realtime_dispatch_position"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.dispatch.lag.events",
+      "kind": "Gauge",
+      "unit": null,
+      "series": ["honua_realtime_dispatch_lag_events"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.dispatch.lag.seconds",
+      "kind": "Gauge",
+      "unit": null,
+      "series": ["honua_realtime_dispatch_lag_seconds"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.delivery.latency",
+      "kind": "Histogram",
+      "unit": null,
+      "series": ["honua_realtime_delivery_latency_bucket", "honua_realtime_delivery_latency_count", "honua_realtime_delivery_latency_sum"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.listener.connected",
+      "kind": "Gauge",
+      "unit": null,
+      "series": ["honua_realtime_listener_connected"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.listener.reconnects",
+      "kind": "Counter",
+      "unit": null,
+      "series": ["honua_realtime_listener_reconnects_total"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.wakeups",
+      "kind": "Counter",
+      "unit": null,
+      "series": ["honua_realtime_wakeups_total"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.resets",
+      "kind": "Counter",
+      "unit": null,
+      "series": ["honua_realtime_resets_total"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.slow_consumer.closed",
+      "kind": "Counter",
+      "unit": null,
+      "series": ["honua_realtime_slow_consumer_closed_total"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.frames.dropped",
+      "kind": "Counter",
+      "unit": null,
+      "series": ["honua_realtime_frames_dropped_total"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.authz.frames_filtered",
+      "kind": "Counter",
+      "unit": null,
+      "series": ["honua_realtime_authz_frames_filtered_total"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.authz.streams_revoked",
+      "kind": "Counter",
+      "unit": null,
+      "series": ["honua_realtime_authz_streams_revoked_total"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua.realtime.notify_queue.usage",
+      "kind": "Gauge",
+      "unit": null,
+      "series": ["honua_realtime_notify_queue_usage"],
+      "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
     }
   ]
 }

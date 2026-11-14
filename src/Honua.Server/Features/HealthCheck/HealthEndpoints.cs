@@ -4,6 +4,7 @@
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
@@ -66,6 +67,15 @@ internal static class HealthEndpoints
 
     private static async Task HandleReadinessProbe(HttpContext context)
     {
+        if (context.RequestServices.GetService<IRealtimeStreamLifecycle>()?.IsDraining == true)
+        {
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            context.Response.ContentType = "text/plain; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-store";
+            await context.Response.WriteAsync("Not Ready", context.RequestAborted);
+            return;
+        }
+
         // Delegate health checking to dedicated service
         IReadinessCheckService readinessCheckService = context.RequestServices.GetRequiredService<IReadinessCheckService>();
         ReadinessResult result = await readinessCheckService.CheckReadinessAsync(context.RequestAborted);
