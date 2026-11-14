@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Assets;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Forms.Packages;
@@ -9,7 +10,8 @@ using Honua.Core.Features.Forms.Packages;
 namespace Honua.Server.Features.Assets;
 
 // Activation inspects customer data without changing its columns or values.
-internal sealed class AssetProfileActivationValidator(IFeatureReader features)
+internal sealed class AssetProfileActivationValidator(
+    IFeatureReader features, IRowLevelSecurityFilterSource rowSecurity, IFieldMaskSource fieldMasks)
 {
     public async Task<IReadOnlyList<AssetFieldError>> ValidateAsync(
         FormTargetMetadataResolution target, AssetProfileFieldMap fields, CancellationToken cancellationToken)
@@ -22,6 +24,26 @@ internal sealed class AssetProfileActivationValidator(IFeatureReader features)
         }
 
         var identity = fields.AssetId!;
+        if (await rowSecurity.ResolveAsync(target.Resource!, cancellationToken).ConfigureAwait(false) is not null)
+        {
+            errors.Add(new AssetFieldError("state", "Activation requires unrestricted row visibility to validate all asset IDs."));
+            return errors;
+        }
+
+        var masked = await fieldMasks.ResolveAsync(target.Resource!, cancellationToken).ConfigureAwait(false);
+        if (masked.Contains(identity, StringComparer.OrdinalIgnoreCase))
+        {
+            errors.Add(new AssetFieldError("fields.assetId", "Activation requires visibility of the asset ID field."));
+            return errors;
+        }
+
+        return await ValidateIdentityAsync((layerId, identity), errors, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<AssetFieldError>> ValidateIdentityAsync(
+        (int LayerId, string Identity) target, List<AssetFieldError> errors, CancellationToken cancellationToken)
+    {
+        var (layerId, identity) = target;
         var quotedIdentity = $"\"{identity.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
         var nullCount = await features.CountAsync(layerId,
             new FeatureQuery { Where = $"{quotedIdentity} IS NULL", IncludeNullGeometry = true }, cancellationToken).ConfigureAwait(false);

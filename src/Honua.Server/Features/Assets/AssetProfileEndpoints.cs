@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Assets;
-using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Assets;
@@ -23,7 +22,7 @@ internal static class AssetProfileEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Assets")
-            .RequireAdminAuthorization();
+            .RequireAuthorization();
 
         MapCollectionRoutes(profiles);
         MapItemRoutes(profiles);

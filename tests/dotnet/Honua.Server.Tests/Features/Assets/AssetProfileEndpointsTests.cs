@@ -19,11 +19,12 @@ public sealed partial class AssetProfileEndpointsTests : IAsyncLifetime
 
     private static readonly string[] Labels = ["Very poor", "Poor", "Fair", "Good", "Very good"];
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = CreateAuthenticatedFixture();
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        SetPrincipal(_fixture.Client, "asset-admin", "admin");
         _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId, new MetadataV2Field { Name = "sign_id", Type = MetadataV2FieldType.String });
         _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId, new MetadataV2Field { Name = "condition_score", Type = MetadataV2FieldType.Integer, Nullable = true });
         _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId, new MetadataV2Field { Name = "inspected_on", Type = MetadataV2FieldType.DateTime, Nullable = true });
