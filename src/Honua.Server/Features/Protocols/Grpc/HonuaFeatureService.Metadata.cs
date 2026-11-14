@@ -71,7 +71,8 @@ internal sealed partial class HonuaFeatureService
             MaxRecordCount = _maxRecordCount,
             HasZ = resource.Display?.HasZ ?? false,
             HasM = resource.Display?.HasM ?? false,
-            Capabilities = await MetadataCapabilitiesAsync(layer, context).ConfigureAwait(false)
+            Capabilities = await MetadataCapabilitiesAsync(layer, context).ConfigureAwait(false),
+            AttachmentLimits = MetadataAttachmentLimits(layer, context)
         };
         PopulateLayerMetadata(descriptor, layer, fields);
         await AddMetadataRelationshipsAsync(descriptor, new(layer, visible), context).ConfigureAwait(false);
@@ -180,6 +181,9 @@ internal sealed partial class HonuaFeatureService
             result.Create |= capabilities.Create;
             result.Update |= capabilities.Update;
             result.Delete |= capabilities.Delete;
+            result.ListAttachments |= capabilities.ListAttachments;
+            result.UploadAttachments |= capabilities.UploadAttachments;
+            result.DeleteAttachments |= capabilities.DeleteAttachments;
         }
         return result;
     }
@@ -209,7 +213,8 @@ internal sealed partial class HonuaFeatureService
                 context.CancellationToken).ConfigureAwait(false) is not null,
             QueryDistinct = true,
             QueryOrderBy = true,
-            QueryPagination = true
+            QueryPagination = true,
+            ListAttachments = layer.Resource.Editing?.SupportsAttachments == true
         };
         var binding = layer.Snapshot?.ResolveStorageBinding(layer.Publication);
         if (binding is null || !FeatureStorageMapping.FromMetadata(layer.Resource, binding).SupportsManagedWrites)
@@ -219,6 +224,8 @@ internal sealed partial class HonuaFeatureService
         result.Create = await AllowsAsync(AuthorizationOperation.Insert).ConfigureAwait(false);
         result.Update = await AllowsAsync(AuthorizationOperation.Update).ConfigureAwait(false);
         result.Delete = await AllowsAsync(AuthorizationOperation.Delete).ConfigureAwait(false);
+        result.UploadAttachments = result.Update && result.ListAttachments && layer.Resource.Editing?.CanModify != false;
+        result.DeleteAttachments = result.UploadAttachments;
         return result;
 
         async Task<bool> AllowsAsync(AuthorizationOperation operation)
