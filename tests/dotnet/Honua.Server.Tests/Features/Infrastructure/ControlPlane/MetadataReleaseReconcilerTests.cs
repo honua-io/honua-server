@@ -158,7 +158,7 @@ public sealed class MetadataReleaseReconcilerTests
         harness.Graph.CurrentHistory.Should().Equal(1L);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task PostActivationRegression_RestoresPriorDocumentAsNewRevision_PreservesData_AndVerifiesRecovery()
     {
         var harness = new ReleaseHarness(faultInjection: true);
@@ -208,7 +208,7 @@ public sealed class MetadataReleaseReconcilerTests
             "committed feature edits and physical data are preserved");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Rollback_WhenConcurrentWriterWinsRestore_PreservesItsEditInNewRevision()
     {
         var harness = new ReleaseHarness(faultInjection: true);
