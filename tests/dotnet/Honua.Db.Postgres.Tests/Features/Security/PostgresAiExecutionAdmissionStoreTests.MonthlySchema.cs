@@ -72,6 +72,76 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
         (await remove.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("23514");
     }
 
+    [IntegrationTheory]
+    [InlineData("{\"Tokens\":0,\"Money\":30}")]
+    [InlineData("{\"Tokens\":30,\"Money\":-1}")]
+    [InlineData("{\"Tokens\":1.5,\"Money\":30}")]
+    [InlineData("{\"Tokens\":\"30\",\"Money\":30}")]
+    [InlineData("{\"Tokens\":30}")]
+    [InlineData("{\"Tokens\":1000000000000001,\"Money\":30}")]
+    public async Task MonthlySchema_InvalidLimits_AreRejected(string limits)
+    {
+        await SeedMonthlySchemaAsync(30);
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand($"UPDATE \"{_schema}\".ai_execution_policies SET epoch = epoch + 1, policy_json = jsonb_set(policy_json, '{{Financial,MonthlyActor}}', @limits::jsonb)", connection);
+        command.Parameters.AddWithValue("limits", limits);
+        var update = async () => await command.ExecuteNonQueryAsync();
+        (await update.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("23514");
+    }
+
+    [IntegrationTest]
+    public async Task MonthlySchema_SettlementOverrun_PreservesDebtAndStopsNextReservation()
+    {
+        await SeedMonthlySchemaAsync(30);
+        await ExecuteAsync($"UPDATE \"{_schema}\".ai_financial_invocations SET charged_tokens = 45, charged_money = 45, state = 'overrun'");
+        var insert = async () => await CloneMonthlyReservationAsync();
+        (await insert.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("23514");
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand($"SELECT count(*) FROM \"{_schema}\".ai_monthly_actor_notices WHERE delivered_at IS NULL", connection);
+        (await command.ExecuteScalarAsync()).Should().Be(1L);
+    }
+
+    [IntegrationTest]
+    public async Task MonthlySchema_ThresholdNotice_IsPersistedAtEightyPercentOnlyOnce()
+    {
+        await SeedMonthlySchemaAsync(30);
+        await ExecuteAsync($"UPDATE \"{_schema}\".ai_financial_invocations SET charged_tokens = 23, charged_money = 23");
+        (await MonthlyNoticeCountAsync()).Should().Be(0);
+        await ExecuteAsync($"UPDATE \"{_schema}\".ai_financial_invocations SET charged_tokens = 24, charged_money = 24");
+        (await MonthlyNoticeCountAsync()).Should().Be(1);
+        await ExecuteAsync($"UPDATE \"{_schema}\".ai_financial_invocations SET charged_tokens = 30, charged_money = 30");
+        (await MonthlyNoticeCountAsync()).Should().Be(1);
+    }
+
+    [IntegrationTest]
+    public async Task MonthlySchema_PriorMonthSettledUsage_DoesNotConsumeCurrentMonthCap()
+    {
+        await SeedMonthlySchemaAsync(30);
+        await ExecuteAsync($"UPDATE \"{_schema}\".ai_financial_invocations SET state = 'settled', settled_at = clock_timestamp(), reserved_at = clock_timestamp() - INTERVAL '2 months'");
+        await CloneMonthlyReservationAsync();
+        await CloneMonthlyReservationAsync();
+        var insert = async () => await CloneMonthlyReservationAsync();
+        (await insert.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("23514");
+        (await FinancialCountAsync()).Should().Be(3);
+    }
+
+    [IntegrationTest]
+    public async Task MonthlySchema_ReplayingFinancialMigration_DoesNotRemoveMonthlyFence()
+    {
+        await SeedMonthlySchemaAsync(15);
+        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "CreateAiFinancialAccounting.sql"));
+        await ExecuteAsync(sql.Replace("$HonuaSchema$", $"\"{_schema}\"", StringComparison.Ordinal));
+        var insert = async () => await CloneMonthlyReservationAsync();
+        (await insert.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("23514");
+    }
+
+    private async Task<long> MonthlyNoticeCountAsync()
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand($"SELECT count(*) FROM \"{_schema}\".ai_monthly_actor_notices WHERE delivered_at IS NULL", connection);
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
     private async Task SeedMonthlySchemaAsync(int limit)
     {
         var store = Store(); var policy = FinancialPolicy();
@@ -99,7 +169,8 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
     private Task CloneMonthlyReservationAsync() => ExecuteAsync($$"""
         INSERT INTO "{{_schema}}".ai_financial_invocations
         SELECT (jsonb_populate_record(NULL::"{{_schema}}".ai_financial_invocations,
-            to_jsonb(f) || jsonb_build_object('attempt_id', '{{Guid.NewGuid():D}}'))).*
+            to_jsonb(f) || jsonb_build_object('attempt_id', '{{Guid.NewGuid():D}}',
+                'reserved_at', clock_timestamp(), 'state', 'reserved', 'settled_at', NULL))).*
         FROM "{{_schema}}".ai_financial_invocations f LIMIT 1
         """);
 }
