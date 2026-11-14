@@ -66,7 +66,22 @@ internal sealed partial class FeatureStreamRealtimeRelay(
         await using var subscription = provider!.Subscribe(
             new RealtimeSubscriptionRequest(RealtimeFamily.Features, [], _relayed, channel.Writer));
         Volatile.Write(ref _subscription, subscription);
-        await foreach (var delivery in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        // While this subscription runs, sessions skip store reads they would only repeat; when it
+        // ends or fails they read the store again until the next subscription is positioned.
+        sessionManager.AttachRelay(() => subscription.Position);
+        try
+        {
+            await RelayDeliveriesAsync(channel.Reader, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            sessionManager.DetachRelay();
+        }
+    }
+
+    private async Task RelayDeliveriesAsync(ChannelReader<RealtimeDelivery> reader, CancellationToken cancellationToken)
+    {
+        await foreach (var delivery in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
         {
             switch (delivery)
             {
@@ -92,6 +107,11 @@ internal sealed partial class FeatureStreamRealtimeRelay(
                 FeatureStreamPublisher.ToEnvelope(featureChange),
                 featureChange.GeometryEnvelope,
                 featureChange.PropertiesJson));
+            sessionManager.MarkRelayed(change.Sequence);
+        }
+        else
+        {
+            sessionManager.MarkUnrelayed(change.Sequence);
         }
 
         _relayed = change.Sequence;

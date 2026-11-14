@@ -182,6 +182,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
         var full = await ReadSnapshotAsync(_client, timeout.Token);
         full.Frame.GetProperty("complete").GetBoolean().Should().BeTrue();
+        full.Frame.GetProperty("resumeCursor").GetString().Should().Be(
+            $"features:{full.Frame.GetProperty("cursor").GetInt64()}");
         full.Frame.GetProperty("featureCount").GetInt64().Should().BeGreaterThan(0);
         var budget = full.Bytes - 1;
         await using var boundedFixture = CreateFixtureWithDeploymentConfig(new Dictionary<string, string?>
@@ -193,6 +195,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         var bounded = await ReadSnapshotAsync(boundedClient, timeout.Token);
         bounded.Bytes.Should().BeLessThanOrEqualTo(budget);
         bounded.Frame.GetProperty("complete").GetBoolean().Should().BeFalse();
+        bounded.Frame.TryGetProperty("resumeCursor", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -1233,6 +1236,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 .Should().Be(bounded.Frames.Features.Count);
             bounded.Frames.End.GetProperty("complete").GetBoolean().Should().BeFalse(
                 "a baseline the budget truncated is not authoritative");
+            bounded.Frames.End.TryGetProperty("resumeCursor", out _).Should().BeFalse();
 
             // A truncated baseline is never a resumable checkpoint: the features it dropped did
             // not change, so no later delta would ever carry them.
