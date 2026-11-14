@@ -403,8 +403,10 @@ internal static partial class FeatureStreamEndpoints
                         // Ignore expected cancellation for the alternate waiter.
                     }
 
-                    if (!sessionManager.NeedsStorePoll(session.SessionId, replayCursor))
+                    if (sessionManager.StorePollSkipCursor(session.SessionId, replayCursor) is { } covered)
                     {
+                        replayCursor = covered;
+                        liveDelivered.AdvanceFloor(replayCursor);
                         nextPollAt = DateTimeOffset.UtcNow + options.CrossNodeSyncInterval;
                         continue;
                     }
@@ -527,8 +529,10 @@ internal static partial class FeatureStreamEndpoints
                 // traffic could keep us pinned in the read branch and the
                 // durable-store sweep would never fire.
                 if (DateTimeOffset.UtcNow >= nextPollAt &&
-                    !sessionManager.NeedsStorePoll(session.SessionId, replayCursor))
+                    sessionManager.StorePollSkipCursor(session.SessionId, replayCursor) is { } drainedThrough)
                 {
+                    replayCursor = drainedThrough;
+                    liveDelivered.AdvanceFloor(replayCursor);
                     nextPollAt = DateTimeOffset.UtcNow + options.CrossNodeSyncInterval;
                 }
                 else if (DateTimeOffset.UtcNow >= nextPollAt)

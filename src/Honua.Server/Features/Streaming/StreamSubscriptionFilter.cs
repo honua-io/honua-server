@@ -128,6 +128,27 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         return _serviceId is null || string.Equals(envelope.ServiceId, _serviceId, _serviceIdComparison);
     }
 
+    // True when the routability snapshot, not the subscription's own criteria, turns this change
+    // away. That snapshot can lag a publish by its refresh interval, so such a change must still be
+    // read from the store rather than treated as offered.
+    internal bool RejectedByRoutability(FeatureStreamEnvelope envelope)
+    {
+        if (_routabilityGuard is null)
+        {
+            return false;
+        }
+
+        if (envelope.ServiceId.Length > 0)
+        {
+            return !_routabilityGuard.IsRoutable(envelope.ServiceId, envelope.LayerId, _resolvedServiceId);
+        }
+
+        var subscribedService = _resolvedServiceId ?? _serviceId;
+        return subscribedService is null
+            ? !_routabilityGuard.IsLayerRoutable(envelope.LayerId)
+            : !_routabilityGuard.IsRoutable(subscribedService, envelope.LayerId, _resolvedServiceId);
+    }
+
     private bool MatchesDatabaseChangeRoute(int layerId)
     {
         var subscribedService = _resolvedServiceId ?? _serviceId;
