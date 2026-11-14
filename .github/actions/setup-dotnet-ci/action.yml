@@ -150,6 +150,9 @@ runs:
     #
     # Opt in via `with: enable-build-cache: 'true'` on the calling job after
     # confirming the restored binary payload fits the hosted runner disk budget.
+    # Features changes can leave incremental AOT outputs stale. Keep both the
+    # exact key and fallback lineage isolated by Directory.Build.targets, which
+    # defines runtime-async, so a fallback cannot restore another lowering mode.
     - name: Cache .NET build outputs
       if: inputs.enable-build-cache == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -157,9 +160,9 @@ runs:
         path: |
           **/bin
           **/obj
-        key: ${{ github.repository }}-${{ runner.os }}-dotnet-build-${{ hashFiles('**/*.cs', '**/*.csproj', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets') }}
+        key: ${{ github.repository }}-${{ runner.os }}-dotnet-build-${{ hashFiles('Directory.Build.targets') }}-${{ hashFiles('**/*.cs', '**/*.csproj', 'Directory.Packages.props', 'Directory.Build.props', 'Directory.Build.targets') }}
         restore-keys: |
-          ${{ github.repository }}-${{ runner.os }}-dotnet-build-
+          ${{ github.repository }}-${{ runner.os }}-dotnet-build-${{ hashFiles('Directory.Build.targets') }}-
 
     - name: Configure GitHub Packages
       shell: bash
