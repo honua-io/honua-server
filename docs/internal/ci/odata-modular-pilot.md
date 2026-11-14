@@ -7,6 +7,15 @@ The new minimal-host component tests and performance measurements remain
 opt-in. Full solution validation, provider coverage, and AOT/image release gates
 remain required. A green pilot is evidence for this composition only.
 
+On the .NET 11 trunk, both `identity` and `run` stop before producing a
+measurement: their OData dependency closure includes `Honua.Core` and
+`Honua.Core.Abstractions`, which target both `net10.0` and `net11.0`. The driver
+rejects `TargetFrameworks` with “Multi-target graph needs explicit per-framework
+evaluation”. `plan` remains available. Do not remove the rejection or treat a
+single outer-build evaluation as a complete input identity. Measured runs need
+per-framework closure evaluation and matching restore/build/test properties
+before this pilot can qualify the current trunk. Normal CI is unaffected.
+
 The driver is `scripts/ci/odata-pilot/pilot.py`. Its `plan` operation writes a
 reviewable selection without restoring, evaluating MSBuild, building, testing,
 or invoking Docker. Missing extracted projects are reported as blockers. The
