@@ -18,11 +18,11 @@ once, including future methods. This addresses a 29-minute pre-PR capacity
 exhaustion with active output at termination; it does not extend timeouts.
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (123 files). Other Honua repositories keep their own inventories;
+> repository (124 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-11-10.
+> Last updated: 2026-11-14.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -130,6 +130,7 @@ Markdown sources and doctor-only tooling have been removed.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
+| `heavy-shutdown-retry.yml` | Heavy Runner Shutdown Retry | `workflow_run` (completed CI) | One bounded retry of proven full-trunk heavy runner shutdowns; no PR jobs. |
 | `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context. Admission checks run first. `pr-gate` builds the affected graph plus planned managed test roots and the server host, publishes pristine per-project outputs and runs the required boot/migration smoke against its canonical host output. The independent `fast-tests` matrix keeps four check names alongside it, selecting each build/test body by the shared affected-project reverse closure and its existing test roots (empty closures skip only with positive governed-docs proof; unknown selection retains all). Every nonempty managed closure also retains architecture and Server governance checks. Selected groups compile only their own test roots: `architecture` (projection regeneration, source and collector architecture, MCP roster drift), `unit-fast` (isolated unit Fast tier), `server-fast` (Server Fast tier) and `server-governance` (Server governance/drift with PostGIS); both server jobs first refresh the admin parity exports Server.Tests compares. The `format` matrix runs `dotnet format` and the analyzer build (affected closure, analyzers, code style and documentation diagnostics as errors) as four jobs: Format, Analyzers (source projects), Analyzers (tests), and Analyzers (server tests, including the architecture collector so other tests do not recompile Server.Tests). Drafts instantiate only Format; ready PRs instantiate all four rows. The source job always retains all solution source roots, including dependencies of affected test roots, and evaluates ownership after SDK/NuGet imports and removes test-only compilation roots (multi-targeted roots remain conservative); all analyzer jobs compile forward dependencies; `HonuaAnalyzerPartition` assigns each project to exactly one diagnostics pass using `IsTestProject`. Runtime execution proofs and fidelity run in full CI, followed by the default PostGIS profile and connection-write policy checks. The independent format and CI-router jobs remain required; `required.needs` is `[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]`. Selected shard jobs, bounded by the `pr_time_budget` in `.github/ci-shards.json` (over-budget shards are deferred to the next trunk run and named in a green `deferred` verdict), consume the same outputs; their aggregate enforces measured timing/TRX receipts and fails the required context on failed or missing execution. Review-first enforcement and docs-only exits remain inside the unfiltered workflow. See the [artifact contract](server-test-binary-artifacts.md) for identity, transport bounds, fallback and rollback. `runner-select` reserves the gate label for `pr-gate` and `server-test-producer`; Format/analyzers and all four Fast/architecture groups use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector, falling back to hosted independently of producer admission or static heavy settings, including draft Format. No early light job inherits the two producer slots; existing even-index affected-shard routing is unchanged ([gate-model.md → PR Gate compute runner selection](gate-model.md#pr-gate-compute-runner-selection)). |
 | `review-gate.yml` | Review Gate Attestation | `pull_request_target`, `issue_comment`, trusted `repository_dispatch`, `workflow_run` [PR Gate, Review Event Bridge] | Required admission context. Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. Cancels superseded events by resolved PR number and skips drafts, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt; merge-train selection and pre-land independently re-attest source evidence. |
 | `repo-hygiene.yml` | Repository hygiene | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Required additions-only context `repo-hygiene / Repository hygiene`. Runs the execution-evidence checker and its tests from the trusted base commit against the explicit PR head, including older heads without those scripts. Calls the shared SHA-pinned workflow with read-only permissions; reads the repository-owned root allowlist and exact gate-input exceptions from the trusted base branch, rejecting new scratch, run output, dated history, samples and unexpected root entries. |
@@ -886,6 +887,27 @@ gate runners. Heavy-pool readiness remains independent of gate-pool admission.
 The producer takes one snapshot; the existing PR selector retains its bounded
 wake/wait orchestration. Both sparse checkouts include the shared validator.
 
+
+### Heavy runner shutdown recovery
+
+`heavy-shutdown-retry.yml` observes completed full trunk `CI` runs. It reads
+trusted trunk code and revalidates the source run before requesting one failed-job
+rerun. Only attempt 1 qualifies, and every failed non-summary job must have the
+`honua-heavy` label and the canonical runner shutdown message in its logs.
+Successful jobs remain completed; failed jobs and their dependents run once more.
+Manual cancellations, selective runs, mixed product failures, unreadable logs and
+second interruptions do not retry. Summary failures qualify only in known dependent-verdict steps; independent foundation/artifact failures remain failures. Required job names and dependency contracts
+are unchanged. Manual full trunk runs use the `CI full` title prefix and selective trunk runs retain `CI affected`, so a dispatch nonce cannot change the mode; merge-train
+dispatch identities retain their existing exact title.
+
+Normal PRs add zero jobs. Each failed first-attempt full trunk run starts one
+hosted observer; a qualifying interruption also requeues only failed jobs and
+dependents. The seven interrupted jobs in run 43540829683 all stopped at
+02:15:21Z on 14 November; that run was later cancelled and is ineligible for
+recovery. No after-change recovery timing is claimed before a live interruption.
+The companion IaC drain marker blocks fresh registration and listener restart
+before stopping all runner services on a spot notice. GitHub records interrupted
+jobs as failed until the observer requests the bounded rerun after completion.
 
 ### Superseded repository hygiene
 
