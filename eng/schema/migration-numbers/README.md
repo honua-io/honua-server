@@ -12,7 +12,10 @@ next free number. Claims are immutable. They make two concurrent PRs with the sa
 number conflict in Git even if both checks passed before either PR landed. Renumber
 the pending migration, its claim, and its hash pin after the first PR merges.
 The Server and Postgres SQL directories have separate number sequences. Existing
-migrations do not need backfilled claims; hash immutability remains a separate gate.
+migrations do not need backfilled claims. The same admission guard rejects edits,
+deletions and renames of existing hash pins against trusted trunk, including paired
+SQL-and-pin edits. Pins added only on newer trunk do not force stale branches to
+refresh.
 
 ## Atomic policy cutover
 
