@@ -20,6 +20,7 @@ public sealed partial class DirectImportCrsContractTests
         await using var register = new NpgsqlCommand("""
             INSERT INTO spatial_ref_sys (srid, auth_name, auth_srid, srtext, proj4text)
             VALUES (910001, 'HONUA_TEST', 910001, 'unsupported test projection', '+proj=honua_invalid_projection')
+            ON CONFLICT (srid) DO NOTHING
             """, connection);
         await register.ExecuteNonQueryAsync();
         try

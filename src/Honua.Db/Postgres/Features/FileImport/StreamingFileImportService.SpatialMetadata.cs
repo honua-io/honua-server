@@ -112,6 +112,11 @@ internal sealed partial class StreamingFileImportService
         ImportedDatasetSpatialMetadata.Facts? facts, ImportTargetOptions options, CancellationToken cancellationToken)
     {
         var storageSrid = ResolveAppendStorageSrid(facts, options);
+        if (storageSrid == (options.Request.TargetSrid ?? options.SourceSrid))
+        {
+            // The request pair was validated before preparation; skip extra pooled connections under the lock.
+            return storageSrid;
+        }
         var issues = await ValidateImportSridsAsync(options.SourceSrid, storageSrid, cancellationToken);
         if (issues.Count > 0)
         {
