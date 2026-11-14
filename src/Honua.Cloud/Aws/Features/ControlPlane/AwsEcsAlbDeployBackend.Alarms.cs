@@ -12,7 +12,7 @@ internal sealed partial class AwsEcsAlbDeployBackend
         if (AlarmAdmission is not null &&
             await AlarmAdmission.GetBlockingReasonAsync(spec.TargetId, cancellationToken).ConfigureAwait(false) is { } reason)
         {
-            throw new InvalidOperationException(reason);
+            throw new DeployAdmissionBlockedException(reason);
         }
     }
 }

@@ -26,7 +26,22 @@ internal sealed partial class DeployWorkflowReconciler(
             if (!await workflowStore.TrySetAsync(preparing, cancellationToken: cancellationToken).ConfigureAwait(false)) return;
             var claimed = await workflowStore.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
             if (claimed is null || claimed.CurrentPhase != ICheckpointedDeployBackend.PreparingPhase) return;
-            var checkpoint = await backend.PrepareCheckpointAsync(claimed, cancellationToken).ConfigureAwait(false);
+            DeployCheckpoint checkpoint;
+            try
+            {
+                checkpoint = await backend.PrepareCheckpointAsync(claimed, cancellationToken).ConfigureAwait(false);
+            }
+            catch (DeployAdmissionBlockedException)
+            {
+                // Admission is checked before migration, so the preparation can be retried safely.
+                await workflowStore.TrySetAsync(claimed with
+                {
+                    CurrentPhase = ICheckpointedDeployBackend.PendingPhase,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                }, cancellationToken: cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+
             var prepared = claimed with
             {
                 CurrentPhase = ICheckpointedDeployBackend.PreparedPhase,
@@ -281,6 +296,10 @@ internal sealed partial class DeployWorkflowReconciler(
             {
                 Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
             }
+        }
+        catch (DeployAdmissionBlockedException)
+        {
+            // Admission refused before mutation; preserve the operation so rollback remains available.
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
