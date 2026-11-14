@@ -778,9 +778,20 @@ none PATCH /healthz/metrics
 none PATCH /healthz/ready
 none POST /geospatial.v1.ElevationService/GetElevation
 none POST /geospatial.v1.ElevationService/GetElevationProfile
+# Generated base handlers for unimplemented FeatureService RPCs return status Unimplemented.
+none POST /geospatial.v1.FeatureService/AbortAttachmentUpload
 none POST /geospatial.v1.FeatureService/ApplyEdits
+none POST /geospatial.v1.FeatureService/BeginAttachmentUpload
+none POST /geospatial.v1.FeatureService/CommitAttachmentUpload
+none POST /geospatial.v1.FeatureService/DeleteAttachment
+none POST /geospatial.v1.FeatureService/DescribeLayer
+none POST /geospatial.v1.FeatureService/DescribeService
+none POST /geospatial.v1.FeatureService/GetAttachmentUrl
+none POST /geospatial.v1.FeatureService/ListAttachments
 none POST /geospatial.v1.FeatureService/QueryFeatures
 none POST /geospatial.v1.FeatureService/QueryFeaturesStream
+none POST /geospatial.v1.FeatureService/UploadAttachment
+none POST /geospatial.v1.FeatureService/UploadAttachmentChunk
 none POST /geospatial.v1.ProcessService/CancelJob
 none POST /geospatial.v1.ProcessService/DryRunPlan
 none POST /geospatial.v1.ProcessService/ExecutePlan
