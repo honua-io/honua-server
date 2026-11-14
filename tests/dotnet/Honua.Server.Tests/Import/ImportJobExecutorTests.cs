@@ -101,18 +101,7 @@ public sealed partial class ImportJobExecutorTests
         var execution = service.ExecuteAsync(record, Substitute.For<IJobExecutionContext>(), cancellation.Token);
         try
         {
-            await importer.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            var running = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
-            running.Should().NotBeNull();
-            await jobManager.ProgressStore.SetProgressAsync(
-                jobId,
-                running! with
-                {
-                    Status = GeoservicesImportStatus.Cancelled,
-                    CurrentPhase = "Cancellation requested"
-                },
-                TimeSpan.FromMinutes(10));
-            importer.Release.TrySetResult(true);
+            await ReleaseCommittedCancellationAsync(jobManager, importer, jobId);
 
             await WaitForAsync(
                 async () =>
@@ -244,6 +233,25 @@ public sealed partial class ImportJobExecutorTests
             await ImportExecutionTestJobs.ObserveAsync(execution);
         }
     }
+    private static async Task ReleaseCommittedCancellationAsync(
+        GeoservicesImportJobManager jobManager,
+        CommittedCancelGeoservicesImportService importer,
+        string jobId)
+    {
+        await importer.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var running = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
+        running.Should().NotBeNull();
+        await jobManager.ProgressStore.SetProgressAsync(
+            jobId,
+            running! with
+            {
+                Status = GeoservicesImportStatus.Cancelled,
+                CurrentPhase = "Cancellation requested"
+            },
+            TimeSpan.FromMinutes(10));
+        importer.Release.TrySetResult(true);
+    }
+
     private static void AssertCommittedCancellation(GeoservicesImportProgress completed)
     {
         completed.Status.Should().Be(GeoservicesImportStatus.NeedsReview);
