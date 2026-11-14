@@ -97,14 +97,14 @@ public sealed class GeoServicesDatumTransformationCatalogTests
     }
 
     [UnitTheory]
-    [InlineData(-170, 60, 170, 65)]
-    [InlineData(-180, 60, 180, 65)]
-    [InlineData(double.NaN, 60, -150, 65)]
-    [InlineData(-150, 65, -149, 60)]
+    [InlineData(new double[] { -170, 60, 170, 65 })]
+    [InlineData(new double[] { -180, 60, 180, 65 })]
+    [InlineData(new double[] { double.NaN, 60, -150, 65 })]
+    [InlineData(new double[] { -150, 65, -149, 60 })]
     public void TryGetForEnvelope_InvalidOrOutsideAlaskaArc_ReturnsFalse(
-        double west, double south, double east, double north)
+        double[] bounds)
     {
-        _catalog.TryGetForEnvelope(Nad27, Nad83, west, south, east, north, out var selection)
+        _catalog.TryGetForEnvelope(Nad27, Nad83, bounds[0], bounds[1], bounds[2], bounds[3], out var selection)
             .Should().BeFalse();
         selection.Should().BeNull();
     }

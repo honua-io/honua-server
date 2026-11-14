@@ -90,9 +90,7 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
                 break;
             }
 
-            if (!Contains(candidate.Envelope, envelope)
-                || candidate.GridCoverage.Count > 0
-                    && !candidate.GridCoverage.Any(area => Contains(area, envelope)))
+            if (!CoversEnvelope(candidate, envelope))
             {
                 continue;
             }
@@ -109,6 +107,11 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
 
         return selection is not null;
     }
+
+    private static bool CoversEnvelope(AreaCandidate candidate, DatumAreaEnvelope envelope)
+        => Contains(candidate.Envelope, envelope)
+            && (candidate.GridCoverage.Count == 0
+                || candidate.GridCoverage.Any(area => Contains(area, envelope)));
 
     public bool HasAreaOfUse(int fromSrid, int toSrid)
         => _byArea.ContainsKey((fromSrid, toSrid));
