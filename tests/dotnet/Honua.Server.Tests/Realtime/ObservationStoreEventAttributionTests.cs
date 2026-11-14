@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Realtime;
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 [Operation(Operations.Create)]
-[Endpoint("/odata/v1.1/Observations")]
+[Endpoint("/sta/v1.1/Observations")]
 public sealed class ObservationStoreEventAttributionTests
 {
     [IntegrationTest]
@@ -54,7 +54,7 @@ public sealed class ObservationStoreEventAttributionTests
 
     [IntegrationTest]
     [Operation(Operations.Update)]
-    [Endpoint("/odata/v1.1/Datastreams({id})")]
+    [Endpoint("/sta/v1.1/Datastreams({id})")]
     public async Task PatchEntity_InlineObservationsRejectsWithoutPublishingEvents()
     {
         var fixture = new WebAppFixture();
