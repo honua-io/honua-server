@@ -64,7 +64,7 @@ class ReadinessDiagnosticTests(unittest.TestCase):
         with patch.object(manual, 'wait_ready', side_effect=original), \
                 patch.object(manual, 'readiness_diagnostics', return_value='services=exited'):
             with self.assertRaisesRegex(AssertionError, 'initial rc.1.*services=exited') as caught:
-                manual.wait_ready_with_diagnostics(1234, [], {}, Path('/unused'), 'initial rc.1')
+                manual.wait_ready_with_diagnostics(1234, 'initial rc.1', ([], {}, Path('/unused')))
         self.assertIs(original, caught.exception.__cause__)
 
     def test_failed_journey_collects_evidence_before_volume_cleanup(self):
@@ -90,7 +90,7 @@ class ReadinessDiagnosticTests(unittest.TestCase):
     def test_success_does_not_collect_diagnostics(self):
         with patch.object(manual, 'wait_ready'), \
                 patch.object(manual, 'readiness_diagnostics') as diagnostics:
-            manual.wait_ready_with_diagnostics(1234, [], {}, Path('/unused'), 'candidate')
+            manual.wait_ready_with_diagnostics(1234, 'candidate', ([], {}, Path('/unused')))
         diagnostics.assert_not_called()
 
 
