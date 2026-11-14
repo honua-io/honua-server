@@ -3,23 +3,30 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Assets;
+using Honua.Server.Features.Assets;
 
 namespace Honua.Server.Features.Tasks;
 
-internal sealed class WorkTaskCompletionValidation(TimeProvider clock, WorkTaskCompletionForm forms)
+internal sealed class WorkTaskCompletionProcessor(WorkTaskCompletionForm form, WorkTaskCompletionExecution execution, TimeProvider clock)
 {
     private const int MaxNotesLength = 4000;
     private const int MinCondition = 1;
     private const int MaxCondition = 5;
-
-    // Field devices drift; an observation a few minutes ahead of the server is accepted, later ones are not.
     private static readonly TimeSpan ClockSkewAllowance = TimeSpan.FromMinutes(5);
 
-    public async Task<AssetFieldError[]> ValidateAsync(WorkTaskCompletionRequest request, WorkTask task, CancellationToken cancellationToken)
+    public async Task<IResult> CompleteAsync(HttpContext context,
+        (WorkTask Task, WorkTaskCompletionRequest Request, AssetCommand Command, long Generation) completion)
     {
-        return Validate(request, task) is { } invalid
-            ? [invalid]
-            : await forms.ValidateAsync((task, request), cancellationToken).ConfigureAwait(false);
+        var (task, request, command, _) = completion;
+        if (Validate(request, task) is { } invalid)
+        {
+            return AssetCommandHttp.Rejected(context, [invalid]);
+        }
+        if (await form.ValidateAsync((task, request, command.Actor), context.RequestAborted).ConfigureAwait(false) is { Length: > 0 } errors)
+        {
+            return AssetCommandHttp.Rejected(context, errors);
+        }
+        return await execution.ApplyAsync(context, completion).ConfigureAwait(false);
     }
 
     private AssetFieldError? Validate(WorkTaskCompletionRequest request, WorkTask task)

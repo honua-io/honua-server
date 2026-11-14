@@ -15,13 +15,25 @@ internal static class AssetsServiceCollectionExtensions
         services.AddScoped<AssetProfileValidator>();
         services.AddScoped<AssetProfileActivationValidator>();
         services.AddScoped<AssetProfileService>();
+        services.AddScoped<AssetCompletionCapabilities>();
+        services.AddScoped<Tasks.WorkTaskAssetResolver>();
+        services.AddScoped<Tasks.WorkTaskAssetReader>();
+        services.AddScoped<Tasks.WorkTaskCompletionWriteback>();
+        services.AddScoped<Tasks.WorkTaskCompletionForm>();
+        services.AddScoped<Tasks.WorkTaskCompletionEdits>();
         services.AddScoped<Tasks.WorkTaskLocator>();
         services.AddScoped<Tasks.WorkTaskAssetGeometry>();
         services.AddScoped<Tasks.WorkTaskFormBinding>();
         services.AddScoped<Tasks.WorkTaskService>();
-        services.AddScoped<Tasks.WorkTaskCompletionForm>();
-        services.AddScoped<Tasks.WorkTaskCompletionValidation>();
         services.AddScoped<Tasks.WorkTaskCompletionService>();
+        services.AddScoped<Tasks.WorkTaskCompletionProcessor>();
+        services.AddScoped<Tasks.WorkTaskCompletionExecution>();
+        services.AddScoped<Tasks.WorkTaskAttachmentAccess>();
+        services.AddScoped<Tasks.WorkTaskAttachmentPolicy>();
+        services.AddScoped<Tasks.WorkTaskAttachmentContent>();
+        services.AddScoped<Tasks.WorkTaskAttachmentService>();
+        services.AddScoped<Tasks.WorkTaskAttachmentCleanup>();
+        services.AddHostedService<Tasks.WorkTaskAttachmentCleanupWorker>();
         return services;
     }
 }

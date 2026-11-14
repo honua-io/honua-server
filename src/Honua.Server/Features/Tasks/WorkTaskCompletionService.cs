@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Assets;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Assets;
 
@@ -9,8 +10,8 @@ namespace Honua.Server.Features.Tasks;
 
 internal sealed class WorkTaskCompletionService(
     IWorkTaskStore tasks,
-    IWorkTaskCompletionStore completions,
-    WorkTaskCompletionValidation validation)
+    IConfigurationGenerationSource generation,
+    WorkTaskCompletionProcessor processor)
 {
     public async Task<IResult> CompleteAsync(HttpContext context, Guid taskId)
     {
@@ -20,6 +21,7 @@ internal sealed class WorkTaskCompletionService(
             return AssetCommandHttp.Rejected(context, "expectedVersion", "A JSON body with commandId and expectedVersion is required.");
         }
 
+        var configurationGeneration = await generation.GetGenerationAsync(context.RequestAborted).ConfigureAwait(false);
         var task = await tasks.GetAsync(taskId, context.RequestAborted).ConfigureAwait(false);
         if (task is null ||
             (await WorkTaskAccess.RequireAsync(context, task.ServiceId, task.ProfileId).ConfigureAwait(false)).Denied is not null)
@@ -36,14 +38,13 @@ internal sealed class WorkTaskCompletionService(
             return AssetCommandHttp.ToResult(context, replay, StatusCodes.Status200OK);
         }
 
-        if (await validation.ValidateAsync(request, task, context.RequestAborted).ConfigureAwait(false) is { Length: > 0 } invalid)
+        var result = await processor.CompleteAsync(context, (task, request, command, configurationGeneration)).ConfigureAwait(false);
+        if (result is IStatusCodeHttpResult { StatusCode: StatusCodes.Status400BadRequest } &&
+            await tasks.FindReceiptAsync(command, context.RequestAborted).ConfigureAwait(false) is { } committed)
         {
-            return AssetCommandHttp.Rejected(context, invalid);
+            return AssetCommandHttp.ToResult(context, committed, StatusCodes.Status200OK);
         }
 
-        var actor = AssetCommandHttp.ResolveTaskActor(context);
-        var result = await completions.CompleteAsync(new WorkTaskCompletionCommand { TaskId = taskId, Request = request, Actor = actor, Command = command }, context.RequestAborted).ConfigureAwait(false);
-        return AssetCommandHttp.ToResult(context, result, StatusCodes.Status200OK);
+        return result;
     }
-
 }

@@ -76,6 +76,10 @@ public sealed record AssetProfileWriteRequest
 
 public sealed record AssetProfile
 {
+    [JsonPropertyName("completionCapabilities")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AssetProfileCompletionCapabilities? CompletionCapabilities { get; init; }
+
     [JsonPropertyName("profileId")]
     public required Guid ProfileId { get; init; }
 
@@ -144,3 +148,9 @@ public sealed record AssetProfileListResult
 }
 
 public sealed record AssetProfileQuery(string ServiceId, Guid? After, int Limit);
+
+public sealed record AssetProfileCompletionCapabilities
+{
+    [JsonPropertyName("mappedAssetWriteback")]
+    public required bool MappedAssetWriteback { get; init; }
+}

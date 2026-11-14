@@ -7,7 +7,7 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Assets;
 
-internal sealed class AssetProfileService(IAssetProfileStore store, AssetProfileValidator validator, TimeProvider clock)
+internal sealed class AssetProfileService(IAssetProfileStore store, AssetProfileValidator validator, TimeProvider clock, AssetCompletionCapabilities capabilities)
 {
     private const int DefaultLimit = 50;
     private const int MaxLimit = 200;
@@ -40,7 +40,7 @@ internal sealed class AssetProfileService(IAssetProfileStore store, AssetProfile
             var access = await AssetServiceAccess.RequireLayerEditorAsync(context, grant, profile.LayerId).ConfigureAwait(false);
             if (access.Denied is null)
             {
-                visible.Add(profile);
+                visible.Add(await capabilities.DescribeAsync(profile, context.RequestAborted).ConfigureAwait(false));
             }
         }
 
@@ -56,6 +56,7 @@ internal sealed class AssetProfileService(IAssetProfileStore store, AssetProfile
             return NotFound(context);
         }
 
+        profile = await capabilities.DescribeAsync(profile, context.RequestAborted).ConfigureAwait(false);
         AssetCommandHttp.ApplyNoStore(context.Response);
         return Results.Json(profile, AssetsJsonContext.Default.AssetProfile);
     }

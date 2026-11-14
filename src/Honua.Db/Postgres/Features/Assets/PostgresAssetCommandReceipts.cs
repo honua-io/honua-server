@@ -37,7 +37,7 @@ internal sealed class PostgresAssetCommandReceipts
         => FindAsync(CreateSelect(connection, null), command, cancellationToken);
 
     private NpgsqlCommand CreateSelect(NpgsqlConnection connection, NpgsqlTransaction? transaction)
-        => new($"SELECT request_sha256, response::text FROM {_table} WHERE service_id = @service_id AND command_id = @command_id",
+        => new($"SELECT request_sha256, response::text, status_code FROM {_table} WHERE service_id = @service_id AND command_id = @command_id",
             connection, transaction);
 
     private static async Task<AssetCommandResult?> FindAsync(
@@ -53,11 +53,11 @@ internal sealed class PostgresAssetCommandReceipts
         }
 
         return string.Equals(reader.GetString(0), command.RequestSha256, StringComparison.Ordinal)
-            ? new AssetCommandResult(AssetCommandStatus.Duplicate, reader.GetString(1))
+            ? new AssetCommandResult(reader.GetInt16(2) == 409 ? AssetCommandStatus.VersionConflict : AssetCommandStatus.Duplicate, reader.GetString(1))
             : AssetCommandResult.CommandReused;
     }
 
-    public async Task RecordAsync(NpgsqlTransaction transaction, AssetCommandReceipt receipt, CancellationToken cancellationToken)
+    public async Task<string> RecordAsync(NpgsqlTransaction transaction, AssetCommandReceipt receipt, CancellationToken cancellationToken)
     {
         await using var insert = new NpgsqlCommand(
             $"""
@@ -65,6 +65,7 @@ internal sealed class PostgresAssetCommandReceipts
                 status_code, response, recorded_at)
             VALUES (@service_id, @command_id, @subject_kind, @subject_id, @action, @actor, @request_sha256, @status_code,
                 @response::jsonb, now())
+            RETURNING response::text
             """,
             transaction.Connection,
             transaction);
@@ -78,7 +79,7 @@ internal sealed class PostgresAssetCommandReceipts
         insert.Parameters.AddWithValue("request_sha256", NpgsqlDbType.Text, command.RequestSha256);
         insert.Parameters.AddWithValue("status_code", NpgsqlDbType.Smallint, receipt.StatusCode);
         insert.Parameters.AddWithValue("response", NpgsqlDbType.Text, receipt.ResponseJson);
-        await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return (string)(await insert.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
     }
 }
 

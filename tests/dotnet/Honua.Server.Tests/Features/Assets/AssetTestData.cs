@@ -78,17 +78,19 @@ internal static class AssetTestData
         return assets;
     }
 
-    public static async Task<WorkTaskFormReference> PublishFormAsync(WebAppFixture fixture)
+    public static async Task<WorkTaskFormReference> PublishFormAsync(WebAppFixture fixture, FormFieldDefinition[]? fields = null)
     {
         using var scope = fixture.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IFormPackageStore>();
+        fields ??= [new FormFieldDefinition { FieldId = "name", Label = "Name", Type = "text", TargetField = "name", Required = true }];
         var draft = await store.SaveDraftAsync(
             new FormPackageDocument
             {
                 Title = "Asset work " + Guid.NewGuid().ToString("N"),
                 Target = new FormTargetDefinition { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId },
-                Fields = [new FormFieldDefinition { FieldId = "name", Label = "Name", Type = "text", TargetField = "name", Required = true }],
-                Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = ["name"] }],
+                AttachmentPolicy = new FormAttachmentPolicy { Enabled = fields.Any(static field => field.Type is "attachment" or "media") },
+                Fields = fields,
+                Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = fields.Select(static field => field.FieldId).OfType<string>().ToArray() }],
             },
             "test-admin");
         var published = await store.PublishAsync(draft.FormId, draft.Version, new FormPackageValidationResult { IsValid = true }, "test-admin")

@@ -5,6 +5,7 @@ using System.Data;
 using Honua.Core.Features.Assets;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.FeatureStore;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Assets;
@@ -12,11 +13,16 @@ namespace Honua.Db.Postgres.Features.Assets;
 internal sealed class PostgresWorkTaskCompletionStore : IWorkTaskCompletionStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly PostgresWorkTaskWriteback _writeback;
+    private readonly string _generationTable;
     private readonly PostgresWorkTaskCommit _commit = new();
     private readonly PostgresWorkTaskRecords _records = new();
+    private readonly PostgresWorkTaskCompletionConflicts _conflicts = new();
 
-    public PostgresWorkTaskCompletionStore(IAdoNetDatabaseConnectionProvider connectionProvider)
+    public PostgresWorkTaskCompletionStore(IAdoNetDatabaseConnectionProvider connectionProvider, PostgresFeatureStoreRefactored features, string? schemaName = null)
     {
+        _writeback = new PostgresWorkTaskWriteback(features);
+        _generationTable = SchemaSearchPath.QualifyTable("configuration_generation", schemaName);
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
     }
 
@@ -32,6 +38,29 @@ internal sealed class PostgresWorkTaskCompletionStore : IWorkTaskCompletionStore
             return replay;
         }
 
+        if (!await LockGenerationAsync(transaction, completion.ConfigurationGeneration, cancellationToken).ConfigureAwait(false))
+        {
+            return new AssetCommandResult(AssetCommandStatus.Rejected, null,
+                "Configuration changed or is unavailable; reload and retry.") { Field = "configurationGeneration" };
+        }
+
+        return await CompleteLockedAsync(transaction, completion, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> LockGenerationAsync(NpgsqlTransaction transaction, long expected, CancellationToken cancellationToken)
+    {
+        // Configuration writers lock this singleton before changing permissions or mappings.
+        // Hold it before task/profile locks through the entire completion commit.
+        await using var fence = new NpgsqlCommand(
+            $"SELECT generation FROM {_generationTable} WHERE singleton FOR SHARE", transaction.Connection, transaction);
+        var current = await fence.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return current is long value && value == expected;
+    }
+
+    private async Task<AssetCommandResult> CompleteLockedAsync(
+        NpgsqlTransaction transaction, WorkTaskCompletionCommand completion, CancellationToken cancellationToken)
+    {
+        var command = completion.Command;
         var current = await _commit.Rows.LockAsync(transaction, completion.TaskId, cancellationToken).ConfigureAwait(false);
         if (current is null)
         {
@@ -44,6 +73,15 @@ internal sealed class PostgresWorkTaskCompletionStore : IWorkTaskCompletionStore
             return new AssetCommandResult(AssetCommandStatus.Forbidden, null, forbidden.Reason);
         }
 
+        if (current.Status == WorkTaskStatus.Completed && completion.Request.Form == current.Form)
+        {
+            if (await PostgresWorkTaskAttachmentClaims.ClaimAsync(transaction, (completion, command.CommandId), cancellationToken).ConfigureAwait(false) is { } invalid)
+            {
+                return invalid;
+            }
+            return await _conflicts.RetainAsync(transaction, (current, completion), cancellationToken).ConfigureAwait(false);
+        }
+
         if (current.Version != completion.Request.ExpectedVersion)
         {
             return AssetCommandResult.VersionConflict(command.CommandId, current.Version, "task");
@@ -54,20 +92,33 @@ internal sealed class PostgresWorkTaskCompletionStore : IWorkTaskCompletionStore
             return refused;
         }
 
-        return await RecordCompletionAsync(transaction, (current, completion), cancellationToken).ConfigureAwait(false);
+        return await PersistCompletionAsync(transaction, (current, completion), cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<AssetCommandResult> RecordCompletionAsync(
+    private async Task<AssetCommandResult> PersistCompletionAsync(
         NpgsqlTransaction transaction,
-        (WorkTask Current, WorkTaskCompletionCommand Completion) input,
+        (WorkTask Current, WorkTaskCompletionCommand Completion) change,
         CancellationToken cancellationToken)
     {
-        var (current, completion) = input;
+        var (current, completion) = change;
+        if (await PostgresWorkTaskWriteback.LockProfileAsync(transaction, change, cancellationToken).ConfigureAwait(false) is { } refused)
+        {
+            return refused;
+        }
+
         var command = completion.Command;
         var recordId = Guid.NewGuid();
+        if (await PostgresWorkTaskAttachmentClaims.ClaimAsync(transaction, (completion, recordId), cancellationToken).ConfigureAwait(false) is { } invalid)
+        {
+            return invalid;
+        }
         var completionRecord = new WorkTaskCompletionRecord { RecordId = recordId, Task = current, Request = completion.Request, Actor = command.Actor };
         await _records.InsertRecordAsync(transaction, completionRecord, cancellationToken).ConfigureAwait(false);
-        await _records.AdvanceSummaryAsync(transaction, completionRecord, cancellationToken).ConfigureAwait(false);
+        var advanced = await _records.AdvanceSummaryAsync(transaction, completionRecord, cancellationToken).ConfigureAwait(false);
+        if (advanced && await _writeback.ApplyAsync(transaction, completion.AssetWriteback, cancellationToken).ConfigureAwait(false) is { } failed)
+        {
+            return failed;
+        }
         var completed = await _records.CompleteTaskAsync(transaction, completionRecord, cancellationToken).ConfigureAwait(false);
 
         var history = PostgresWorkTaskCommit.HistoryEvent(command, (current, completed), ["status", "completion"]) with

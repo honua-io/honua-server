@@ -32,7 +32,7 @@ public sealed partial class FormPackageValidator
         {
             var request = new FormSubmissionRequest { Values = values, Attachments = attachments };
             ValidateSubmittedValues(package, request, target.Resource, issues);
-            ValidateSubmittedAttachments(package, request, target.Resource, issues);
+            ValidateSubmittedAttachments(package, (request, target.Resource, true), issues);
         }
 
         return CreateResult(issues);
