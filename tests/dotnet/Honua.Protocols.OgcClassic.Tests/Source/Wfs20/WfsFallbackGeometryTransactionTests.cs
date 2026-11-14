@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 [Collection("Database")]
 [Protocol(TestProtocols.Wfs10)]
 [Protocol(TestProtocols.Wfs20)]
-public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
+public sealed partial class WfsFallbackGeometryTransactionTests : IAsyncLifetime
 {
     private const string TypeName = "native_rich_edits_wfs";
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
@@ -33,6 +33,7 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        _fixture.ReplaceService(_publisher);
         await _fixture.InitializeAsync();
         await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
         await using var command = connection.CreateCommand();

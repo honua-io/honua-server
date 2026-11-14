@@ -18,7 +18,7 @@ Filter feature queries by a bounded or open-ended time range.
 | Edition | Community |
 | Surface maturity | 6 implemented |
 | Registry entries | 6 |
-| Proving tests | 16 |
+| Proving tests | 18 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

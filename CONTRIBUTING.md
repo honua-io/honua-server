@@ -25,3 +25,6 @@ Purpose covers internal use and modification.
 
 The SDKs, Console, Studio and the open protocol standards are Apache-2.0 and have their
 own contribution terms in their repositories.
+
+Organization developers can install the repository’s local Git hooks with
+[`scripts/hooks/setup-git-hooks.sh`](scripts/hooks/setup-git-hooks.sh).
