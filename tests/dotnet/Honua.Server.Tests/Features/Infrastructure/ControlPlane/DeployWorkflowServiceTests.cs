@@ -1341,6 +1341,103 @@ public sealed class DeployWorkflowServiceTests
         await backend.Received(1).StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData("create")]
+    [InlineData("submit")]
+    public async Task SubmitAsync_AdmissionRefusedAfterPlanning_PreservesRetry(string entryPoint)
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = Substitute.For<IDeployBackend>();
+        backend.BackendName.Returns("honua-gitops-kubernetes");
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
+        backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>())
+            .Returns(new DeployPlan { IsReadyToSubmit = true });
+        backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<DeploySubmissionResult>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
+        var service = CreateService(store, backend);
+        var operation = await service.CreateAsync("prod-api", "sha256:new", "sha256:old", "alice", "Deploy",
+            "alarm-race", "corr", OperationPriority.Normal, submitImmediately: entryPoint == "create", parameterOverrides: null);
+        if (entryPoint == "submit")
+        {
+            operation = await service.SubmitAsync(operation!.OperationId, "alice", "submit");
+        }
+
+        operation!.Status.Should().Be(WorkflowOperationStatus.Planned);
+        operation.CompletedAt.Should().BeNull();
+        (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.Planned);
+        backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Submitted });
+
+        var retried = await service.SubmitAsync(operation.OperationId, "alice", "retry");
+
+        retried!.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        await backend.Received(2).StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PromoteAsync_AdmissionRefusedDuringCanary_PreservesRollback()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = Substitute.For<IDeployBackend>();
+        backend.BackendName.Returns("honua-gitops-kubernetes");
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        backend.PromoteAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<DeployObservation>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
+        backend.RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new DeployObservation { Status = WorkflowOperationStatus.RollbackRequested });
+        var operation = CreateOperationRecord(WorkflowOperationStatus.Reconciling);
+        await store.TryCreateAsync(operation);
+        var service = CreateService(store, backend);
+
+        var refused = await service.PromoteAsync(operation.OperationId, "alice", "promote");
+
+        refused.Outcome.Should().Be(DeployWorkflowService.DeployPromotionOutcome.PreconditionFailed);
+        (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        var rollback = await service.RequestRollbackAsync(operation.OperationId, "alice", "alarm recovery");
+        rollback!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        await backend.Received(1).RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(ICheckpointedDeployBackend.PendingPhase)]
+    [InlineData(ICheckpointedDeployBackend.PreparedPhase)]
+    [InlineData(ICheckpointedDeployBackend.CutoverPhase)]
+    [InlineData(ICheckpointedDeployBackend.RampPhase)]
+    public async Task Reconciler_AdmissionRefusedDuringCheckpoint_PreservesRollback(string phase)
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = Substitute.For<IDeployBackend, ICheckpointedDeployBackend>();
+        backend.BackendName.Returns("honua-gitops-kubernetes");
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        ((ICheckpointedDeployBackend)backend).RequiresCheckpoint(Arg.Any<WorkflowOperationRecord>()).Returns(true);
+        backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<DeploySubmissionResult>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
+        ((ICheckpointedDeployBackend)backend).PrepareCheckpointAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<DeployCheckpoint>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
+        ((ICheckpointedDeployBackend)backend).ActivateCheckpointAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<DeployObservation>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
+        backend.PromoteAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<DeployObservation>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
+        backend.RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new DeployObservation { Status = WorkflowOperationStatus.RollbackRequested });
+        var operation = CreateOperationRecord(WorkflowOperationStatus.Reconciling) with
+        {
+            CurrentPhase = phase
+        };
+        await store.TryCreateAsync(operation);
+
+        await CreateReconciler(store, backend).ReconcileWorkflowOperationAsync(operation.OperationId);
+
+        var retained = await store.GetAsync(operation.OperationId);
+        retained!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        retained.CurrentPhase.Should().Be(phase);
+        retained.CompletedAt.Should().BeNull();
+        var rollback = await CreateService(store, backend).RequestRollbackAsync(operation.OperationId, "alice", "recover");
+        rollback!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        await backend.Received(1).RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
+    }
+
     private static DeployWorkflowService CreateService(
         TestWorkflowOperationStore store,
         IDeployBackend backend,

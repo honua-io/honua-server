@@ -59,15 +59,15 @@ public sealed class AwsDeploymentAlarmAdmissionTests
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public async Task GetBlockingReasonAsync_IncompleteOrMissingOrDuplicateAlarm_Blocks(bool missing, bool duplicate)
+    [InlineData("incomplete")]
+    [InlineData("missing")]
+    [InlineData("duplicate")]
+    public async Task GetBlockingReasonAsync_IncompleteOrMissingOrDuplicateAlarm_Blocks(string snapshotKind)
     {
-        var alarms = missing ? Array.Empty<AwsDeploymentAlarmState>() : duplicate
+        var alarms = snapshotKind == "missing" ? Array.Empty<AwsDeploymentAlarmState>() : snapshotKind == "duplicate"
             ? new[] { new AwsDeploymentAlarmState("regional", "OK"), new("regional", "OK") }
             : new[] { new AwsDeploymentAlarmState("regional", "OK") };
-        var (guard, _) = CreateGuard(new AwsDeploymentAlarmSnapshot { Alarms = alarms, IsComplete = missing || duplicate });
+        var (guard, _) = CreateGuard(new AwsDeploymentAlarmSnapshot { Alarms = alarms, IsComplete = snapshotKind != "incomplete" });
 
         (await guard.GetBlockingReasonAsync(TargetId, CancellationToken.None)).Should().NotBeNull();
     }
@@ -122,13 +122,13 @@ public sealed class AwsDeploymentAlarmAdmissionTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task GetBlockingReasonAsync_EmptyOrDuplicateConfiguration_BlocksWithoutProviderCalls(bool duplicate)
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task GetBlockingReasonAsync_EmptyOrDuplicateConfiguration_BlocksWithoutProviderCalls(int alarmCount)
     {
         var (_, client) = CreateGuard(Snapshot(new AwsDeploymentAlarmState("regional", "OK")));
         var options = ConfiguredOptions();
-        options.Targets[TargetId].Regions["us-west-2"] = duplicate ? ["regional", "regional"] : [];
+        options.Targets[TargetId].Regions["us-west-2"] = Enumerable.Repeat("regional", alarmCount).ToArray();
         var guard = new AwsDeploymentAlarmAdmission(Options.Create(options), client);
 
         (await guard.GetBlockingReasonAsync(TargetId, CancellationToken.None)).Should().NotBeNull();
