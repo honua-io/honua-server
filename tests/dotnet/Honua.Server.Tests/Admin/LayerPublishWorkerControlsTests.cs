@@ -139,7 +139,7 @@ public sealed class LayerPublishWorkerControlsTests
     public async Task Execute_NotificationThrowsAfterCommit_DoesNotRetryPublication()
     {
         using var fixture = new Fixture();
-        fixture.Notifications.BroadcastResourcesListChanged().Returns(_ => throw new IOException("notification failed"));
+        fixture.Notifications.BroadcastResourcesListChanged().Returns(ValueTask.FromException(new IOException("notification failed")));
         fixture.Publisher.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(Summary());
         var result = await fixture.ExecuteAsync();
