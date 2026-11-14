@@ -17,7 +17,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private string[]? _themes;
     internal bool HasThemes { get; private set; }
 
-    /// <summary>Omission preserves the stored value; an empty array clears it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[]? Themes
     {
@@ -32,7 +31,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private string? _language;
     internal bool HasLanguage { get; private set; }
 
-    /// <summary>Omission preserves the stored value; explicit null clears it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Language
     {
@@ -47,7 +45,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private string? _license;
     internal bool HasLicense { get; private set; }
 
-    /// <summary>Omission preserves the stored value; explicit null clears it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? License
     {
@@ -62,7 +59,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private string? _attribution;
     internal bool HasAttribution { get; private set; }
 
-    /// <summary>Omission preserves the stored value; explicit null clears it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Attribution
     {
@@ -77,7 +73,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private string? _publisher;
     internal bool HasPublisher { get; private set; }
 
-    /// <summary>Omission preserves the stored value; explicit null clears it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Publisher
     {
@@ -92,7 +87,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private MetadataV2ContactPoint? _contactPoint;
     internal bool HasContactPoint { get; private set; }
 
-    /// <summary>Omission preserves the stored value; explicit null clears it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public MetadataV2ContactPoint? ContactPoint
     {
@@ -107,7 +101,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private MetadataV2Link[]? _links;
     internal bool HasLinks { get; private set; }
 
-    /// <summary>Omission preserves the stored value; an empty array clears it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public MetadataV2Link[]? Links
     {

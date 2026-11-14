@@ -8,7 +8,6 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 
 public static class MetadataV2GraphValidator
 {
-    /// <summary>Validates descriptive governance fields using the graph write rules.</summary>
     public static MetadataV2GraphValidationResult ValidateMetadata(MetadataV2ObjectMetadata metadata)
     {
         ArgumentNullException.ThrowIfNull(metadata);

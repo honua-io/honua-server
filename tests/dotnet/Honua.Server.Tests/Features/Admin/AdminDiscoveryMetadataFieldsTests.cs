@@ -16,6 +16,9 @@ public sealed partial class AdminDiscoveryMetadataEndpointsTests
     [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     [Endpoint("GET /api/v1/admin/services/{serviceName}/discovery")]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/discovery")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    [Endpoint("GET /rest/services/{serviceName}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     [InlineData("/api/v1/admin/metadata/layers/0/discovery")]
     [InlineData("/api/v1/admin/services/test/discovery")]
     public async Task UpdateDiscovery_DescriptiveFields_RoundTripsPreservesAndClears(string path)
@@ -37,32 +40,66 @@ public sealed partial class AdminDiscoveryMetadataEndpointsTests
             data.GetProperty(field).GetRawText().Should().Be(JsonSerializer.Serialize(fields[field]));
         data.GetProperty("contactPoint").GetProperty("email").GetString().Should().Be("gis@example.com");
         data.GetProperty("links")[0].GetProperty("href").GetString().Should().Be("https://example.com/metadata");
+        AssertStoredDiscoveryFields(path);
+        (await UpdateAsync(client, path, data.GetProperty("etag").GetString()!)).StatusCode.Should().Be(HttpStatusCode.OK);
+        using var preserved = JsonDocument.Parse(await client.GetStringAsync(path));
+        var current = preserved.RootElement.GetProperty("data");
+        foreach (var field in fields.Keys.Where(key => key != "etag"))
+            current.GetProperty(field).GetRawText().Should().Be(data.GetProperty(field).GetRawText());
+        await AssertDiscoveryProtocolFieldsAsync(client, path);
+        fields["etag"] = current.GetProperty("etag").GetString();
+        await ClearDescriptiveFieldsAsync(client, path, fields);
+    }
+
+    private void AssertStoredDiscoveryFields(string path)
+    {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var metadata = path.Contains("/layers/", StringComparison.Ordinal)
             ? snapshot.Index.ResourcesByStorageLayerId[0].Metadata
             : snapshot.Graph.Services.First(service => service.Metadata.Name == "test").Metadata;
         metadata.License.Should().Be("MIT");
         metadata.ContactPoint!.Email.Should().Be("gis@example.com");
-        (await UpdateAsync(client, path, data.GetProperty("etag").GetString()!)).StatusCode.Should().Be(HttpStatusCode.OK);
-        using var preserved = JsonDocument.Parse(await client.GetStringAsync(path));
-        var current = preserved.RootElement.GetProperty("data");
-        foreach (var field in fields.Keys.Where(key => key != "etag"))
-            current.GetProperty(field).GetRawText().Should().Be(data.GetProperty(field).GetRawText());
-        await ClearDescriptiveFieldsAsync(client, path, fields, current.GetProperty("etag").GetString()!);
     }
 
     private static async Task ClearDescriptiveFieldsAsync(HttpClient client, string path,
-        Dictionary<string, object?> fields, string etag)
+        Dictionary<string, object?> fields)
     {
         foreach (var field in fields.Keys.Where(key => key != "etag").ToArray())
             fields[field] = field is "themes" or "links" ? Array.Empty<object>() : null;
-        fields["etag"] = etag;
         using var clear = new StringContent(JsonSerializer.Serialize(fields), Encoding.UTF8, "application/json");
         (await client.PutAsync(path, clear)).StatusCode.Should().Be(HttpStatusCode.OK);
         using var cleared = JsonDocument.Parse(await client.GetStringAsync(path));
-        cleared.RootElement.GetProperty("data").GetProperty("license").ValueKind.Should().Be(JsonValueKind.Null);
-        cleared.RootElement.GetProperty("data").GetProperty("contactPoint").ValueKind.Should().Be(JsonValueKind.Null);
-        cleared.RootElement.GetProperty("data").GetProperty("themes").GetArrayLength().Should().Be(0);
+        var data = cleared.RootElement.GetProperty("data");
+        foreach (var field in fields.Keys.Where(key => key != "etag"))
+        {
+            if (field is "themes" or "links")
+                data.GetProperty(field).GetArrayLength().Should().Be(0);
+            else
+                data.GetProperty(field).ValueKind.Should().Be(JsonValueKind.Null);
+        }
+    }
+
+    private static async Task AssertDiscoveryProtocolFieldsAsync(HttpClient client, string path)
+    {
+        var featureServerPath = path.Contains("/layers/", StringComparison.Ordinal)
+            ? "/rest/services/test/FeatureServer/0?f=json"
+            : "/rest/services/test/FeatureServer?f=json";
+        using var response = await client.GetAsync(featureServerPath);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var featureServer = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        featureServer.RootElement.GetProperty("license").GetString().Should().Be("MIT");
+        featureServer.RootElement.GetProperty("publisher").GetString().Should().Be("City GIS");
+        featureServer.RootElement.GetProperty("copyrightText").GetString().Should().Be("City survey");
+        if (!path.Contains("/layers/", StringComparison.Ordinal))
+            return;
+        using var collectionResponse = await client.GetAsync("/ogc/features/collections/0?f=json");
+        collectionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var collection = JsonDocument.Parse(await collectionResponse.Content.ReadAsStringAsync());
+        var links = collection.RootElement.GetProperty("links").EnumerateArray().ToArray();
+        links.Should().Contain(link => link.GetProperty("rel").GetString() == "describedby"
+            && link.GetProperty("href").GetString() == "https://example.com/metadata");
+        links.Should().Contain(link => link.GetProperty("rel").GetString() == "license"
+            && link.GetProperty("title").GetString() == "MIT");
     }
 
     [IntegrationTheory]
