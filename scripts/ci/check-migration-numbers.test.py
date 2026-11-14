@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import subprocess
+import hashlib
 import tempfile
 import unittest
 
@@ -28,6 +29,9 @@ class MigrationNumberTests(unittest.TestCase):
         path = self.root / directory / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
+        pin = self.root / "eng/schema/migration-hashes" / directory / (name + ".sha256")
+        pin.parent.mkdir(parents=True, exist_ok=True)
+        pin.write_text(hashlib.sha256(content.encode()).hexdigest() + "\n")
         if claim:
             marker = self.root / "eng/schema/migration-numbers" / directory / (name.split("_")[0] + ".txt")
             marker.parent.mkdir(parents=True, exist_ok=True)
@@ -102,10 +106,41 @@ class MigrationNumberTests(unittest.TestCase):
         self.assertIn(str(ledger.relative_to(self.root)),
                       self.git("diff", "--name-only", "--diff-filter=U"))
 
-    def test_existing_modification_is_left_to_immutability_guard(self):
+    def test_paired_sql_and_pin_modification_fails(self):
         self.add(SERVER, "001_Initial.sql", "SELECT 2;")
         self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("hash pins are immutable", result.stdout)
+
+    def test_existing_pin_deletion_fails(self):
+        (self.root / "eng/schema/migration-hashes" / SERVER / "001_Initial.sql.sha256").unlink()
+        self.commit()
+        self.assertIn("hash pins are immutable", self.check().stdout)
+
+    def test_existing_pin_rename_fails(self):
+        pin = self.root / "eng/schema/migration-hashes" / SERVER / "001_Initial.sql.sha256"
+        pin.rename(pin.with_name("001_Renamed.sql.sha256"))
+        self.commit()
+        self.assertIn("hash pins are immutable", self.check().stdout)
+
+    def test_newer_trunk_pins_do_not_force_stale_branch_refresh(self):
+        self.git("checkout", "-q", "trunk")
+        self.add(SERVER, "002_Landed.sql")
+        self.commit()
+        self.git("checkout", "-q", "--detach", self.base)
+        self.add(SERVER, "003_Pending.sql")
+        self.commit()
         self.assertEqual(self.check().returncode, 0)
+
+    def test_modified_pin_imported_from_newer_trunk_fails(self):
+        self.git("checkout", "-q", "trunk")
+        self.add(SERVER, "002_Landed.sql")
+        self.commit()
+        self.git("checkout", "-q", "--detach", self.base)
+        self.add(SERVER, "002_Landed.sql", "SELECT 2;")
+        self.commit()
+        self.assertIn("hash pins are immutable", self.check().stdout)
 
     def test_same_number_in_other_migration_namespace_passes(self):
         self.add(POSTGRES, "001_Raster.sql")

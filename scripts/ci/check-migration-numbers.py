@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject new SQL migration numbers that collide with current trunk or each other."""
+"""Preserve trusted migration hashes and reject colliding new migration numbers."""
 
 import argparse
 from pathlib import PurePosixPath
@@ -23,11 +23,24 @@ def numbered(paths):
     return result
 
 
+def changed_existing_pins(ancestor, head, trunk):
+    root = "eng/schema/migration-hashes"
+    inherited = set(git_paths("ls-tree", "-r", "--name-only", "-z", ancestor, "--", root))
+    candidate = set(git_paths("ls-tree", "-r", "--name-only", "-z", head, "--", root))
+    # Ignore pins added only on newer trunk, which a stale branch need not carry.
+    # Any trunk pin present on the branch must retain its trusted contents.
+    changed = git_paths("diff", "--no-renames", "--diff-filter=MD", "--name-only", "-z", trunk, head, "--", root)
+    return sorted(path for path in changed if path and path in inherited | candidate)
+
+
 def check(base, head, trunk):
     ancestor = subprocess.check_output(["git", "merge-base", base, head], text=True).strip()
     additions = numbered(git_paths("diff", "--no-renames", "--diff-filter=A", "--name-only", "-z", ancestor, head, "--", *DIRECTORIES))
     existing = numbered(git_paths("ls-tree", "-r", "--name-only", "-z", trunk, "--", *DIRECTORIES))
     failures = []
+    changed_pins = changed_existing_pins(ancestor, head, trunk)
+    if changed_pins:
+        failures.append("Existing migration hash pins are immutable: " + ", ".join(changed_pins))
     claim_root = "eng/schema/migration-numbers"
     claims = git_paths("diff", "--no-renames", "--diff-filter=MD", "--name-only", "-z", ancestor, head, "--", claim_root)
     changed_claims = [path for path in claims if re.fullmatch(r"\d+\.txt", PurePosixPath(path).name)]
