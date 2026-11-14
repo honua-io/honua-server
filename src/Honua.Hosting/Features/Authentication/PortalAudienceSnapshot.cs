@@ -1,12 +1,17 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.MultiTenancy;
+
 namespace Honua.Infrastructure.Authentication;
 
 internal interface IPortalAudienceSnapshotProvider
 {
     Task<IReadOnlySet<string>> GetServiceIdsAsync(
         string username, string? tenantId, CancellationToken cancellationToken);
+
+    Task<IReadOnlySet<string>> GetServiceIdsAsync(
+        string username, TenantReadScope scope, CancellationToken cancellationToken);
 }
 
 internal static class PortalAudienceSnapshot

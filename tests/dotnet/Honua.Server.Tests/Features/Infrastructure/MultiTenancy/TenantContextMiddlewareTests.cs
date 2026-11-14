@@ -28,6 +28,57 @@ public class TenantContextMiddlewareTests
 {
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("GET /binding")]
+    public async Task DefaultConfiguration_BearerWithoutTenantClaim_UsesPublicTenant()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: ("iss", "https://issuer.example"),
+            authenticationType: "Bearer");
+
+        var client = await CreateAppAsync(principal, useDefaultOptions: true);
+        var response = await client.GetAsync("/binding");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("public|public", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /binding")]
+    public async Task SingleTenantConfiguration_IgnoresIdentityProviderTenantAndHeader()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: ("tid", "directory-tenant"),
+            roles: ["platform_admin"],
+            authenticationType: "Bearer");
+        var client = await CreateAppAsync(principal, options => options.DefaultTenantId = "deployment",
+            useDefaultOptions: true);
+        client.DefaultRequestHeaders.Add(TenantContextOptions.TenantHeaderName, "other-tenant");
+
+        var response = await client.GetAsync("/binding");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("deployment|deployment", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /binding")]
+    public async Task SingleTenantConfiguration_BrowserPrincipal_UsesDeploymentBinding()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: ("tid", "directory-tenant"),
+            authenticationType: "Cookies");
+        var client = await CreateAppAsync(principal, useDefaultOptions: true);
+
+        var response = await client.GetAsync("/binding");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("public|public", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
     public async Task ClaimBased_TidClaim_PopulatesTenantContextFromClaim()
     {
@@ -226,13 +277,32 @@ public class TenantContextMiddlewareTests
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
-    public async Task OperatorBearerWithoutTenantClaim_TenantBoundRouteIsRejected()
+    public async Task OperatorBearerWithoutTenantClaim_TenantBoundRoute_ResolvesDefaultTenantLikeAdminSession()
     {
         var principal = AuthenticatedPrincipal(
             claims: (ClaimTypes.Name, "operator"),
             authenticationType: "OperatorBearer");
 
         var client = await CreateAppAsync(principal);
+        var tenant = await client.GetStringAsync("/tenant");
+        var binding = await client.GetStringAsync("/binding");
+
+        Assert.Equal("Default:public", tenant);
+        Assert.Equal("public|public", binding);
+    }
+
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task OperatorBearerWithoutTenantClaim_NoDefaultTenant_TenantBoundRouteIsRejected(string? defaultTenantId)
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal, options => options.DefaultTenantId = defaultTenantId);
         var response = await client.GetAsync("/tenant");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -242,14 +312,92 @@ public class TenantContextMiddlewareTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("GET /api/v1/admin/oidc/providers")]
-    public async Task OperatorBearerWithoutTenantClaim_ExplicitControlPlaneRouteContinues()
+    [Endpoint("GET /tenant")]
+    public async Task OperatorBearerWithTenantClaim_ClaimWinsOverDefaultTenant()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: ("tid", "tenant-a"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal);
+
+        Assert.Equal("Claim:tenant-a", await client.GetStringAsync("/tenant"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task OperatorBearerWithUnauthorizedTenantHeader_IsDenied()
     {
         var principal = AuthenticatedPrincipal(
             claims: (ClaimTypes.Name, "operator"),
             authenticationType: "OperatorBearer");
 
         var client = await CreateAppAsync(principal);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/tenant");
+        request.Headers.Add(TenantContextOptions.TenantHeaderName, "tenant-other");
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task JwtBearerWithoutTenantClaim_TenantBoundRouteIsRejected()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "external-user"),
+            authenticationType: "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/tenant");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task OperatorBearerIdentityAlongsideJwtBearer_TenantBoundRouteIsRejected()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+        principal.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, "external-user")], "Bearer"));
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/tenant");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task OperatorBearerWithoutTenantClaim_ExplicitControlPlaneRouteUsesDefaultTenant()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/api/v1/admin/oidc/providers");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Default:public", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task OperatorBearerWithoutTenantClaim_NoDefaultTenant_ExplicitControlPlaneRouteContinues()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal, options => options.DefaultTenantId = null);
         var response = await client.GetAsync("/api/v1/admin/oidc/providers");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -275,7 +423,7 @@ public class TenantContextMiddlewareTests
         Assert.Equal(
             "https://issuer.example",
             CanonicalSecurityActor.FindStampedValue(principal, "honua:issuer"));
-        Assert.Null(CanonicalSecurityActor.FindStampedValue(
+        Assert.Equal("public", CanonicalSecurityActor.FindStampedValue(
             principal,
             CanonicalSecurityActor.EffectiveTenantClaim));
     }
@@ -401,16 +549,19 @@ public class TenantContextMiddlewareTests
 
     private static Task<HttpClient> CreateAppAsync(
         ClaimsPrincipal? principal,
-        Action<TenantContextOptions>? configureOptions = null)
+        Action<TenantContextOptions>? configureOptions = null,
+        bool useDefaultOptions = false)
         => CreateMultiPrincipalAppAsync(
             principals: new Dictionary<string, ClaimsPrincipal?> { ["default"] = principal },
             defaultPrincipalKey: "default",
-            configureOptions: configureOptions);
+            configureOptions: configureOptions,
+            useDefaultOptions: useDefaultOptions);
 
     private static async Task<HttpClient> CreateMultiPrincipalAppAsync(
         Dictionary<string, ClaimsPrincipal?> principals,
         string? defaultPrincipalKey = null,
-        Action<TenantContextOptions>? configureOptions = null)
+        Action<TenantContextOptions>? configureOptions = null,
+        bool useDefaultOptions = false)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -418,7 +569,11 @@ public class TenantContextMiddlewareTests
         var config = new ConfigurationBuilder().Build();
         builder.Services.AddHonuaTenantContext(config, opt =>
         {
-            // Defaults already exist; allow individual tests to override.
+            // Existing tests exercise the explicitly enabled multi-tenant boundary.
+            if (!useDefaultOptions)
+            {
+                opt.Enabled = true;
+            }
             configureOptions?.Invoke(opt);
         });
 

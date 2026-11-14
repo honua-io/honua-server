@@ -61,6 +61,7 @@ internal sealed class McpJobProgressBridge
         {
             try
             {
+                using var watch = _sessions.AcquireSessionWatch(sessionId);
                 using var scope = _scopeFactory.CreateScope();
                 var jobService = scope.ServiceProvider.GetRequiredService<IGeoprocessingJobService>();
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(
@@ -114,7 +115,7 @@ internal sealed class McpJobProgressBridge
                 return;
             }
 
-            var terminal = IsTerminal(record.Status);
+            var terminal = record.Status.IsTerminal();
             var phase = record.CurrentPhase ?? record.Status.ToString();
             var progress = record.PercentComplete ?? (terminal ? ProgressTotal : 0d);
 
@@ -138,7 +139,4 @@ internal sealed class McpJobProgressBridge
             }
         }
     }
-
-    private static bool IsTerminal(ExecutionJobStatus status) =>
-        status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 }

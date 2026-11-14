@@ -1,0 +1,15 @@
+name: Configure PostgreSQL connection
+description: Export the assigned PostgreSQL service port for tests and SQL clients
+inputs:
+  port:
+    description: Assigned host port for the PostgreSQL service
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        PGPORT: ${{ inputs.port }}
+      run: |
+        echo "PGPORT=$PGPORT" >> "$GITHUB_ENV"
+        echo "HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;Database=honua_test;Username=honua;Password=honua" >> "$GITHUB_ENV"

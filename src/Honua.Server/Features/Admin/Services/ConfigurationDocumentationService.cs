@@ -207,7 +207,7 @@ public sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildProperty("Deployment:Mode", "Deployment__Mode", "string",
-                    "Deployment mode (SingleInstance or MultiNode). MultiNode requires Redis and shared file storage.",
+                    "Deployment mode (SingleInstance or MultiNode). MultiNode requires shared cloud file storage.",
                     DeploymentMode.SingleInstance.ToString())
             ]
         };

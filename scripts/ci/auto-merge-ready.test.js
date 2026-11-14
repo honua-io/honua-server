@@ -11,11 +11,11 @@ const ready = () => ({
   labels: { nodes: [], pageInfo: { hasNextPage: false } },
   commits: { totalCount: 1 }, autoMergeRequest: null,
 });
-async function run(pr, mutationError = null) {
+async function run(pr, mutationError = null, eventPr = { draft: false, labels: [] }) {
   const mutations = [];
   const summary = { addHeading() { return this; }, addRaw() { return this; }, async write() {} };
   await vm.runInNewContext(`(async () => {${script}})()`, {
-    context: { repo: { owner: 'honua-io', repo: 'honua-server' }, issue: { number: 42 } },
+    context: { payload: { pull_request: eventPr }, repo: { owner: 'honua-io', repo: 'honua-server' }, issue: { number: 42 } },
     core: { notice() {}, summary },
     github: { async graphql(query, variables) {
       if (query.includes('query(')) return { repository: { pullRequest: pr } };
@@ -124,4 +124,16 @@ test('mergeability computation race stays neutral only for the clean-status API 
   const emptyErrors = new Error('Pull request is in clean status');
   emptyErrors.errors = [];
   await assert.rejects(run(pr, emptyErrors), /clean status/);
+});
+
+test('draft or held event cannot re-arm admission after live state changes', async () => {
+  for (const eventPr of [
+    { draft: true, labels: [] },
+    ...['hold', 'train:hold', 'train:escalated'].map(name => ({ draft: false, labels: [{ name }] })),
+  ]) {
+    assert.equal((await run(ready(), null, eventPr)).length, 0);
+    const actions = await run({ ...ready(), autoMergeRequest: { mergeMethod: 'SQUASH' } }, null, eventPr);
+    assert.equal(actions.length, 1);
+    assert.equal(actions[0].action, 'disable');
+  }
 });

@@ -11,6 +11,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -650,7 +651,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             parameterPlaceholders += $"{BuildGeometryInsertExpression(declaredGeometryType!, srid)}";
         }
 
-        var insertSql = $"INSERT INTO {QuoteIdentifier(targetSchema)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders})";
+        var insertSql = $"INSERT INTO {SqlIdentifier.QuoteIdentifier(targetSchema)}.{SqlIdentifier.QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders})";
 
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = insertSql;
@@ -763,7 +764,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         CancellationToken cancellationToken)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} (");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)} (");
         sb.AppendLine("    honua_objectid BIGSERIAL PRIMARY KEY");
 
         foreach (var field in fields)
@@ -791,7 +792,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     private static async Task EnsureSchemaAsync(NpgsqlConnection connection, string schemaName, CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"CREATE SCHEMA IF NOT EXISTS {QuoteIdentifier(schemaName)}";
+        cmd.CommandText = $"CREATE SCHEMA IF NOT EXISTS {SqlIdentifier.QuoteIdentifier(schemaName)}";
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -801,7 +802,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         if (await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, tableName, cancellationToken).ConfigureAwait(false))
         {
             await using var cmd = connection.CreateCommand();
-            cmd.CommandText = $"DROP TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}";
+            cmd.CommandText = $"DROP TABLE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)}";
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
@@ -861,9 +862,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             command.Transaction = transaction;
             var targetExists = await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, targetTableName, cancellationToken).ConfigureAwait(false);
             await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, stagingTableName, cancellationToken).ConfigureAwait(false);
-            command.CommandText = (targetExists ? $"DROP TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(targetTableName)} RESTRICT; " : string.Empty) +
-                                  $"ALTER TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)} RENAME TO {QuoteIdentifier(targetTableName)}; " +
-                                  $"ALTER INDEX {QuoteIdentifier(schemaName)}.{QuoteIdentifier(BuildSpatialIndexName(stagingTableName))} RENAME TO {QuoteIdentifier(BuildSpatialIndexName(targetTableName))}";
+            command.CommandText = (targetExists ? $"DROP TABLE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(targetTableName)} RESTRICT; " : string.Empty) +
+                                  $"ALTER TABLE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(stagingTableName)} RENAME TO {SqlIdentifier.QuoteIdentifier(targetTableName)}; " +
+                                  $"ALTER INDEX {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(BuildSpatialIndexName(stagingTableName))} RENAME TO {SqlIdentifier.QuoteIdentifier(BuildSpatialIndexName(targetTableName))}";
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -887,7 +888,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     private static async Task CreateSpatialIndexAsync(NpgsqlConnection connection, string schemaName, string tableName, CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(BuildSpatialIndexName(tableName))} ON {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} USING GIST (geom)";
+        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {SqlIdentifier.QuoteIdentifier(BuildSpatialIndexName(tableName))} ON {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)} USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -1209,9 +1210,6 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             Duration = duration
         };
     }
-
-    private static string QuoteIdentifier(string identifier)
-        => $"\"{identifier.Replace("\"", "\"\"")}\"";
 
     private sealed record FeaturePage(IReadOnlyList<JsonElement> Features, int? NumberMatched);
 

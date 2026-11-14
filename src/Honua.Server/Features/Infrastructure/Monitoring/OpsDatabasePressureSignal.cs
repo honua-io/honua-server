@@ -58,6 +58,8 @@ internal sealed class OpsFindingsExtendedSignals
 
     public IOpsHealthRollupStore? RollupStore { get; init; }
 
+    public IOpsExternalEventStore? ExternalEventStore { get; init; }
+
     public OpsFindingsCollectionLedger? CollectionLedger { get; init; }
 
     public TimeProvider? TimeProvider { get; init; }

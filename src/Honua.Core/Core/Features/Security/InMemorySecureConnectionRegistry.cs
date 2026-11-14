@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 
@@ -14,6 +15,7 @@ public sealed class InMemorySecureConnectionRegistry : ISecureConnectionRegistry
     public Task<DataConnection> CreateConnectionAsync(DataConnection connection, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        DataStoreProviderPolicy.EnsureStoreProfileIncludes(connection.Provider);
         if (connection.ConnectionId == Guid.Empty)
         {
             connection.ConnectionId = Guid.NewGuid();
@@ -70,6 +72,8 @@ public sealed class InMemorySecureConnectionRegistry : ISecureConnectionRegistry
 
     public Task<DataConnection> UpdateConnectionAsync(DataConnection connection, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(connection);
+        DataStoreProviderPolicy.EnsureStoreProfileIncludes(connection.Provider);
         ArgumentNullException.ThrowIfNull(connection);
         _byId[connection.ConnectionId] = connection;
         return Task.FromResult(connection);

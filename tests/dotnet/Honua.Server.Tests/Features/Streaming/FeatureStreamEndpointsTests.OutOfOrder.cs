@@ -23,6 +23,7 @@ public sealed partial class FeatureStreamEndpointsTests
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_DefaultSubscription_DeliversLowerCursorArrivingAfterHigherCursorExactlyOnce()
     {
+        await StartDefaultApplicationAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
         var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
@@ -68,6 +69,7 @@ public sealed partial class FeatureStreamEndpointsTests
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_DefaultSubscription_DeliversLowerCursorArrivingAfterHigherCursorExactlyOnce()
     {
+        await StartDefaultApplicationAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
         var eventStore = _fixture.GetService<IFeatureChangeEventStore>();

@@ -22,6 +22,120 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
     private const string PublishOperationId = "service.publish";
 
     [UnitTest]
+    public async Task EvaluateAsync_AgentPublishWithConfiguredDeny_PreservesDeny()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions
+        {
+            Enabled = true,
+            Rules = [new OperationPolicyRule
+            {
+                OperationId = PublishOperationId,
+                Decision = PolicyDecisionKind.Deny,
+                Reason = "publishing is locked"
+            }]
+        });
+
+        var decision = await Evaluate(pdp, new OperationPolicyContext { Roles = ["agent", "admin"] });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.Deny);
+        decision.Reason.Should().Be("publishing is locked");
+        decision.ApprovalLane.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_AgentPublishWithDefaultDeny_PreservesDeny()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions
+        {
+            Enabled = true,
+            DefaultDecision = PolicyDecisionKind.Deny,
+            DefaultReason = "publishing is locked"
+        });
+
+        var decision = await Evaluate(pdp, new OperationPolicyContext { Roles = ["agent"] });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.Deny);
+        decision.Reason.Should().Be("publishing is locked");
+        decision.ApprovalLane.Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EvaluateAsync_AgentPublishWithDryRunFirst_PreservesPreviewRequirement(bool useDefault)
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions
+        {
+            Enabled = true,
+            DefaultDecision = useDefault ? PolicyDecisionKind.DryRunFirst : PolicyDecisionKind.Allow,
+            DefaultReason = "preview required",
+            Rules = useDefault ? [] : [new OperationPolicyRule
+            {
+                OperationId = PublishOperationId,
+                Decision = PolicyDecisionKind.DryRunFirst,
+                Reason = "preview required"
+            }]
+        });
+
+        var decision = await Evaluate(pdp, new OperationPolicyContext { Roles = ["agent", "admin"] },
+            request: BuildRequest(dryRun: false));
+
+        decision.Kind.Should().Be(PolicyDecisionKind.DryRunFirst);
+        decision.Reason.Should().Be("preview required");
+        decision.ApprovalLane.Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EvaluateAsync_AgentPublishWithDryRunFirst_AllowsRequestedPreview(bool useDefault)
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions
+        {
+            Enabled = true,
+            DefaultDecision = useDefault ? PolicyDecisionKind.DryRunFirst : PolicyDecisionKind.Allow,
+            DefaultReason = "preview required",
+            Rules = useDefault ? [] : [new OperationPolicyRule
+            {
+                OperationId = PublishOperationId,
+                Decision = PolicyDecisionKind.DryRunFirst,
+                Reason = "preview required"
+            }]
+        });
+
+        var decision = await Evaluate(pdp, new OperationPolicyContext { Roles = ["agent", "admin"] },
+            request: BuildRequest(dryRun: true));
+
+        decision.Kind.Should().Be(PolicyDecisionKind.Allow);
+        decision.ApprovalLane.Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData(PolicyDecisionKind.Deny)]
+    [InlineData(PolicyDecisionKind.RequireApproval)]
+    public async Task EvaluateAsync_AgentPublishDryRun_PreservesExplicitRestriction(PolicyDecisionKind restriction)
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions
+        {
+            Enabled = true,
+            Rules = [new OperationPolicyRule
+            {
+                OperationId = PublishOperationId,
+                Decision = restriction,
+                Reason = "restricted preview",
+                ApprovalLane = "preview-approval"
+            }]
+        });
+
+        var decision = await Evaluate(pdp, new OperationPolicyContext { Roles = ["agent", "admin"] },
+            request: BuildRequest(dryRun: true));
+
+        decision.Kind.Should().Be(restriction);
+        decision.Reason.Should().Be("restricted preview");
+        decision.ApprovalLane.Should().Be(restriction == PolicyDecisionKind.RequireApproval ? "preview-approval" : null);
+    }
+
+    [UnitTest]
     public async Task EvaluateAsync_When_Disabled_Returns_Allow()
     {
         var pdp = BuildPdp(new OperationPolicyOptions

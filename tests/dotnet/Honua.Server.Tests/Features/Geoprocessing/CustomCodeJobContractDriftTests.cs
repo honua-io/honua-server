@@ -156,7 +156,7 @@ public sealed class CustomCodeJobContractDriftTests
         };
 
         await coordinator.ValidateMintAndInjectAsync(
-            "gp-cc-seam-1", OwnerPrincipal(), specParams, options, CancellationToken.None);
+            new CustomCodeSubmission("gp-cc-seam-1", OwnerPrincipal(), specParams), options, CancellationToken.None);
 
         // Every supplied customcode.* input is now mirrored to env.CUSTOMCODE_* with the
         // SAME value (output_prefix is server-set, so its env mirrors the clamped value).
@@ -210,7 +210,7 @@ public sealed class CustomCodeJobContractDriftTests
         };
 
         await coordinator.ValidateMintAndInjectAsync(
-            "gp-cc-seam-2", OwnerPrincipal(), specParams, options, CancellationToken.None);
+            new CustomCodeSubmission("gp-cc-seam-2", OwnerPrincipal(), specParams), options, CancellationToken.None);
 
         specParams.Should().NotContainKey("env." + CustomCodeJobContract.DeclaredScopeEnvName);
         specParams.Should().NotContainKey("env." + CustomCodeJobContract.ParamsJsonEnvName);

@@ -11,6 +11,7 @@
 // touches IMetadataV2GraphStore. Extracted into its own file so extent-recomputation SQL
 // stays in one place independent of the broader publish/persist flow.
 
+using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Admin.Domain;
 using Npgsql;
 
@@ -34,14 +35,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        var qualifiedTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
-        var quotedGeometryColumn = QuoteIdentifier(geometryColumn);
+        var qualifiedTable = $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}";
+        var quotedGeometryColumn = SqlIdentifier.QuoteIdentifier(geometryColumn);
         var normalizedSourceSrid = sourceSrid > 0 ? sourceSrid : CatalogExtentSrid;
 
         // A managed-store layer shares the features table with every other managed layer;
         // its extent covers only its own rows (honua-server#4859).
         var layerPredicate = managedLayerId.HasValue
-            ? $" AND {QuoteIdentifier(ManagedLayerDiscriminatorColumn)} = @managedLayerId"
+            ? $" AND {SqlIdentifier.QuoteIdentifier(ManagedLayerDiscriminatorColumn)} = @managedLayerId"
             : string.Empty;
         var sql = $"""
             WITH source_geometries AS (

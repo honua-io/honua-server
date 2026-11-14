@@ -67,7 +67,7 @@ internal static class ConsoleContentMapper
             UpdatedById = updater,
             Provenance = request.Provenance ?? Array.Empty<ConsoleProvenanceRef>(),
             TypeMetadata = request.TypeMetadata,
-            Generation = request.Generation,
+            Generation = request.AuthorizedGeneration ?? request.Generation,
         };
     }
 

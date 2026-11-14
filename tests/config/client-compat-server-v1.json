@@ -2,12 +2,12 @@
   "schemaVersion": "1.0",
   "profile": "client-compat-server-v1",
   "serverMode": "source",
-  "dotnetVersion": "10.0.x",
+  "dotnetVersion": "11.0.x",
   "databaseImage": "postgis/postgis:16-3.4",
   "aspnetcoreEnvironment": "Development",
   "baseUrl": "http://localhost:5000",
   "serviceId": "test_service",
   "layerId": "0",
   "setupAction": ".github/actions/setup-honua-server/action.yml",
-  "setupActionRevision": "sha256:1236d1d4a0e8fcc1cba9aa745bf5cfbdd6f5290d747fb3578c200c70eabfbbeb"
+  "setupActionRevision": "sha256:2ba76f03569398289dafae5417a8903c9622bc877d7678cbed20d1aae9a659f1"
 }

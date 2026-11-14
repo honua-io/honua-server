@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -66,6 +67,55 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         _admissionCoordinator = admissionCoordinator ?? ExecutionAdmissionCoordinator.ProcessLocal;
     }
 
+    private async Task<ExecutionJobRecord?> FindKeyedReplayAsync(
+        (string ResolvedKey, string JobId, string PrincipalId, string? TenantId, string RequestFingerprint) identity,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        var jobStore = RequireJobStore();
+        var replay = await jobStore.GetAsync(identity.JobId, cancellationToken).ConfigureAwait(false);
+        if (replay is not null)
+        {
+            EnsureMatchingIdempotentRequest(replay, identity.RequestFingerprint, identity.PrincipalId, identity.TenantId);
+            EnsureSubmissionDidNotRollback(replay);
+            Log.SubmittedIdempotent(_logger, identity.JobId);
+            return replay;
+        }
+
+        if (identity.TenantId is not null && TenantReadScope.For(_tenantContext).IncludesLegacy)
+        {
+            var legacyTenantId = JobOwnershipSecurity.CreateJobId("te", identity.ResolvedKey, identity.PrincipalId, null);
+            var legacyTenantJob = await jobStore.GetAsync(legacyTenantId, cancellationToken).ConfigureAwait(false);
+            if (legacyTenantJob is not null)
+            {
+                EnsureMatchingIdempotentRequest(legacyTenantJob, identity.RequestFingerprint, identity.PrincipalId, null);
+                EnsureSubmissionDidNotRollback(legacyTenantJob);
+                return legacyTenantJob;
+            }
+        }
+
+        // A keyed job written before ids were scoped by tenant and owner lives under the
+        // key-only id: replay it to its own submitter and refuse the key to anyone else, so a
+        // retry that crosses that change does not export twice.
+        var priorFormat = await jobStore
+            .GetAsync(JobOwnershipSecurity.CreatePriorFormatJobId("te", identity.ResolvedKey), cancellationToken)
+            .ConfigureAwait(false);
+        if (priorFormat is not null)
+        {
+            EnsureMatchingIdempotentRequest(
+                priorFormat,
+                identity.RequestFingerprint,
+                JobOwnershipSecurity.MatchesPriorFormatSubmitter(priorFormat.Audit, principal,
+                    TenantReadScope.For(_tenantContext).IncludesLegacy
+                        && priorFormat.Audit.SubmitterSecurityContext?.TenantId is null ? null : identity.TenantId));
+            EnsureSubmissionDidNotRollback(priorFormat);
+            Log.SubmittedIdempotent(_logger, priorFormat.OperationId);
+            return priorFormat;
+        }
+
+        return null;
+    }
+
     public async Task<ExecutionJobRecord> SubmitAsync(
         TileExportJobPlan plan,
         string? idempotencyKey,
@@ -106,33 +156,12 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         // a client retry after a timeout is never rejected (429/503) by the active job count, cost, or
         // rate bucket its own original submission created. A new submission still evaluates admission
         // below. The unkeyed path derives a fresh GUID id, so no replay is possible.
-        if (resolvedKey is not null)
+        if (resolvedKey is not null
+            && await FindKeyedReplayAsync(
+                (resolvedKey, jobId, principalId, submitter.TenantId, requestFingerprint), principal, cancellationToken)
+                .ConfigureAwait(false) is { } replay)
         {
-            var replay = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-            if (replay is not null)
-            {
-                EnsureMatchingIdempotentRequest(replay, requestFingerprint, principalId, submitter.TenantId);
-                EnsureSubmissionDidNotRollback(replay);
-                Log.SubmittedIdempotent(_logger, jobId);
-                return replay;
-            }
-
-            // A keyed job written before ids were scoped by tenant and owner lives under the
-            // key-only id: replay it to its own submitter and refuse the key to anyone else, so a
-            // retry that crosses that change does not export twice.
-            var priorFormat = await jobStore
-                .GetAsync(JobOwnershipSecurity.CreatePriorFormatJobId("te", resolvedKey), cancellationToken)
-                .ConfigureAwait(false);
-            if (priorFormat is not null)
-            {
-                EnsureMatchingIdempotentRequest(
-                    priorFormat,
-                    requestFingerprint,
-                    JobOwnershipSecurity.MatchesPriorFormatSubmitter(priorFormat.Audit, principal, submitter.TenantId));
-                EnsureSubmissionDidNotRollback(priorFormat);
-                Log.SubmittedIdempotent(_logger, priorFormat.OperationId);
-                return priorFormat;
-            }
+            return replay;
         }
 
         ExecutionJobRecord record;
@@ -313,7 +342,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
             return;
         }
 
-        if (IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             throw new TileExportPreconditionFailedException(
                 $"Tile-export job '{jobId}' is in terminal state '{job.Status}' and cannot be cancelled.");
@@ -331,7 +360,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                 return;
             }
 
-            if (IsTerminal(job.Status))
+            if (job.Status.IsTerminal())
             {
                 throw new TileExportPreconditionFailedException(
                     $"Tile-export job '{jobId}' reached terminal state '{job.Status}' before cancellation could be applied.");
@@ -479,7 +508,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
 
     private bool IsOwnedBy(ExecutionJobRecord job, ClaimsPrincipal principal)
         => JobOwnershipSecurity.CanAccess(job.Audit,
-            JobSecurityContextCapture.Capture(principal, _rbacOptions, _tenantContext).TenantId, principal);
+            TenantReadScope.For(_tenantContext, JobSecurityContextCapture.Capture(principal, _rbacOptions, _tenantContext).TenantId), principal);
 
     private static TileExportPackageFormat ResolvePackageFormat(ExecutionJobRecord job)
         => job.Spec.Parameters.TryGetValue(TileExportJobParameterKeys.PackageFormat, out var raw)
@@ -590,9 +619,6 @@ internal sealed partial class TileExportJobService : ITileExportJobService
 
     private IExecutionJobStore RequireJobStore()
         => _jobStore ?? throw new TileExportStoreUnavailableException();
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 
     private static partial class Log
     {

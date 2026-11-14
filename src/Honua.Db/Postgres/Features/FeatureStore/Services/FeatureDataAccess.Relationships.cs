@@ -170,9 +170,10 @@ internal sealed partial class FeatureDataAccess
         var features = new List<Feature>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+        var attributesReader = new FeatureAttributeReadContext();
         while (await reader.ReadAsync(cancellationToken))
         {
-            var feature = await ReadFeatureAsync(reader, cancellationToken);
+            var feature = ReadFeature(reader, attributesReader);
 
             // Resolve the origin object id(s) this related row belongs to BEFORE field
             // filtering so the destination key is still available, then re-stamp the

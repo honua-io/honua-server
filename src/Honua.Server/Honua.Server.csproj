@@ -76,12 +76,12 @@
     <!-- Code follows dependency inversion: Server → Core ← Infrastructure -->
     <!-- Program registers Postgres services via AddPostgreSqlServices -->
     <ProjectReference Include="..\Honua.Db\Postgres\Honua.Postgres.csproj" />
-    <ProjectReference Include="..\Honua.Db\DuckDB\Honua.DuckDB.csproj" />
-    <ProjectReference Include="..\Honua.Db\SqlServer\Honua.SqlServer.csproj" />
-    <ProjectReference Include="..\Honua.Db\MySql\Honua.MySql.csproj" />
-    <ProjectReference Include="..\Honua.Db\Redshift\Honua.Redshift.csproj" />
-    <ProjectReference Include="..\Honua.Db\GeoServicesRest\Honua.GeoServicesRest.csproj" />
-    <ProjectReference Include="..\Honua.Db\Databricks\Honua.Databricks.csproj" />
+    <ProjectReference Include="..\Honua.Db\DuckDB\Honua.DuckDB.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\SqlServer\Honua.SqlServer.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\MySql\Honua.MySql.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\Redshift\Honua.Redshift.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\GeoServicesRest\Honua.GeoServicesRest.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\Databricks\Honua.Databricks.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
     <ProjectReference Include="..\Honua.Db\Oracle\Honua.Oracle.csproj" Condition="'$(HonuaIncludeOracle)' == 'true'" />
     <ProjectReference Include="..\Honua.Db\Snowflake\Honua.Snowflake.csproj" Condition="'$(HonuaIncludeSnowflake)' == 'true'" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
@@ -152,16 +152,12 @@
 
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" />
-    <PackageReference Include="BouncyCastle.Cryptography" />
     <PackageReference Include="Geospatial.Grpc" />
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.AspNetCore" />
     <PackageReference Include="Grpc.AspNetCore.Server.Reflection" />
     <PackageReference Include="Grpc.AspNetCore.Web" />
     <PackageReference Include="Grpc.AspNetCore.HealthChecks" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
-    <PackageReference Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
     <!-- Force the audited-safe MessagePack (2.5.301) over the vulnerable 2.5.187 that the SignalR Redis
          backplane pulls transitively (transitive pinning is not enabled repo-wide). See #2554. -->
@@ -189,7 +185,6 @@
                       Condition="'$(HonuaUseSkiaNoDependencies)' != 'true'" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies"
                       Condition="'$(HonuaUseSkiaNoDependencies)' == 'true'" />
-    <PackageReference Include="Apache.Arrow" />
     <EmbeddedResource Include="Migrations\*.sql" />
     <EmbeddedResource Include="MigrationContracts\attachment-schema-preamble.v1.sql.template"
                       LogicalName="Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template" />
@@ -206,7 +201,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ParquetSharp" />
     <PackageReference Include="Scalar.AspNetCore" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <Content Update="openapi.json">
@@ -234,10 +228,6 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
     <Content Include="..\..\docs\developer\api-specs\admin-api.json" Link="admin-openapi.json" Condition="Exists('..\..\docs\developer\api-specs\admin-api.json')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
-    <Content Include="..\..\docs\api-specs\admin-api.json" Link="admin-openapi.json" Condition="!Exists('..\..\docs\developer\api-specs\admin-api.json') and Exists('..\..\docs\api-specs\admin-api.json')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

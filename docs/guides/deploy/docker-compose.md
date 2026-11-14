@@ -41,6 +41,10 @@ dc() { docker compose --env-file .env -f compose.yaml "$@"; }
 Compose 2.23.1 or later is required. Nothing here needs a repository checkout, a
 compiler, or a registry credential.
 
+The default serving image includes only the PostGIS data store and retains file-format
+import and export support. Keep the install's default image for PostGIS. Additional
+stores require the [full JIT image variant](../operate/nightly-images.md#data-store-variants).
+
 ## Hardened evaluation install from the shipped Compose file
 
 The release also ships a hardened Compose file (named `production`; not certified for rc.2),
@@ -235,7 +239,8 @@ services, style and render. It refuses the following with a typed
 Two operations still execute directly on such a host: publishing a service
 (`service.publish`) and applying a style preset to a published layer
 (`style.apply-preset`). When `Operations:Policy` allows the caller (an `admin`
-or `scoped-admin-key` role, such as an `admin:write` API key),
+or `scoped-admin-key` role, such as an `admin:write` API key, and not an agent:
+an agent's publish files a proposal, which needs the system database),
 `honua_publish_service`, `honua_apply_style_preset` and
 `POST /api/v1/operations/{service.publish|style.apply-preset}/submit` make the
 change and return the usual handle: `operationId`, `operationInstanceId`,

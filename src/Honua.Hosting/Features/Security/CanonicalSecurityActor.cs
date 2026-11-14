@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Infrastructure.Authentication;
 
 namespace Honua.Infrastructure.Security;
@@ -161,8 +162,9 @@ internal static class CanonicalSecurityActor
 
     internal static bool IsRequestBindingProjection(Claim claim) =>
         IsFrameworkOwnedClaim(claim)
-        && claim.Type is CanonicalActorClaim or EffectiveTenantClaim or ScopeCeilingClaim
-            or AuthenticationSchemeClaim or "honua:issuer";
+        && (claim.Type is CanonicalActorClaim or EffectiveTenantClaim or ScopeCeilingClaim
+            or AuthenticationSchemeClaim or "honua:issuer"
+            || (claim.Type == ClaimTypes.Role && claim.Value == AgentApprovalRule.AgentRole));
 
     internal static string ResolveScopeCeiling(ClaimsPrincipal principal)
     {
@@ -211,6 +213,14 @@ internal static class CanonicalSecurityActor
         && (IsBearerScheme(FindStampedValue(principal, AuthenticationSchemeClaim))
             || principal.Identities.Any(static identity =>
                 identity.IsAuthenticated && IsBearerScheme(identity.AuthenticationType)));
+
+    internal static bool IsOperatorBearerOnlyPrincipal(ClaimsPrincipal principal)
+    {
+        var authenticated = principal.Identities.Where(static identity => identity.IsAuthenticated).ToArray();
+        return authenticated.Length > 0
+            && authenticated.All(static identity => string.Equals(identity.AuthenticationType?.Trim(),
+                OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.OrdinalIgnoreCase));
+    }
 
     private static bool IsBearerScheme(string? scheme) =>
         string.Equals(scheme?.Trim(), OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase)

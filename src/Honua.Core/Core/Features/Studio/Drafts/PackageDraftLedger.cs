@@ -10,7 +10,7 @@ namespace Honua.Core.Features.Studio.Drafts;
 /// <see cref="IPackageDraftStore"/>. The backing decides whether the bytes are
 /// process-local or shared; this type does not.
 /// </summary>
-internal sealed class PackageDraftLedger : IPackageDraftStore
+public sealed class PackageDraftLedger : IPackageDraftStore
 {
     private readonly IPackageDraftBacking _backing;
     private readonly PackageDraftRetentionOptions _retention;
@@ -93,7 +93,7 @@ internal sealed class PackageDraftLedger : IPackageDraftStore
         }
 
         var record = new PackageDraftRecord(ownerId, _timeProvider.GetUtcNow(), map, app);
-        await _backing.UpsertAsync(kind, id, record, _retention.Ttl, cancellationToken).ConfigureAwait(false);
+        await _backing.UpsertAsync(new PackageDraftWrite(kind, id, record, _retention.Ttl), cancellationToken).ConfigureAwait(false);
         await TrimAsync(kind, cancellationToken).ConfigureAwait(false);
     }
 

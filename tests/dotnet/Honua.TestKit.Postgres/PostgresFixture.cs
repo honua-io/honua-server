@@ -22,10 +22,11 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly PostgresSharedState SharedState = new();
     private static readonly string[] SharedStoreMigrations =
-        ["113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql",
+        ["031_CreateMetadataV2Snapshot.sql", "113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql",
             "141_CreateImportedDatasetSpatialMetadata.sql", "147_CreateJobSubstrate.sql",
             "148_CreateControlPlaneState.sql", "149_CreateSecurityState.sql",
-            "150_CreateOAuthClientsAndOperationProgress.sql"];
+            "150_CreateOAuthClientsAndOperationProgress.sql", "154_CreatePackageDraftsAndMcpSessions.sql",
+            "156_CreateConfigurationDocuments.sql"];
 
     // Upload tests run with HONUA_SKIP_MIGRATIONS and a seed that mirrors older import
     // functions, not this script. The importer calls these after every committed load.
@@ -511,6 +512,49 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
             finally
             {
                 await ExecuteAdvisoryLockCommandAsync(lockConnection, "SELECT pg_advisory_unlock(@key);", cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    // Takes the schema-mutation advisory lock shared with SeedRunner and holds it until the
+    // returned handle is disposed. Use it when a test writes process-global rows (for example
+    // honua.raster_data) and must also read them back before any parallel fixture seed runs;
+    // RunUnderSchemaMutationLockAsync covers a single action instead.
+    public async Task<IAsyncDisposable> AcquireSchemaMutationLockAsync(CancellationToken cancellationToken = default)
+    {
+        var lockConnection = await GetConnectionAsync().ConfigureAwait(false);
+        try
+        {
+            await ExecuteAdvisoryLockCommandAsync(lockConnection, "SELECT pg_advisory_lock(@key);", cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await lockConnection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        return new SchemaMutationLockLease(lockConnection);
+    }
+
+    private sealed class SchemaMutationLockLease(NpgsqlConnection lockConnection) : IAsyncDisposable
+    {
+        private NpgsqlConnection? _lockConnection = lockConnection;
+
+        public async ValueTask DisposeAsync()
+        {
+            var connection = Interlocked.Exchange(ref _lockConnection, null);
+            if (connection is null)
+            {
+                return;
+            }
+
+            try
+            {
+                await ExecuteAdvisoryLockCommandAsync(connection, "SELECT pg_advisory_unlock(@key);", CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
             }
         }
     }
