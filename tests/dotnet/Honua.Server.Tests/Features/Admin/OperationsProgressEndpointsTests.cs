@@ -1277,6 +1277,58 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         (await jobStore.GetAsync(operationId))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_LocalRetryAfterDurableCancel_DoesNotCancelSuccessor()
+    {
+        var operationId = Guid.NewGuid().ToString("N");
+        var now = DateTimeOffset.UtcNow;
+        var initial = new ExecutionJobRecord
+        {
+            OperationId = operationId, Version = 1, Status = ExecutionJobStatus.Queued,
+            CreatedAt = now, UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Export, Backend = "local",
+                TargetKind = BatchComputeTargetKind.KubernetesJob, WorkloadName = "cancel-retry"
+            }
+        };
+        var current = initial;
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(operationId, Arg.Any<CancellationToken>()).Returns(_ => current);
+        store.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ExecutionJobRecord>());
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { current = call.Arg<ExecutionJobRecord>(); return true; });
+        var queue = Substitute.For<IJobQueue>();
+        queue.RemoveAsync(operationId, Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            current = initial with { Version = 3, CurrentPhase = "Queued for manual retry" };
+            return Task.CompletedTask;
+        });
+        var fixture = new WebAppFixture()
+            .ReplaceRequestService<IExecutionJobStore>(store)
+            .ReplaceRequestService<IJobQueue>(queue);
+        await fixture.InitializeAsync();
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        try
+        {
+            await progressStore.SetProgressAsync(operationId,
+                ExportProgress.CreateInitial(operationId, "csv", "svc", 1, 10));
+
+            var response = await fixture.Client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            current.Status.Should().Be(ExecutionJobStatus.Queued);
+            await store.Received(1).TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
