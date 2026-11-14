@@ -22,7 +22,7 @@ namespace Honua.Db.Postgres.Features.Metadata;
 /// refreshed in the same transaction. <c>metadata_v2_current</c> tracks the active
 /// revision per environment.
 /// </summary>
-internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphRevisionStager, IMetadataV2GraphWriteBaseReader, IMetadataV2GraphRevisionProbe
+internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphRevisionStager, IMetadataV2GraphRevisionProbe
 {
     // Shared with schema-coupled metadata publishers such as the demo STAC seed.
     // The environment hash is the second key so unrelated environments can publish concurrently.
@@ -118,7 +118,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     /// <inheritdoc />
     public Task<MetadataV2GraphSnapshot?> TryGetPersistedCurrentAsync(CancellationToken cancellationToken = default)
         // Write/publish base load: only the genuinely-activated snapshot, never the V1
-        // compat synthesis. See IMetadataV2GraphWriteBaseReader for why. (honua-server#1412.)
+        // compat synthesis. See PostgresMetadataV2GraphStore for why. (honua-server#1412.)
         => TryLoadCurrentAsync(cancellationToken);
 
     /// <summary>

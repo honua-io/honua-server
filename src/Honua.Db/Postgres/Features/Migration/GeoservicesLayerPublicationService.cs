@@ -23,7 +23,7 @@ internal sealed partial class GeoservicesLayerPublicationService
     private readonly IGeoServicesStyleConverter? _styleConverter;
     private readonly ILayerStyleCatalog? _styleCatalog;
     private readonly ILayerReconciliationService? _reconciliationService;
-    private readonly IMetadataV2GraphWriteBaseReader? _metadataWriteBaseReader;
+    private readonly PostgresMetadataV2GraphStore? _metadataWriteBaseReader;
     private readonly ILogger<GeoservicesLayerPublicationService> _logger;
 
     /// <summary>
@@ -48,7 +48,7 @@ internal sealed partial class GeoservicesLayerPublicationService
         // graph (where AutoPublish materialized res-layer-{layerId}), never the V1-catalog compat
         // synthesis. The Postgres store implements this seam; a non-implementing test double leaves
         // the reader null and catalog reconciliation is skipped.
-        _metadataWriteBaseReader = metadataGraphStore as IMetadataV2GraphWriteBaseReader;
+        _metadataWriteBaseReader = metadataGraphStore as PostgresMetadataV2GraphStore;
     }
 
     /// <summary>
