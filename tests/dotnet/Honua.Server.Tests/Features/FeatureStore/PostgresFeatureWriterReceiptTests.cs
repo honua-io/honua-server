@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -87,6 +88,52 @@ public partial class PostgresFeatureStoreIntegrationTests
             .Should().Be(original.Attributes["category"]);
         var receipts = new PostgresFeatureEditIdempotencyReceipts(_fixture.DataSource, _testSchema);
         (await receipts.TryReadAsync(receipt.Scope))!.Value.ToArray().Should().Equal(receipt.Payload.ToArray());
+    }
+
+    [IntegrationTheory]
+    [InlineData(IsolationLevel.ReadCommitted)]
+    [InlineData(IsolationLevel.RepeatableRead)]
+    [Operation(Operations.ApplyEdits)]
+    public async Task WriterTransaction_ReceiptCommit_DistinctScopesBothCommit(IsolationLevel isolation)
+    {
+        await CreateReceiptTableAsync();
+        var store = CreateFeatureStore();
+        var firstReceipt = TransactionReceipt();
+        var secondReceipt = TransactionReceipt();
+        await using var first = await store.BeginTransactionAsync(isolation);
+        await using var second = await store.BeginTransactionAsync(isolation);
+        await UpdateReceiptTestAttributeAsync(first, (PointsLayerId, 1, "category"), "first-scope");
+        await UpdateReceiptTestAttributeAsync(second, (PointsLayerId, 2, "category"), "second-scope");
+        (await first.CommitAsync(firstReceipt)).Should().Be(FeatureWriterTransactionCommitOutcome.Committed);
+        (await second.CommitAsync(secondReceipt)).Should().Be(FeatureWriterTransactionCommitOutcome.Committed);
+
+        (await store.GetAsync(PointsLayerId, 1))!.Value.Attributes["category"].Should().Be("first-scope");
+        (await store.GetAsync(PointsLayerId, 2))!.Value.Attributes["category"].Should().Be("second-scope");
+        var receipts = new PostgresFeatureEditIdempotencyReceipts(_fixture.DataSource, _testSchema);
+        (await receipts.TryReadAsync(firstReceipt.Scope))!.Value.ToArray().Should().Equal(firstReceipt.Payload.ToArray());
+        (await receipts.TryReadAsync(secondReceipt.Scope))!.Value.ToArray().Should().Equal(secondReceipt.Payload.ToArray());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task WriterTransaction_ReceiptCommit_RejectsSerializableWithoutCommitting()
+    {
+        await CreateReceiptTableAsync();
+        var store = CreateFeatureStore();
+        var receipt = TransactionReceipt();
+        var original = (await store.GetAsync(PointsLayerId, 1))!.Value;
+        await using (var transaction = await store.BeginTransactionAsync(IsolationLevel.Serializable))
+        {
+            transaction.SupportsDurableReceipts.Should().BeFalse();
+            await UpdateReceiptTestAttributeAsync(transaction, (PointsLayerId, 1, "category"), "unsupported");
+            var commit = () => transaction.CommitAsync(receipt);
+            await commit.Should().ThrowAsync<NotSupportedException>();
+        }
+
+        (await store.GetAsync(PointsLayerId, 1))!.Value.Attributes["category"]
+            .Should().Be(original.Attributes["category"]);
+        var receipts = new PostgresFeatureEditIdempotencyReceipts(_fixture.DataSource, _testSchema);
+        (await receipts.TryReadAsync(receipt.Scope)).Should().BeNull();
     }
 
     [IntegrationTest]

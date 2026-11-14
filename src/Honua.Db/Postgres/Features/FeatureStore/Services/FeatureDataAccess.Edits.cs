@@ -1098,13 +1098,21 @@ internal sealed partial class FeatureDataAccess
                 cancellationToken);
         }
 
-        public bool SupportsDurableReceipts => true;
+        // Serializable can fail for unrelated scopes; only snapshot conflicts on the same receipt
+        // may be classified as an existing winner by the shared receipt writer.
+        public bool SupportsDurableReceipts =>
+            _transaction.IsolationLevel is IsolationLevel.ReadCommitted or IsolationLevel.RepeatableRead;
 
         public async Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
             FeatureWriterTransactionReceipt receipt,
             CancellationToken cancellationToken = default)
         {
             EnsureActive();
+            if (!SupportsDurableReceipts)
+            {
+                throw new NotSupportedException("Durable transaction receipts require read committed or repeatable read isolation.");
+            }
+
             PostgresGrpcApplyEditsReceipt.ValidatePayload(receipt.Scope, receipt.Payload);
             if (receipt.ExpiresAt <= DateTimeOffset.UtcNow)
             {
