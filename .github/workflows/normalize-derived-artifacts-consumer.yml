@@ -1,11 +1,12 @@
 name: Derived Artifact Normalization Consumer
+run-name: Normalization producer ${{ github.event.workflow_run.id }} attempt ${{ github.event.workflow_run.run_attempt }}
 
 on:
   workflow_run:
     workflows: ["Derived Artifact Normalization"]
     types: [completed]
 
-# The workflow GITHUB_TOKEN stays read-only in every mode. Enforce mode writes
+# Envelope validation keeps its GITHUB_TOKEN read-only in every mode. Enforce mode writes
 # only through a short-lived installation token minted immediately before the
 # single mutation step; envelope download, validation, and comparison never see
 # a credential. Required App permissions: Contents read+write (blobs/tree/commit
@@ -25,6 +26,10 @@ env:
 
 jobs:
   admit:
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
     if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
@@ -41,12 +46,15 @@ jobs:
           script: |
             const {admitNormalization} = require('./scripts/ci/admit-normalization-consumer');
             const pr = await admitNormalization({github, context});
-            if (pr) core.setOutput('pr', String(pr));
+            if (!pr) return;
+            const {cancelOlderConsumers} = require('./scripts/ci/cancel-older-normalization-consumers');
+            await cancelOlderConsumers({github, context, core}, pr);
+            core.setOutput('pr', String(pr));
 
   validate:
     needs: admit
     concurrency:
-      group: normalization-consumer-${{ needs.admit.outputs.pr }}
+      group: normalization-consumer-${{ needs.admit.outputs.pr }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
       cancel-in-progress: true
     if: >
       needs.admit.outputs.pr != '' &&

@@ -136,7 +136,7 @@ review/admission state before acting. Normalization producers and consumers
 cancel superseded work per PR. Draft and metadata-only producer events use
 isolated groups so they cannot cancel eligible generation. A trusted consumer
 admission job resolves the live PR and rejects old-head completions before
-entering the per-PR cancellation group. Live-head checks and compare-and-swap
+entering the producer-generation concurrency group. Live-head checks and compare-and-swap
 remain required before producing data or mutating a branch.
 
 Completions without a PR number use an isolated resolver group per run; once resolved, publication cancels older work by PR number. An unresolvable completion cannot cancel a resolver for another run.
@@ -1410,3 +1410,5 @@ already cancel superseded PR runs through their existing per-PR concurrency grou
 Normalization consumer admission reads the exact producer attempt before joining
 its per-PR cancellation group. Only a successful envelope-packaging job admits
 validation; late same-SHA metadata or draft skips cannot cancel useful work.
+
+Normalization consumer validation isolates concurrency by PR and producer run/attempt. Trusted admission cancels only consumers of older producer generations associated with that PR; delayed old completions cannot cancel newer work. Only admission has Actions write permission for cancellation. Validation retains read-only Actions, Contents and Pull requests permissions, and its existing installation-token and compare-and-swap mutation controls.

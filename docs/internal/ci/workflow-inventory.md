@@ -1023,3 +1023,5 @@ already cancel superseded PR runs through their existing per-PR concurrency grou
 Normalization consumer admission reads the exact producer attempt before joining
 its per-PR cancellation group. Only a successful envelope-packaging job admits
 validation; late same-SHA metadata or draft skips cannot cancel useful work.
+
+Normalization consumer validation isolates concurrency by PR and producer run/attempt. Trusted admission cancels only consumers of older producer generations associated with that PR; delayed old completions cannot cancel newer work. Only admission has Actions write permission for cancellation. Validation retains read-only Actions, Contents and Pull requests permissions, and its existing installation-token and compare-and-swap mutation controls.

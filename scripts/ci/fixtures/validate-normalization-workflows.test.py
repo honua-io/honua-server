@@ -53,6 +53,13 @@ class NormalizationContractTests(unittest.TestCase):
                     with self.assertRaisesRegex(AssertionError, "cancel superseded"):
                         run(**{workflow: SOURCES[workflow].replace(old, new.replace("\n  queue:", "\n      queue:") if workflow == "consumer" else new, 1)})
 
+    def test_cancellation_write_scope_cannot_reach_validation(self) -> None:
+        for old, new in (("  validate:\n", "  validate:\n    permissions:\n      actions: write\n"),
+                         ("      pull-requests: read\n", "      pull-requests: write\n")):
+            with self.subTest(mutation=new):
+                with self.assertRaisesRegex(AssertionError, "permission"):
+                    run(consumer=SOURCES["consumer"].replace(old, new, 1))
+
     def test_generator_in_packaging_is_rejected(self) -> None:
         marker = "      - name: Download bounded projection data\n"
         producer = SOURCES["producer"].replace(

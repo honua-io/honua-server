@@ -49,7 +49,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture hygiene-cancellation "${PYTHON_BIN}" scripts/ci/fixtures/test-repo-hygiene-cancellation.py
 fi
 
-run_fixture normalization-consumer-admission node --test scripts/ci/admit-normalization-consumer.test.js
+run_fixture normalization-consumer-admission node --test scripts/ci/admit-normalization-consumer.test.js scripts/ci/cancel-older-normalization-consumers.test.js
 run_fixture code-quality-supersession node --test scripts/ci/cancel-superseded-code-quality.test.js
 run_fixture heavy-shutdown-retry node --test scripts/ci/heavy-shutdown-retry.test.js
 run_fixture review-revalidation node --test .github/scripts/revalidate-exact-head-review.test.cjs

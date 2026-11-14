@@ -47,10 +47,13 @@ def validate_permissions(workflow: str, allowed: set[str], label: str) -> dict:
     jobs = document.get("jobs")
     if not isinstance(jobs, dict):
         raise AssertionError(f"{label} jobs must be a mapping")
-    for job in jobs.values():
+    for name, job in jobs.items():
         if "permissions" not in job:
             continue
         permissions = job["permissions"]
+        if label == "consumer GITHUB_TOKEN" and name == "admit" and permissions == {
+                "actions": "write", "contents": "read", "pull-requests": "read"}:
+            continue
         if not isinstance(permissions, dict) or any(
                 key not in allowed or value != "read" for key, value in permissions.items()):
             raise AssertionError(f"{label} job permission must remain read-only and allowlisted")
@@ -389,11 +392,14 @@ def validate_concurrency(producer: str, consumer: str) -> None:
         raise AssertionError("producer must cancel superseded normalization runs per PR")
     job = consumer_doc["jobs"]["validate"]
     if "concurrency" in consumer_doc or job.get("concurrency") != {
-        "group": "normalization-consumer-${{ needs.admit.outputs.pr }}", "cancel-in-progress": True,
+        "group": "normalization-consumer-${{ needs.admit.outputs.pr }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}", "cancel-in-progress": True,
     } or job.get("needs") != "admit" or "needs.admit.outputs.pr != ''" not in job["if"]:
-        raise AssertionError("consumer must cancel superseded normalization runs per PR after live admission")
+        raise AssertionError("consumer must cancel superseded runs only across older producer generations")
     admission = consumer_doc["jobs"]["admit"]
     checkout, resolver = admission["steps"]
+    if (admission.get("permissions", {}).get("actions") != "write"
+            or "cancelOlderConsumers({github, context, core}, pr)" not in resolver["with"]["script"]):
+        raise AssertionError("consumer cancellation must target only older producer generations")
     if (admission.get("outputs", {}).get("pr") != "${{ steps.live.outputs.pr }}"
             or checkout.get("with", {}).get("ref") != "${{ github.event.repository.default_branch }}"
             or checkout["with"].get("persist-credentials") is not False
