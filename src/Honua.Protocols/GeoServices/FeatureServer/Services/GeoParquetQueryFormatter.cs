@@ -28,7 +28,7 @@ internal static class GeoParquetQueryFormatter
     {
         ArgumentNullException.ThrowIfNull(resource);
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
-        return GeoParquetFeatureWriter.FormatAsGeoParquet(
+        var (response, contentType) = GeoParquetFeatureWriter.FormatAsGeoParquet(
             result,
             resource,
             objectIdFieldName,
@@ -40,6 +40,7 @@ internal static class GeoParquetQueryFormatter
             outFields,
             logger,
             encodingLimits);
+        return (response.ToArray(), contentType);
     }
 
     internal static List<MetadataV2Field> ResolveSelectedFields(MetadataV2Resource resource, string[]? outFields)

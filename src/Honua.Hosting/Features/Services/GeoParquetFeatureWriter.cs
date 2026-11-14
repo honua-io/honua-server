@@ -54,7 +54,7 @@ public static partial class GeoParquetFeatureWriter
     [ThreadStatic]
     private static WKBWriter? _wkbWriter3D;
 
-    public static (byte[] response, string contentType) FormatAsGeoParquet(
+    public static (ReadOnlyMemory<byte> response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
         MetadataV2Resource resource,
         string objectIdFieldName,
@@ -153,7 +153,7 @@ public static partial class GeoParquetFeatureWriter
     // wrapped in TypeInitializationException).
     // Translate that into a typed ParquetRuntimeUnavailableException so protocol adapters can
     // return a clean 501 capability response instead of an unhandled 500 (honua-server#1942).
-    private static byte[] WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
+    private static ReadOnlyMemory<byte> WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
     {
         using var stream = new BoundedParquetStream(limits.MaxResponseBytes);
         try
@@ -171,7 +171,7 @@ public static partial class GeoParquetFeatureWriter
                 writer.Close();
             }
 
-            return stream.ToArray();
+            return stream.GetBuffer().AsMemory(0, checked((int)stream.Length));
         }
         catch (Exception) when (stream.LimitExceeded)
         {
@@ -222,7 +222,7 @@ public static partial class GeoParquetFeatureWriter
         return selectedFields;
     }
 
-    private static (byte[] response, string contentType) CreateEmptyGeoParquet(
+    private static (ReadOnlyMemory<byte> response, string contentType) CreateEmptyGeoParquet(
         MetadataV2Resource resource,
         string objectIdFieldName,
         bool returnGeometry,

@@ -212,11 +212,14 @@ internal sealed class PbfQueryFormatter
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var srid = outputSrid ?? resource.ReadSrid() ?? 4326;
 
-        var featureResult = new ProtobufWriter(result.Items.Length * 256);
+        var writer = new ProtobufWriter(result.Items.Length * 256);
         try
         {
+            writer.WriteString(1, PbfVersion);
+            var queryPosition = writer.BeginMessage(2);
+            var featurePosition = writer.BeginMessage(1);
             WriteFeatureResult(
-                ref featureResult,
+                ref writer,
                 result,
                 resource,
                 objectIdFieldName,
@@ -227,34 +230,13 @@ internal sealed class PbfQueryFormatter
                 effectiveLimits,
                 outFields,
                 quantizationTransform);
-
-            var queryResult = new ProtobufWriter(featureResult.Position + 16);
-            try
-            {
-                queryResult.WriteMessage(1, ref featureResult);
-
-                var outer = new ProtobufWriter(queryResult.Position + 64);
-                try
-                {
-                    outer.WriteString(1, PbfVersion);
-                    outer.WriteMessage(2, ref queryResult);
-
-                    return (outer.ToArrayAndDispose(), "application/x-protobuf");
-                }
-                catch
-                {
-                    outer.Dispose();
-                    throw;
-                }
-            }
-            finally
-            {
-                queryResult.Dispose();
-            }
+            writer.EndMessage(featurePosition);
+            writer.EndMessage(queryPosition);
+            return (writer.ToArrayAndDispose(), "application/x-protobuf");
         }
         finally
         {
-            featureResult.Dispose();
+            writer.Dispose();
         }
     }
 
