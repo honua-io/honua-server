@@ -3,7 +3,7 @@
 This is the pre-change measurement for ADR-0074 and #3213. It was collected at
 2026-08-14T02:23:39Z from the most recent 30 runs created on or after 2026-07-14
 for each declared workflow. The machine-readable summary is
-[`evidence/actions-baseline-2026-08-13.json`](evidence/actions-baseline-2026-08-13.json)
+[`evidence/actions-baseline-2026-08-13.json`](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/internal/ci/evidence/actions-baseline-2026-08-13.json)
 (canonical Git blob SHA-256
 `8452667dceba5b71a98d41c9af564506a0d92b4e24863cd6df6e1341e8241ab4`).
 The digest is over the committed LF-normalized blob, not a checkout transformed
@@ -32,8 +32,8 @@ python scripts/ci/measure-actions-baseline.py `
   --format markdown
 ```
 
-The exact compact normalized input is committed as
-[`evidence/actions-baseline-input-2026-08-13.json.gz`](evidence/actions-baseline-input-2026-08-13.json.gz).
+The exact compact normalized input is archived at
+[`evidence/actions-baseline-input-2026-08-13.json.gz`](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/internal/ci/evidence/actions-baseline-input-2026-08-13.json.gz).
 This preserves job timestamps and runner labels observed while three workflows
 were still active; those historical observations cannot be recreated by
 querying the mutable runs later. Gzip output omits filename/time metadata and is

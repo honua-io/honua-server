@@ -4,6 +4,7 @@
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
 using Honua.Server.Features.Console.Models;
+using Honua.Server.Features.Admin;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -49,6 +50,7 @@ internal static class ConsoleOpenDataEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/stac/publish", HandlePublishStac)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithDisplayName("Publish Console Open-Data to STAC")
             .WithSummary("Publishes (or re-publishes/updates) the item to the STAC catalog. Requires open-data eligibility and a DCAT-valid page.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));

@@ -8,8 +8,9 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.Server.Features.Admin.Models;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
+using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -45,6 +46,38 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
     {
         _client.Dispose();
         _factory.Dispose();
+    }
+
+    [IntegrationTheory]
+    [InlineData("POST", "/profiles")]
+    [InlineData("PUT", "/profiles/profile")]
+    [InlineData("DELETE", "/profiles/profile")]
+    [InlineData("POST", "/profiles/profile/mappings")]
+    [InlineData("PUT", "/profiles/profile/mappings/mapping")]
+    [InlineData("DELETE", "/profiles/profile/mappings/mapping")]
+    [InlineData("POST", "/profiles/profile/revocations")]
+    [InlineData("DELETE", "/profiles/profile/revocations/revocation")]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/profiles")]
+    [Endpoint("PUT /api/v1/admin/security/client-certificates/profiles/{profileId}")]
+    [Endpoint("DELETE /api/v1/admin/security/client-certificates/profiles/{profileId}")]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/profiles/{profileId}/mappings")]
+    [Endpoint("PUT /api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}")]
+    [Endpoint("DELETE /api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}")]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/profiles/{profileId}/revocations")]
+    [Endpoint("DELETE /api/v1/admin/security/client-certificates/profiles/{profileId}/revocations/{revocationId}")]
+    public async Task AgentAdministrator_CannotManageCertificateCredentials(string method, string path)
+    {
+        var key = await _factory.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "certificate-agent", ["admin", "agent"], null, "test", CancellationToken.None);
+        using var agent = _factory.CreateClient();
+        agent.DefaultRequestHeaders.Add("X-API-Key", key.Key);
+        using var request = new HttpRequestMessage(new HttpMethod(method),
+            "/api/v1/admin/security/client-certificates" + path);
+        request.Content = JsonContent.Create(new { });
+
+        using var response = await agent.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [IntegrationTest]

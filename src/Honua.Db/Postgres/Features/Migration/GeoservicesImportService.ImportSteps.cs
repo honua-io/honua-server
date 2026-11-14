@@ -16,6 +16,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
@@ -1053,8 +1054,8 @@ internal sealed partial class GeoservicesImportService
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE SCHEMA IF NOT EXISTS {QuoteIdentifier(schemaName)};");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} (");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE SCHEMA IF NOT EXISTS {SqlIdentifier.QuoteIdentifier(schemaName)};");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)} (");
 
         for (var i = 0; i < columns.Count; i++)
         {

@@ -188,7 +188,7 @@ before the query instant; dispatch deduplicates by task/version/alert policy.
 
 ## Offline sync contract
 
-[ADR-0087](../adr/0087-one-first-party-field-sync-contract.md) selects the
+[ADR-0088](../adr/0088-one-first-party-field-sync-contract.md) selects the
 fieldcollection family for first-party offline exchange, maps every conflict
 row below to proposed named responses, and records current implementation gaps.
 Task commands still execute through the shared domain service; generic feature
