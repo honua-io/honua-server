@@ -109,11 +109,7 @@ internal sealed partial class CacheServiceResponseCache
                 RemoveReservation(current);
             }
 
-            var expiresAt = now.Add(expiration);
-            if (current is not null && current.ExpiresAt > expiresAt)
-            {
-                expiresAt = current.ExpiresAt;
-            }
+            var expiresAt = RetainedExpiration(now.Add(expiration), current);
 
             var reservation = new ResponseReservation(budgetKey, Math.Max(bytes, current?.Bytes ?? 0), expiresAt)
             {
@@ -124,6 +120,9 @@ internal sealed partial class CacheServiceResponseCache
             return AddReservation(reservation);
         }
     }
+
+    private static DateTimeOffset RetainedExpiration(DateTimeOffset expiresAt, ResponseReservation? current)
+        => current is not null && current.ExpiresAt > expiresAt ? current.ExpiresAt : expiresAt;
 
     private ResponseReservation AddReservation(ResponseReservation reservation)
     {
