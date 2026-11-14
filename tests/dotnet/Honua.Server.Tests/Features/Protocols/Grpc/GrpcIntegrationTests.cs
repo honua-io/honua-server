@@ -97,6 +97,83 @@ public sealed class GrpcIntegrationTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
+    [IntegrationTheory]
+    [InlineData("date", "2026-02-30")]
+    [InlineData("time", "24:00:00")]
+    [InlineData("timestamp_offset", "2026-11-14T01:02:03+14:01")]
+    [InlineData("decimal", "1e6")]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_InvalidTypedAttribute_RejectsWholeCallBeforeWrites(string kind, string value)
+    {
+        var update = new Proto.Feature { Id = 1 };
+        update.Attributes["name"] = kind switch
+        {
+            "date" => new Proto.AttributeValue { DateValue = value },
+            "time" => new Proto.AttributeValue { TimeValue = value },
+            "timestamp_offset" => new Proto.AttributeValue { TimestampOffsetValue = value },
+            _ => new Proto.AttributeValue { DecimalValue = value },
+        };
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId
+        };
+        request.Updates.Add(update);
+        var before = await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, 1);
+
+        var act = async () => await _client!.ApplyEditsAsync(request, _headers);
+        var failure = await act.Should().ThrowAsync<RpcException>();
+        failure.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, 1))
+            .Should().Be(before);
+        (await _fixture.CountStoredFeaturesAsync(WebAppFixture.TestLayerId))
+            .Should().Be(SeededFeatureCount);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.FeatureService/QueryFeatures")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_MalformedGlobalIdSelector_RejectsWholeCall()
+    {
+        var request = GlobalIdQuery("invalid-global-id");
+
+        await AssertInvalidArgumentAsync(request);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.FeatureService/QueryFeatures")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_ObjectAndGlobalIdSelectorsTogether_RejectsWholeCall()
+    {
+        var request = GlobalIdQuery("4e886876-f3d3-4fc1-adfd-765880396ff2");
+        request.ObjectIds.Add(1);
+
+        await AssertInvalidArgumentAsync(request);
+    }
+
+    private static Proto.QueryFeaturesRequest GlobalIdQuery(string globalId)
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId
+        };
+        request.GlobalIds.Add(globalId);
+        return request;
+    }
+
+    private async Task AssertInvalidArgumentAsync(Proto.QueryFeaturesRequest request)
+    {
+        var act = async () => await _client!.QueryFeaturesAsync(request, _headers);
+        var failure = await act.Should().ThrowAsync<RpcException>();
+        failure.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryFeatures")]
