@@ -218,7 +218,8 @@ public class StreamingImportTests : IAsyncLifetime
         };
         content.Add(fileContent);
         content.Add(new StringContent("wkt_import_table"), "TableName");
-        content.Add(new StringContent("4326"), "SourceSrid");
+        using var sourceSrid = new StringContent("4326");
+        content.Add(sourceSrid, "SourceSrid");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
@@ -282,7 +283,8 @@ public class StreamingImportTests : IAsyncLifetime
         };
         content.Add(fileContent);
         content.Add(new StringContent("wkb_import_table"), "TableName");
-        content.Add(new StringContent("4326"), "SourceSrid");
+        using var sourceSrid = new StringContent("4326");
+        content.Add(sourceSrid, "SourceSrid");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
@@ -355,7 +357,8 @@ public class StreamingImportTests : IAsyncLifetime
         };
         content.Add(fileContent);
         content.Add(new StringContent("csv_import_table"), "TableName");
-        content.Add(new StringContent("4326"), "SourceSrid");
+        using var sourceSrid = new StringContent("4326");
+        content.Add(sourceSrid, "SourceSrid");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
@@ -1048,7 +1051,8 @@ public class StreamingImportTests : IAsyncLifetime
         };
         content.Add(fileContent);
         content.Add(new StringContent("flatgeobuf_import_test"), "TableName");
-        content.Add(new StringContent("4326"), "SourceSrid");
+        using var sourceSrid = new StringContent("4326");
+        content.Add(sourceSrid, "SourceSrid");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
@@ -1133,7 +1137,8 @@ public class StreamingImportTests : IAsyncLifetime
         };
         content.Add(fileContent);
         content.Add(new StringContent(tableName), "TableName");
-        content.Add(new StringContent("4326"), "SourceSrid");
+        using var sourceSrid = new StringContent("4326");
+        content.Add(sourceSrid, "SourceSrid");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);

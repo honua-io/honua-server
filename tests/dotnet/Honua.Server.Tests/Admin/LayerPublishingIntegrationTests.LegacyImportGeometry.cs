@@ -37,7 +37,8 @@ public sealed partial class LayerPublishingIntegrationTests
             upload.Add(new StringContent(source), "File", "points.csv");
             upload.Add(new StringContent(tableName), "TableName");
             upload.Add(new StringContent("4326"), "TargetSrid");
-            upload.Add(new StringContent("4326"), "SourceSrid");
+            using var sourceSrid = new StringContent("4326");
+            upload.Add(sourceSrid, "SourceSrid");
             upload.Add(new StringContent(loadMode), "LoadMode");
             upload.Add(new StringContent(loadMode == "Replace" ? "true" : "false"), "OverwriteExisting");
             using var response = await _client.PostAsync("/api/v1/admin/import/upload", upload);

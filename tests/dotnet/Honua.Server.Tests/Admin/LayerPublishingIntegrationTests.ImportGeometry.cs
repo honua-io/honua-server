@@ -79,9 +79,10 @@ public sealed partial class LayerPublishingIntegrationTests
         upload.Add(new StringContent(source), "File", scenario == "PointCsv" ? "points.csv" : "features.geojson");
         upload.Add(new StringContent($"geometry_{Guid.NewGuid():N}"), "TableName");
         upload.Add(new StringContent(targetSrid.ToString(System.Globalization.CultureInfo.InvariantCulture)), "TargetSrid");
+        using var sourceSrid = new StringContent("4326");
         if (scenario == "PointCsv")
         {
-            upload.Add(new StringContent("4326"), "SourceSrid");
+            upload.Add(sourceSrid, "SourceSrid");
         }
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", upload);
         var payload = await response.Content.ReadAsStringAsync();
@@ -158,6 +159,7 @@ public sealed partial class LayerPublishingIntegrationTests
         serverFeatures[0].GetProperty("attributes").GetProperty("population").GetInt64().Should().Be(2);
         serverFeatures[0].GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Object);
         serverFeatures[1].GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Object);
+        using var sourceSrid = new StringContent("4326");
         if (scenario == "PointCsv")
         {
             var pointGeometry = serverFeatures[0].GetProperty("geometry");
@@ -180,7 +182,8 @@ public sealed partial class LayerPublishingIntegrationTests
         await using (var connection = await _fixture.Postgres.GetConnectionAsync())
         {
             var relation = $"\"{imported.Schema}\".\"{imported.PhysicalTableName}\"";
-            if (scenario == "PointCsv")
+            using var sourceSrid = new StringContent("4326");
+        if (scenario == "PointCsv")
             {
                 // Point-layer edits have historically accepted multipart points too.
                 await using var multipart = new Npgsql.NpgsqlCommand(
