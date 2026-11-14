@@ -55,11 +55,7 @@ public sealed class CollaborationRealtimeRelayTests
             }
             return Substitute.For<IRealtimeSubscription>();
         });
-        var services = new ServiceCollection();
-        services.AddSingleton(CreateRepository());
-        services.AddSingleton(new InMemoryCollaborationSessionService(
-            Substitute.For<ISavedMapCollaborationAuthorizer>(), new SystemCollaborationSessionClock()));
-        await using var container = services.BuildServiceProvider();
+        await using var container = CreateContainer();
         using var relay = new CollaborationRealtimeRelay(provider, container, NullLogger<CollaborationRealtimeRelay>.Instance);
         await relay.StartAsync(CancellationToken.None);
         try
@@ -70,6 +66,15 @@ public sealed class CollaborationRealtimeRelayTests
         {
             await relay.StopAsync(CancellationToken.None);
         }
+    }
+
+    private static ServiceProvider CreateContainer()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(CreateRepository());
+        services.AddSingleton(new InMemoryCollaborationSessionService(
+            Substitute.For<ISavedMapCollaborationAuthorizer>(), new SystemCollaborationSessionClock()));
+        return services.BuildServiceProvider();
     }
 
     private static ISavedMapOperationLogRepository CreateRepository()
