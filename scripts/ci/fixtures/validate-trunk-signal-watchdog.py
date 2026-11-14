@@ -75,7 +75,7 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
         calls = self.run_watchdog([
             {'id': 42, 'status': 'queued', 'run_started_at': '2026-11-11T11:00:00Z'},
         ], jobs={'42': [{'status': 'queued', 'runner_id': 0, 'started_at': '2026-11-11T11:01:00Z'}]})
-        self.assertTrue(any(kind == 'failed' and '14 h' in value for kind, value in calls))
+        self.assertTrue(any(kind == 'failed' and '20 h' in value for kind, value in calls))
 
     def test_stalled_child_queue_still_alerts_after_schedule_starts(self):
         queued = {'id': 42, 'status': 'queued', 'updated_at': '2026-11-11T11:00:00Z',
@@ -85,7 +85,7 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
             {'status': 'queued', 'runner_id': 0, 'started_at': '2026-11-11T11:02:00Z', 'name': 'Waiting shard'},
         ]})
         self.assertTrue(any(kind == 'failed' and 'Waiting shard' in value for kind, value in calls))
-        self.assertFalse(any(kind == 'failed' and '14 h' in value for kind, value in calls))
+        self.assertFalse(any(kind == 'failed' and '20 h' in value for kind, value in calls))
 
     def test_cancellation_churn_still_alerts_with_fresh_result(self):
         calls = self.run_watchdog([
@@ -134,9 +134,17 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
         ci = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
         self.assertEqual(ci['on']['schedule'], [{'cron': '23 7 * * *'}, {'cron': '23 13 * * *'}])
 
+    def test_long_daily_gap_allows_scheduled_start_and_result_latency(self):
+        # The 13:23-to-07:23 UTC gap is 18 h, plus up to 4 h for a result.
+        calls = self.run_watchdog([
+            {'status': 'completed', 'run_started_at': '2026-11-10T18:01:00Z'},
+        ], runs=[{'status': 'completed', 'conclusion': 'success',
+                  'updated_at': '2026-11-10T14:01:00Z'}])
+        self.assertFalse(any(kind == 'failed' for kind, _ in calls))
+
     def test_missing_schedule_fails_despite_recent_affected_result(self):
         calls = self.run_watchdog([])
-        self.assertTrue(any(kind == 'failed' and '14 h' in value for kind, value in calls))
+        self.assertTrue(any(kind == 'failed' and '20 h' in value for kind, value in calls))
         query = [value for kind, value in calls if kind == 'query' and value.get('event') == 'schedule']
         self.assertEqual(len(query), 1)
         self.assertEqual(query[0]['branch'], 'trunk')
@@ -144,7 +152,7 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
 
     def test_only_a_real_recent_start_recovers(self):
         for run in [
-            {'status': 'completed', 'run_started_at': '2026-11-10T21:59:59Z'},
+            {'status': 'completed', 'run_started_at': '2026-11-10T15:59:59Z'},
             {'status': 'queued', 'run_started_at': '2026-11-11T11:00:00Z'},
             {'status': 'pending', 'run_started_at': '2026-11-11T11:00:00Z'},
             {'status': 'waiting', 'run_started_at': '2026-11-11T11:00:00Z'},
@@ -241,10 +249,10 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
             {'status': 'completed', 'run_started_at': '2026-11-11T11:00:00Z'}
         ], runs=[
             {'status': 'completed', 'conclusion': 'timed_out', 'created_at': '2026-11-11T05:00:00Z'},
-            {'status': 'completed', 'conclusion': 'success', 'updated_at': '2026-11-10T19:59:59Z',
+            {'status': 'completed', 'conclusion': 'success', 'updated_at': '2026-11-10T13:59:59Z',
              'html_url': 'https://example.test/old'},
         ])
-        self.assertTrue(any(kind == 'failed' and '16 h' in value and 'example.test/old' in value
+        self.assertTrue(any(kind == 'failed' and '22 h' in value and 'example.test/old' in value
                             for kind, value in calls))
 
     def test_full_run_in_progress_after_sparse_results_is_not_stale(self):
