@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using FluentAssertions;
+using Google.Protobuf;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Grpc.Net.Client.Web;
@@ -95,6 +96,62 @@ public sealed class GrpcIntegrationTests : IAsyncLifetime
     {
         _channel?.Dispose();
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData(10, "2026-02-30")]
+    [InlineData(11, "24:00:00")]
+    [InlineData(12, "2026-11-14T01:02:03+14:01")]
+    [InlineData(13, "1e6")]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_InvalidTypedAttribute_RejectsWholeCallBeforeWrites(int fieldNumber, string value)
+    {
+        var update = new Proto.Feature { Id = 1 };
+        update.Attributes["name"] = Proto.AttributeValue.Parser.ParseFrom(EncodeStringField(fieldNumber, value));
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId
+        };
+        request.Updates.Add(update);
+        var before = await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, 1);
+
+        var act = async () => await _client!.ApplyEditsAsync(request, _headers);
+        var failure = await act.Should().ThrowAsync<RpcException>();
+        failure.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+
+        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, 1))
+            .Should().Be(before);
+        (await _fixture.CountStoredFeaturesAsync(WebAppFixture.TestLayerId))
+            .Should().Be(SeededFeatureCount);
+    }
+
+    [IntegrationTheory]
+    [InlineData("invalid-global-id", false)]
+    [InlineData("4e886876-f3d3-4fc1-adfd-765880396ff2", true)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.FeatureService/QueryFeatures")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_InvalidGlobalIdFilter_RejectsWholeCall(string globalId, bool includeObjectIds)
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId
+        };
+        if (includeObjectIds)
+        {
+            request.ObjectIds.Add(1);
+        }
+
+        const int GlobalIdsFieldNumber = 22;
+        request.MergeFrom(EncodeStringField(GlobalIdsFieldNumber, globalId));
+
+        var act = async () => await _client!.QueryFeaturesAsync(request, _headers);
+        var failure = await act.Should().ThrowAsync<RpcException>();
+        failure.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
     }
 
     [IntegrationTest]
@@ -347,6 +404,18 @@ public sealed class GrpcIntegrationTests : IAsyncLifetime
             .Should().Be(0);
         (await _fixture.CountStoredFeaturesAsync(WebAppFixture.TestLayerId))
             .Should().Be(SeededFeatureCount);
+    }
+
+    private static byte[] EncodeStringField(int fieldNumber, string value)
+    {
+        using var encoded = new MemoryStream();
+        using (var writer = new CodedOutputStream(encoded, leaveOpen: true))
+        {
+            writer.WriteTag(fieldNumber, WireFormat.WireType.LengthDelimited);
+            writer.WriteString(value);
+        }
+
+        return encoded.ToArray();
     }
 
     private async Task<long> CountAsync(string? where)
