@@ -5,7 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import PartitionSource, check_partition
+from shard_capacity_partition import PartitionSource, capacity_split_group, capacity_split_names, check_partition
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/check-server-test-shard-coverage.py")
@@ -15,7 +15,7 @@ CONFIG = json.loads((ROOT / ".github/ci-shards.json").read_text())
 CONTRACT = json.loads((ROOT / "scripts/ci/fixtures/console-capacity-contract.json").read_text())
 ORIGINAL = CONTRACT["originalShard"]
 NAMES = ("Server Features Console Sessions and Access", ORIGINAL["name"])
-CHILDREN = [next(shard for shard in CONFIG["shards"] if shard["name"] == name) for name in NAMES]
+CHILDREN = [capacity_split_group(CONFIG, name) for name in NAMES]
 MODULE.TEST_PROJECT_DIRS = {
     root: project for root, project in MODULE.TEST_PROJECT_DIRS.items() if project == ORIGINAL["csproj"]
 }
@@ -33,8 +33,12 @@ isolated = {
     if method.rsplit(".", 1)[0] in CONTRACT["isolatedClasses"]
 }
 assert selected[0] == isolated, "The measured Console classes changed ownership."
-parents = [parent for parent in CONFIG["shard_partitions"] if set(NAMES) & set(parent["children"])]
-assert parents == [CONTRACT["parentPartition"]], "The legacy parent contract changed."
+expanded = {child for name in NAMES for child in capacity_split_names(CONFIG, name)}
+parents = [parent for parent in CONFIG["shard_partitions"] if expanded <= set(parent["children"])]
+expected_parent = {**CONTRACT["parentPartition"], "children": [
+    child for name in CONTRACT["parentPartition"]["children"]
+    for child in capacity_split_names(CONFIG, name)]}
+assert parents == [expected_parent], "The legacy parent contract changed."
 for field in ("artifact_suffix", "log_name", "shard_name"):
     assert len({shard[field] for shard in CONFIG["shards"]}) == len(CONFIG["shards"]), field
 

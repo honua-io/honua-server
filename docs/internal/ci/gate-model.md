@@ -1,6 +1,17 @@
 # CI Gate Model
 
-The latest full-run capacity audit partitions eleven additional parents into 26
+The PR-budget ownership audit adds 46 children for fifteen more parents whose
+measured ranks exceeded the 10-minute PR budget. Historical class and method
+spans from full run `43580101834`, plus at least 3.8 minutes of setup allowance,
+initialize their ranks at 6.8–9.7 minutes. These estimates need measurement in the
+next coordinated full run. Exact partition fixtures preserve the parent methods,
+future-method fallback, triggers, projects and budgets. The split restores a
+budget-eligible owner for 63 source paths, bringing coverage to 729 of 794 paths.
+The remaining 65 paths are explicit existing debt in `pr-owner-debt.json`;
+the time-budget fixture rejects any additional path losing its last eligible
+owner and includes a failure injection that makes all owners exceed the budget.
+
+An earlier full-run capacity audit partitions eleven additional parents into 26
 children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
 Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
 OGC API Features, GeoServices GPServer and NAServer, STAC Protocol, Operator

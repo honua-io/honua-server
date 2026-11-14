@@ -35,11 +35,26 @@ PARENT_IMAGES = {
     "Server Features Admin Release Control": [],
     "Server Features Collaboration Mobile and Identity": [],
     "Server Features Packages and Temporal": [],
+    "Core and Cloud Contracts": ['ryuk', 'postgis16', 'postgis18'],
+    "STAC and API Governance": [],
+    "Server Features Console Sessions and Access": [],
+    "Server Features Console and Alerts": [],
+    "OGC API Maps Rendering and Records": [],
+    "OGC API Tiles Coverages and Processes": ['ryuk', 'redis'],
+    "OGC API Tiles Endpoints and CRS": [],
+    "GeoServices Geometry VectorTile and Versioning": [],
+    "GeoServices Versioning": [],
+    "GeoServices ImageServer": [],
+    "GeoServices Catalog and ImageServer Support": [],
+    "GeoServices ImageServer Rendering and Support": [],
+    "GeoServices ImageServer Raster Rendering": [],
+    "Raster Serving Scene Geometry and Terrain": [],
+    "Elevation and Terrain Analysis": [],
 }
 assert {contract["originalShard"]["name"] for contract in contracts} == set(PARENT_IMAGES), "Unlisted split parent."
 cases = {child: PARENT_IMAGES[contract["originalShard"]["name"]]
          for contract in contracts for child in contract["children"]}
-cases.update({"Scene": [], "Protocol Units": [], "Core and Cloud Contracts": ["ryuk", "postgis16", "postgis18"]})
+cases.update({"Scene": [], "Protocol Units": []})
 for name, expected in cases.items():
     result = subprocess.run(["bash", "-c", script], env={**os.environ, "SERVER_SHARD": name},
                             check=True, capture_output=True, text=True)

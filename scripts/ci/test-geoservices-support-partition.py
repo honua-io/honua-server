@@ -6,6 +6,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+from shard_capacity_partition import capacity_split_group
+
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location('coverage', ROOT / 'scripts/ci/check-server-test-shard-coverage.py')
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -15,7 +17,7 @@ PARENT = '(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.
 PROJECT = 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj'
 NAMES = ('GeoServices Catalog and ImageServer Support', 'GeoServices ImageServer Rendering and Support',
          'GeoServices ImageServer Raster Rendering')
-CHILDREN = [next(s for s in CONFIG['shards'] if s['name'] == n) for n in NAMES]
+CHILDREN = [capacity_split_group(CONFIG, name) for name in NAMES]
 METHODS = MODULE.selection_pool(MODULE.enumerate_test_classes(), PROJECT)
 EXPECTED = {m for m in METHODS if MODULE._eval(MODULE._FilterParser(PARENT).parse(), m)}
 assert EXPECTED, 'The actual GeoServices source inventory must be present.'

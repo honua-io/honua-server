@@ -7,6 +7,7 @@ defect it is written for.
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 import os
@@ -26,6 +27,33 @@ selector = shard_fixtures.selector
 budget_module = selector.time_budget
 FixtureError = shard_fixtures.FixtureError
 TESTKIT_PROBE = ["tests/dotnet/Honua.TestKit/AffectedShardsFixtureProbe.cs"]
+OWNER_DEBT_PATH = Path(__file__).with_name("pr-owner-debt.json")
+
+
+def check_pr_owners(config: dict[str, Any]) -> None:
+    """Reject a new trigger with no owner that can run inside the PR budget."""
+    limit = budget_module.load_time_budget(config)["max_shard_minutes"]
+    paths = {path for shard in config["shards"] for path in shard["paths"]}
+    owned = {path for shard in config["shards"] if shard["dispatch_rank"] <= limit for path in shard["paths"]}
+    debt = set(json.loads(OWNER_DEBT_PATH.read_text())["paths"])
+    missing = sorted(paths - owned - debt)
+    if missing:
+        raise FixtureError(f"paths without a PR-budget owner: {missing}")
+
+
+def check_owner_failure_injections(config: dict[str, Any]) -> None:
+    limit = budget_module.load_time_budget(config)["max_shard_minutes"]
+    debt = set(json.loads(OWNER_DEBT_PATH.read_text())["paths"])
+    path = next(path for shard in config["shards"] for path in shard["paths"] if path not in debt)
+    broken = copy.deepcopy(config)
+    for shard in broken["shards"]:
+        if path in shard["paths"]:
+            shard["dispatch_rank"] = limit + 1
+    try:
+        check_pr_owners(broken)
+    except FixtureError:
+        return
+    raise FixtureError("owner check accepted a path after its last PR-budget owner was lost")
 
 
 def select_within_budget(config: dict[str, Any], changed: list[str], descriptor: dict[str, Any]) -> dict[str, Any]:
@@ -137,6 +165,8 @@ def check_failure_injections(config: dict[str, Any]) -> None:
 
 def main() -> int:
     config = selector.load_config(shard_fixtures.CONFIG_PATH)
+    check_pr_owners(config)
+    check_owner_failure_injections(config)
     check_budget_bounds_the_selection(config)
     check_total_budget_defers_the_overflow(config)
     check_all_deferred_selection_skips_offline(config)

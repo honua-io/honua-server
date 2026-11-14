@@ -79,6 +79,15 @@ def capacity_split_names(config, name):
     return sorted(children, key=lambda candidate: int(candidate[len(name) + 1:]))
 
 
+def capacity_split_group(config, name):
+    """Recombine descendants to check a historical parent conservation contract."""
+    names = capacity_split_names(config, name)
+    children = [shard for shard in config["shards"] if shard["name"] in names]
+    return {**children[0], "name": name,
+            "filter": "|".join(f"({child['filter']})" for child in children),
+            **{field: any(child[field] for child in children) for field in REPORT_UPLOAD_FIELDS}}
+
+
 def measured_ranks():
     """The recorded median passing job minutes per shard (gate-model.md, "Measured ranks")."""
     return json.loads(MEASURED_RANKS_PATH.read_text())["ranks"]

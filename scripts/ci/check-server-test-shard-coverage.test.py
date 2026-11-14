@@ -13,7 +13,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import expected_rank
+from shard_capacity_partition import capacity_split_names, expected_rank
 
 
 SCRIPT = Path(__file__).with_name("check-server-test-shard-coverage.py")
@@ -521,7 +521,7 @@ def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
             name for name, node in parsed.items()
             if classes[fqn]["csproj"] in csprojs[name] and MODULE._eval(node, classes[fqn]["fqn"])
         ]
-        assert owners == ["Raster Serving Scene Geometry and Terrain"], (fqn, owners)
+        assert len(owners) == 1 and owners[0] in capacity_split_names(config, "Raster Serving Scene Geometry and Terrain"), (fqn, owners)
 
 
 def test_studio_dashboard_mcp_integration_has_one_server_assembly_owner() -> None:
@@ -573,7 +573,7 @@ def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
             if classes[f"{KNOWN}::{fqn}"]["csproj"] in MODULE.shard_projects(shard)
             and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), fqn)
         ]
-        assert owners == [owner], (fqn, owners)
+        assert len(owners) == 1 and owners[0] in capacity_split_names(config, owner), (fqn, owners)
 
 
 test_core_capacity_moves_have_exactly_one_server_assembly_owner()

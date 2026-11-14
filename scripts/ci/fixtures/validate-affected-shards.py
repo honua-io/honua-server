@@ -167,27 +167,30 @@ def check_feature_namespace_selects_its_shard(
     silently stops predicting the trailing matrix for that family.
     """
     covered = 0
+    families = {}
     for shard in config["shards"]:
-        prefix = unique_owned_prefix(config, shard)
+        families.setdefault(tuple(shard.get("paths", ())), []).append(shard)
+    grouped = {**config, "shards": [members[0] for members in families.values()]}
+    for members in families.values():
+        prefix = unique_owned_prefix(grouped, members[0])
         if prefix is None:
             continue
         covered += 1
         probe = f"{prefix}AffectedShardsFixtureProbe.cs"
         result = select_offline(
-            config,
-            [probe],
+            config, [probe],
             descriptor=router(config, [probe], config_path=config_path),
-            projects=None,
-            cap=6,
+            projects=None, cap=6,
         )
-        if shard["name"] not in candidates(result):
+        missing = {shard["name"] for shard in members} - candidates(result)
+        if missing:
             raise FixtureError(
-                f"a change under {prefix!r} did not select shard {shard['name']!r} "
+                f"a change under {prefix!r} did not select shards {sorted(missing)!r} "
                 f"(reason={result['reason']}, candidates={sorted(candidates(result))[:8]})"
             )
     if covered < 10:
         raise FixtureError(
-            f"only {covered} shards declare a uniquely owned source prefix; the "
+            f"only {covered} shard families declare a uniquely owned source prefix; the "
             "namespace fixture has stopped covering the routing map"
         )
     return covered
@@ -213,7 +216,9 @@ def check_temporal_source_survives_the_cap(config: dict[str, Any]) -> None:
         deferred = {entry["name"] for entry in result["deferred_to_trunk"]}
         if result["candidate_count"] <= len(result["shards"]):
             raise FixtureError("temporal probe must leave some candidates unselected")
-        if not set(owners) <= set(result["shards"]):
+        # The cap samples split families; competing in-budget families may
+        # consume the remaining slots. Temporal must retain an executing owner.
+        if not set(owners) & set(result["shards"]):
             raise FixtureError(f"changed temporal source lost an executing owner: {result['shards']}")
         if catch_all & (candidates(result) | deferred):
             raise FixtureError(f"{catch_all!r} competes with {owners!r} for temporal source")
