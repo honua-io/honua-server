@@ -24,6 +24,12 @@ public class AcceptingInMemoryProgressStore : IUniversalProgressStore
         return Task.FromResult(ProgressCompareAndSetResult.Updated);
     }
 
+    public virtual Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
+    {
+        _progress[write.OperationId] = write.Progress;
+        return Task.FromResult(ProgressCompareAndSetResult.Updated);
+    }
+
     public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
         where TProgress : class, IOperationProgress
         => Task.FromResult(_progress.TryGetValue(operationId, out var p) ? p as TProgress : null);
@@ -49,11 +55,43 @@ public sealed class UnrecordedConditionalWriteProgressStore : AcceptingInMemoryP
 {
     public override Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
         => Task.FromResult(ProgressCompareAndSetResult.Updated);
+
+    public override Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
+        => Task.FromResult(ProgressCompareAndSetResult.Updated);
 }
 
 public sealed class ComparingInMemoryProgressStore : IUniversalProgressStore
 {
     private readonly ConcurrentDictionary<string, IOperationProgress> _entries = new(StringComparer.Ordinal);
+
+    public Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
+    {
+        while (true)
+        {
+            if (!_entries.TryGetValue(write.OperationId, out var current))
+            {
+                if (expectedProgress is not null)
+                {
+                    return Task.FromResult(ProgressCompareAndSetResult.NotFound);
+                }
+                if (_entries.TryAdd(write.OperationId, write.Progress))
+                {
+                    return Task.FromResult(ProgressCompareAndSetResult.Updated);
+                }
+                continue;
+            }
+
+            if (!Equals(current, expectedProgress))
+            {
+                return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
+            }
+
+            if (_entries.TryUpdate(write.OperationId, write.Progress, current))
+            {
+                return Task.FromResult(ProgressCompareAndSetResult.Updated);
+            }
+        }
+    }
 
     public Task SetProgressAsync(
         string operationId,
