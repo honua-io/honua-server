@@ -605,12 +605,12 @@ internal sealed partial class FeatureServerQueryHandler(
                     return Results.Bytes(payload, contentType);
                 }
 
-                var payloadArray = payload.ToArray();
                 if (!ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
                 {
-                    return Results.Bytes(payloadArray, contentType);
+                    return Results.Bytes(payload, contentType);
                 }
 
+                var payloadArray = payload.ToArray();
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payloadArray, contentType, _etagService);
                 await _responseCache.SetAsync(currentCacheKey, cachedResponse, cacheTtl, cancellationToken);
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);

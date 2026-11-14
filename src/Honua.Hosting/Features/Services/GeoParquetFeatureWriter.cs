@@ -54,7 +54,7 @@ public static partial class GeoParquetFeatureWriter
     [ThreadStatic]
     private static WKBWriter? _wkbWriter3D;
 
-    public static (byte[] response, string contentType) FormatAsGeoParquet(
+    public static (ReadOnlyMemory<byte> response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
         MetadataV2Resource resource,
         string objectIdFieldName,

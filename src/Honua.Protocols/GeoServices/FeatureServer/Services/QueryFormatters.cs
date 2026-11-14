@@ -121,9 +121,10 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits effectiveLimits,
         string[]? outFields)
     {
-        var (response, contentType) = GeoParquetQueryFormatter.FormatAsGeoParquetStream(
+        var (response, contentType) = GeoParquetFeatureWriter.FormatAsGeoParquetStream(
             result,
             resource,
+            GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
             returnGeometry,
             outputSrid,
             returnZ,
