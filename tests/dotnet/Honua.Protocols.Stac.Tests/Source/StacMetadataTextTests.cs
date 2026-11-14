@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
@@ -36,14 +37,28 @@ public sealed class StacMetadataTextTests
     public Task GetCollection_UnusualMetadataText_RoundTripsJson(string text)
         => AssertMetadataRoundTripAsync($"/stac/collections/{WebAppFixture.TestLayerId}", text);
 
+    private static void SetMetadata(WebAppFixture fixture, string title, string description)
+    {
+        fixture.MutateV2ResourceObjectMetadata(WebAppFixture.TestLayerId,
+            metadata => metadata with { Title = title, Description = description });
+        var snapshot = fixture.GetCurrentV2GraphSnapshot();
+        fixture.GetService<TestMetadataV2GraphProvider>().SetGraph(snapshot.Graph with
+        {
+            Publications = snapshot.Graph.Publications.Select(publication =>
+                publication.LayerIndex == WebAppFixture.TestLayerId
+                    ? publication with { Metadata = publication.Metadata with { Title = title } }
+                    : publication).ToArray(),
+            Revision = snapshot.Graph.Revision + 1
+        }, schema: fixture.CurrentSchema);
+    }
+
     private static async Task AssertMetadataRoundTripAsync(string path, string text)
     {
         await using var fixture = new WebAppFixture();
         await fixture.InitializeAsync();
         var title = "Title " + text;
         var description = "Description " + text;
-        fixture.MutateV2ResourceObjectMetadata(WebAppFixture.TestLayerId,
-            metadata => metadata with { Title = title, Description = description });
+        SetMetadata(fixture, title, description);
 
         using var response = await fixture.Client.GetAsync(path);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
