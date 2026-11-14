@@ -87,7 +87,32 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
         using var response = await client.GetAsync("/healthz/deep");
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-        cancelled.Task.IsCompletedSuccessfully.Should().BeTrue();
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ReadinessCheck)]
+    [Endpoint("GET /healthz/deep")]
+    public async Task DeepHealthEndpoint_DependencyIgnoresCancellation_ReturnsUnavailableWithinBudget()
+    {
+        var checker = Substitute.For<IDatabaseHealthChecker>();
+        var pending = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        checker.IsDatabaseHealthyAsync(Arg.Any<CancellationToken>()).Returns(pending.Task);
+        using var host = Configure(checker, HealthyCatalog());
+        using var client = host.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(15);
+        try
+        {
+            using var response = await client.GetAsync("/healthz/deep");
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await response.Content.ReadAsStringAsync()).Should().Be("Not Ready");
+            pending.Task.IsCompleted.Should().BeFalse();
+        }
+        finally
+        {
+            pending.TrySetResult(false);
+        }
     }
 
     [IntegrationTest]

@@ -2,11 +2,14 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -15,6 +18,8 @@ using Honua.Core.Features.Infrastructure.Health;
 
 internal static class HealthEndpoints
 {
+    private static readonly TimeSpan DeepProbeTimeout = TimeSpan.FromSeconds(5);
+
     private static readonly string[] NonGetMethods =
     [
         HttpMethods.Post,
@@ -44,6 +49,16 @@ internal static class HealthEndpoints
             .WithDisplayName("Readiness Probe Method Not Allowed")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
+        _ = endpoints.MapMethods("/healthz/deep", [HttpMethods.Get], HandleDeepProbe)
+            .WithDisplayName("Deep Health Probe")
+            .AllowAnonymous()
+            .CacheOutput(static policy => policy.NoCache())
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+        _ = endpoints.MapMethods("/healthz/deep", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithDisplayName("Deep Health Probe Method Not Allowed")
+            .AllowAnonymous()
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+
         // PERFORMANCE OPTIMIZATION: Add performance metrics endpoint for monitoring
         var metricsEndpoint = endpoints.MapMethods("/healthz/metrics", [HttpMethods.Get], HandlePerformanceMetrics)
             .WithDisplayName("Performance Metrics")
@@ -71,6 +86,43 @@ internal static class HealthEndpoints
         ReadinessResult result = await readinessCheckService.CheckReadinessAsync(context.RequestAborted);
 
         // Convert health check result to HTTP response
+        await WriteHealthCheckResponse(context, result);
+    }
+
+    private static async Task HandleDeepProbe(
+        HttpContext context,
+        IDatabaseHealthChecker database,
+        IMetadataV2GraphProvider catalog)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        deadline.CancelAfter(DeepProbeTimeout);
+        ReadinessResult result;
+        try
+        {
+            if (!context.RequestServices.GetRequiredService<MigrationState>().IsReady ||
+                !await database.IsDatabaseHealthyAsync(deadline.Token).WaitAsync(deadline.Token))
+            {
+                result = ReadinessResult.NotReady("Dependencies unavailable");
+            }
+            else
+            {
+                await catalog.GetCurrentAsync(deadline.Token).AsTask().WaitAsync(deadline.Token);
+                deadline.Token.ThrowIfCancellationRequested();
+                result = ReadinessResult.Ready();
+            }
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            return;
+        }
+        // This anonymous probe boundary reports dependency failures without exposing their details.
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            HealthEndpointsLog.DeepProbeFailed(context.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Honua.HealthCheck"), exception);
+            result = ReadinessResult.NotReady("Dependencies unavailable");
+        }
+
         await WriteHealthCheckResponse(context, result);
     }
 
