@@ -65,8 +65,17 @@ jobs:
           echo "completed_base=${completed_base}" >> "$GITHUB_OUTPUT"
           echo "last_green=$(latest_ancestor "${green_heads}")" >> "$GITHUB_OUTPUT"
 
-      - name: Dispatch CI over the new merges
+      - name: Bound affected CI and reserve PR capacity
+        id: admission
         if: steps.base.outputs.superseded == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMPLETED_BASE: ${{ steps.base.outputs.completed_base }}
+          HEAD_SHA: ${{ steps.base.outputs.head }}
+        run: python3 scripts/ci/affected_admission.py "${COMPLETED_BASE}" "${HEAD_SHA}"
+
+      - name: Dispatch CI over the new merges
+        if: steps.base.outputs.superseded == 'false' && steps.admission.outputs.admitted == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ steps.base.outputs.head }}
@@ -86,13 +95,8 @@ jobs:
             exit 0
           fi
 
-          if [ -n "${COMPLETED_BASE}" ]; then
-            run_title="affected ${COMPLETED_BASE:0:12}..${HEAD_SHA:0:12}"
-            echo "Execution range: ${COMPLETED_BASE}..${HEAD_SHA}" >> "$GITHUB_STEP_SUMMARY"
-          else
-            run_title="full matrix (no completed trunk ancestor)"
-            echo "No completed CI ancestor of ${HEAD_SHA}; dispatching the full matrix." | tee -a "$GITHUB_STEP_SUMMARY"
-          fi
+          run_title="affected ${COMPLETED_BASE:0:12}..${HEAD_SHA:0:12}"
+          echo "Execution range: ${COMPLETED_BASE}..${HEAD_SHA}" >> "$GITHUB_STEP_SUMMARY"
 
           run_url="$(gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/dispatches" \
