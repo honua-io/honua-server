@@ -55,9 +55,7 @@ public sealed class RealtimeNotificationEndpointsTests
         var jobs = Substitute.For<IGeoprocessingJobService>();
         var context = CreateContext("?jobId=mine");
         context.Request.Headers["Last-Event-ID"] = "jobs:3";
-        jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(new ExecutionJobRecord { OperationId = "mine", Status = ExecutionJobStatus.Running,
-                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
-                Spec = new ExecutionJobSpec { TargetKind = default, Backend = "test", Kind = default, WorkloadName = "test" } });
+        jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(RunningJob("mine"));
         RealtimeSubscriptionRequest? request = null;
         provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(value =>
         {
@@ -90,9 +88,7 @@ public sealed class RealtimeNotificationEndpointsTests
             .Returns(new RealtimeLogWindow(RealtimeFamily.Jobs, 0, 0));
         var calls = 0;
         jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(_ =>
-            ++calls == 1 ? Task.FromResult(new ExecutionJobRecord { OperationId = "mine", Status = ExecutionJobStatus.Running,
-                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
-                Spec = new ExecutionJobSpec { TargetKind = default, Backend = "test", Kind = default, WorkloadName = "test" } }) :
+            ++calls == 1 ? Task.FromResult(RunningJob("mine")) :
                 Task.FromException<ExecutionJobRecord>(new GeoprocessingAuthorizationException(false)));
         provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(value =>
         {
@@ -112,12 +108,7 @@ public sealed class RealtimeNotificationEndpointsTests
         var context = CreateContext("?jobId=mine");
         provider.GetWindowAsync(RealtimeFamily.Jobs, Arg.Any<CancellationToken>())
             .Returns(new RealtimeLogWindow(RealtimeFamily.Jobs, 0, 0));
-        jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(new ExecutionJobRecord
-        {
-            OperationId = "mine", Status = ExecutionJobStatus.Running,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
-            Spec = new ExecutionJobSpec { TargetKind = default, Backend = "test", Kind = default, WorkloadName = "test" },
-        });
+        jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(RunningJob("mine"));
         provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(value =>
         {
             value.Writer.TryWrite(new RealtimeDelivery.Reset("retention", 9));
@@ -347,4 +338,13 @@ public sealed class RealtimeNotificationEndpointsTests
         RealtimeFamily.Jobs, sequence, jobId, "job.status", JsonElement.Parse(
             "{\"status\":\"Running\",\"updatedAt\":\"2026-11-14T00:00:00Z\",\"requesterId\":\"secret\",\"result\":\"private-result\"}"),
         DateTimeOffset.UtcNow);
+
+    private static ExecutionJobRecord RunningJob(string operationId) => new()
+    {
+        OperationId = operationId,
+        Status = ExecutionJobStatus.Running,
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
+        Spec = new ExecutionJobSpec { TargetKind = default, Backend = "test", Kind = default, WorkloadName = "test" },
+    };
 }

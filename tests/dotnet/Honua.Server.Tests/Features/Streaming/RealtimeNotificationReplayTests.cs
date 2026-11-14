@@ -41,10 +41,7 @@ public sealed class RealtimeNotificationReplayTests(DatabaseFixtureAdapter datab
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var context = Context("?jobId=mine", cursor, timeout);
         var jobs = Substitute.For<IGeoprocessingJobService>();
-        jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(
-            new ExecutionJobRecord { OperationId = "mine", Status = ExecutionJobStatus.Running,
-                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
-                Spec = new ExecutionJobSpec { TargetKind = default, Backend = "test", Kind = default, WorkloadName = "test" } });
+        jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(RunningJob("mine"));
 
         await RealtimeNotificationEndpoints.HandleJobsAsync(context, Provider(harness), jobs);
 
@@ -124,4 +121,13 @@ public sealed class RealtimeNotificationReplayTests(DatabaseFixtureAdapter datab
             return Task.CompletedTask;
         }
     }
+
+    private static ExecutionJobRecord RunningJob(string operationId) => new()
+    {
+        OperationId = operationId,
+        Status = ExecutionJobStatus.Running,
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
+        Spec = new ExecutionJobSpec { TargetKind = default, Backend = "test", Kind = default, WorkloadName = "test" },
+    };
 }
