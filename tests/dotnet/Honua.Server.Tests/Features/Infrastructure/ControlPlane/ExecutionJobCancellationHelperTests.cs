@@ -20,7 +20,7 @@ public sealed class ExecutionJobCancellationHelperTests
     [Fact]
     public async Task QueuedLocalCancellationCasLosesToManualRetry_DoesNotCancelSuccessor()
     {
-        var original = CreateJobRecord("queued-retry", ExecutionJobStatus.Queued) with { Version = 1 };
+        var original = CreateJobRecord("queued-retry", ExecutionJobStatus.Queued, backend: "local") with { Version = 1 };
         // A queued job can be cancelled and manually retried without changing claim or attempt fields.
         var successor = original with { Version = 3, CurrentPhase = "Queued for manual retry" };
         var store = Substitute.For<IExecutionJobStore>();
@@ -32,6 +32,34 @@ public sealed class ExecutionJobCancellationHelperTests
 
         result.State.Should().Be(ExecutionJobCancellationState.Unconfirmed);
         await store.Received(1).TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task QueuedCancellationCasLosesToWorkerPickup_RequestsDurableCancellation(int attemptIncrement)
+    {
+        var original = CreateJobRecord("queued-pickup", ExecutionJobStatus.Queued, backend: "local") with { Version = 1 };
+        var claimed = original with
+        {
+            Version = 2,
+            Status = ExecutionJobStatus.Running,
+            AttemptCount = original.AttemptCount + attemptIncrement,
+            ClaimedBy = "worker",
+            ClaimedAt = DateTimeOffset.UtcNow
+        };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+        store.GetAsync(original.OperationId, Arg.Any<CancellationToken>()).Returns(claimed);
+
+        var result = await ExecutionJobCancellationHelper.TryApplyAsync(store, original.OperationId, original, "Cancelled");
+
+        result.State.Should().Be(ExecutionJobCancellationState.CancellationRequested);
+        result.Job!.CancellationRequestedAt.Should().NotBeNull();
+        await store.Received(1).TrySetAsync(Arg.Is<ExecutionJobRecord>(job =>
+            job.ClaimedBy == "worker" && job.CancellationRequestedAt.HasValue),
+            Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [Theory]

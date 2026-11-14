@@ -194,7 +194,7 @@ internal static partial class OperationsProgressEndpoints
 
     private static async Task<IResult?> TryReconcileDurableCancelAsync(
         HttpContext httpContext,
-        string operationId,
+        ExecutionJobRecord? executionJob,
         IUniversalProgressStore progressStore,
         CancellationToken cancellationToken)
     {
@@ -204,12 +204,12 @@ internal static partial class OperationsProgressEndpoints
             return null;
         }
 
-        var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (executionJob == null)
         {
             return null;
         }
 
+        var operationId = executionJob.OperationId;
         if (executionJob.Status.IsTerminal())
         {
             if (executionJob.Status == ExecutionJobStatus.Cancelled)
@@ -461,7 +461,9 @@ internal static partial class OperationsProgressEndpoints
 
         if (progress.Status is OperationStatus.Cancelled)
         {
-            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, progressStore, cancellationToken);
+            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext,
+                jobStore == null ? null : await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false),
+                progressStore, cancellationToken);
             if (reconcileResult != null)
             {
                 return reconcileResult;
@@ -505,11 +507,23 @@ internal static partial class OperationsProgressEndpoints
             if (cancellationTarget?.Spec.Backend == LocalBatchComputeBackend.BackendId)
             {
                 var reconcileResult = await TryReconcileDurableCancelAsync(
-                    httpContext, operationId, progressStore, cancellationToken).ConfigureAwait(false);
+                    httpContext, cancellationTarget, progressStore, cancellationToken).ConfigureAwait(false);
                 if (reconcileResult != null)
                 {
                     return reconcileResult;
                 }
+
+                if (cancellationTarget.ClaimedBy != null)
+                {
+                    ExecutionJobCancellationTokens.CancelAttempt(cancellationNotifiers, cancellationTarget);
+                }
+
+                return Results.Json(new CancelOperationResponse
+                {
+                    OperationId = operationId,
+                    Message = "Operation cancellation requested",
+                    Type = progress.Type
+                }, OperationsProgressJsonContext.Default.CancelOperationResponse);
             }
         }
 
@@ -559,7 +573,9 @@ internal static partial class OperationsProgressEndpoints
 
         if (latestProgress.Status is OperationStatus.Cancelled)
         {
-            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, progressStore, cancellationToken);
+            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext,
+                jobStore == null ? null : await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false),
+                progressStore, cancellationToken);
             if (reconcileResult != null)
             {
                 return reconcileResult;
@@ -856,7 +872,9 @@ internal static partial class OperationsProgressEndpoints
 
             if (current.Status is OperationStatus.Cancelled)
             {
-                var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, progressStore, cancellationToken);
+                var reconcileResult = await TryReconcileDurableCancelAsync(httpContext,
+                    jobStore == null ? null : await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false),
+                    progressStore, cancellationToken);
                 if (reconcileResult != null)
                 {
                     return reconcileResult;
