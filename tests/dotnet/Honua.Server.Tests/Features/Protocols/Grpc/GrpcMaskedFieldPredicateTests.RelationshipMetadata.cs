@@ -13,25 +13,25 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 public sealed partial class GrpcMaskedFieldPredicateTests
 {
     [UnitTheory]
-    [InlineData(false, false, true)]
-    [InlineData(true, false, false)]
-    [InlineData(false, true, false)]
+    [InlineData("unused", "unused", 1)]
+    [InlineData("parent_id", "unused", 0)]
+    [InlineData("unused", "objectid", 0)]
     [Endpoint("POST /geospatial.v1.FeatureService/DescribeLayer")]
     public async Task DescribeLayer_DestinationRelationship_UsesLocalAndRelatedKeys(
-        bool maskLocal, bool maskRelated, bool expected)
+        string localMask, string relatedMask, int expectedCount)
     {
         var triple = DestinationRelationshipTriple();
         _resourceValidator.ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(triple));
         _fieldMaskSource.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
             .Returns(call => ImmutableArray.Create(call.Arg<MetadataV2Resource>().Metadata.Id == _resource.Metadata.Id
-                ? maskLocal ? "parent_id" : "unused" : maskRelated ? "objectid" : "unused"));
+                ? localMask : relatedMask));
         using var context = CreateCallContext();
 
         var response = await _sut.DescribeLayer(new() { ServiceId = "test", LayerId = 0 }, context);
 
-        response.Layer.Relationships.Should().HaveCount(expected ? 1 : 0);
-        if (expected)
+        response.Layer.Relationships.Should().HaveCount(expectedCount);
+        if (expectedCount > 0)
         {
             response.Layer.Relationships[0].OriginKeyField.Should().Be("parent_id");
             response.Layer.Relationships[0].DestinationKeyField.Should().Be("objectid");
