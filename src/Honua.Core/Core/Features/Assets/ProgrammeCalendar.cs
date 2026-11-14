@@ -38,7 +38,7 @@ public sealed class ProgrammeCalendar
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(interval);
         if (!Enum.IsDefined(unit))
         {
-            throw new ArgumentOutOfRangeException(nameof(unit));
+            throw new ArgumentOutOfRangeException(nameof(recurrence));
         }
 
         if (anchorLocal.Kind != DateTimeKind.Unspecified)
