@@ -100,6 +100,7 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             GdbVersion = queryParams.GdbVersion,
             QuantizationParameters = queryParams.QuantizationParameters,
             DatumTransformation = queryParams.DatumTransformation,
+            CoordinateEpoch = queryParams.CoordinateEpoch,
             Time = queryParams.Time,
             TimeRelation = queryParams.TimeRelation,
             ObjectIds = queryParams.ObjectIds

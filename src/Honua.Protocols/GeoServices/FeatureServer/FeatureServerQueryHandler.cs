@@ -1755,14 +1755,16 @@ internal sealed partial class FeatureServerQueryHandler(
             geodeticLayerSrid,
             geodeticOutputSrid,
             validatedParams.DatumTransformation);
-        if (!TryResolveDatumTransformation(
-                context,
-                validatedParams.DatumTransformation,
-                datumFromSrid,
-                datumToSrid,
-                out var datumSelection,
-                out var datumError,
-                TryGeographicQueryEnvelope(query, layerSrid)))
+        var (datumSelection, datumError) = ResolveDatumTransformation(context,
+            new GeoServicesDatumTransformationResolver.ResolutionRequest
+            {
+                Value = validatedParams.DatumTransformation,
+                FromSrid = datumFromSrid,
+                ToSrid = datumToSrid ?? datumFromSrid,
+                Envelope = TryGeographicQueryEnvelope(query, layerSrid),
+                CoordinateEpoch = validatedParams.CoordinateEpoch
+            });
+        if (datumError is not null)
         {
             return (null, null, datumError);
         }
@@ -1778,72 +1780,44 @@ internal sealed partial class FeatureServerQueryHandler(
         // keeps two-argument ST_Transform.
         if (query.SpatialFilter is { Srid: int filterSrid }
             && filterSrid > 0
-            && filterSrid != layerSrid
-            && GeoServicesDatumTransformationResolver.TryResolve(
-                _datumTransformationCatalog,
-                datumTransformationValue: null,
-                filterSrid,
-                layerSrid,
-                out var filterSelection,
-                out _)
-            && filterSelection is not null)
+            && filterSrid != layerSrid)
         {
-            query = query with { SpatialFilterDatumTransformation = filterSelection };
+            var (filterSelection, filterError) = ResolveDatumTransformation(context,
+                new GeoServicesDatumTransformationResolver.ResolutionRequest
+                {
+                    FromSrid = filterSrid,
+                    ToSrid = layerSrid,
+                    CoordinateEpoch = validatedParams.CoordinateEpoch
+                });
+            if (filterError is not null)
+            {
+                return (null, null, filterError);
+            }
+
+            if (filterSelection is not null)
+            {
+                query = query with { SpatialFilterDatumTransformation = filterSelection };
+            }
         }
 
         return (query, outputSrid, null);
     }
 
-    private bool TryResolveDatumTransformation(
-        HttpContext context,
-        string? datumTransformationValue,
-        int layerSrid,
-        int? outputSrid,
-        out DatumTransformationSelection? selection,
-        out IResult? error,
-        DatumAreaEnvelope? envelope = null)
+    private (DatumTransformationSelection? Selection, IResult? Error) ResolveDatumTransformation(
+        HttpContext context, GeoServicesDatumTransformationResolver.ResolutionRequest request)
     {
-        selection = null;
-        error = null;
-
-        // No output SRID: nothing to reproject. Equal SRIDs are also a no-op unless the
-        // client named a transformation, which must be validated against the geodetic pair
-        // rather than dropped (projected CRS can share a base).
-        if (!outputSrid.HasValue)
+        var result = GeoServicesDatumTransformationResolver.Resolve(_datumTransformationCatalog, request);
+        if (result.Error is { } error)
         {
-            return true;
+            return (null, StandardErrorHelpers.CreateBadRequest(context, "Invalid datumTransformation", [error]));
         }
 
-        if (outputSrid.Value == layerSrid && string.IsNullOrWhiteSpace(datumTransformationValue))
+        if (!string.IsNullOrWhiteSpace(request.Value))
         {
-            return true;
+            FeatureServerLog.DatumTransformationRequested(_logger, request.Value);
         }
 
-        // Delegate the WKID -> PROJ pipeline selection to the shared resolver so the
-        // FeatureServer, Geometry Service, and ImageServer project paths stay on one
-        // catalog mapping; this method only adapts the neutral error into the
-        // FeatureServer's problem-shape and emits the protocol log.
-        if (!GeoServicesDatumTransformationResolver.TryResolve(
-                _datumTransformationCatalog,
-                datumTransformationValue,
-                layerSrid,
-                outputSrid.Value,
-                out selection,
-                out var resolveError,
-                envelope))
-        {
-            error = StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid datumTransformation",
-                [resolveError]);
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(datumTransformationValue))
-        {
-            FeatureServerLog.DatumTransformationRequested(_logger, datumTransformationValue);
-        }
-
-        return true;
+        return (result.Selection, null);
     }
 
     // An explicit datum transformation is catalogued on the geographic pair, so projected SRIDs use their geodetic bases, while an omitted transformation keeps the raw SRIDs for PROJ's SRID-only pipeline.

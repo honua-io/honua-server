@@ -65,6 +65,12 @@ public sealed record ImportRequest
 
     public int? SourceSrid { get; init; }
 
+    public int? DatumTransformationWkid { get; init; }
+
+    public string? DatumTransformationName { get; init; }
+
+    public double? CoordinateEpoch { get; init; }
+
     public int? TargetSrid { get; init; }
 
     // When the mode is left at its default, overwrite selects replace and otherwise the load appends, so an existing target is not silently destroyed.
@@ -86,6 +92,8 @@ public sealed record ImportRequest
 
     public void Validate()
     {
+        ValidateDatumSelection();
+
         var cloudFileId = string.IsNullOrWhiteSpace(CloudFileId) ? null : CloudFileId;
         var localFilePath = string.IsNullOrWhiteSpace(LocalFilePath) ? null : LocalFilePath;
         var objectStoreUri = string.IsNullOrWhiteSpace(ObjectStoreUri) ? null : ObjectStoreUri;
@@ -125,6 +133,25 @@ public sealed record ImportRequest
         {
             throw new InvalidOperationException("Upsert load mode requires at least one key column.");
         }
+    }
+
+    private void ValidateDatumSelection()
+    {
+        if (DatumTransformationWkid is not null && !string.IsNullOrWhiteSpace(DatumTransformationName))
+        {
+            throw new InvalidOperationException("Select datumTransformation by WKID or name, using one selector.");
+        }
+
+        if (DatumTransformationWkid is <= 0)
+        {
+            throw new InvalidOperationException("datumTransformation must be a positive WKID.");
+        }
+
+        if (CoordinateEpoch is { } epoch && !double.IsFinite(epoch))
+        {
+            throw new InvalidOperationException("coordinateEpoch must be a finite decimal year.");
+        }
+
     }
 
     public bool UsesCloudStorage => !string.IsNullOrWhiteSpace(CloudFileId);

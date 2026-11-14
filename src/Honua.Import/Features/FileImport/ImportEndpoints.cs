@@ -578,6 +578,9 @@ internal static partial class ImportEndpoints
             SourceKind = "url",
             SourceUrl = request.SourceUrl,
             SourceSrid = request.SourceSrid,
+            DatumTransformationWkid = request.DatumTransformationWkid,
+            DatumTransformationName = request.DatumTransformationName,
+            CoordinateEpoch = request.CoordinateEpoch,
             TargetSrid = request.TargetSrid,
             TargetSchema = request.TargetSchema,
             OverwriteExisting = request.OverwriteExisting,
@@ -714,6 +717,9 @@ internal static partial class ImportEndpoints
                 TableName = request.TableName,
                 TargetSchema = request.TargetSchema,
                 SourceSrid = request.SourceSrid,
+                DatumTransformationWkid = request.DatumTransformationWkid,
+                DatumTransformationName = request.DatumTransformationName,
+                CoordinateEpoch = request.CoordinateEpoch,
                 TargetSrid = request.TargetSrid,
                 OverwriteExisting = request.OverwriteExisting
             };
@@ -1142,6 +1148,9 @@ internal static partial class ImportEndpoints
                 UploadId = NormalizeOptionalOperationId(fields, "UploadId"),
                 SourceSrid = ParseOptionalSrid(fields, "SourceSrid"),
                 TargetSrid = ParseOptionalSrid(fields, "TargetSrid"),
+                DatumTransformationWkid = ParseDatumTransformationWkid(fields),
+                DatumTransformationName = fields.GetValueOrDefault("DatumTransformationName"),
+                CoordinateEpoch = ParseCoordinateEpoch(fields),
                 TargetSchema = targetSchema,
                 OverwriteExisting = TryParseBool(fields, "OverwriteExisting"),
                 ForceBackground = TryParseBool(fields, "ForceBackground"),
@@ -1323,6 +1332,36 @@ internal static partial class ImportEndpoints
         if (!fields.TryGetValue(fieldName, out var value) || string.IsNullOrWhiteSpace(value)) return null;
         if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)) return parsed;
         throw new ArgumentException("The coordinate-system code must be an integer.");
+    }
+
+    private static int? ParseDatumTransformationWkid(Dictionary<string, string> fields)
+    {
+        if (!fields.TryGetValue("DatumTransformationWkid", out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var wkid) || wkid <= 0)
+        {
+            throw new ArgumentException("DatumTransformationWkid must be a positive integer.");
+        }
+
+        return wkid;
+    }
+
+    private static double? ParseCoordinateEpoch(Dictionary<string, string> fields)
+    {
+        if (!fields.TryGetValue("CoordinateEpoch", out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var epoch) || !double.IsFinite(epoch))
+        {
+            throw new ArgumentException("coordinateEpoch must be a finite decimal year.");
+        }
+
+        return epoch;
     }
 
     private static string? NormalizeOptionalOperationId(Dictionary<string, string> fields, string fieldName)
@@ -1810,6 +1849,9 @@ internal sealed record ImportUrlImportRequest
     public required string TableName { get; init; }
     public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
+    public int? DatumTransformationWkid { get; init; }
+    public string? DatumTransformationName { get; init; }
+    public double? CoordinateEpoch { get; init; }
     public int? TargetSrid { get; init; }
     public bool OverwriteExisting { get; init; }
     public bool ForceBackground { get; init; }
@@ -1841,6 +1883,9 @@ internal sealed record ImportExecutionRequest
     public string? UploadId { get; init; }
     public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
+    public int? DatumTransformationWkid { get; init; }
+    public string? DatumTransformationName { get; init; }
+    public double? CoordinateEpoch { get; init; }
     public int? TargetSrid { get; init; }
     public bool OverwriteExisting { get; init; }
     public bool ForceBackground { get; init; }

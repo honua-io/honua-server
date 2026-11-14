@@ -18,30 +18,84 @@ internal static class GeoServicesDatumTransformationResolver
         out DatumTransformationSelection? selection,
         [NotNullWhen(false)] out string? errorMessage,
         DatumAreaEnvelope? envelope = null)
-        => TryResolveWithDirection(
-            catalog,
-            datumTransformationValue,
-            transformForwardOverride: null,
-            fromSrid,
-            toSrid,
-            out selection,
-            out errorMessage,
-            envelope);
+    {
+        var result = Resolve(catalog, new ResolutionRequest
+        {
+            Value = datumTransformationValue,
+            FromSrid = fromSrid,
+            ToSrid = toSrid,
+            Envelope = envelope
+        });
+        selection = result.Selection;
+        errorMessage = result.Error;
+        return errorMessage is null;
+    }
 
-    public static bool TryResolveWithDirection(
-        IDatumTransformationCatalog catalog,
-        string? datumTransformationValue,
-        bool? transformForwardOverride,
-        int fromSrid,
-        int toSrid,
-        out DatumTransformationSelection? selection,
-        [NotNullWhen(false)] out string? errorMessage,
-        DatumAreaEnvelope? envelope = null)
+    public static Resolution Resolve(IDatumTransformationCatalog catalog, ResolutionRequest parameters)
+    {
+        var operation = ResolveOperation(catalog, parameters);
+        if (operation.Error is not null)
+        {
+            return operation;
+        }
+
+        double? observationEpoch = null;
+        if (!string.IsNullOrWhiteSpace(parameters.CoordinateEpoch))
+        {
+            if (!double.TryParse(parameters.CoordinateEpoch, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedEpoch)
+                || !double.IsFinite(parsedEpoch))
+            {
+                return new Resolution(null, "coordinateEpoch must be a finite decimal year.");
+            }
+
+            observationEpoch = parsedEpoch;
+        }
+
+        try
+        {
+            return new Resolution(operation.Selection?.WithCoordinateEpoch(observationEpoch));
+        }
+        catch (ArgumentException exception)
+        {
+            return new Resolution(null, exception.Message);
+        }
+    }
+
+    internal sealed record ResolutionRequest
+    {
+        public string? Value { get; init; }
+        public string? CoordinateEpoch { get; init; }
+        public bool? Forward { get; init; }
+        public int FromSrid { get; init; }
+        public int ToSrid { get; init; }
+        public DatumAreaEnvelope? Envelope { get; init; }
+    }
+
+    internal sealed record Resolution(DatumTransformationSelection? Selection, string? Error = null);
+
+    private static Resolution ResolveNamedOperation(IDatumTransformationCatalog catalog, ResolutionRequest parameters)
+    {
+        var selection = catalog.FindByName(parameters.Value!, parameters.FromSrid, parameters.ToSrid);
+        if (selection is null)
+        {
+            return new Resolution(null, "The named datumTransformation does not apply to the requested reprojection.");
+        }
+
+        return parameters.Forward is { } direction && direction != selection.TransformForward
+            ? new Resolution(null, "transformForward does not agree with the named datumTransformation direction.")
+            : new Resolution(selection);
+    }
+
+    private static Resolution ResolveOperation(IDatumTransformationCatalog catalog, ResolutionRequest parameters)
     {
         ArgumentNullException.ThrowIfNull(catalog);
-
-        selection = null;
-        errorMessage = null;
+        var datumTransformationValue = parameters.Value;
+        var transformForwardOverride = parameters.Forward;
+        var fromSrid = parameters.FromSrid;
+        var toSrid = parameters.ToSrid;
+        var envelope = parameters.Envelope;
+        DatumTransformationSelection? selection = null;
+        string? errorMessage;
 
         // No reprojection requested, or output equals the input SRID: nothing to do when
         // the client did not request a transformation. An explicit WKID must still be
@@ -49,13 +103,18 @@ internal static class GeoServicesDatumTransformationResolver
         // accepting a transformation that does not apply to that base pair is incorrect.
         if (fromSrid == toSrid && string.IsNullOrWhiteSpace(datumTransformationValue))
         {
-            return true;
+            return new Resolution(selection);
+        }
+
+        if (datumTransformationValue?.StartsWith("Honua:", StringComparison.Ordinal) == true)
+        {
+            return ResolveNamedOperation(catalog, parameters);
         }
 
         if (!DatumTransformationParser.TryParse(datumTransformationValue, out var request, out var parseError))
         {
             errorMessage = parseError;
-            return false;
+            return new Resolution(null, errorMessage);
         }
 
         if (request is { } requested)
@@ -77,7 +136,7 @@ internal static class GeoServicesDatumTransformationResolver
                     $"datumTransformation WKID {requested.Wkid.ToString(CultureInfo.InvariantCulture)} is not supported "
                     + $"for the {fromSrid.ToString(CultureInfo.InvariantCulture)} -> "
                     + $"{toSrid.ToString(CultureInfo.InvariantCulture)} reprojection.";
-                return false;
+                return new Resolution(null, errorMessage);
             }
 
             // TryGetByWkid returns a selection already oriented from source to target. An
@@ -91,11 +150,11 @@ internal static class GeoServicesDatumTransformationResolver
                     + $"transformForward={requested.TransformForward.ToString().ToLowerInvariant()} does not apply "
                     + $"to the {fromSrid.ToString(CultureInfo.InvariantCulture)} -> "
                     + $"{toSrid.ToString(CultureInfo.InvariantCulture)} reprojection.";
-                return false;
+                return new Resolution(null, errorMessage);
             }
 
             selection = resolved;
-            return true;
+            return new Resolution(selection);
         }
 
         // No client choice. An envelope selects the single grid whose area contains it.
@@ -113,7 +172,7 @@ internal static class GeoServicesDatumTransformationResolver
                 selection = fallback;
             }
 
-            return true;
+            return new Resolution(selection);
         }
 
         if (catalog.TryGetDefault(fromSrid, toSrid, out var defaultSelection))
@@ -121,6 +180,6 @@ internal static class GeoServicesDatumTransformationResolver
             selection = defaultSelection;
         }
 
-        return true;
+        return new Resolution(selection);
     }
 }
