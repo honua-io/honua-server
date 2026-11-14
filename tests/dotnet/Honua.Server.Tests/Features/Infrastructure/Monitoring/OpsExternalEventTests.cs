@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Observability.Abstractions;
@@ -55,7 +56,7 @@ public sealed class OpsExternalEventTests
         var body = Envelope("aws.ecs", "ECS Task State Change", detail);
         var events = Enumerable.Range(0, 3).Select(i => OpsExternalEventMapper.Parse(
             body.Replace("7a92fa24", $"7a92fa2{i}", StringComparison.Ordinal))).ToArray();
-        OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:05:00Z"))
+        OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:05:00Z", CultureInfo.InvariantCulture))
             .Should().BeEmpty();
     }
 
@@ -124,9 +125,9 @@ public sealed class OpsExternalEventTests
     {
         var body = Envelope("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"clusterArn\":\"cluster\",\"group\":\"service:server\",\"containers\":[{\"exitCode\":1}]}");
         var events = Enumerable.Range(0, 3).Select(i => OpsExternalEventMapper.Parse(body.Replace("7a92fa24", $"7a92fa2{i}", StringComparison.Ordinal))).ToArray();
-        var findings = OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:05:00Z"));
+        var findings = OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:05:00Z", CultureInfo.InvariantCulture));
         findings.Should().ContainSingle(f => f.Rule == "ecs-task-crash-loop" && f.Severity == OpsFindingSeverity.Critical);
-        OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:16:00Z"))
+        OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:16:00Z", CultureInfo.InvariantCulture))
             .Should().NotContain(f => f.Rule == "ecs-task-crash-loop");
     }
 
@@ -157,7 +158,7 @@ public sealed class OpsExternalEventTests
         var alarm = OpsExternalEventMapper.Parse(Envelope("aws.cloudwatch", "CloudWatch Alarm State Change", "{\"state\":{\"value\":\"ALARM\"}}"));
         var recovered = OpsExternalEventMapper.Parse(alarm.Body.Replace("7a92fa24", "8a92fa24", StringComparison.Ordinal)
             .Replace("00:00:00Z", "00:01:00Z", StringComparison.Ordinal).Replace("ALARM", "OK", StringComparison.Ordinal));
-        var findings = OpsExternalEventMapper.MapRecent([recovered, alarm], DateTimeOffset.Parse("2026-11-14T00:05:00Z"));
+        var findings = OpsExternalEventMapper.MapRecent([recovered, alarm], DateTimeOffset.Parse("2026-11-14T00:05:00Z", CultureInfo.InvariantCulture));
         findings.Should().ContainSingle().Which.Rule.Should().Be("cloudwatch-alarm-recovered");
     }
 
