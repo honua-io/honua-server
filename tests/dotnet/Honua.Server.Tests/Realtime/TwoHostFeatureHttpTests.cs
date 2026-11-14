@@ -172,10 +172,14 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         var toFrame = frames.Select(frame => Stopwatch.GetElapsedTime(RelayedAt(relayed, frame), frame.ReceivedAt))
             .Order().ToArray();
         var p95 = (int)Math.Ceiling(Edits * 0.95) - 1;
+        var listenerB = _taskB.GetService<RealtimeListener>();
+        var logHeadB = await _taskB.GetService<PostgresFeatureChangeLog>().ReadHeadAsync(timeout.Token);
         latencies[p95].Should().BeLessThanOrEqualTo(latencyTarget,
             $"p95 commit-to-relay was {toRelay[p95].TotalMilliseconds:F0} ms and relay-to-frame {toFrame[p95].TotalMilliseconds:F0} ms; " +
             $"relay moved {relayed.Count} times ({DescribeRelay(relayed)}) for frame generations " +
-            $"{frames[0].Generation}..{frames[^1].Generation}");
+            $"{frames[0].Generation}..{frames[^1].Generation}; task B feature log head {logHeadB}, " +
+            $"listener connected {listenerB.IsConnected} (pid {listenerB.ProcessId}, reconnects {listenerB.Reconnects}, " +
+            $"poll-only reason {listenerB.PollOnlyReason ?? "none"})");
     }
 
     // Records when task B's feature relay first reached each position, sampled every few
