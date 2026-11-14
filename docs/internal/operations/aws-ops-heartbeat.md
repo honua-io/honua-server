@@ -16,10 +16,11 @@ task cannot flood the metric during a partial failure. Each attempt has a
 The task role needs `cloudwatch:PutMetricData`, restricted by the
 `cloudwatch:namespace` condition to `Honua/Operations`. The regional Launch Stack
 alarm uses `Maximum < 1` for three consecutive 60-second periods and treats
-missing data as breaching. The alarm sends directly to the notification email
-through SNS, so its delivery does not depend on server availability.
+missing data as breaching. Raw metric alarms send to the operations queue. A
+single composite alarm sends the incident email through SNS, so notification
+does not depend on server availability and individual alarms do not duplicate it.
 
-MAIN performs live qualification from the laptop: verify metric samples with two
+An authorized operator performs live qualification: verify metric samples with two
 healthy tasks, roll both tasks, stop the service long enough for three missing
 periods and confirm the SNS notification. Restore the service and confirm the
 alarm recovers. Record the deployed image digest, stack, alarm history and email
