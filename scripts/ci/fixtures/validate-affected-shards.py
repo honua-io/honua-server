@@ -117,10 +117,8 @@ def candidates(result: dict[str, Any]) -> set[str]:
     return set(result["shards"]) | set(result["dropped"])
 
 
-def unique_owned_prefix(
-    config: dict[str, Any], shard: dict[str, Any], *, include_split_siblings: bool = False
-) -> str | None:
-    """A source/test prefix claimed only by this shard or its split siblings.
+def unique_owned_prefix(config: dict[str, Any], shard: dict[str, Any]) -> str | None:
+    """A source/test prefix claimed only by this shard.
 
     Shared prefixes (the Core validation pipeline, the TestKit harness) are
     deliberately mapped to several shards, so they prove nothing about a single
@@ -130,13 +128,6 @@ def unique_owned_prefix(
         prefix
         for other in config["shards"]
         if other["name"] != shard["name"]
-        and not (
-            include_split_siblings
-            and other["name"].rsplit(" ", 1)[-1].isdecimal()
-            and shard["name"].rsplit(" ", 1)[-1].isdecimal()
-            and other["name"].rsplit(" ", 1)[0] == shard["name"].rsplit(" ", 1)[0]
-            and other.get("paths") == shard.get("paths")
-        )
         for prefix in other.get("paths", ())
     ]
     for prefix in shard.get("paths", ()):
@@ -148,6 +139,20 @@ def unique_owned_prefix(
             continue
         return prefix
     return None
+
+
+def family_owned_prefix(config: dict[str, Any], shard: dict[str, Any]) -> str | None:
+    """A source/test prefix claimed only by this shard's capacity family."""
+    siblings = {
+        other["name"] for other in config["shards"]
+        if other["name"].rsplit(" ", 1)[-1].isdecimal()
+        and shard["name"].rsplit(" ", 1)[-1].isdecimal()
+        and other["name"].rsplit(" ", 1)[0] == shard["name"].rsplit(" ", 1)[0]
+        and other.get("paths") == shard.get("paths")
+    } - {shard["name"]}
+    family_config = dict(config, shards=[other for other in config["shards"]
+                                         if other["name"] not in siblings])
+    return unique_owned_prefix(family_config, shard)
 
 
 def runnable_method_index(classes: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
@@ -177,7 +182,7 @@ def check_feature_namespace_selects_its_shard(
     """
     covered = 0
     for shard in config["shards"]:
-        prefix = unique_owned_prefix(config, shard, include_split_siblings=True)
+        prefix = family_owned_prefix(config, shard)
         if prefix is None:
             continue
         covered += 1

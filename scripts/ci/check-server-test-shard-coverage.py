@@ -698,7 +698,7 @@ def evaluate_assertion(
       --assert-owner (require_runnable=True) pins a REAL class to its shard. It
         must (a) name a class that exists, (b) in the asserted assembly, (c) that
         declares at least one recognised test method, and (d) have every runnable
-        method selected by the shard's filter. (c) is the #3317 half: before it, the assertion proved
+        method selected by the shard's filter. (c) guards runnable ownership: before it, the assertion proved
         the class was CLAIMED, never that it would RUN — a class the enumerator
         cannot see declaring a test is exactly the class whose disappearance the
         orphan guard would also miss, so an assertion over it was self-defeating.

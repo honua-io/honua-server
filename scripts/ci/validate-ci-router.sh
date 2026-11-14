@@ -1747,7 +1747,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEchoTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
     "WFS 8" \
-  `# #7678 method-split classes (including ImageServerEndpointsTests) are pinned` \
+  `# the capacity split method-split classes (including ImageServerEndpointsTests) are pinned` \
   `# by the full-run-capacity method contracts above, which check every method.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
