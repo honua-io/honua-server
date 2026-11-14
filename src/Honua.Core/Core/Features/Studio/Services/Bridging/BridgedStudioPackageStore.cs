@@ -50,6 +50,9 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
     public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => _inner.DeleteDraftAsync(draftId, cancellationToken);
 
+    public Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default)
+        => _inner.DeleteDraftAsync(draftId, expectedGeneration, cancellationToken);
+
     /// <inheritdoc />
     public Task<StudioContentVersion> CreateVersionAsync(
         StudioPackageDraft draft,

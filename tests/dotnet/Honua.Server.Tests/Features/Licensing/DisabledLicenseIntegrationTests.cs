@@ -34,7 +34,6 @@ public sealed class DisabledLicenseIntegrationTests
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/license")]
     [Endpoint("GET /api/v1/admin/license/status")]
-    [Endpoint("GET /api/v1/admin/license/capacity")]
     [Endpoint("GET /api/v1/admin/license/features")]
     public async Task Production_DisabledWithoutLicense_StartsWithActiveEntitlementsAndTruthfulAdminResponses()
     {
@@ -42,7 +41,6 @@ public sealed class DisabledLicenseIntegrationTests
             RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
         var schemas = contract.RootElement.GetProperty("components").GetProperty("schemas");
         var statusSchema = schemas.GetProperty("LicenseStatusResponse").GetProperty("properties");
-        var capacitySchema = schemas.GetProperty("LicenseCapacitySnapshot").GetProperty("properties");
         var postgres = new PostgresFixture();
         await postgres.InitializeAsync();
         var schema = await postgres.CreateIsolatedSchemaAsync(nameof(DisabledLicenseIntegrationTests));
@@ -55,7 +53,7 @@ public sealed class DisabledLicenseIntegrationTests
             Assert.All(FeatureCatalog.All, feature =>
                 Assert.True(LicenseGate.CheckEntitlement(fixture.Services, feature.Key).IsActive));
             Assert.DoesNotContain(fixture.Services.GetServices<IHostedService>(), service =>
-                service is FileBackedLicenseService or LicenseCapacityMeter);
+                service is FileBackedLicenseService);
             Assert.False(fixture.Services.GetRequiredService<ILicenseOperationPolicy>().IsBlocked);
 
             // #4758: the composed ladder keeps Studio draft composition direct in Disabled mode,
@@ -100,18 +98,6 @@ public sealed class DisabledLicenseIntegrationTests
                     Assert.Contains(entitlements, item => item.GetProperty("key").GetString() == key && item.GetProperty("isActive").GetBoolean());
                 }
             }
-
-            using var capacityResponse = await client.GetAsync("/api/v1/admin/license/capacity");
-            Assert.Equal(HttpStatusCode.OK, capacityResponse.StatusCode);
-            using var capacityJson = JsonDocument.Parse(await capacityResponse.Content.ReadAsStringAsync());
-            var capacity = capacityJson.RootElement.GetProperty("data");
-            Assert.False(capacity.GetProperty("meteringEnabled").GetBoolean());
-            Assert.Equal("boolean", capacitySchema.GetProperty("meteringEnabled").GetProperty("type").GetString());
-            Assert.Equal(9, capacity.GetProperty("state").GetInt32());
-            Assert.Contains(capacitySchema.GetProperty("state").GetProperty("enum").EnumerateArray(),
-                value => value.GetInt32() == capacity.GetProperty("state").GetInt32());
-            Assert.False(capacity.GetProperty("registrationEnforced").GetBoolean());
-            Assert.Equal(0, capacity.GetProperty("liveInstanceCount").GetInt32());
 
             using var featuresResponse = await client.GetAsync("/api/v1/admin/license/features");
             Assert.Equal(HttpStatusCode.OK, featuresResponse.StatusCode);

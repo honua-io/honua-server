@@ -26,6 +26,8 @@ public sealed class GeoParquetPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
         preview.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.StoredSrid.Should().Be(4326);
         preview.TotalFeatureCount.Should().Be(1);
         preview.SampleProperties.Should().ContainKey("name");
         preview.SampleProperties["name"].Should().Be("Test Feature");
@@ -41,7 +43,11 @@ public sealed class GeoParquetPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
         preview.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.StoredSrid.Should().Be(4326);
         preview.TotalFeatureCount.Should().Be(1);
+        preview.CoordinateSystem!.SourceCrsDeclared.Should().BeFalse();
+        preview.CoordinateSystem.DetectionMethod.Should().Be("format-defined");
     }
 
     [UnitTest]
@@ -55,6 +61,8 @@ public sealed class GeoParquetPreviewTests
         preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
         preview.DetectedSrid.Should().BeNull();
         preview.TotalFeatureCount.Should().Be(1);
+        preview.CoordinateSystem!.SourceCrsDeclared.Should().BeTrue();
+        preview.CoordinateSystem.RequiresSourceOverride.Should().BeTrue();
     }
 
     [UnitTest]
@@ -67,6 +75,8 @@ public sealed class GeoParquetPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
         preview.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.StoredSrid.Should().Be(4326);
         preview.TotalFeatureCount.Should().Be(1);
     }
 
@@ -245,6 +255,8 @@ public sealed class GeoParquetPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
         preview.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.StoredSrid.Should().Be(4326);
         preview.TotalFeatureCount.Should().Be(1);
     }
 

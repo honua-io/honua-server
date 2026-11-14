@@ -118,7 +118,6 @@ internal static partial class MapServerEndpoints
             var serviceSrid = ResolveTileServiceSrid(service, publishedLayers);
             var storage = context.RequestServices.GetService<ICloudFileStorage>();
             var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
-            var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
             // The rendered PNG contains RLS-filtered feature geometry for the *current*
             // principal, so the cloud tile cache key MUST be partitioned by the effective
             // RLS predicate. Without it, principal A's tile would be served to principal B
@@ -160,7 +159,7 @@ internal static partial class MapServerEndpoints
                 y,
                 x);
 
-            if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken, tileCacheKeyIndex).ConfigureAwait(false) is { } cachedTile)
+            if (await GeoServicesCloudTileCache.TryReadAsync(storage, storageOptions, tileCacheKey, cancellationToken).ConfigureAwait(false) is { } cachedTile)
             {
                 stopwatch.Stop();
                 MapServerLog.TileCompleted(logger, serviceId, 0, stopwatch.Elapsed.TotalMilliseconds);
@@ -204,8 +203,7 @@ internal static partial class MapServerEndpoints
                     .Add("x", x.ToString(CultureInfo.InvariantCulture))
                     .Add("y", y.ToString(CultureInfo.InvariantCulture))
                     .Add("metadataEtag", snapshot.Etag),
-                cancellationToken,
-                tileCacheKeyIndex).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
 
             return Results.Bytes(renderResult.ImageBytes, "image/png");
         }

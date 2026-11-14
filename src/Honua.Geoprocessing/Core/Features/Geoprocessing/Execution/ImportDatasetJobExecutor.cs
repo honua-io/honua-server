@@ -223,7 +223,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
             : string.IsNullOrWhiteSpace(request.TargetSchema)
                 ? ResolveOperationalSchema(services)
                 : request.TargetSchema!;
-        var detectedSrid = importResult.DetectedSrid ?? request.TargetSrid;
+        var storedSrid = importResult.StoredSrid ?? request.TargetSrid;
 
         PublishedLayerSummary publishedLayer;
         try
@@ -241,7 +241,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
                     : request.GeometryColumn,
                 PrimaryKey = ImportTablePrimaryKey,
                 Fields = BuildPublishedImportFields(importResult.TypedColumns),
-                Srid = detectedSrid,
+                Srid = storedSrid,
                 StorageCrsCoordinateEpoch = importResult.StorageCrsCoordinateEpoch,
                 ServiceName = request.ServiceName,
                 ConnectionId = Guid.TryParse(request.ConnectionRef, out var pubConnectionId)
@@ -435,7 +435,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
             sourceSrid = parsedSourceSrid;
         }
 
-        var targetSrid = 4326;
+        int? targetSrid = null;
         if (inputs.TryGet("targetSrid", out var targetSridRaw)
             && int.TryParse(targetSridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTargetSrid)
             && parsedTargetSrid > 0)
@@ -562,7 +562,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
 
         public int? SourceSrid { get; init; }
 
-        public int TargetSrid { get; init; }
+        public int? TargetSrid { get; init; }
 
         public int? RasterLayerId { get; init; }
     }

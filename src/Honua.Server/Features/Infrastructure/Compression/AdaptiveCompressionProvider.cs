@@ -95,10 +95,10 @@ internal static class AdaptiveCompressionLevelSelector
 internal abstract class AdaptiveCompressionStream : Stream
 {
     private readonly Stream _outputStream;
-    private bool _disposed;
     private readonly AdaptiveCompressionOptions _options;
     private readonly MemoryStream _buffer;
     private Stream? _compressionStream;
+    private bool _disposed;
 
     protected AdaptiveCompressionStream(Stream outputStream, AdaptiveCompressionOptions options)
     {
@@ -229,7 +229,7 @@ internal abstract class AdaptiveCompressionStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        // DisposeAsync has already released the buffer; Stream.DisposeAsync calls back into here.
+        // DisposeAsync releases the buffer before Stream.DisposeAsync calls back here.
         if (disposing && !_disposed)
         {
             _disposed = true;

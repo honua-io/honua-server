@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Admin;
 using Honua.TestKit.Attributes;
@@ -11,22 +12,28 @@ namespace Honua.Db.Postgres.Tests.Features.Admin;
 public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
 {
     [UnitTheory]
-    [InlineData("resources", false)]
-    [InlineData("storageBindings", false)]
-    [InlineData("publications", false)]
-    [InlineData("resources", true)]
-    [InlineData("storageBindings", true)]
-    [InlineData("publications", true)]
-    public void BuildLinkedLayerMetadataV2Graph_OmittedStatus_InitializesReadyStatus(string collection, bool explicitNull)
+    [InlineData("resources")]
+    [InlineData("storageBindings")]
+    [InlineData("publications")]
+    public void BuildLinkedLayerMetadataV2Graph_OmittedStatus_InitializesReadyStatus(string collection)
+    {
+        AssertDefaultStatusInitializesReadyStatus(collection, entity => entity.Remove("status"));
+    }
+
+    [UnitTheory]
+    [InlineData("resources")]
+    [InlineData("storageBindings")]
+    [InlineData("publications")]
+    public void BuildLinkedLayerMetadataV2Graph_NullStatus_InitializesReadyStatus(string collection)
+    {
+        AssertDefaultStatusInitializesReadyStatus(collection, entity => entity["status"] = null);
+    }
+
+    private static void AssertDefaultStatusInitializesReadyStatus(string collection, Action<JsonObject> setStatus)
     {
         var (source, scope, datasetId) = CreateCollidingStorageGraph(false);
         var document = JsonSerializer.SerializeToNode(source, MetadataV2JsonContext.Default.MetadataV2Graph)!;
-        var entity = document[collection]![0]!.AsObject();
-        entity.Remove("status");
-        if (explicitNull)
-        {
-            entity["status"] = null;
-        }
+        setStatus(document[collection]![0]!.AsObject());
         var graph = JsonSerializer.Deserialize(document.ToJsonString(), MetadataV2JsonContext.Default.MetadataV2Graph)!;
         var omitted = collection switch
         {

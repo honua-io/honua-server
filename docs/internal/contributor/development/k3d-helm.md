@@ -1,5 +1,7 @@
 # Local Helm Testing
 
+> Kubernetes is not certified for 2026.1. These instructions do not establish release qualification.
+
 Local Helm chart ownership and k3d/kind helper scripts now live in the separate
 [`honua-helm`](https://github.com/honua-io/honua-helm) repository.
 

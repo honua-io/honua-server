@@ -90,7 +90,7 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=name):
                 self.assertIn("github.event.pull_request.number", concurrency.get("group", ""))
                 cancellation = concurrency.get("cancel-in-progress")
-                if name in ("review-gate.yml", "review-event-bridge.yml", "pr-review-doctor.lock.yml", "normalize-derived-artifacts.yml", "auto-merge-ready.yml"):
+                if name in ("pr-review-doctor.lock.yml", "normalize-derived-artifacts.yml", "auto-merge-ready.yml"):
                     self.assertEqual(cancellation, "false")
                     self.assertEqual(concurrency.get("queue"), "max")
                 else:
@@ -117,8 +117,14 @@ class PullRequestLoadTests(unittest.TestCase):
         gate = workflow("pr-gate.yml")
         self.assertIn("ready_for_review", gate["on"]["pull_request"].get("types", []))
         self.assertIn("converted_to_draft", gate["on"]["pull_request"].get("types", []))
-        self.assertEqual(gate["jobs"]["required"]["name"], "PR Gate")
-        self.assertEqual(gate["jobs"]["affected-shards"]["name"], "PR Gate / Affected shards")
+        # Ready runs report the exact required contexts. A draft run must not:
+        # a ready transition creates them only after its heavy needs finish.
+        for key, context in (("required", "PR Gate"), ("affected-shards", "PR Gate / Affected shards")):
+            name = gate["jobs"][key]["name"]
+            ready = evaluate(name, {"event_name": "pull_request", "event": {"pull_request": {"draft": False}}})
+            self.assertEqual(ready, context, key)
+            draft = evaluate(name, {"event_name": "pull_request", "event": {"pull_request": {"draft": True}}})
+            self.assertEqual(draft, f"{context} (draft)", key)
         required = ("clean-code.yml", "repo-hygiene.yml")
         for name, key, job in workflow_jobs(required):
             with self.subTest(workflow=name, job=key):
@@ -289,6 +295,19 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertTrue(evaluate(condition, event))
         event["event"]["pull_request"]["head"]["repo"]["full_name"] = "fork/repo"
         self.assertFalse(evaluate(condition, event))
+
+    def test_review_gate_admits_draft_conversion_only_for_cancellation(self):
+        gate = workflow("review-gate.yml")
+        condition = gate["jobs"]["resolve"]["if"]
+        for action, draft, admitted in (("opened", True, False),
+                                         ("synchronize", True, False),
+                                         ("converted_to_draft", True, True),
+                                         ("ready_for_review", False, True)):
+            with self.subTest(action=action):
+                event = {"event_name": "pull_request_target", "event": {
+                    "action": action, "pull_request": {"draft": draft}}}
+                self.assertEqual(evaluate(condition, event), admitted)
+        self.assertEqual(gate["jobs"]["attest"]["concurrency"]["cancel-in-progress"], "true")
 
     def test_trusted_observers_keep_current_draft_refusal(self):
         observer = workflow("server-test-prebuild-observe.yml")

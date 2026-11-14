@@ -3,9 +3,11 @@
 
 using Microsoft.Extensions.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.SharedCaching;
 
@@ -17,6 +19,13 @@ internal static class SharedCacheExtensions
         services.AddSingleton<IConfigurationDocumentationContributor, SharedCacheConfigurationDocumentationContributor>();
         services.TryAddSingleton<ICdnInvalidator, NoCdnInvalidator>();
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton(static provider => new CdnPurgeCoordination
+        {
+            TimeProvider = provider.GetRequiredService<TimeProvider>(),
+            HttpContextAccessor = provider.GetService<IHttpContextAccessor>(),
+            Options = provider.GetService<IOptionsMonitor<SharedCacheOptions>>(),
+            LeaseStore = provider.GetService<ILeaseStore>(),
+        });
         services.TryAddSingleton<CdnInvalidationService>();
         return services;
     }

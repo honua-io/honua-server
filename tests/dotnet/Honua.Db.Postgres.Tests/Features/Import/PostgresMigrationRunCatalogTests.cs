@@ -13,6 +13,7 @@ using Honua.Db.Postgres.Features.FileImport;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
@@ -175,8 +176,30 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
         statusPage.Items.Should().NotContain(r => r.RunId == older.RunId);
     }
 
+    [IntegrationTest]
+    public async Task GetAsync_WhenConfiguredPoolIsFull_WaitsForCapacity()
+    {
+        await EnsureMigrationRunsTableAsync();
+        var settings = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+        {
+            MaxPoolSize = 1,
+            ApplicationName = $"catalog-pool-{Guid.NewGuid():N}"
+        };
+        await using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
+        var catalog = new PostgresMigrationRunCatalog(dataSource,
+            NullLogger<PostgresMigrationRunCatalog>.Instance);
+        await using (var heldConnection = await dataSource.OpenConnectionAsync())
+        {
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+            Func<Task> read = async () => await catalog.GetAsync("pool-limit-probe", cancellation.Token);
+            await read.Should().ThrowAsync<OperationCanceledException>();
+        }
+        using var available = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await catalog.GetAsync("pool-limit-probe", available.Token);
+    }
+
     private PostgresMigrationRunCatalog CreateCatalog()
-        => new(Task.FromResult(fixture.ConnectionString), NullLogger<PostgresMigrationRunCatalog>.Instance);
+        => new(fixture.DataSource, NullLogger<PostgresMigrationRunCatalog>.Instance);
 
     /// <summary>
     /// The 031 migration creates honua.migration_runs; tests apply the same

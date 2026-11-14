@@ -56,6 +56,42 @@ function parseRunId(value) {
   return parsePositiveSafeInteger(value, 'workflow run id');
 }
 
+function selectCanonicalWorkflowJob(jobs, run, { workflowName, jobName, jobConclusion }) {
+  const canonicalJobs = jobs.filter((job) =>
+    job.run_id === run.id &&
+    job.run_attempt === run.run_attempt &&
+    job.workflow_name === workflowName &&
+    job.name === jobName &&
+    job.head_sha === run.head_sha &&
+    job.status === 'completed' &&
+    job.conclusion === jobConclusion,
+  );
+  // Zero matches is the superseded shape: a cancelled source never reached the
+  // terminal job the caller pinned. More than one is ambiguity or API drift and
+  // must never be silenced.
+  if (canonicalJobs.length !== 1) {
+    const message = 'source run does not identify exactly one canonical workflow job';
+    if (canonicalJobs.length === 0) {
+      // A draft run reports its aggregate as `<job> (draft)` so it can never
+      // satisfy the required context; classify it as draft admission.
+      const draftAggregate = jobs.some((job) =>
+        job.run_id === run.id &&
+        job.run_attempt === run.run_attempt &&
+        job.workflow_name === workflowName &&
+        job.name === `${jobName} (draft)` &&
+        job.head_sha === run.head_sha);
+      if (draftAggregate) {
+        throw new UnresolvedTrustedWorkflowRunError(
+          'source-run-draft-admission', 'the source run reported only the draft aggregate');
+      }
+      throw new UnresolvedTrustedWorkflowRunError('source-run-job-absent', message);
+    }
+    throw new Error(message);
+  }
+
+  return canonicalJobs[0];
+}
+
 async function resolveOrThrow({
   github,
   owner,
@@ -121,27 +157,7 @@ async function resolveOrThrow({
     github.rest.actions.listJobsForWorkflowRun,
     { owner, repo, run_id: id, filter: 'latest', per_page: 100 },
   );
-  const canonicalJobs = jobs.filter((job) =>
-    job.run_id === id &&
-    job.run_attempt === run.run_attempt &&
-    job.workflow_name === workflowName &&
-    job.name === jobName &&
-    job.head_sha === run.head_sha &&
-    job.status === 'completed' &&
-    job.conclusion === jobConclusion,
-  );
-  // Zero matches is the superseded shape: a cancelled source never reached the
-  // terminal job the caller pinned. More than one is ambiguity or API drift and
-  // must never be silenced.
-  if (canonicalJobs.length !== 1) {
-    const message = 'source run does not identify exactly one canonical workflow job';
-    if (canonicalJobs.length === 0) {
-      throw new UnresolvedTrustedWorkflowRunError('source-run-job-absent', message);
-    }
-    throw new Error(message);
-  }
-
-  const job = canonicalJobs[0];
+  const job = selectCanonicalWorkflowJob(jobs, run, { workflowName, jobName, jobConclusion });
   if (!Number.isSafeInteger(job.id) || job.id <= 0) {
     throw new Error('canonical workflow job identity is invalid');
   }

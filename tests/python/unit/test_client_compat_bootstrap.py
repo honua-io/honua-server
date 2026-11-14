@@ -21,7 +21,10 @@ class ClientCompatBootstrapTests(unittest.TestCase):
                                  "service_completed_successfully")
                 self.assertEqual(services[lane]["depends_on"]["honua"]["condition"], "service_healthy")
         self.assertNotIn("HONUA_SKIP_MIGRATIONS", services["honua"]["environment"])
-        self.assertIn("/healthz/ready", services["honua"]["healthcheck"]["test"][-1])
+        # The shell-free image probes /healthz/ready through its compiled
+        # helper; `--ready` selects that path (docker/runtime/health-probe.c).
+        self.assertEqual(["CMD", "/app/honua-healthcheck", "--ready"],
+                         services["honua"]["healthcheck"]["test"])
 
     def test_r_lane_mounts_include_driver_and_receipt_inputs(self):
         compose = ROOT / "docker/client-compat/compose.yml"

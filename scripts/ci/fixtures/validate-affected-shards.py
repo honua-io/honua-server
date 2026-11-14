@@ -64,6 +64,9 @@ def load_module():
     return module
 
 
+sys.path.insert(0, str(REPO_ROOT / "scripts/ci"))
+from shard_capacity_partition import capacity_split_names
+
 selector = load_module()
 
 
@@ -198,7 +201,7 @@ def check_temporal_source_survives_the_cap(config: dict[str, Any]) -> None:
         "src/Honua.Server/Features/Security/Probe.cs",
     ]
     owner = "Server Features Packages and Temporal"
-    catch_all = "Server Features Miscellaneous"
+    catch_all = set(capacity_split_names(config, "Server Features Miscellaneous"))
 
     def require_owner(shards: dict[str, Any]) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -212,12 +215,12 @@ def check_temporal_source_survives_the_cap(config: dict[str, Any]) -> None:
             raise FixtureError("temporal probe must leave some candidates unselected")
         if owner not in result["shards"]:
             raise FixtureError(f"changed temporal source lost its executing owner: {result['shards']}")
-        if catch_all in candidates(result) | deferred:
+        if catch_all & (candidates(result) | deferred):
             raise FixtureError(f"{catch_all!r} competes with {owner!r} for temporal source")
 
     require_owner(config)
     copied = copy.deepcopy(config)
-    parent = next(shard for shard in copied["shards"] if shard["name"] == catch_all)
+    parent = next(shard for shard in copied["shards"] if shard["name"] in catch_all)
     parent["paths"].append("src/Honua.Server/Features/Temporal/")
     try:
         require_owner(copied)
@@ -584,14 +587,15 @@ def check_skip_paths() -> None:
         raise FixtureError(f"CI-only diff did not skip: {workflow_only['reason']}")
 
 
-def check_fixture_input_owners() -> None:
+def check_fixture_input_owners(config: dict[str, Any]) -> None:
     owners = {
         "tests/fixtures/gp/": "Protocol and Host Components",
         "tests/fixtures/plugins/": "Server Features Miscellaneous",
     }
     for prefix, expected_owner in owners.items():
         result = run_selector([f"{prefix}consumer-input.json"])
-        if set(result["shards"]) != {expected_owner}:
+        expected = set(capacity_split_names(config, expected_owner))
+        if set(result["shards"]) != expected:
             raise FixtureError(
                 f"{prefix} selected {result['shards']}, expected only {expected_owner}"
             )
@@ -870,7 +874,7 @@ def main() -> int:
     check_wps_and_h3_tests_select_both_owners(config)
     tiered = check_non_runnable_tiers_are_not_credited(config)
     unrouted = check_unrouted_test_selects_its_owning_shard(config)
-    check_fixture_input_owners()
+    check_fixture_input_owners(config)
     roots = check_shard_owned_roots_are_product_code(config)
     check_run_all_narrows_by_affected_projects(config)
     check_targeted_answer_is_never_trimmed(config)

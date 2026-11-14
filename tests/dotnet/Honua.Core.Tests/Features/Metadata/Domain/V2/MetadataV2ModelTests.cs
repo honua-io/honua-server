@@ -52,26 +52,37 @@ public sealed class MetadataV2ModelTests
     // An absent identifier member keeps the property initializer (an empty identifier); only an
     // explicit null stays null. The empty identifier derives nothing, so legacy layerIndex, path
     // and serviceLocalId values still win, exactly as with a null identifier.
-    [UnitTheory]
+    [UnitTest]
     [Operation(Operations.Metadata)]
-    [InlineData("{\"status\":{}}", null, null, null)]
-    [InlineData("{\"layerIndex\":7,\"path\":\"parcels\",\"serviceLocalId\":\"local\",\"status\":{}}", 7, "parcels", "local")]
-    public void DeserializePublication_MissingIdentifier_UsesEmptyIdentifierAndLegacyValues(
-        string json, int? layerIndex, string? path, string? serviceLocalId)
+    public void DeserializePublication_MissingIdentifier_UsesEmptyIdentifier()
+    {
+        AssertMissingIdentifierPreservesLegacyValues("{\"status\":{}}", new MetadataV2Publication());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void DeserializePublication_MissingIdentifier_PreservesLegacyValues()
+    {
+        AssertMissingIdentifierPreservesLegacyValues(
+            "{\"layerIndex\":7,\"path\":\"parcels\",\"serviceLocalId\":\"local\",\"status\":{}}",
+            new MetadataV2Publication { LayerIndex = 7, Path = "parcels", ServiceLocalId = "local" });
+    }
+
+    private static void AssertMissingIdentifierPreservesLegacyValues(string json, MetadataV2Publication expected)
     {
         var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Publication)!;
 
         publication.Identifier.Should().Be(new MetadataV2PublicationIdentifier());
-        publication.LayerIndex.Should().Be(layerIndex);
-        publication.Path.Should().Be(path);
-        publication.ServiceLocalId.Should().Be(serviceLocalId);
+        publication.LayerIndex.Should().Be(expected.LayerIndex);
+        publication.Path.Should().Be(expected.Path);
+        publication.ServiceLocalId.Should().Be(expected.ServiceLocalId);
         var roundTrip = JsonSerializer.Deserialize(
             JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Publication),
             MetadataV2JsonContext.Default.MetadataV2Publication)!;
         roundTrip.Identifier.Should().Be(publication.Identifier);
-        roundTrip.LayerIndex.Should().Be(layerIndex);
-        roundTrip.Path.Should().Be(path);
-        roundTrip.ServiceLocalId.Should().Be(serviceLocalId);
+        roundTrip.LayerIndex.Should().Be(expected.LayerIndex);
+        roundTrip.Path.Should().Be(expected.Path);
+        roundTrip.ServiceLocalId.Should().Be(expected.ServiceLocalId);
     }
 
     [UnitTest]

@@ -46,8 +46,7 @@ public sealed record LicenseStatus(
     LicenseValidationState ValidationState = LicenseValidationState.Valid,
     string? LicenseId = null,
     DateTimeOffset? IssuedAt = null,
-    IReadOnlyList<Entitlement>? Entitlements = null,
-    LicenseCapacityTerms? CapacityTerms = null)
+    IReadOnlyList<Entitlement>? Entitlements = null)
 {
     public LicenseMode Mode { get; init; } = LicenseMode.Enabled;
 
@@ -69,8 +68,7 @@ public sealed record LicenseSnapshot(
     IReadOnlyList<Entitlement> Entitlements,
     IReadOnlySet<string> ActiveEntitlementKeys,
     long SnapshotVersion,
-    string? KeyId,
-    LicenseCapacityTerms? CapacityTerms = null)
+    string? KeyId)
 {
     public const string DisabledEditionName = "Unlicensed-2026.1";
 

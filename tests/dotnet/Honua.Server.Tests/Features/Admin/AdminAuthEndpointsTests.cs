@@ -1213,24 +1213,26 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     internal static WebAppFixture ConfigureGenericOidcFixture(WebAppFixture fixture, IHttpClientFactory httpClientFactory)
     {
         return fixture
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("Oidc:Enabled", "true");
-                builder.UseSetting("Oidc:RequireHttps", "true");
-                builder.UseSetting("Oidc:Generic:Enabled", "true");
-                builder.UseSetting("Oidc:Generic:Authority", "https://auth.example.com");
-                builder.UseSetting("Oidc:Generic:ClientId", "generic-client-id");
-                builder.UseSetting("Oidc:Generic:ClientSecret", "generic-secret-value-minimum-length");
-                builder.UseSetting("Oidc:Generic:DisplayName", "External Provider");
-                builder.UseSetting("Oidc:TokenValidation:ValidateIssuer", "false");
-                builder.UseSetting("Oidc:TokenValidation:ValidateAudience", "false");
-                builder.UseSetting("Oidc:TokenValidation:ValidateIssuerSigningKey", "false");
-                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", TestSigningKey);
-            })
+            .ConfigureWebHost(ConfigureGenericOidcHost)
             .ConfigureServices(services =>
             {
                 services.AddSingleton(httpClientFactory);
             });
+    }
+
+    internal static void ConfigureGenericOidcHost(IWebHostBuilder builder)
+    {
+        builder.UseSetting("Oidc:Enabled", "true");
+        builder.UseSetting("Oidc:RequireHttps", "true");
+        builder.UseSetting("Oidc:Generic:Enabled", "true");
+        builder.UseSetting("Oidc:Generic:Authority", "https://auth.example.com");
+        builder.UseSetting("Oidc:Generic:ClientId", "generic-client-id");
+        builder.UseSetting("Oidc:Generic:ClientSecret", "generic-secret-value-minimum-length");
+        builder.UseSetting("Oidc:Generic:DisplayName", "External Provider");
+        builder.UseSetting("Oidc:TokenValidation:ValidateIssuer", "false");
+        builder.UseSetting("Oidc:TokenValidation:ValidateAudience", "false");
+        builder.UseSetting("Oidc:TokenValidation:ValidateIssuerSigningKey", "false");
+        builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", TestSigningKey);
     }
 
     internal sealed record StubOidcEndpoints(

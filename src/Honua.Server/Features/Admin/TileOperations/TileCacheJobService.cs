@@ -49,7 +49,6 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     public async Task<string> SubmitAsync(
         TileOperationStartRequest request,
         string? schemaName,
-        string? tenantScope = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -58,7 +57,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         var options = _options.CurrentValue;
         var jobId = $"tile-{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
-        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName, tenantScope, options);
+        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName, options);
         var targetLayerIds = await ResolveTargetLayerIdsAsync(request, cancellationToken).ConfigureAwait(false);
 
         var jobRecord = new ExecutionJobRecord
@@ -70,7 +69,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             CurrentPhase = "Queued",
             // Replica safety (issue #2661): serialize concurrent generations of the same
             // (service, gridset, style) window under an exclusive lease so two backend workers
-            // never seed/expire/delete the same key window at once.
+            // never seed the same key window at once.
             Concurrency = new OperationConcurrencyPolicy
             {
                 PartitionKey = TileCacheExecutionSpecBuilder.BuildPartitionKey(request, targetLayerIds),
@@ -140,7 +139,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             return false;
         }
 
-        if (IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             return false;
         }
@@ -209,11 +208,6 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
-
     private static partial class Log
     {
         [LoggerMessage(9220, LogLevel.Information,
@@ -237,7 +231,6 @@ internal interface ITileCacheJobService
     Task<string> SubmitAsync(
         TileOperationStartRequest request,
         string? schemaName,
-        string? tenantScope = null,
         CancellationToken cancellationToken = default);
 
     Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default);

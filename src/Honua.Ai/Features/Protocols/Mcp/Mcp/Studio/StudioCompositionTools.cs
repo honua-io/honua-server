@@ -42,10 +42,7 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
     {
         Name = ToolName,
         Title = "Add Studio layer",
-        Description =
-            "Add a layer to a map/app/dashboard draft with generation checking. Copy discovery studioSourceId to "
-            + "layer.sourceId; layer.id is the presentation id. Catalog editing needs no portable sourceBindings or "
-            + "mapSpec export. invalid_argument: duplicate id or wrong family.",
+        Description = "Add a layer to a map/app/dashboard draft. Set layer.sourceId to studioSourceId from honua_list_layers; layer.id is presentation identity. Needs no sourceBindings or mapSpec export. Duplicate ids or other families fail invalid_argument.",
         InputSchema = StudioMcpSchemas.AddLayerArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Add Studio layer", destructive: false, idempotent: false)
@@ -123,9 +120,7 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
     {
         Name = ToolName,
         Title = "Remove Studio layer",
-        Description =
-            "Remove a map/app/dashboard draft layer by id with generation checking. Prune its exclusive bindings, "
-            + "inline style and mapSpec entries. not_found: unknown layer.",
+        Description = "Remove a map/app/dashboard draft layer by id. Prune bindings, inline style and mapSpec entries only it used; unknown ids fail not_found.",
         InputSchema = StudioMcpSchemas.RemoveLayerArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Destructive: it removes composed state. Undo is a fresh
@@ -190,9 +185,7 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
     {
         Name = ToolName,
         Title = "Set Studio layer style",
-        Description =
-            "Set a map/app/dashboard draft layer style with generation checking. Omitted/null styleRef clears it; "
-            + "styleBody stores inline style. References are bound without catalog validation. not_found: unknown layer.",
+        Description = "Set a composed layer's styleRef; omit or null to clear. styleBody stores inline style. Requires a map/app/dashboard draft. Unknown ids fail not_found; style references are not catalog-checked.",
         InputSchema = StudioMcpSchemas.SetLayerStyleArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Re-pointing a style binding is non-destructive; re-applying the same
@@ -285,9 +278,7 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
     {
         Name = ToolName,
         Title = "Set Studio layer visibility",
-        Description =
-            "Persist map/app/dashboard draft layer visibility with generation checking (ADR-0030 setVisibility). Local "
-            + "toggles are overwritten on sync; this one persists. not_found: unknown layer.",
+        Description = "Persist a map/app/dashboard layer's visibility. Draft sync overwrites client-local toggles, not this. Unknown ids fail not_found.",
         InputSchema = StudioMcpSchemas.SetLayerVisibilityArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Hiding a layer removes no composed state (the layer, its source and its style binding
@@ -355,9 +346,7 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
     {
         Name = ToolName,
         Title = "Set Studio view",
-        Description =
-            "Update map/app/dashboard draft view (bbox, center, zoom, pitch, bearing, crs) with generation checking. "
-            + "Omitted values stay unchanged. invalid_argument: out-of-range zoom/pitch/bearing.",
+        Description = "Update bbox, center, zoom, pitch, bearing or crs in a map/app/dashboard draft. Omitted values stay; out-of-range camera settings fail invalid_argument.",
         InputSchema = StudioMcpSchemas.SetViewArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Set Studio view", destructive: false, idempotent: true)
@@ -427,9 +416,7 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
     {
         Name = ToolName,
         Title = "Add Studio widget",
-        Description =
-            "Add a map/app/dashboard draft widget with generation checking. invalid_argument: duplicate widget id or "
-            + "wrong draft family.",
+        Description = "Add a widget to a map/app/dashboard draft. Duplicate ids and other families fail invalid_argument.",
         InputSchema = StudioMcpSchemas.AddWidgetArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Add Studio widget", destructive: false, idempotent: false)
@@ -507,8 +494,7 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
     {
         Name = ToolName,
         Title = "Remove Studio widget",
-        Description =
-            "Remove a map/app/dashboard draft widget by id with generation checking. not_found: unknown widget.",
+        Description = "Remove a map/app/dashboard draft widget by id; unknown ids fail not_found.",
         InputSchema = StudioMcpSchemas.RemoveWidgetArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Remove Studio widget", destructive: true, idempotent: false)
@@ -716,9 +702,7 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
     {
         Name = ToolName,
         Title = "Remove Studio interaction",
-        Description =
-            "Remove a map/app/dashboard draft interaction by id with generation checking. not_found: unknown "
-            + "interaction.",
+        Description = "Remove an event/action binding from a map/app/dashboard draft by id; unknown ids fail not_found.",
         InputSchema = StudioMcpSchemas.RemoveInteractionArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Destructive: it removes composed wiring. Undo is a fresh
@@ -921,10 +905,7 @@ internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpT
     {
         Name = ToolName,
         Title = "Remove Studio control",
-        Description =
-            "Remove a map/app/dashboard draft control by id with generation checking. not_found: unknown control. "
-            + "Referencing interactions cause invalid_argument unless cascadeInteractions=true removes those bindings "
-            + "too.",
+        Description = "Remove a map/app/dashboard control by id. Unknown ids fail not_found. References to control:{id} fail invalid_argument unless cascadeInteractions also removes the interactions.",
         InputSchema = StudioMcpSchemas.RemoveControlArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Destructive: it removes composed state (and, when cascading, its bindings).

@@ -149,8 +149,6 @@ internal sealed class ImageServerTileHandler
             {
                 var storage = context.RequestServices.GetService<ICloudFileStorage>();
                 var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
-                var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
-                var tileCacheTenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
                 var tileCacheKey = ImageServerTileCacheKey.Build(
                     storageOptions,
                     snapshot.Etag,
@@ -173,9 +171,7 @@ internal sealed class ImageServerTileHandler
                         storage,
                         storageOptions,
                         tileCacheKey,
-                        cancellationToken,
-                        tileCacheKeyIndex,
-                        tileCacheTenantScope).ConfigureAwait(false) is { } cachedTile)
+                        cancellationToken).ConfigureAwait(false) is { } cachedTile)
                 {
                     ImageServerLog.ImageTileGenerated(_logger, layerId, cachedTile.Data.Length);
                     scope.SetSuccess(1);
@@ -224,9 +220,7 @@ internal sealed class ImageServerTileHandler
                             .Add("y", row.ToString(CultureInfo.InvariantCulture))
                             .Add("format", rasterFormat.ToString())
                             .Add("metadataEtag", snapshot.Etag),
-                        cancellationToken,
-                        tileCacheKeyIndex,
-                        tileCacheTenantScope).ConfigureAwait(false);
+                        cancellationToken).ConfigureAwait(false);
                     return Results.File(result.Data, result.ContentType);
                 }
             }
@@ -378,8 +372,6 @@ internal sealed class ImageServerTileHandler
 
             var storage = context.RequestServices.GetService<ICloudFileStorage>();
             var storageOptions = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value;
-            var tileCacheKeyIndex = context.RequestServices.GetService<ITileCacheKeyIndex>();
-            var tileCacheTenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
             var window = new RasterTileWindow
             {
                 MinX = bounds.XMin,
@@ -413,9 +405,7 @@ internal sealed class ImageServerTileHandler
                     storage,
                     storageOptions,
                     tileCacheKey,
-                    cancellationToken,
-                    tileCacheKeyIndex,
-                    tileCacheTenantScope).ConfigureAwait(false) is { } cachedTile)
+                    cancellationToken).ConfigureAwait(false) is { } cachedTile)
             {
                 ImageServerLog.ImageTileGenerated(_logger, layerId, cachedTile.Data.Length);
                 scope.SetSuccess(1);
@@ -463,9 +453,7 @@ internal sealed class ImageServerTileHandler
                     .Add("y", row.ToString(CultureInfo.InvariantCulture))
                     .Add("format", rasterFormat.ToString())
                     .Add("metadataEtag", snapshot.Etag),
-                cancellationToken,
-                tileCacheKeyIndex,
-                tileCacheTenantScope).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
             return Results.File(result.Data, result.ContentType);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

@@ -411,10 +411,14 @@ internal static class ServiceCollectionExtensions
             return new CachingMetadataV2GraphProvider(
                 store,
                 cache,
-                metadataEnvironment,
-                serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-                static loadScope => loadScope.GetRequiredService<IMetadataV2GraphStore>(),
-                revisionProbe);
+                new MetadataV2GraphCacheConfiguration
+                {
+                    Environment = metadataEnvironment,
+                    LoadScopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    ResolveLoader = static loadScope => loadScope.GetRequiredService<IMetadataV2GraphStore>(),
+                    RevisionProbe = revisionProbe,
+                    GenerationSource = serviceProvider.GetService<IConfigurationGenerationSource>()
+                });
         });
         // Legacy V1 catalog -> Metadata v2 graph projector (honua-server#2081). Lets compat
         // seeding paths (cloud-demo reset/startup) project freshly-seeded legacy services
@@ -836,18 +840,16 @@ internal static class ServiceCollectionExtensions
         // Footprint-driven batch import run catalog (#1253). Persists batch
         // composition, ordering, and per-child status backing the batch
         // orchestration endpoints. Scoped to align with the scoped orchestrator.
-        // The Task<string> is sourced from the singleton PostgresConnectionStringCache so
-        // the secret is resolved once at startup and per-request awaits are free (PA-077).
         services.AddScoped<IMigrationBatchRunCatalog>(serviceProvider =>
             new PostgresMigrationBatchRunCatalog(
-                serviceProvider.GetRequiredService<PostgresConnectionStringCache>().ResolvedConnectionStringTask,
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
                 serviceProvider.GetRequiredService<ILogger<PostgresMigrationBatchRunCatalog>>()));
 
         // Migration run catalog (#1015/#1598). Persists lifecycle rows backing the
         // admin run-history write/read API.
         services.AddScoped<IMigrationRunCatalog>(serviceProvider =>
             new PostgresMigrationRunCatalog(
-                serviceProvider.GetRequiredService<PostgresConnectionStringCache>().ResolvedConnectionStringTask,
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
                 serviceProvider.GetRequiredService<ILogger<PostgresMigrationRunCatalog>>()));
 
         // Register the post-publish reconciliation service (issues #1247/#1380). It probes the

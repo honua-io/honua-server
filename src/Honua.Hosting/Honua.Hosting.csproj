@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <Import Project="..\..\eng\Honua.BuildProfiles.props" />
+
   <PropertyGroup>
     <TargetFramework>$(HonuaTargetFramework)</TargetFramework>
     <OutputType>Library</OutputType>
@@ -80,8 +82,9 @@
          deliveries to a dead-letter topic. The dependency is isolated behind
          the ConfluentKafkaEventProducer wrapper; the sink itself depends only
          on the IKafkaEventProducer abstraction so it stays unit-testable
-         without a live broker. -->
-    <PackageReference Include="Confluent.Kafka" />
+         without a live broker. Excluded from the PostGIS-only default image
+         (HonuaIncludeEventBrokers=false). -->
+    <PackageReference Include="Confluent.Kafka" Condition="'$(HonuaIncludeEventBrokers)' == 'true'" />
     <!-- NATS.Net backs the enterprise event-bus NATS sink (#357): the
          broker-agnostic IFeatureChangeEventSink NATS adapter publishes committed
          feature-change events to a configurable JetStream subject with optional
@@ -89,8 +92,15 @@
          deliveries to a dead-letter subject. The dependency is isolated behind
          the NatsJetStreamEventProducer wrapper; the sink itself depends only on
          the INatsEventProducer abstraction so it stays unit-testable without a
-         live JetStream server. -->
-    <PackageReference Include="NATS.Net" />
+         live JetStream server. Excluded with Confluent.Kafka above. -->
+    <PackageReference Include="NATS.Net" Condition="'$(HonuaIncludeEventBrokers)' == 'true'" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HonuaIncludeEventBrokers)' != 'true'">
+    <!-- Only the concrete broker clients need the packages; the sinks, options and
+         producer abstractions stay compiled so configuration validation is unchanged. -->
+    <Compile Remove="Features/Events/Sinks/Kafka/ConfluentKafkaEventProducer.cs" />
+    <Compile Remove="Features/Events/Sinks/Nats/NatsJetStreamEventProducer.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -34,10 +34,19 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        // A preview does not execute the operation; preserve its configured policy and let
+        // the dispatcher produce the dry-run result before requiring approval to execute.
+        var requiresAgentApproval = !request.DryRun && AgentApprovalRule.Applies(request.OperationId, context.Roles);
+
+        Task<PolicyDecision> Complete(PolicyDecision decision) => Task.FromResult(
+            requiresAgentApproval && decision.Kind is not (PolicyDecisionKind.Deny or PolicyDecisionKind.DryRunFirst)
+                ? AgentApprovalRule.Decision
+                : decision);
+
         // Disabled policy is a pass-through allow — identical to the Community default.
         if (!_options.Enabled)
         {
-            return Task.FromResult(PolicyDecision.Allowed);
+            return Complete(PolicyDecision.Allowed);
         }
 
         var rules = Composition.Rules;
@@ -53,13 +62,13 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
             // executed without an operator-authored rule.
             if (i >= Composition.OperatorRuleCount && rule.Decision == PolicyDecisionKind.Allow)
             {
-                return Task.FromResult(new PolicyDecision { Kind = PolicyDecisionKind.Allow, Reason = rule.Reason });
+                return Complete(new PolicyDecision { Kind = PolicyDecisionKind.Allow, Reason = rule.Reason });
             }
 
-            return Task.FromResult(ResolveDecision(rule.Decision, rule.Reason, rule.ApprovalLane, request));
+            return Complete(ResolveDecision(rule.Decision, rule.Reason, rule.ApprovalLane, request));
         }
 
-        return Task.FromResult(ResolveDecision(
+        return Complete(ResolveDecision(
             _options.DefaultDecision,
             _options.DefaultReason,
             _options.DefaultApprovalLane,

@@ -81,7 +81,7 @@ def decide(
     else:
         lines.append(
             f"- Mode: `{mode or 'report'}` "
-            "(report-only; enforcement policy: docs/ci/affected-shards-promotion.md)"
+            "(report-only; enforcement policy: docs/internal/ci/affected-shards-promotion.md)"
         )
     lines.append(
         f"- Selection: `{selection.reason or 'unavailable'}` (`{selection.count or '0'}` shard families)"

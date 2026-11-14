@@ -12,6 +12,7 @@
 // table and easier to reason about apart from the SQL-mutating publish path.
 
 using System.Globalization;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -430,8 +431,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         CancellationToken cancellationToken,
         NpgsqlTransaction? transaction = null)
     {
-        var sourceTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
-        var sourceGeometry = QuoteIdentifier(geometryColumn);
+        var sourceTable = $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}";
+        var sourceGeometry = SqlIdentifier.QuoteIdentifier(geometryColumn);
         var sql = $"""
             WITH source AS (
                 SELECT {sourceGeometry}::geometry AS geom

@@ -43,7 +43,6 @@ public sealed class ScheduledTickDispatcherTests
     [InlineData(ScheduledTickKind.WorkflowSchedule)]
     [InlineData(ScheduledTickKind.JobReconciliation)]
     [InlineData(ScheduledTickKind.TileCacheExpiry)]
-    [InlineData(ScheduledTickKind.TileCacheEviction)]
     [InlineData(ScheduledTickKind.WorkspaceCleanup)]
     [InlineData(ScheduledTickKind.FileStorageCleanup)]
     [InlineData(ScheduledTickKind.TemporaryFileCleanup)]

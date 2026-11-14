@@ -120,6 +120,30 @@ public sealed class InMemoryImportJobServiceCleanupTests
         progress.ErrorMessage.Should().NotContain("SQL");
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task QueueImportAsync_Success_ReportsSourceAndStoredCoordinateSystem()
+    {
+        var reprojected = ImportResult.CreateSuccess("parcels", SupportedFileFormat.GeoJson, 1, detectedSrid: 2193) with { SourceSrid = 2193, StoredSrid = 4326, Reprojected = true };
+        using var jobService = new InMemoryImportJobService(
+            new FakeFileImportService(reprojected), new NoopPerformanceMonitor(), NullLogger<InMemoryImportJobService>.Instance);
+        using var stream = new MemoryStream([0x01]);
+        var jobId = await jobService.QueueImportAsync(new ImportRequest
+        {
+            FileStream = stream,
+            FileName = "parcels.geojson",
+            TableName = "parcels"
+        }, 1);
+        await WaitForCompletionAsync(jobService, TimeSpan.FromSeconds(10));
+
+        var progress = await jobService.GetProgressAsync(jobId);
+        progress!.Status.Should().Be(ImportStatus.Completed);
+        progress.DetectedSrid.Should().Be(2193);
+        progress.SourceSrid.Should().Be(2193);
+        progress.StoredSrid.Should().Be(4326);
+        progress.Reprojected.Should().BeTrue();
+    }
+
     private static async Task WaitForCompletionAsync(InMemoryImportJobService jobService, TimeSpan timeout)
     {
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
@@ -170,7 +194,7 @@ public sealed class InMemoryImportJobServiceCleanupTests
         await Task.CompletedTask;
     }
 
-    private sealed class FakeFileImportService(ImportResult? failure = null) : IFileImportService
+    private sealed class FakeFileImportService(ImportResult? fixedResult = null) : IFileImportService
     {
         public ImportLimits Limits { get; } = new();
 
@@ -196,7 +220,7 @@ public sealed class InMemoryImportJobServiceCleanupTests
                 await Task.Delay(TimeSpan.FromMilliseconds(index), cancellationToken);
             }
 
-            var result = failure ?? ImportResult.CreateSuccess(request.TableName, SupportedFileFormat.GeoJson, 1);
+            var result = fixedResult ?? ImportResult.CreateSuccess(request.TableName, SupportedFileFormat.GeoJson, 1);
             return result;
         }
 

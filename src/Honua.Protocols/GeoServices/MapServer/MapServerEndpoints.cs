@@ -8,6 +8,7 @@
 // route opts into AllowAnonymous explicitly so authorization-policy tooling
 // can see the intent rather than treating it as an accidental gap.
 
+using Honua.Core.Features.Metadata.Caching;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.SharedCaching;
 
@@ -234,6 +235,7 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer");
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/{layerId:int}/query", HandleLayerQueryPost)
+            .WithMetadata(ReadOnlyRequestMetadata.Instance)
             .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query MapServer Layer (POST)")
             .WithName("MapServerQueryPost")
@@ -251,6 +253,7 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer");
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/query", HandleServiceQueryPost)
+            .WithMetadata(ReadOnlyRequestMetadata.Instance)
             .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query MapServer Service (POST)")
             .WithName("MapServerServiceQueryPost")

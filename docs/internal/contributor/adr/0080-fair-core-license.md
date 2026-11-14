@@ -8,7 +8,7 @@ Honua Server and Honua Collect were published under the Elastic License 2.0 (ADR
 conversion clause, bars every third-party managed deployment including integrators installing Honua
 into a customer's own environment, and carries another vendor's name. The commercial model
 ([editions and licensing](../../../concepts/editions-and-licensing.md)) is free Community
-self-hosting plus signed-license Pro and Enterprise entitlements and capacity metering, which needs a
+self-hosting plus signed-license Pro and Enterprise entitlements, which needs a
 license that protects license-key functionality and the future hosted offering while remaining
 honest with the open-source community about what it is.
 
@@ -20,8 +20,7 @@ License. Licensor: Honua Geo Inc.
 - Permitted Purpose: any use other than a Competing Use, expressly including internal use,
   non-commercial education and research, and professional services delivered to a licensee.
 - Limitations: no circumventing or removing license-key functionality. `NOTICE` states that this
-  includes the signed license envelope, edition and entitlement gating, and capacity registration,
-  metering and enforcement.
+  includes the signed license envelope and edition and entitlement gating.
 - Future license: each version is additionally licensed under Apache-2.0 two years after it is made
   available.
 - Prior versions remain under ELv2. SDKs, Console, Studio and the open protocol standards stay
@@ -43,5 +42,3 @@ License. Licensor: Honua Geo Inc.
 - The attachment preamble (`src/Honua.Server/MigrationContracts/attachment-schema-preamble.v1.sql.template`)
   keeps its immutable v1 bytes. That preamble is pinned by SHA-256 in `ServerCoreSchemaMigrations`,
   and a header change there makes every non-default-schema attachment migration refuse to load.
-- Capacity metering must stay on the license-validated code path to remain covered by the
-  Limitations clause.
