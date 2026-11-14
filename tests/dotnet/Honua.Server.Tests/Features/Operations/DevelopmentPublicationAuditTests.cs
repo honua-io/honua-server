@@ -41,6 +41,7 @@ public sealed class DevelopmentPublicationAuditTests
             {
                 builder.UseSetting("Licensing:Mode", "Disabled");
                 builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
+                builder.UseSetting("Public:BaseUrl", "http://localhost");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             })

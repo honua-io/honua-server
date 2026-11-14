@@ -143,6 +143,7 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
         _fixture.ConfigureWebHost(builder =>
         {
             builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
+            builder.UseSetting("Public:BaseUrl", "http://localhost");
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
         });
         await _fixture.InitializeAsync();

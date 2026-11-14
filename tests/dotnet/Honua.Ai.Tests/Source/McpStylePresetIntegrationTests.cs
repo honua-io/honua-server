@@ -49,6 +49,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         _fixture.ConfigureWebHost(builder =>
         {
             builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
+            builder.UseSetting("Public:BaseUrl", "http://localhost");
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
         });
         await _fixture.InitializeAsync();
@@ -349,7 +350,9 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         {
             parameters = new Dictionary<string, string>
             {
-                ["serviceId"] = WebAppFixture.TestServiceId,
+                ["serviceId"] = _fixture.GetCurrentV2GraphSnapshot().Graph.Publications
+                    .First(publication => publication.LayerIndex == WebAppFixture.TestLayerId
+                        && publication.PublicationType == MetadataV2PublicationType.EsriMapLayer).ServiceId,
                 ["serviceLayerIndex"] = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["styleId"] = styleId,
             },
