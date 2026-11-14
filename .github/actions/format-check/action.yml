@@ -63,6 +63,8 @@ runs:
       env:
         GATE_FORMAT_MODE: ${{ steps.format-scope.outputs.mode }}
         GATE_FORMAT_INCLUDE_FILE: ${{ steps.format-scope.outputs.include-file }}
+      # dotnet format omits DiagnosticSuppressor instances (dotnet/sdk#51364).
+      # These eight rules remain required errors in the analyzer build rows.
       run: |
         if [[ "${GATE_FORMAT_MODE}" == "affected" ]]; then
           if [[ ! -s "${GATE_FORMAT_INCLUDE_FILE}" ]]; then
@@ -71,11 +73,11 @@ runs:
           fi
           mapfile -t include_paths < "${GATE_FORMAT_INCLUDE_FILE}"
           dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic \
-            --include "${include_paths[@]}"
+            --include "${include_paths[@]}" --exclude-diagnostics CA2000 IDE0063 RS0030 S1244 S2486 S108 CA1508 CA1851
         elif [[ "${GATE_FORMAT_MODE}" == "skip" ]]; then
           echo "::notice::Format check skipped: the diff has no surviving formattable files and no format-sensitive configuration. The merge train's full-solution format remains the backstop."
         else
-          dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
+          dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic --exclude-diagnostics CA2000 IDE0063 RS0030 S1244 S2486 S108 CA1508 CA1851
         fi
 
     - name: Compute analyzer build scope
