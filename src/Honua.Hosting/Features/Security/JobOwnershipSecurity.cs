@@ -7,6 +7,7 @@ using System.Text;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 
 namespace Honua.Infrastructure.Security;
 
@@ -24,16 +25,19 @@ internal static class JobOwnershipSecurity
         => principal.Identity?.IsAuthenticated == true && principal.IsInRole("admin");
 
     internal static bool CanAccess(OperationAuditInfo audit, string? requestTenant, ClaimsPrincipal principal)
+        => CanAccess(audit, TenantReadScope.Exact(requestTenant), principal);
+
+    internal static bool CanAccess(OperationAuditInfo audit, TenantReadScope scope, ClaimsPrincipal principal)
     {
         if (audit.SubmitterSecurityContext is not { } submitter
-            || !string.Equals(submitter.TenantId, requestTenant, StringComparison.Ordinal))
+            || !scope.Contains(submitter.TenantId))
         {
             return false;
         }
 
         return IsAdministrator(principal)
-            || MatchesSubmitter(audit, ResolveOwner(principal), requestTenant)
-            || MatchesPriorFormatSubmitter(audit, principal, requestTenant);
+            || MatchesSubmitter(audit, ResolveOwner(principal), submitter.TenantId)
+            || MatchesPriorFormatSubmitter(audit, principal, submitter.TenantId);
     }
 
     internal static bool MatchesSubmitter(OperationAuditInfo audit, string? owner, string? tenant)

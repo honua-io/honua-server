@@ -16,6 +16,7 @@ using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.ProcessRelease;
 using Honua.Geoprocessing.Release;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
@@ -58,6 +59,27 @@ public sealed class CustomCodeSubmitTests
             .Returns(ApprovalRequirement.NotRequired());
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("public")]
+    [InlineData(null)]
+    public async Task SubmitJob_CustomCode_UsesEffectiveTenantForCallback(string? effectiveTenant)
+    {
+        var principal = OwnerPrincipal();
+        CanonicalSecurityActor.StampRequestBinding(principal, effectiveTenant);
+        var issuer = Substitute.For<IScopedJobTokenIssuer>();
+        issuer.IssueAsync(Arg.Any<ScopedJobTokenRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new ScopedJobTokenIssuance("callback-token", DateTimeOffset.UtcNow.AddHours(1)));
+        var job = await CreateService(scopedJobTokenIssuer: issuer)
+            .SubmitJobAsync(CustomCodePlan(), null, principal, CustomCodeMetadata());
+
+        job.Audit.SubmitterSecurityContext!.TenantId.Should().Be(effectiveTenant);
+        await issuer.Received(1).IssueAsync(
+            Arg.Is<ScopedJobTokenRequest>(request => request.TenantId == effectiveTenant),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

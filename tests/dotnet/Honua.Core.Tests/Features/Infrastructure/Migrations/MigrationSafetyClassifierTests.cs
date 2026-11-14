@@ -8,6 +8,198 @@ namespace Honua.Core.Tests.Features.Infrastructure.Migrations;
 [Trait("Tier", "Fast")]
 public sealed class MigrationSafetyClassifierTests
 {
+    [Theory]
+    [InlineData("'", "--\"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("$sql$", "--\"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("'", "/*\"; DROP/* outer /* nested */ comment */TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("$sql$", "/*\"; DROP/* outer /* nested */ comment */TABLE honua.evidence; SELECT 1 AS \"")]
+    public void DetectBreakingRules_ComputedCommentContext_DetectsDrop(string delimiter, string fragment)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}SELECT 1 AS {{delimiter}} || chr(34) ||
+                    {{delimiter}}{{fragment}}{{delimiter}} || chr(34);
+            END;
+            $body$;
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-table");
+    }
+
+    [Theory]
+    [InlineData("'", "DROP/**/TABLE honua.evidence")]
+    [InlineData("$sql$", "DROP/**/TABLE honua.evidence")]
+    [InlineData("'", "DROP/* outer /* nested */ comment */TABLE honua.evidence")]
+    [InlineData("$sql$", "DROP-- comment\nTABLE honua.evidence")]
+    [InlineData("$sql$", "SELECT 1 AS \"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("'", "SELECT 1 AS \"--\"; DROP/**/TABLE honua.evidence")]
+    [InlineData("'", "SELECT 1 AS \"/*\"; DROP/**/TABLE honua.evidence")]
+    [InlineData("$sql$", "SELECT 1 AS \"--\"; DROP/**/TABLE honua.evidence")]
+    [InlineData("$sql$", "SELECT 1 AS \"/*\"; DROP/**/TABLE honua.evidence")]
+    public void DetectBreakingRules_ComputedDynamicComments_DetectsDrop(string delimiter, string fragment)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}{{fragment}}{{delimiter}} || '';
+            END;
+            $body$;
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-table");
+    }
+
+    [Theory]
+    [InlineData("'", "--")]
+    [InlineData("$sql$", "--")]
+    [InlineData("'", "/*")]
+    [InlineData("$sql$", "/*")]
+    public void DetectBreakingRules_QuotedCommentBeforeConcatenatedDdl(string delimiter, string quotedMarker)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}SELECT 1 AS "{{quotedMarker}}"; ALTER {{delimiter}} ||
+                    {{delimiter}}/**/TABLE honua.layers DROP COLUMN legacy_name{{delimiter}};
+            END;
+            $body$;
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-column");
+    }
+
+    [Theory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
+    public void DetectBreakingRules_ComputedDynamicQuotes_DoNotHideTruncate(string delimiter)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}SELECT 1 AS {{delimiter}} || chr(34) ||
+                    {{delimiter}}CREATE TRIGGER "; TRUNCATE honua.evidence; SELECT 1 AS " BEFORE INSERT ON{{delimiter}} ||
+                    chr(34);
+            END;
+            $body$;
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("truncate-table");
+    }
+
+    [Theory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
+    public void DetectBreakingRules_DynamicTriggerFragmentsInOneExecute_DoNotHideTruncate(string delimiter)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}CREATE TRIGGER "first{{delimiter}} || chr(34) ||
+                    {{delimiter}} BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject();
+                      TRUNCATE honua.evidence;
+                      CREATE TRIGGER {{delimiter}} || chr(34) ||
+                    {{delimiter}}second" BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject(){{delimiter}};
+            END;
+            $body$;
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("truncate-table");
+    }
+
+    [Fact]
+    public void DetectBreakingRules_IncompleteDynamicTriggerIdentifiers_DoNotHideTruncate()
+    {
+        const string sql = """
+            DO $$
+            BEGIN
+                EXECUTE 'CREATE TRIGGER "first' || chr(34) ||
+                    ' BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject()';
+                TRUNCATE honua.evidence;
+                EXECUTE 'CREATE TRIGGER ' || chr(34) ||
+                    'second" BEFORE INSERT ON honua.evidence EXECUTE FUNCTION reject()';
+            END;
+            $$;
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("truncate-table");
+    }
+
+    [Theory]
+    [InlineData("CREATE TRIGGER guard BEFORE TRUNCATE ON honua.evidence FOR EACH STATEMENT EXECUTE FUNCTION reject();")]
+    [InlineData("CREATE OR REPLACE TRIGGER guard AFTER INSERT OR TRUNCATE OR DELETE ON honua.evidence EXECUTE FUNCTION reject();")]
+    [InlineData("CREATE TRIGGER \"evidence guard\" BEFORE UPDATE OF \"display name\", status OR TRUNCATE ON honua.evidence EXECUTE FUNCTION reject();")]
+    [InlineData("CREATE TRIGGER guard BEFORE /* event */ TRUNCATE ON honua.evidence EXECUTE FUNCTION reject();")]
+    [InlineData("DO $$ BEGIN CREATE TRIGGER guard BEFORE TRUNCATE ON honua.evidence EXECUTE FUNCTION reject(); END $$;")]
+    [InlineData("DO $$ BEGIN EXECUTE 'CREATE TRIGGER guard BEFORE TRUNCATE ON honua.evidence EXECUTE FUNCTION reject()'; END $$;")]
+    public void DetectBreakingRules_TruncateTriggerEvent_IsExpand(string sql)
+    {
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("TRUNCATE TABLE honua.evidence RESTART IDENTITY CASCADE;")]
+    [InlineData("CREATE TRIGGER guard BEFORE TRUNCATE ON honua.evidence EXECUTE FUNCTION reject(); TRUNCATE honua.evidence;")]
+    [InlineData("TRUNCATE honua.evidence; CREATE TRIGGER guard BEFORE TRUNCATE ON honua.evidence EXECUTE FUNCTION reject();")]
+    [InlineData("CREATE FUNCTION reject() RETURNS trigger AS $$ BEGIN TRUNCATE honua.evidence; RETURN NULL; END $$ LANGUAGE plpgsql; CREATE TRIGGER guard BEFORE TRUNCATE ON honua.evidence EXECUTE FUNCTION reject();")]
+    [InlineData("DO $$ BEGIN EXECUTE 'CREATE TRIGGER guard BEFORE TRUNCATE ON honua.evidence EXECUTE FUNCTION reject(); TRUNCATE honua.evidence'; END $$;")]
+    public void DetectBreakingRules_TruncateBesideTriggerDeclaration_IsContract(string sql)
+    {
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("truncate-table");
+    }
+
+    [Theory]
+    [InlineData("CREATE TABLE \"CREATE TRIGGER \" (id int); TRUNCATE honua.evidence; CREATE TABLE \" BEFORE TRUNCATE ON\" (id int);")]
+    [InlineData("CREATE TABLE \"prefix\"\"CREATE TRIGGER \" (id int); TRUNCATE honua.evidence; CREATE TABLE \" BEFORE TRUNCATE ON\" (id int);")]
+    [InlineData("CREATE TABLE \"/*\" (id int);\n-- */\nCREATE TABLE \"CREATE TRIGGER \" (id int); TRUNCATE honua.evidence; CREATE TABLE \" BEFORE INSERT ON\" (id int);")]
+    [InlineData("CREATE TABLE \"--\" (id int); CREATE TABLE \"CREATE TRIGGER \" (id int);\nTRUNCATE honua.evidence; CREATE TABLE \" BEFORE INSERT ON\" (id int);")]
+    [InlineData("CREATE TABLE \"'\" (id int); CREATE TABLE \"CREATE TRIGGER \" (id int); TRUNCATE honua.evidence; CREATE TABLE \" BEFORE INSERT ON\" (id int); -- '")]
+    public void DetectBreakingRules_TriggerTextInsideQuotedIdentifiers_DoesNotHideTruncate(string sql)
+    {
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("truncate-table");
+    }
+
+    [Theory]
+    [InlineData("CREATE DOMAIN ©e AS text; SELECT ©e'\\';\nTRUNCATE honua.evidence;\n-- '")]
+    [InlineData("SELECT E'\\'\"--\"';\nTRUNCATE honua.evidence;\n-- '")]
+    [InlineData("SELECT e'\\'\"/*\"';\nTRUNCATE honua.evidence;\n-- '")]
+    [InlineData("DO E'BEGIN EXECUTE \\'TRUNCATE honua.evidence\\'; END';")]
+    public void DetectBreakingRules_EscapeStrings_DoNotHideTruncate(string sql)
+    {
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("truncate-table");
+    }
+
+    [Theory]
+    [InlineData("SELECT E''\n'\\' \"--\"';\nTRUNCATE honua.evidence;\n-- '")]
+    [InlineData("SELECT E'' -- continuation\n'\\' \"--\"';\nTRUNCATE honua.evidence;\n-- '")]
+    [InlineData("SELECT E'' /* outer /* nested */\n */ '\\' \"--\"';\nTRUNCATE honua.evidence;\n-- '")]
+    [InlineData("DO $$ BEGIN EXECUTE E'TRUNCA\\x54E honua.evidence'; END $$;")]
+    [InlineData("DO $$ BEGIN EXECUTE E'TRUNCA\\124E honua.evidence'; END $$;")]
+    [InlineData("DO $$ BEGIN EXECUTE E'TRUNCA\\u0054E honua.evidence'; END $$;")]
+    [InlineData("DO $$ BEGIN EXECUTE E'TRUNCA\\U00000054E honua.evidence'; END $$;")]
+    [InlineData("DO $$ BEGIN EXECUTE E'TRUNCA'\n'\\x54E honua.evidence'; END $$;")]
+    [InlineData("DO $$ BEGIN EXECUTE 'TRUNCA'\n'TE honua.evidence'; END $$;")]
+    public void DetectBreakingRules_ContinuedAndNumericEscapeStrings_DoNotHideTruncate(string sql)
+    {
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("truncate-table");
+    }
+
+    [Fact]
+    public void DetectBreakingRules_EscapedInertString_IsExpand()
+    {
+        const string sql = "SELECT E'\\'\"--\" TRUNCATE honua.evidence';";
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void DetectBreakingRules_TriggerDeclaration_DoesNotHideOtherDestructiveRules()
+    {
+        const string sql = "CREATE TRIGGER guard BEFORE TRUNCATE ON honua.evidence EXECUTE FUNCTION reject(); DROP TABLE honua.evidence;";
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().ContainSingle().Which.Should().Be("drop-table");
+    }
+
     [Fact]
     public void DetectBreakingRules_DoesNotTreatDbUpVariableAsDollarQuotedBody()
     {
@@ -152,6 +344,27 @@ public sealed class MigrationSafetyClassifierTests
     [InlineData("DO $$ BEGIN EXECUTE 'ALTER ' || 'TABLE honua.layers RENAME TO archived_layers'; END $$;", "rename-table")]
     public void DetectBreakingRules_FlagsExecutableRoutineAndDynamicSqlBodies(string sql, string expectedRule)
     {
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain(expectedRule);
+    }
+
+    [Theory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
+    public void DetectBreakingRules_FlagsCommentsSplitAcrossDynamicLiterals(string delimiter)
+    {
+        var sql = $"DO $body$ BEGIN EXECUTE {delimiter}ALTER /{delimiter} || {delimiter}* comment *{delimiter} || {delimiter}/TABLE honua.layers DROP COLUMN legacy_name{delimiter}; END $body$;";
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-column");
+    }
+
+    [Theory]
+    [InlineData("'", "/**/TABLE honua.layers DROP COLUMN legacy_name", "drop-column")]
+    [InlineData("$sql$", "/* outer /* nested */ comment */TABLE honua.layers RENAME TO archived_layers", "rename-table")]
+    [InlineData("'", "-- comment\nTABLE honua.layers ALTER COLUMN name TYPE integer", "alter-column-type")]
+    public void DetectBreakingRules_FlagsConcatenatedDynamicSqlAcrossComments(string delimiter, string fragment, string expectedRule)
+    {
+        var sql = $"DO $body$ BEGIN EXECUTE {delimiter}ALTER {delimiter} || {delimiter}{fragment}{delimiter}; END $body$;";
+
         MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain(expectedRule);
     }
 
