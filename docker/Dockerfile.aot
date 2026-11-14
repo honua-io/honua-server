@@ -13,8 +13,8 @@
 # they cannot load. On Alpine every f=parquet request returned the typed 501, and gcompat +
 # libatomic loaded the library but segfaulted the server on the first request. These are the
 # same Ubuntu-based SDK/runtime-deps digests as docker/Dockerfile.lambda.aot.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb
-ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled-extra@sha256:bf8715422b59a65719605d4fe2b8f3f0eb96209b84cb2ed6bf3b5af7d879f148
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute-chiseled-extra@sha256:661d3e8cfdab9503453095a5b53b17f63402400266c0e0f6f2d1b1192e6da5c9
 
 ARG HONUA_STORE_PROFILE=postgis
 
@@ -91,7 +91,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    set -- "-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis}" "-p:HonuaNobleRuntimePublish=true" "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" "-p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
+    set -- "-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis}" "-p:HonuaUbuntuRuntimePublish=true" "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" "-p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then set -- "$@" "-p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then set -- "$@" "-p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then set -- "$@" "-p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
@@ -133,7 +133,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    set -- "-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis}" "-p:HonuaNobleRuntimePublish=true" "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" "-p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
+    set -- "-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis}" "-p:HonuaUbuntuRuntimePublish=true" "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" "-p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then set -- "$@" "-p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then set -- "$@" "-p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then set -- "$@" "-p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \

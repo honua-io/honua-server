@@ -158,8 +158,8 @@ public sealed class MetadataReleaseReconcilerTests
         harness.Graph.CurrentHistory.Should().Equal(1L);
     }
 
-    [Fact]
-    public async Task PostActivationRegression_RestoresPriorRevision_PreservesData_AndVerifiesRecovery()
+    [UnitTest]
+    public async Task PostActivationRegression_RestoresPriorDocumentAsNewRevision_PreservesData_AndVerifiesRecovery()
     {
         var harness = new ReleaseHarness(faultInjection: true);
         var id = await harness.SubmitAsync();
@@ -172,10 +172,10 @@ public sealed class MetadataReleaseReconcilerTests
         var final = await harness.DriveToTerminalAsync(id);
 
         final.Status.Should().Be(WorkflowOperationStatus.RolledBack);
-        final.CurrentPhase.Should().Contain("Reactivated prior revision 1").And.Contain("Recovered revision 1 verified");
+        final.CurrentPhase.Should().Contain("Restored prior revision 1 as new revision 3").And.Contain("Recovered revision 3 verified");
         final.MetadataRelease!.EvidenceRefs.Select(e => e.Kind).Should().Equal("smoke-candidate", "smoke", "smoke-recovered");
-        harness.Graph.Current.Revision.Should().Be(1);
-        harness.Graph.CurrentHistory.Should().Equal(1L, 2L, 1L);
+        harness.Graph.Current.Revision.Should().Be(3);
+        harness.Graph.CurrentHistory.Should().Equal(1L, 2L, 3L);
         ReleaseHarness.HasField(harness.Graph.Current, "parcels", NewField).Should().BeFalse();
         harness.Physical.Snapshot(ReleaseHarness.ParcelsLayer).Should().BeEquivalentTo(physicalBeforeRollback,
             "rollback restores metadata only; physical rows, including ETL-populated values, are untouched");
@@ -206,6 +206,29 @@ public sealed class MetadataReleaseReconcilerTests
         live.Graph.Services.Select(s => s.Metadata.Id).Should().BeEquivalentTo(new[] { "cadastre", "transport" });
         harness.Physical.Snapshot(ReleaseHarness.ParcelsLayer).Should().BeEquivalentTo(physicalBeforeRollback,
             "committed feature edits and physical data are preserved");
+    }
+
+    [UnitTest]
+    public async Task Rollback_WhenConcurrentWriterWinsRestore_PreservesItsEditInNewRevision()
+    {
+        var harness = new ReleaseHarness(faultInjection: true);
+        var id = await harness.SubmitAsync();
+        await harness.DriveUntilAsync(id, op => op.Status == WorkflowOperationStatus.RollbackRequested);
+        harness.Graph.BeforeSave = async () =>
+        {
+            harness.Graph.BeforeSave = null;
+            var current = harness.Graph.Current;
+            await harness.Graph.SaveAsync(
+                ReleaseHarness.WithField(current.Graph, "roads", "surface", MetadataV2FieldType.String), current.Etag);
+        };
+
+        var final = await harness.DriveToTerminalAsync(id);
+
+        final.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        final.CurrentPhase.Should().Contain("Reverted 1 owned field change(s) on top of revision 3 as revision 4");
+        harness.Graph.CurrentHistory.Should().Equal(1L, 2L, 3L, 4L);
+        ReleaseHarness.HasField(harness.Graph.Current, "roads", "surface").Should().BeTrue();
+        ReleaseHarness.HasField(harness.Graph.Current, "parcels", NewField).Should().BeFalse();
     }
 
     [Fact]
@@ -332,14 +355,14 @@ public sealed class MetadataReleaseReconcilerTests
         var requested = await harness.DriveUntilAsync(id, op => op.Status == WorkflowOperationStatus.RollbackRequested);
 
         await harness.StepAsync(id);
-        harness.Graph.Current.Revision.Should().Be(1);
+        harness.Graph.Current.Revision.Should().Be(3);
         await harness.Workflow.SetAsync(requested);
 
         var final = await harness.DriveToTerminalAsync(id);
 
         final.Status.Should().Be(WorkflowOperationStatus.RolledBack);
         final.CurrentPhase.Should().Contain("nothing to revert");
-        harness.Graph.CurrentHistory.Should().Equal(1L, 2L, 1L);
+        harness.Graph.CurrentHistory.Should().Equal(1L, 2L, 3L);
     }
 
     [Theory]
@@ -694,6 +717,8 @@ public sealed class MetadataReleaseReconcilerTests
         /// </summary>
         public Func<Task>? BeforeActivate { get; set; }
 
+        public Func<Task>? BeforeSave { get; set; }
+
         public MetadataV2GraphSnapshot Current
         {
             get
@@ -741,14 +766,19 @@ public sealed class MetadataReleaseReconcilerTests
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
             => new(Retained(revision));
 
-        public Task<MetadataV2GraphSnapshot> SaveAsync(MetadataV2Graph graph, string? expectedEtag, CancellationToken cancellationToken = default)
+        public async Task<MetadataV2GraphSnapshot> SaveAsync(MetadataV2Graph graph, string? expectedEtag, CancellationToken cancellationToken = default)
         {
+            if (BeforeSave is { } concurrentWriter)
+            {
+                await concurrentWriter();
+            }
+
             lock (_gate)
             {
                 EnsureCurrent(expectedEtag);
                 var snapshot = Persist(graph);
                 MoveCurrent(snapshot.Revision);
-                return Task.FromResult(snapshot);
+                return snapshot;
             }
         }
 

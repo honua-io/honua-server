@@ -108,10 +108,8 @@ using Microsoft.AspNetCore.Server.Kestrel.Https;
 // In the Development environment ASP.NET Core loads the static-web-assets runtime manifest
 // implicitly, inside WebApplication.CreateBuilder, and eagerly opens every content root it
 // declares as a PhysicalFileProvider — which throws DirectoryNotFoundException for a root that
-// is not materialized on disk. That aborts host construction before any application code (or
-// any test assertion) runs. The explicit hosted-Blazor loader below is already hardened against
-// this, but it never runs in Development, so the guard has to happen here, ahead of the builder
-// (honua-server#2904).
+// is not materialized on disk. That aborts host construction before any application code runs,
+// so the missing roots are created here, ahead of the builder.
 StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -1627,6 +1625,9 @@ app.UseLimitsEnforcement();
 
 // Validate query, form, and selected header inputs before authentication and endpoint execution.
 app.UseInputValidation();
+
+// Refresh shared identity configuration before any authentication or cached response can run.
+Honua.Server.Features.Infrastructure.Configuration.ConfigurationRuntimeMiddleware.UseSharedConfiguration(app);
 
 // Validate optional/required client certificates before the regular auth stack so
 // required mTLS surfaces can return machine-readable errors instead of TLS handshakes.

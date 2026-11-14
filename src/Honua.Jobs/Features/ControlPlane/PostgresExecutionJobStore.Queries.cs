@@ -219,7 +219,9 @@ internal sealed partial class PostgresExecutionJobStore
 
         if (query.ApplyTenantScope)
         {
-            predicates.Add("tenant_id IS NOT DISTINCT FROM @tenant_id");
+            predicates.Add(query.IncludeUnassignedTenant
+                ? "(tenant_id IS NOT DISTINCT FROM @tenant_id OR tenant_id IS NULL)"
+                : "tenant_id IS NOT DISTINCT FROM @tenant_id");
             command.Parameters.Add(new NpgsqlParameter("tenant_id", NpgsqlDbType.Text) { Value = (object?)query.TenantId ?? DBNull.Value });
         }
 
