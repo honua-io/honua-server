@@ -464,10 +464,10 @@ internal sealed class McpToolsCallParams
 
     // MRTR retry fields (SEP-2322); only modern requests may carry them.
     [JsonPropertyName("inputResponses")]
-    public JsonElement? InputResponses { get; set; }
+    public JsonElement InputResponses { get; set; }
 
     [JsonPropertyName("requestState")]
-    public JsonElement? RequestState { get; set; }
+    public JsonElement RequestState { get; set; }
 }
 
 /// <summary>

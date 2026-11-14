@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -200,6 +202,36 @@ public sealed class McpMrtrClarificationTests
 
         var error = (await SendAsync(services, call)).GetProperty("error");
 
+        error.GetProperty("code").GetInt32().Should().Be(McpErrorMapper.JsonRpcInvalidParams);
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be(McpErrorMapper.Codes.InvalidRequestState);
+        await _grounding.DidNotReceiveWithAnyArgs().GroundAsync(default!, default!, default);
+    }
+
+    [UnitTheory]
+    [InlineData("requestState")]
+    [InlineData("inputResponses")]
+    [InlineData("both")]
+    public async Task Retry_ExplicitNullFields_IsRefusedBeforeTheToolRuns(string field)
+    {
+        using var services = Services(_grounding);
+        var context = ModernCall(services, new McpCall(Goal, FormCapable));
+        var body = (await JsonNode.ParseAsync(context.Request.Body))!.AsObject();
+        var parameters = body["params"]!.AsObject();
+        if (field is "requestState" or "both")
+        {
+            parameters["requestState"] = null;
+        }
+
+        if (field is "inputResponses" or "both")
+        {
+            parameters["inputResponses"] = null;
+        }
+
+        context.Request.Body = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(body.ToJsonString()));
+        await McpEndpointExtensions.HandlePostAsync(context, CancellationToken.None);
+        context.Response.Body.Position = 0;
+        using var response = await JsonDocument.ParseAsync(context.Response.Body);
+        var error = response.RootElement.GetProperty("error");
         error.GetProperty("code").GetInt32().Should().Be(McpErrorMapper.JsonRpcInvalidParams);
         error.GetProperty("data").GetProperty("code").GetString().Should().Be(McpErrorMapper.Codes.InvalidRequestState);
         await _grounding.DidNotReceiveWithAnyArgs().GroundAsync(default!, default!, default);

@@ -146,7 +146,7 @@ internal sealed class McpRequestContinuation
         IMcpTool tool,
         McpToolsCallParams parameters)
     {
-        if (parameters.InputResponses is { ValueKind: not JsonValueKind.Object }
+        if (parameters.InputResponses is { ValueKind: not (JsonValueKind.Object or JsonValueKind.Undefined) }
             || parameters.RequestState is not { ValueKind: JsonValueKind.String } encoded
             || codec.Read(encoded.GetString(), binding) is not { } state)
         {
