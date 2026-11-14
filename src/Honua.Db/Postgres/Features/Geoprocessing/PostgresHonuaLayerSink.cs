@@ -212,6 +212,7 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
         HonuaLayerLoadMode loadMode,
         CancellationToken cancellationToken)
     {
+        ImportTableOwnership.RefuseReservedStagedTarget(schema, table);
         if (await ImportTableOwnership.ExistsAsync(connection, schema, table, cancellationToken).ConfigureAwait(false))
         {
             // Append and keyed upsert may write an authorized published table without

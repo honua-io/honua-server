@@ -211,4 +211,36 @@ public sealed class ImportRequestTests
 
         act.Should().NotThrow();
     }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(ImportLoadMode.Append, "Staged_0123456789abcdef01234567", true)]
+    [InlineData(ImportLoadMode.Upsert, "staged_0123456789abcdef01234567", true)]
+    [InlineData(ImportLoadMode.Replace, "staged_0123456789abcdef01234567", true)]
+    [InlineData(ImportLoadMode.CreateOnly, "staged_0123456789abcdef01234567", false)]
+    [InlineData(ImportLoadMode.Append, "staged_parcels", false)]
+    public void Validate_ServerDerivedStagedName_IsReservedForCreateOnly(ImportLoadMode mode, string table, bool refused)
+    {
+        using var stream = new MemoryStream([1]);
+        var request = new ImportRequest
+        {
+            FileStream = stream,
+            FileName = "data.geojson",
+            TableName = table,
+            LoadMode = mode,
+            OverwriteExisting = mode == ImportLoadMode.Replace,
+            KeyColumns = mode == ImportLoadMode.Upsert ? ["id"] : [],
+        };
+
+        Action act = () => request.Validate();
+
+        if (refused)
+        {
+            act.Should().Throw<InvalidOperationException>().WithMessage("*reserved for server-owned staged imports*");
+        }
+        else
+        {
+            act.Should().NotThrow();
+        }
+    }
 }

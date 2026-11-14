@@ -26,45 +26,75 @@ internal sealed class StagedImportApprovalMapper : IOperationApprovalRequestMapp
         var pin = StagedImportPin.Read(request);
         var (tenantId, actorId) = StagedImportOperation.RequireScope(context);
         var table = StagedImportOperation.ParseCommand(request, tenantId, actorId).Table;
+        return StagedApprovalRequests.Build(new StagedApprovalInput
+        {
+            OperationId = OperationId,
+            Request = request,
+            Context = context,
+            Decision = decision,
+            Summary = $"Import {pin.Preview.FeatureCount} feature(s) from job '{StagedImportOperation.Required(request, "jobId")}' "
+                + $"into new server-owned staging table '{StagedImportOperation.Required(request, "schema")}.{table}'. "
+                + $"Content SHA-256 {pin.Preview.ContentSha256}; approval expires {pin.ExpiresAt:O}.",
+        });
+    }
+
+    public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)
+    {
+        var replay = StagedApprovalRequests.ReadReplay(OperationId, request);
+        _ = StagedImportPin.Read(replay.Request);
+        return replay;
+    }
+}
+
+// Shared by the staged import and discard mappers: one sealed payload shape and one replay reader.
+internal sealed record StagedApprovalInput
+{
+    public required string OperationId { get; init; }
+    public required OperationRequest Request { get; init; }
+    public required OperationPolicyContext Context { get; init; }
+    public required PolicyDecision Decision { get; init; }
+    public required string Summary { get; init; }
+}
+
+internal static class StagedApprovalRequests
+{
+    public static OperationGatewayRequest Build(StagedApprovalInput input)
+    {
         var payload = new StagedImportApprovalPayload
         {
-            Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
-            TenantId = context.TenantId,
-            SchemaName = context.SchemaName,
+            Parameters = new Dictionary<string, string?>(input.Request.Parameters, StringComparer.Ordinal),
+            TenantId = input.Context.TenantId,
+            SchemaName = input.Context.SchemaName,
         };
         var serialized = JsonSerializer.Serialize(payload, StagedImportApprovalJsonContext.Default.StagedImportApprovalPayload);
         return new OperationGatewayRequest
         {
-            OperationInstanceId = context.OperationInstanceId,
-            OperationId = OperationId,
+            OperationInstanceId = input.Context.OperationInstanceId,
+            OperationId = input.OperationId,
             Kind = OperationClass.AdminConfigChange,
-            RequestedBy = context.PrincipalId,
-            Reason = decision.Reason,
-            CorrelationId = context.CorrelationId,
+            RequestedBy = input.Context.PrincipalId,
+            Reason = input.Decision.Reason,
+            CorrelationId = input.Context.CorrelationId,
             ExecutionPayload = serialized,
             Plan = new OperationProposalPlan
             {
-                Summary = $"Import {pin.Preview.FeatureCount} feature(s) from job '{payload.Parameters["jobId"]}' "
-                    + $"into new server-owned staging table '{payload.Parameters["schema"]}.{table}'. "
-                    + $"Content SHA-256 {pin.Preview.ContentSha256}; approval expires {pin.ExpiresAt:O}.",
+                Summary = input.Summary,
                 RiskLevel = ProposalRiskLevel.Medium,
                 ExecutionPayload = serialized,
             },
         };
     }
 
-    public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)
+    // Replay reads only the plan payload sealed by the approved plan hash.
+    public static OperationApprovalReplayMapping ReadReplay(string operationId, OperationGatewayRequest request)
     {
-        // Replay reads only the plan payload sealed by the approved plan hash.
         var payload = JsonSerializer.Deserialize(request.Plan?.ExecutionPayload
-            ?? throw new InvalidOperationException("The staged import replay payload is unavailable."),
+            ?? throw new InvalidOperationException("The staged replay payload is unavailable."),
             StagedImportApprovalJsonContext.Default.StagedImportApprovalPayload)
-            ?? throw new InvalidOperationException("The staged import replay payload is invalid.");
-        var replay = new OperationRequest { OperationId = OperationId, Parameters = payload.Parameters };
-        _ = StagedImportPin.Read(replay);
+            ?? throw new InvalidOperationException("The staged replay payload is invalid.");
         return new OperationApprovalReplayMapping
         {
-            Request = replay,
+            Request = new OperationRequest { OperationId = operationId, Parameters = payload.Parameters },
             TenantId = payload.TenantId,
             SchemaName = payload.SchemaName,
         };

@@ -105,6 +105,7 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var physicalTable = target.Table;
+        ImportTableOwnership.RefuseReservedStagedTarget(schemaName, physicalTable);
         var existed = await ImportTableOwnership.ExistsAsync(connection, schemaName, physicalTable, cancellationToken).ConfigureAwait(false);
         if (existed)
         {

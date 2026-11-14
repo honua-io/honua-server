@@ -29,6 +29,7 @@ public sealed class OperatorJourneyMcpRosterTests
             ["admin.layer.publish"] = OperationApprovalModel.OperatorGate,
             ["admin.services.access-policy.set"] = OperationApprovalModel.OperatorGate,
             ["dataset.stage.import"] = OperationApprovalModel.OperatorGate,
+            ["dataset.stage.discard"] = OperationApprovalModel.OperatorGate,
         };
 
     [UnitTest]

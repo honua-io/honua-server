@@ -41,6 +41,35 @@ internal static class ImportedDatasetSpatialMetadata
         }
     }
 
+    // The importer and publisher table lock, held until the caller's transaction ends.
+    internal static async Task AcquireTransactionLockAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, string schema, string table,
+        CancellationToken cancellationToken)
+    {
+        await using var advisory = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended(@lock_key, 0))", connection, transaction);
+        advisory.CommandTimeout = 0;
+        advisory.Parameters.AddWithValue("lock_key", TargetLockKey(schema, table));
+        await advisory.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    internal static async Task DeleteTableFactsAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, string metadataSchema,
+        (string Schema, string Table) target, CancellationToken cancellationToken)
+    {
+        if (!await IsAvailableAsync(connection, transaction, metadataSchema, cancellationToken))
+        {
+            return;
+        }
+
+        await using var command = new NpgsqlCommand(
+            $"DELETE FROM {RegistryTable(metadataSchema)} WHERE schema_name = @schema AND table_name = @table",
+            connection, transaction);
+        command.Parameters.AddWithValue("schema", target.Schema);
+        command.Parameters.AddWithValue("table", target.Table);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     internal static async Task LockRelationAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, string schema, string table,
         CancellationToken cancellationToken)

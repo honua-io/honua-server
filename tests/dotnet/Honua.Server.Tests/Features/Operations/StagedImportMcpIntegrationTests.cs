@@ -41,7 +41,7 @@ public sealed class StagedImportMcpIntegrationTests(RedisFixture redis)
     [IntegrationTest]
     [Operation(Operations.Import)]
     [Endpoint("POST /mcp")]
-    public async Task AgentProposal_ImportsOnlyAfterHumanApproval_AndNonAdminIsRefused()
+    public async Task AgentProposals_ImportAndDiscardOnlyAfterHumanApproval_AndNonAdminIsRefused()
     {
         var artifact = FeatureCollectionArtifact.BuildDataUri(Encoding.UTF8.GetBytes(GeoJson));
         var fixture = CreateFixture(artifact);
@@ -59,12 +59,16 @@ public sealed class StagedImportMcpIntegrationTests(RedisFixture redis)
             var physicalTable = handle.GetProperty("result").GetProperty("details").GetProperty("physicalTable").GetString()!;
             physicalTable.Should().Be("imported_" + stagingTable, "the import lands in the previewed server-owned table");
             (await RowCountAsync(fixture, schema, physicalTable)).Should().Be(1, handle.GetRawText());
+            await ProposeAndApproveDiscardAsync(fixture, agent, schema, physicalTable);
 
             using var admin = fixture.CreateAdminClient();
             using var reader = await ReaderClientAsync(fixture, admin);
             var denied = await CallAsync(reader, "honua_op_dataset_stage_preview", Arguments(schema, artifact, "intent-denied"));
             denied.GetRawText().Should().Contain("permission_denied");
             denied.GetRawText().Should().NotContain("previewFingerprint");
+            var deniedDiscard = await CallAsync(reader, "honua_op_dataset_stage_discard",
+                new Dictionary<string, object?> { ["intentId"] = "intent-staged", ["schema"] = schema });
+            deniedDiscard.GetRawText().Should().Contain("permission_denied");
         }
         finally
         {
@@ -91,6 +95,18 @@ public sealed class StagedImportMcpIntegrationTests(RedisFixture redis)
                 services.RemoveAll<IGeoprocessingJobService>();
                 services.AddSingleton(jobs);
             });
+    }
+
+    private static async Task ProposeAndApproveDiscardAsync(
+        WebAppFixture fixture, HttpClient agent, string schema, string physicalTable)
+    {
+        var discardId = await CallProposalAsync(agent, "honua_op_dataset_stage_discard",
+            new Dictionary<string, object?> { ["intentId"] = "intent-staged", ["schema"] = schema });
+        (await RowCountAsync(fixture, schema, physicalTable)).Should().Be(1, "a discard proposal must not drop");
+        var discarded = await HumanApprovedOperation.ApproveAndReadHandleAsync(fixture, discardId);
+        discarded.GetProperty("result").GetProperty("details").GetProperty("outcome").GetString()
+            .Should().Be("discarded", discarded.GetRawText());
+        (await RowCountAsync(fixture, schema, physicalTable)).Should().BeNull("the approved discard drops the staging table");
     }
 
     private static async Task<(string ProposalId, string StagingTable)> PreviewAndProposeAsync(

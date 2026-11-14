@@ -30,6 +30,8 @@ public sealed partial class RuntimeDdlGovernanceTests
                 new(RuntimeDdlCategory.ExtensionBootstrap, 1, "PostgresDatabaseCompatibilityChecker runs one idempotent CREATE EXTENSION IF NOT EXISTS postgis in the startup preflight, which precedes the migrations, so a fresh database that ships the PostGIS packages can boot (#6488). It creates no Honua table or schema; migration 043 issues the same statement."),
             ["src/Honua.Db/Postgres/Features/GeometryService/PostgresGeometryOperationService.cs"] =
                 new(RuntimeDdlCategory.SessionTemporaryFunction, 3, "PostgresGeometryOperationService owns three fixed-name pg_temp geodesic helpers on its leased connection; pool reset or session termination discards them. No persistent schema is modified."),
+            ["src/Honua.Db/Postgres/Features/FileImport/PostgresServerJobArtifactImportLedger.Discard.cs"] =
+                new(RuntimeDdlCategory.GeneratedImportTarget, 1, "Staged-import discard drops only the importer-owned table named by one committed create-only receipt. It takes the import/publish table lock, checks for a published layer, then takes the ownership lock, and spends the receipt in the same transaction (#7632)."),
             ["src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.FreshPromotion.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 5, "Create-only import renames its own uniquely named staging table, key, indexes and sequence to the fresh target inside the promotion transaction. The target must not exist; it never renames core schema or customer tables (#7607)."),
             ["src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService.FreshStaging.cs"] =

@@ -129,6 +129,13 @@ public sealed record ImportRequest
         {
             throw new InvalidOperationException("Upsert load mode requires at least one key column.");
         }
+
+        // Only create-only staging may write a server-derived staged table name.
+        if (EffectiveLoadMode != ImportLoadMode.CreateOnly && StagedImportTableNames.IsReservedLogical(TableName))
+        {
+            throw new InvalidOperationException(
+                "Table names of the form 'staged_<24 hex>' are reserved for server-owned staged imports.");
+        }
     }
 
     public bool UsesCloudStorage => !string.IsNullOrWhiteSpace(CloudFileId);

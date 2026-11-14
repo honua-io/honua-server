@@ -26,6 +26,8 @@ internal static class StagedImportOperation
 
     public const string ImportOperationId = "dataset.stage.import";
 
+    public const string DiscardOperationId = "dataset.stage.discard";
+
     public const string PreviewFingerprintParameter = "previewFingerprint";
 
     internal static readonly TimeSpan ApprovalWindow = TimeSpan.FromMinutes(30);
@@ -48,12 +50,19 @@ internal static class StagedImportOperation
             SideEffect = OperationSideEffectClass.MutatesData,
             Extra = [RequiredParameter(PreviewFingerprintParameter)],
         }),
+        Descriptor(new DescriptorSpec(DiscardOperationId, "Discard an unpublished staged import",
+            "Drops the server-owned staging table of one approved staged import and spends its receipt. Refuses a published or referenced table.")
+        {
+            Approval = OperationApprovalModel.OperatorGate,
+            SideEffect = OperationSideEffectClass.DestroysState,
+            Inputs = [RequiredParameter("intentId"), RequiredParameter("schema")],
+        }),
     ];
 
     // The server owns the destination: callers cannot name, reuse or overwrite a table.
     public static string DestinationTable(string tenantId, string actorId, string intentId)
-        => "staged_" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
-            string.Join("\n", "staged-import/v1", tenantId, actorId, intentId))))[..24];
+        => StagedImportTableNames.Prefix + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+            string.Join("\n", "staged-import/v1", tenantId, actorId, intentId))))[..StagedImportTableNames.HashLength];
 
     public static ServerJobArtifactImportCommand ParseCommand(OperationRequest request, string tenantId, string actorId)
     {
@@ -114,6 +123,7 @@ internal static class StagedImportOperation
         public required OperationApprovalModel Approval { get; init; }
         public required OperationSideEffectClass SideEffect { get; init; }
         public IReadOnlyList<OperationParameterDescriptor> Extra { get; init; } = [];
+        public IReadOnlyList<OperationParameterDescriptor>? Inputs { get; init; }
     }
 
     private static OperationDescriptor Descriptor(DescriptorSpec spec) => new()
@@ -132,7 +142,7 @@ internal static class StagedImportOperation
             Determinism = OperationDeterminism.RuntimeDynamic,
             SupportsDryRun = false,
         },
-        InputSchema =
+        InputSchema = spec.Inputs ??
         [
             .. SourceParameters.Select(RequiredParameter),
             OptionalParameter("sourceSrid"),
@@ -155,6 +165,14 @@ internal static class StagedImportOperation
             Type = name is "targetSrid" or "sourceSrid" ? WorkflowSchemaValueType.WholeNumber : WorkflowSchemaValueType.Text,
         },
     };
+
+    // A SQL identifier the importer accepts; rejected before it reaches an approval summary.
+    internal static string RequireIdentifier(OperationRequest request, string name)
+    {
+        var value = Required(request, name);
+        ServerJobArtifactImporter.RequireIdentifier(value, name);
+        return value;
+    }
 
     internal static string Required(OperationRequest request, string name)
         => request.Parameters.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)

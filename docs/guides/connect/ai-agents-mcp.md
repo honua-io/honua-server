@@ -106,7 +106,7 @@ every tool call still requires its usual authorization.
 
 Give an agent its own key with the `agent` grant, never the bootstrap admin password or a full-admin key. Every call on `/mcp` is treated as an agent call whatever key it carries, and so is any request made with an `agent`-grant key. For an agent caller:
 
-- An access-policy change, a staged dataset import or a publish (`honua_admin_services_access_policy_set`, `honua_op_dataset_stage_import`, `honua_admin_layer_publish`, `honua_publish_service`, or the same operations through `POST /api/v1/operations/{operationId}/submit`) does not execute. It files a proposal and returns `status: "RequiresApproval"` with its `proposalId`. A person approves it in Console **Approvals**; see [approve an agent-proposed change](../secure/approve-agent-changes.md).
+- An access-policy change, a staged dataset import or discard, or a publish (`honua_admin_services_access_policy_set`, `honua_op_dataset_stage_import`, `honua_op_dataset_stage_discard`, `honua_admin_layer_publish`, `honua_publish_service`, or the same operations through `POST /api/v1/operations/{operationId}/submit`) does not execute. It files a proposal and returns `status: "RequiresApproval"` with its `proposalId`. A person approves it in Console **Approvals**; see [approve an agent-proposed change](../secure/approve-agent-changes.md).
 - The administrator exemption from approval does not apply, even when the key also carries `admin` or `admin:write`. A direct admin REST call to change an access policy or publish a layer is refused with `type: "urn:honua:approval-required"`, and the message says how to submit the change for approval.
 - A Studio publication an agent requests is a proposal too, even when the caller is an administrator.
 - Some changes are refused for an agent and must be made by a person in Console: a layer's access settings, enabling, disabling or refreshing a layer, role permissions, OAuth scopes, and publishing, republishing or rolling back Console content publications or changing their sharing.
@@ -230,7 +230,7 @@ Import a completed job artifact in two steps, without touching an existing table
    - the content SHA-256, feature count, source CRS and target SRID;
    - the server-owned `stagingTable`.
 
-   You cannot name the table. It is derived from your tenant, your identity and the `intentId`, and a request that supplies `table` is refused.
+   You cannot name the table. It is derived from your tenant, your identity and the `intentId`, and a request that supplies `table` is refused. Staging table names of this exact form (`staged_` and 24 hex characters) are reserved: file imports refuse them, and other importers cannot replace such a table.
 2. `honua_op_dataset_stage_import` (`dataset.stage.import`) takes the same inputs plus `previewFingerprint`. The server previews the artifact again and refuses the call if anything changed since your preview. It then seals the binding into the request with a 30-minute approval window. Clients cannot supply the binding.
 
 For an agent the import files a proposal and returns `RequiresApproval`. Nothing is imported until a person approves it. On approval, the import:
@@ -240,7 +240,7 @@ For an agent the import files a proposal and returns `RequiresApproval`. Nothing
 - creates a new table and never appends to or overwrites one;
 - refuses an expired window, changed artifact content, or a different tenant or requester.
 
-Both tools need admin write (import) authority; the approving person needs it too. OAuth-scoped agent tokens cannot call them yet. Within one approved proposal, a retried execution returns the original receipt; after the approval window, preview and propose again. Discarding a staged table is not available yet; until it is, a person removes an unpublished staging table.
+Both tools need admin write (import) authority; the approving person needs it too. OAuth-scoped agent tokens cannot call them yet. Within one approved proposal, a retried execution returns the original receipt; after the approval window, preview and propose again. To undo before publishing, `honua_op_dataset_stage_discard` (`dataset.stage.discard`) takes the same `intentId` and `schema`. It needs the same approval and drops only that import's server-owned table and spends its receipt; a later import uses a new `intentId` and a new preview. It refuses a table that is published or that another database object depends on, and it reports `not-found` when nothing remains.
 
 ### Apply a catalog style
 

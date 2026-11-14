@@ -36,6 +36,7 @@ internal static class McpInputDescriptions
         ("dataset.stage.preview", "targetSrid"), ("dataset.stage.preview", "sourceSrid"),
         ("dataset.stage.import", "intentId"), ("dataset.stage.import", "schema"),
         ("dataset.stage.import", "targetSrid"), ("dataset.stage.import", "sourceSrid"),
+        ("dataset.stage.discard", "intentId"), ("dataset.stage.discard", "schema"),
     ];
 
     internal static string Describe(string operationId, string parameter, string description)

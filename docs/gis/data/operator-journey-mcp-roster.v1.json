@@ -172,6 +172,15 @@
         "targetId",
         "targetSrid"
       ]
+    },
+    {
+      "toolName": "honua_op_dataset_stage_discard",
+      "operationId": "dataset.stage.discard",
+      "mode": "execute",
+      "inputFields": [
+        "intentId",
+        "schema"
+      ]
     }
   ]
 }

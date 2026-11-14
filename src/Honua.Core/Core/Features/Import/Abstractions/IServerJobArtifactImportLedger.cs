@@ -37,6 +37,33 @@ internal interface IServerJobArtifactImportLedger
         ServerJobArtifactImportScope scope,
         Func<IServerJobArtifactImportAttempt, CancellationToken, Task<ServerJobArtifactImportReceipt>> import,
         CancellationToken cancellationToken);
+
+    // Drops the server-owned table of one committed staged import and forgets its receipt.
+    Task<StagedImportDiscardOutcome> DiscardStagedAsync(
+        StagedImportDiscardRequest request,
+        CancellationToken cancellationToken);
+}
+
+// Table is the server-derived staging name; a receipt for any other table is never discarded.
+internal sealed record StagedImportDiscardRequest(
+    string TenantId,
+    string ActorId,
+    string IntentId,
+    string Schema,
+    string Table);
+
+internal enum StagedImportDiscardOutcome
+{
+    Discarded,
+
+    // No committed staged import for this tenant, requester and intent (including after a discard).
+    NotFound,
+
+    // A published layer or a database object depends on the table.
+    Referenced,
+
+    // The table exists but does not carry the importer ownership marker.
+    NotOwned,
 }
 
 internal interface IServerJobArtifactImportAttempt

@@ -15,13 +15,15 @@ namespace Honua.Db.Postgres.Features.FileImport;
 /// Catalog receipt for job-artifact imports. A session advisory lock covers the attempt.
 /// The committed update runs on the import transaction, not on this connection.
 /// </summary>
-internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifactImportLedger
+internal sealed partial class PostgresServerJobArtifactImportLedger : IServerJobArtifactImportLedger
 {
     private const string Reserved = "reserved";
     private const string Committed = "committed";
 
     private readonly NpgsqlDataSource _dataSource;
     private readonly string _table;
+    private readonly string _layersTable;
+    private readonly string _metadataSchema;
     private readonly PostgresSessionLockConnections _sessionLockConnections;
 
     internal PostgresServerJobArtifactImportLedger(
@@ -34,6 +36,8 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         _dataSource = dataSource;
         _sessionLockConnections = sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled;
         _table = SchemaSearchPath.QualifyTable("job_artifact_import_receipt", schema.MetadataSchema);
+        _layersTable = SchemaSearchPath.QualifyTable("layers", schema.MetadataSchema);
+        _metadataSchema = schema.MetadataSchema;
     }
 
     public async Task<ServerJobArtifactImportReceipt> GetOrImportAsync(
@@ -45,8 +49,16 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         ArgumentNullException.ThrowIfNull(import);
         RequireScope(scope);
         var scopeKey = ScopeKey(scope);
-        // The attempt holds a session advisory lock. On Lambda the connection is unpooled, so
-        // closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        return await WithScopeLockAsync(scopeKey,
+            connection => GetOrImportLockedAsync(connection, scope, scopeKey, import, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    // One import scope at a time: import and discard share the session advisory lock. On Lambda the
+    // connection is unpooled, so closing it ends the RDS Proxy-pinned session (honua-server#6765).
+    private async Task<T> WithScopeLockAsync<T>(
+        string scopeKey, Func<NpgsqlConnection, Task<T>> body, CancellationToken cancellationToken)
+    {
         await using var connection = await _sessionLockConnections.OpenAsync(_dataSource, cancellationToken)
             .ConfigureAwait(false);
         if (!await TryLockAsync(connection, scopeKey, cancellationToken).ConfigureAwait(false))
@@ -56,20 +68,18 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
 
         try
         {
-            return await GetOrImportLockedAsync(connection, scope, scopeKey, import, cancellationToken)
-                .ConfigureAwait(false);
+            return await body(connection).ConfigureAwait(false);
         }
         finally
         {
-            // Disconnect also releases the session lock. A failed unlock must not hide the receipt.
+            // Disconnect also releases the session lock. A failed unlock must not hide the outcome.
             try
             {
                 await UnlockAsync(connection, scopeKey, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
-                // The receipt is already decided. A failed unlock must not replace it.
-                // The next attempt takes over a reserved row when the session is gone.
+                // The outcome is already decided. The next attempt takes over a reserved row when the session is gone.
                 Trace.TraceWarning(
                     "Job artifact import left its session lock for takeover: {0}",
                     exception.GetType().Name);
@@ -386,10 +396,10 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
     }
 
     private static string ScopeKey(ServerJobArtifactImportScope scope)
-    {
-        var text = scope.TenantId + "\n" + scope.ActorId + "\n" + scope.IntentId;
-        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
-    }
+        => ScopeKey(scope.TenantId, scope.ActorId, scope.IntentId);
+
+    private static string ScopeKey(string tenantId, string actorId, string intentId)
+        => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(tenantId + "\n" + actorId + "\n" + intentId)));
 
     private static void RequireScope(ServerJobArtifactImportScope scope)
     {

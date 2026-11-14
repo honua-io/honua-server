@@ -187,7 +187,7 @@ public sealed class McpRegistryCompositionTests
     public async Task ProductionOperationsComposition_ByDefault_PublishesExactlyTheAuditedAdminProjection()
     {
         const int ExpectedManifestTools = 72;
-        const int ExpectedRosterAdditions = 10;
+        const int ExpectedRosterAdditions = 11;
         const int ExpectedPublishedTools = ExpectedManifestTools + ExpectedRosterAdditions;
         const int ExpectedExclusions = 18;
         const string ExpectedExclusionDigest = "4b8e74902239822013532dac7eb7cae22e9c47e5c297ebb36741b27be7090196";
@@ -229,6 +229,7 @@ public sealed class McpRegistryCompositionTests
             "honua_admin_import_upload_object",
             "honua_admin_import_upload_url",
             "honua_admin_server_status",
+            "honua_op_dataset_stage_discard",
             "honua_op_dataset_stage_import",
             "honua_op_dataset_stage_preview",
         };

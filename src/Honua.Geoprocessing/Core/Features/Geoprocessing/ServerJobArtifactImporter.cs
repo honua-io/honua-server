@@ -33,6 +33,11 @@ internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactIm
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, (string Fingerprint, ServerJobArtifactImportReceipt Receipt)> _entries = new(StringComparer.Ordinal);
 
+    // The process-local ledger owns no tables, so it cannot prove or perform a discard.
+    public Task<StagedImportDiscardOutcome> DiscardStagedAsync(
+        StagedImportDiscardRequest request, CancellationToken cancellationToken)
+        => throw new GeoprocessingPreconditionFailedException("Discarding a staged import requires the durable import ledger.");
+
     public async Task<ServerJobArtifactImportReceipt> GetOrImportAsync(
         ServerJobArtifactImportScope scope,
         Func<IServerJobArtifactImportAttempt, CancellationToken, Task<ServerJobArtifactImportReceipt>> import,
@@ -442,7 +447,7 @@ internal static partial class ServerJobArtifactImporter
         }
     }
 
-    private static void RequireIdentifier(string value, string name)
+    internal static void RequireIdentifier(string value, string name)
     {
         if (value.Length is < 1 or > 63
             || !char.IsAsciiLetter(value[0]) && value[0] != '_'
