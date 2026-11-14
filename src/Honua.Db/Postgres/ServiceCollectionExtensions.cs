@@ -1031,7 +1031,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.IImportedTileCacheReader,
             Honua.Db.Postgres.Features.TileCachePackage.PostgresImportedTileCacheReader>();
 
-        services.AddScoped<IOgcTileCacheExportService>(serviceProvider =>
+        services.AddScoped<OgcTileCacheExportService>(serviceProvider =>
         {
             var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
             return new OgcTileCacheExportService(

@@ -16,7 +16,7 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddImportSuggestionsCore(this IServiceCollection services)
     {
-        services.TryAddSingleton<IGeoServicesConstructCapabilityRegistry>(
+        services.TryAddSingleton<GeoServicesConstructCapabilityRegistry>(
             _ => new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors));
         services.TryAddScoped<IFileFormatDetectionService, FileFormatDetectionService>();
         services.TryAddSingleton<IImportSchemaSuggestionService, ImportSchemaSuggestionService>();
@@ -49,14 +49,14 @@ public static class ServiceCollectionExtensions
                 client.Timeout = TimeSpan.FromMinutes(10);
             },
             configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
-        services.TryAddScoped<IOgcCoverageImportService>(serviceProvider =>
+        services.TryAddScoped<OgcCoverageImportService>(serviceProvider =>
             serviceProvider.GetRequiredService<OgcCoverageImportService>());
 
         // Legacy WCS coverage import service (issue #1030 slice 3). The WCS
         // service wraps the slice-2 coverage import pipeline — no separate
         // HttpClient is needed because the underlying service handles all
         // wire IO. Format negotiation and inventory downgrades happen in-process.
-        services.TryAddScoped<IOgcWcsImportService, OgcWcsImportService>();
+        services.TryAddScoped<OgcWcsImportService>();
 
         // Default in-memory evidence store for ArcGIS migration runs. Postgres composition
         // root replaces this with a durable implementation; tests rely on this default to

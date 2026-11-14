@@ -131,7 +131,7 @@ internal static partial class OgcWcsImportEndpoints
 
         try
         {
-            var service = context.RequestServices.GetRequiredService<IOgcWcsImportService>();
+            var service = context.RequestServices.GetRequiredService<OgcWcsImportService>();
             var result = await service.ImportAsync(importRequest, cancellationToken).ConfigureAwait(false);
 
             await Results.Json(result, OgcWcsImportJsonContext.Default.OgcWcsImportResult)

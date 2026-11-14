@@ -135,7 +135,7 @@ internal static partial class OgcCoverageImportEndpoints
 
         try
         {
-            var service = context.RequestServices.GetRequiredService<IOgcCoverageImportService>();
+            var service = context.RequestServices.GetRequiredService<OgcCoverageImportService>();
             var result = await service.ImportAsync(importRequest, cancellationToken).ConfigureAwait(false);
 
             await Results.Json(result, OgcCoverageImportJsonContext.Default.OgcCoverageImportResult)

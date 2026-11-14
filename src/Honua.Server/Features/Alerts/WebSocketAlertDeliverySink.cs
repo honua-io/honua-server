@@ -43,10 +43,10 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
         }
     }
 
-    public IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler)
+    public Subscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler)
         => Subscribe(handler, null);
 
-    public IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options)
+    public Subscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options)
     {
         ArgumentNullException.ThrowIfNull(handler);
 
@@ -104,7 +104,7 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
         DateTimeOffset ConnectedAt,
         string? ClientLabel);
 
-    private sealed class Subscription : IAlertNotificationSubscription
+    internal sealed class Subscription : IDisposable
     {
         private readonly InMemoryAlertNotificationBroadcaster _broadcaster;
         private readonly Guid _id;

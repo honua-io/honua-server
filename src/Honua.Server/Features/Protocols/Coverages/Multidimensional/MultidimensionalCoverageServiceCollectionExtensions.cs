@@ -12,7 +12,7 @@ internal static class MultidimensionalCoverageServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddSingleton<IMultidimensionalCoverageMetadataReader, NotEnabledMultidimensionalCoverageMetadataReader>();
+        services.AddSingleton<NotEnabledMultidimensionalCoverageMetadataReader>();
         return services;
     }
 }

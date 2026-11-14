@@ -19,7 +19,7 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
+public sealed partial class OgcCoverageImportService
 {
     private const string GeoTiffFormat = "GeoTIFF";
     private const string CogFormat = "CloudOptimizedGeoTIFF";

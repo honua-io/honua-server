@@ -126,7 +126,7 @@ internal static partial class OgcTileCacheExportEndpoints
             };
         }
 
-        var exportService = context.RequestServices.GetRequiredService<IOgcTileCacheExportService>();
+        var exportService = context.RequestServices.GetRequiredService<OgcTileCacheExportService>();
 
         OgcTileCacheExportResult result;
         try

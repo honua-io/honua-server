@@ -43,7 +43,7 @@ internal static class ProcessMigrationEvidenceClassifier
 
     // Single shared registry instance built from the same descriptor set the DI
     // container seeds, so the static GP classifier resolves identical verdicts.
-    private static readonly IGeoServicesConstructCapabilityRegistry Registry =
+    private static readonly GeoServicesConstructCapabilityRegistry Registry =
         new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors);
 
     public static ProcessMigrationEvidenceClassification Classify(ProcessDefinition definition)
@@ -51,7 +51,7 @@ internal static class ProcessMigrationEvidenceClassifier
 
     public static ProcessMigrationEvidenceClassification Classify(
         ProcessDefinition definition,
-        IGeoServicesConstructCapabilityRegistry registry)
+        GeoServicesConstructCapabilityRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(registry);

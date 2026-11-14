@@ -7,7 +7,7 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Core.Features.Raster.Multidimensional.Services;
 
-public sealed class NotEnabledMultidimensionalCoverageMetadataReader : IMultidimensionalCoverageMetadataReader
+public sealed class NotEnabledMultidimensionalCoverageMetadataReader
 {
     public IReadOnlyList<MultidimensionalCoverageFormat> SupportedFormats => Array.Empty<MultidimensionalCoverageFormat>();
 
