@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Caching;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -20,15 +21,52 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]
-public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
+public sealed class AdminLayerDisplaySpatialTests
+    : IClassFixture<AdminLayerDisplaySpatialTests.SeededHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureWebHost(builder => builder.UseEnvironment("Test")
-            .UseSetting("HONUA_DEV_AUTH", "false")
-            .UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword));
+    private readonly SeededHost _host;
+    private readonly WebAppFixture _fixture;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public AdminLayerDisplaySpatialTests(SeededHost host)
+    {
+        _host = host;
+        _fixture = host.Application;
+    }
+
+    public Task InitializeAsync() => _host.RestoreSeededStateAsync();
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    // Cases write layer metadata into the metadata graph, so one host serves the class. Before each
+    // case it restores the seeded graph under a new revision and evicts the cached service and
+    // layer metadata, so no case sees an earlier case's writes or cached responses.
+    public sealed class SeededHost : IAsyncLifetime
+    {
+        private MetadataV2Graph? _seeded;
+
+        public WebAppFixture Application { get; } = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseEnvironment("Test")
+                .UseSetting("HONUA_DEV_AUTH", "false")
+                .UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword));
+
+        public async Task InitializeAsync()
+        {
+            await Application.InitializeAsync();
+            _seeded = Application.GetCurrentV2GraphSnapshot().Graph;
+        }
+
+        public Task RestoreSeededStateAsync()
+        {
+            var seeded = _seeded ?? throw new InvalidOperationException("The host must be initialized first.");
+            var revision = Application.GetCurrentV2GraphSnapshot().Graph.Revision + 1;
+            ((TestMetadataV2GraphProvider)Application.GetService<IMetadataV2GraphProvider>())
+                .SetGraph(seeded with { Revision = revision }, schema: Application.CurrentSchema);
+            return Application.GetService<OutputCacheInvalidationService>()
+                .InvalidateServiceCatalogAsync(serviceId: null, layerIds: null, CancellationToken.None);
+        }
+
+        public Task DisposeAsync() => Application.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/display")]
