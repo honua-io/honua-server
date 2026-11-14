@@ -80,17 +80,22 @@ public sealed class DevelopmentPublicationAuditTests
                 Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
             var operationId = handle.GetProperty("operationInstanceId").GetString();
             operationId.Should().NotBeNullOrWhiteSpace();
-            using var response = await admin.GetAsync($"/api/v1/admin/observability/audit?resourceId={Uri.EscapeDataString(operationId!)}&action=operation.completed");
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var audit = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var events = audit.RootElement.GetProperty("items").EnumerateArray().ToArray();
-            events.Should().ContainSingle();
-            events[0].GetProperty("actor").GetString().Should().StartWith("apikey:api-key:");
-            events[0].GetProperty("timestamp").GetDateTimeOffset().Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2));
+            await AssertAuditAsync(admin, operationId!);
         }
         finally
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static async Task AssertAuditAsync(HttpClient admin, string operationId)
+    {
+        using var response = await admin.GetAsync($"/api/v1/admin/observability/audit?resourceId={Uri.EscapeDataString(operationId)}&action=operation.completed");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var audit = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var events = audit.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        events.Should().ContainSingle();
+        events[0].GetProperty("actor").GetString().Should().StartWith("apikey:api-key:");
+        events[0].GetProperty("timestamp").GetDateTimeOffset().Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2));
     }
 }
