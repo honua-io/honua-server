@@ -81,15 +81,15 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
             return false;
         }
 
-        return TrySelectArea(candidates, new DatumAreaEnvelope(west, south, east, north), out selection);
+        selection = SelectArea(candidates, new DatumAreaEnvelope(west, south, east, north));
+        return selection is not null;
     }
 
-    private static bool TrySelectArea(
+    private static DatumTransformationSelection? SelectArea(
         IReadOnlyList<AreaCandidate> candidates,
-        DatumAreaEnvelope envelope,
-        [NotNullWhen(true)] out DatumTransformationSelection? selection)
+        DatumAreaEnvelope envelope)
     {
-        selection = null;
+        DatumTransformationSelection? selection = null;
         int? priority = null;
         foreach (var candidate in candidates)
         {
@@ -105,15 +105,14 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
 
             if (selection is not null)
             {
-                selection = null;
-                return false;
+                return null;
             }
 
             selection = candidate.Selection;
             priority = candidate.Priority;
         }
 
-        return selection is not null;
+        return selection;
     }
 
     private static bool CoversEnvelope(AreaCandidate candidate, DatumAreaEnvelope envelope)
