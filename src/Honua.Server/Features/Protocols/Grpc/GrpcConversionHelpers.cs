@@ -107,13 +107,14 @@ internal static class GrpcConversionHelpers
 
     public static FeatureEditBatch ToFeatureEditBatch(Proto.ApplyEditsRequest request)
     {
+        GrpcGlobalIds.EnsureSelectorMode(request);
         var creates = request.Adds.Count == 0
             ? ImmutableArray<Feature>.Empty
             : request.Adds.Select(feature => ToDomainFeature(feature, requireId: false)).ToImmutableArray();
 
         var updates = request.Updates.Count == 0
             ? ImmutableArray<Feature>.Empty
-            : request.Updates.Select(feature => ToDomainFeature(feature, requireId: true)).ToImmutableArray();
+            : request.Updates.Select(feature => ToDomainFeature(feature, requireId: !request.UseGlobalIds)).ToImmutableArray();
 
         var deletes = request.Deletes.Count == 0
             ? ImmutableArray<long>.Empty
@@ -196,9 +197,14 @@ internal static class GrpcConversionHelpers
         bool includeGeometry = true,
         GeometryLimits? geometryLimits = null,
         string? objectIdFieldName = null,
-        IReadOnlySet<string>? hiddenFields = null)
+        IReadOnlySet<string>? hiddenFields = null,
+        string? globalIdFieldName = null)
     {
-        var proto = new Proto.Feature { Id = feature.Id };
+        var proto = new Proto.Feature
+        {
+            Id = feature.Id,
+            GlobalId = GrpcGlobalIds.Read(feature.Attributes, globalIdFieldName) ?? string.Empty
+        };
 
         foreach (var (key, value) in feature.Attributes)
         {
@@ -349,7 +355,21 @@ internal static class GrpcConversionHelpers
                 av.Int32Value = s;
                 break;
             case decimal dec:
+                // Metadata declares numeric columns as double; decimal_value is reserved
+                // for a declared exact-decimal field type, which metadata does not have yet.
                 av.DoubleValue = (double)dec;
+                break;
+            case DateOnly date:
+                return GrpcTypedValues.FromDate(date);
+            case TimeOnly time:
+                return GrpcTypedValues.FromTime(time);
+            case TimeSpan span when span >= TimeSpan.Zero && span < TimeSpan.FromDays(1):
+                return GrpcTypedValues.FromTime(TimeOnly.FromTimeSpan(span));
+            case Guid guid:
+                av.StringValue = guid.ToString("D");
+                break;
+            case IFormattable formattable:
+                av.StringValue = formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture);
                 break;
             default:
                 av.StringValue = value.ToString() ?? string.Empty;
@@ -397,6 +417,11 @@ internal static class GrpcConversionHelpers
             Proto.AttributeValue.ValueOneofCase.BoolValue => value.BoolValue,
             Proto.AttributeValue.ValueOneofCase.DatetimeValue => DateTimeOffset.FromUnixTimeMilliseconds(value.DatetimeValue).UtcDateTime,
             Proto.AttributeValue.ValueOneofCase.BytesValue => value.BytesValue.ToByteArray(),
+            Proto.AttributeValue.ValueOneofCase.DateValue => GrpcTypedValues.ParseDate(value.DateValue),
+            Proto.AttributeValue.ValueOneofCase.TimeValue => GrpcTypedValues.ParseTime(value.TimeValue),
+            Proto.AttributeValue.ValueOneofCase.TimestampOffsetValue
+                => GrpcTypedValues.ParseTimestampOffset(value.TimestampOffsetValue),
+            Proto.AttributeValue.ValueOneofCase.DecimalValue => GrpcTypedValues.ParseDecimal(value.DecimalValue),
             _ => null
         };
     }
@@ -465,7 +490,8 @@ internal static class GrpcConversionHelpers
         var proto = new Proto.EditResult
         {
             Success = result.IsSuccess,
-            ObjectId = result.ObjectId ?? 0
+            ObjectId = result.ObjectId ?? 0,
+            GlobalId = result.GlobalId is { Length: > 0 } globalId ? GrpcGlobalIds.Normalize(globalId) : string.Empty
         };
 
         if (!result.IsSuccess)
