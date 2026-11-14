@@ -820,7 +820,7 @@ public static class MetadataV2GraphValidator
 
     private static void ValidateServices(
         List<string> errors,
-        IEnumerable<MetadataV2Service> services,
+        IReadOnlyList<MetadataV2Service> services,
         Dictionary<string, MetadataV2Layer> publicationsById)
     {
         // Service→publications is now derived from publication.ServiceId only;
