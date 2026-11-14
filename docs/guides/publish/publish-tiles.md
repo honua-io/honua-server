@@ -45,6 +45,8 @@ Run `GET /api/v1/admin/tile-operations/jobs/{jobId}`, substituting the id from s
 
 List jobs with `GET .../jobs?activeOnly=true`, cancel with `POST .../jobs/{jobId}/cancel`, retry failed/cancelled jobs with `POST .../jobs/{jobId}/retry` (retry creates a new job id with the original parameters).
 
+A tile job is a job in the server's PostgreSQL database. It runs once, on whichever server claims it, and still runs if the server that accepted it stops. Tile jobs queued or running before an upgrade to this release are not carried over: they cannot be cancelled or retried, and they disappear from the job list within 24 hours. Submit those operations again.
+
 ### 4. Invalidate after data changes
 
 Run `POST /api/v1/admin/tile-operations/jobs` with `{"operation":"invalidate","layerId":1}`.
