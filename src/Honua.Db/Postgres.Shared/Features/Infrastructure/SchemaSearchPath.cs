@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using Honua.Core.Queries.Filters;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
@@ -57,7 +58,7 @@ internal static partial class SchemaSearchPath
             throw new InvalidOperationException($"Invalid schema name '{schemaName}'.");
         }
 
-        return QuoteIdentifier(schemaName);
+        return SqlIdentifier.QuoteIdentifier(schemaName);
     }
 
     public static string QualifyTable(string tableName, string? schemaName = null)
@@ -71,12 +72,6 @@ internal static partial class SchemaSearchPath
     // from truncating distinct resource/schema identities onto the same name.
     [GeneratedRegex("\\A[A-Za-z_][A-Za-z0-9_]{0,62}\\z", RegexOptions.CultureInvariant)]
     private static partial Regex SchemaNamePattern();
-
-    private static string QuoteIdentifier(string identifier)
-    {
-        using var commandBuilder = new NpgsqlCommandBuilder();
-        return commandBuilder.QuoteIdentifier(identifier);
-    }
 
     internal static string BuildSearchPathValue(string schemaName)
     {

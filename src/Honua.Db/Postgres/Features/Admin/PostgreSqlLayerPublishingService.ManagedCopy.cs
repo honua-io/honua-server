@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
@@ -82,7 +83,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // Preserve the source identity separately, then make the public primary-ID
         // attribute agree with the managed writer's physical objectid. This is a new
         // publication; attachments and relationships must use this explicit mapping.
-        var featuresTable = $"{QuoteIdentifier(managedSchema)}.\"features\"";
+        var featuresTable = $"{SqlIdentifier.QuoteIdentifier(managedSchema)}.\"features\"";
         var sql = $$"""
             UPDATE {{featuresTable}}
             SET attributes = COALESCE(attributes, '{}'::jsonb)

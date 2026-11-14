@@ -1,8 +1,18 @@
 # CI Gate Model
 
+OData Core is partitioned into `OData Core Endpoints` (the whole
+`ODataEndpointTests` class) and the residual `OData Core` catch-all. Both retain
+the original project, path triggers, tier filters and 29-minute test / 39-minute
+job budgets. Targeted overrides select both children; the coverage validator and
+`test-odata-core-capacity-partition.py` enforce the original inventory exactly
+once, including future methods. This addresses a 29-minute pre-PR capacity
+exhaustion with active output at termination; it does not extend timeouts.
+
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
 > Last updated: 2026-11-12
+
+The shard retry supervisor captures cancellation before spawning a test process. Cancellation received during startup is replayed once the child is available, with bounded escalation for TERM-ignoring descendants. The CI router exercises both TERM and INT during child creation.
 
 ## Tier Definitions
 
@@ -28,7 +38,7 @@ NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory
 
 4. **New checks default to nightly** unless explicitly justified as PR-blocking. Justification requires: deterministic behavior, sub-5-minute runtime, and author-actionable failure messages.
 
-   **Named PR checks — `PR Gate`, `Review Gate`, and Repository hygiene.** Together, `PR Gate` and `Review Gate` remain the required PR lane on `trunk`: unprivileged verification and trusted exact-head admission. Verification uses an affected-scope managed build producer, selected shard consumers, and independent Fast/architecture, format and CI-router jobs. The producer retains the server boot/migration smoke. Fast, architecture and governance verification remain required on PRs and build independently alongside the producer. Native GDAL/PDAL execution proofs and import/export fidelity run in `ci.yml`, whose aggregate requires the runtime-proof job whenever the managed build is selected. `Review Gate` adds no build runner. Repository hygiene publishes `repo-hygiene / Repository hygiene` through the SHA-pinned shared workflow. It deterministically judges added paths against trusted-base policy, has a five-minute job timeout, and reports author-actionable path violations. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
+   **Named PR checks — `PR Gate`, `Review Gate`, and Repository hygiene.** Together, `PR Gate` and `Review Gate` remain the required PR lane on `trunk`: unprivileged verification and trusted exact-head admission. Verification uses an affected-scope managed build producer, selected shard consumers, and independent Fast/architecture, format and CI-router jobs. The producer retains the server boot/migration smoke. Fast, architecture and governance verification remain required on PRs and build independently alongside the producer. Native GDAL/PDAL execution proofs and import/export fidelity run in `ci.yml`, whose aggregate requires the runtime-proof job whenever the managed build is selected. `Review Gate` adds no build runner. Repository hygiene publishes `repo-hygiene / Repository hygiene` through the SHA-pinned shared workflow. The execution-evidence job materializes its checker and tests from the trusted base commit, so older heads need no checker files and PR changes cannot replace the policy. It checks the explicit base/head diff; both this job and shared hygiene must succeed. Shared hygiene deterministically judges added paths against trusted-base policy, has a five-minute job timeout, and reports author-actionable path violations. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
 
 5. **AOT verification is full-CI only until trim debt is retired.** The `AOT Build Verification` job in `ci.yml` runs in the full scheduled/manual integration lane or on PRs explicitly labeled `ci/full`, not on routine PRs or merge-to-trunk pushes, because its current failures are not consistently fast or author-actionable within the default PR lane.
 
@@ -40,9 +50,15 @@ Full CI runs twice daily at `09:23` and `21:23` UTC (01:23 and 13:23 Pacific sta
 
 See [the workflow inventory](workflow-inventory.md#neutral-automation-helpers)
 for helper check names and queue policy. Helper completion does not grant
-admission: drafts retain pending `Review Gate` status, blocking reviews retain
-failure, and real attestation/API errors fail. Superseded normalization producers
+admission: draft helpers skip without publishing success; `ready_for_review`
+re-enters attestation. Blocking reviews retain failure, and real attestation/API
+errors fail. Review helpers cancel superseded events per PR and re-read live
+review/admission state before acting. Superseded normalization producers
 and consumers exit neutrally before producing data or mutating a branch.
+
+Completions without a PR number use an isolated resolver group per run; once resolved, publication cancels older work by PR number. An unresolvable completion cannot cancel a resolver for another run.
+
+Review event ordering is not guaranteed. A late old-head event reconciles the current live PR head after cancelling an older resolver. Draft conversion retains a lightweight cancellation path into the shared attestation group; the live draft is then shed before checkout or status publication. Other draft pull-request payloads skip resolution.
 
 ## Verification stages
 
@@ -54,8 +70,8 @@ earlier one could not.
 |---|---|---|---|---|
 | **0 Pre-PR** | Author, before opening or pushing | `scripts/ci/pre-pr-check.sh` (local) | Affected build, Fast tests and affected shards on the author's machine | No; the PR template asks for the result |
 | **1 PR gate** | `pull_request` | `pr-gate.yml`, `review-gate.yml`, `repo-hygiene.yml` | Affected-scope build, selected shards, Fast/architecture, format, router validation, exact-head review | Yes: `PR Gate`, `Review Gate`, Repository hygiene |
-| **2 Pre-merge** | Trunk moves under an open PR | `pr-sync-doctor.md` and the fleet lander | A behind PR is refreshed only when trunk touched its affected projects; the refreshed head reruns stage 1. The lander merges only an exact-head green, thread-free PR | Yes, through stage 1 on the refreshed head |
-| **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over new merges since the latest completed CI run (`selective_base`): the shards and lanes those merges touch | No; a red run starts the CI doctor |
+| **2 Pre-merge** | Trunk moves under an open PR | The owning lane and the fleet lander | A behind PR is refreshed only when trunk touched its affected projects; the refreshed head reruns stage 1. The lander merges only an exact-head green, thread-free PR | Yes, through stage 1 on the refreshed head |
+| **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over new merges since the latest completed CI run (`selective_base`): the shards and lanes those merges touch | No; a red run is assigned to an owning lane |
 | **4 Full** | `schedule` 09:23 and 21:23 UTC | `ci.yml` | The full matrix, compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
 
 Full runs use off-hour minutes to reduce schedule-delivery contention. The
@@ -74,9 +90,9 @@ Stage 3 details:
 - The dispatch summary separately lists the culprit range from the latest
   full green ancestor (searched among the newest 100 successful runs,
   excluding affected titles that cannot clear earlier failures). It passes
-  that ancestor as `investigation_base` to `ci.yml` for the CI doctor; missing
+  that ancestor as `investigation_base` to `ci.yml` for the investigating lane; missing
   green history is reported as unknown. Failures
-  remain owned by the CI doctor; twice-daily full runs retain complete coverage.
+  remain owned by the investigating lane; twice-daily full runs retain complete coverage.
 - Runs queue without cancellation. GitHub replaces older pending runs; the
   newer run covers merges since the latest completed head. Superseded pushes
   exit when checkout finds a newer trunk tip.
@@ -90,9 +106,7 @@ Stage 3 details:
 - The dispatched run is titled `CI affected <base>..<head>`. Its `changes`
   job prints the suspect range (`scripts/ci/trunk-suspect-range.sh`: every
   trunk commit in the range and the pull requests it names) to the job log and
-  summary. A red run triggers the CI doctor through its `workflow_run`
-  listener on `CI`, which reads the title and the log to find the breaking
-  merge.
+  summary. The investigating lane reads the title and log to identify the breaking merge.
 - Affected runs never certify a sha: `scripts/ci/select-certified-nightly-sha.py`
   ignores runs titled `CI affected ...`, so a selective run that finishes after
   a full run on the same sha cannot supersede that full run's certification.
@@ -111,7 +125,7 @@ These workflows are merge-blocking for all PRs to trunk:
 | Workflow | What it validates | Path filter |
 |---|---|---|
 | `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; selected shard consumers run the affected tests that fit the `pr_time_budget` in `.github/ci-shards.json` (shards over 10 measured minutes, or past 45 runner-minutes in total, are deferred to the next trunk run and named in the verdict). Independent Fast/architecture jobs (one per test group, each compiling only its test roots), format, analyzer and CI-router jobs remain required. `required.needs` includes `pr-gate`, `fast-tests`, `format`, `ci-router-validation`, and `affected-shards`. The affected-shard aggregate enforces every selected timing/TRX result before `PR Gate` succeeds. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
-| `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it retains a SHA-bound decision receipt for the read-only `review-first-evidence-ledger.yml`; the ledger reports but cannot promote. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | None — it must publish on every PR head |
+| `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it retains a SHA-bound decision receipt for the read-only `review-first-evidence-ledger.yml`; the ledger reports but cannot promote. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | Drafts skip; every ready PR head requires attestation |
 | `repo-hygiene.yml` | **Required context `repo-hygiene / Repository hygiene`.** Reads the root allowlist and exact gate-input exceptions from the trusted base branch; checks only PR-added paths for scratch, backups, run output, dated history, product samples and unexpected roots. The shared checker is pinned by SHA, runs with read-only permissions and has a five-minute timeout. | None — it must publish on every PR head |
 | `ci.yml` | **No `pull_request` trigger.** Full CI runs twice daily at 09:23 and 21:23 UTC (01:23 and 13:23 Pacific standard time) and through manual dispatch. It covers managed builds, protocol profiles, foundation and server shards, native Worker tests, runtime proofs, architecture checks, JavaScript checks and compatibility. `CI Gate` requires the runtime proof result and appears only on full CI runs. | n/a — not PR-triggered |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
@@ -622,7 +636,9 @@ local files alone do not constitute a trusted release attestation.
 The founder-approved quarantine policy in [known-flakes.md](known-flakes.md#automatic-bounded-quarantine)
 allows one same-job failed-method retry within the original shard budget. Success requires
 complete passing retry evidence, retained alongside the first attempt. Ambiguous theory-row
-names are rejected so a passing sibling cannot conceal a missing failure. Infrastructure and
+names in selected failed methods (including passing siblings), or anywhere in the retry,
+are rejected so a passing sibling cannot conceal a missing failure. Duplicate display names
+in unrelated passing methods remain untouched in the merged results. Infrastructure and
 execution failures remain blocking. Tests retain the supervisor’s process group so shared deadlines clean up the full tree.
 Cancellation signals the test’s descendants, including those that leave the inherited
 process group, and escalates to SIGKILL after at most half a second. Required check names and minimum-execution checks remain
@@ -671,7 +687,7 @@ execution matrix and enforced test filters remain unchanged.
 
 ### Pre-PR and trailing affected execution
 
-Before refreshing a behind branch, lanes and the sync doctor share
+Before refreshing a behind branch, lanes run
 `bash scripts/ci/compute-affected-projects.sh --trunk-overlap HEAD origin/trunk`.
 Its JSON `refresh_required` compares committed changes on both sides of their
 merge base using the canonical reverse-dependency selector. Disjoint project
@@ -826,13 +842,9 @@ The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Ga
 
 ### Optional PR workflow input boundaries
 
-Capability Impact Comparison keeps its PR observation report, scoped to runtime
-source, .NET proving tests, compatibility baselines, capability data, the shard
-map and the selector/report tools. Unrelated prose and workflow edits no longer
-start it. It is currently disabled in repository settings; this filter makes
-re-enabling it safe. Capability Matrix Aggregation and OpenAPI Contract
-Governance already enumerate their generator/contract inputs and retain those
-filters.
+Capability Impact Comparison was retired after being disabled in repository
+settings; its workflow has been removed. Capability Matrix Aggregation and
+OpenAPI Contract Governance retain their generator/contract input filters.
 
 GeoArrow and GeoParquet interop run on pull requests only for files whose names
 contain GeoArrow or Parquet (sources, tests, CRS resources, test data), the few
@@ -1102,9 +1114,8 @@ that run supplies the after-change timing and memory evidence.
 PR Gate's architecture matrix member runs pinned, checksum-verified actionlint
 before setup/build and before any docs/generated-only skip. All workflow YAML
 files receive syntax and expression checks; a job-level `runner.temp` expression
-is rejected before landing. Compatibility exceptions allow only the unsupported
-`concurrency.queue` diagnostic and two pre-existing property-reference messages
-in generated gh-aw doctor locks. No other syntax/context diagnostic is ignored.
+is rejected before landing. The compatibility exception allows only the unsupported
+`concurrency.queue` diagnostic. No expression-context diagnostic is ignored.
 Regression fixtures prove queue acceptance and failure for invalid contexts,
 unknown keys and missing dependencies. Required names and `required.needs` stay
 unchanged, and the check adds zero jobs per PR. Timing evidence will come from

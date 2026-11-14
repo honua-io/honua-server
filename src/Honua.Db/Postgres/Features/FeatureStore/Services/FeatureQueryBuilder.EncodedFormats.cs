@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
@@ -98,7 +99,7 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(", ");
             sql.Append(BuildEncodedBinaryAttributeExpression(field, ref paramIndex, parameters));
             sql.Append(" AS ");
-            sql.Append(QuoteIdentifier(field.Name));
+            sql.Append(SqlIdentifier.QuoteIdentifier(field.Name));
         }
     }
 
@@ -179,11 +180,6 @@ internal sealed partial class FeatureQueryBuilder
     {
         var canonicalName = DatabaseSchema.MapFieldName(fieldName);
         return canonicalName.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string QuoteIdentifier(string identifier)
-    {
-        return $"\"{identifier.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
     }
 
     private CoreParameterizedQuery BuildOptimizedSelectWithWindowCountQuery(

@@ -38,6 +38,7 @@ namespace Honua.Server.Tests.Features.WorkflowPackages;
 [Operation(Operations.ProcessExecution)]
 public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
 {
+    private const string AdminPassword = "workflow-package-admin-key";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly InMemoryExecutionJobStore _jobStore = new();
@@ -52,6 +53,12 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
     {
         _fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IExecutionJobStore>();
@@ -77,7 +84,7 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _client = _fixture.CreateAdminClient();
+        _client = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();

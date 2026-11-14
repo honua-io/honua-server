@@ -139,7 +139,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             return false;
         }
 
-        if (IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             return false;
         }
@@ -207,11 +207,6 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             graphProvider,
             cancellationToken).ConfigureAwait(false);
     }
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 
     private static partial class Log
     {

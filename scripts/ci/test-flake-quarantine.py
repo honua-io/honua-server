@@ -137,6 +137,24 @@ class RetryTests(unittest.TestCase):
                 with self.subTest(original=original), self.assertRaises(ValueError):
                     q.retry_replacements(first, retry)
 
+    def test_unselected_passing_collisions_preserve_results_after_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first, retry, merged = (Path(directory) / name for name in ('first.xml', 'retry.xml', 'merged.xml'))
+            trx(first, [('Stable(...)', 'Passed'), ('Stable(...)', 'Passed'), ('Flaky', 'Failed')])
+            trx(retry, [('Flaky', 'Passed')])
+            q.merge_retry(first, retry, merged)
+            cases = q.read_cases(merged)
+            self.assertEqual([('Stable(...)', 'Passed'), ('Stable(...)', 'Passed'), ('Flaky', 'Passed')],
+                             [(case[1], case[2]) for case in cases])
+
+    def test_selected_method_passing_sibling_collisions_remain_ambiguous(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first, retry = Path(directory) / 'first.xml', Path(directory) / 'retry.xml'
+            trx(first, [('Flaky(1)', 'Failed'), ('Flaky(...)', 'Passed'), ('Flaky(...)', 'Passed')])
+            trx(retry, [('Flaky(1)', 'Passed')])
+            with self.assertRaisesRegex(ValueError, 'ambiguous test-case identities'):
+                q.retry_replacements(first, retry)
+
     def test_run_level_errors_cannot_be_reclassified_as_a_flake(self):
         for key in ('error', 'timeout', 'aborted', 'disconnected', 'notRunnable'):
             with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
