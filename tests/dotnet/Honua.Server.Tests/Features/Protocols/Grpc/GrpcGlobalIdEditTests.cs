@@ -251,6 +251,36 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
 
     [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task AddWithNonStringRawGlobalId_IsRejectedWithoutWriting()
+    {
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        var add = new Proto.Feature();
+        add.Attributes["GlobalID"] = new Proto.AttributeValue { Int32Value = 123 };
+        request.Adds.Add(add);
+
+        var act = async () => await _sut.ApplyEdits(request, CallContext("insert"));
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        AssertNothingWritten();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task AddWithConflictingGlobalIds_IsRejectedWithoutWriting()
+    {
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        var add = new Proto.Feature { GlobalId = GlobalId };
+        add.Attributes["GlobalID"] = new Proto.AttributeValue { StringValue = Guid.NewGuid().ToString("D") };
+        request.Adds.Add(add);
+
+        var act = async () => await _sut.ApplyEdits(request, CallContext("insert"));
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        AssertNothingWritten();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task AddsRepeatingAGlobalIdThroughRawAttributes_AreRejectedWithoutWriting()
     {
         var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };

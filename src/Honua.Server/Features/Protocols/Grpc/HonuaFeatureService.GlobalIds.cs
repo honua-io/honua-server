@@ -173,10 +173,11 @@ internal sealed partial class HonuaFeatureService
                 : (batch, edit);
         }
 
-        var supplied = batch.Creates.Select((create, index) => ClientGlobalId(edit.Request.Adds[index], create, field)).ToArray();
+        string?[] supplied;
         ImmutableArray<string> clientIds;
         try
         {
+            supplied = batch.Creates.Select((create, index) => ClientGlobalId(edit.Request.Adds[index], create, field)).ToArray();
             clientIds = GrpcGlobalIds.ParseDistinctSelectors(supplied.OfType<string>(), "add global IDs");
         }
         catch (ArgumentException ex)
@@ -204,7 +205,28 @@ internal sealed partial class HonuaFeatureService
     }
 
     private static string? ClientGlobalId(Proto.Feature add, Feature create, string field)
-        => add.GlobalId.Length > 0 ? add.GlobalId : GrpcGlobalIds.Read(create.Attributes, field);
+    {
+        foreach (var (key, value) in create.Attributes)
+        {
+            if (key.Equals(field, StringComparison.OrdinalIgnoreCase) && value is not null)
+            {
+                if (value is not (Guid or string { Length: > 0 }))
+                {
+                    throw new ArgumentException($"{field} must contain a UUID.");
+                }
+
+                var raw = GrpcGlobalIds.ParseSelector(InsertGlobalIds.Normalize(value), field);
+                if (add.GlobalId.Length > 0 && !raw.Equals(add.GlobalId, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new ArgumentException($"{field} and Feature.global_id must identify the same UUID.");
+                }
+
+                return raw;
+            }
+        }
+
+        return add.GlobalId.Length > 0 ? add.GlobalId : null;
+    }
 
     private static ImmutableDictionary<string, object?> WithoutField(ImmutableDictionary<string, object?> attributes, string field)
         => attributes.Keys.Where(key => key.Equals(field, StringComparison.OrdinalIgnoreCase)).Aggregate(
