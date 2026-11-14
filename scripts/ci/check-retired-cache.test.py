@@ -83,6 +83,23 @@ class RetiredCacheTests(unittest.TestCase):
         self.commit()
         self.assertEqual(self.check().returncode, 1)
 
+    def test_non_lf_separators_cannot_hide_mentions(self):
+        for index, separator in enumerate(["\f", "\r", "\v", "\u0085", "\u2028", "\u2029"]):
+            self.write(f"separator-{index}.txt", f"prefix{separator}Redis\n")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        for index in range(6):
+            self.assertIn(f"separator-{index}.txt:1:", result.stdout)
+
+    def test_literal_pathspecs_cannot_exempt_a_matching_filename(self):
+        self.write("[ab].txt", "Redis\n")
+        self.write("a.txt", "allowed\n")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("[ab].txt:1:", result.stdout)
+
     def test_invalid_base_fails_closed(self):
         self.assertNotEqual(self.check("missing-ref").returncode, 0)
 

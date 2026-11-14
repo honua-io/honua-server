@@ -9,6 +9,7 @@ import subprocess
 POLICY_FILES = {
     "scripts/ci/check-retired-cache.py",
     "scripts/ci/check-retired-cache.test.py",
+    "scripts/ci/check-retired-cache-workflow.test.py",
 }
 
 
@@ -22,7 +23,7 @@ def exempt(path: str) -> bool:
 
 def git_diff(revisions, options):
     return subprocess.check_output([
-        "git", "-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-textconv",
+        "git", "--literal-pathspecs", "-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-textconv",
         "--no-renames", *options, *revisions,
     ])
 
@@ -30,7 +31,7 @@ def git_diff(revisions, options):
 def violations(revisions, path):
     patch = git_diff(revisions, ["--text", "--unified=0", "--no-color", "--src-prefix=a/", "--dst-prefix=b/"])
     line_number = 0
-    for line in patch.decode("utf-8", errors="replace").splitlines():
+    for line in patch.decode("utf-8", errors="replace").split("\n"):
         hunk = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
         if hunk:
             line_number = int(hunk.group(1))
