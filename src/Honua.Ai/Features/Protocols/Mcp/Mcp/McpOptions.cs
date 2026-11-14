@@ -28,6 +28,10 @@ internal sealed class McpOptions
     // When no signing key is configured, the shared database connection string is the HKDF input.
     public string? SessionSigningKey { get; set; }
 
+    // Console origin for in-client approval (MRTR URL-mode elicitation). Unset keeps the
+    // Console-only approval path; the link opens /inbox?proposalId=... under this URL.
+    public string? ApprovalConsoleUrl { get; set; }
+
     internal static readonly TimeSpan DefaultStatelessSessionLifetime = TimeSpan.FromHours(8);
 
     public TimeSpan StatelessSessionLifetime { get; set; } = DefaultStatelessSessionLifetime;

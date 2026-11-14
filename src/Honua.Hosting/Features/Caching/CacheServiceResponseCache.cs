@@ -6,11 +6,13 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Infrastructure.Middleware;
 
 namespace Honua.Infrastructure.Caching;
 
-internal sealed class CacheServiceResponseCache : IResponseCache
+internal sealed partial class CacheServiceResponseCache : IResponseCache
 {
+    private const int ReservationOverheadBytes = 128;
     private const string KeyPrefix = "response:";
     private const string BoundKeyPrefix = "response-bound:";
     private const string VersionPrefix = "response-version:";
@@ -37,15 +39,14 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     private readonly ICacheService _cacheService;
     private readonly int _maxEntryBytes;
     private readonly int _maxBytes;
-    private readonly object _budgetLock = new();
-    private readonly Dictionary<string, ResponseReservation> _reservations = new(StringComparer.Ordinal);
-
+    private readonly int _maxEntries;
     public CacheServiceResponseCache(ICacheService cacheService, CacheOptions? options = null)
     {
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         options ??= new CacheOptions();
         _maxEntryBytes = options.ResponseCacheMaxEntryBytes;
         _maxBytes = options.ResponseCacheMaxBytes;
+        _maxEntries = options.ResponseCacheMaxEntries;
     }
 
     public async Task<string> BindKeyAsync(string key, CancellationToken cancellationToken = default)
@@ -56,31 +57,29 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
     public async Task SetAsync<T>(string key, T value, TimeSpan expiration, CancellationToken cancellationToken = default) where T : class
     {
-        var reserved = false;
-        if (value is CachedResponse cached)
+        var cached = value as CachedResponse;
+        if (cached is not null && cached.Payload.Length > _maxEntryBytes)
         {
-            if (cached.Payload.Length > _maxEntryBytes ||
-                !TryReserve(key, cached.Payload.Length, expiration))
-            {
-                return;
-            }
+            return;
+        }
 
-            reserved = true;
+        var storageKey = await BuildStorageKeyAsync(key, allowLocalVersionCache: true, cancellationToken).ConfigureAwait(false);
+        var reservation = cached is null ? null : TryReserve(storageKey, cached.Payload.Length, expiration);
+        if (cached is not null && reservation is null)
+        {
+            return;
         }
 
         try
         {
-            await _cacheService.SetAsync(
-                await BuildStorageKeyAsync(key, allowLocalVersionCache: true, cancellationToken).ConfigureAwait(false),
-                value,
-                expiration,
-                cancellationToken).ConfigureAwait(false);
+            await _cacheService.SetAsync(storageKey, value, expiration, cancellationToken).ConfigureAwait(false);
+            CompleteWrite(reservation, expiration);
         }
         catch
         {
-            if (reserved)
+            if (reservation is not null)
             {
-                ReleaseReservation(key);
+                FailWrite(reservation);
             }
 
             throw;
@@ -107,8 +106,23 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
     public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
-        ReleaseReservation(key);
-        await _cacheService.RemoveAsync(await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+        var storageKey = await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false);
+        var reservation = BeginRemoval(storageKey);
+        try
+        {
+            await _cacheService.RemoveAsync(storageKey, cancellationToken).ConfigureAwait(false);
+            if (reservation is not null)
+            {
+                ReleaseReservation(reservation);
+            }
+        }
+        finally
+        {
+            if (reservation is not null)
+            {
+                EndReclamation([reservation]);
+            }
+        }
     }
 
     public async Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
@@ -197,21 +211,30 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             return false;
         }
 
-        // Each namespace token bumps an independent version key, so the writes have
-        // no ordering dependency on one another; issue them concurrently instead of
-        // one round trip at a time.
-        await Task.WhenAll(namespaces.Select(ns => _cacheService.SetAsync(
-                VersionPrefix + ns,
-                Guid.NewGuid().ToString("N"),
-                VersionTtl,
-                cancellationToken)))
-            .ConfigureAwait(false);
-
-        // Evict from the local in-process cache so this node sees the new version
-        // on the very next write too, without waiting for the 30 s local TTL.
-        foreach (var ns in namespaces)
+        var obsolete = BeginReclamation(namespaces);
+        try
         {
-            _localVersionCache.TryRemove(ns, out _);
+            await Task.WhenAll(namespaces.Select(ns => _cacheService.SetAsync(
+                    VersionPrefix + ns,
+                    Guid.NewGuid().ToString("N"),
+                    VersionTtl,
+                    cancellationToken)))
+                .ConfigureAwait(false);
+
+            foreach (var ns in namespaces)
+            {
+                _localVersionCache.TryRemove(ns, out _);
+            }
+
+            foreach (var reservation in obsolete)
+            {
+                await _cacheService.RemoveAsync(reservation.StorageKey, cancellationToken).ConfigureAwait(false);
+                ReleaseReservation(reservation);
+            }
+        }
+        finally
+        {
+            EndReclamation(obsolete);
         }
 
         return true;
@@ -311,61 +334,6 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
         return Array.Empty<string>();
     }
-
-    private bool TryReserve(string key, int bytes, TimeSpan expiration)
-    {
-        var now = DateTimeOffset.UtcNow;
-        lock (_budgetLock)
-        {
-            PruneExpiredReservations(now);
-            var existing = _reservations.TryGetValue(key, out var current) ? current.Bytes : 0;
-            long resident = 0;
-            foreach (var reservation in _reservations.Values)
-            {
-                resident += reservation.Bytes;
-            }
-
-            if (resident - existing + bytes > _maxBytes)
-            {
-                return false;
-            }
-
-            _reservations[key] = new ResponseReservation(bytes, now.Add(expiration));
-            return true;
-        }
-    }
-
-    private void ReleaseReservation(string key)
-    {
-        lock (_budgetLock)
-        {
-            _reservations.Remove(key);
-        }
-    }
-
-    private void PruneExpiredReservations(DateTimeOffset now)
-    {
-        List<string>? expired = null;
-        foreach (var pair in _reservations)
-        {
-            if (pair.Value.ExpiresAt <= now)
-            {
-                (expired ??= []).Add(pair.Key);
-            }
-        }
-
-        if (expired is null)
-        {
-            return;
-        }
-
-        foreach (var key in expired)
-        {
-            _reservations.Remove(key);
-        }
-    }
-
-    private readonly record struct ResponseReservation(int Bytes, DateTimeOffset ExpiresAt);
 
     private static string NormalizeKey(string key)
     {
