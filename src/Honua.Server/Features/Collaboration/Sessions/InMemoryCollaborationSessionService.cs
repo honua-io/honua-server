@@ -80,6 +80,7 @@ internal sealed partial class InMemoryCollaborationSessionService
         if (_relay is not null)
         {
             await _relay.Ready.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await _relay.ReadPresenceSnapshotAsync(mapId, cancellationToken).ConfigureAwait(false);
         }
 
         var now = _clock.UtcNow;

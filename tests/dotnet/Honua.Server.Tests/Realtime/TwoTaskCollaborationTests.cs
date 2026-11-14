@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Realtime;
@@ -84,6 +85,36 @@ public sealed class TwoTaskCollaborationTests(DatabaseFixtureAdapter database) :
         replay.Operations.Should().ContainSingle(op => op.OperationId == appended.Operation!.OperationId);
     }
 
+    [IntegrationTest]
+    public async Task Replacement_PagesPresenceBeyondResumeLimit_AndUsesLatestState()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var id = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var rows = Enumerable.Range(1, 600).Select(n => new RealtimeLogRow("map-a", "presence",
+            JsonSerializer.SerializeToElement(new CollaborationPresenceMessage
+            {
+                OriginInstanceId = "retained-peer",
+                Presence = new CollaborationParticipantPresence
+                {
+                    SessionId = id, ParticipantId = id.ToString("N"), DisplayName = "alice",
+                    JoinedAt = now, LastSeenAt = now, Cursor = new CollaborationCursor { X = n, Y = 34 }
+                },
+                Event = new CollaborationEventEnvelope
+                {
+                    MapId = "map-a", EventId = Guid.NewGuid().ToString("N"), Sequence = n,
+                    Cursor = n.ToString(System.Globalization.CultureInfo.InvariantCulture), ServerTime = now,
+                    SessionId = id.ToString("N"), Event = new CollaborationSessionEvent { Type = CollaborationSessionEventTypes.Cursor }
+                }
+            }, CollaborationSessionJsonContext.Default.CollaborationPresenceMessage))).ToArray();
+        await harness.Log.AppendAsync(RealtimeLogFamilies.CollabPresence, rows, null, CancellationToken.None);
+
+        await using var replacement = await TaskNode.StartAsync(harness);
+        var joined = await replacement.JoinAsync("bob");
+        joined.Snapshot.Participants.Should().Contain(p => p.Id == id.ToString("N"));
+        joined.Snapshot.Cursors[id.ToString("N")].X.Should().Be(600);
+    }
+
     private async Task<RealtimeLogHarness> CreateHarnessAsync()
     {
         var harness = await RealtimeLogHarness.CreateAsync(database);
@@ -129,7 +160,7 @@ public sealed class TwoTaskCollaborationTests(DatabaseFixtureAdapter database) :
 
         private TaskNode(RealtimeLogHarness harness)
         {
-            var options = new RealtimeOptions { LocalPollInterval = TimeSpan.FromMilliseconds(20), WakeCoalesceWindow = TimeSpan.Zero };
+            var options = new RealtimeOptions { LocalPollInterval = TimeSpan.FromMilliseconds(20), WakeCoalesceWindow = TimeSpan.Zero, ResumeMaxEvents = 2 };
             var dispatcher = harness.CreateDispatcher(options);
             var presence = new RealtimePresenceBatcher(harness.Log);
             IRealtimeFanoutProvider provider = new PostgresRealtimeFanoutProvider(harness.Log, dispatcher, presence);

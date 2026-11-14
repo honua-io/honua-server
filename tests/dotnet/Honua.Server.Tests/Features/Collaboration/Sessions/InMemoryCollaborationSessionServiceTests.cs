@@ -442,6 +442,8 @@ public sealed class InMemoryCollaborationSessionServiceTests
             Published.Add(draft.Payload.Deserialize(CollaborationSessionJsonContext.Default.CollaborationPresenceMessage)!.Event);
         }
         public ValueTask<RealtimePosition> AppendAsync(RealtimeEventDraft draft, System.Data.Common.DbTransaction? transaction, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(string scopeKey, long after, long through, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public ValueTask<IRealtimeStreamLease?> TryAcquireMcpStreamAsync(string sessionId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request) => throw new NotSupportedException();
         public ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
