@@ -118,7 +118,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     /// <inheritdoc />
     public Task<MetadataV2GraphSnapshot?> TryGetPersistedCurrentAsync(CancellationToken cancellationToken = default)
         // Write/publish base load: only the genuinely-activated snapshot, never the V1
-        // compat synthesis. See PostgresMetadataV2GraphStore for why. (honua-server#1412.)
+        // compatibility synthesis.
         => TryLoadCurrentAsync(cancellationToken);
 
     /// <summary>
