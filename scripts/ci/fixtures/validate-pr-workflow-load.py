@@ -101,21 +101,21 @@ class PullRequestLoadTests(unittest.TestCase):
         gate = workflow("pr-gate.yml")
         group = gate["concurrency"]["group"]
 
-        def admission(action, draft, number=7639):
+        def admission(action, *, draft, number=7639):
             event = {"event_name": "pull_request", "ref": "refs/pull/7639/merge", "event": {
                 "action": action, "pull_request": {"number": number, "draft": draft},
             }}
             return re.sub(r"\$\{\{.*?\}\}", lambda match: str(evaluate(match[0], event)), group)
 
-        ready = admission("ready_for_review", False)
+        ready = admission("ready_for_review", draft=False)
         # GitHub may deliver a draft push after readiness starts the full gate.
         # Cancellation is safe only within the same readiness state and PR.
         for action in ("opened", "synchronize", "converted_to_draft"):
             with self.subTest(action=action):
-                self.assertNotEqual(admission(action, True), ready)
-        self.assertEqual(admission("synchronize", False), ready)
-        self.assertEqual(admission("opened", True), admission("synchronize", True))
-        self.assertNotEqual(admission("ready_for_review", False, number=7640), ready)
+                self.assertNotEqual(admission(action, draft=True), ready)
+        self.assertEqual(admission("synchronize", draft=False), ready)
+        self.assertEqual(admission("opened", draft=True), admission("synchronize", draft=True))
+        self.assertNotEqual(admission("ready_for_review", draft=False, number=7640), ready)
         self.assertEqual(gate["concurrency"]["cancel-in-progress"], "true")
 
     def test_required_checks_keep_draft_admission_and_names(self):
