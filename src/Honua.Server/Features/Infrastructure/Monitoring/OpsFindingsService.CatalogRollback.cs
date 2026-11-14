@@ -32,6 +32,15 @@ internal sealed partial class OpsFindingsService
                 EvidencePostureVocabulary.ReasonCodes.SourceUnavailable, maximumAge: SignalValidity);
         }
 
+        AddCatalogRollbackFindings(findings, watches);
+
+        return EvidencePostureFactory.Complete(CatalogRollbackSourceId,
+            EvidencePostureVocabulary.BackendKinds.DurableStore, CatalogRollbackBackendId,
+            _clock.GetUtcNow(), SignalValidity);
+    }
+
+    private static void AddCatalogRollbackFindings(List<OpsFinding> findings, IReadOnlyList<CatalogActivationWatch> watches)
+    {
         foreach (var watch in watches)
         {
             const string rule = "catalog-activation-rolled-back";
@@ -49,8 +58,5 @@ internal sealed partial class OpsFindingsService
             });
         }
 
-        return EvidencePostureFactory.Complete(CatalogRollbackSourceId,
-            EvidencePostureVocabulary.BackendKinds.DurableStore, CatalogRollbackBackendId,
-            _clock.GetUtcNow(), SignalValidity);
     }
 }

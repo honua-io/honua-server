@@ -736,7 +736,10 @@ Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(bu
 // Configure caching options and register cache services
 InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration);
 
-builder.Services.AddHostedService<Honua.ControlPlane.CatalogActivationWatcher>();
+if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
+{
+    builder.Services.AddHostedService<Honua.ControlPlane.CatalogActivationWatcher>();
+}
 
 // Configure cloud file storage for imports and attachments
 builder.Services.AddCloudFileStorage(builder.Configuration);
