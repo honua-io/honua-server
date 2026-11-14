@@ -111,8 +111,8 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
     private async Task AssertMaskedReplayAsync(Func<Proto.ApplyEditsResponse, HonuaFeatureService> serviceFactory)
     {
         _featureWriter.ApplyEditsAsync(
-                Arg.Any<int>(), Arg.Any<FeatureEditBatch>(), Arg.Any<FeatureEditIdempotencyReceipt>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new FeatureEditApplication
+                default, default, default(FeatureEditIdempotencyReceipt), default)
+            .ReturnsForAnyArgs(Task.FromResult(new FeatureEditApplication
             {
                 Result = FeatureEditResult.Success(1, 0, 0, createResults: [EditOperationResult.Success(7)]),
             }));
