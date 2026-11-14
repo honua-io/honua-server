@@ -403,7 +403,18 @@ internal sealed partial class RateLimitingMiddleware
         // matches. Resolution order is centralized in RateLimitPolicyResolver so the precedence is
         // identical everywhere it is applied. Tier limits meter the subject across all endpoints, so
         // they carry no endpoint scope.
-        var policies = await _policyStore.ListPoliciesAsync(context.RequestAborted);
+        IReadOnlyList<RateLimitPolicy>? policies;
+        try
+        {
+            policies = await _policyStore.ListPoliciesAsync(context.RequestAborted);
+        }
+        // A policy store outage must not disable limiting: fall back to the global default below.
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            RateLimitingLog.PolicyStoreUnavailable(_logger, ex);
+            policies = null;
+        }
+
         if (policies is { Count: > 0 })
         {
             var descriptor = BuildRequestDescriptor(context);

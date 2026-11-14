@@ -13,6 +13,7 @@ using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Honua.Server.Features.Admin.Services;
+using Honua.Server.Features.Infrastructure.Configuration;
 
 namespace Honua.Server.Features.Admin;
 
@@ -65,6 +66,9 @@ internal static partial class OidcProviderEndpoints
 
         group.MapPost("/", HandleCreateProvider)
             .WithDisplayName("Create OIDC Provider")
+            .Produces<ApiResponse<OidcProviderResponse>>(StatusCodes.Status201Created)
+            .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
             .RequireAdminCredentialManagementAuthorization()
             .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
@@ -97,7 +101,7 @@ internal static partial class OidcProviderEndpoints
         internal static readonly CreateProviderRoute Instance = new();
     }
 
-    // Provider creation is serialized so two concurrent creates cannot both pass the single-provider entitlement check.
+    // Process-local stores need serialization; shared stores also enforce admission in PostgreSQL.
     private static readonly SemaphoreSlim ProviderCreationGate = new(1, 1);
 
     // A create past a single provider requires the multi-provider entitlement, and that check runs inside the creation lock.
@@ -117,8 +121,10 @@ internal static partial class OidcProviderEndpoints
         try
         {
             var store = httpContext.RequestServices.GetRequiredService<IOidcProviderStore>();
-            var existing = await store.ListProvidersAsync(httpContext.RequestAborted).ConfigureAwait(false);
-            if (existing.Count >= 1)
+            var existingCount = store is PostgresOidcProviderStore sharedStore
+                ? await sharedStore.CountConfiguredProvidersAsync(httpContext.RequestAborted).ConfigureAwait(false)
+                : (await store.ListProvidersAsync(httpContext.RequestAborted).ConfigureAwait(false)).Count;
+            if (existingCount >= 1)
             {
                 var multiProviderGate = LicenseGate.RequireEntitlement(
                     httpContext,
@@ -186,12 +192,11 @@ internal static partial class OidcProviderEndpoints
         }
     }
 
-    private static async Task<Results<Created<ApiResponse<OidcProviderResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
-        HandleCreateProvider(
-            CreateOidcProviderRequest request,
-            [FromServices] IOidcProviderStore store,
-            [FromServices] ILogger<OidcProviderEndpointsLog> logger,
-            HttpContext context)
+    private static async Task<IResult> HandleCreateProvider(
+        CreateOidcProviderRequest request,
+        [FromServices] IOidcProviderStore store,
+        [FromServices] ILogger<OidcProviderEndpointsLog> logger,
+        HttpContext context)
     {
         try
         {
@@ -212,7 +217,17 @@ internal static partial class OidcProviderEndpoints
                 Enabled = request.Enabled,
             };
 
-            var created = await store.CreateProviderAsync(provider, context.RequestAborted);
+            var multiProviderDecision = LicenseGate.CheckEntitlement(
+                context.RequestServices, FeatureCatalog.OidcMultiProviderKey);
+            var created = store is PostgresOidcProviderStore sharedStore && !multiProviderDecision.IsActive
+                ? await sharedStore.CreateProviderIfBelowLimitAsync(provider, 1, context.RequestAborted)
+                : await store.CreateProviderAsync(provider, context.RequestAborted);
+            if (created is null)
+            {
+                return StandardErrorHelpers.CreatePaymentRequired(
+                    context, multiProviderDecision.UpgradeMessage,
+                    [$"entitlement: {FeatureCatalog.OidcMultiProviderKey}"]);
+            }
             var response = ToResponse(created);
 
             OidcProviderLog.ProviderCreated(logger, created.Name, created.ProviderId);
@@ -279,13 +294,7 @@ internal static partial class OidcProviderEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
             }
 
-            var existing = await store.GetProviderAsync(id, context.RequestAborted);
-            if (existing == null)
-            {
-                return TypedResults.NotFound(ApiResponse<object>.Failure("OIDC provider not found"));
-            }
-
-            var updated = new OidcProviderConfiguration
+            var result = await store.UpdateProviderAsync(id, existing => new OidcProviderConfiguration
             {
                 ProviderId = existing.ProviderId,
                 Name = request.Name ?? existing.Name,
@@ -298,9 +307,12 @@ internal static partial class OidcProviderEndpoints
                 CreatedAt = existing.CreatedAt,
                 UpdatedAt = DateTimeOffset.UtcNow,
                 LastHealthCheck = existing.LastHealthCheck,
-            };
+            }, context.RequestAborted);
+            if (result is null)
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure("OIDC provider not found"));
+            }
 
-            var result = await store.UpdateProviderAsync(updated, context.RequestAborted);
             return TypedResults.Ok(ApiResponse<OidcProviderResponse>.CreateSuccess(ToResponse(result!)));
         }
         // Intentional catch-all request-handling boundary: this is the OIDC

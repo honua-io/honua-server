@@ -13,7 +13,7 @@ public interface IRateLimitPolicyStore
 
     Task<RateLimitPolicy> CreatePolicyAsync(RateLimitPolicy policy, CancellationToken cancellationToken = default);
 
-    Task<RateLimitPolicy?> UpdatePolicyAsync(RateLimitPolicy policy, CancellationToken cancellationToken = default);
+    Task<RateLimitPolicy?> UpdatePolicyAsync(Guid policyId, Func<RateLimitPolicy, RateLimitPolicy> update, CancellationToken cancellationToken = default);
 
     Task<bool> DeletePolicyAsync(Guid policyId, CancellationToken cancellationToken = default);
 

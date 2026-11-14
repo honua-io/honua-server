@@ -78,7 +78,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   BASE_URL: http://localhost:5000
   SOAK_SERVER_PORT: '5000'
   SOAK_DB_NAME: honua_soak
