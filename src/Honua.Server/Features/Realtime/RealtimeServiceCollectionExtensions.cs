@@ -51,6 +51,8 @@ internal static class RealtimeServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddRealtimeEventLog(configuration);
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.TryAddSingleton<IRealtimeStreamLifecycle, RealtimeStreamLifecycle>();
         services.TryAddSingleton<RealtimeDispatcher>();
         services.TryAddSingleton<RealtimePresenceBatcher>();
 
@@ -74,9 +76,26 @@ internal static class RealtimeServiceCollectionExtensions
         if (hostsDatabasePollingLoops)
         {
             AddTailService(services, configuration);
+            AddStreamLifecycleServices(services);
         }
 
         return services;
+    }
+
+    private static void AddStreamLifecycleServices(IServiceCollection services)
+    {
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeQueueUsageSampler>(
+            provider => new RealtimeQueueUsageSampler(
+                provider.GetService<NpgsqlDataSource>() is null ? null : provider.GetService<ILeaseStore>(),
+                token => provider.GetRequiredService<PostgresRealtimeEventLog>().ReadNotificationQueueUsageAsync(token),
+                provider.GetRequiredService<ILogger<RealtimeQueueUsageSampler>>())
+            {
+                Clock = provider.GetRequiredService<TimeProvider>()
+            }));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeDrainHostedService>(
+            provider => new RealtimeDrainHostedService(
+                provider.GetRequiredService<IRealtimeStreamLifecycle>(),
+                provider.GetService<IHostApplicationLifetime>())));
     }
 
     private static void AddTailService(IServiceCollection services, IConfiguration configuration)
@@ -91,7 +110,10 @@ internal static class RealtimeServiceCollectionExtensions
                     hasDatabase ? provider.GetRequiredService<RealtimePresenceBatcher>() : null,
                     hasDatabase && crossNode ? provider.GetRequiredService<RealtimeListener>() : null,
                     provider.GetRequiredService<IOptions<RealtimeOptions>>(),
-                    provider.GetRequiredService<ILogger<RealtimeTailBackgroundService>>());
+                    provider.GetRequiredService<ILogger<RealtimeTailBackgroundService>>())
+                {
+                    StreamLifecycle = provider.GetRequiredService<IRealtimeStreamLifecycle>()
+                };
             }));
     }
 

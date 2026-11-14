@@ -82,6 +82,16 @@ internal sealed class PostgresRealtimeEventLog(JobStoreDatabase database) : IExp
             cancellationToken);
     }
 
+    public Task<double> ReadNotificationQueueUsageAsync(CancellationToken cancellationToken)
+        => database.ExecuteAsync(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand("SELECT pg_notification_queue_usage()", connection);
+                return (double)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken);
+
     // The head of every logged family: one probe per wake-up.
     public Task<IReadOnlyDictionary<string, long>> ReadHeadsAsync(CancellationToken cancellationToken)
         => database.ExecuteAsync<IReadOnlyDictionary<string, long>>(
