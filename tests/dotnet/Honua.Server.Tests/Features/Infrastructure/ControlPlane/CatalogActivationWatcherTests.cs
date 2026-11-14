@@ -28,10 +28,12 @@ public sealed class CatalogActivationWatcherTests
     {
         _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { Watch() with { RollbackRevision = 3, ChangeId = "catalog-watch-1" } });
         _cdn.InvalidateAsync(default!, default).ReturnsForAnyArgs(new CdnInvalidationResult(CdnInvalidationOutcome.Failed));
-        await Watcher().RunOnceAsync(default);
+        using var watcher = Watcher();
+        await watcher.RunOnceAsync(default);
         await _store.DidNotReceiveWithAnyArgs().CompletePurgeAsync(default, default);
         _cdn.InvalidateAsync(default!, default).ReturnsForAnyArgs(new CdnInvalidationResult(CdnInvalidationOutcome.Submitted));
-        await Watcher().RunOnceAsync(default);
+        using var restarted = Watcher();
+        await restarted.RunOnceAsync(default);
         await _store.Received(1).CompletePurgeAsync(1, Arg.Any<CancellationToken>());
         await _store.DidNotReceiveWithAnyArgs().TryRollbackAsync(default!, default);
     }
@@ -40,7 +42,8 @@ public sealed class CatalogActivationWatcherTests
     public async Task RunOnceAsync_ExpiredActivation_ExpiresWithoutReadingTrafficOrPurging()
     {
         _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { Watch() with { ActivatedAt = Now.AddHours(-1) } });
-        await Watcher().RunOnceAsync(default);
+        using var watcher = Watcher();
+        await watcher.RunOnceAsync(default);
         await _store.Received(1).ExpireAsync(1, Arg.Any<CancellationToken>());
         await _health.DidNotReceiveWithAnyArgs().ReadLatencyAsync(default, default, default, default);
         await _cdn.DidNotReceiveWithAnyArgs().InvalidateAsync(default!, default);
@@ -51,7 +54,8 @@ public sealed class CatalogActivationWatcherTests
     {
         _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { Watch() });
         _health.ReadLatencyAsync(default, default, default, default).ReturnsForAnyArgs(Array.Empty<OpsHealthLatencyRow>());
-        await Watcher().RunOnceAsync(default);
+        using var watcher = Watcher();
+        await watcher.RunOnceAsync(default);
         await _store.DidNotReceiveWithAnyArgs().TryRollbackAsync(default!, default);
         await _cdn.DidNotReceiveWithAnyArgs().InvalidateAsync(default!, default);
     }
@@ -62,7 +66,8 @@ public sealed class CatalogActivationWatcherTests
         _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { Watch() });
         _health.ReadLatencyAsync(default, default, default, default).ReturnsForAnyArgs(new[] { Row(-2, 0), Row(6, 40), Row(7, 40) });
         _store.TryRollbackAsync(default!, default).ReturnsForAnyArgs(false);
-        await Watcher().RunOnceAsync(default);
+        using var watcher = Watcher();
+        await watcher.RunOnceAsync(default);
         await _store.Received(1).TryRollbackAsync(Arg.Is<CatalogRollbackRequest>(request => request.ActivationId == 1), Arg.Any<CancellationToken>());
         await _cdn.DidNotReceiveWithAnyArgs().InvalidateAsync(default!, default);
     }
@@ -76,7 +81,8 @@ public sealed class CatalogActivationWatcherTests
             .ReturnsForAnyArgs(new[] { Row(-2, 0), Row(6, 40), Row(7, 40) });
         _store.TryRollbackAsync(default!, default).ReturnsForAnyArgs(true);
         _cdn.InvalidateAsync(default!, default).ReturnsForAnyArgs(new CdnInvalidationResult(CdnInvalidationOutcome.Submitted));
-        await Watcher().RunOnceAsync(default);
+        using var watcher = Watcher();
+        await watcher.RunOnceAsync(default);
         await _store.Received(1).CompletePurgeAsync(1, Arg.Any<CancellationToken>());
         await _cdn.Received(1).InvalidateAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
     }
@@ -96,7 +102,8 @@ public sealed class CatalogActivationWatcherTests
                 Row(2, 40) with { BucketStart = watch.ActivatedAt.AddMinutes(2) },
             });
 
-        await Watcher(seconds).RunOnceAsync(default);
+        using var watcher = Watcher(seconds);
+        await watcher.RunOnceAsync(default);
 
         await _store.DidNotReceiveWithAnyArgs().TryRollbackAsync(default!, default);
     }
