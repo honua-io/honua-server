@@ -22,7 +22,7 @@ internal sealed record OpsSelfCheckEnvironment(DateTimeOffset? CertificateExpire
 
 internal sealed class OpsSelfCheckSource(
     IHttpClientFactory clients,
-    Func<IReadOnlyList<OidcProviderRegistration>> providers,
+    Func<CancellationToken, Task<IReadOnlyList<OidcProviderRegistration>>> providers,
     OpsSelfCheckEnvironment environment) : IOpsSelfCheckSource
 {
     internal const string HttpClientName = "honua-self-checks";
@@ -35,7 +35,8 @@ internal sealed class OpsSelfCheckSource(
 
     public async Task<IReadOnlyList<OpsIdentityProviderHealth>> ReadIdentityProvidersAsync(CancellationToken cancellationToken)
     {
-        var registrations = providers().Where(provider => provider.Enabled).ToArray();
+        var registrations = (await providers(cancellationToken).ConfigureAwait(false))
+            .Where(provider => provider.Enabled).ToArray();
         var results = new OpsIdentityProviderHealth[registrations.Length];
         await Parallel.ForEachAsync(Enumerable.Range(0, registrations.Length),
             new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken }, async (index, token) =>

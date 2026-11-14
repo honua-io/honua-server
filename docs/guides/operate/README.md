@@ -159,7 +159,10 @@ cached for five minutes and the public GitHub latest-release feed cached for
 24 hours. API Lambda hosts also register the sampler while their execution
 environment is running. Event-handler-only Lambda profiles evaluate checks on a
 findings read. Lambda caches last only for the lifetime of the execution
-environment. Each replica keeps its own cache.
+environment. Each replica keeps its own cache. Before each sign-in probe, it
+refreshes persisted provider configuration even when it serves no admin requests.
+Provider configuration changes therefore appear in these sampled health findings
+within the five-minute interval; request authentication refreshes independently.
 
 The certificate check reads the expiry of the certificate actually loaded to
 protect the encryption key ring. A host without a configured certificate emits

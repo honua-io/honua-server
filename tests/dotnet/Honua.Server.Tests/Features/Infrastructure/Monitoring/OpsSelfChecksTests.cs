@@ -169,6 +169,27 @@ public sealed class OpsSelfChecksTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task ConfigurationStoreFailure_ReportsWarningAndRetriesWithoutStoppingOtherChecks()
+    {
+        var clock = new TestClock();
+        var source = new FakeSource
+        {
+            ProviderFailure = new Npgsql.NpgsqlException("private-store-connection"),
+            Release = new("2026.2", ReleaseNotes)
+        };
+        var checks = new OpsSelfChecks(clock, source);
+        var findings = await checks.EvaluateAsync();
+        Assert.Contains(findings, finding => finding.Rule == OpsSelfChecks.CollectionRule);
+        Assert.Contains(findings, finding => finding.Rule == OpsSelfChecks.ReleaseRule);
+        Assert.DoesNotContain("private-store-connection", JsonSerializer.Serialize(findings), StringComparison.Ordinal);
+        source.ProviderFailure = null;
+        clock.Advance(TimeSpan.FromMinutes(5));
+        Assert.DoesNotContain(await checks.EvaluateAsync(), finding => finding.Rule == OpsSelfChecks.CollectionRule);
+        Assert.Equal(2, source.ProviderReads);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task CancelledCollection_PropagatesAndDoesNotCacheIncompleteResult()
     {
         var source = new FakeSource { ProviderFailure = new OperationCanceledException() };

@@ -144,7 +144,7 @@ public sealed class OpsSelfCheckSourceTests
     }
 
     private static OpsSelfCheckSource Create(FakeClients factory, IReadOnlyList<OidcProviderRegistration>? providers = null)
-        => new(factory, () => providers ?? [], new(null, "2026.1"));
+        => new(factory, _ => Task.FromResult<IReadOnlyList<OidcProviderRegistration>>(providers ?? []), new(null, "2026.1"));
 
     private static OidcProviderRegistration Provider(string authority)
         => new("643bcfd3-a3d1-470c-a659-f9547d6d3447", "Generic", "Test", authority,

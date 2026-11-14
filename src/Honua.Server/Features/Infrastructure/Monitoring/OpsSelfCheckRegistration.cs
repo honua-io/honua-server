@@ -3,7 +3,9 @@
 
 using Honua.ControlPlane;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Configuration;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -18,7 +20,7 @@ internal static class OpsSelfCheckRegistration
             OpsSelfCheckEnvironment.ReadVersion()));
         services.AddSingleton<IOpsSelfCheckSource>(sp => new OpsSelfCheckSource(
             sp.GetRequiredService<IHttpClientFactory>(),
-            () => ReadProviders(sp),
+            cancellationToken => ReadProvidersAsync(sp, cancellationToken),
             sp.GetRequiredService<OpsSelfCheckEnvironment>()));
         services.AddSingleton<OpsSelfChecks>();
         if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
@@ -27,8 +29,13 @@ internal static class OpsSelfCheckRegistration
         }
     }
 
-    private static IReadOnlyList<OidcProviderRegistration> ReadProviders(IServiceProvider services)
+    private static async Task<IReadOnlyList<OidcProviderRegistration>> ReadProvidersAsync(
+        IServiceProvider services, CancellationToken cancellationToken)
     {
+        if (services.GetService<NpgsqlDataSource>() is not null)
+        {
+            await services.GetRequiredService<ConfigurationRuntimeRefresh>().RefreshAsync(cancellationToken).ConfigureAwait(false);
+        }
         var options = services.GetRequiredService<IOptionsMonitor<OidcAuthenticationOptions>>().CurrentValue;
         return options.Enabled
             ? OidcProviderCatalog.GetProviders(options, services.GetService<IOidcRuntimeProviderSource>())

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Net.Sockets;
 using System.Text.Json;
 using Honua.Core.Features.Observability.Domain;
@@ -30,6 +31,9 @@ internal sealed class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource sour
     internal const string CollectionRule = "self-check-unavailable";
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    // ADR-0086 exception: these sampled health observations never authorize requests.
+    // Persisted providers refresh before every five-minute probe; the configuration-independent
+    // public release feed is sampled daily. Certificate lifetime is immutable and evaluated fresh.
     private DateTimeOffset? _providersReadAt;
     private DateTimeOffset? _releaseReadAt;
     private IReadOnlyList<OpsFinding> _providerFindings = [];
@@ -70,11 +74,11 @@ internal sealed class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource sour
         {
             return await request.Read(request.Now, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidOperationException or IOException or SocketException)
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidOperationException or IOException or SocketException or DbException)
         {
             return [CreateFinding(new(CollectionRule, new() { WorkloadId = request.Component }, request.Now),
                 new(OpsFindingSeverity.Warning, "A scheduled health check could not finish",
-                "Check the server's outbound connectivity. This check will retry on its next scheduled run."))];
+                "Check the configuration store and server's outbound connectivity. This check will retry on its next scheduled run."))];
         }
     }
 
