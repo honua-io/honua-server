@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Linq;
+using Honua.Core.Features.Collaboration.Operations;
 using Honua.Server.Features.Collaboration.FeatureLocks;
 using Honua.Server.Features.Collaboration.Operations;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -21,11 +22,16 @@ internal static class CollaborationSessionServices
         // owner semantics under the end-user flag). Unresolvable map ids stay fail-closed.
         services.TryAddSingleton<ISavedMapCollaborationAuthorizer, StudioSavedMapCollaborationAuthorizer>();
 
-        if (services.Any(static d => d.ServiceType == typeof(IRealtimeFanoutProvider)) &&
-            services.Any(static d => d.ServiceType == typeof(NpgsqlDataSource)))
+        var usesDatabase = services.Any(static d => d.ServiceType == typeof(NpgsqlDataSource));
+        IRealtimeFanoutProvider? ResolveFanout(IServiceProvider sp) =>
+            usesDatabase && sp.GetService<NpgsqlDataSource>() is null
+                ? null
+                : sp.GetService<IRealtimeFanoutProvider>();
+
+        if (services.Any(static d => d.ServiceType == typeof(IRealtimeFanoutProvider)) && usesDatabase)
         {
             services.TryAddSingleton<CollaborationRealtimeRelay>();
-            services.AddHostedService(static sp => sp.GetRequiredService<CollaborationRealtimeRelay>());
+            services.AddHostedService<CollaborationRealtimeRelayHost>();
         }
 
         // Deployment topology drives the collaboration fail-closed rules; it is deliberately an
@@ -36,8 +42,14 @@ internal static class CollaborationSessionServices
         // The advertised session capabilities must match what the endpoints will accept: when
         // edits fail closed, the stream advertises operations/replay as unavailable. Computed on
         // demand rather than snapshotted at construction — see CollaborationCapabilitySource.
-        services.TryAddSingleton<CollaborationCapabilitySource>();
-        services.TryAddSingleton<CollaborationSessionRealtimeServices>();
+        services.TryAddSingleton(sp => new CollaborationCapabilitySource(
+            sp.GetRequiredService<SavedMapCollaborationTopology>(),
+            sp.GetRequiredService<ISavedMapOperationLogRepository>(),
+            ResolveFanout(sp)));
+        services.TryAddSingleton(sp => new CollaborationSessionRealtimeServices(
+            ResolveFanout(sp),
+            sp.GetRequiredService<CollaborationCapabilitySource>(),
+            sp.GetService<NpgsqlDataSource>() is null ? null : sp.GetService<CollaborationRealtimeRelay>()));
         services.TryAddSingleton<InMemoryCollaborationSessionService>();
         // The background sweep keeps the singleton presence/outbox state bounded when
         // participants stop polling or a socket dies without a close frame.
@@ -54,4 +66,22 @@ internal static class CollaborationSessionServices
 internal sealed class SystemCollaborationSessionClock : ICollaborationSessionClock
 {
     public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
+}
+
+// Test hosts may remove the database after application registration. Resolve the relay only
+// after the final service collection is built, just like the realtime tail and retention hosts.
+internal sealed class CollaborationRealtimeRelayHost(IServiceProvider services) : IHostedService
+{
+    private CollaborationRealtimeRelay? _relay;
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        _relay = services.GetService<NpgsqlDataSource>() is null
+            ? null
+            : services.GetRequiredService<CollaborationRealtimeRelay>();
+        return _relay?.StartAsync(cancellationToken) ?? Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) =>
+        _relay?.StopAsync(cancellationToken) ?? Task.CompletedTask;
 }

@@ -6,15 +6,51 @@ using FluentAssertions;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Realtime;
 using Honua.Server.Features.Collaboration.Sessions;
+using Honua.Server.Features.Collaboration.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Npgsql;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Collaboration.Sessions;
 
 public sealed class CollaborationRealtimeRelayTests
 {
+    [UnitTest]
+    public async Task Transport_WhenDatabaseRemovedAfterRegistration_DoesNotResolveFanout()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSingleton(Substitute.For<ISavedMapCollaborationAuthorizer>());
+        using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=honua;Username=honua");
+        services.AddSingleton(dataSource);
+        services.AddSingleton<IRealtimeFanoutProvider>(_ =>
+            throw new InvalidOperationException("Database-backed fanout must not be resolved without a database."));
+        services.AddCollaborationSessionTransport();
+        services.RemoveAll<NpgsqlDataSource>();
+        await using var container = services.BuildServiceProvider();
+
+        var realtime = container.GetRequiredService<CollaborationSessionRealtimeServices>();
+        realtime.Provider.Should().BeNull();
+        realtime.Relay.Should().BeNull();
+        container.GetRequiredService<CollaborationCapabilitySource>().Current.Operations.Should().BeTrue();
+        container.GetRequiredService<SavedMapOperationAppendCoordinator>().CanAcceptEdits.Should().BeTrue();
+        var hosted = container.GetServices<IHostedService>().ToArray();
+        foreach (var service in hosted)
+        {
+            await service.StartAsync(CancellationToken.None);
+        }
+        foreach (var service in hosted.Reverse())
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
     [UnitTest]
     public async Task Reset_ResumesFromSuppliedHead_WhenWindowAdvancesDuringRecovery()
     {
