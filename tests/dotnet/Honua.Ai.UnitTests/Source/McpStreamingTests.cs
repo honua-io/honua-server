@@ -211,8 +211,7 @@ public sealed class McpStreamingTests
         sessions.TryGetReader(sessionId, out _).Should().BeTrue();
     }
 
-    [Theory]
-    [Trait("Category", "Unit")]
+    [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task GetStream_WhenDisconnectedOrOwnershipLost_ReleasesLeaseAndPreservesSession(bool loseOwnership)

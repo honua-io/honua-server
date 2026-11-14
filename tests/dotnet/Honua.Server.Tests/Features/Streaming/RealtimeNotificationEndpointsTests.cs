@@ -34,8 +34,7 @@ namespace Honua.Server.Tests.Features.Streaming;
 [Operation(Operations.Security)]
 public sealed class RealtimeNotificationEndpointsTests
 {
-    [Theory]
-    [Trait("Category", "Unit")]
+    [UnitTheory]
     [InlineData("jobs:0", true)]
     [InlineData("jobs:9223372036854775807", true)]
     [InlineData("jobs:-1", false)]
@@ -231,8 +230,7 @@ public sealed class RealtimeNotificationEndpointsTests
         provider.DidNotReceive().Subscribe(Arg.Any<RealtimeSubscriptionRequest>());
     }
 
-    [Theory]
-    [Trait("Category", "Unit")]
+    [UnitTheory]
     [InlineData("jobs")]
     [InlineData("catalog")]
     public async Task Stream_WithoutCursor_CapturesHeadBeforeDelayedWorkerStarts(string familyName)
@@ -264,8 +262,7 @@ public sealed class RealtimeNotificationEndpointsTests
         Assert.Collection(delivered, sequence => Assert.Equal(8, sequence));
     }
 
-    [Theory]
-    [Trait("Category", "Unit")]
+    [UnitTheory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task Alerts_RetentionReset_SendsRecoveryFrameBeforeClosingWebSocket(bool acknowledgeClose)
