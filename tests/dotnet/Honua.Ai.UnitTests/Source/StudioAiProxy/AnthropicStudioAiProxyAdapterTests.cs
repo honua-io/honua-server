@@ -76,7 +76,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [UnitTest]
     public async Task StreamAsync_StallAfterPartialText_IsDeadlineBoundDisposedAndHasNoSuccessTerminal()
     {
-        var stalled = new StudioAiProxyStallingStream("data: {\"type\":\"message_start\",\"message\":{\"model\":\"m\"}}\n\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n");
+        using var stalled = new StudioAiProxyStallingStream("data: {\"type\":\"message_start\",\"message\":{\"model\":\"m\"}}\n\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n");
         var handler = new StudioAiProxySequenceHttpMessageHandler(
             () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(stalled) });
         var adapter = new AnthropicStudioAiProxyAdapter(

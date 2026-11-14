@@ -166,7 +166,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [UnitTest]
     public async Task StreamAsync_CancelledAfterToolTurn_DoesNotSaveContinuation()
     {
-        var handler = new StudioAiProxyMockHttpMessageHandler(WithThinking(ToolCallFixture));
+        using var handler = new StudioAiProxyMockHttpMessageHandler(WithThinking(ToolCallFixture));
         using var clients = new StudioAiProxyMockHttpClientFactory(handler);
         var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
