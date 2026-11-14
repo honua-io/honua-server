@@ -675,7 +675,9 @@ internal sealed partial class OperationGateway : IOperationGateway
                 .ConfigureAwait(false);
             if (existing != null)
             {
-                return FolderProposalResult(existing, request, plan, decision);
+                return RequiresNewFolderIdempotencyKey(existing, new FolderProposalReuseContext(request, plan, clock))
+                    ? NewIdempotencyKeyRequiredResult(decision)
+                    : ExistingProposalResult(existing, decision, reservedKey);
             }
         }
 
