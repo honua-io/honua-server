@@ -76,6 +76,14 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton<IMcpSessionStore>(provider =>
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
+        services.AddOAuthScopeCatalogue();
+
+        services.AddRetentionSweeps();
+        return services;
+    }
+
+    private static void AddOAuthScopeCatalogue(this IServiceCollection services)
+    {
         // Replace only the built-in default when protocol registration ran first.
         // Explicit customer stores and repeated shared-state composition remain intact.
         foreach (var descriptor in services.Where(item =>
@@ -88,9 +96,6 @@ internal static class PostgresSharedStateRegistration
             provider.GetService<NpgsqlDataSource>() is not null
                 ? new PostgresOAuthScopeCatalogue(provider.GetRequiredService<JobStoreDatabase>())
                 : new InMemoryOAuthScopeCatalogue());
-
-        services.AddRetentionSweeps();
-        return services;
     }
 
     private static void AddRetentionSweeps(this IServiceCollection services)
