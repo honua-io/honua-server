@@ -10671,7 +10671,7 @@
             "description": "Approval authority or durable control-plane storage is temporarily unavailable."
           },
           "422": {
-            "description": "The approved operation cannot be executed with the sealed evidence."
+            "description": "No operation executor is registered for the proposal's operation (problem code `operation-executor-unavailable`). The proposal is not approved and its state is unchanged."
           }
         },
         "security": [
