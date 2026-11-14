@@ -618,6 +618,7 @@ if (hostHasSystemDatabase)
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
         .GetValue<Honua.ControlPlane.ControlPlaneTriggerMode>("TriggerMode", Honua.ControlPlane.ControlPlaneTriggerMode.Poll);
 
+    builder.Services.AddScoped<Honua.Infrastructure.Monitoring.OpsNotificationReminderRunner>();
     builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler>(
         static provider => provider.GetRequiredService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>());
