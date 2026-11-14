@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Caching;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -20,20 +21,26 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]
-public sealed class AdminLayerDisplaySpatialTests : IClassFixture<AdminLayerDisplaySpatialTests.Fixture>
+public sealed class AdminLayerDisplaySpatialTests
+    : IClassFixture<AdminLayerDisplaySpatialTests.SeededHost>, IAsyncLifetime
 {
+    private readonly SeededHost _host;
     private readonly WebAppFixture _fixture;
 
-    public AdminLayerDisplaySpatialTests(Fixture fixture)
+    public AdminLayerDisplaySpatialTests(SeededHost host)
     {
-        fixture.RestoreSeededGraph();
-        _fixture = fixture.Application;
+        _host = host;
+        _fixture = host.Application;
     }
 
-    // Cases write layer metadata into the metadata graph, so one host serves the class and each
-    // case restores the seeded graph under a new revision: revision-keyed caches and etags never
-    // return an earlier case's content.
-    public sealed class Fixture : IAsyncLifetime
+    public Task InitializeAsync() => _host.RestoreSeededStateAsync();
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    // Cases write layer metadata into the metadata graph, so one host serves the class. Before each
+    // case it restores the seeded graph under a new revision and evicts the cached service and
+    // layer metadata, so no case sees an earlier case's writes or cached responses.
+    public sealed class SeededHost : IAsyncLifetime
     {
         private MetadataV2Graph? _seeded;
 
@@ -48,12 +55,14 @@ public sealed class AdminLayerDisplaySpatialTests : IClassFixture<AdminLayerDisp
             _seeded = Application.GetCurrentV2GraphSnapshot().Graph;
         }
 
-        public void RestoreSeededGraph()
+        public Task RestoreSeededStateAsync()
         {
-            var seeded = _seeded ?? throw new InvalidOperationException("The fixture must be initialized first.");
+            var seeded = _seeded ?? throw new InvalidOperationException("The host must be initialized first.");
             var revision = Application.GetCurrentV2GraphSnapshot().Graph.Revision + 1;
             ((TestMetadataV2GraphProvider)Application.GetService<IMetadataV2GraphProvider>())
                 .SetGraph(seeded with { Revision = revision }, schema: Application.CurrentSchema);
+            return Application.GetService<OutputCacheInvalidationService>()
+                .InvalidateServiceCatalogAsync(serviceId: null, layerIds: null, CancellationToken.None);
         }
 
         public Task DisposeAsync() => Application.DisposeAsync();
