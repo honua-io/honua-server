@@ -117,7 +117,8 @@ internal static class OpsExternalEventMapper
 
     private static Template? TaskTemplate(JsonElement detail)
     {
-        if (Text(detail, "lastStatus") != "STOPPED")
+        if (Text(detail, "lastStatus") != "STOPPED" ||
+            Text(detail, "stopCode") is "UserInitiated" or "ServiceSchedulerInitiated" or "SpotInterruption" or "TerminationNotice")
         {
             return null;
         }
@@ -130,7 +131,7 @@ internal static class OpsExternalEventMapper
 
         var containers = detail.TryGetProperty("containers", out var array) && array.ValueKind == JsonValueKind.Array
             ? array.EnumerateArray().ToArray() : [];
-        if (reason.Contains("OutOfMemory", StringComparison.OrdinalIgnoreCase) || containers.Any(c => ExitCode(c) == 137))
+        if (reason.Contains("OutOfMemory", StringComparison.OrdinalIgnoreCase) || containers.Any(c => Text(c, "reason").Contains("OutOfMemory", StringComparison.OrdinalIgnoreCase)))
         {
             return Warning("ecs-task-oom", "A server task ran out of memory", "Check task memory and workload pressure. A memory increase changes cost and requires operator approval.");
         }

@@ -29,7 +29,7 @@ alarm event by event time is presented for an alarm resource. These templates do
 not authorize remediation or spending. Unknown event types are retained without
 creating a finding. Invalid envelopes remain unacknowledged.
 
-`IOpsExternalEventHandler` runs after persistence and before acknowledgment,
+`IOpsExternalEventConsumer` runs after persistence and before acknowledgment,
 including on duplicate deliveries. Handlers receive the original envelope with
 its identity and UTC event time. They must deduplicate their own side effects and
 fence the current service/release identity before acting. An old receiving task

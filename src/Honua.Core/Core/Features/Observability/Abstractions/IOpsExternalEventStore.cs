@@ -21,7 +21,7 @@ public interface IOpsEventQueueClient
 
 // Called after durable ingestion and before acknowledgement, including duplicate deliveries.
 // Implementations must be idempotent by event id and fence the target release themselves.
-public interface IOpsExternalEventHandler
+public interface IOpsExternalEventConsumer
 {
     Task HandleAsync(OpsExternalEvent externalEvent, CancellationToken cancellationToken);
 }

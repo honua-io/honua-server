@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 public sealed class OpsExternalEventTests
 {
     [Theory]
-    [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"containers\":[{\"exitCode\":137}]}", "ecs-task-oom")]
+    [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"containers\":[{\"exitCode\":137,\"reason\":\"OutOfMemoryError\"}]}", "ecs-task-oom")]
     [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"stoppedReason\":\"CannotPullContainerError: denied\"}", "image-pull-failed")]
     [InlineData("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_FAILED\"}", "ecs-deployment-failed")]
     [InlineData("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_COMPLETED\"}", "ecs-deployment-completed")]
@@ -40,6 +40,30 @@ public sealed class OpsExternalEventTests
         finding.Explanation.Should().NotBeNullOrWhiteSpace();
         finding.Id.Should().Be(OpsExternalEventMapper.Map(body)!.Id);
         finding.RecommendedAction.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("UserInitiated")]
+    [InlineData("ServiceSchedulerInitiated")]
+    [InlineData("SpotInterruption")]
+    [InlineData("TerminationNotice")]
+    [Operation(Operations.TestInfrastructure)]
+    public void RequestedShutdown_DoesNotProduceCrashFindings(string stopCode)
+    {
+        var detail = $$"""{"lastStatus":"STOPPED","stopCode":"{{stopCode}}","containers":[{"exitCode":137}]}""";
+        var body = Envelope("aws.ecs", "ECS Task State Change", detail);
+        var events = Enumerable.Range(0, 3).Select(i => OpsExternalEventMapper.Parse(
+            body.Replace("7a92fa24", $"7a92fa2{i}", StringComparison.Ordinal))).ToArray();
+        OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:05:00Z"))
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    [Operation(Operations.TestInfrastructure)]
+    public void Exit137WithoutMemoryEvidence_IsGenericCrash()
+    {
+        var body = Envelope("aws.ecs", "ECS Task State Change", """{"lastStatus":"STOPPED","containers":[{"exitCode":137}]}""");
+        OpsExternalEventMapper.Map(body)!.Rule.Should().Be("ecs-task-stopped");
     }
 
     [Theory]
@@ -113,7 +137,7 @@ public sealed class OpsExternalEventTests
         var handler = new RetryingHandler(store);
         var queue = new FakeQueue();
         await using var services = new ServiceCollection().AddSingleton<IOpsExternalEventStore>(store)
-            .AddSingleton<IOpsExternalEventHandler>(handler).BuildServiceProvider();
+            .AddSingleton<IOpsExternalEventConsumer>(handler).BuildServiceProvider();
         using var service = CreateService(queue, services);
         var body = Envelope("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_COMPLETED\"}");
         var process = () => service.ProcessAsync(new OpsEventQueueMessage("first", body), CancellationToken.None);
@@ -136,7 +160,7 @@ public sealed class OpsExternalEventTests
         findings.Should().ContainSingle().Which.Rule.Should().Be("cloudwatch-alarm-recovered");
     }
 
-    private sealed class RetryingHandler(MemoryStore store) : IOpsExternalEventHandler
+    private sealed class RetryingHandler(MemoryStore store) : IOpsExternalEventConsumer
     {
         internal int Calls { get; private set; }
         public Task HandleAsync(OpsExternalEvent externalEvent, CancellationToken cancellationToken)

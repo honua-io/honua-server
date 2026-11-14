@@ -119,10 +119,12 @@ internal static class ObservabilityServiceCollectionExtensions
         if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
         {
             services.AddHostedService<OpsHealthRollupSampler>();
+#if !HONUA_EXCLUDE_AWS
             if (services.AddAwsOpsEventQueue(configuration))
             {
                 services.AddHostedService<OpsEventIngestionService>();
             }
+#endif
         }
 
         // Aggregated operate-status surface (A12): composes the ops-health snapshot + findings into
