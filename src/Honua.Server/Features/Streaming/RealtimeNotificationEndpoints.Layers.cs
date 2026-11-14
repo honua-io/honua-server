@@ -57,7 +57,7 @@ internal static partial class RealtimeNotificationEndpoints
             await state.History.GetByEtagAsync(state.Environment, previousEtag, token).ConfigureAwait(false);
         if (next is null || (previousEtag is not null && previous is null))
         {
-            await WriteFrameAsync(state.Context.Response, new StreamFrame(null, "reset", writer =>
+            await WriteFrameAsync(state.Context.Response, new StreamFrame(item.Position, "reset", writer =>
             {
                 writer.WriteStartObject();
                 writer.WriteString("reason", "retention");

@@ -108,7 +108,7 @@ internal static class McpRealtimeStream
                 var frame = delivery switch
                 {
                     RealtimeDelivery.Event item => $"id: {item.Value.Position}\nevent: message\ndata: {item.Value.Payload.GetRawText()}\n\n",
-                    RealtimeDelivery.Reset reset => $"event: reset\ndata: {{\"reason\":{JsonSerializer.Serialize(reset.Reason, McpJsonContext.Default.String)},\"head\":{reset.Head.ToString(CultureInfo.InvariantCulture)}}}\n\n",
+                    RealtimeDelivery.Reset reset => $"id: {new RealtimePosition(RealtimeFamily.Mcp, reset.Head)}\nevent: reset\ndata: {{\"reason\":{JsonSerializer.Serialize(reset.Reason, McpJsonContext.Default.String)},\"head\":{reset.Head.ToString(CultureInfo.InvariantCulture)}}}\n\n",
                     _ => ": hb\n\n"
                 };
                 await writer.WriteAsync(frame, token).ConfigureAwait(false);

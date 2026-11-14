@@ -145,7 +145,7 @@ internal static partial class RealtimeNotificationEndpoints
                         }
                         break;
                     case RealtimeDelivery.Reset reset:
-                        await WriteFrameAsync(context.Response, new StreamFrame(null, "reset", writer =>
+                        await WriteFrameAsync(context.Response, new StreamFrame(new RealtimePosition(request.Family, reset.Head), "reset", writer =>
                         {
                             writer.WriteStartObject();
                             writer.WriteString("reason", reset.Reason);
