@@ -34,8 +34,10 @@ public sealed class CollaborationRealtimeRelayTests
         var provider = Substitute.For<IRealtimeFanoutProvider>();
         var subscriptions = 0;
         var reconnect = new TaskCompletionSource<long?>(TaskCreationOptions.RunContinuationsAsynchronously);
+#pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
         provider.GetWindowAsync(Arg.Any<RealtimeFamily>(), Arg.Any<CancellationToken>())
             .Returns(call => ValueTask.FromResult(new RealtimeLogWindow(call.Arg<RealtimeFamily>(), 1, subscriptions == 0 ? 10 : 13)));
+#pragma warning restore CA2012
         provider.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(call =>
         {
             var request = call.Arg<RealtimeSubscriptionRequest>();
