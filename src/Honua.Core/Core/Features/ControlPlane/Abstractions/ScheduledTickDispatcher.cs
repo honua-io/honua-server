@@ -77,7 +77,7 @@ public enum ScheduledTickKind
     // bounded and skips locked rows, so duplicate or concurrent sweeps delete nothing extra.
     JobStoreRetention,
 
-    /// <summary>Leased operational reminders and approval expiry. Cadence one minute.</summary>
+    // Leased operational reminders and approval expiry. Cadence one minute.
     OpsNotifications
 }
 

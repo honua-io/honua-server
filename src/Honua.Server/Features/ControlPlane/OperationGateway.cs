@@ -771,7 +771,9 @@ internal sealed partial class OperationGateway : IOperationGateway
                     : ExistingProposalResult(winner, decision, request.IdempotencyKey!);
             }
 
-            var renewedId = DeriveProposalId(request.Kind, request.OperationId, $"{request.IdempotencyKey}#{renewal + 1}", request.TenantId);
+            // Renewal ordinals live outside the caller-key hash namespace. A literal
+            // caller key ending in "#1" must never alias another key's renewal.
+            var renewedId = $"{proposalId}-renewal-{(renewal + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
             proposal = proposal with { ProposalId = renewedId, Audit = proposal.Audit with { ProposalId = renewedId } };
         }
 

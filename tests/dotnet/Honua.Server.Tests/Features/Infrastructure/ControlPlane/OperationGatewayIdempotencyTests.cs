@@ -78,6 +78,30 @@ public sealed class OperationGatewayIdempotencyTests
         (await store.GetAsync(third.ProposalId!))!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RouteAsync_ApprovalTier_RenewalDoesNotAliasLiteralCallerKey(bool literalFirst)
+    {
+        var store = new MultiProposalStore();
+        var sut = BuildGateway(store, ApprovalLadder());
+        var request = new OperationGatewayRequest { Kind = OperationClass.Deploy, RequestedBy = "agent", IdempotencyKey = "finding" };
+        var literalRequest = request with { IdempotencyKey = "finding#1" };
+        var first = await sut.RouteAsync(request);
+        store.SetStatus(first.ProposalId!, OperationProposalStatus.Expired);
+
+        var earlier = await sut.RouteAsync(literalFirst ? literalRequest : request);
+        var later = await sut.RouteAsync(literalFirst ? request : literalRequest);
+
+        earlier.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, earlier.Message);
+        later.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, later.Message);
+        later.ProposalId.Should().NotBe(earlier.ProposalId);
+        (await sut.RouteAsync(literalRequest)).ProposalId.Should().Be(literalFirst ? earlier.ProposalId : later.ProposalId);
+        (await sut.RouteAsync(request)).ProposalId.Should().Be(literalFirst ? later.ProposalId : earlier.ProposalId);
+        store.Count.Should().Be(3);
+        store.ActiveCount.Should().Be(2);
+    }
+
     [Fact]
     public async Task RouteAsync_ApprovalTier_ConcurrentRequestsAfterExpiry_CreateOneFreshProposal()
     {
