@@ -88,6 +88,7 @@ public sealed class WorkTaskCrewAccessTests : IAsyncLifetime
                 ExpectedVersion = 3,
                 ObservedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
                 Form = _form,
+                Answers = System.Text.Json.JsonElement.Parse("""{"name":"Cleared trail"}"""),
                 Notes = "Branch removed from the trail.",
             },
             AssetsJsonContext.Default.WorkTaskCompletionRequest);

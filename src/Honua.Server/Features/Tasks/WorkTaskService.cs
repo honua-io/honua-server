@@ -147,7 +147,7 @@ internal sealed class WorkTaskService(
         }
 
         var location = await locator.LocateAsync(request, context.User, context.RequestAborted).ConfigureAwait(false);
-        var (form, formError) = await formBinding.PinAsync(request, grant.Service!, context.RequestAborted).ConfigureAwait(false);
+        var (form, formError) = await formBinding.PinAsync(request, (grant.Service!, context), context.RequestAborted).ConfigureAwait(false);
         AssetFieldError[] errors = [.. new[] { location.Error, formError }.OfType<AssetFieldError>()];
         if (errors.Length > 0)
         {

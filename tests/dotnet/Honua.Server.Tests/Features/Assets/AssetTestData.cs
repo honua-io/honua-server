@@ -87,6 +87,7 @@ internal static class AssetTestData
             {
                 Title = "Asset work " + Guid.NewGuid().ToString("N"),
                 Target = new FormTargetDefinition { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId },
+                Fields = [new FormFieldDefinition { FieldId = "name", Label = "Name", Type = "text", TargetField = "name", Required = true }],
                 Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = ["name"] }],
             },
             "test-admin");

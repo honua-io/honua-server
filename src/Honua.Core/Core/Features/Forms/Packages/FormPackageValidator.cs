@@ -13,7 +13,7 @@ namespace Honua.Core.Features.Forms.Packages;
 /// <summary>
 /// Validates form packages and submissions against target layer schema and server policy.
 /// </summary>
-public sealed class FormPackageValidator
+public sealed partial class FormPackageValidator
 {
     private static readonly HashSet<string> _supportedVisibilityOperators = new(StringComparer.OrdinalIgnoreCase)
     {

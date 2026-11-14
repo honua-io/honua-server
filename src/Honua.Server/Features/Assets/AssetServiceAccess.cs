@@ -52,7 +52,8 @@ internal static class AssetServiceAccess
 
         var target = FormTargetMetadataResolver.Resolve(grant.Snapshot!,
             new FormTargetDefinition { ServiceId = grant.ServiceId, LayerId = layerId.Value });
-        if (target.Resource is null)
+        if (target.Resource is null || target.Publication is null ||
+            !TenantScopeHelpers.IsPublicationVisible(context, target.Publication, target.Resource, target.Service))
         {
             return AssetServiceGrant.Deny(AssetCommandHttp.Rejected(context, "layerId", "The published layer was not found."));
         }

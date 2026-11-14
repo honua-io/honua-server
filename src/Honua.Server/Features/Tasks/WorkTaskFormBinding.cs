@@ -2,8 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Assets;
+using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Assets;
+using Honua.Server.Features.Forms;
 
 namespace Honua.Server.Features.Tasks;
 
@@ -12,7 +14,7 @@ internal sealed class WorkTaskFormBinding(IAssetProfileStore profiles, AssetForm
 {
     public async Task<(WorkTaskFormReference? Form, AssetFieldError? Error)> PinAsync(
         WorkTaskCreateRequest request,
-        MetadataV2Service service,
+        (MetadataV2Service Service, HttpContext Context) target,
         CancellationToken cancellationToken)
     {
         var formId = request.FormId;
@@ -27,9 +29,37 @@ internal sealed class WorkTaskFormBinding(IAssetProfileStore profiles, AssetForm
             return (null, new AssetFieldError("formId", "No form is bound: pass formId or set the profile's default form for this task type."));
         }
 
-        var published = await forms.FindPublishedAsync(formId, service, cancellationToken).ConfigureAwait(false);
-        return published is null
-            ? (null, new AssetFieldError("formId", $"Form '{formId}' has no published version on this service."))
-            : (new WorkTaskFormReference { FormId = published.FormId, Version = published.Version }, null);
+        var published = await forms.FindPublishedAsync(formId, target.Service, cancellationToken).ConfigureAwait(false);
+        if (published is null || !await IsCompatibleAsync(request, published, target.Context).ConfigureAwait(false))
+        {
+            return (null, new AssetFieldError("formId", "The published form is not compatible with this task target."));
+        }
+
+        return (new WorkTaskFormReference { FormId = published.FormId, Version = published.Version }, null);
+    }
+
+    private async Task<bool> IsCompatibleAsync(WorkTaskCreateRequest request, FormPackageVersion form, HttpContext context)
+    {
+        if (form.Package.Target is not { } target)
+        {
+            return false;
+        }
+
+        var grant = await AssetServiceAccess.RequireLayerEditorAsync(context, request.ServiceId, target.LayerId).ConfigureAwait(false);
+        if (grant.Denied is not null)
+        {
+            return false;
+        }
+
+        var profile = request.ProfileId is Guid id ? await profiles.GetAsync(id, context.RequestAborted).ConfigureAwait(false) : null;
+        if (profile is not null && profile.LayerId != target.LayerId)
+        {
+            return false;
+        }
+
+        var resolved = FormTargetMetadataResolver.Resolve(grant.Snapshot!, target);
+        var fields = resolved.Resource!.SchemaFields;
+        return form.Package.Fields.All(field => string.IsNullOrWhiteSpace(field.TargetField) ||
+            fields.Any(mapped => string.Equals(mapped.Name, field.TargetField, StringComparison.OrdinalIgnoreCase)));
     }
 }

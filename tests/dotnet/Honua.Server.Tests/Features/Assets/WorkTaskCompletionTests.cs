@@ -149,6 +149,27 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
         (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(0);
     }
 
+    [IntegrationTheory]
+    [InlineData("{}")]
+    [InlineData("{\"name\":123}")]
+    [InlineData("{\"name\":\"x\",\"NAME\":\"y\"}")]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/tasks/{taskId}/completion")]
+    public async Task Complete_InvalidPinnedFormAnswers_LeavesTaskAndEvidenceUnchanged(string answers)
+    {
+        var taskId = await StartedInspectionAsync(_assets[0].AssetId);
+        var receipts = await AssetTestData.CountAsync(_fixture, "asset_command_receipts");
+        var response = await CompleteAsync(taskId, Completion(3, Later, 3) with { Answers = JsonElement.Parse(answers) });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+        (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(0);
+        (await AssetTestData.CountAsync(_fixture, "asset_summaries")).Should().Be(0);
+        (await AssetTestData.CountAsync(_fixture, "work_task_history")).Should().Be(3);
+        (await AssetTestData.CountAsync(_fixture, "asset_command_receipts")).Should().Be(receipts);
+        (await AssetTestData.ScalarAsync(_fixture, $"SELECT status FROM honua.work_tasks WHERE task_id = '{taskId}'"))
+            .Should().Be(WorkTaskStatus.InProgress);
+    }
+
     private Task<Guid> StartedInspectionAsync(string assetId) => StartedTaskAsync(assetId, WorkTaskType.Inspection);
 
     private async Task<Guid> StartedTaskAsync(string assetId, string type)
@@ -198,7 +219,7 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
         ObservedAt = observedAt,
         Form = _form,
         Condition = condition,
-        Answers = JsonElement.Parse("""{"faceLegible":true}"""),
+        Answers = JsonElement.Parse("""{"name":"Inspected sign"}"""),
         Notes = "Post leaning slightly.",
     };
 

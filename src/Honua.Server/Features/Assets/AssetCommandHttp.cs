@@ -9,6 +9,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Assets;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Assets;
 
@@ -31,7 +32,12 @@ internal static class AssetCommandHttp
     }
 
     public static string ResolveActor(HttpContext context)
-        => ServiceDataEditorAuthorization.ResolveOwnerSubject(context.User) ?? AuditEvent.AnonymousActor;
+        => CanonicalSecurityActor.Resolve(context.User)?.ActorId ?? AuditEvent.AnonymousActor;
+
+    // Planners are administrators (full admin keys or configured admin roles); everyone else acts as crew on the tasks
+    // of services they can edit.
+    public static WorkTaskActor ResolveTaskActor(HttpContext context)
+        => new(ResolveActor(context)) { IsPlanner = ServiceDataEditorAuthorization.IsAdminPrincipal(context) };
 
     // Planners are administrators (full admin keys or configured admin roles); everyone else acts as crew on the tasks
     // of services they can edit.

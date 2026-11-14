@@ -59,7 +59,7 @@ internal sealed class WorkTaskAssetGeometry(
         // Two rows are read so a non-unique asset ID is refused rather than resolved arbitrarily.
         var result = await featureReader.QueryAsync(
             target.StorageLayerId!.Value,
-            new FeatureQuery { SqlFilter = translation.SqlFilter, Limit = 2 },
+            new FeatureQuery { SqlFilter = translation.SqlFilter, Limit = 2, OutputSrid = resource.ReadSrid() ?? Wgs84 },
             cancellationToken).ConfigureAwait(false);
         var features = result.Items.Take(2).ToList();
         return features switch
@@ -81,7 +81,7 @@ internal sealed class WorkTaskAssetGeometry(
         return field?.Type switch
         {
             MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger
-                => long.TryParse(assetId, NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? new Literal(number, LiteralType.Number) : null,
+                => long.TryParse(assetId, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var number) ? new Literal(number, LiteralType.Number) : null,
             MetadataV2FieldType.Uuid => Guid.TryParse(assetId, out var uuid) ? new Literal(uuid.ToString("D"), LiteralType.Text) : null,
             _ => new Literal(assetId, LiteralType.Text),
         };
