@@ -3316,7 +3316,7 @@
       "timeout_minutes": 30,
       "test_timeout_minutes": 20,
       "max_cpu_count": "1",
-      "upload_operator_eval_report": true,
+      "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "Capacity audit of the last three full trunk runs (43348507021, 43471044721, 43540829683): measured TRX interval weights select this cut. Original selection, source triggers and execution budgets are retained. The final child owns unlisted future classes/methods. Child wall time is not yet measured; dispatch rank remains conservative.",
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing)&FullyQualifiedName!~Honua.Server.Tests.Features.Geoprocessing.CustomCodeArtifactEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Geoprocessing.GrpcProcessServiceIntegrationTests&FullyQualifiedName!~Honua.Server.Tests.Features.Geoprocessing.Execution.ImageryClassifyExecutionProofTests&FullyQualifiedName!~Honua.Server.Tests.Features.Geoprocessing.RasterSurfaceServiceTests&FullyQualifiedName!~Honua.Server.Tests.Features.Eval.EvalHarnessTests&FullyQualifiedName!~Honua.Server.Tests.Features.Geoprocessing.Execution.ImportDatasetJobExecutorTests&FullyQualifiedName!~Honua.Server.Tests.Features.Geoprocessing.GpJobWorkerCompositionRootTests&FullyQualifiedName!~Honua.Server.Tests.Features.Geoprocessing.Execution.GeometryBufferJobExecutorIntegrationTests&FullyQualifiedName!~Honua.Server.Tests.Features.Geoprocessing.TileExportAdmissionSharedLeaseTests",

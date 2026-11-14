@@ -39,7 +39,7 @@ for contract in CONTRACTS:
     names = contract["children"]
     children = [next(shard for shard in CONFIG["shards"] if shard["name"] == name) for name in names]
     selected = verify(original, children)
-    for mutation in ("lost", "duplicate", "foreign", "budget", "trigger"):
+    for mutation in ("lost", "duplicate", "foreign", "budget", "trigger", "report"):
         broken = copy.deepcopy(children)
         if mutation == "lost":
             broken[0]["filter"] += "&FullyQualifiedName!=" + min(selected[0])
@@ -49,8 +49,11 @@ for contract in CONTRACTS:
             broken[0]["filter"] += "|FullyQualifiedName~Honua.Server.Tests."
         elif mutation == "budget":
             broken[0]["test_timeout_minutes"] += 1
-        else:
+        elif mutation == "trigger":
             broken[0]["paths"] = broken[0]["paths"][1:]
+        else:
+            for child in broken:
+                child["upload_operator_eval_report"] = True
         try:
             verify(original, broken)
         except AssertionError:
@@ -65,7 +68,18 @@ for contract in CONTRACTS:
         assert original["name"] not in override["shards"]
         if set(names) & set(override["shards"]):
             assert set(names) <= set(override["shards"])
-    print(f"full-run-capacity=ok parent={original['name']} methods={list(map(len, selected))} negatives=5")
+    print(f"full-run-capacity=ok parent={original['name']} methods={list(map(len, selected))} negatives=6")
 
 for field in ("artifact_suffix", "log_name", "shard_name"):
     assert len({shard[field] for shard in CONFIG["shards"]}) == len(CONFIG["shards"]), field
+
+# The fixed-name operator-eval-report upload fails without eval-report.json, so exactly one
+# shard uploads it and that shard runs the harness test that writes the report.
+REPORT_TEST = "Honua.Server.Tests.Features.Eval.EvalHarnessTests"
+uploaders = [shard for shard in CONFIG["shards"] if shard["upload_operator_eval_report"]]
+assert len(uploaders) == 1, [shard["name"] for shard in uploaders]
+report_filter = MODULE._FilterParser(uploaders[0]["filter"]).parse()
+report_methods = [entry["fqn"] + "." + method for entry in CLASSES.values()
+                  if entry["fqn"] == REPORT_TEST for method in entry["methods"]]
+assert report_methods and all(MODULE._eval(report_filter, name) for name in report_methods), uploaders[0]["name"]
+print(f"operator-eval-report=ok shard={uploaders[0]['name']}")

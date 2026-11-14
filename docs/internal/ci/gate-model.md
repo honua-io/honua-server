@@ -27,21 +27,9 @@ Focused one-worker qualification passed all seven revised children: Migration
 1/2/3 took 7.35/5.35/5.51 minutes and STAC 1/2/3/4 took
 11.94/4.01/5.93/4.68 minutes. The largest Migration child finishes
 21.65 minutes before the exhausted parent deadline; this is capacity headroom,
-not a measured end-to-end workflow saving.
-
-The live-output capacity partitions replace File and Raster Import with three
-numbered children (import orchestration, direct CRS/authorization contracts, and
-the residual import/raster selection), Sharing with two (REST tokens and the
-residual selection), and Analytics Studio Export and Reporting with three
-(spatial analytics, export, and the residual feature-store/reporting selection).
-Scheduled full run `43540829683` exhausted the respective 28-, 22-, and 22-minute
-test budgets while producing output within eight seconds of termination. These
-are incomplete baselines, not passing durations. Every child retains its parent's
-project, routing paths, tier filters and test/job time limits; targeted overrides
-select all siblings. Dispatch ranks remain inherited pending measured child runs.
-`test-live-output-capacity-partitions.py` conserves the original methods exactly
-once, keeps each class intact for future methods, and rejects lost, duplicated,
-foreign, budget-expanded or path-narrowed selections.
+not a measured end-to-end workflow saving. STAC Protocol 1 is the single
+class `StacSearchTests` at 11.94 of 15 minutes (80%); it cannot be split further by
+class and is the next method-level partition candidate.
 
 FeatureServer Replica now uses three whole-class shards: `FeatureServer Replica
 Management` (conflict review, ownership and management), `FeatureServer Replica
@@ -1322,4 +1310,4 @@ skipping or missing results fail the shell check. The required name and both
 avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
-The numbered MCP, GPServer/NAServer, Admin Authorization and Operator Eval capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child and unrelated controls.
+The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.

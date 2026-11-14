@@ -1607,7 +1607,7 @@ jobs:
           images=()
           case "${SERVER_SHARD}" in
             'Admin & Infrastructure '[0-9]*| \
-            'Migration'| \
+            'Migration '[0-9]*| \
             'FeatureServer Editing and Relationships'| \
             'FeatureServer Query Services and Replication '[0-9]*| \
             'OGC API Tiles Coverages and Processes'| \
