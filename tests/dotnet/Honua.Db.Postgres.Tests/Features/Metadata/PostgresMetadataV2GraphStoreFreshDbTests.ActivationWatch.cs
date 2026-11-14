@@ -63,6 +63,30 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
     });
 
     [IntegrationTest]
+    public Task ActivationWatch_OldRollback_LeavesRecentFindingsOnlyWhileItsPurgeIsPending() => WithWatchSchemaAsync(async schema =>
+    {
+        var store = WatchStore(schema);
+        var original = await store.SaveAsync(WatchGraph("original"), null);
+        await store.SaveAsync(WatchGraph("candidate"), original.Etag);
+        var watch = (await store.ReadPendingAsync()).Single();
+        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().BeTrue();
+        await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+        await using (var command = new NpgsqlCommand($"""
+            UPDATE "{schema}".catalog_activation_watches
+               SET activated_at = clock_timestamp() - interval '25 hours'
+             WHERE id = @id
+            """, connection))
+        {
+            command.Parameters.AddWithValue("id", watch.Id);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        (await store.ReadRecentRollbacksAsync()).Should().ContainSingle("an unacknowledged purge stays visible however old");
+        await store.CompletePurgeAsync(watch.Id);
+        (await store.ReadRecentRollbacksAsync()).Should().BeEmpty();
+    });
+
+    [IntegrationTest]
     public Task ActivationWatch_ExpiredOrOtherEnvironment_CannotRollBack() => WithWatchSchemaAsync(async schema =>
     {
         var store = WatchStore(schema);

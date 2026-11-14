@@ -48,6 +48,9 @@ internal static class OpsFindingEvidenceMap
     private static readonly IReadOnlyList<string> BatchBackendSources =
         [EvidencePostureVocabulary.SourceIds.FindingsBatchBackends];
 
+    private static readonly IReadOnlyList<string> CatalogRollbackSources =
+        [EvidencePostureVocabulary.SourceIds.FindingsCatalogRollbacks];
+
     private static readonly IReadOnlyList<string> ReleaseDivergenceSources =
     [
         EvidencePostureVocabulary.SourceIds.FindingsControlPlane,
@@ -68,6 +71,7 @@ internal static class OpsFindingEvidenceMap
         OpsFindingsService.RuleDbBoundedAdmissionPressure => DatabasePressureSources,
         OpsFindingsService.RuleServingLatencySlo => ServingLatencySources,
         OpsFindingsService.RulePlatformReleaseRuntimeDivergence => ReleaseDivergenceSources,
+        OpsFindingsService.RuleCatalogActivationRolledBack => CatalogRollbackSources,
         _ => [EvidencePostureVocabulary.SourceIds.Findings],
     };
 

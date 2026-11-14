@@ -3,6 +3,7 @@
 
 using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
@@ -108,12 +109,66 @@ public sealed class CatalogActivationWatcherTests
         await _store.DidNotReceiveWithAnyArgs().TryRollbackAsync(default!, default);
     }
 
-    private CatalogActivationWatcher Watcher(int seconds = 300)
+    [UnitTest]
+    public async Task RunOnceAsync_PurgeKeepsFailing_BacksOffInsteadOfRetryingEveryTick()
     {
-        var services = new ServiceCollection().AddSingleton(_store).AddSingleton(_health)
+        _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { Watch() with { RollbackRevision = 3, ChangeId = "catalog-watch-1" } });
+        _cdn.InvalidateAsync(default!, default).ReturnsForAnyArgs(new CdnInvalidationResult(CdnInvalidationOutcome.Failed));
+        using var watcher = Watcher();
+        await watcher.RunOnceAsync(default);
+        await watcher.RunOnceAsync(default);
+        await watcher.RunOnceAsync(default);
+        await _cdn.Received(1).InvalidateAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
+        await _store.DidNotReceiveWithAnyArgs().CompletePurgeAsync(default, default);
+    }
+
+    [UnitTest]
+    public async Task RunOnceAsync_PurgeClaimedByAnotherTask_DoesNotPurgeOrAcknowledge()
+    {
+        _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { Watch() with { RollbackRevision = 3, ChangeId = "catalog-watch-1" } });
+        var leases = Substitute.For<ILeaseStore>();
+        leases.TryAcquireAsync(default, default, default).ReturnsForAnyArgs(false);
+        using var watcher = Watcher(leases: leases);
+        await watcher.RunOnceAsync(default);
+        await leases.Received(1).TryAcquireAsync(
+            Arg.Is<LeaseClaim>(claim => claim.LeaseKey == "catalog-rollback-purge:1"), TimeSpan.FromMinutes(1), Arg.Any<CancellationToken>());
+        await _cdn.DidNotReceiveWithAnyArgs().InvalidateAsync(default!, default);
+        await _store.DidNotReceiveWithAnyArgs().CompletePurgeAsync(default, default);
+    }
+
+    [UnitTest]
+    public async Task RunOnceAsync_PurgeSucceedsUnderLease_AcknowledgesAndReleases()
+    {
+        _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { Watch() with { RollbackRevision = 3, ChangeId = "catalog-watch-1" } });
+        _cdn.InvalidateAsync(default!, default).ReturnsForAnyArgs(new CdnInvalidationResult(CdnInvalidationOutcome.Submitted));
+        var leases = Substitute.For<ILeaseStore>();
+        leases.TryAcquireAsync(default, default, default).ReturnsForAnyArgs(true);
+        using var watcher = Watcher(leases: leases);
+        await watcher.RunOnceAsync(default);
+        await _store.Received(1).CompletePurgeAsync(1, Arg.Any<CancellationToken>());
+        await leases.Received(1).ReleaseAsync(Arg.Is<LeaseClaim>(claim => claim.LeaseKey == "catalog-rollback-purge:1"), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData(0, 1)]
+    [InlineData(1, 2)]
+    [InlineData(4, 16)]
+    [InlineData(5, 30)]
+    [InlineData(40, 30)]
+    public void PurgeBackoff_DoublesFromOneMinuteUpToThirty(int failures, int minutes)
+        => Assert.Equal(TimeSpan.FromMinutes(minutes), CatalogActivationWatcher.PurgeBackoff(failures));
+
+    private CatalogActivationWatcher Watcher(int seconds = 300, ILeaseStore? leases = null)
+    {
+        var collection = new ServiceCollection().AddSingleton(_store).AddSingleton(_health)
             .AddSingleton<TimeProvider>(new FixedTimeProvider())
-            .AddSingleton(Options.Create(new TracingOptions { ServingLatencyWindowSeconds = seconds }))
-            .BuildServiceProvider();
+            .AddSingleton(Options.Create(new TracingOptions { ServingLatencyWindowSeconds = seconds }));
+        if (leases is not null)
+        {
+            collection.AddSingleton(leases);
+        }
+
+        var services = collection.BuildServiceProvider();
         return new(services, new CdnInvalidationService(_cdn, NullLogger<CdnInvalidationService>.Instance),
             NullLogger<CatalogActivationWatcher>.Instance);
     }

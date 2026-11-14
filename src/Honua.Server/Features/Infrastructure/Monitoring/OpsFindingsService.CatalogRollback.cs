@@ -9,7 +9,8 @@ namespace Honua.Infrastructure.Monitoring;
 internal sealed partial class OpsFindingsService
 {
     private readonly ICatalogActivationWatchStore? _catalogActivationWatches;
-    internal const string CatalogRollbackSourceId = "honua_ops_findings.catalog_rollbacks";
+    internal const string RuleCatalogActivationRolledBack = "catalog-activation-rolled-back";
+    internal const string CatalogRollbackSourceId = EvidencePostureVocabulary.SourceIds.FindingsCatalogRollbacks;
     private const string CatalogRollbackBackendId = "catalog-activation-watch-store";
 
     private async Task<EvidenceSourceEnvelope> EvaluateCatalogRollbacksAsync(List<OpsFinding> findings, CancellationToken cancellationToken)
@@ -43,7 +44,7 @@ internal sealed partial class OpsFindingsService
     {
         foreach (var watch in watches)
         {
-            const string rule = "catalog-activation-rolled-back";
+            const string rule = RuleCatalogActivationRolledBack;
             var subject = new OpsFindingSubject { OperationId = watch.ChangeId };
             findings.Add(new OpsFinding
             {
@@ -54,9 +55,8 @@ internal sealed partial class OpsFindingsService
                 Explanation = $"Catalog revision {watch.Revision} was undone by revision {watch.RollbackRevision}. {watch.Reason}",
                 DetectedAt = watch.ActivatedAt,
                 Subject = subject,
-                EvidenceRefs = [$"catalog-activation:{watch.Id}", $"admin-change:{watch.ChangeId}"],
+                EvidenceRefs = [$"catalog-activation:{watch.Id}"],
             });
         }
-
     }
 }

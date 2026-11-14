@@ -390,8 +390,10 @@ internal static class ServiceCollectionExtensions
                 configuration["Database:Schema"],
                 serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>()));
 
+        // A host that replaces or decorates IMetadataV2GraphStore has no activation journal: the watch
+        // store resolves to null there, so the watcher idles and its findings source reports notConfigured.
         services.AddScoped<ICatalogActivationWatchStore>(serviceProvider =>
-            (ICatalogActivationWatchStore)serviceProvider.GetRequiredService<IMetadataV2GraphStore>());
+            (serviceProvider.GetRequiredService<IMetadataV2GraphStore>() as ICatalogActivationWatchStore)!);
 
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.

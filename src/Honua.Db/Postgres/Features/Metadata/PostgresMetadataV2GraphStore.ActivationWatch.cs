@@ -18,7 +18,10 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
         => await ReadWatchesAsync("(state = 'watching' OR (state = 'rolled_back' AND purge_completed_at IS NULL))", cancellationToken).ConfigureAwait(false);
 
     public Task<IReadOnlyList<CatalogActivationWatch>> ReadRecentRollbacksAsync(CancellationToken cancellationToken = default)
-        => ReadWatchesAsync("state = 'rolled_back'", cancellationToken);
+        // A rollback stays a finding for a day after its activation, and for as long as its CDN purge is unacknowledged.
+        => ReadWatchesAsync(
+            "state = 'rolled_back' AND (purge_completed_at IS NULL OR activated_at > clock_timestamp() - interval '24 hours')",
+            cancellationToken);
 
     private async Task<IReadOnlyList<CatalogActivationWatch>> ReadWatchesAsync(string statePredicate, CancellationToken cancellationToken)
     {

@@ -51,7 +51,8 @@ public sealed partial class OpsFindingsServiceTests
         var second = (await service.EvaluateAsync()).Single(f => f.Rule == "catalog-activation-rolled-back");
         Assert.Equal(first.Id, second.Id);
         Assert.Equal("catalog-watch-5", first.Subject.OperationId);
-        Assert.Contains("admin-change:catalog-watch-5", first.EvidenceRefs);
+        Assert.Equal(new[] { "catalog-activation:5" }, first.EvidenceRefs);
+        Assert.Equal(new[] { OpsFindingsService.CatalogRollbackSourceId }, OpsFindingEvidenceMap.RequiredSourceIds(first));
         Assert.Contains("revision 9", first.Explanation);
         Assert.Null(first.RecommendedAction);
     }
