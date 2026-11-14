@@ -1212,3 +1212,25 @@ All cases and assertions remain in the Security and Authorization 5 shard on
 selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
 definition.
+
+
+### Heavy runner shutdown recovery
+
+`heavy-shutdown-retry.yml` observes completed full trunk `CI` runs. It reads
+trusted trunk code and revalidates the source run before requesting one failed-job
+rerun. Only attempt 1 qualifies, and every failed non-summary job must have the
+`honua-heavy` label and the canonical runner shutdown message in its logs.
+Successful jobs remain completed; failed jobs and their dependents run once more.
+Manual cancellations, selective runs, mixed product failures, unreadable logs and
+second interruptions do not retry. Required job names and dependency contracts
+are unchanged. Manual full trunk runs use the `CI full` title prefix; merge-train
+dispatch identities retain their existing exact title.
+
+Normal PRs add zero jobs. Each failed first-attempt full trunk run starts one
+hosted observer; a qualifying interruption also requeues only failed jobs and
+dependents. The seven interrupted jobs in run 43540829683 all stopped at
+02:15:21Z on 14 November; that run was later cancelled and is ineligible for
+recovery. No after-change recovery timing is claimed before a live interruption.
+The companion IaC drain marker blocks fresh registration and listener restart
+before stopping all runner services on a spot notice. GitHub records interrupted
+jobs as failed until the observer requests the bounded rerun after completion.

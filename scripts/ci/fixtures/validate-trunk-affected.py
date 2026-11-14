@@ -65,7 +65,7 @@ class TrunkAffectedWorkflowTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("certified_selector", CERTIFIED_SELECTOR)
         selector = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(selector)
-        self.assertEqual(workflow("ci.yml")["run-name"], "CI ${{ inputs.merge_train_nonce }}")
+        self.assertEqual(workflow("ci.yml")["run-name"], "CI ${{ github.ref == 'refs/heads/trunk' && (github.event_name == 'schedule' || inputs.full_ci || !inputs.selective_base) && 'full ' || '' }}${{ inputs.merge_train_nonce }}")
         scripts = step_scripts(self.job)
         selective_title = 'run_title="affected ${COMPLETED_BASE:0:12}..${HEAD_SHA:0:12}"'
         self.assertIn(selective_title, scripts)
