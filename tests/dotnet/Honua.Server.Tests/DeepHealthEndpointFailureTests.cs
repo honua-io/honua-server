@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -104,6 +105,23 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
             using var response = await client.SendAsync(request);
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ReadinessCheck)]
+    [Endpoint("GET /healthz/deep")]
+    public async Task DeepHealthEndpoint_MigrationsFail_ReturnsUnavailableDespiteHealthyDatabase()
+    {
+        var checker = Substitute.For<IDatabaseHealthChecker>();
+        checker.IsDatabaseHealthyAsync(Arg.Any<CancellationToken>()).Returns(true);
+        using var host = Configure(checker, HealthyCatalog());
+        using var client = host.CreateClient();
+        host.Services.GetRequiredService<MigrationState>().MarkFailed("private migration failure");
+
+        using var response = await client.GetAsync("/healthz/deep");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await response.Content.ReadAsStringAsync()).Should().Be("Not Ready");
     }
 
     private WebApplicationFactory<Program> Configure(IDatabaseHealthChecker checker, IMetadataV2GraphProvider catalog)
