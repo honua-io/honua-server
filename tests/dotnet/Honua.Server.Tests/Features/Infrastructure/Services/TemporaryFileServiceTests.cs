@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Honua.FileStorage;
 using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Services;
@@ -840,6 +841,50 @@ public sealed class TemporaryFileServiceTests : IDisposable
         url.Should().EndWith(".png");
         progressStore.SetAttempts.Should().BeGreaterThan(0);
         await s3.Received().PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task StoreTemporaryFileAsync_CreatesPrivateDirectoryAndOwnerOnlyFiles()
+    {
+        // A configured fixed path such as /tmp/honua-temp must not expose stored files.
+        var storageDirectory = Path.Join(_storageDirectory, "private");
+        var service = CreateService(new TemporaryFileOptions
+        {
+            StorageDirectory = storageDirectory,
+            DefaultExpiration = TimeSpan.FromMinutes(5)
+        });
+
+        await service.StoreTemporaryFileAsync(new byte[] { 1, 2, 3 }, "image/png");
+
+        var stored = Directory.GetFiles(storageDirectory);
+        stored.Should().HaveCount(2, "one data file and one metadata file");
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        File.GetUnixFileMode(storageDirectory).Should().Be(PrivateTempFile.OwnerDirectory);
+        foreach (var path in stored)
+        {
+            File.GetUnixFileMode(path).Should().Be(PrivateTempFile.OwnerReadWrite, path);
+        }
+    }
+
+    [UnitTest]
+    public void Constructor_RemovesSharedWriteFromAPreCreatedStorageDirectory()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var storageDirectory = Path.Join(_storageDirectory, "shared");
+        Directory.CreateDirectory(storageDirectory);
+        File.SetUnixFileMode(storageDirectory, PrivateTempFile.OwnerDirectory | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite);
+
+        CreateService(new TemporaryFileOptions { StorageDirectory = storageDirectory });
+
+        PrivateTempFile.IsWritableByOthers(storageDirectory).Should().BeFalse();
     }
 
     public void Dispose()

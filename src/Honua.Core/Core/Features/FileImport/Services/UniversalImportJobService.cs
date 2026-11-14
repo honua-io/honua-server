@@ -14,6 +14,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Honua.Core.Features.Security;
 
 namespace Honua.Core.Features.FileImport.Services;
 
@@ -195,20 +196,18 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 request.FileStream.Position = 0;
             }
 
-            // Path.Combine's second argument is a server-generated file name built from a
-            // Guid.NewGuid() job id and a fresh Guid.NewGuid() suffix, so it can never be
-            // rooted/absolute; Path.Combine cannot silently drop the temp directory here.
-            tempFilePath = Path.Join(Path.GetTempPath(), $"honua-import-{jobId}-{Guid.NewGuid():N}.tmp");
+            // Server-generated name (job id plus a fresh GUID), created exclusively and
+            // owner-only so other local users cannot read the upload.
+            tempFilePath = PrivateTempFile.NewPath($"honua-import-{jobId}-", ".tmp");
             try
             {
-                await using (var tempStream = new FileStream(tempFilePath, new FileStreamOptions
+                await using (var tempStream = new FileStream(tempFilePath, PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
                 {
-                    Mode = FileMode.CreateNew,
                     Access = FileAccess.Write,
                     Share = FileShare.None,
                     BufferSize = 64 * 1024,
                     Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-                }))
+                })))
                 {
                     await request.FileStream.CopyToAsync(tempStream, cancellationToken);
                 }

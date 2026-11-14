@@ -31,6 +31,7 @@ using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
+using Honua.Core.Features.Security;
 
 namespace Honua.Import.FileImport;
 
@@ -1359,15 +1360,9 @@ internal static partial class ImportEndpoints
     // may be left under this path — a background job must never be queued referencing it.
     private static string CreateStagedImportFilePath(string fileName)
     {
-        // Not a path-combine drop risk: fileName is always FileUploadSecurity.SanitizeFileName
-        // output at call sites, which strips path separators, so extension can contain neither
-        // a separator nor a drive/root prefix; it is also appended as a suffix after the GUID,
-        // so this segment can never be rooted.
-        var extension = Path.GetExtension(fileName);
-        return Path.Join(
-            Path.GetTempPath(),
-            "honua-import-staging",
-            $"{Guid.NewGuid():N}{extension}");
+        // Directly under the temp path: no shared fixed directory another local user could
+        // pre-create; the copy creates the file exclusively and owner-only.
+        return PrivateTempFile.NewPath("honua-import-staging-", Path.GetExtension(fileName));
     }
 
     private static FileStream OpenSequentialReadStream(string path, int bufferSize)
@@ -1822,7 +1817,7 @@ internal sealed record StagedImportFile
     public string? ContentType { get; init; }
 
     /// <summary>
-    /// Path to the within-request staging scratch file under <c>honua-import-staging/</c>.
+    /// Path to the within-request staging scratch file (<c>honua-import-staging-*</c> under the temp path).
     /// This is transient local scratch only (ADR-0060): it is read and deleted inside the
     /// same HTTP request. Durable, cross-request handoff to a background worker goes through
     /// the shared object store (<c>ICloudFileStorage</c> / <c>ImportRequest.CloudFileId</c>),

@@ -9,24 +9,22 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Security;
 namespace Honua.Core.Features.FileImport.Services;
 
 internal static class ImportStreamHelper
 {
     internal static async Task<FileStream> SpillToSeekableTempAsync(Stream source, CancellationToken cancellationToken)
     {
-        // Path.Combine's second argument is a server-generated file name built solely from a
-        // fresh Guid.NewGuid(), so it can never be rooted/absolute; Path.Combine cannot silently
-        // drop the temp directory here.
+        // The name is a fixed prefix plus a fresh GUID, created exclusively and owner-only.
         var tempFile = new FileStream(
-            Path.Join(Path.GetTempPath(), $"honua-import-{Guid.NewGuid():N}.tmp"),
-            new FileStreamOptions
+            PrivateTempFile.NewPath("honua-import-", ".tmp"),
+            PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
             {
-                Mode = FileMode.CreateNew,
                 Access = FileAccess.ReadWrite,
                 Share = FileShare.None,
                 Options = FileOptions.Asynchronous | FileOptions.SequentialScan | FileOptions.DeleteOnClose
-            });
+            }));
         try
         {
             await source.CopyToAsync(tempFile, cancellationToken);
