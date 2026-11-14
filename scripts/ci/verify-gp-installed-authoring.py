@@ -13,6 +13,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gp_devkit_publication as publication
+from gp_installed_events import validate_journal
 
 
 def main():
@@ -22,6 +23,7 @@ def main():
     parser.add_argument('--package-version-stamp')
     parser.add_argument('--host-debug-receipt', type=Path)
     parser.add_argument('--restored-locks', type=Path)
+    parser.add_argument('--event-journals', type=Path)
     args = parser.parse_args()
     if args.package_version:
         packages = list(args.package_version.glob('Honua.Geoprocessing.Cli.*.nupkg'))
@@ -84,6 +86,7 @@ def main():
                 assert result['status'] == 'succeeded', result
                 receipt = Path(result['receipt'])
                 assert receipt.is_file()
+                validate_journal(receipt)
                 assert (receipt.parent / 'artifacts/summary.json').read_bytes() == (project / 'expected/summary.json').read_bytes()
                 if args.host_debug_receipt:
                     if not args.package_version_stamp:
@@ -96,26 +99,40 @@ def main():
             assert discovery['runnableHere'] is True, discovery
             assert any(item['name'].startswith('dependency lock') and item['status'] == 'satisfied'
                        for item in discovery['prerequisites']), discovery
-            output = run(tool, 'test', '--project', str(project))
+            def test_project(project_path=project, expected=0):
+                output = run(tool, 'test', '--project', str(project_path), expected=expected)
+                receipts = re.findall(r'^receipt : (.+)$', output, re.MULTILINE)
+                assert len(receipts) == 1, 'Expected one local authoring receipt'
+                receipt = Path(receipts[0].strip())
+                validate_journal(receipt)
+                return output, receipt
+
+            output, receipt = test_project()
+            if args.event_journals:
+                destination = args.event_journals.resolve() / language
+                destination.mkdir(parents=True, exist_ok=True)
+                for name in ('receipt.json', 'events.jsonl'):
+                    shutil.copyfile(receipt.parent / name, destination / name)
             assert 'PASS  summary.json' in output and 'summary : passed' in output
             if language == 'dotnet' and os.name != 'nt':
                 # A symlinked ancestor must share the direct-build dependency graph.
                 # Windows symlinks require privileges unavailable on some consumers.
                 alias = root / 'linked authoring project'
                 alias.symlink_to(project, target_is_directory=True)
-                linked = run(tool, 'test', '--project', str(alias))
+                linked, _ = test_project(alias)
                 assert 'PASS  summary.json' in linked and 'summary : passed' in linked
             expected = project / 'expected/summary.json'
             original = expected.read_bytes()
             broken = json.loads(original)
             broken['mean'] = 999
             expected.write_text(json.dumps(broken))
-            assert 'FAIL  summary.json' in run(tool, 'test', '--project', str(project), expected=1)
+            negative, _ = test_project(expected=1)
+            assert 'FAIL  summary.json' in negative
             expected.write_bytes(original)
-            run(tool, 'test', '--project', str(project))
+            test_project()
             # Recreate the ignored payload exactly as a fresh source clone must do.
             shutil.rmtree(project / '.honua/toolchain')
-            run(tool, 'test', '--project', str(project))
+            test_project()
             if language == 'python':
                 harness = project / '.honua/toolchain/docker/worker-customcode-python/harness'
                 run(sys.executable, '-m', 'pip', 'install', '--no-deps', str(harness), cwd=project)
@@ -141,7 +158,7 @@ def main():
                           '--runtime-image', 'ghcr.io/honua-io/fixture@sha256:' + 'a' * 64,
                           cwd=project, expected=1)
             assert 'receipt' in refusal.lower() and 'not valid honua.gp-process' not in refusal
-        print('Installed Python and .NET init/test/negative golden/host debug launch/direct test/release refusal passed.')
+        print('Installed Python and .NET init/test/negative golden/host debug launch/direct test/v1 event journals/release refusal passed.')
 
 
 if __name__ == '__main__':
