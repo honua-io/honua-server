@@ -1834,6 +1834,9 @@ sql:
       );
   - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS public_objectid BIGINT;"
   # Source attribution read by feature streams (migration 050_AddChangeLogAttribution.sql).
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS actor TEXT;"
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS source SMALLINT;"
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS operation_name TEXT;"
   - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS source_id TEXT;"
   - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS origin_replica_id TEXT;"
   - "ALTER TABLE honua.feature_changes ALTER COLUMN origin_replica_id SET DEFAULT NULLIF(current_setting('honua.origin_replica_id', true), '');"
@@ -1845,6 +1848,8 @@ sql:
   # Committed row images from migration 137_CaptureFeatureChangeCommittedImage.sql.
   - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS committed_geometry geometry;"
   - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS committed_attributes JSONB;"
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS committed_created_at TIMESTAMPTZ;"
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS committed_updated_at TIMESTAMPTZ;"
   - |
       ALTER TABLE IF EXISTS honua.feature_changes
           ADD COLUMN IF NOT EXISTS event_id TEXT,
@@ -1973,16 +1978,25 @@ sql:
           lid INT;
           oid BIGINT;
           public_oid BIGINT;
+          previous_public_oid BIGINT;
           row_attributes JSONB;
           op SMALLINT;
           ver TEXT;
           ver_uuid UUID;
+          attr_actor TEXT;
+          attr_source SMALLINT;
+          attr_operation TEXT;
+          attr_source_id TEXT;
+          raw_source TEXT;
           before_geometry geometry;
           before_attributes JSONB;
           before_created_at TIMESTAMPTZ;
           before_updated_at TIMESTAMPTZ;
+          committed_geometry geometry;
+          committed_attributes JSONB;
+          committed_created_at TIMESTAMPTZ;
+          committed_updated_at TIMESTAMPTZ;
       BEGIN
-          gen := nextval('honua.sync_generation');
           IF TG_OP = 'INSERT' THEN
               lid := NEW.layer_id;
               oid := NEW.objectid;
@@ -1999,24 +2013,67 @@ sql:
               row_attributes := OLD.attributes;
               op := 3;
           END IF;
+
           IF TG_OP <> 'INSERT' THEN
               before_geometry := OLD.geometry::geometry;
               before_attributes := COALESCE(OLD.attributes, '{}'::jsonb);
               before_created_at := OLD.created_at;
               before_updated_at := OLD.updated_at;
           END IF;
+
+          IF TG_OP <> 'DELETE' THEN
+              committed_geometry := NEW.geometry::geometry;
+              committed_attributes := COALESCE(NEW.attributes, '{}'::jsonb);
+              committed_created_at := NEW.created_at;
+              committed_updated_at := NEW.updated_at;
+          END IF;
+
           public_oid := honua.resolve_feature_public_objectid(lid, oid, row_attributes);
+          IF TG_OP = 'UPDATE' THEN
+              previous_public_oid := honua.resolve_feature_public_objectid(
+                  OLD.layer_id,
+                  OLD.objectid,
+                  OLD.attributes);
+              IF previous_public_oid IS DISTINCT FROM public_oid THEN
+                  RAISE EXCEPTION
+                      'Cannot change the public id.primary for layer % object % from % to %',
+                      lid, oid, previous_public_oid, public_oid
+                      USING ERRCODE = '23514',
+                            HINT = 'The protocol-facing primary object identifier is immutable.';
+              END IF;
+          END IF;
+
+          PERFORM pg_advisory_xact_lock(144047712, 0); -- 0x0894FE60
+          gen := nextval('honua.sync_generation');
+
           ver := current_setting('honua.gdb_version', true);
           IF ver IS NULL OR ver = '' THEN
               ver_uuid := NULL;
           ELSE
               ver_uuid := ver::UUID;
           END IF;
+
+          attr_actor := NULLIF(current_setting('honua.temporal_actor', true), '');
+          raw_source := NULLIF(current_setting('honua.temporal_source', true), '');
+          IF raw_source IS NULL THEN
+              attr_source := NULL;
+          ELSE
+              attr_source := raw_source::SMALLINT;
+          END IF;
+          attr_operation := NULLIF(current_setting('honua.temporal_operation', true), '');
+          attr_source_id := NULLIF(current_setting('honua.temporal_source_id', true), '');
+
           INSERT INTO honua.feature_changes
               (generation, layer_id, objectid, public_objectid, operation, version_id,
-               pre_geometry, pre_attributes, pre_created_at, pre_updated_at)
-          VALUES (gen, lid, oid, public_oid, op, ver_uuid, before_geometry, before_attributes,
-                  before_created_at, before_updated_at);
+               actor, source, operation_name, source_id, pre_geometry, pre_attributes,
+               pre_created_at, pre_updated_at, committed_geometry, committed_attributes,
+               committed_created_at, committed_updated_at)
+          VALUES
+              (gen, lid, oid, public_oid, op, ver_uuid,
+               attr_actor, attr_source, attr_operation, attr_source_id, before_geometry, before_attributes,
+               before_created_at, before_updated_at, committed_geometry, committed_attributes,
+               committed_created_at, committed_updated_at);
+
           IF TG_OP = 'DELETE' THEN
               RETURN OLD;
           END IF;

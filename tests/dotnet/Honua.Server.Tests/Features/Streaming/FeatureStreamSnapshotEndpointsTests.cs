@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit;
@@ -1368,12 +1369,14 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         try
         {
-            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot&cursor=features:0");
+            var window = await fixture.GetService<IRealtimeFanoutProvider>()
+                .GetWindowAsync(RealtimeFamily.Features, cts.Token);
+            using var request = BuildSseRequest($"/api/v1/streaming/features?layers=0&mode=snapshot&cursor=features:{window.Head}");
             using var response = await fixture.CreateAdminClient()
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK,
-                "cursor 0 is replayable in an empty retention window and needs no feature read");
+                "the current head is replayable and needs no feature read");
         }
         finally
         {
