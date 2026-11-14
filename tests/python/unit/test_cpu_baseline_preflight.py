@@ -37,7 +37,7 @@ def test_generic_vm_model_warns_by_default_and_names_missing_features(tmp_path):
     assert result.returncode == 0
     assert "WARNING" in result.stderr
     assert "missing: popcnt ssse3 sse4_1 sse4_2)" in result.stderr
-    assert "host-passthrough" in result.stderr and "2027.1" in result.stderr
+    assert "host-passthrough" in result.stderr and "2026.1" in result.stderr
 
 
 def test_generic_vm_model_fails_when_enforced(tmp_path):

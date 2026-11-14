@@ -146,7 +146,6 @@ public sealed class TileCacheExpiryHostedServiceTests
         public override Task<string> StartAsync(
             TileOperationStartRequest request,
             string? schemaName = null,
-            string? tenantScope = null,
             CancellationToken cancellationToken = default)
         {
             var call = Interlocked.Increment(ref _calls);
@@ -155,7 +154,7 @@ public sealed class TileCacheExpiryHostedServiceTests
                 throw new RedisTimeoutException("Timeout awaiting response, command=GET", CommandStatus.Sent);
             }
 
-            return base.StartAsync(request, schemaName, tenantScope, cancellationToken);
+            return base.StartAsync(request, schemaName, cancellationToken);
         }
     }
 
@@ -230,7 +229,6 @@ public sealed class TileCacheExpiryHostedServiceTests
         public virtual Task<string> StartAsync(
             TileOperationStartRequest request,
             string? schemaName = null,
-            string? tenantScope = null,
             CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
