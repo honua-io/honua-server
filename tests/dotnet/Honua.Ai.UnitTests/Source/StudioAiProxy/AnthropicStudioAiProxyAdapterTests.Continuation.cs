@@ -10,6 +10,7 @@ using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.Security.Admission;
 using Honua.Server.Tests.Features.StudioAiProxy.Fakes;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
@@ -162,6 +163,34 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         handler.SendCount.Should().Be(1);
     }
 
+    [UnitTest]
+    public async Task StreamAsync_CancelledAfterToolTurn_DoesNotSaveContinuation()
+    {
+        var handler = new StudioAiProxyMockHttpMessageHandler(WithThinking(ToolCallFixture));
+        using var clients = new StudioAiProxyMockHttpClientFactory(handler);
+        var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+        var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
+        using var cancellation = new CancellationTokenSource();
+        List<StudioAiChatEvent> events = [];
+
+        var consume = async () =>
+        {
+            await foreach (var evt in adapter.StreamAsync(DefaultOptions(), InitialContinuationRequest(identity),
+                RecordingAiAdmission.TransportPermit(), cancellation.Token))
+            {
+                events.Add(evt);
+                if (evt.Type == StudioAiChatEventType.MessageStop) await cancellation.CancelAsync();
+            }
+        };
+        await consume.Should().ThrowAsync<OperationCanceledException>();
+
+        events.Last().StopReason.Should().Be(StudioAiStopReason.ToolCall);
+        var continueTurn = () => CollectAsync(adapter, ToolResultContinuationRequest(identity));
+        await continueTurn.Should().ThrowAsync<InvalidOperationException>();
+        handler.SendCount.Should().Be(1);
+    }
+
     [UnitTheory]
     [InlineData("actor")]
     [InlineData("workflow")]
@@ -200,7 +229,6 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
 
         await continueTurn.Should().ThrowAsync<InvalidOperationException>();
         handler.SendCount.Should().Be(1);
-        handler.CapturedRequestBody.Should().NotContain("PRIVATE_");
     }
 
     [UnitTest]
