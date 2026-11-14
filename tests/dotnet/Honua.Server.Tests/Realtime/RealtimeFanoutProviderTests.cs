@@ -28,6 +28,71 @@ public sealed class RealtimeFanoutProviderTests(DatabaseFixtureAdapter database)
     private static readonly TimeSpan _deliveryTimeout = TimeSpan.FromSeconds(15);
 
     [IntegrationTest]
+    public async Task McpStream_TwoTasksOverPostgres_OneOwnerUntilDisconnect()
+    {
+        await using var harness = await RealtimeLogHarness.CreateAsync(database);
+        var nodeA = new InProcessRealtimeFanoutProvider(harness.Log, harness.CreateDispatcher(),
+            new RealtimePresenceBatcher(harness.Log), harness.CreateLeaseStore());
+        var nodeB = new PostgresRealtimeFanoutProvider(harness.Log, harness.CreateDispatcher(),
+            new RealtimePresenceBatcher(harness.Log), harness.CreateLeaseStore());
+        await using var first = await nodeA.TryAcquireMcpStreamAsync("session-a", CancellationToken.None);
+        first.Should().NotBeNull();
+        first!.IsHeld.Should().BeTrue();
+        (await nodeB.TryAcquireMcpStreamAsync("session-a", CancellationToken.None)).Should().BeNull();
+        await using var otherSession = await nodeB.TryAcquireMcpStreamAsync("session-b", CancellationToken.None);
+        otherSession.Should().NotBeNull();
+
+        await first.DisposeAsync();
+        await using var successor = await nodeB.TryAcquireMcpStreamAsync("session-a", CancellationToken.None);
+        successor.Should().NotBeNull();
+        await first.DisposeAsync();
+        (await nodeA.TryAcquireMcpStreamAsync("session-a", CancellationToken.None)).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task PresenceSnapshot_PagesBeyondResumeLimit_StaysScopedAndStopsAtCapturedHead()
+    {
+        await using var harness = await RealtimeLogHarness.CreateAsync(database);
+        var dispatcher = harness.CreateDispatcher(new RealtimeOptions { ResumeMaxEvents = 2 });
+        var provider = new InProcessRealtimeFanoutProvider(harness.Log, dispatcher, new RealtimePresenceBatcher(harness.Log));
+        await AppendAsync(harness, RealtimeLogFamilies.CollabPresence, "other-map", 3);
+        await AppendAsync(harness, RealtimeLogFamilies.CollabPresence, "map-1", 600);
+        var window = await provider.GetWindowAsync(RealtimeFamily.CollabPresence, CancellationToken.None);
+        await AppendAsync(harness, RealtimeLogFamilies.CollabPresence, "map-1", 2);
+        var cursor = window.Oldest - 1;
+        var events = new List<RealtimeEvent>();
+        while (true)
+        {
+            var page = await provider.ReadPresencePageAsync("map-1", cursor, window.Head, CancellationToken.None);
+            page.Count.Should().BeLessThanOrEqualTo(256);
+            if (page.Count == 0)
+            {
+                break;
+            }
+
+            events.AddRange(page);
+            cursor = page[^1].Sequence;
+        }
+
+        events.Select(item => item.Sequence).Should().Equal(Enumerable.Range(4, 600).Select(value => (long)value));
+        events.Should().OnlyContain(item => item.ScopeKey == "map-1");
+    }
+
+    [IntegrationTest]
+    public async Task PresenceSnapshot_SweptRowsDoNotResetOrRestartPaging()
+    {
+        await using var harness = await RealtimeLogHarness.CreateAsync(database);
+        var provider = new InProcessRealtimeFanoutProvider(harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log));
+        await AppendAsync(harness, RealtimeLogFamilies.CollabPresence, "map-1", 300);
+        var first = await provider.ReadPresencePageAsync("map-1", 0, 300, CancellationToken.None);
+        await harness.ExecuteAsync($"DELETE FROM {harness.Table("realtime_events")} WHERE seq <= 280");
+
+        var next = await provider.ReadPresencePageAsync("map-1", first[^1].Sequence, 300, CancellationToken.None);
+
+        next.Select(item => item.Sequence).Should().Equal(Enumerable.Range(281, 20).Select(value => (long)value));
+    }
+
+    [IntegrationTest]
     public async Task Subscribe_LiveOnly_ReceivesOnlyEventsAppendedAfterItWentLive()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);

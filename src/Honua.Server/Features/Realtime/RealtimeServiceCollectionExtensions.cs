@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Realtime;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -59,9 +60,10 @@ internal static class RealtimeServiceCollectionExtensions
             var log = provider.GetRequiredService<PostgresRealtimeEventLog>();
             var dispatcher = provider.GetRequiredService<RealtimeDispatcher>();
             var presence = provider.GetRequiredService<RealtimePresenceBatcher>();
+            var leases = provider.GetService<ILeaseStore>();
             return crossNode
-                ? new PostgresRealtimeFanoutProvider(log, dispatcher, presence)
-                : new InProcessRealtimeFanoutProvider(log, dispatcher, presence);
+                ? new PostgresRealtimeFanoutProvider(log, dispatcher, presence, leases)
+                : new InProcessRealtimeFanoutProvider(log, dispatcher, presence, leases);
         });
 
         if (crossNode)

@@ -20,6 +20,30 @@ public interface IRealtimeFanoutProvider
     IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request);
 
     ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads one bounded page of retained presence for a scope, after the exclusive cursor and
+    /// through an inclusive head captured with <see cref="GetWindowAsync"/>. An empty page ends the
+    /// snapshot. Presence swept during paging is best effort; the client replay limit does not apply.
+    /// </summary>
+    ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(
+        string scopeKey, long after, long through, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Acquires the sole MCP notification GET stream for a session across all tasks, or returns
+    /// null if occupied. POST response streams do not acquire this lease. Dispose on disconnect.
+    /// </summary>
+    ValueTask<IRealtimeStreamLease?> TryAcquireMcpStreamAsync(string sessionId, CancellationToken cancellationToken);
+}
+
+/// <summary>Shared ownership of one notification stream, renewed until disposed or lost.</summary>
+public interface IRealtimeStreamLease : IAsyncDisposable
+{
+    /// <summary>Check immediately before every delivery; false requires closing the stream.</summary>
+    bool IsHeld { get; }
+
+    /// <summary>Cancel pending reads when ownership cannot be proved.</summary>
+    CancellationToken LostToken { get; }
 }
 
 public sealed record RealtimeProviderCapabilities(bool CrossNode, bool OrderedPerFamily, bool Resumable);

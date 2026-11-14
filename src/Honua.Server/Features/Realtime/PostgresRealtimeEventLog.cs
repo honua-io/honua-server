@@ -13,7 +13,7 @@ namespace Honua.Server.Features.Realtime;
 // One event to append: the scope readers filter on, the event kind and its JSON payload.
 internal readonly record struct RealtimeLogRow(string ScopeKey, string Kind, JsonElement Payload);
 
-internal sealed record RealtimeLogRead(string Family, long After, int Limit, IReadOnlyCollection<string>? ScopeKeys = null);
+internal sealed record RealtimeLogRead(string Family, long After, int Limit, IReadOnlyCollection<string>? ScopeKeys = null, long? Through = null);
 
 // The realtime event log in the system database (ADR-0085). Appends go through realtime_append, the
 // function triggers call too, so sequence allocation and the notification live in one place.
@@ -117,12 +117,13 @@ internal sealed class PostgresRealtimeEventLog(JobStoreDatabase database) : IExp
                 await using var command = new NpgsqlCommand(
                     $"""
                     SELECT seq, scope_key, kind, payload::text, created_at FROM {_events}
-                    WHERE family = @family AND seq > @after{(scoped ? " AND scope_key = ANY(@scopes)" : string.Empty)}
+                    WHERE family = @family AND seq > @after AND seq <= @through{(scoped ? " AND scope_key = ANY(@scopes)" : string.Empty)}
                     ORDER BY seq LIMIT @limit
                     """,
                     connection);
                 command.Parameters.Add(new NpgsqlParameter("family", NpgsqlDbType.Text) { Value = request.Family });
                 command.Parameters.Add(new NpgsqlParameter("after", NpgsqlDbType.Bigint) { Value = request.After });
+                command.Parameters.Add(new NpgsqlParameter("through", NpgsqlDbType.Bigint) { Value = request.Through ?? long.MaxValue });
                 command.Parameters.Add(new NpgsqlParameter("limit", NpgsqlDbType.Integer) { Value = request.Limit });
                 if (scoped)
                 {
