@@ -82,11 +82,6 @@ public sealed record SpecPlanNode
     public IReadOnlyList<SpecWarning> Warnings { get; init; } = [];
 }
 
-/// <summary>
-/// Cost estimate for a single <see cref="SpecPlanNode"/>. Populated by
-/// <see cref="Honua.Core.Features.Spec.Services.SpecCostEstimator"/>
-/// using catalog metadata only — never by invoking the process family.
-/// </summary>
 public sealed record SpecCostEstimate
 {
     /// <summary>

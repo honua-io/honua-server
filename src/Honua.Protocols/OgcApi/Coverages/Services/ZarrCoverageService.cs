@@ -18,13 +18,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Services;
 
-/// <summary>
-/// Serves registered Zarr stores through the OGC API Coverages surface
-/// (read-only, chunked-read access pattern, #1590). Adapts coverage collection
-/// metadata, field schemas, and grid-index subset requests onto the shared
-/// Zarr read pipeline (<see cref="ZarrCoverageSubsetPlanner"/> +
-/// <see cref="ZarrSubsetReader"/>); it never builds a parallel data path.
-/// </summary>
 internal sealed class ZarrCoverageService
 {
     /// <summary>
