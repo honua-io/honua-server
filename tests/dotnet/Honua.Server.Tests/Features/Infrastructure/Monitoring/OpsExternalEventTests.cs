@@ -162,6 +162,36 @@ public sealed class OpsExternalEventTests
         findings.Should().ContainSingle().Which.Rule.Should().Be("cloudwatch-alarm-recovered");
     }
 
+    [Fact]
+    [Operation(Operations.TestInfrastructure)]
+    public void Map_JsonbSeparatorExpansion_DoesNotRejectAcceptedEvent()
+    {
+        var detail = "{\"status\":\"FAILED\",\"padding\":[" + string.Join(",", Enumerable.Repeat("0", 100000)) + "]}";
+        var wire = Envelope("aws.batch", "Batch Job State Change", detail);
+        OpsExternalEventMapper.Parse(wire);
+        var persisted = wire.Replace(",", ", ", StringComparison.Ordinal).Replace(":", ": ", StringComparison.Ordinal);
+        System.Text.Encoding.UTF8.GetByteCount(persisted).Should().BeGreaterThan(262144);
+        OpsExternalEventMapper.Map(persisted)!.Rule.Should().Be("gp-job-failed");
+        var ingest = () => OpsExternalEventMapper.Parse(persisted);
+        ingest.Should().Throw<JsonException>();
+    }
+
+    [Theory]
+    [InlineData("SERVICE_DEPLOYMENT_COMPLETED", "ecs-deployment-completed")]
+    [InlineData("SERVICE_DEPLOYMENT_ROLLBACK_COMPLETED", "ecs-deployment-rollback-completed")]
+    [Operation(Operations.TestInfrastructure)]
+    public void MapRecent_RecoveredDeployment_RetiresFailureForOnlyThatService(string outcome, string rule)
+    {
+        var failed = OpsExternalEventMapper.Parse(Envelope("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_FAILED\"}"));
+        var recovered = OpsExternalEventMapper.Parse(failed.Body.Replace("7a92fa24", "8a92fa24", StringComparison.Ordinal)
+            .Replace("00:00:00Z", "00:01:00Z", StringComparison.Ordinal).Replace("SERVICE_DEPLOYMENT_FAILED", outcome, StringComparison.Ordinal));
+        var other = OpsExternalEventMapper.Parse(failed.Body.Replace("7a92fa24", "9a92fa24", StringComparison.Ordinal)
+            .Replace("service/stack/server", "service/stack/other", StringComparison.Ordinal));
+        var findings = OpsExternalEventMapper.MapRecent([recovered, other, failed], DateTimeOffset.Parse("2026-11-14T00:05:00Z", CultureInfo.InvariantCulture));
+        findings.Should().HaveCount(2).And.ContainSingle(f => f.Rule == rule);
+        findings.Should().ContainSingle(f => f.Rule == "ecs-deployment-failed" && f.Subject.TargetId!.EndsWith("/other", StringComparison.Ordinal));
+    }
+
     private sealed class RetryingHandler(MemoryStore store) : IOpsExternalEventConsumer
     {
         internal int Calls { get; private set; }
