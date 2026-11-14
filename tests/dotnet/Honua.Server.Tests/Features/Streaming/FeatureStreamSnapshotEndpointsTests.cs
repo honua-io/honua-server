@@ -175,6 +175,57 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SnapshotThenDeltaMode_ExactByteBoundary_IncludesCursorPrefix()
+    {
+        await StartDefaultApplicationAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        async Task<(int Bytes, JsonElement Frame)> ReadSnapshotAsync(HttpClient client)
+        {
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot-then-delta");
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(timeout.Token), Encoding.UTF8);
+            var bytes = 0;
+            var snapshot = false;
+            JsonElement frame = default;
+            while (await reader.ReadLineAsync(timeout.Token) is { } line)
+            {
+                bytes += Encoding.UTF8.GetByteCount(line) + 1;
+                snapshot |= line == "event: snapshot";
+                if (snapshot && line.StartsWith("data: ", StringComparison.Ordinal))
+                {
+                    using var json = JsonDocument.Parse(line[6..]);
+                    frame = json.RootElement.Clone();
+                }
+                if (line.Length == 0)
+                {
+                    if (snapshot)
+                    {
+                        return (bytes, frame);
+                    }
+                    bytes = 0;
+                }
+            }
+            throw new InvalidOperationException("No batched snapshot received.");
+        }
+
+        var full = await ReadSnapshotAsync(_client);
+        full.Frame.GetProperty("complete").GetBoolean().Should().BeTrue();
+        full.Frame.GetProperty("featureCount").GetInt64().Should().BeGreaterThan(0);
+        var budget = full.Bytes - 1;
+        await using var boundedFixture = CreateFixtureWithDeploymentConfig(new Dictionary<string, string?>
+        {
+            ["FeatureStreaming:MaxSnapshotBytes"] = budget.ToString(CultureInfo.InvariantCulture)
+        });
+        await boundedFixture.InitializeAsync();
+        using var boundedClient = boundedFixture.CreateAdminClient();
+        var bounded = await ReadSnapshotAsync(boundedClient);
+        bounded.Bytes.Should().BeLessThanOrEqualTo(budget);
+        bounded.Frame.GetProperty("complete").GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotThenDeltaMode_EmitsOneBatchedBaselineThenTheMutation()
     {
         await StartDefaultApplicationAsync();

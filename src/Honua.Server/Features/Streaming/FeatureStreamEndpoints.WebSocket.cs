@@ -137,11 +137,12 @@ internal static partial class FeatureStreamEndpoints
                             },
                             FeatureStreamJsonContext.Default.FeatureStreamResetFrame),
                         linkedCts.Token).ConfigureAwait(false);
-                    if (subscriptionFilter is not StreamSubscriptionFilter { LayerIds: not null })
+                    var snapshotScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, subscriptionFilter);
+                    if (snapshotScopeError is not null)
                     {
                         await TrySendWebSocketTerminalErrorAsync(webSocket, session.WriteLock, session.SessionId,
                             FeatureStreamSessionManager.DefaultSubscriptionId,
-                            "Retention requires resynchronization with an explicit layer selection.", linkedCts.Token).ConfigureAwait(false);
+                            snapshotScopeError, linkedCts.Token).ConfigureAwait(false);
                         return;
                     }
                 }

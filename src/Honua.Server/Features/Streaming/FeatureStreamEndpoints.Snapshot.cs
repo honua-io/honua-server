@@ -362,7 +362,7 @@ internal static partial class FeatureStreamEndpoints
         var json = JsonSerializer.Serialize(payload, jsonTypeInfo);
         var frame = id.HasValue
             ? string.Concat(
-                "id: ", id.Value.ToString(CultureInfo.InvariantCulture), "\n",
+                "id: ", FeatureStreamCursor.Format(id.Value), "\n",
                 "event: ", eventName, "\n",
                 "data: ", json, "\n\n")
             : string.Concat("event: ", eventName, "\n", "data: ", json, "\n\n");

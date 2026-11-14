@@ -33,6 +33,9 @@ internal static partial class FeatureStreamEndpoints
         while (!cancellationToken.IsCancellationRequested)
         {
             var events = await eventStore.QueryAsync(cursor, null, null, batchSize, cancellationToken).ConfigureAwait(false);
+            await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
+                new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock), cursor, cancellationToken)
+                .ConfigureAwait(false);
 
             FeatureStreamLog.ReplayStarted(logger, events.Count, cursor, sessionId);
 
@@ -165,6 +168,8 @@ internal static partial class FeatureStreamEndpoints
         while (!cancellationToken.IsCancellationRequested)
         {
             var events = await eventStore.QueryAsync(cursor, null, null, batchSize, cancellationToken).ConfigureAwait(false);
+            await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), cursor, cancellationToken)
+                .ConfigureAwait(false);
 
             FeatureStreamLog.ReplayStarted(logger, events.Count, cursor, sessionId);
 
@@ -229,9 +234,9 @@ internal static partial class FeatureStreamEndpoints
         return cursor;
     }
 
-    // A replay that starts, or ends, before the first resumable position has lost changes and fails
-    // closed. A short read is otherwise proof of exhaustion: generations are allocated under a lock
-    // held to commit, so no change below the last one read commits later.
+    // Validate retention against the incoming cursor before delivering each page: advancing the
+    // cursor first can hide a gap introduced while the query was running. A short read proves
+    // exhaustion because generations are allocated under a lock held to commit.
     internal sealed record FeatureStreamReplayContext(
         IFeatureChangeEventStore EventStore,
         ILogger Logger,

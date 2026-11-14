@@ -200,11 +200,12 @@ internal static partial class FeatureStreamEndpoints
                     var head = await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false);
                     await WriteSseResetAsync(context.Response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.Retention, Head = FeatureStreamCursor.Format(head) }, linkedCts.Token)
                         .ConfigureAwait(false);
-                    if (subscriptionFilter is not StreamSubscriptionFilter { LayerIds: not null })
+                    var snapshotScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, subscriptionFilter);
+                    if (snapshotScopeError is not null)
                     {
                         await WriteSseTerminalErrorAsync(context.Response, session.SessionId,
                             FeatureStreamSessionManager.DefaultSubscriptionId,
-                            "Retention requires resynchronization with an explicit layer selection.", linkedCts.Token).ConfigureAwait(false);
+                            snapshotScopeError, linkedCts.Token).ConfigureAwait(false);
                         await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
                         return;
                     }
@@ -593,6 +594,15 @@ internal static partial class FeatureStreamEndpoints
         {
             var head = await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
             await WriteSseResetAsync(response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.Retention, Head = FeatureStreamCursor.Format(head) }, cancellationToken).ConfigureAwait(false);
+            var snapshotScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, recovery.Filter);
+            if (snapshotScopeError is not null)
+            {
+                await WriteSseTerminalErrorAsync(response, recovery.Session.SessionId,
+                    FeatureStreamSessionManager.DefaultSubscriptionId, snapshotScopeError, cancellationToken).ConfigureAwait(false);
+                await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             if (recovery.Filter is StreamSubscriptionFilter { LayerIds: not null } filter)
             {
                 var snapshotResult = await EmitSnapshotAsync(
