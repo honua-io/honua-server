@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import runpy
 import sys
 from pathlib import Path
@@ -17,6 +18,8 @@ UNAFFECTED_SKIP_REASONS = {
 }
 observe_execution = runpy.run_path(str(Path(__file__).with_name("shard-execution-evidence.py")))["observe"]
 DEFERRED_SKIP_REASON = runpy.run_path(str(Path(__file__).with_name("shard_time_budget.py")))["DEFERRED_SKIP_REASON"]
+# Shard jobs upload `<artifact>-attempt-<run_attempt>`, one directory per artifact.
+ATTEMPT_DIRECTORY = re.compile(r"^(?P<artifact>.+)-attempt-(?P<attempt>[1-9][0-9]*)$")
 RED_ANNOTATION = (
     "HONUA_AFFECTED_SHARD_RED shard='{shard}' status='{status}' — "
     "this shard family has failing execution evidence for this run."
@@ -297,16 +300,33 @@ def _verify_execution(timing: dict[str, Any], directory: Path) -> None:
     timing["execution"] = measured
 
 
+def _receipt_directories(directory: Path) -> list[Path]:
+    """Keep the newest attempt of each shard artifact.
+
+    A failed-jobs rerun re-runs only the failed or cancelled shards; the shards
+    it skips keep their earlier attempt's artifact. Artifact ids do not follow
+    upload order, so the attempt number in the name decides which copy counts.
+    """
+    newest: dict[str, tuple[int, Path]] = {}
+    for child in sorted(path for path in directory.iterdir() if path.is_dir()):
+        match = ATTEMPT_DIRECTORY.match(child.name)
+        artifact, attempt = (match["artifact"], int(match["attempt"])) if match else (child.name, 0)
+        if artifact not in newest or attempt > newest[artifact][0]:
+            newest[artifact] = (attempt, child)
+    return [directory] + [path for _, path in (newest[name] for name in sorted(newest))]
+
+
 def _load_timings(directory: Path) -> list[dict[str, Any]]:
     if not directory.is_dir():
         return []
     timings: list[dict[str, Any]] = []
-    for path in sorted(directory.glob("*.timing.json")):
-        value = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(value, dict):
-            raise ValueError(f"{path.name} is not a timing object")
-        _verify_execution(value, directory)
-        timings.append(value)
+    for receipts in _receipt_directories(directory):
+        for path in sorted(receipts.glob("*.timing.json")):
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(value, dict):
+                raise ValueError(f"{path.name} is not a timing object")
+            _verify_execution(value, receipts)
+            timings.append(value)
     return timings
 
 
