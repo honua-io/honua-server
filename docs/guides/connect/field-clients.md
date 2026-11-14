@@ -7,6 +7,8 @@ description: "Validate feature access, editing, conflict handling, and offline h
 
 Use a client that supports OGC API Features for discovery and reading. Editing requires a client that also supports the advertised transaction operations, or WFS transactions. Read access alone does not establish edit or offline-sync support. Validate the exact client version against your deployment before collecting production data.
 
+Honua first-party clients use gRPC and cloud-native files as described in [ADR-0087](../../internal/contributor/adr/0087-native-client-protocols.md). This guide covers third-party compatibility through OGC API Features and WFS.
+
 ## Connect and verify capabilities
 
 In the client's connection dialog, set the OGC API Features service URL to your server's `/ogc/features` root, configure the deployment's authentication, and discover collections. Select a published collection that your account can read and edit. Inspect the service conformance and collection metadata before enabling optional operations or coordinate systems. For a WFS connection, use `/wfs` and inspect its capabilities, feature types, and transaction support.
