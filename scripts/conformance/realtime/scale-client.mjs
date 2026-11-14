@@ -82,7 +82,7 @@ function receiveFrame(state, frame, context) {
   state.seen[ordinal] = 1;
   const latency = performance.now() - started;
   context.maximum = Math.max(context.maximum, latency);
-  context.buckets[Math.min(60_000, Math.floor(latency))]++;
+  context.buckets[Math.min(60_000, Math.ceil(latency))]++;
   if (++state.received === context.total) state.complete();
 }
 
