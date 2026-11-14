@@ -17,7 +17,8 @@ namespace Honua.Server.Tests.Features.Orchestration;
 [Operation(Operations.TestInfrastructure)]
 public sealed class PostgresSourceWatermarkStoreTests
 {
-    private static readonly DateTimeOffset Timestamp = new(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Timestamp =
+        new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero).AddTicks(7);
 
     [IntegrationTest]
     public async Task AdvanceAsync_WithoutRedis_IsReadableAfterTheWritingHostStops()
