@@ -23,11 +23,12 @@ internal static class StudioAuthorizationAudit
             return;
         }
 
+        var (actor, actorType) = AuditContextResolver.ResolveCanonicalActor(context);
         var auditEvent = new AuditEvent
         {
             Timestamp = timeProvider.GetUtcNow(),
             EventType = AuditEventType.Authorization,
-            Actor = AuditContextResolver.ResolveCanonicalActor(context, out var actorType),
+            Actor = actor,
             ActorType = actorType,
             ResourceType = resourceType,
             ResourceId = resourceId,

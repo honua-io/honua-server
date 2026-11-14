@@ -79,7 +79,7 @@ internal static class AuditContextResolver
 
     // Studio authorization audits use the actor tenant resolution stamps, even when it has not run
     // yet or does not stamp (multi-tenant API keys), so their policy and handler records agree.
-    public static string ResolveCanonicalActor(HttpContext context, out AuditActorType actorType)
+    public static (string Actor, AuditActorType ActorType) ResolveCanonicalActor(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -90,16 +90,17 @@ internal static class AuditContextResolver
                 CanonicalSecurityActor.CanonicalActorClaim))
             && CanonicalSecurityActor.Resolve(principal) is { } actor)
         {
-            actorType = string.Equals(
+            var actorType = string.Equals(
                 actor.AuthenticationScheme,
                 Honua.Infrastructure.Authentication.AuthenticationExtensions.ApiKeyScheme,
                 StringComparison.OrdinalIgnoreCase)
                 ? AuditActorType.ApiKey
                 : AuditActorType.UserId;
-            return actor.ActorId;
+            return (actor.ActorId, actorType);
         }
 
-        return ResolveActor(context, out actorType);
+        var fallbackActor = ResolveActor(context, out var fallbackActorType);
+        return (fallbackActor, fallbackActorType);
     }
 
     public static void MarkAuthorizationFailureAudited(HttpContext context)
