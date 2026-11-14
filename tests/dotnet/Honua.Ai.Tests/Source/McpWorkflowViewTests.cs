@@ -1034,10 +1034,10 @@ public sealed partial class McpWorkflowViewTests
     [UnitTest]
     public async Task ProfileChange_BroadcastsToolsListChanged()
     {
-        var sessions = new McpSessionManager();
-        sessions.CreateSession();
         var publisher = Substitute.For<IMcpNotificationPublisher>();
+#pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
         publisher.BroadcastToolsListChanged().Returns(new ValueTask<int>(1));
+#pragma warning restore CA2012
         var monitor = new StubOptionsMonitor(new McpWorkflowViewOptions());
         var notifier = new McpWorkflowViewChangeNotifier(monitor, publisher, NullLogger<McpWorkflowViewChangeNotifier>.Instance);
         await notifier.StartAsync(CancellationToken.None);

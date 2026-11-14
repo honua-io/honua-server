@@ -82,7 +82,7 @@ public sealed class McpStreamingTests
     [UnitTest]
     public async Task Publisher_PublishProgress_AppendsWellFormedJsonRpcNotification()
     {
-        var sessions = new McpSessionManager();
+        await using var sessions = new McpSessionManager();
         var id = sessions.CreateSession();
         var publisher = CreatePublisher(sessions, out var drafts);
 
@@ -103,7 +103,7 @@ public sealed class McpStreamingTests
     [UnitTest]
     public async Task Publisher_Broadcast_AppendsOneSharedNotification()
     {
-        var sessions = new McpSessionManager();
+        await using var sessions = new McpSessionManager();
         var first = sessions.CreateSession();
         var second = sessions.CreateSession();
         var publisher = CreatePublisher(sessions, out var drafts);
@@ -117,7 +117,7 @@ public sealed class McpStreamingTests
     [UnitTest]
     public async Task Publisher_ConfiguredProviderFailure_DoesNotFallBackToLocalDelivery()
     {
-        var sessions = new McpSessionManager();
+        await using var sessions = new McpSessionManager();
         var sessionId = sessions.CreateSession();
         sessions.TryGetReader(sessionId, out var reader).Should().BeTrue();
         var provider = new RecordingFanoutProvider([], failAppend: true);
@@ -172,7 +172,7 @@ public sealed class McpStreamingTests
     [UnitTest]
     public async Task GetStream_WithoutProvider_DeliversLocalNotificationAndPreservesSession()
     {
-        var sessions = new McpSessionManager();
+        await using var sessions = new McpSessionManager();
         var sessionId = sessions.CreateSession();
         sessions.TryEnqueue(sessionId, "local-notification").Should().BeTrue();
         var services = new ServiceCollection();

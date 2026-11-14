@@ -21,11 +21,12 @@ public sealed class RealtimeMcpNotificationTests(DatabaseFixtureAdapter database
     public async Task PublishProgress_SessionOnAnotherTask_PersistsJsonRpcNotification()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);
-        var remoteSessions = new McpSessionManager();
+        await using var remoteSessions = new McpSessionManager();
+        await using var localSessions = new McpSessionManager();
         var sessionId = remoteSessions.CreateSession();
         using var services = new ServiceCollection()
             .AddLogging()
-            .AddSingleton(new McpSessionManager())
+            .AddSingleton(localSessions)
             .AddSingleton<IRealtimeFanoutProvider>(new PostgresRealtimeFanoutProvider(
                 harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log)))
             .BuildServiceProvider();
@@ -49,7 +50,8 @@ public sealed class RealtimeMcpNotificationTests(DatabaseFixtureAdapter database
             harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log));
         var consumerProvider = new PostgresRealtimeFanoutProvider(
             harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log));
-        var publisher = new McpNotificationPublisher(new McpSessionManager(),
+        await using var publisherSessions = new McpSessionManager();
+        var publisher = new McpNotificationPublisher(publisherSessions,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<McpNotificationPublisher>.Instance, publisherProvider);
         await publisher.PublishProgress("session-a", "job-a", 25, 100, "Running");
         await publisher.PublishProgress("session-b", "job-b", 50, 100, "Running");
