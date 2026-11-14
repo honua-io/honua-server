@@ -165,7 +165,7 @@ internal sealed partial class HonuaFeatureService
         return layers;
     }
 
-    private static async Task<Proto.FeatureCapabilities> ServiceMetadataCapabilitiesAsync(
+    private async Task<Proto.FeatureCapabilities> ServiceMetadataCapabilitiesAsync(
         IReadOnlyList<GrpcLayerContext> layers, ServerCallContext context)
     {
         var result = new Proto.FeatureCapabilities();
@@ -200,12 +200,13 @@ internal sealed partial class HonuaFeatureService
         return fields.Where(field => !masked.Contains(field.Name)).ToArray();
     }
 
-    private static async Task<Proto.FeatureCapabilities> MetadataCapabilitiesAsync(GrpcLayerContext layer, ServerCallContext context)
+    private async Task<Proto.FeatureCapabilities> MetadataCapabilitiesAsync(GrpcLayerContext layer, ServerCallContext context)
     {
         var result = new Proto.FeatureCapabilities
         {
             Query = true,
-            QueryStream = true,
+            QueryStream = await ResolveStreamingStoreAsync(layer, context.GetHttpContext().RequestServices,
+                context.CancellationToken).ConfigureAwait(false) is not null,
             QueryDistinct = true,
             QueryOrderBy = true,
             QueryPagination = true

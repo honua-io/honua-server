@@ -14,6 +14,28 @@ public sealed partial class GrpcMaskedFieldPredicateTests
 {
     [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/DescribeLayer")]
+    [Endpoint("POST /geospatial.v1.FeatureService/DescribeService")]
+    public async Task DescribeMetadata_NonStreamingProvider_DoesNotAdvertiseStreaming()
+    {
+        _resourceValidator.ValidateServiceV2Async("test", Arg.Any<CancellationToken>())
+            .Returns(Honua.Core.Features.Validation.Abstractions.ResourceValidationResult.Success(
+                _service, ServiceMetadataSnapshot(1)));
+        using var context = CreateCallContext(services =>
+            Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton(
+                services, NSubstitute.Substitute.For<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>()));
+
+        var layer = await _sut.DescribeLayer(new() { ServiceId = "test", LayerId = 0 }, context);
+        var service = await _sut.DescribeService(new() { ServiceId = "test" }, context);
+
+        layer.Layer.Capabilities.Query.Should().BeTrue();
+        layer.Layer.Capabilities.QueryStream.Should().BeFalse();
+        service.Service.Capabilities.Query.Should().BeTrue();
+        service.Service.Capabilities.QueryStream.Should().BeFalse();
+        AssertNoRead();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/DescribeLayer")]
     public async Task DescribeLayer_ProjectedBbox_PreservesCoordinatesAndCrs()
     {
         var triple = CreateTriple();

@@ -241,7 +241,7 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         yield return Feature.Create(1, null);
     }
 
-    private TestServerCallContext CreateCallContext()
+    private TestServerCallContext CreateCallContext(Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
@@ -249,6 +249,8 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         services.AddSingleton(_fieldMaskSource);
         services.AddSingleton<IFilterExpressionService>(
             new FilterExpressionService(new FilterExpressionTranslator(_sqlFilterTranslator)));
+
+        configure?.Invoke(services);
 
         var httpContext = new DefaultHttpContext
         {

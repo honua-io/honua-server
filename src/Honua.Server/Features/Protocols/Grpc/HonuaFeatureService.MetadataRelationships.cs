@@ -60,9 +60,8 @@ internal sealed partial class HonuaFeatureService
             var relatedFields = (await VisibleMetadataFieldsAsync(
                 CreateLayerContext(layer.Service, publication, related, storageId, snapshot), context).ConfigureAwait(false))
                 .Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var destination = relationship.Role.Equals("destination", StringComparison.OrdinalIgnoreCase);
-            if (!visible.Contains(destination ? relationship.DestinationField : relationship.OriginField) ||
-                !relatedFields.Contains(destination ? relationship.OriginField : relationship.DestinationField))
+            if (!visible.Contains(relationship.OriginField) ||
+                !relatedFields.Contains(relationship.DestinationField))
             {
                 continue;
             }
