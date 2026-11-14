@@ -15,7 +15,7 @@ Honua serves Mapbox Vector Tiles (MVT) per layer with TileJSON metadata and a ge
 | GET | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Vector tile for a layer (XYZ scheme, WebMercator). |
 | GET | `/tiles/{layerId}/h3/{z}/{x}/{y}.mvt` | H3 hexagon-aggregated vector tile. |
 | GET | `/tiles/{layerId}/tile.json` | TileJSON 3.0 metadata for the layer. |
-| GET | `/api/styles/{layerId}.json` | Generated MapLibre style document for the layer. |
+| GET | `/api/styles/{publicationId}.json` | Generated MapLibre style document for the layer. |
 | GET, HEAD | `/api/v1/tiles/pmtiles/{*artifactId}` | Range-proxied access to a published PMTiles artifact. |
 
 OGC API Tiles offers the standards-based equivalent of the XYZ routes — see [OGC APIs](ogc-apis.md). Cached raster tiles for GeoServices clients are served at `/rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}` ([GeoServices REST](geoservices-rest.md)).
@@ -34,8 +34,6 @@ Unknown query parameters are rejected with 400. Zoom is validated against the co
 Cache lifecycle: tile responses carry a `Cache-Control: max-age=N` header. The TTL is resolved per tileset — a per-tileset override from the `TileOptions:TilesetLifecycle` configuration (keyed `serviceId/layerId/tileMatrixSetId`) takes precedence, otherwise the global `TileOptions:CacheMaxAge` applies.
 
 Metatiling: the seed/render path renders tiles in aligned N×N metatile blocks per pass, controlled by `TileOptions:MetatileFactor` (default `1`, which keeps the per-tile behavior). Larger factors group neighbouring tiles so the provider amortizes per-tile setup.
-
-Size-quota / LRU eviction: `TileOptions:Eviction` (`Enabled`, `MaxEntries`, `MaxBytes`) declares when least-recently-used cached tiles are dropped. The decision policy is built in; for the Redis-backed tile cache, operators can alternatively rely on the infrastructure `maxmemory-policy allkeys-lru`. Disabled by default (TTL-only).
 
 Scheduled invalidation: `TileCacheExpiry` (`Enabled`, `IntervalSeconds`, `Targets[]` of `serviceId`/`layerId`/`tileMatrixSetId`) periodically dispatches an `invalidate` tile operation per target — the time-based complement to the per-tileset TTL. Disabled by default; the sweep interval is clamped to a 60s minimum.
 
@@ -65,7 +63,7 @@ to local physical files or independent cloud-provider qualification.
 
 > Open `https://server.example.com/tiles/0/h3/8/40/98.mvt?resolution=7` in a browser.
 
-> Open `https://server.example.com/api/styles/0.json` in a browser.
+> Open the `style` URL returned by TileJSON. It contains the graph Layer ID, which can differ from the numeric tile selector.
 
 ## Conformance
 

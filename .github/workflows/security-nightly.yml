@@ -43,7 +43,7 @@ permissions:
   packages: read
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
   REGISTRY: ghcr.io
@@ -489,24 +489,6 @@ jobs:
           cat > container-structure-test.yaml <<'EOF'
           schemaVersion: 2.0.0
 
-          commandTests:
-            - name: "Check binary exists and is executable"
-              command: "ls"
-              args: ["-la", "/app/Honua.Server"]
-              expectedOutput: [".*-rwxr-xr-x.*Honua.Server"]
-
-            - name: "Check non-root user"
-              command: "whoami"
-              expectedOutput: ["honua"]
-
-            - name: "Check log directory"
-              command: "test"
-              args: ["-d", "/tmp/honua-logs"]
-
-            - name: "Check cache directory"
-              command: "test"
-              args: ["-d", "/tmp/honua-cache"]
-
           fileExistenceTests:
             - name: "Application binary"
               path: "/app/Honua.Server"
@@ -571,6 +553,22 @@ jobs:
             exit 1
           fi
 
+          # Production refuses to start with a database but no certificate protecting the
+          # operation key ring. This throwaway one guards only the disposable database above.
+          # It is world-readable so the image's non-root user can read the bind mount; the
+          # per-run password still protects it.
+          KEYRING_DIR="$RUNNER_TEMP/keyring"
+          install -d -m 0755 "$KEYRING_DIR"
+          KEYRING_PASSWORD="$(openssl rand -hex 24)"
+          export KEYRING_PASSWORD
+          echo "::add-mask::$KEYRING_PASSWORD"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=honua-security-nightly-keyring" \
+            -keyout "$KEYRING_DIR/keyring.key" -out "$KEYRING_DIR/keyring.crt" 2>/dev/null
+          openssl pkcs12 -export -in "$KEYRING_DIR/keyring.crt" -inkey "$KEYRING_DIR/keyring.key" \
+            -out "$KEYRING_DIR/operation-keyring.pfx" -passout env:KEYRING_PASSWORD
+          rm -f "$KEYRING_DIR/keyring.key" "$KEYRING_DIR/keyring.crt"
+          chmod 0644 "$KEYRING_DIR/operation-keyring.pfx"
+
           SERVER_PORT="$(python3 scripts/ci/owned-server.py port --variable HONUA_SECURITY_SMOKE_PORT --ci-default 8080)"
           SERVER_URL="http://127.0.0.1:$SERVER_PORT"
           RUNTIME_APP_ID="$(docker run -d \
@@ -582,6 +580,9 @@ jobs:
             -e HONUA_ADMIN_PASSWORD="Sec-Nightly-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!" \
             -e Security__ConnectionEncryption__MasterKey="sec-nightly-master-key-${{ github.run_id }}-${{ github.run_attempt }}-padding0000" \
             -e ConnectionStrings__DefaultConnection="Host=$RUNTIME_DB;Port=5432;Database=honua;Username=honua;Password=$RUNTIME_DB_PASSWORD" \
+            -v "$KEYRING_DIR/operation-keyring.pfx:/run/honua-keyring/operation-keyring.pfx:ro" \
+            -e Operations__SecretChannel__KeyRingCertificatePath=/run/honua-keyring/operation-keyring.pfx \
+            -e Operations__SecretChannel__KeyRingCertificatePassword="$KEYRING_PASSWORD" \
             -p "127.0.0.1:$SERVER_PORT:8080" \
             ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }})"
           echo "RUNTIME_APP_ID=$RUNTIME_APP_ID" >> "$GITHUB_ENV"
@@ -604,22 +605,7 @@ jobs:
             exit 1
           fi
 
-          if ! docker exec "$RUNTIME_APP_ID" sh -c 'touch /test-write' 2>/dev/null; then
-            : # expected — read-only filesystem rejects the write
-          else
-            echo "::error::Container filesystem is writable; expected read-only."
-            exit 1
-          fi
-
-          if ! user="$(docker exec "$RUNTIME_APP_ID" whoami 2>&1)"; then
-            echo "::error::Failed to query container user (container may have exited): $user"
-            docker logs "$RUNTIME_APP_ID" || true
-            exit 1
-          fi
-          if [ "$user" != "honua" ]; then
-            echo "Container not running as expected user: $user"
-            exit 1
-          fi
+          docker exec "$RUNTIME_APP_ID" /app/honua-healthcheck --security
 
           python3 scripts/ci/owned-server.py wait --container "$RUNTIME_APP_ID" --container-port 8080 \
             --url "$RUNTIME_SERVER_URL/healthz/live" --timeout 5

@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Infrastructure.Caching;
@@ -10,24 +12,91 @@ internal sealed partial class OutputCacheInvalidationService
     // Data edits arrive here once per write; the CDN is told at most once per coalescing window.
     public async Task InvalidateEditedLayerAsync(string? serviceId, int layerId, CancellationToken cancellationToken)
     {
-        await EvictLayerAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
-        if (_cdnInvalidation is not null)
+        try
         {
-            var paths = await CdnPathsForEditedLayerAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
+            await EvictLayerAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
+            if (_cdnInvalidation is not null)
+            {
+                var paths = await CdnPathsForEditedLayerAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
+                await InvalidateCdnAfterEditAsync(paths, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The edit is committed. Finish origin eviction before the CDN can refill from it, independently of the request.
+            await EvictLayerAsync(serviceId, layerId, CancellationToken.None).ConfigureAwait(false);
+            if (_cdnInvalidation is not null)
+            {
+                var paths = await CdnPathsForEditedLayerAsync(serviceId, layerId, CancellationToken.None).ConfigureAwait(false);
+                _cdnInvalidation.InvalidateWithNextWindow(paths);
+            }
+            throw;
+        }
+    }
+
+    public async Task InvalidateEditedStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await EvictStorageLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+            var paths = await CdnPathsForEditedStorageLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
             await InvalidateCdnAfterEditAsync(paths, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            await EvictStorageLayerAsync(storageLayerId, CancellationToken.None).ConfigureAwait(false);
+            if (_cdnInvalidation is not null)
+            {
+                var paths = await CdnPathsForEditedStorageLayerAsync(storageLayerId, CancellationToken.None).ConfigureAwait(false);
+                _cdnInvalidation.InvalidateWithNextWindow(paths);
+            }
+            throw;
         }
     }
 
     public async Task InvalidateEditedCollectionAsync(string collectionId, CancellationToken cancellationToken)
     {
         await EvictCollectionAsync(collectionId, cancellationToken).ConfigureAwait(false);
-        await InvalidateCdnAfterEditAsync(CdnPaths.EveryOgcSurface, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnAfterEditAsync(CdnPathsForEditedOgcSurface(), cancellationToken).ConfigureAwait(false);
     }
 
     public async Task InvalidateEditedOgcMetadataAsync(CancellationToken cancellationToken)
     {
         await EvictOgcMetadataAsync(cancellationToken).ConfigureAwait(false);
-        await InvalidateCdnAfterEditAsync(CdnPaths.EveryOgcSurface, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnAfterEditAsync(CdnPathsForEditedOgcSurface(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private string[] CdnPathsForEditedOgcSurface()
+        => _cdnInvalidation is { TagsEnabled: true }
+            ? CdnCacheTags.InvalidationsForOgcSurface
+            : CdnPaths.EveryOgcSurface;
+
+    private async Task<string[]> CdnPathsForEditedStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
+    {
+        if (_cdnInvalidation is not { TagsEnabled: true })
+        {
+            return CdnPaths.Everything;
+        }
+
+        var snapshot = await ReadStorageInvalidationSnapshotAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            return CdnPaths.Everything;
+        }
+
+        var paths = new HashSet<string>(CdnCacheTags.InvalidationsForEditedStorageLayer(storageLayerId), StringComparer.Ordinal);
+        foreach (var publication in PublicationsEditedWithStorageLayer(snapshot, storageLayerId))
+        {
+            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+            {
+                return CdnPaths.Everything;
+            }
+
+            paths.UnionWith(CdnCacheTags.InvalidationsForEditedLayer(
+                publication.LayerIndex ?? storageLayerId, [service.Metadata.Name, service.EffectivePublicName]));
+        }
+
+        return [.. paths];
     }
 
     private Task InvalidateCdnAfterEditAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken)
@@ -40,9 +109,68 @@ internal sealed partial class OutputCacheInvalidationService
 
     private async Task<string[]> CdnPathsForEditedLayerAsync(string? serviceId, int layerId, CancellationToken cancellationToken)
     {
+        if (_cdnInvalidation is { TagsEnabled: true })
+        {
+            var serviceNames = await PublishedServiceNamesAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
+            var tagInvalidations = CdnCacheTags.InvalidationsForEditedLayer(layerId, serviceNames);
+            if (tagInvalidations.Length > 0)
+            {
+                return tagInvalidations;
+            }
+        }
+
         var resolvedServiceIds = await ResolveLayerServiceIdsAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
         return CdnPaths.ForEditedLayer(
             layerId,
             string.IsNullOrWhiteSpace(serviceId) ? resolvedServiceIds : [.. resolvedServiceIds, serviceId.Trim()]);
     }
+
+    // A response is tagged with the name its service is published under, which may differ from the name an edit arrives with.
+    // Layer numbers are per service, so an edit that names its service never reaches the other services' layer of that number.
+    private async Task<string[]> PublishedServiceNamesAsync(string? serviceId, int layerId, CancellationToken cancellationToken)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var editedService = serviceId?.Trim();
+        if (!string.IsNullOrEmpty(editedService))
+        {
+            names.Add(editedService);
+        }
+
+        try
+        {
+            names.UnionWith(await CatalogServiceNamesAsync(editedService, layerId, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogResolveLayerServicesFailed(_logger, layerId, ex);
+        }
+
+        return [.. names];
+    }
+
+    private async Task<string[]> CatalogServiceNamesAsync(string? editedService, int layerId, CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        if (scope.ServiceProvider.GetService<IMetadataV2GraphProvider>() is not { } graphProvider)
+        {
+            return [];
+        }
+
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return PublishedNamesOfLayer(snapshot, editedService, layerId);
+    }
+
+    private static string[] PublishedNamesOfLayer(MetadataV2GraphSnapshot snapshot, string? editedService, int layerId)
+        =>
+        [
+            .. snapshot.Graph.Publications
+                .Where(publication => publication.LayerIndex == layerId)
+                .Select(publication => snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId))
+                .OfType<MetadataV2Service>()
+                .Where(service => string.IsNullOrEmpty(editedService)
+                    || Names(service).Contains(editedService, StringComparer.OrdinalIgnoreCase))
+                .SelectMany(service => new[] { service.Metadata.Name, service.EffectivePublicName }),
+        ];
+
+    private static string[] Names(MetadataV2Service service) => [service.Metadata.Id, service.Metadata.Name, service.EffectivePublicName];
 }

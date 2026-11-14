@@ -41,6 +41,7 @@ def build_command(profile):
         SERVER,
         "--configuration",
         "Release",
+        "-maxcpucount:4",
         "-p:HonuaProtocolProfile=" + profile,
         "-p:TreatWarningsAsErrors=true",
         "-p:RunAnalyzers=true",

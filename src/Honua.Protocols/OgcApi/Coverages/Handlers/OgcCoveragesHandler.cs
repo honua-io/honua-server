@@ -24,6 +24,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using Honua.Infrastructure.Rendering;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Handlers;
 
@@ -235,7 +236,7 @@ internal sealed class OgcCoveragesHandler
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
             var byCollection = await LayerValidationHelpers.ResolveStorageCollectionsWithAccessV2Async(
-                context, snapshot, CoveragesProtocol, cancellationToken: cancellationToken).ConfigureAwait(false);
+                context, snapshot, new(CoveragesProtocol) { CancellationToken = cancellationToken }).ConfigureAwait(false);
             var visible = byCollection
                 .Where(entry => entry.Value.IsValid)
                 .OrderBy(entry => entry.Key)
@@ -536,7 +537,7 @@ internal sealed class OgcCoveragesHandler
             telemetry.SetSuccess(1);
             OgcCoveragesLog.CoverageReturned(_logger, collectionId, result.Data.Length, result.ContentType);
 
-            return Results.File(result.Data, negotiatedFormat.ContentType);
+            return EncodedRasterResults.File(result.Data, negotiatedFormat.ContentType);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

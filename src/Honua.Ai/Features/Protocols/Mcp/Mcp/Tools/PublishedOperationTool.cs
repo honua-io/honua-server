@@ -53,7 +53,8 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         _inputSchema = BuildInputSchema(
             descriptor.InputSchema.Select(parameter => parameter with
             {
-                Name = McpConnectionDiscoveryProjection.InputName(descriptor.OperationId, parameter.Name)
+                Name = McpConnectionDiscoveryProjection.InputName(descriptor.OperationId, parameter.Name),
+                Title = McpInputDescriptions.Describe(descriptor.OperationId, parameter.Name, parameter.Title)
             }).ToArray(), descriptor.Policy.SupportsDryRun);
     }
 
@@ -108,6 +109,9 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         if (FolderToolName(operationId) is { } folderToolName) return folderToolName;
         if (operationId == McpConnectionDiscoveryProjection.TablesOperationId)
             return "honua_admin_connection_tables_list";
+
+        if (operationId == McpConnectionDiscoveryProjection.LayersOperationId)
+            return "honua_admin_connection_layers_list";
 
         var isAdminOperation = operationId.StartsWith("admin.", StringComparison.Ordinal);
         var operationName = isAdminOperation ? operationId["admin.".Length..] : operationId;
@@ -178,14 +182,18 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         await EnsureOperationAuthorizationAsync(httpContext, principal, cancellationToken).ConfigureAwait(false);
 
-        var proposalOnly = RequiresProposalSubmission;
+        var dryRun = ReadBool(arguments, "dryRun");
+        // Supported previews use normal dispatch so configured preview restrictions
+        // still apply. Only mutations are submitted as approval proposals.
+        var supportedPreview = RequiresProposalSubmission && dryRun && _descriptor.Policy.SupportsDryRun;
+        var proposalOnly = RequiresProposalSubmission && !supportedPreview;
         var requester = new ApprovalRequester(_descriptor.OperationId, McpAuthorizationHelper.ResolveActorId(principal));
         if (proposalOnly && await ApprovalContinuation.TryResumeAsync(httpContext, requester, cancellationToken).ConfigureAwait(false) is { } resumed)
         {
             return resumed;
         }
 
-        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate && !proposalOnly)
+        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate && !proposalOnly && !supportedPreview)
         {
             // Fail closed until #3586 replaces this refusal with the unified runtime's
             // transport-neutral approval proof. The MCP adapter must not implement an
@@ -213,7 +221,6 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         };
 
         var parameters = ReadParameters(arguments);
-        var dryRun = ReadBool(arguments, "dryRun");
         var connectionId = ReadString(arguments, "connectionId");
         var serviceName = ReadString(arguments, "serviceName");
         var request = new OperationRequest
@@ -565,11 +572,7 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
                 }
 
                 writer.WriteStartObject(parameter.Name);
-                WriteSchema(writer, parameter.Schema);
-                if (!string.IsNullOrWhiteSpace(parameter.Title))
-                {
-                    writer.WriteString("description", parameter.Title);
-                }
+                WriteSchema(writer, parameter.Schema, parameter.Title);
 
                 writer.WriteEndObject();
             }
@@ -602,8 +605,10 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         && !name.EndsWith("Reference", StringComparison.Ordinal)
         && !name.EndsWith("Type", StringComparison.Ordinal);
 
-    private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema)
+    private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema, string? description = null)
     {
+        var schemaDescription = string.IsNullOrWhiteSpace(description) ? schema.Description : description;
+        if (!string.IsNullOrWhiteSpace(schemaDescription)) writer.WriteString("description", schemaDescription);
         var type = schema.Type switch
         {
             Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.WholeNumber => "integer",

@@ -36,7 +36,7 @@ is one day. No branch-prefix lookup or cross-run artifact search is used; the
 existing v1 exact-head shard cache remains a separate fallback in full CI.
 
 The producer exports its actual selected `dotnet --version`, rather than the
-floating `10.0.x` request. Managed consumers install that exact version into a
+floating `11.0.x` request. Managed consumers install that exact version into a
 private runner-temp SDK directory and verify both the selected version and
 effective host/runtime-root paths before restoration. This prevents an SDK
 rollout between jobs from changing the toolchain: a producer using 10.0.401 and
@@ -149,7 +149,17 @@ Restore then:
   content;
 - after extraction, rejects the payload if any content root named by a restored
   runtime manifest is missing. Roots under the packaging `repo_root` are checked
-  at the same relative path under the destination.
+  at the same relative path under the destination;
+- rewrites repository roots in staged `*.staticwebassets.runtime.json` and
+  `MvcTestingAppManifest.json` to the consumer checkout before installation.
+  MVC assembly keys and the published-app `~` sentinel stay intact. Missing,
+  traversal-containing, or external MVC roots reject the payload before any
+  existing output is replaced. NuGet static-asset roots retain their existing
+  availability check and scoped-build fallback.
+
+The contract fixture restores into a different checkout with the producer
+removed, verifies both runtime manifest formats, and proves invalid MVC roots
+leave existing consumer outputs untouched.
 
 A rejection takes the existing `rejected_cache_evidence` path.
 `server-test-shard-cache.sh` removes the test project output and every declared

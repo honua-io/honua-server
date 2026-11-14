@@ -39,7 +39,6 @@ public sealed class ServingImageBoundaryTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var workflows = new[]
         {
-            ".github/workflows/release-bundle.yml",
             ".github/workflows/deploy.yml",
             ".github/workflows/deploy-platform-images.yml",
             ".github/workflows/nightly-container-build.yml"
@@ -64,15 +63,15 @@ public sealed class ServingImageBoundaryTests
             "Lambda and Functions must fail before publication if registry attestations are absent or mismatched");
         nightly.Should().Contain("provenance: mode=max", Exactly.Twice());
         nightly.Should().NotContain("load: true", "local image stores can discard attestation manifests");
-        nightly.Should().Contain("nightly-aot-${tag_name#nightly-}",
+        nightly.Should().Contain("type=raw,value=nightly-aot-${{ needs.select-candidate.outputs.sha7 }}",
             "dated and SHA AOT compatibility tags must retain their established infix naming");
-        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Times(5),
+        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Times(6),
             "canonical, Lambda, Functions and Compose executor indexes, and the Lambda serving child, must receive GitHub provenance");
-        nightly.Should().Contain("attestations: write", Exactly.Times(5));
-        nightly.Should().Contain("id-token: write", Exactly.Times(5));
-        nightly.Should().Contain("subject-digest: ${{ steps.manifest.outputs.subject_digest }}", Exactly.Twice(),
+        nightly.Should().Contain("attestations: write", Exactly.Times(6));
+        nightly.Should().Contain("id-token: write", Exactly.Times(6));
+        nightly.Should().Contain("subject-digest: ${{ steps.manifest.outputs.subject_digest }}", Exactly.Thrice(),
             "attestations must bind the final pushed manifest digest rather than a mutable tag");
-        nightly.Should().Contain("push-to-registry: true", Exactly.Times(6),
+        nightly.Should().Contain("push-to-registry: true", Exactly.Times(7),
             "gh attestation verify oci://... requires the provenance and SBOM to be available with the image");
     }
 
@@ -138,17 +137,17 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
-    public void Publishers_ShouldPromoteTheExactVerifiedAotDigest()
+    public void Publishers_ShouldPromoteTheExactVerifiedServingDigest()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var expectations = new[]
         {
             (
                 Path: ".github/workflows/deploy.yml",
-                Candidate: "- name: Build native-AOT candidate by digest",
-                Verification: "- name: Verify native-AOT candidate before registry publication",
-                Publication: "- name: Publish verified native-AOT architecture tags",
-                Digest: "steps.aot_candidate.outputs.digest",
+                Candidate: "- name: Build serving candidate by digest",
+                Verification: "- name: Verify serving candidate before registry publication",
+                Publication: "- name: Publish verified serving architecture tags",
+                Digest: "steps.candidate.outputs.digest",
                 CrossRegistry: true),
             (
                 Path: ".github/workflows/deploy-platform-images.yml",
@@ -173,9 +172,9 @@ public sealed class ServingImageBoundaryTests
                 CrossRegistry: true),
             (
                 Path: ".github/workflows/release-bundle.yml",
-                Candidate: "- name: Build RC AOT candidate by digest",
-                Verification: "- name: Verify RC AOT candidate before registry publication",
-                Publication: "- name: Publish verified RC AOT tag",
+                Candidate: "- name: Build RC JIT candidate by digest",
+                Verification: "- name: Verify RC JIT candidate before registry publication",
+                Publication: "- name: Publish verified RC JIT tag",
                 Digest: "steps.build.outputs.digest",
                 CrossRegistry: false)
         };
@@ -196,7 +195,7 @@ public sealed class ServingImageBoundaryTests
                 verificationIndex,
                 StringComparison.Ordinal);
             publicationIndex.Should().BeGreaterThan(verificationIndex,
-                $"{expectation.Path} must enforce the AOT boundary before publishing registry tags");
+                $"{expectation.Path} must verify the serving candidate before publishing registry tags");
 
             var nextStepIndex = workflow.IndexOf(
                 "\n      - name:",
@@ -217,7 +216,11 @@ public sealed class ServingImageBoundaryTests
                 "docker/build-push-action",
                 Exactly.Once(),
                 $"{expectation.Path} must not rebuild between candidate creation and verification");
-            verification.Should().Contain(VerifierCommand, expectation.Path);
+            verification.Should().Contain(
+                expectation.Path == ".github/workflows/release-bundle.yml"
+                    ? "scripts/ci/measure-serving-image.py \"$CANDIDATE\" --published --profile postgis"
+                    : VerifierCommand,
+                expectation.Path);
             verification.Should().Contain(expectation.Digest, expectation.Path);
             publication.Should().Contain(expectation.Digest,
                 $"{expectation.Path} must promote the digest that passed verification");
@@ -250,12 +253,9 @@ public sealed class ServingImageBoundaryTests
 
     private static readonly TagReleaseLeg[] TagReleaseLegs =
     [
-        new(DeployWorkflow, "- name: Build native-AOT candidate by digest",
-            "- name: Gate native-AOT tag release on fixable HIGH/CRITICAL vulnerabilities",
-            "- name: Publish verified native-AOT architecture tags", "steps.aot_candidate.outputs.digest"),
-        new(DeployWorkflow, "- name: Build JIT candidate by digest",
-            "- name: Gate JIT tag release on fixable HIGH/CRITICAL vulnerabilities",
-            "- name: Publish JIT architecture tags", "steps.build.outputs.digest"),
+        new(DeployWorkflow, "- name: Build serving candidate by digest",
+            "- name: Gate serving tag release on fixable HIGH/CRITICAL vulnerabilities",
+            "- name: Publish verified serving architecture tags", "steps.candidate.outputs.digest"),
         new(PlatformWorkflow, "- name: Build native-AOT platform candidate by digest",
             "- name: Gate native-AOT tag release on fixable HIGH/CRITICAL vulnerabilities",
             "- name: Publish verified native-AOT platform architecture tags", "steps.aot_candidate.outputs.digest"),
@@ -352,12 +352,22 @@ public sealed class ServingImageBoundaryTests
         latestTagIndex.Should().BeGreaterThan(gaGuardIndex,
             "mutable latest tags must only be collected inside the GA guard");
         publicationIndex.Should().BeGreaterThan(latestTagIndex);
-        workflow[gaGuardIndex..publicationIndex].Should().Contain(":latest-aot\"");
+        workflow[gaGuardIndex..publicationIndex].Should().Contain(":latest-jit\"");
 
         var documentation = File.ReadAllText(
             Path.Join(repositoryRoot, "docs/internal/contributor/release-bundle.md"));
-        documentation.Should().Contain("It advances `latest` and `latest-aot` only");
+        documentation.Should().Contain("It advances `latest` and `latest-jit` only");
         documentation.Should().Contain("preview and RC promotions do not move the stable tags");
+    }
+
+    [ArchitectureTest]
+    public void DefaultJitDockerfile_ShouldDeclareProductionProfile()
+    {
+        var contents = File.ReadAllText(Path.Join(ArchitectureTestHelpers.ResolveRepositoryRoot(), "Dockerfile"));
+        contents.Should().Contain("honua.runtime.profile=\"web\"");
+        contents.Should().Contain("honua.runtime.compilation=\"jit\"");
+        contents.Should().Contain("honua.runtime.distribution=\"production\"");
+        contents.Should().Contain("ARG HONUA_STORE_PROFILE=postgis");
     }
 
     [ArchitectureTest]
@@ -366,7 +376,6 @@ public sealed class ServingImageBoundaryTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var dockerfiles = new[]
         {
-            "Dockerfile",
             "docker/Dockerfile.lambda",
             "docker/Dockerfile.functions"
         };
@@ -381,16 +390,16 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
-    public void PublishedTags_ShouldMakeAotCanonicalAndJitExplicit()
+    public void PublishedTags_ShouldMakeJitCanonicalAndAotExplicit()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var genericDeploy = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy.yml"))
             .ReplaceLineEndings("\n");
         var platformDeploy = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy-platform-images.yml"));
 
-        genericDeploy.Should().Contain("dockerfile: Dockerfile\n            tag_suffix: -jit");
-        genericDeploy.Should().Contain("dockerfile: docker/Dockerfile.aot\n            tag_suffix: \"\"");
-        genericDeploy.Should().Contain("compatibility_alias: -aot");
+        genericDeploy.Should().Contain("dockerfile: Dockerfile\n            tag_suffix: \"\"");
+        genericDeploy.Should().Contain("dockerfile: docker/Dockerfile.aot\n            tag_suffix: -aot");
+        genericDeploy.Should().Contain("compatibility_alias: -jit");
         genericDeploy.Should().Contain("- name: Classify mutable latest promotion", Exactly.Twice());
         genericDeploy.Should().Contain(
             "type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ steps.release_kind.outputs.promote_latest }}",
@@ -449,12 +458,12 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
-    public void ServingImageBoundaryWorkflow_ShouldBuildInspectAllProductionAotImagesAndSmokeCanonicalImage()
+    public void ServingImageBoundaryWorkflow_ShouldInspectCanonicalJitAndPlatformAotImages()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/serving-image-boundary.yml"));
 
-        // The three variants build as parallel matrix legs, not three serial
+        // The canonical JIT and two platform AOT variants build as parallel matrix legs, not three serial
         // step pairs in one job: they share no artifact, cache scope, or step
         // output, and the serial arrangement cost a ~140-minute critical path
         // where the bound should be the slowest single build. The proof that
@@ -462,13 +471,13 @@ public sealed class ServingImageBoundaryTests
         // plus one parameterised build/verify pair, asserted together here.
         foreach (var productionVariant in new[]
                  {
-                     "docker/Dockerfile.aot",
+                     "Dockerfile",
                      "docker/Dockerfile.lambda.aot",
                      "docker/Dockerfile.functions.aot"
                  })
         {
             workflow.Should().Contain($"dockerfile: {productionVariant}",
-                "every production AOT variant needs its own matrix leg");
+                "the canonical JIT and platform AOT variants each need their own matrix leg");
         }
 
         workflow.Should().Contain("file: ${{ matrix.dockerfile }}",
@@ -477,6 +486,8 @@ public sealed class ServingImageBoundaryTests
             "the shared verify step must inspect the image its own leg just built");
         workflow.Should().Contain("fail-fast: false",
             "one variant's failure must not cancel and hide the evidence for the others");
+        workflow.Should().Contain("--compilation ${{ matrix.variant == 'generic' && 'jit' || 'native-aot' }}",
+            "each variant must enforce the boundary for its actual compilation mode");
 
         // PR verification, nightly and release builds share per-variant caches.
         // Keep the architecture explicit so amd64 and arm64 exports cannot collide.
@@ -484,16 +495,19 @@ public sealed class ServingImageBoundaryTests
         var release = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy-platform-images.yml"));
         foreach (var cacheScope in new[]
                  {
-                     "honua-aot-amd64",
+                     "honua-jit-amd64",
                      "honua-lambda-aot-amd64",
                      "honua-functions-aot-amd64"
                  })
         {
             workflow.Should().Contain($"cache_scope: {cacheScope}");
             var variantScope = cacheScope[..^"-amd64".Length];
-            var nightlyScope = variantScope == "honua-functions-aot"
-                ? cacheScope
-                : variantScope + "-${{ matrix.arch }}";
+            var nightlyScope = variantScope switch
+            {
+                "honua-functions-aot" => cacheScope,
+                "honua-jit" => "honua-jit${{ matrix.store_suffix }}-${{ matrix.arch }}",
+                _ => variantScope + "-${{ matrix.arch }}"
+            };
             nightly.Should().Contain($"buildcache:{nightlyScope}", Exactly.Twice(),
                 "nightly must import and export the same per-variant cache as PR builds");
             release.Should().Contain($"cache_scope: {variantScope}",
@@ -502,7 +516,10 @@ public sealed class ServingImageBoundaryTests
 
         workflow.Should().Contain("--variable HONUA_BOUNDARY_SMOKE_PORT --ci-default 8080");
         workflow.Should().Contain("SERVER_URL=\"http://127.0.0.1:$SERVER_PORT\"");
-        workflow.Should().Contain("wait --container \"$CONTAINER\" --url \"$SERVER_URL/healthz/live\"");
+        workflow.Should().Contain("wait --container \"$CONTAINER\" --container-port 8080 --url \"$SERVER_URL/healthz/ready\"");
+        workflow.Should().Contain("file: docker/Dockerfile.aot",
+            "the optional generic AOT image must retain its native migration refusal proof");
+        workflow.Should().Contain("scripts/ci/verify-native-migration-refusal.py");
         workflow.Should().Contain("pull_request:");
         workflow.Should().Contain("paths:");
         workflow.Should().Contain("vars.HONUA_SERVING_IMAGE_SKIP == 'true'");
@@ -546,6 +563,7 @@ public sealed class ServingImageBoundaryTests
         foreach (var imageDefiningInput in new[]
                  {
                      "'.dockerignore'",
+                     "'Dockerfile'",
                      "'docker/Dockerfile.aot'",
                      "'docker/Dockerfile.lambda.aot'",
                      "'docker/Dockerfile.functions.aot'",
@@ -692,7 +710,7 @@ public sealed class ServingImageBoundaryTests
         dockerfile.Should().Contain("ARG PDAL_VERSION=");
         dockerfile.Should().Contain("ARG PDAL_SOURCE_SHA256=");
         dockerfile.Should().Contain("ARG GDAL_VERSION=3.13.1");
-        dockerfile.Should().Contain("ARG DOTNET_RUNTIME_VERSION=10.0.15");
+        dockerfile.Should().Contain("ARG DOTNET_RUNTIME_VERSION=11.0.0");
         dockerfile.Should().Contain("ubuntu-full-3.13.1");
         dockerfile.Should().Contain("apt-get -y --no-install-recommends upgrade");
         dockerfile.Should().Contain("FROM ${GDAL_BASE_IMAGE} AS pdal-build");
@@ -711,7 +729,7 @@ public sealed class ServingImageBoundaryTests
         var verifier = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/verify-serving-image-boundary.py"));
         verifier.Should().Contain("\"honua.native.gdal.version\": \"3.13.1\"");
         verifier.Should().Contain("\"honua.native.pdal.version\": \"2.10.2\"");
-        verifier.Should().Contain("\"honua.runtime.dotnet.version\": \"10.0.15\"");
+        verifier.Should().Contain("\"honua.runtime.dotnet.version\": \"11.0.0\"");
         verifier.Should().Contain("worker image must run as user 1001:1001");
         verifier.Should().Contain("libpdalcpp.so");
         const string lockedNugetMount = "--mount=type=cache,target=/root/.nuget/packages,sharing=locked";

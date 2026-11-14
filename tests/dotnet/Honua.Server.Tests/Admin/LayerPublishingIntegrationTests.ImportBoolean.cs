@@ -39,10 +39,11 @@ public sealed partial class LayerPublishingIntegrationTests
         var attributes = rest.RootElement.GetProperty("features").EnumerateArray().Should().ContainSingle().Subject.GetProperty("attributes");
         attributes.GetProperty("name").GetString().Should().Be(expectedName);
         attributes.GetProperty("is_demo").GetInt32().Should().Be(value);
+        var catalogLayer = await ReadImportedGeometryCatalogLayerAsync();
         var mcp = await CallGeometryCatalogAsync("honua_query_features", new
         {
-            serviceId = _serviceName,
-            layerId = _layerId,
+            serviceId = catalogLayer.GetProperty("serviceId").GetString(),
+            serviceLayerIndex = catalogLayer.GetProperty("serviceLayerIndex").GetInt32(),
             where,
             outFields = new[] { "id", "is_demo", "name" },
             limit = 10

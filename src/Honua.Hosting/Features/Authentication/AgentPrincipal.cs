@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Operations.Policy;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 
@@ -49,7 +50,7 @@ internal static class AgentPrincipal
             return;
         }
 
-        principal.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, AgentApprovalRule.AgentRole)]));
+        principal.AddIdentity(new ClaimsIdentity([CanonicalSecurityActor.CreateStampedClaim(ClaimTypes.Role, AgentApprovalRule.AgentRole)]));
     }
 
     public static IApplicationBuilder UseAgentPrincipalMarking(this IApplicationBuilder app)

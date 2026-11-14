@@ -27,7 +27,6 @@ internal interface ITileOperationJobService
     Task<string> StartAsync(
         TileOperationStartRequest request,
         string? schemaName = null,
-        string? tenantScope = null,
         CancellationToken cancellationToken = default);
     Task<TileOperationProgress?> GetAsync(string jobId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TileOperationProgress>> ListAsync(bool activeOnly, CancellationToken cancellationToken = default);
@@ -91,7 +90,6 @@ internal sealed partial class TileOperationJobService(
     public async Task<string> StartAsync(
         TileOperationStartRequest request,
         string? schemaName = null,
-        string? tenantScope = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -109,8 +107,8 @@ internal sealed partial class TileOperationJobService(
             normalized = normalized with { GenerationId = jobId };
         }
 
-        _jobRequests[jobId] = CreateCachedRequest(normalized, schemaName, tenantScope);
-        await PersistJobRequestAsync(jobId, normalized, schemaName, tenantScope, cancellationToken).ConfigureAwait(false);
+        _jobRequests[jobId] = CreateCachedRequest(normalized, schemaName);
+        await PersistJobRequestAsync(jobId, normalized, schemaName, cancellationToken).ConfigureAwait(false);
 
         var progress = TileOperationProgress.CreateInitial(
             jobId,
@@ -211,7 +209,6 @@ internal sealed partial class TileOperationJobService(
         return await StartAsync(
             originalRequest.Value.Request,
             originalRequest.Value.SchemaName,
-            originalRequest.Value.TenantScope,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -312,8 +309,7 @@ internal sealed partial class TileOperationJobService(
                         started,
                         request,
                         scope.ServiceProvider,
-                        linkedCts.Token,
-                        cachedRequest.Value.TenantScope).ConfigureAwait(false);
+                        linkedCts.Token).ConfigureAwait(false);
                 }
                 finally
                 {
@@ -397,7 +393,6 @@ internal sealed partial class TileOperationJobService(
                     jobId,
                     request,
                     cachedRequest.Value.SchemaName,
-                    cachedRequest.Value.TenantScope,
                     cancellationToken).ConfigureAwait(false);
                 if (shouldRequeue)
                 {
@@ -423,13 +418,11 @@ internal sealed partial class TileOperationJobService(
 
     private static CachedTileOperationRequest CreateCachedRequest(
         TileOperationStartRequest request,
-        string? schemaName,
-        string? tenantScope)
+        string? schemaName)
     {
         return new CachedTileOperationRequest(
             request,
             schemaName,
-            tenantScope,
             DateTimeOffset.UtcNow.Add(_jobRequestRetention));
     }
 
@@ -463,7 +456,7 @@ internal sealed partial class TileOperationJobService(
             return null;
         }
 
-        var restoredRequest = CreateCachedRequest(request.Request, request.SchemaName, request.TenantScope);
+        var restoredRequest = CreateCachedRequest(request.Request, request.SchemaName);
         _jobRequests[jobId] = restoredRequest;
         return restoredRequest;
     }
@@ -517,8 +510,7 @@ internal sealed partial class TileOperationJobService(
 
         _jobRequests[jobId] = CreateCachedRequest(
             cachedRequest.Request,
-            cachedRequest.SchemaName,
-            cachedRequest.TenantScope);
+            cachedRequest.SchemaName);
     }
 
     private void PruneExpiredJobRequests()
@@ -537,7 +529,6 @@ internal sealed partial class TileOperationJobService(
         string jobId,
         TileOperationStartRequest request,
         string? schemaName,
-        string? tenantScope,
         CancellationToken cancellationToken)
     {
         if (_requestCache == null)
@@ -549,8 +540,7 @@ internal sealed partial class TileOperationJobService(
             new PersistedTileOperationRequest
             {
                 Request = request,
-                SchemaName = schemaName,
-                TenantScope = tenantScope
+                SchemaName = schemaName
             },
             TileOperationsJsonContext.Default.PersistedTileOperationRequest);
         await _requestCache.SetStringAsync(
@@ -713,7 +703,6 @@ internal sealed partial class TileOperationJobService(
     private readonly record struct CachedTileOperationRequest(
         TileOperationStartRequest Request,
         string? SchemaName,
-        string? TenantScope,
         DateTimeOffset ExpiresAtUtc);
 
     [LoggerMessage(EventId = 9200, Level = LogLevel.Warning, Message = "Tile job {JobId} failed during {Operation}.")]
@@ -724,7 +713,6 @@ internal sealed record PersistedTileOperationRequest
 {
     public required TileOperationStartRequest Request { get; init; }
     public string? SchemaName { get; init; }
-    public string? TenantScope { get; init; }
 }
 
 internal sealed record TileOperationStartRequest
@@ -740,7 +728,8 @@ internal sealed record TileOperationStartRequest
 
     public string? Style { get; init; }
 
-    public string? Format { get; init; }
+    // Archive/publish tile payload compression: "none" (default) or "gzip".
+    public string? TileCompression { get; init; }
 
     // A retry forwards the generation id so the run resumes rather than starting over.
     public string? GenerationId { get; init; }

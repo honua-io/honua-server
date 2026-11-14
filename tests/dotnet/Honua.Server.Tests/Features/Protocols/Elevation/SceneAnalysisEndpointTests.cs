@@ -41,7 +41,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/sun-shadow")]
     public async Task PostSunShadow_DaytimeSun_CastsShadowOverSurface()
     {
-        await SeedFullWorldRasterAsync(0);
+        await using var heldRasters = await HoldFullWorldRasterAsync(0);
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/sun-shadow",
@@ -88,7 +88,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
         // quantized to maxShadowLengthMeters / sampleCount, so keep that step well inside
         // the 1.5 m tolerance (200 / 256 ~= 0.78 m). A 20 km max with 256 samples steps at
         // 78 m and can only ever report a multiple of it.
-        await SeedFullWorldRasterAsync(0);
+        await using var heldRasters = await HoldFullWorldRasterAsync(0);
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/sun-shadow",
@@ -121,7 +121,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/sun-shadow")]
     public async Task PostSunShadow_SunBelowHorizon_ReportsNoShadow()
     {
-        await SeedFullWorldRasterAsync(0);
+        await using var heldRasters = await HoldFullWorldRasterAsync(0);
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/sun-shadow",
@@ -150,7 +150,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/sun-shadow")]
     public async Task PostSunShadow_MissingTimestamp_ReturnsBadRequest()
     {
-        await SeedFullWorldRasterAsync(0);
+        await using var heldRasters = await HoldFullWorldRasterAsync(0);
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/sun-shadow",
@@ -192,7 +192,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/slice")]
     public async Task PostSlice_OverSurface_ReturnsIntersectionMetadata()
     {
-        await SeedFullWorldRasterAsync(123.0);
+        await using var heldRasters = await HoldFullWorldRasterAsync(123.0);
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/slice",
@@ -236,7 +236,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/slice")]
     public async Task PostSlice_DegeneratePlane_ReturnsUnprocessableEntity()
     {
-        await SeedFullWorldRasterAsync(0);
+        await using var heldRasters = await HoldFullWorldRasterAsync(0);
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/slice",
@@ -279,7 +279,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/slice")]
     public async Task PostSlice_WithMixedResolutionMosaic_ReturnsActionableUnprocessableEntity()
     {
-        await SeedMixedResolutionMosaicAsync();
+        await using var heldRasters = await HoldMixedResolutionMosaicAsync();
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/slice",
@@ -327,7 +327,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/slice")]
     public async Task PostSlice_OverStepTerrain_ReturnsKnownStationElevationsAndRelief()
     {
-        await SeedStepTerrainRasterAsync();
+        await using var heldRasters = await HoldStepTerrainRasterAsync();
 
         const double startLon = -0.1;
         const double endLon = 0.1;
@@ -381,14 +381,14 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
         samples[^1].GetProperty("distanceMeters").GetDouble().Should().BeApproximately(expectedLengthMeters, 0.5);
     }
 
-    private Task SeedStepTerrainRasterAsync()
+    private Task<IAsyncDisposable> HoldStepTerrainRasterAsync()
     {
         const double cell = 250;
         var westWidth = (int)((StepBoundaryXMeters + StepHalfExtentMeters) / cell);
         var eastWidth = (int)((StepHalfExtentMeters - StepBoundaryXMeters) / cell);
         var height = (int)(StepHalfExtentMeters * 2 / cell);
 
-        return RasterIntegrationTestData.ReplaceLayerRastersAsync(
+        return RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -417,8 +417,8 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
                 Srid: 3857));
     }
 
-    private Task SeedFullWorldRasterAsync(double elevationMeters)
-        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+    private Task<IAsyncDisposable> HoldFullWorldRasterAsync(double elevationMeters)
+        => RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -434,8 +434,8 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
                 CreatedAt: RasterIntegrationTestData.WestAcquisition,
                 Srid: 3857));
 
-    private Task SeedMixedResolutionMosaicAsync()
-        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+    private Task<IAsyncDisposable> HoldMixedResolutionMosaicAsync()
+        => RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(

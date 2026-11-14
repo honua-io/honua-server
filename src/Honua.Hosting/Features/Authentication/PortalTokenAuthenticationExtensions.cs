@@ -129,7 +129,7 @@ public static class PortalTokenAuthenticationExtensions
         services.AddScoped<IPortalCredentialVerifier>(static provider =>
         {
             var options = provider.GetRequiredService<IOptions<PortalCredentialVerifierOptions>>().Value;
-            var admin = provider.GetRequiredService<AdminPortalCredentialVerifier>();
+            var admin = CountAttempts(provider, provider.GetRequiredService<AdminPortalCredentialVerifier>());
 
             if (!options.UseOidc)
             {
@@ -142,6 +142,11 @@ public static class PortalTokenAuthenticationExtensions
                 : oidc;
         });
     }
+
+    private static IPortalCredentialVerifier CountAttempts(IServiceProvider provider, IPortalCredentialVerifier admin)
+        => provider.GetService<AuthenticationAttemptGate>() is { } gate
+            ? new AttemptCountingPortalCredentialVerifier(admin, gate, provider.GetRequiredService<IHttpContextAccessor>())
+            : admin;
 
     private static void TryAddPortalOAuthBridge(this IServiceCollection services)
     {

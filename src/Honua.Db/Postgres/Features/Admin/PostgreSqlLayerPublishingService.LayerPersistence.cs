@@ -12,6 +12,7 @@
 // catalog-mutating SQL stays together and is easy to review for transactional consistency.
 
 using System.Globalization;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Admin.Domain;
 using Npgsql;
 using NpgsqlTypes;
@@ -192,7 +193,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         ArgumentException.ThrowIfNullOrWhiteSpace(schema);
         ArgumentException.ThrowIfNullOrWhiteSpace(table);
 
-        var sourceTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
+        var sourceTable = $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}";
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
@@ -230,10 +231,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // tables, and materialized views page by (tableoid, ctid) so a gateway
         // timeout is not what bounds the statement (honua-server#5948). Views have
         // no ctid and keep the single INSERT...SELECT.
-        var sourceTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
+        var sourceTable = $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}";
         var canonicalGeometry = string.IsNullOrWhiteSpace(geometryColumn)
             ? "NULL::geometry"
-            : BuildCanonicalGeometryExpression($"src.{QuoteIdentifier(geometryColumn)}");
+            : BuildCanonicalGeometryExpression($"src.{SqlIdentifier.QuoteIdentifier(geometryColumn)}");
         var attributesExpression = BuildAttributesExpression(attributeColumns);
 
         // A managed-store publish names the exact features table its binding reads; the
@@ -241,7 +242,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var featuresTable = featuresSchema is null
             ? await ResolveCanonicalFeaturesTableAsync(connection, transaction, cancellationToken)
                 .ConfigureAwait(false)
-            : $"{QuoteIdentifier(featuresSchema)}.{QuoteIdentifier(ManagedFeaturesTableName)}";
+            : $"{SqlIdentifier.QuoteIdentifier(featuresSchema)}.{SqlIdentifier.QuoteIdentifier(ManagedFeaturesTableName)}";
 
         if (!await SourceSupportsKeysetAsync(connection, transaction, schema, table, cancellationToken)
                 .ConfigureAwait(false))
@@ -891,20 +892,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        return new PublishedLayerSummary
-        {
-            LayerId = reader.GetInt32(0),
-            LayerName = reader.GetString(1),
-            Description = reader.IsDBNull(2) ? null : reader.GetString(2),
-            Schema = reader.GetString(3),
-            Table = reader.GetString(4),
-            PrimaryKey = reader.IsDBNull(5) ? null : reader.GetString(5),
-            GeometryType = reader.GetString(6),
-            Srid = reader.GetInt32(7),
-            Enabled = reader.GetBoolean(8),
-            FieldCount = reader.GetInt32(9),
-            ServiceName = serviceName
-        };
+        return ReadPublishedLayer(reader, serviceName);
     }
 
     private static async Task<PublishedLayerSummary?> GetLayerSummaryByIdAsync(
@@ -950,20 +938,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        return new PublishedLayerSummary
-        {
-            LayerId = reader.GetInt32(0),
-            LayerName = reader.GetString(1),
-            Description = reader.IsDBNull(2) ? null : reader.GetString(2),
-            Schema = reader.GetString(3),
-            Table = reader.GetString(4),
-            PrimaryKey = reader.IsDBNull(5) ? null : reader.GetString(5),
-            GeometryType = reader.GetString(6),
-            Srid = reader.GetInt32(7),
-            Enabled = reader.GetBoolean(8),
-            FieldCount = reader.GetInt32(9),
-            ServiceName = DefaultServiceName
-        };
+        return ReadPublishedLayer(reader, DefaultServiceName);
     }
 
     private static async Task SetLayerEnabledCoreAsync(
@@ -989,7 +964,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         return new PublishedLayerSummary
         {
-            LayerId = layer.LayerId,
+            StorageLayerId = layer.StorageLayerId,
             LayerName = layer.LayerName,
             Description = layer.Description,
             Schema = layer.Schema,

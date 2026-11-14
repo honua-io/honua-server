@@ -24,7 +24,7 @@ public sealed class LayerFieldConfigurationUpdateItem
 
 public sealed class LayerFieldConfigurationResponse
 {
-    public int LayerId { get; init; }
+    public int StorageLayerId { get; init; }
 
     public IReadOnlyList<LayerFieldConfigurationItem> Fields { get; init; } = Array.Empty<LayerFieldConfigurationItem>();
 }
@@ -49,7 +49,7 @@ public sealed class LayerFilterConfigurationUpdateRequest
 
 public sealed class LayerFilterConfigurationResponse
 {
-    public int LayerId { get; init; }
+    public int StorageLayerId { get; init; }
 
     public LayerPermanentFilterConfiguration? PermanentFilter { get; init; }
 }

@@ -216,7 +216,7 @@
     },
     {
       "name": "Tile Operations",
-      "description": "Asynchronous tile cache seed/warm/invalidate/purge/archive/publish jobs and on-demand eviction sweeps. Response payloads on this surface use PascalCase property names."
+      "description": "Asynchronous tile cache seed/warm/invalidate/purge/archive/publish jobs. Response payloads on this surface use PascalCase property names."
     },
     {
       "name": "Field Mask Policies",
@@ -1603,7 +1603,7 @@
         }
       }
     },
-    "/connections/{id}/layers/{layerId}/enabled": {
+    "/connections/{id}/layers/{storageLayerId}/enabled": {
       "put": {
         "tags": [
           "Layers"
@@ -1622,10 +1622,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -1947,7 +1947,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/style": {
+    "/metadata/layers/{storageLayerId}/style": {
       "get": {
         "tags": [
           "Styles"
@@ -1958,10 +1958,10 @@
         "deprecated": true,
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2000,10 +2000,10 @@
         "operationId": "updateAdminLayerStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2046,7 +2046,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/style/import-sld": {
+    "/metadata/layers/{storageLayerId}/style/import-sld": {
       "post": {
         "tags": [
           "Styles"
@@ -2056,10 +2056,10 @@
         "operationId": "importLayerSldStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2120,7 +2120,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/style/export-sld": {
+    "/metadata/layers/{storageLayerId}/style/export-sld": {
       "get": {
         "tags": [
           "Styles"
@@ -2130,10 +2130,10 @@
         "operationId": "exportLayerSldStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2191,7 +2191,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/suggest-style": {
+    "/metadata/layers/{storageLayerId}/suggest-style": {
       "post": {
         "tags": [
           "Styles"
@@ -2201,10 +2201,10 @@
         "operationId": "suggestLayerStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -3713,7 +3713,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/metadata": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/metadata": {
       "put": {
         "tags": [
           "Services",
@@ -3732,13 +3732,14 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer",
               "format": "int32"
-            }
+            },
+            "description": "Layer index within the named service."
           }
         ],
         "requestBody": {
@@ -3794,7 +3795,7 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
             "schema": {
@@ -9987,7 +9988,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/popup-info": {
+    "/metadata/layers/{storageLayerId}/popup-info": {
       "get": {
         "tags": [
           "Metadata"
@@ -10074,7 +10075,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/drawing-info": {
+    "/metadata/layers/{storageLayerId}/drawing-info": {
       "get": {
         "tags": [
           "Metadata"
@@ -10161,7 +10162,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/relationships": {
+    "/metadata/layers/{storageLayerId}/relationships": {
       "get": {
         "tags": [
           "Metadata"
@@ -10250,7 +10251,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/fields": {
+    "/metadata/layers/{storageLayerId}/fields": {
       "get": {
         "tags": [
           "Metadata"
@@ -10336,7 +10337,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/filter": {
+    "/metadata/layers/{storageLayerId}/filter": {
       "get": {
         "tags": [
           "Metadata"
@@ -10422,7 +10423,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/validation": {
+    "/metadata/layers/{storageLayerId}/validation": {
       "get": {
         "tags": [
           "Metadata"
@@ -12790,10 +12791,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "query",
             "required": false,
-            "description": "Filter by service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -14265,7 +14266,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/export": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/export": {
       "get": {
         "tags": [
           "Services"
@@ -14284,10 +14285,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
-            "description": "Service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -14409,7 +14410,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/share/traffic": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic": {
       "get": {
         "tags": [
           "Share"
@@ -14428,10 +14429,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
-            "description": "Service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -14500,7 +14501,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/share/traffic/series": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic/series": {
       "get": {
         "tags": [
           "Share"
@@ -14519,10 +14520,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
-            "description": "Service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -19293,6 +19294,168 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "Security"
+        ],
+        "summary": "Sign In Browser Administrator Session",
+        "description": "Signs a browser administrator in with the built-in administrator password and sets a 30-minute HttpOnly, Secure admin session cookie. HTTPS only. The request must be same-origin and carry the antiforgery request token from `GET /auth/csrf` in the `X-Honua-CSRF` header together with its antiforgery cookie. Any existing session for the caller is replaced. Rate limited to 5 requests per minute. Responses from the handler are `no-store`.",
+        "operationId": "createAdminPasswordSession",
+        "security": [],
+        "parameters": [
+          {
+            "name": "X-Honua-CSRF",
+            "in": "header",
+            "required": true,
+            "description": "Request token returned by `GET /auth/csrf` for this browser.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPasswordSignInRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Signed in; the admin session cookie is set."
+          },
+          "400": {
+            "description": "Not HTTPS, cross-origin, missing or invalid CSRF token, or an empty or over-long password."
+          },
+          "401": {
+            "description": "The password is not valid, or no administrator password is configured."
+          },
+          "429": {
+            "description": "Too many failed attempts from this client address; the source is refused until the `Retry-After` interval elapses.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the client address may try again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAuthProblemResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Administrator sign-in is unavailable: the configured administrator password could not be resolved, or the shared session store could not create the session.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAuthProblemResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/csrf": {
+      "get": {
+        "tags": [
+          "Security"
+        ],
+        "summary": "Get Browser Session CSRF Token",
+        "description": "Issues an antiforgery request token for browser administrator sign-in and sets the matching HttpOnly, Secure, SameSite=Strict antiforgery cookie. Send the token in the `X-Honua-CSRF` header on `POST /auth/session`. HTTPS only. The successful response is `no-store` and is not wrapped in the standard admin envelope.",
+        "operationId": "getAdminBrowserCsrfToken",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Antiforgery request token issued; the antiforgery cookie is set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCsrfResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was not made over HTTPS."
+          }
+        }
+      }
+    },
+    "/auth/password-token": {
+      "post": {
+        "tags": [
+          "Security"
+        ],
+        "summary": "Sign In Browser Administrator Bearer",
+        "description": "Exchanges the built-in administrator password for a short-lived (30 minute) operator bearer, for browser clients served from an explicitly allowed CORS origin that cannot use the session cookie. HTTPS only; the `Origin` header must be an explicitly configured CORS origin and the request must not carry an admin session cookie. Rate limited to 5 requests per minute. The response is `no-store` and is not wrapped in the standard admin envelope.",
+        "operationId": "createAdminPasswordBearer",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPasswordSignInRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Operator bearer issued; it expires 30 minutes after issuance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOperatorBearerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not HTTPS, origin not explicitly allowed, an admin session cookie is present, or an empty or over-long password."
+          },
+          "401": {
+            "description": "The password is not valid, or no administrator password is configured."
+          },
+          "429": {
+            "description": "Too many failed attempts from this client address; the source is refused until the `Retry-After` interval elapses.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the client address may try again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAuthProblemResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The configured administrator password could not be resolved, or operator bearer issuance is not configured on this server.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAuthProblemResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/auth/bearer": {
@@ -20205,92 +20368,6 @@
         }
       }
     },
-    "/tile-operations/evict": {
-      "post": {
-        "tags": [
-          "Tile Operations"
-        ],
-        "summary": "Evict Tile Cache",
-        "description": "Runs a synchronous size-quota / LRU eviction sweep over the live Redis tile-key index, dropping least-recently-used tiles above the configured `TileOptions:Eviction` quota. When eviction is disabled or no live tile-key index is available the sweep is a no-op that returns 200 with `Enabled=false` and zero counts. No request body is required.",
-        "operationId": "evictTileCache",
-        "responses": {
-          "200": {
-            "description": "Eviction sweep outcome.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TileCacheEvictionResult"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/tile-operations/cache/inventory": {
-      "get": {
-        "tags": [
-          "Tile Operations"
-        ],
-        "summary": "Inventory Generated Tile Cache",
-        "description": "Returns tracked generated-tile counts, bytes, and per-zoom coverage. Optional service and gridset filters bound the inventory without scanning object storage.",
-        "operationId": "getTileCacheInventory",
-        "parameters": [
-          {
-            "name": "serviceId",
-            "in": "query",
-            "required": false,
-            "description": "Service whose published layers scope the inventory.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "gridset",
-            "in": "query",
-            "required": false,
-            "description": "Tile matrix set identifier used to scope the inventory.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Generated tile-cache inventory.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TileCacheInventoryResult"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "503": {
-            "description": "The generated tile-cache index is unavailable.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/connections/{id}/tables/validate": {
       "post": {
         "tags": [
@@ -20401,7 +20478,7 @@
         }
       }
     },
-    "/connections/{id}/layers/{layerId}/features/refresh": {
+    "/connections/{id}/layers/{storageLayerId}/features/refresh": {
       "post": {
         "tags": [
           "Layers"
@@ -20420,10 +20497,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Published layer identifier.",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -20973,75 +21050,6 @@
           },
           "503": {
             "description": "The geocoder reference store is unavailable or incompatible; the import was not applied."
-          }
-        }
-      }
-    },
-    "/license/capacity": {
-      "get": {
-        "tags": [
-          "License"
-        ],
-        "summary": "Get License Capacity State",
-        "description": "Returns the current license capacity meter state: band state, licensed capacity terms, current and rolling p95 serving units, burst ceiling and multiplier, sustained-growth grace clock, enforcement/Redis-coordination flags, local instance role and topology, live/production/excluded instance counts, surge state, warning thresholds, and operator-facing messages.",
-        "operationId": "getLicenseCapacityState",
-        "responses": {
-          "200": {
-            "description": "Current license capacity meter state.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseLicenseCapacitySnapshot"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/license/capacity/surge": {
-      "post": {
-        "tags": [
-          "License"
-        ],
-        "summary": "Set License Surge Mode",
-        "description": "Declares or clears operator surge mode on the license capacity meter and returns the recomputed capacity state. While surge mode is active, p95 samples are masked and surge days are drawn from the annual allowance. A missing request body returns 400.",
-        "operationId": "setLicenseCapacitySurgeMode",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LicenseSurgeModeUpdateRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Capacity state after applying the surge declaration.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseLicenseCapacitySnapshot"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -22125,7 +22133,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/discovery": {
+    "/metadata/layers/{storageLayerId}/discovery": {
       "get": {
         "operationId": "getAdminLayerDiscovery",
         "tags": [
@@ -22135,12 +22143,13 @@
         "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer"
-            }
+            },
+            "description": "Internal storage layer identifier."
           }
         ],
         "responses": {
@@ -22174,12 +22183,13 @@
         "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer"
-            }
+            },
+            "description": "Internal storage layer identifier."
           }
         ],
         "responses": {
@@ -22317,7 +22327,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/display": {
+    "/metadata/layers/{storageLayerId}/display": {
       "get": {
         "tags": [
           "Metadata",
@@ -22325,13 +22335,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
@@ -22371,13 +22375,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
@@ -22421,7 +22419,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/spatial": {
+    "/metadata/layers/{storageLayerId}/spatial": {
       "get": {
         "tags": [
           "Metadata",
@@ -22429,13 +22427,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
@@ -22475,13 +22467,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
@@ -22519,6 +22505,78 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/LayerSpatialUpdateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/coordinate-systems": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Search Coordinate Systems",
+        "operationId": "SearchCoordinateSystemsV1",
+        "description": "Search the configured coordinate-system catalog by name or code. Results include display names, units and areas when available.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Search text; leading and trailing whitespace is removed before validation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching coordinate systems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoordinateSystemSearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid search text or result limit.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "The coordinate-system catalog is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
               }
             }
           }
@@ -22578,10 +22636,10 @@
         }
       },
       "AdminAuthoringLayerId": {
-        "name": "layerId",
+        "name": "storageLayerId",
         "in": "path",
         "required": true,
-        "description": "Global numeric layer identifier. The route is constrained to an int, so a non-integer segment does not match the route at all.",
+        "description": "Internal storage layer identifier, resolved through the storage binding. A service-local index cannot substitute for this identifier.",
         "schema": {
           "type": "integer",
           "format": "int32"
@@ -24851,7 +24909,7 @@
       "PublishedLayerSummary": {
         "type": "object",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer ID"
@@ -27382,11 +27440,11 @@
       "LayerMetadataResponse": {
         "type": "object",
         "required": [
-          "layerId",
+          "serviceLayerIndex",
           "layerName"
         ],
         "properties": {
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
           },
@@ -30424,7 +30482,7 @@
               "enabled",
               "disabled"
             ],
-            "description": "Runtime licensing mode. Disabled grants all catalog entitlements without license validation, expiry or capacity metering."
+            "description": "Runtime licensing mode. Disabled grants all catalog entitlements without license validation or expiry."
           }
         }
       },
@@ -37962,7 +38020,7 @@
         "type": "object",
         "description": "A layer's stored popup-info / drawing-info JSON document.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -38023,7 +38081,7 @@
             "nullable": true,
             "description": "Relationship description."
           },
-          "relatedLayerId": {
+          "relatedStorageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Returns -1 if no storage-layer handle exists."
@@ -38066,7 +38124,7 @@
         "type": "object",
         "description": "A layer's persisted relationships.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -38106,7 +38164,7 @@
         "required": [
           "id",
           "name",
-          "relatedLayerId",
+          "relatedStorageLayerId",
           "originField",
           "destinationField"
         ],
@@ -38124,7 +38182,7 @@
             "nullable": true,
             "description": "Relationship description."
           },
-          "relatedLayerId": {
+          "relatedStorageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index."
@@ -38270,7 +38328,7 @@
         "type": "object",
         "description": "Persisted layer field configuration.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -38379,7 +38437,7 @@
         "type": "object",
         "description": "Persisted layer permanent filter configuration.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -38471,7 +38529,7 @@
           "status"
         ],
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -41678,7 +41736,7 @@
         "description": "Create/replace payload for a scheduled Share export definition.",
         "required": [
           "serviceName",
-          "layerId",
+          "serviceLayerIndex",
           "destinationType",
           "format",
           "schedule"
@@ -41693,7 +41751,7 @@
             "type": "string",
             "description": "Owning service name."
           },
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32",
             "minimum": 0,
@@ -41754,7 +41812,7 @@
           "serviceName": {
             "type": "string"
           },
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
           },
@@ -41926,7 +41984,7 @@
           "serviceName": {
             "type": "string"
           },
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
           }
@@ -47248,6 +47306,32 @@
           }
         }
       },
+      "AdminCsrfResponse": {
+        "type": "object",
+        "required": [
+          "requestToken"
+        ],
+        "properties": {
+          "requestToken": {
+            "type": "string",
+            "description": "Antiforgery request token to send in the `X-Honua-CSRF` header."
+          }
+        }
+      },
+      "AdminPasswordSignInRequest": {
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "description": "Built-in administrator password."
+          }
+        }
+      },
       "AdminAuthProblemResponse": {
         "type": "object",
         "description": "RFC 7807 problem document emitted by the admin auth bootstrap endpoints.",
@@ -48360,7 +48444,7 @@
         "properties": {
           "operation": {
             "type": "string",
-            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `expire`, `delete`."
+            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`."
           },
           "serviceId": {
             "type": "string",
@@ -48406,10 +48490,10 @@
             "nullable": true,
             "description": "Optional generated-tile style window. Defaults to `default`."
           },
-          "format": {
+          "tileCompression": {
             "type": "string",
             "nullable": true,
-            "description": "Optional generated-tile format window. ImageServer aliases such as `jpeg`, `tiff`, and `cog` map to their canonical cache extensions."
+            "description": "`none` or `gzip`: tile payload compression for `archive` and `publish` PMTiles output, case-insensitive. Defaults to `none`, which writes the same bytes as earlier releases. Rejected for other operations."
           },
           "generationId": {
             "type": "string",
@@ -48538,6 +48622,11 @@
             "type": "string",
             "nullable": true
           },
+          "TileCompression": {
+            "type": "string",
+            "nullable": true,
+            "description": "Tile compression written to the PMTiles header (`none` or `gzip`) for archive and publish jobs; null for other operations."
+          },
           "DownloadUrl": {
             "type": "string",
             "nullable": true
@@ -48650,93 +48739,6 @@
           "ServiceId": {
             "type": "string",
             "nullable": true
-          }
-        }
-      },
-      "TileCacheEvictionResult": {
-        "type": "object",
-        "description": "Response property names are PascalCase.",
-        "properties": {
-          "Enabled": {
-            "type": "boolean",
-            "description": "Whether eviction was enabled and a live tile-key index was available."
-          },
-          "Scanned": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Tracked tile entries scanned at the start of the sweep."
-          },
-          "Evicted": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Least-recently-used tiles evicted from the cache store and index."
-          },
-          "Message": {
-            "type": "string"
-          }
-        }
-      },
-      "TileCacheInventoryResult": {
-        "type": "object",
-        "description": "Response property names are PascalCase.",
-        "required": [
-          "Enabled",
-          "EntryCount",
-          "TotalBytes",
-          "PerZoom"
-        ],
-        "properties": {
-          "Enabled": {
-            "type": "boolean",
-            "description": "Whether a live tile-key index was available."
-          },
-          "ServiceId": {
-            "type": "string",
-            "nullable": true
-          },
-          "Gridset": {
-            "type": "string",
-            "nullable": true
-          },
-          "EntryCount": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "TotalBytes": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "PerZoom": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TileCacheZoomCoverage"
-            }
-          }
-        }
-      },
-      "TileCacheZoomCoverage": {
-        "type": "object",
-        "required": [
-          "Zoom",
-          "Count",
-          "Bytes"
-        ],
-        "properties": {
-          "Zoom": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "Count": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "Bytes": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
           }
         }
       },
@@ -49582,226 +49584,6 @@
           }
         }
       },
-      "LicenseSurgeModeUpdateRequest": {
-        "type": "object",
-        "required": [
-          "enabled"
-        ],
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "description": "Whether surge mode should be active."
-          },
-          "reason": {
-            "type": "string",
-            "nullable": true,
-            "description": "Optional operator-facing reason for the surge declaration."
-          }
-        }
-      },
-      "LicenseCapacitySnapshot": {
-        "type": "object",
-        "properties": {
-          "state": {
-            "type": "integer",
-            "format": "int32",
-            "enum": [
-              0,
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8,
-              9
-            ],
-            "description": "Numeric LicenseCapacityBandState: 0 NotConfigured, 1 Excluded, 2 Normal, 3 ApproachingBand, 4 Burst, 5 Grace, 6 GraceExpired, 7 Surge, 8 MeteringGap, 9 Disabled."
-          },
-          "terms": {
-            "$ref": "#/components/schemas/LicenseCapacityTermsView"
-          },
-          "currentServingUnits": {
-            "type": "number",
-            "format": "double"
-          },
-          "p95ServingUnits": {
-            "type": "number",
-            "format": "double"
-          },
-          "burstCeilingServingUnits": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "burstMultiplier": {
-            "type": "number",
-            "format": "double"
-          },
-          "gracePeriodDays": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "graceStartedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "graceExpiresAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "registrationEnforced": {
-            "type": "boolean"
-          },
-          "redisConfigured": {
-            "type": "boolean"
-          },
-          "redisCoordinated": {
-            "type": "boolean"
-          },
-          "meteringGap": {
-            "type": "boolean",
-            "description": "True when enforcement is suspended because the coordinated meter is unavailable."
-          },
-          "localDeploymentRole": {
-            "type": "integer",
-            "format": "int32",
-            "enum": [
-              0,
-              1,
-              2,
-              3,
-              4
-            ],
-            "description": "Numeric LicenseDeploymentRole: 0 Production, 1 Development, 2 Test, 3 Staging, 4 ColdDr."
-          },
-          "localTopology": {
-            "type": "integer",
-            "format": "int32",
-            "enum": [
-              0,
-              1,
-              2,
-              3
-            ],
-            "description": "Numeric LicenseServingTopology: 0 SingleNode, 1 VirtualMachine, 2 ReplicaSet, 3 Serverless."
-          },
-          "localServingUnits": {
-            "type": "number",
-            "format": "double"
-          },
-          "localRoleExcluded": {
-            "type": "boolean"
-          },
-          "liveInstanceCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "productionInstanceCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "excludedInstanceCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "surge": {
-            "$ref": "#/components/schemas/LicenseSurgeState"
-          },
-          "warning80Percent": {
-            "type": "boolean"
-          },
-          "warning100Percent": {
-            "type": "boolean"
-          },
-          "messages": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Safe operator-facing state messages."
-          },
-          "meteringEnabled": {
-            "type": "boolean",
-            "description": "False in Disabled licensing mode; no registrations, usage samples, surge state or capacity enforcement are active."
-          }
-        }
-      },
-      "LicenseCapacityTermsView": {
-        "type": "object",
-        "nullable": true,
-        "description": "Capacity terms encoded in the active license; omitted when the license declares none.",
-        "properties": {
-          "maxSustainedServingUnits": {
-            "type": "number",
-            "format": "double"
-          },
-          "annualSurgeDays": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true,
-            "description": "Null means unlimited."
-          },
-          "surgeAllowance": {
-            "type": "string",
-            "description": "Human-readable surge allowance tier."
-          }
-        }
-      },
-      "LicenseSurgeState": {
-        "type": "object",
-        "properties": {
-          "isActive": {
-            "type": "boolean"
-          },
-          "activatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "reason": {
-            "type": "string",
-            "nullable": true
-          },
-          "annualAllowanceDays": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true,
-            "description": "Null means unlimited."
-          },
-          "usedDaysThisYear": {
-            "type": "number",
-            "format": "double"
-          },
-          "remainingDaysThisYear": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          }
-        }
-      },
-      "ApiResponseLicenseCapacitySnapshot": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/LicenseCapacitySnapshot"
-          },
-          "message": {
-            "type": "string",
-            "nullable": true
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
       "ExternalServiceDiscoverRequest": {
         "type": "object",
         "properties": {
@@ -50354,11 +50136,11 @@
       "LayerRelationshipBatchUpdateItem": {
         "type": "object",
         "required": [
-          "layerId"
+          "storageLayerId"
         ],
         "description": "Complete desired relationship set for one global storage-layer id.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32"
           },
@@ -50481,7 +50263,7 @@
             "minimum": 0,
             "description": "Source count, updated to the actual materialization observation when reported by the worker."
           },
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "nullable": true,
@@ -51981,7 +51763,7 @@
             "type": "string",
             "nullable": true
           },
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32"
           }
@@ -52087,7 +51869,7 @@
             "minimum": 0,
             "nullable": true
           },
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32"
           }
@@ -52108,6 +51890,51 @@
           "timestamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "CoordinateSystemSearchResult": {
+        "type": "object",
+        "required": [
+          "items",
+          "hasMore"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoordinateSystemEntry"
+            }
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "Whether more matches exist beyond this response limit."
+          }
+        }
+      },
+      "CoordinateSystemEntry": {
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "unit",
+          "area"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true
+          },
+          "area": {
+            "type": "string",
+            "nullable": true
           }
         }
       }

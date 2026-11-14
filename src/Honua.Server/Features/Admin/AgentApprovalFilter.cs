@@ -3,8 +3,11 @@
 
 using Honua.Core.Features.Console.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Console;
 using Honua.Server.Features.Console.Models;
+using Honua.Server.Features.Console.Services;
 
 namespace Honua.Server.Features.Admin;
 
@@ -37,10 +40,39 @@ internal static class AgentApprovalFilter
         => Refuse(invocation, next, LayerStateRef, ConsoleGuidance);
 
     // Any visibility beyond personal, or a team scope, puts content in front of a new audience.
-    public static ValueTask<object?> ContentVisibility(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
-        => invocation.Arguments.Any(static argument => WidensVisibility(argument))
-            ? Refuse(invocation, next, ContentVisibilityRef, ConsoleGuidance)
-            : next(invocation);
+    public static async ValueTask<object?> ContentVisibility(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
+    {
+        var context = invocation.HttpContext;
+        if (!AgentPrincipal.IsAgent(context.User))
+            return await next(invocation).ConfigureAwait(false);
+
+        var changesAudience = invocation.Arguments.Any(static argument => WidensVisibility(argument));
+        if (invocation.Arguments.OfType<CreateConsoleContentItemRequest>().FirstOrDefault() is { OwnerId: not null } create)
+        {
+            changesAudience |= !string.Equals(create.OwnerId, ConsolePrincipal.ResolveActorId(context.User), StringComparison.Ordinal);
+        }
+
+        if (!changesAudience && invocation.Arguments.OfType<UpdateConsoleContentItemRequest>().FirstOrDefault() is { } update)
+        {
+            var store = context.RequestServices.GetRequiredService<ProjectedConsoleContentStore>();
+            var id = context.Request.RouteValues["id"]?.ToString();
+            if (id is not null && await store.GetAsync(id, context.RequestAborted).ConfigureAwait(false) is { } existing)
+            {
+                if (update.Generation is { } generation && generation != existing.Generation)
+                {
+                    return TypedResults.Conflict(ApiResponse<object>.Failure("Console content item generation has changed."));
+                }
+
+                changesAudience = !string.Equals(update.OwnerId, existing.OwnerId, StringComparison.Ordinal);
+                // Persist against the same version whose ownership was authorized.
+                update.AuthorizedGeneration = existing.Generation;
+            }
+        }
+
+        return changesAudience
+            ? OperatorApprovalGate.AgentApprovalRequired(context, ContentVisibilityRef, ConsoleGuidance)
+            : await next(invocation).ConfigureAwait(false);
+    }
 
     private static bool WidensVisibility(object? argument) => argument switch
     {
@@ -57,7 +89,7 @@ internal static class AgentApprovalFilter
         => Refuse(invocation, next, AccessGrantsRef, ConsoleGuidance);
 
     public static ValueTask<object?> LayerMetadataAccessPolicy(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
-        => invocation.Arguments.OfType<UpdateLayerMetadataRequest>().Any(static request => request.AccessPolicy is not null)
+        => invocation.Arguments.OfType<UpdateLayerMetadataRequest>().Any(static request => request.AccessPolicy is not null || request.Editing is not null)
             ? Refuse(invocation, next, AccessPolicyRef, ConsoleGuidance)
             : next(invocation);
 

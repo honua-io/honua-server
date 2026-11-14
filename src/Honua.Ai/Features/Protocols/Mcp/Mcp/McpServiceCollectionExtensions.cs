@@ -35,22 +35,16 @@ internal static class McpServiceCollectionExtensions
         // Streamable-HTTP session registry (honua-server#1954). A process-wide
         // singleton constructed via a factory so it picks up the configured
         // lifecycle bounds and the host TimeProvider (defaults to
-        // TimeProvider.System when none is registered). When Redis is connected
-        // (the governed control plane requires it) session records are shared
-        // through RedisMcpSessionStore, so a session negotiated on any instance is
-        // honoured by every instance (honua-release#531 journey stage 1.5); without
-        // a multiplexer the registry is in-memory on a single instance and
-        // stateless on a multi-instance host. An explicitly registered
-        // IMcpSessionStore wins (tests compose a shared fake).
+        // TimeProvider.System when none is registered). A host with a system
+        // database registers the shared IMcpSessionStore, so a session negotiated
+        // on any instance is honoured by every instance; without one the registry
+        // is in-memory on a single instance and stateless on a multi-instance host.
         services.TryAddSingleton(McpMrtrRuntime.Create);
         services.TryAddSingleton(static sp =>
         {
             var options = sp.GetRequiredService<IOptions<McpOptions>>().Value;
             var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
-            var store = sp.GetService<IMcpSessionStore>()
-                ?? (sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
-                    ? new RedisMcpSessionStore(redis)
-                    : null);
+            var store = sp.GetService<IMcpSessionStore>();
 
             // Without a store, a host that runs as several instances (Lambda, a
             // MultiNode deployment) mints signed self-describing session ids so any
@@ -90,6 +84,7 @@ internal static class McpServiceCollectionExtensions
                 statelessTokens,
                 options.MaxSessionsPerPrincipal);
         });
+        services.AddHostedService(static sp => sp.GetRequiredService<McpSessionManager>());
         return services;
     }
 
@@ -213,10 +208,6 @@ internal static class McpServiceCollectionExtensions
         // here so the MCP surface is self-sufficient regardless of whether the
         // host also composes the Studio slice.
         services.AddStudioDraftFactories();
-        // The draft factories register the in-memory store. Replace that default
-        // when Redis is composed so a draft saved on one replica is readable on
-        // another; without a multiplexer the in-memory store stays (honua-server#3312).
-        PackageDraftStoreComposition.PreferRedisWhenConfigured(services);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateMapPackageTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateAppPackageTool>());
 

@@ -127,7 +127,7 @@ test wall times include fixture setup and cleanup:
 Each timing artifact reports `capacity_status: ok`, exit 0, and no timeout or
 kill escalation. These are single-run measurements, not a p90 estimate. The
 source-bound hashes and normalization provenance are retained in the
-[verification record](mapserver-shard-capacity-20260907.json). Wider CI is not
+[verification record](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/internal/ci/mapserver-shard-capacity-20260907.json). Wider CI is not
 claimed green: the original source has the expected generated-catalog drift
 plus separate Studio/export/import failures requiring attribution. Later
 tests, including the QGIS point-literal regressions in #4523, must be included
@@ -1192,7 +1192,7 @@ Run `39099807022` at `94f7d6b3` exhausted the combined FeatureServer shard's
 37-minute test cap while it was still producing output. The completed prior
 `fc8139b5` TRX contains 430 passing cases in 30.6 minutes, with low headroom.
 Its dirty-source flag remains recorded in
-`featureserver-shard-capacity-20261018.json`; it is sizing evidence only.
+[the FeatureServer fixture](../../../eng/ci/fixtures/shard-capacity/featureserver.json); it is sizing evidence only.
 
 `FeatureServer Editing and Relationships` owns the whole ApplyEdits, mutation,
 relationship, feature-lock, edit-capability and edit-owner class families. The
@@ -1242,7 +1242,7 @@ and `ImageServerMosaicIntegrationTests` move intact to a new
 These are estimates from one completed historical run, not a p90 or fresh
 post-split verdict. Fixed job setup and newer tests still need actual hosted
 measurement. The original failed run remains failed. The
-[bounded evidence record](imageserver-shard-capacity-20261012.json) retains
+[bounded evidence record](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/internal/ci/imageserver-shard-capacity-20261012.json) retains
 source/run/artifact identities, file hashes, class intervals and timing data.
 
 Focused run [38189708636](https://github.com/honua-io/honua-server/actions/runs/38189708636)
@@ -1345,7 +1345,7 @@ foundation results from run `38541322272` contain all 29 methods expanded into
 53 passing cases. Those are prior-source execution observations, not new
 post-split results or additional integration cases.
 
-The [bounded evidence record](admin-runtime-shard-capacity-20261014.json)
+The [bounded evidence record](../../../eng/ci/fixtures/shard-capacity/admin-runtime.json)
 retains the raw artifact, log and TRX identities plus the historical method
 partition. These one-run timing observations size the change; they are not a
 p90 estimate or fresh post-split proof. Two actual executions per child and
@@ -1381,7 +1381,7 @@ this does not rewrite a historical 121-shard audit or certify any new source aut
 The console timing suggests roughly eleven minutes were spent in the largest class, but incomplete
 logs cannot predict either child's final wall time. Actual complete child TRX and timing receipts
 remain necessary; the split alone does not establish qualification or close a capacity incident.
-The retained source/timing description is `wms-shard-capacity-20261018.json` beside this document.
+The retained source/timing description is [the WMS fixture](../../../eng/ci/fixtures/shard-capacity/wms.json).
 
 
 ## October 2026 Core attachments capacity split (6451)
@@ -1433,7 +1433,7 @@ Completed trunk run 42230715248 executed 223 passing Miscellaneous cases over a
 serial 23.2-minute interval. Whole-class filters assign every retained case to
 one child: 170 to Miscellaneous and 53 to Packages and Temporal. Source-method
 ownership and timing inputs are retained in
-[miscellaneous-shard-capacity.json](miscellaneous-shard-capacity.json).
+[miscellaneous-shard-capacity.json](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/internal/ci/miscellaneous-shard-capacity.json).
 
 | Child | Predicted serial interval | Inner / outer budget |
 | --- | --- | --- |
@@ -1556,3 +1556,24 @@ expands to all of its children. The affected-shard selector ranks one child per 
 family before any family's second child when the routing signals tie, so a change to a
 class split across many children does not take every slot from another changed test's
 owner.
+
+## Admin authentication capacity split (12 November 2026)
+
+Trunk `8558bbce1e` [run 43209990084](https://github.com/honua-io/honua-server/actions/runs/43209990084/job/131180962263)
+exhausted the authentication/credentials shard's 22-minute inner budget with
+output still arriving two seconds before termination (100.2% utilization).
+This is a censored sample, not a completed duration. The recorded baseline is
+[admin-auth-capacity-baseline.json](../../../scripts/ci/fixtures/admin-auth-capacity-baseline.json).
+
+The seven classes now run in four jobs: authentication and operator bearer;
+OAuth and OIDC; API keys; client certificates. Whole classes stay together.
+Every child retains all original source triggers, report flags, project,
+parallelism and 22/32-minute inner/outer budgets. Required checks are unchanged.
+The coverage fixture proves the historical selection has exactly one owner,
+and the containing identity partition includes all four children.
+
+The children conservatively inherit the parent's 21.7-minute dispatch rank;
+these are not measured child durations. PR time-budget deferral therefore stays
+in force until completed scheduled trunk samples justify new ranks. The next
+scheduled full run must establish child durations and policy headroom; no
+post-change reduction is claimed yet. No daytime full CI dispatch is needed.

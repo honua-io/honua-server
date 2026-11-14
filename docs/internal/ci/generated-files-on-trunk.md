@@ -70,8 +70,10 @@ proof-ledger, schema, route coverage, judgment and OpenAPI checks stay hard.
 The trailing Server foundation family also refreshes before its validators,
 so it cannot race the post-merge writer against stale committed projections.
 The separate capability aggregation check now also reports drift with a notice.
-The existing normalization producer/consumer remains in observation mode and
-continues its bounded reproducibility checks without modifying PR branches.
+The normalization producer/consumer runs in enforce mode (#3219): on a
+same-repository PR branch it commits the validated catalog/parity/matrix blobs
+and re-requests exact-head review; forks and protected branches stay read-only.
+This writer still owns the trunk copy.
 
 Generation and validation check out the triggering `github.sha`, including
 on reruns, with read-only contents/packages permissions and no persisted Git
@@ -85,23 +87,35 @@ account's GraphQL budget is shared with other automation, and three trunk runs
 on 2026-09-13 pushed the branch and then failed `gh pr list` with a GraphQL
 rate-limit error while REST quota remained (#4732).
 
-Before committing a diff, publication compares that validated source with
-remote trunk. If trunk has already advanced, it reports both identities and leaves the
-automation PR untouched. A scheduled run dispatches a fresh-trunk retry, with
-at most two successors in the nightly chain. Each successor checks out its own
-trigger SHA and reruns generation and validation. Retries stop at the UTC date
-boundary; manual runs without a retry date and reruns do not extend the chain.
-Validation still proves the triggering source; it
+Before committing a diff, publication compares that validated source with remote
+trunk. A first attempt (`GITHUB_RUN_ATTEMPT=1`) triggered on trunk publishes
+even if trunk has advanced, unless trunk already carries the candidate's changed
+generated files. Independent generated files on trunk do not cause a no-op
+candidate to reopen a PR. The commit sits directly on the validated
+source, so the PR is an ordinary branch behind trunk: PR Gate tests its merge,
+and generated-only admission, which requires base == source, falls back to the
+full checks. The earlier design refused a moved trunk and dispatched at most two
+fresh-head retries. That lost whole days: GitHub starts this schedule hours
+late, into hours when trunk lands 2-6 PRs, and on 11 Nov 2026 a run queued for
+five hours was replaced by a manual dispatch that lost the race with no retry.
+Concurrency does not guarantee source order. Before replacing an existing
+automation head, publication fetches its captured commit and verifies that its
+`Generated-From` source is an ancestor of (or equal to) the candidate source.
+Older or unrelated sources preserve the newer publication, even when it finished
+before the candidate started. Missing or inconsistent provenance fails closed;
+shallow checkouts fetch history before checking ancestry. A rerun (attempt > 1),
+a local run or a dispatch on another ref still refuses a moved trunk and leaves
+the automation PR untouched. Validation still proves the triggering source; it
 does not check out or certify the later trunk revision. A new source/workflow
 fix requires a new imaged release candidate and certification at that identity.
 Network failures reading remote refs fail publication rather than masquerading
 as an absent branch. The push uses an explicit lease and a temporary Git
 credential helper; no PAT is persisted in the checkout. The automation-branch
-lease is captured before observing trunk, so a racing newer publisher cannot
-be overwritten. This is not an atomic trunk-freshness/admission guarantee:
-trunk can advance during publication or review. As in #4695, these are ordinary
+lease is captured before observing trunk, so a racing newer publisher cannot be
+overwritten. This is not an atomic trunk-freshness or admission guarantee: trunk
+can advance during publication or review. As in #4695, these are ordinary
 reviewed maintenance PRs; the next nightly run or an explicit dispatch refreshes
-any drift remaining after the bounded retries.
+any drift that remains.
 The source trailer and triggering-SHA validation identify exactly what was
 validated; neither claims that trunk stopped moving.
 

@@ -10,6 +10,12 @@ This guide covers migration for the Honua control-plane/admin API only.
 This guide covers the Honua control-plane (admin) API only. For SDK support windows and
 release-channel expectations, see [Server + SDK compatibility](../concepts/ecosystem.md).
 
+## rc.2 Layer selectors
+
+Regenerate clients against the matching rc.2 admin contract. Global metadata and Connection routes accept `storageLayerId`; Service-scoped routes accept `serviceLayerIndex` with the Service. Publishing receipts expose `storageLayerId`, while a resolved native publish operation can also report its Service-local `serviceLayerIndex`. These numbers can differ; do not substitute one for the other.
+
+The same change removes storage-derived public WFS, Records and style identifiers. Follow the [Layer identifier migration guide](../guides/migrate/public-layer-identifiers.md) and [breaking release note](release-notes/2026.1-rc.2.md) before qualifying SDKs or saved integrations against the candidate.
+
 ## Withdrawal of the COG publication endpoint
 
 The revert of PR #5027 in PR #5042 withdraws the newly added
@@ -34,6 +40,25 @@ The other properties keep their names and meaning.
 Clients that read either property should stop reading it and regenerate from the
 current admin contract. There is no replacement, because no fallback or reconnect
 interval remains to report.
+
+## Tile cache inventory and license capacity withdrawn
+
+Generated tiles are no longer tracked in a shared index, and Honua does not meter
+capacity. These admin operations are removed with no replacement:
+
+- `POST /api/v1/admin/tile-operations/evict` and
+  `GET /api/v1/admin/tile-operations/cache/inventory`.
+- The `expire` and `delete` tile operations, and the `format` field of the tile
+  operation request. `invalidate` clears response and CDN caches; it does not
+  remove or expire generated tiles in object storage. Those tiles can still be
+  served until their existing TTL expires. There is no admin replacement for
+  `expire` or `delete`. A `format` value that clients still send is ignored.
+- `GET /api/v1/admin/license/capacity`, `POST /api/v1/admin/license/capacity/surge`
+  and the `capacity` property of the license status. Licenses that carry capacity
+  terms are still accepted; the terms are ignored.
+
+Clients that call these operations should stop calling them and regenerate from the
+current admin contract.
 
 ## Import scan result types
 
@@ -66,6 +91,16 @@ proposals need fresh proposals, and unpassed legacy coordinated-release gates
 need fresh human reviews. Already claimed legacy executions and submitted child
 operations retain their recorded authority and may drain. Deploy Server before
 the Console companion; automation can continue proposing and monitoring work.
+
+## Browser session CSRF protection
+
+Cookie-authenticated clients must fetch `GET /api/v1/admin/auth/csrf` over HTTPS
+and send its `requestToken` in the `X-Honua-CSRF` header for unsafe requests,
+including sign-in, bearer issuance and logout. Keep cookies on the same origin.
+Fetch a fresh token after password or OIDC sign-in because the token is bound to
+the current identity. Coordinate this server update with the Console client.
+See [browser sign-in](../guides/secure/authentication.md) for the session and
+separate-origin bearer flows.
 
 ## Migration Baseline
 

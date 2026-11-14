@@ -133,6 +133,20 @@ for step in steps:
         assert "if: inputs.phase != 'build'" in step, name
     if any(label in name for label in ['Compute gate build scope', 'Union producer test roots', 'Restore selected build scope', 'Build (warnings as errors)', 'Format Check']):
         assert "if: inputs.phase != 'test'" in step, name
+# The producer shares a 10 GiB slice with runner services. Verify the actual
+# restore/build steps rather than accepting resource settings elsewhere.
+for name in ("Restore selected build scope", "Build (warnings as errors)"):
+    step = next(step for step in steps if step.splitlines()[0] == f"    - name: {name}")
+    for setting in ("DOTNET_PROCESSOR_COUNT: '4'", "DOTNET_CLI_USE_MSBUILD_SERVER: 'false'",
+                    "MSBUILDDISABLENODEREUSE: '1'"):
+        assert setting in step, (name, setting)
+    invocations = re.findall(r"(?:dotnet build|scripts/ci/dotnet-restore-retry\.sh) (?:[^\n]*\\\n)*[^\n]*", step)
+    assert len(invocations) == (2 if name.startswith("Build") else 1), name
+    for invocation in invocations:
+        arguments = shlex.split(invocation.replace("\\\n", " "))
+        assert arguments.count('-maxcpucount:4') == 1, name
+        assert not any(arg.startswith(('-m:', '/m:', '/maxcpucount:', '-maxcpucount:'))
+                       and arg != '-maxcpucount:4' for arg in arguments), name
 assert steps[0].startswith('    - name: Validate gate phase')
 assert steps[1].startswith('    - name: Pre-pull Testcontainers PostGIS image')
 assert TEXT.index('Regenerate projections') < TEXT.index('Run .NET Tests (Architecture Source)')
@@ -164,7 +178,7 @@ require(
 )
 require(
     r"dotnet build \"\$\{GATE_BUILD_FILTER\}\" \\\s+--no-restore \\\s+"
-    r"--configuration Release \\\s+(?:-graphBuild \\\s+)?"
+    r"--configuration Release \\\s+(?:-graphBuild -maxcpucount:4 \\\s+)?"
     r"/p:TreatWarningsAsErrors=true",
     "build the affected solution filter with the same "
     "--no-restore/Release/warnings-as-errors contract as the full build",
@@ -336,12 +350,39 @@ require(
     "disable only the serialized PR format invocation",
     text=PR_GATE_TEXT,
 )
-require(
-    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer\]",
-    "keep the required PR Gate context as a fail-closed aggregator over "
-    "build/tests, format, CI router validation, and the server-test producer",
-    text=PR_GATE_TEXT,
-)
+def require_required_gate_contract(text: str) -> None:
+    block = re.search(r"^  required:\n(?:(?!^  \S)[\s\S])*", text, re.MULTILINE)
+    if block is None:
+        raise AssertionError("lean gate must retain the required aggregator")
+    expected_name = "${{ github.event.pull_request.draft && 'PR Gate (draft)' || 'PR Gate' }}"
+    require(
+        r"^    name: " + re.escape(expected_name) + r"$",
+        "reserve the required PR Gate context for ready verification",
+        text=block[0],
+    )
+    require(
+        r"^    needs: \[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer\]$",
+        "keep the fail-closed aggregator dependencies over build/tests, format, "
+        "CI router validation, affected shards, and the server-test producer",
+        text=block[0],
+    )
+
+
+require_required_gate_contract(PR_GATE_TEXT)
+for old, new in (
+    ("name: ${{ github.event.pull_request.draft && 'PR Gate (draft)' || 'PR Gate' }}", "name: PR Gate"),
+    ("'PR Gate (draft)' || 'PR Gate'", "'PR Gate' || 'PR Gate (draft)'"),
+    ("needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]",
+     "needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards]"),
+):
+    if old not in PR_GATE_TEXT:
+        raise AssertionError("required aggregator mutation must change the workflow")
+    try:
+        require_required_gate_contract(PR_GATE_TEXT.replace(old, new))
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("required aggregator checker accepted an unsafe context or missing dependency")
 require(
     r"ci-router-validation:\n[\s\S]*?run: scripts/ci/pr-touches-ci-surface\.sh --github-output",
     "classify every PR Gate run for CI-surface changes before deciding "

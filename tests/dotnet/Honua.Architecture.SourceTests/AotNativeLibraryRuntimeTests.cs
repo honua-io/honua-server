@@ -23,6 +23,22 @@ public sealed class AotNativeLibraryRuntimeTests
         "docker/Dockerfile.lambda.aot"
     ];
 
+    private static void AssertNativeLinkGate(string runtimeStage, string relativePath)
+    {
+        if (relativePath == "docker/Dockerfile.lambda.aot")
+        {
+            runtimeStage.Should().Contain("ldd -r /var/task/libSkiaSharp.so", relativePath);
+            runtimeStage.Should().Contain("for native in ParquetSharpNative.so libduckdb.so", relativePath);
+            runtimeStage.Should().Contain("ldd -r \"/var/task/${native}\"", relativePath);
+            runtimeStage.Should().Contain("not found|undefined symbol|not a dynamic executable", relativePath);
+            runtimeStage.Should().Contain("exit 1", relativePath);
+        }
+        else
+        {
+            runtimeStage.Should().Contain("sh docker/runtime/verify-native.sh", relativePath);
+        }
+    }
+
     [ArchitectureTest]
     public void PublishedServerAotDockerfiles_ShouldTargetGlibcAndInstallParquetNativeDependencies()
     {
@@ -58,11 +74,11 @@ public sealed class AotNativeLibraryRuntimeTests
             var contents = File.ReadAllText(Path.Join(repositoryRoot, relativePath));
             var runtimeStage = contents[contents.IndexOf("AS runtime", StringComparison.Ordinal)..];
 
-            runtimeStage.Should().MatchRegex(@"for native in [^;]*\bParquetSharpNative\.so\b[^;]*\blibduckdb\.so\b|for native in [^;]*\blibduckdb\.so\b[^;]*\bParquetSharpNative\.so\b",
-                $"{relativePath} must link-check both glibc-only native libraries in the runtime stage");
-            runtimeStage.Should().Contain("ldd -r \"", relativePath);
-            runtimeStage.Should().Contain("grep -Eq 'not found|undefined symbol|not a dynamic executable'", relativePath);
-            runtimeStage.Should().Contain("exit 1", relativePath);
+            AssertNativeLinkGate(runtimeStage, relativePath);
+            var verification = File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/verify-native.sh"));
+            verification.Should().Contain("ParquetSharpNative.so");
+            verification.Should().Contain("libSkiaSharp.so");
+            verification.Should().Contain("chroot \"$runtime_root\" \"$loader\" --list");
         }
     }
 
@@ -87,7 +103,7 @@ public sealed class AotNativeLibraryRuntimeTests
         var restoreStepCount = buildStage.Split(
             "sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj").Length - 1;
         var argumentListCount = buildStage.Split(
-            "set -- \"-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}\" \"-p:HonuaUseSkiaNoDependencies=true\"").Length - 1;
+            "set -- \"-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis}\" \"-p:HonuaUbuntuRuntimePublish=true\" \"-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}\" \"-p:HonuaUseSkiaNoDependencies=true\"").Length - 1;
         restoreStepCount.Should().Be(2);
         argumentListCount.Should().Be(restoreStepCount,
             "the RID restore layer and the restore+publish retry unit must both select the NoDependencies asset; "
@@ -100,10 +116,10 @@ public sealed class AotNativeLibraryRuntimeTests
             var runtimeStage = contents[contents.IndexOf("AS runtime", StringComparison.Ordinal)..];
 
             contents.Should().Contain("-p:HonuaUseSkiaNoDependencies=true", relativePath);
-            runtimeStage.Should().Contain("libSkiaSharp.so",
-                $"{relativePath}: the Skia native must stay under the ldd -r gate, not be excluded to go green");
+            AssertNativeLinkGate(runtimeStage, relativePath);
             runtimeStage.Should().Contain("fonts-dejavu-core", relativePath);
-            runtimeStage.Should().Contain("test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", relativePath);
+            File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/verify-native.sh"))
+                .Should().Contain("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
             runtimeStage.Should().Contain("HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                 $"{relativePath}: the NoDependencies asset has no Fontconfig lookup, so text renders blank without a font file");
         }
@@ -130,13 +146,13 @@ public sealed class AotNativeLibraryRuntimeTests
 
         var smoke = workflow[smokeIndex..publicationIndex];
         smoke.Should().Contain("steps.build.outputs.digest", "the smoke must boot the exact candidate digest");
-        smoke.Should().Contain("scripts/ci/smoke-aot-geoparquet.sh \"$CANDIDATE\"");
+        smoke.Should().Contain("scripts/ci/smoke-serving-formats.sh \"$CANDIDATE\"");
         smoke.Should().NotContain("continue-on-error");
         smoke.Should().Contain("if: matrix.arch == 'amd64'",
             "the CNG seed database image is amd64-only; any other condition would silently skip the smoke");
         smoke.Should().NotContain("if: ${{", "the smoke must not gain an escape-hatch condition");
 
-        var script = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/smoke-aot-geoparquet.sh"));
+        var script = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/smoke-serving-formats.sh"));
         script.Should().Contain("f=parquet");
         script.Should().Contain("[[ \"$code\" == 200 ]]");
         script.Should().Contain("PAR1", "a 200 carrying the 501 capability envelope must not pass");

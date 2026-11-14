@@ -1,0 +1,14 @@
+{
+  "id": "apply_style_preset.service_layer_index_result",
+  "schemaRef": "tools/apply_style_preset.result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "serviceId": "county_parcels",
+    "serviceLayerIndex": 3,
+    "styleId": "style_parcels"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": [
+    "StyleRef"
+  ]
+}

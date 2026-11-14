@@ -16,6 +16,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
@@ -412,7 +413,7 @@ internal sealed partial class GeoservicesImportService
                 var attachmentOutcome = await CopyAttachmentsAsync(
                     request,
                     layerInfo,
-                    publishedLayer.LayerId,
+                    publishedLayer.StorageLayerId,
                     objectIdMap,
                     warnings,
                     progress,
@@ -453,7 +454,7 @@ internal sealed partial class GeoservicesImportService
             {
                 ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Validating, request,
                     "Reconciling published layer against source snapshot",
-                    featuresProcessed, featuresProcessed, layerInfo.Name, publishedLayer.LayerId,
+                    featuresProcessed, featuresProcessed, layerInfo.Name, publishedLayer.StorageLayerId,
                     attachmentsProcessed: attachmentCount, failedAttachments: failedAttachments);
 
                 // #4600 AC6: a filtered import is reconciled against the filtered source. The discovery
@@ -513,7 +514,7 @@ internal sealed partial class GeoservicesImportService
                 Attachments = attachmentFidelity,
                 Relationships = request.DeferRelationshipApplyToBatch
                     ? []
-                    : DescribeUnappliedSourceRelationships(layerInfo, publishedLayer?.LayerId),
+                    : DescribeUnappliedSourceRelationships(layerInfo, publishedLayer?.StorageLayerId),
                 SourceSnapshot = sourceSnapshot
             });
 
@@ -533,7 +534,7 @@ internal sealed partial class GeoservicesImportService
                     featuresProcessed,
                     featuresProcessed,
                     layerInfo.Name,
-                    publishedLayer?.LayerId,
+                    publishedLayer?.StorageLayerId,
                     attachmentsProcessed: attachmentCount,
                     failedAttachments: failedAttachments,
                     reconciliationArtifact: reconciliation.Artifact,
@@ -547,7 +548,7 @@ internal sealed partial class GeoservicesImportService
                     request.LayerId,
                     featuresProcessed,
                     failedFeatures,
-                    publishedLayer?.LayerId,
+                    publishedLayer?.StorageLayerId,
                     publishedLayer?.ServiceName ?? request.ServiceName,
                     layerInfo.Name,
                     stopwatch.Elapsed,
@@ -570,7 +571,7 @@ internal sealed partial class GeoservicesImportService
                 featuresProcessed,
                 featuresProcessed,
                 layerInfo.Name,
-                publishedLayer?.LayerId,
+                publishedLayer?.StorageLayerId,
                 attachmentsProcessed: attachmentCount,
                 failedAttachments: failedAttachments,
                 reconciliationArtifact: reconciliation.Artifact,
@@ -584,7 +585,7 @@ internal sealed partial class GeoservicesImportService
                 request.LayerId,
                 featuresProcessed,
                 failedFeatures,
-                publishedLayer?.LayerId,
+                publishedLayer?.StorageLayerId,
                 publishedLayer?.ServiceName ?? request.ServiceName,
                 layerInfo.Name,
                 duration: stopwatch.Elapsed,
@@ -1053,8 +1054,8 @@ internal sealed partial class GeoservicesImportService
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE SCHEMA IF NOT EXISTS {QuoteIdentifier(schemaName)};");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} (");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE SCHEMA IF NOT EXISTS {SqlIdentifier.QuoteIdentifier(schemaName)};");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)} (");
 
         for (var i = 0; i < columns.Count; i++)
         {

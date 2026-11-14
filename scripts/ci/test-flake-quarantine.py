@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -136,6 +137,24 @@ class RetryTests(unittest.TestCase):
                 with self.subTest(original=original), self.assertRaises(ValueError):
                     q.retry_replacements(first, retry)
 
+    def test_unselected_passing_collisions_preserve_results_after_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first, retry, merged = (Path(directory) / name for name in ('first.xml', 'retry.xml', 'merged.xml'))
+            trx(first, [('Stable(...)', 'Passed'), ('Stable(...)', 'Passed'), ('Flaky', 'Failed')])
+            trx(retry, [('Flaky', 'Passed')])
+            q.merge_retry(first, retry, merged)
+            cases = q.read_cases(merged)
+            self.assertEqual([('Stable(...)', 'Passed'), ('Stable(...)', 'Passed'), ('Flaky', 'Passed')],
+                             [(case[1], case[2]) for case in cases])
+
+    def test_selected_method_passing_sibling_collisions_remain_ambiguous(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first, retry = Path(directory) / 'first.xml', Path(directory) / 'retry.xml'
+            trx(first, [('Flaky(1)', 'Failed'), ('Flaky(...)', 'Passed'), ('Flaky(...)', 'Passed')])
+            trx(retry, [('Flaky(1)', 'Passed')])
+            with self.assertRaisesRegex(ValueError, 'ambiguous test-case identities'):
+                q.retry_replacements(first, retry)
+
     def test_run_level_errors_cannot_be_reclassified_as_a_flake(self):
         for key in ('error', 'timeout', 'aborted', 'disconnected', 'notRunnable'):
             with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
@@ -177,6 +196,29 @@ class RetryTests(unittest.TestCase):
                 q.read_cases(path)
 
 
+class ProcessSnapshotTests(unittest.TestCase):
+    def test_snapshot_survives_signal_to_supervisor_group(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory) / 'ps'
+            real_ps = shutil.which('ps')
+            fake.write_text('#!/usr/bin/env python3\n'
+                            'import os, signal, sys\n'
+                            'os.killpg(os.getpgid(os.getppid()), signal.SIGTERM)\n'
+                            f'os.execv({real_ps!r}, [{real_ps!r}, *sys.argv[1:]])\n')
+            fake.chmod(0o755)
+            command = [sys.executable, '-c',
+                       'import os, signal, sys; '
+                       'signal.signal(signal.SIGTERM, lambda *_: None); '
+                       'sys.path.insert(0, sys.argv[1]); '
+                       'from shard_processes import descendant_pids; '
+                       'assert os.getpid() in descendant_pids(os.getpid())',
+                       str(Path(runner.__file__).parent)]
+            with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}'}):
+                result = subprocess.run(command, start_new_session=True, timeout=5,
+                                        capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+
+
 class RunnerTests(unittest.TestCase):
     def test_duplicate_gate_wrapper_cleans_up_term_ignoring_child(self):
         self.assert_timeout_cleanup(foreground=False)
@@ -216,7 +258,9 @@ class RunnerTests(unittest.TestCase):
                                          'HONUA_TEST_QUARANTINE_OBSERVE': 'true',
                                          'HONUA_SERVER_TEST_TIMEOUT_FOREGROUND': str(foreground).lower()}):
                 try:
-                    result = subprocess.run(command, timeout=5, capture_output=True)
+                    # Interpreter start-up on a loaded hosted runner can use most of a few seconds; a
+                    # descendant that escaped the kill would still hold the pipe for its full 30 s sleep.
+                    result = subprocess.run(command, timeout=20, capture_output=True)
                 except BaseException:
                     cleanup()
                     raise

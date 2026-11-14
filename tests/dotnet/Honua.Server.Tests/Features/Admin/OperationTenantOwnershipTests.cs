@@ -122,43 +122,6 @@ public sealed class OperationTenantOwnershipTests
         await gateway.DidNotReceiveWithAnyArgs().RejectProposalAsync(default!, default!, default!, default);
     }
 
-    [Theory]
-    [InlineData(false, "public", TenantContextSource.Default, 200)]
-    [InlineData(false, "custom", TenantContextSource.Default, 200)]
-    [InlineData(true, "public", TenantContextSource.Default, 404)]
-    [InlineData(false, "public", TenantContextSource.Claim, 404)]
-    public async Task LegacyRecords_OnlySingleTenantDefaultCanReadAndList(
-        bool enabled, string defaultTenant, TenantContextSource source, int expectedStatus)
-    {
-        var proposals = Substitute.For<IOperationProposalStore>();
-        var legacy = Proposal("");
-        proposals.GetAsync("proposal-a", Arg.Any<CancellationToken>()).Returns(legacy);
-        proposals.ListActiveAsync(Arg.Any<Honua.Core.Features.Guardrails.Domain.OperationClass?>(), Arg.Any<CancellationToken>())
-            .Returns(new[] { legacy });
-        var instances = Substitute.For<InstanceStore>();
-        instances.GetAsync("handle-a", Arg.Any<CancellationToken>()).Returns(new OperationHandle
-        {
-            OperationInstanceId = "handle-a",
-            OperationId = "admin.test",
-            CorrelationId = "correlation",
-            Status = OperationHandleStatus.Accepted,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        });
-        using var services = Services(defaultTenant, proposals,
-            new TenantContextOptions { Enabled = enabled, DefaultTenantId = defaultTenant }, source);
-        var context = Context(services);
-
-        var proposal = await Invoke(typeof(ProposalEndpoints), "HandleGetProposal", context, proposals);
-        var handle = await Invoke(typeof(OperationsEndpoints), "HandleGetHandleStatus", context, instanceStore: instances);
-        var list = await Invoke(typeof(ProposalEndpoints), "HandleListProposals", context, proposals);
-
-        (((IStatusCodeHttpResult)proposal).StatusCode ?? 200).Should().Be(expectedStatus);
-        (((IStatusCodeHttpResult)handle).StatusCode ?? 200).Should().Be(expectedStatus);
-        ((ProposalListResponse)((IValueHttpResult)list).Value!).Proposals
-            .Should().HaveCount(expectedStatus == 200 ? 1 : 0);
-    }
-
     [Fact]
     public async Task EnvelopeAcceptance_PreservesTenantAndSeparatesIdempotentRequests()
     {
@@ -206,17 +169,15 @@ public sealed class OperationTenantOwnershipTests
     private static OperationProposal Proposal(string tenant) => JsonSerializer.Deserialize<OperationProposal>(
         $$"""{"ProposalId":"proposal-a","TenantId":"{{tenant}}","Kind":2,"Status":1,"RequestedBy":"other-actor","CreatedAt":"2026-09-04T00:00:00Z","UpdatedAt":"2026-09-04T00:00:00Z"}""")!;
 
-    private static ServiceProvider Services(string tenantId, IOperationProposalStore store,
-        TenantContextOptions? options = null, TenantContextSource source = TenantContextSource.Claim)
+    private static ServiceProvider Services(string tenantId, IOperationProposalStore store)
     {
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns(tenantId);
-        tenant.Source.Returns(source);
         var auth = Substitute.For<IAuthorizationService>();
         auth.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>())
             .Returns(AuthorizationResult.Success());
         return new ServiceCollection().AddLogging().AddSingleton(tenant).AddSingleton(store)
-            .AddSingleton(auth).AddSingleton(Options.Create(options ?? new TenantContextOptions { Enabled = true })).BuildServiceProvider();
+            .AddSingleton(auth).AddSingleton(Options.Create(new TenantContextOptions())).BuildServiceProvider();
     }
 
     private static DefaultHttpContext Context(IServiceProvider services, string role = "admin") => new()

@@ -28,12 +28,15 @@ policy rules cannot remove this requirement. A direct admin API call from an
 agent for either change is refused with an approval-required error that says
 how to submit it for approval. Some changes are refused for agents outright:
 a layer's access settings, enabling or refreshing a layer, role permissions,
-OAuth scopes, and Console content publications and their sharing. Make those
+OAuth scopes, scene generation, ingestion, registration and access settings, form package publication,
+and Console content publications and their sharing. Make those
 changes yourself in Console.
 
 Give each agent its own key with the `agent` grant and only the grants its task
 needs. Do not give an agent the bootstrap admin password or a full-admin key. An
-agent key cannot create, rotate or revoke API keys. See
+agent key cannot manage API keys or client-certificate credentials, or exchange its credentials
+for a portal token. Studio rollback requests also require approval because they
+can change the published version. See
 [AI agents over MCP](../connect/ai-agents-mcp.md#agent-changes-need-one-human-approval).
 
 ## Review and approve in Console

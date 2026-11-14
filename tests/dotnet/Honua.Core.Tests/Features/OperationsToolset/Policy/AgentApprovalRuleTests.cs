@@ -1,9 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Guardrails.Abstractions;
+using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 
@@ -15,6 +20,7 @@ public sealed class AgentApprovalRuleTests
     [InlineData("admin.services.access-policy.set")]
     [InlineData("admin.layer.publish")]
     [InlineData("service.publish")]
+    [InlineData("studio.content.rollback")]
     public async Task EvaluateAsync_AgentGatedOperation_PolicyDisabled_RequiresApproval(string operationId)
     {
         var pdp = BuildPdp(new OperationPolicyOptions { Enabled = false }, productionEnvironment: false);
@@ -87,6 +93,95 @@ public sealed class AgentApprovalRuleTests
     {
         AgentApprovalRule.IsAgent(["Agent"]).Should().BeTrue();
         AgentApprovalRule.IsAgent(["admin", "scoped-admin-key"]).Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("authorized", null, PolicyDecisionKind.RequireApproval)]
+    [InlineData("admin-direct-publication", null, PolicyDecisionKind.RequireApproval)]
+    [InlineData("autonomy-authorized", null, PolicyDecisionKind.RequireApproval)]
+    [InlineData("authorized", "approved-proposal", PolicyDecisionKind.Allow)]
+    public async Task CanonicalPdp_AgentStudioPublication_RequiresHumanDecision(
+        string authorizationOutcome, string? approvedProposalId, PolicyDecisionKind expected)
+    {
+        var operationId = StudioDraftMutationContext.PublicationOperationId;
+        var pdp = new CanonicalOperationPolicyDecisionPoint(
+            new CanonicalOperationPolicyConfiguration(Options.Create(new OperationPolicyOptions { Enabled = false })), new DirectLadder());
+        var request = new OperationRequest
+        {
+            OperationId = operationId,
+            GatewayRequest = new OperationGatewayRequest
+            {
+                Kind = OperationClass.StudioDraftMutation,
+                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationRequest,
+            },
+        };
+
+        var decision = await pdp.EvaluateAsync(BuildDescriptor(operationId), request,
+            new OperationPolicyContext
+            {
+                Roles = ["admin", "agent"],
+                AuthorizationOutcome = authorizationOutcome,
+                ApprovedProposalId = approvedProposalId,
+            });
+
+        decision.Kind.Should().Be(expected);
+    }
+
+    [UnitTest]
+    public async Task CanonicalPdp_AgentRollback_DirectEdition_RequiresApproval()
+    {
+        const string operationId = "studio.content.rollback";
+        var pdp = new CanonicalOperationPolicyDecisionPoint(
+            new CanonicalOperationPolicyConfiguration(Options.Create(new OperationPolicyOptions { Enabled = false })), new DirectLadder());
+        var request = new OperationRequest
+        {
+            OperationId = operationId,
+            GatewayRequest = new OperationGatewayRequest
+            {
+                Kind = OperationClass.StudioDraftMutation,
+                ActionDiscriminator = BuiltInGuardrailActions.StudioRollback,
+            },
+        };
+
+        var decision = await pdp.EvaluateAsync(BuildDescriptor(operationId), request,
+            new OperationPolicyContext { Roles = ["admin", "agent"] });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.RequireApproval);
+    }
+
+    [UnitTheory]
+    [InlineData("service.publish", BuiltInGuardrailActions.StudioPublicationRequest)]
+    [InlineData("studio.content.rollback", BuiltInGuardrailActions.StudioRollback)]
+    public async Task CanonicalPdp_AgentOperation_BlockedGuardrail_DeniesInsteadOfProposing(
+        string operationId, string action)
+    {
+        var pdp = new CanonicalOperationPolicyDecisionPoint(
+            new CanonicalOperationPolicyConfiguration(Options.Create(new OperationPolicyOptions { Enabled = false })), new DirectLadder(GuardrailTier.Blocked));
+        var request = new OperationRequest
+        {
+            OperationId = operationId,
+            GatewayRequest = new OperationGatewayRequest
+            {
+                Kind = OperationClass.StudioDraftMutation,
+                ActionDiscriminator = action,
+            },
+        };
+
+        var decision = await pdp.EvaluateAsync(BuildDescriptor(operationId), request,
+            new OperationPolicyContext { Roles = ["admin", "agent"], AuthorizationOutcome = "autonomy-authorized" });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.Deny);
+        decision.Reason.Should().Be("test: direct edition");
+    }
+
+    private sealed class DirectLadder(GuardrailTier tier = GuardrailTier.DirectExecute) : IGuardrailLadder
+    {
+        public GuardrailDecision Resolve(OperationClass kind) => Direct();
+        public GuardrailDecision Resolve(OperationClass kind, HonuaEdition edition) => Direct();
+        public GuardrailDecision Resolve(OperationClass kind, string? action) => Direct();
+        public GuardrailDecision Resolve(OperationClass kind, string? action, HonuaEdition edition) => Direct();
+        private GuardrailDecision Direct() => new(
+            tier, OperationClass.StudioDraftMutation, HonuaEdition.Community, "test: direct edition");
     }
 
     private static OperationPolicyOptions ProductionOptions() => new()

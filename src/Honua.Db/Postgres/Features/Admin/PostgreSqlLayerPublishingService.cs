@@ -17,6 +17,7 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging;
 using Honua.Db.Postgres.Features.FileImport;
@@ -149,7 +150,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         ListedLayerScope scope,
         CancellationToken cancellationToken)
     {
-        var layerIds = scope.Layers.Select(layer => layer.LayerId).ToHashSet();
+        var layerIds = scope.Layers.Select(layer => layer.StorageLayerId).ToHashSet();
         var storageScope = await ResolveLayerStorageScopeAsync(
             scope.Connection, null, layerIds, scope.ConnectionId, cancellationToken).ConfigureAwait(false);
         await ValidateTenantAccessAsync(
@@ -208,7 +209,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private static PublishedLayerSummary ReadPublishedLayer(NpgsqlDataReader reader, string serviceName)
         => new()
         {
-            LayerId = reader.GetInt32(0),
+            StorageLayerId = reader.GetInt32(0),
             LayerName = reader.GetString(1),
             Description = reader.IsDBNull(2) ? null : reader.GetString(2),
             Schema = reader.GetString(3),
@@ -600,7 +601,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         return new PublishedLayerSummary
         {
-            LayerId = layerId,
+            StorageLayerId = layerId,
             LayerName = request.LayerName.Trim(),
             Description = request.Description,
             License = request.SourceGovernance?.License,
@@ -858,7 +859,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         else if (string.IsNullOrWhiteSpace(geometryColumn))
         {
             await using var countCommand = new NpgsqlCommand(
-                $"SELECT COUNT(*) FROM {QuoteIdentifier(schema)}.{QuoteIdentifier(table)}", connection, transaction);
+                $"SELECT COUNT(*) FROM {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}", connection, transaction);
             nonSpatialRowCount = (long)(await countCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
             checks.Add(nonSpatialRowCount == 0 && !request.AllowEmptyTable
                 ? Error("feature-count", "Source table is empty.")

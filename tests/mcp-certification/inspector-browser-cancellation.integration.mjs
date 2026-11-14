@@ -59,10 +59,10 @@ for (const dropCancellation of [false, true]) {
             capabilities: { tools: {} } });
         } else if (message.method === 'tools/list') {
           reply({ tools: [{ name: 'honua_query_features', description: 'Authored control query', inputSchema: {
-            type: 'object', properties: { serviceId: { type: 'string' }, layerId: { type: 'integer' },
+            type: 'object', properties: { serviceId: { type: 'string' }, serviceLayerIndex: { type: 'integer' },
               where: { type: 'string' }, outFields: { type: 'array', items: { type: 'string' } },
               outSrid: { type: 'integer' }, returnGeometry: { type: 'boolean' }, limit: { type: 'integer' } },
-            required: ['serviceId', 'layerId', 'where'] } }] });
+            required: ['serviceId', 'serviceLayerIndex', 'where'] } }] });
         } else if (message.method === 'tools/call') {
           assert.equal(message.params.name, 'honua_query_features'); callCount++;
           if (callCount > 1) { recoveryResult = queryResult(); reply(recoveryResult); return; }

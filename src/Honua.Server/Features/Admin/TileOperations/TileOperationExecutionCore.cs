@@ -56,8 +56,7 @@ internal sealed partial class TileOperationExecutionCore
         TileOperationProgress started,
         TileOperationStartRequest request,
         IServiceProvider serviceProvider,
-        CancellationToken cancellationToken,
-        string? tenantScope = null)
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(started);
         ArgumentNullException.ThrowIfNull(request);
@@ -76,8 +75,6 @@ internal sealed partial class TileOperationExecutionCore
             "purge" => await ExecuteInvalidationAsync(started, request, graphProvider, cancellationToken).ConfigureAwait(false),
             "archive" => await ExecuteArchiveAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
             "publish" => await ExecutePublishAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
-            "expire" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: false, graphProvider, serviceProvider, tenantScope, cancellationToken).ConfigureAwait(false),
-            "delete" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: true, graphProvider, serviceProvider, tenantScope, cancellationToken).ConfigureAwait(false),
             _ => started with
             {
                 Status = OperationStatus.Failed,
@@ -758,15 +755,17 @@ internal sealed partial class TileOperationExecutionCore
                 $"Tile pyramid exceeded maxTiles={selection.MaxTiles}; the archive contains {tileCoordinates.Count} selected tiles and its header describes that truncated coverage.");
         }
 
+        var tileCompression = TileArchiveCompression.Parse(request.TileCompression);
         var current = progress with
         {
             TotalTiles = total,
             Warnings = warningList.ToArray(),
+            TileCompression = TileArchiveCompression.ToWireValue(tileCompression),
             CurrentPhase = $"Generating tiles for {operationName}"
         };
         await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
 
-        var writer = new PMTilesWriter(tileCompression: PMTilesCompression.None);
+        var writer = new PMTilesWriter(tileCompression: tileCompression);
         foreach (var coordinate in tileCoordinates)
         {
             cancellationToken.ThrowIfCancellationRequested();

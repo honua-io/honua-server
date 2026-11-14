@@ -2,12 +2,15 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Infrastructure.SecurityState;
+using Honua.Server.Features.Infrastructure.McpSessions;
+using Honua.Server.Features.Studio.Drafts;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Microsoft.AspNetCore.DataProtection;
@@ -23,9 +26,12 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 {
     private static readonly string[] _migrationResourceNames =
     [
+        "Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql",
         "Honua.Server.Migrations.148_CreateControlPlaneState.sql",
         "Honua.Server.Migrations.149_CreateSecurityState.sql",
-        "Honua.Server.Migrations.150_CreateOAuthClientsAndOperationProgress.sql"
+        "Honua.Server.Migrations.150_CreateOAuthClientsAndOperationProgress.sql",
+        "Honua.Server.Migrations.154_CreatePackageDraftsAndMcpSessions.sql",
+        "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql"
     ];
 
     private readonly PostgresJobSubstrateHarness _jobs;
@@ -55,6 +61,10 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
         return new ControlPlaneStateHarness(jobs);
     }
+
+    public Task ReplayConfigurationMigrationAsync()
+        => ExecuteAsync(ReadMigration("Honua.Server.Migrations.156_CreateConfigurationDocuments.sql")
+            .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
 
     public string Table(string tableName) => _jobs.Database.Table(tableName);
 
@@ -86,9 +96,19 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public PostgresIdempotencyReservationStore CreateIdempotencyReservationStore() => new(_jobs.Database);
 
+    public PostgresConfigurationDocuments CreateConfigurationDocuments() => new(_jobs.Database, _sharedKeyRing);
+    public PostgresConfigurationDocuments CreateConfigurationDocuments(IDataProtectionProvider keyRing) => new(_jobs.Database, keyRing);
+    public PostgresOidcProviderStore CreateOidcStore() => new(CreateConfigurationDocuments());
+    public PostgresRateLimitPolicyStore CreateRateStore() => new(CreateConfigurationDocuments());
+    public PostgresClientCertificateTrustStore CreateTrustStore() => new(CreateConfigurationDocuments());
+
     public PostgresOAuthClientStore CreateOAuthClientStore() => new(_jobs.Database);
 
     public PostgresUniversalProgressStore CreateProgressStore() => new(_jobs.Database);
+
+    public PostgresPackageDraftBacking CreatePackageDraftBacking() => new(_jobs.Database);
+
+    public PostgresMcpSessionStore CreateMcpSessionStore() => new(_jobs.Database);
 
     // Every stored column of the approval tables as text, so a leak through any field is seen.
     public async Task<StoredTextScan> ScanApprovalTablesForAsync(string text)
