@@ -262,37 +262,24 @@ class RuntimeBaseTests(unittest.TestCase):
             resolve.assert_called_once_with("base", "head")
             self.assertIn("base=base", Path(f"{directory}/output").read_text())
 
-    def test_small_selection_keeps_accumulated_range(self):
-        with patch.object(self.module, "selected_count", return_value=30):
-            base, reason = self.module.execution_base("base", "head")
-        self.assertEqual(base, "base")
-        self.assertIn("30 shards", reason)
+    def test_admitted_selection_keeps_complete_accumulated_range(self):
+        with patch.object(self.module, "admission", return_value=(True, "within cap")):
+            self.assertEqual(self.module.execution_base("base", "head"), ("base", "within cap"))
 
-    def test_large_selection_uses_entire_newest_merge_and_records_deferral(self):
-        with patch.object(self.module, "selected_count", side_effect=[160, 4]), \
-                patch.object(self.module, "git", return_value="first-parent") as git:
-            base, reason = self.module.execution_base("base", "head")
-        self.assertEqual(base, "first-parent")
-        git.assert_called_once_with("rev-parse", "head^1")
-        self.assertIn("deferred to scheduled full CI", reason)
-
-    def test_broad_newest_merge_is_never_arbitrarily_truncated(self):
-        with patch.object(self.module, "selected_count", side_effect=[160, 150]), \
-                patch.object(self.module, "git", return_value="parent"):
-            base, reason = self.module.execution_base("base", "head")
-        self.assertEqual(base, "parent")
-        self.assertIn("retain all of its shards", reason)
-
-    def test_router_failure_fails_selection_without_silently_skipping_tests(self):
-        with patch.object(self.module, "selected_count",
-                          side_effect=subprocess.CalledProcessError(1, "router")):
-            with self.assertRaises(subprocess.CalledProcessError):
+    def test_deferred_selection_cancels_before_publishing_outputs(self):
+        with patch.object(self.module, "admission", return_value=(False, "over cap")), \
+                patch.object(self.module, "record") as record, \
+                patch.object(self.module, "gh_api") as api, \
+                patch.dict(os.environ, GITHUB_RUN_ID="123", GITHUB_REPOSITORY="honua-io/honua-server"):
+            with self.assertRaises(SystemExit):
                 self.module.execution_base("base", "head")
+            record.assert_called_once_with("over cap")
+            api.assert_called_once_with("repos/honua-io/honua-server/actions/runs/123/cancel", "POST")
 
     def test_effective_base_reaches_routing_and_build_with_least_privilege(self):
         jobs = workflow("ci.yml")["jobs"]
         changes = jobs["changes"]
-        self.assertEqual(changes["permissions"], {"contents": "read", "actions": "read"})
+        self.assertEqual(changes["permissions"], {"contents": "read", "actions": "write"})
         self.assertEqual(changes["outputs"]["selective_base"], "${{ steps.diff.outputs.base }}")
         self.assertIn("resolve-trailing-base.py", step_scripts(changes))
         for job_name in ("targeted-shards", "build"):

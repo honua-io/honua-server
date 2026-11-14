@@ -208,7 +208,8 @@ adding a compiled consumer of any of these files restores runtime validation.
 | `merge-train.yml` | Merge Train | `schedule` (`*/15`, dry-run), `workflow_dispatch` | Manual/release-candidate batch authority (ADR-0055), not the routine landing path. Requires exact-head `PR Gate` + `Review Gate` at selection and again immediately before the compare-and-swap land. Automatic triggers are dry-run-only; landing needs an explicit `train_apply=true` dispatch. `scripts/ci/validate-single-merge-authority.sh` rejects merge primitives outside the explicit authority allowlist, with one narrow exception for ruleset-governed auto-merge requests. |
 | `merge-train-rerun-recovery.yml` | Merge Train Rerun Recovery | `workflow_run` [CI] | Resumes the active immutable batch when a failed batch CI is rerun green. Uses its **own** per-source-run concurrency group (sharing the train's group made GitHub evict queued recoveries — 12 of 15 consecutive runs were `cancelled`); exclusion against a live train is re-established by an explicit idle wait plus the durable Merge Train State issue. See `docs/internal/contributor/merge-coordination-runbook.md`. |
 | `ci.yml` | CI | `schedule` (09:23 and 21:23 UTC), `workflow_dispatch` | No `pull_request` trigger. Its `CI Gate` context validates scheduled or manually dispatched integration runs. Runtime proofs and import/export fidelity require the managed producer; native GDAL/PDAL and raster receipts run in the existing Worker job. Managed build producer, independent required full-solution format job, test and both architecture suites, CI-router validation, JS typecheck, and Postgres compatibility. Foundation families and selected server shards need the producer, restore verified outputs with MVC and static-asset runtime content roots relocated to the consumer checkout, and compile only their missing project union. Source architecture runs after projection regeneration; the full collector remains in the foundation server family. See the [artifact contract](server-test-binary-artifacts.md). Per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)`, so unselected shards never instantiate a runner. The full shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. On a managed-artifact miss, the existing legacy cache path remains available: `server-tests` shards can opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait) when `HONUA_SERVER_TEST_PREBUILD_CONSUME=true`; absent/false is off and rollback is one variable update — contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics, writes `.timing.json`, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. `pr-template-check` and `pr-readiness` short-circuit to success on every non-`pull_request` event, so today they are no-op roll-ups into `CI Gate`. |
-| `trunk-affected.yml` | Trunk affected run | `push` (trunk, no path filter), `workflow_dispatch` | Stage 3 of the [gate model](gate-model.md#verification-stages). Resolves the head of the most recently completed `CI` run on trunk (success or failure, excluding cancellations; newest 100 runs ordered by completion update time) that is an ancestor of the pushed head and dispatches `ci.yml` with `selective_base` set to it, titled `CI affected <base>..<head>`, so only the shards and lanes the new merges touch run. Runs queue in one concurrency group without cancellation; a run whose push is no longer the trunk tip exits, because the newer push's run covers it. Writes the separate culprit range since the last full green ancestor (successful affected runs cannot clear earlier failures) (commits and pull requests) to its summary; passes that ancestor separately as `investigation_base` so the dispatched run's `changes` job writes the same culprit range to its log and summary for the lane investigating the failure. Missing green history is reported as unknown. Affected runs never certify a sha for the nightly image (`select-certified-nightly-sha.py` ignores their title). Not a required check. Needs only `actions: write` and `contents: read`. |
+| `pr-gate-priority.yml` | PR Gate priority | `workflow_run` for PR Gate (`requested`, `in_progress`) | Trusted trunk handler cancels only same-repository `CI affected ` trunk dispatches to release runner capacity for PRs. Full and branch runs are excluded. Deferred coverage remains in scheduled full CI; actions-write token never executes PR code. |
+| `trunk-affected.yml` | Trunk affected run | `push` (trunk, no path filter), `workflow_dispatch` | Stage 3 of the [gate model](gate-model.md#verification-stages). Resolves the head of the most recently completed `CI` run on trunk (success or failure, excluding cancellations; newest 100 runs ordered by completion update time) that is an ancestor of the pushed head and dispatches `ci.yml` with `selective_base` set to it, titled `CI affected <base>..<head>`, so only the shards and lanes the new merges touch run. Runs queue in one concurrency group without cancellation; a run whose push is no longer the trunk tip exits, because the newer push's run covers it. Writes the separate culprit range since the last full green ancestor (successful affected runs cannot clear earlier failures) (commits and pull requests) to its summary; passes that ancestor separately as `investigation_base` so the dispatched run's `changes` job writes the same culprit range to its log and summary for the lane investigating the failure. Missing green history is reported as unknown. Affected runs never certify a sha for the nightly image (`select-certified-nightly-sha.py` ignores their title). Not a required check. Needs only `actions: write` and `contents: read`. Admission and execution recheck a conservative 40-job total bound (33 side jobs plus selected shards); full routing, unknown history or active PR Gate defer coverage to scheduled full CI without a successful CI baseline. Affected server-shard concurrency is two. |
 | `trunk-signal-watchdog.yml` | Trunk signal watchdog | Half-hourly `schedule`, `workflow_dispatch` | Opens or updates a `trunk-signal` issue and fails when outstanding work has no usable CI result in 2 h, a run or child job queued over 45 min, at least 6 of the last 10 runs were cancelled, or no scheduled full CI run started in 14 h. Queries scheduled runs separately so selective traffic cannot hide missed delivery; a queued workflow counts as started only when job runner assignment proves execution, and child queues remain monitored; closes the issue only when all signals recover. |
 | `native-tools-publish.yml` | Publish trusted native tools | `push` (native inputs on `trunk`), weekly `schedule`, `workflow_dispatch` | Trusted trunk-only production `native-tools` image publisher; dedicated image/cache, exact input identity and immutable digest attestation. Consumers verify provenance and retain the bounded production build on any miss. No merge authority; existing native/AOT execution proofs remain required. See [native tools reuse](native-tools-reuse.md). |
 | `gp-devkit-publish.yml` | Publish GP Devkit | `workflow_dispatch` only | Packs `Honua.Geoprocessing.Cli` at the repository version and pushes it to GitHub Packages only for an explicit canonical-trunk dispatch. The publication identity is retained for honua-release#615. Pull requests and installed-authoring candidates do not publish. |
@@ -657,9 +658,9 @@ Trailing `selective_base` dispatches use their verified base for the managed
 producer's affected project graph. An effective full-CI decision (including a
 router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
-run at most six at once for every `selective_base` dispatch (twelve above 30 selected shards), including router
-promotions and explicit full-coverage overrides. Full coverage still selects
-every shard; scheduled and non-selective full runs run at most 16 concurrent shards. Expensive AOT, Docker,
+run at most two at once for every `selective_base` dispatch. Optional affected
+runs above 40 total jobs defer to scheduled full CI; manual full-coverage overrides
+retain every shard. Scheduled and non-selective full runs run at most 16 concurrent shards. Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
@@ -778,22 +779,21 @@ Optional PR workflow filters and retained post-merge coverage are documented in
 
 ## Trailing affected CI selection
 
-Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
-so queued dispatches do not retain an obsolete range. Dispatch and execution use the same completed-run selector; execution never regresses behind the dispatched base. Selections above 30 shards
-fall back to the newest merge; the summary records the older range deferred to
-the twice-daily full run. A broad newest merge retains every selected shard.
-Affected shard concurrency is six, or twelve when more than 30 shards remain
-selected (`scripts/ci/trailing_selection.py` owns both numbers and the
-threshold), including full-coverage routing fallbacks; manual and scheduled
-full runs run 16 at once. On 12 Nov (03:30-04:00 UTC) a full run at 24 held
-28 of the org's 60 hosted runners while other pull request workflows held
-20-35, and PR Gate jobs waited a median 7.3 minutes (3 seconds before and after).
-Sixteen gives PR Gate eight more runners; the 1,272 shard-minutes of a full
-matrix then take about 79 minutes instead of 53. A
-134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
-at a two-second median; twelve halves that so a broad run finishes before the
-next full run. Required PR gates
-and shard definitions are unchanged.
+Trailing affected CI refreshes its completed-ancestor base when the selection job starts.
+Dispatch and execution both require a conservative total bound of at most 40 jobs:
+33 side jobs plus the complete selected server-shard set. Full routing, unavailable
+selection/history, missing baseline or an active PR Gate defer the whole range to
+the next twice-daily full run. No range is narrowed to a newer merge. Execution
+cancels before publishing change outputs when admission fails, so deferred work
+cannot become a successful CI baseline. Admitted affected shards run two at once;
+scheduled and non-selective full runs retain their 16-shard concurrency.
+
+`pr-gate-priority.yml` cancels only same-repository affected trunk dispatches when
+PR Gate is requested or starts. It checks out trusted trunk code, excludes full
+and branch runs, and uses the existing cancellation helper to tolerate completion
+races. Required PR gates and shard definitions are unchanged. The reported baseline
+incident expanded to about 170 jobs, queued for two hours and occupied seven of
+eight heavy runners. Live after timing and runner counts await a merged run.
 
 ### Covered trunk runs
 

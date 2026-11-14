@@ -1,27 +1,18 @@
 #!/usr/bin/env python3
-"""Size and identify an affected trunk run: backlog limit, shard concurrency, run title.
+"""Identify affected trunk runs and reserve heavy-pool capacity for PR Gate.
 
-An affected dispatch shares the org's hosted runners with PR Gate. A narrow
-selection runs at the PR-safe width. A selection still above the backlog limit
-after newest-merge narrowing runs at twice that width so it finishes before the
-next twice-daily full run. Full and pull-request runs use the workflow's full
-width and do not consult this module.
-
-Reads the selected shard matrix (JSON array) on stdin and prints the width.
+Admission bounds the job count before fanout. Full runs retain their normal
+width; optional affected runs use at most two heavy shard runners.
 """
 import json
 import sys
 
-SHARD_BACKLOG_LIMIT = 30
 # run-name of every trunk-affected.yml dispatch; full CI runs never carry it.
 AFFECTED_RUN_TITLE_PREFIX = "CI affected "
-AFFECTED_WIDTH = 6
-BROAD_AFFECTED_WIDTH = 12
+AFFECTED_WIDTH = 2
 
 
 def affected_max_parallel(selected_shards: int) -> int:
-    if selected_shards > SHARD_BACKLOG_LIMIT:
-        return BROAD_AFFECTED_WIDTH
     return AFFECTED_WIDTH
 
 
