@@ -46,6 +46,23 @@ public sealed class PostgresWorkflowRunStoreTests
     }
 
     [IntegrationTest]
+    public async Task GetAsync_AuthorizedRasterPlan_RoundTripsJsonbAndActiveRuns()
+    {
+        await using var host = CreateHost();
+        await host.InitializeAsync();
+        var store = host.GetService<IWorkflowRunStore>();
+        var run = Run();
+        run = run with
+        {
+            StepStates = [run.StepStates[0] with { AuthorizedPlan = WorkflowRasterTestData.Plan() }]
+        };
+        await store.SetAsync(run);
+
+        (await store.GetAsync(run.RunId)).Should().BeEquivalentTo(run);
+        (await store.ListActiveAsync()).Should().ContainEquivalentOf(run);
+    }
+
+    [IntegrationTest]
     public async Task ListActiveAsync_CancelledRunWithRunningChild_RemainsUntilChildFinishes()
     {
         await using var host = CreateHost();

@@ -39,6 +39,22 @@ public sealed class PostgresWorkflowDefinitionStoreTests
     }
 
     [IntegrationTest]
+    public async Task GetAsync_RasterDefinition_RoundTripsJsonbAndLists()
+    {
+        await using var host = CreateHost();
+        await host.InitializeAsync();
+        var store = host.GetService<IWorkflowDefinitionStore>();
+        var definition = Definition() with
+        {
+            Steps = [new WorkflowStepDefinition { StepId = "raster", Plan = WorkflowRasterTestData.Plan() }]
+        };
+        await store.SetAsync(definition);
+
+        (await store.GetAsync(definition.WorkflowId)).Should().BeEquivalentTo(definition);
+        (await store.ListAsync()).Should().ContainEquivalentOf(definition);
+    }
+
+    [IntegrationTest]
     public async Task ListEventTriggeredAsync_DisabledDefinition_IsExcludedUntilEnabled()
     {
         await using var host = CreateHost();
