@@ -128,6 +128,36 @@ public sealed class McpMrtrClarificationTests
         result.GetProperty("structuredContent").TryGetProperty("clarification", out _).Should().BeTrue();
     }
 
+    [UnitTheory]
+    [InlineData("""{"clarify":{"action":"decline"}}""")]
+    [InlineData("""{"clarify":{"action":"cancel"}}""")]
+    [InlineData("""{"clarify":{"action":"accept","content":{}}}""")]
+    [InlineData("""{"clarify":{"action":"accept","content":{"extent":"  "}}}""")]
+    public async Task GroundCandidates_EmptyLaterRound_PreservesIntentAndEarlierAnswers(string responses)
+    {
+        Grounds(Asking("extent"));
+        using var services = Services(_grounding);
+        var state = Mint(services, Binding(services, GroundCandidatesTool.ToolName, Goal),
+            new(McpRequestStateKind.Clarification,
+                """{"i":"intent-abc","a":{"workflow_family":["Analyze"]}}""", InMinutes(services, 5)));
+
+        var result = (await SendAsync(services, new McpCall(Goal, FormCapable)
+        {
+            RequestState = state,
+            InputResponses = responses,
+        })).GetProperty("result");
+
+        result.GetProperty("resultType").GetString().Should().Be("complete");
+        result.GetProperty("structuredContent").GetProperty("clarification").GetProperty("intentId")
+            .GetString().Should().Be("intent-abc");
+        await _grounding.Received(1).GroundAsync(
+            Arg.Is<GroundingRequest>(request => request.IntentId == "intent-abc"
+                && request.ClarificationResponse != null
+                && request.ClarificationResponse.Answers.Count == 1
+                && request.ClarificationResponse.Answers["workflow_family"].Single() == "Analyze"),
+            Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     public void Refusal_AnonymousCaller_GetsNoContinuation()
     {

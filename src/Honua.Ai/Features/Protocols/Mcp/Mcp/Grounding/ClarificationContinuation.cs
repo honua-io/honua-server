@@ -44,18 +44,12 @@ internal sealed class ClarificationContinuation
 
         var response = continuation.Response(InputKey)
             ?? throw new GeoprocessingValidationException($"A clarification retry requires inputResponses.{InputKey}.");
-        if (!response.Accepted)
-        {
-            return new ClarificationContinuation(continuation, given) { Declined = true };
-        }
-
         var (intentId, earlier) = ReadReference(state.Reference);
-        var answers = Merge(given, earlier, ReadAnswers(response.Content));
-        if (answers.Count == 0)
-        {
-            // An accepted but empty form answers nothing; treat it as a decline rather than a dead end.
-            return new ClarificationContinuation(continuation, given) { Declined = true };
-        }
+        var currentAnswers = response.Accepted
+            ? ReadAnswers(response.Content)
+            : new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        var answers = Merge(given, earlier, currentAnswers);
+        var declined = !response.Accepted || currentAnswers.Count == 0;
         var resumed = new McpClarifyIntentArgument
         {
             IntentId = intentId,
@@ -67,7 +61,11 @@ internal sealed class ClarificationContinuation
             Context = original.Context,
             Response = new McpClarificationResponseInput { Answers = answers },
         };
-        return new ClarificationContinuation(continuation, answers) { Request = GroundingToolMapper.ToDomain(resumed) };
+        return new ClarificationContinuation(continuation, answers)
+        {
+            Request = GroundingToolMapper.ToDomain(resumed),
+            Declined = declined,
+        };
     }
 
     public static McpClarifyIntentArgument FromGround(McpGroundCandidatesArgument? argument) => new()
