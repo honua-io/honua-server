@@ -36,11 +36,8 @@ public sealed partial class ExportJobTests
         var resumeUpload = NewSignal();
         var pausedStore = PauseProgressRead(progress, job.JobId, (read, resumeAdmission, ProgressReadPause.AfterSnapshot));
         PauseFirstUpload(nodes.Storage, (upload, resumeUpload));
-        var staleContext = PublishingContext();
         var leaseLost = false;
-        staleContext.ThrowIfExecutionLeaseLostAsync(Arg.Any<CancellationToken>()).Returns(_ =>
-            leaseLost ? Task.FromException(new OperationCanceledException("Attempt replaced")) : Task.CompletedTask);
-        staleContext.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        var staleContext = RetiringContext(() => leaseLost);
         var staleAttempt = nodes.CreateExecutor(pausedStore).ExecuteAsync(record, staleContext, CancellationToken.None);
         Task<JobExecutionResult>? replacementAttempt = null;
         try
@@ -79,11 +76,8 @@ public sealed partial class ExportJobTests
         var uploading = NewSignal();
         var resumeUpload = NewSignal();
         var pausedStore = PauseProgressRead(progress, job.JobId, (reading, resumeAdmission, ProgressReadPause.BeforeSnapshot));
-        var staleContext = PublishingContext();
         var leaseLost = false;
-        staleContext.ThrowIfExecutionLeaseLostAsync(Arg.Any<CancellationToken>()).Returns(_ =>
-            leaseLost ? Task.FromException(new OperationCanceledException("Attempt replaced")) : Task.CompletedTask);
-        staleContext.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        var staleContext = RetiringContext(() => leaseLost);
         PauseFirstUpload(nodes.Storage, (uploading, resumeUpload));
         var staleAttempt = nodes.CreateExecutor(pausedStore).ExecuteAsync(record, staleContext, CancellationToken.None);
         Task<JobExecutionResult>? replacementAttempt = null;
@@ -246,4 +240,13 @@ public sealed partial class ExportJobTests
     private enum ProgressReadPause { BeforeSnapshot, AfterSnapshot }
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private static IJobExecutionContext RetiringContext(Func<bool> leaseLost)
+    {
+        var context = PublishingContext();
+        context.ThrowIfExecutionLeaseLostAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            leaseLost() ? Task.FromException(new OperationCanceledException("Attempt replaced")) : Task.CompletedTask);
+        context.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
+        return context;
+    }
+
 }

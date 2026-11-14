@@ -1166,10 +1166,7 @@ public sealed partial class OperationsProgressEndpointsTests : IAsyncLifetime
         });
         SetCurrentOnWrite(store, candidate => current = candidate);
         var queue = Substitute.For<IJobQueue>();
-        var fixture = new WebAppFixture()
-            .ReplaceRequestService<IExecutionJobStore>(store)
-            .ReplaceRequestService<IJobQueue>(queue);
-        await fixture.InitializeAsync();
+        var fixture = await CancellationFixtureAsync(store, queue);
         var progressStore = fixture.GetService<IUniversalProgressStore>();
         try
         {
@@ -1206,10 +1203,7 @@ public sealed partial class OperationsProgressEndpointsTests : IAsyncLifetime
             current = initial with { Version = 3, CurrentPhase = "Queued for manual retry" };
             return Task.CompletedTask;
         });
-        var fixture = new WebAppFixture()
-            .ReplaceRequestService<IExecutionJobStore>(store)
-            .ReplaceRequestService<IJobQueue>(queue);
-        await fixture.InitializeAsync();
+        var fixture = await CancellationFixtureAsync(store, queue);
         var progressStore = fixture.GetService<IUniversalProgressStore>();
         try
         {
@@ -1473,4 +1467,13 @@ public sealed partial class OperationsProgressEndpointsTests : IAsyncLifetime
         public Task<long> GetQueueDepthAsync(CancellationToken cancellationToken = default)
             => Task.FromResult((long)_operationIds.Count);
     }
+    private static async Task<WebAppFixture> CancellationFixtureAsync(IExecutionJobStore store, IJobQueue queue)
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceRequestService<IExecutionJobStore>(store)
+            .ReplaceRequestService<IJobQueue>(queue);
+        await fixture.InitializeAsync();
+        return fixture;
+    }
+
 }

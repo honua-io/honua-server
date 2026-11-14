@@ -68,17 +68,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         store.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(_ => job);
         var cancelling = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                job = call.Arg<ExecutionJobRecord>();
-                if (job.Status == ExecutionJobStatus.Cancelled)
-                {
-                    cancelling.TrySetResult();
-                    await resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
-                }
-                return true;
-            });
+        PauseTerminalCancellation(store, candidate => job = candidate, (cancelling, resume));
         var progress = new ComparingInMemoryProgressStore();
         await progress.SetProgressAsync(job.OperationId,
             TileOperationProgress.CreateInitial(job.OperationId, "archive", null, 1, "WebMercatorQuad"));
@@ -155,13 +145,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
     public async Task ConcurrentCancel_OnlyTransitionWinnerReleasesOutstandingJob(string path)
     {
         var initial = ControlJob(path == "console-running" ? ExecutionJobStatus.Running : ExecutionJobStatus.Queued);
-        var backend = Substitute.For<IBatchComputeBackend>();
-        backend.BackendName.Returns("remote-test");
-        backend.TargetKind.Returns(initial.Spec.TargetKind);
-        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
-            .Returns(new BatchComputeBackendCapabilities { SupportsCancellation = true });
-        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
-            .Returns(new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled });
+        var backend = CancellableControlBackend(initial.Spec with { Backend = "remote-test" });
         if (path is "console-backend" or "tile-remote")
         {
             initial = initial with
@@ -194,6 +178,35 @@ public sealed partial class TileCacheJobExecutorPublishTests
         }
         race.Current.Status.Should().Be(ExecutionJobStatus.Cancelled);
         race.Writers.Should().Be(2, "both callers must race the same nonterminal record");
+    }
+
+    private static void PauseTerminalCancellation(IExecutionJobStore store,
+        Action<ExecutionJobRecord> setCurrent, (TaskCompletionSource Reached, TaskCompletionSource Resume) signals)
+    {
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var candidate = call.Arg<ExecutionJobRecord>();
+                setCurrent(candidate);
+                if (candidate.Status == ExecutionJobStatus.Cancelled)
+                {
+                    signals.Reached.TrySetResult();
+                    await signals.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                }
+                return true;
+            });
+    }
+
+    private static IBatchComputeBackend CancellableControlBackend(ExecutionJobSpec spec)
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns(spec.Backend);
+        backend.TargetKind.Returns(spec.TargetKind);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities { SupportsCancellation = true });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled });
+        return backend;
     }
 
     private static TileCacheJobService CreateControlTileService(IExecutionJobStore store,
