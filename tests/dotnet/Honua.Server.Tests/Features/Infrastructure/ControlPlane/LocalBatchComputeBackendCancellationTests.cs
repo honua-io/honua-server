@@ -58,7 +58,7 @@ public sealed class LocalBatchComputeBackendCancellationTests
         var progressStore = Substitute.For<IUniversalProgressStore>();
         var tokens = new ExecutionJobCancellationTokens();
         var backend = new LocalBatchComputeBackend(progressStore, [tokens]);
-        using var successor = tokens.CreateLinkedTokenSource("tile-retry", "successor");
+        using var successor = tokens.CreateLinkedTokenSource("tile-retry", "successor", 2);
         var now = DateTimeOffset.UtcNow;
         var oldClaim = new ExecutionJobRecord
         {
@@ -106,12 +106,14 @@ public sealed class LocalBatchComputeBackendCancellationTests
             .BuildServiceProvider();
 
         var backend = services.GetRequiredService<LocalBatchComputeBackend>();
-        using var cts = executionTokens.CreateLinkedTokenSource("job-x", "worker-1");
+        using var cts = executionTokens.CreateLinkedTokenSource("job-x", "worker-1", 1);
         var now = DateTimeOffset.UtcNow;
         var job = new ExecutionJobRecord
         {
             OperationId = "job-x",
             Status = ExecutionJobStatus.Running,
+            ClaimedBy = "worker-1",
+            AttemptCount = 1,
             CreatedAt = now,
             UpdatedAt = now,
             Spec = new ExecutionJobSpec

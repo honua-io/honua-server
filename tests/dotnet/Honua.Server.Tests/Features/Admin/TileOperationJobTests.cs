@@ -442,6 +442,24 @@ public sealed partial class TileOperationJobTests
     }
 
     [UnitTest]
+    public async Task CancelAsync_QueuedJob_DoesNotSignalBackendAfterTerminalTransition()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
+        var notifier = Substitute.For<IJobCancellationNotifier>();
+        var localBackend = new LocalBatchComputeBackend(progressStore, [notifier]);
+        var options = new TileCacheBatchOptions { Backend = LocalBatchComputeBackend.BackendId };
+        var service = CreateService(jobStore, progressStore, [localBackend], options, Substitute.For<IJobQueue>());
+        var jobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin));
+
+        var cancelled = await service.CancelAsync(jobId);
+
+        cancelled.Should().BeTrue();
+        (await jobStore.GetAsync(jobId))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        notifier.DidNotReceive().Cancel(jobId);
+    }
+
+    [UnitTest]
     public async Task CancelAsync_TerminalJob_ReturnsFalse()
     {
         var jobStore = new InMemoryExecutionJobStore();

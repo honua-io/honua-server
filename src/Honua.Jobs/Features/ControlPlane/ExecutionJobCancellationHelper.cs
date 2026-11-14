@@ -345,6 +345,19 @@ internal static class ExecutionJobCancellationHelper
             return new(BackendCancelApplyOutcome.TerminalConflict, fresh, fresh.Status);
         }
 
+        // A console retry can reset a cancelled record before this delayed backend
+        // response is applied. Heartbeats may advance the version, but the request
+        // and execution attempt must still be the ones sent to the backend.
+        if (fresh.AttemptCount != job.AttemptCount
+            || fresh.ClaimedBy != job.ClaimedBy
+            || fresh.ClaimedAt != job.ClaimedAt
+            || fresh.ProviderOperationId != job.ProviderOperationId
+            || fresh.CancellationRequestedAt != job.CancellationRequestedAt
+            || fresh.NextRetryAt != job.NextRetryAt)
+        {
+            return new(BackendCancelApplyOutcome.Unconfirmed, fresh);
+        }
+
         var retryNow = DateTimeOffset.UtcNow;
         var retryMerged = MergeBackendCancelObservation(fresh, observation, retryNow);
 

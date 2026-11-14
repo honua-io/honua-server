@@ -498,10 +498,11 @@ internal static partial class OperationsProgressEndpoints
 
         // Persist local cancellation before the process-only signal so takeover after a
         // worker crash observes the accepted request. The worker still owns its terminal state.
+        ExecutionJobRecord? cancellationTarget = null;
         if (jobStore != null)
         {
-            var durableJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (durableJob?.Spec.Backend == LocalBatchComputeBackend.BackendId)
+            cancellationTarget = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (cancellationTarget?.Spec.Backend == LocalBatchComputeBackend.BackendId)
             {
                 var reconcileResult = await TryReconcileDurableCancelAsync(
                     httpContext, operationId, progressStore, cancellationToken).ConfigureAwait(false);
@@ -518,7 +519,9 @@ internal static partial class OperationsProgressEndpoints
         // Cancelled (if interrupted) or Completed (if rendering already finished).
         // Writing Cancelled here would race with the worker's Completed write and
         // could hide a successfully rendered result.
-        var workerOwnsTerminalState = cancellationNotifiers.CancelAny(operationId);
+        var workerOwnsTerminalState = cancellationTarget != null
+            ? ExecutionJobCancellationTokens.CancelAttempt(cancellationNotifiers, cancellationTarget)
+            : cancellationNotifiers.CancelAny(operationId);
 
         if (workerOwnsTerminalState)
         {

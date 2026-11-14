@@ -1296,7 +1296,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
             {
                 Kind = ExecutionJobKind.TileCache, Backend = "aws-batch",
                 TargetKind = BatchComputeTargetKind.AwsBatch, WorkloadName = "tile-cancel-race",
-                Parameters = new Dictionary<string, string> { ["operation"] = operation }
+                Parameters = new Dictionary<string, string> { [TileCacheJobParameterKeys.Operation] = operation }
             }
         };
         var current = initial;

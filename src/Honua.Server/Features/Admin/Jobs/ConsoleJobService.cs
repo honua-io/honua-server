@@ -297,7 +297,7 @@ internal sealed partial class ConsoleJobService(
             ThrowForCancelOutcome(preResult.Outcome);
         }
 
-        _ = serviceProvider.GetServices<IJobCancellationNotifier>().CancelAny(job.OperationId);
+        _ = ExecutionJobCancellationTokens.CancelAttempt(serviceProvider.GetServices<IJobCancellationNotifier>(), job);
 
         var backends = serviceProvider.GetServices<IBatchComputeBackend>();
         var backend = backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);

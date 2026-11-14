@@ -53,7 +53,7 @@ internal sealed class LocalBatchComputeBackend(
     {
         // A single IJobCancellationNotifier parameter binds only the last DI registration
         // and may never signal the execution-job token.
-        cancellationNotifiers.CancelAny(job.OperationId);
+        ExecutionJobCancellationTokens.CancelAttempt(cancellationNotifiers, job);
 
         if (job.Status == ExecutionJobStatus.Queued)
         {

@@ -259,7 +259,10 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             return false;
         }
 
-        await backend.CancelAsync(outcome.Job ?? job, cancellationToken).ConfigureAwait(false);
+        if (outcome.State == ExecutionJobCancellationState.CancellationRequested)
+        {
+            await backend.CancelAsync(outcome.Job ?? job, cancellationToken).ConfigureAwait(false);
+        }
         return true;
     }
 
