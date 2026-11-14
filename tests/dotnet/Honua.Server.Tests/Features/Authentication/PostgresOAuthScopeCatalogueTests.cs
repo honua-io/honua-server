@@ -79,6 +79,30 @@ public sealed class PostgresOAuthScopeCatalogueTests(DatabaseFixtureAdapter data
     }
 
     [IntegrationTest]
+    public async Task UnicodeIdentity_MatchesInMemoryCatalogueForLookupGrantsAndDelete()
+    {
+        var shared = Store();
+        var local = new InMemoryOAuthScopeCatalogue();
+        string[] scopes = ["s", "ſ", "i", "ı", "k", "K", "μ", "µ", "𐐀", "𐐨"];
+        foreach (var scope in scopes)
+        {
+            var definition = new OAuthScopeDefinition(scope, scope, ["permission:" + scope]);
+            await shared.DefineAsync(definition, CancellationToken.None);
+            await local.DefineAsync(definition, CancellationToken.None);
+        }
+        foreach (var scope in scopes)
+        {
+            (await shared.GetAsync(scope, CancellationToken.None)).Should()
+                .BeEquivalentTo(await local.GetAsync(scope, CancellationToken.None), scope);
+            (await shared.ResolveGrantAsync(scope, scopes, CancellationToken.None)).Should()
+                .BeEquivalentTo(await local.ResolveGrantAsync(scope, scopes, CancellationToken.None), scope);
+            (await shared.DeleteAsync(scope, CancellationToken.None)).Should()
+                .BeEquivalentTo(await local.DeleteAsync(scope, CancellationToken.None), scope);
+        }
+        (await shared.ListAsync(CancellationToken.None)).Should().BeEmpty();
+    }
+
+    [IntegrationTest]
     public async Task GetAndDeleteAsync_BlankScope_ReturnNull()
     {
         var store = Store();

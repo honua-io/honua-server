@@ -21,7 +21,7 @@ internal sealed class PostgresOAuthScopeCatalogue(JobStoreDatabase database) : I
     {
         cancellationToken.ThrowIfCancellationRequested();
         return string.IsNullOrWhiteSpace(scope) ? null
-            : (await ReadAsync([scope.Trim().ToUpperInvariant()], cancellationToken).ConfigureAwait(false)).SingleOrDefault();
+            : (await ReadAsync([OrdinalIgnoreCaseKey.Create(scope.Trim())], cancellationToken).ConfigureAwait(false)).SingleOrDefault();
     }
 
     public async Task<OAuthScopeDefinition> DefineAsync(OAuthScopeDefinition definition, CancellationToken cancellationToken)
@@ -36,7 +36,7 @@ internal sealed class PostgresOAuthScopeCatalogue(JobStoreDatabase database) : I
                 INSERT INTO {_table} (scope_key, body) VALUES (@key, @body)
                 ON CONFLICT (scope_key) DO UPDATE SET body = EXCLUDED.body
                 """, connection);
-            command.Parameters.AddWithValue("key", normalized.Scope.ToUpperInvariant());
+            command.Parameters.AddWithValue("key", OrdinalIgnoreCaseKey.Create(normalized.Scope));
             command.Parameters.AddWithValue("body", NpgsqlDbType.Jsonb, body);
             await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
         }, StatementRepeat.NotAfterSend, cancellationToken).ConfigureAwait(false);
@@ -53,7 +53,7 @@ internal sealed class PostgresOAuthScopeCatalogue(JobStoreDatabase database) : I
         return database.ExecuteAsync<OAuthScopeDefinition?>(async (connection, _, token) =>
         {
             await using var command = new NpgsqlCommand($"DELETE FROM {_table} WHERE scope_key = @key RETURNING body", connection);
-            command.Parameters.AddWithValue("key", scope.Trim().ToUpperInvariant());
+            command.Parameters.AddWithValue("key", OrdinalIgnoreCaseKey.Create(scope.Trim()));
             return await command.ExecuteScalarAsync(token).ConfigureAwait(false) is string json ? Deserialize(json) : null;
         }, StatementRepeat.NotAfterSend, cancellationToken);
     }
@@ -63,7 +63,7 @@ internal sealed class PostgresOAuthScopeCatalogue(JobStoreDatabase database) : I
     {
         cancellationToken.ThrowIfCancellationRequested();
         var keys = OAuthScopePolicy.Candidates(requestedScope, allowedScopes)
-            .Select(scope => scope.ToUpperInvariant()).Distinct(StringComparer.Ordinal).ToArray();
+            .Select(OrdinalIgnoreCaseKey.Create).Distinct(StringComparer.Ordinal).ToArray();
         var definitions = keys.Length == 0 ? [] : await ReadAsync(keys, cancellationToken).ConfigureAwait(false);
         return OAuthScopePolicy.Resolve(requestedScope, allowedScopes,
             definitions.ToDictionary(definition => definition.Scope, StringComparer.OrdinalIgnoreCase));
