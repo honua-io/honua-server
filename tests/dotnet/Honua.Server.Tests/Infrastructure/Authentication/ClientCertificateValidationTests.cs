@@ -638,7 +638,7 @@ public sealed class ClientCertificateValidationTests
         return new ClientCertificateValidator(monitor, store);
     }
 
-    private static X509Certificate2 CreateCertificate(
+    internal static X509Certificate2 CreateCertificate(
         string subject,
         string? uri,
         DateTimeOffset? notBefore = null,
@@ -790,7 +790,7 @@ public sealed class ClientCertificateValidationTests
     private static string ExportPem(X509Certificate2 certificate)
         => new string(PemEncoding.Write("CERTIFICATE", certificate.RawData));
 
-    private sealed class TestOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    internal sealed class TestOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
         public T CurrentValue { get; } = value;
 

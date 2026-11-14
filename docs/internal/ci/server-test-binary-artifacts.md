@@ -36,7 +36,7 @@ is one day. No branch-prefix lookup or cross-run artifact search is used; the
 existing v1 exact-head shard cache remains a separate fallback in full CI.
 
 The producer exports its actual selected `dotnet --version`, rather than the
-floating `10.0.x` request. Managed consumers install that exact version into a
+floating `11.0.x` request. Managed consumers install that exact version into a
 private runner-temp SDK directory and verify both the selected version and
 effective host/runtime-root paths before restoration. This prevents an SDK
 rollout between jobs from changing the toolchain: a producer using 10.0.401 and

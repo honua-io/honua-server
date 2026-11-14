@@ -77,6 +77,7 @@
         "OGC API Features",
         "OGC Classic Maps Core",
         "OGC Classic Maps Supporting",
+        "OData Core Endpoints",
         "OData Core",
         "MCP Endpoints",
         "MCP and Sessions",
@@ -99,6 +100,7 @@
         "OGC API Features",
         "OGC Classic Maps Core",
         "OGC Classic Maps Supporting",
+        "OData Core Endpoints",
         "OData Core",
         "MCP Endpoints",
         "MCP and Sessions",
@@ -121,6 +123,7 @@
         "OGC API Features",
         "OGC Classic Maps Core",
         "OGC Classic Maps Supporting",
+        "OData Core Endpoints",
         "OData Core",
         "MCP Endpoints",
         "MCP and Sessions",
@@ -158,6 +161,7 @@
         "Admin & Infrastructure 2",
         "Admin & Infrastructure 3",
         "Admin & Infrastructure 4",
+        "OData Core Endpoints",
         "OData Core"
       ]
     },
@@ -179,6 +183,7 @@
         "Admin & Infrastructure 2",
         "Admin & Infrastructure 3",
         "Admin & Infrastructure 4",
+        "OData Core Endpoints",
         "OData Core"
       ]
     },
@@ -362,7 +367,7 @@
     },
     {
       "name": "File and Raster Import capacity split (#3204)",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportCancellationMonitorTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.ImportValidationErrorMessage|FullyQualifiedName~Honua.Server.Tests.Import.RedisJobQueueFallback|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinatorRecovery|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportCancellationMonitorTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.ImportValidationErrorMessage|FullyQualifiedName~Honua.Server.Tests.Import.RedisJobQueueFallback|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinatorRecovery|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests",
       "children": [
         "File and Raster Import",
         "Cloud and Streaming Import"
@@ -422,6 +427,8 @@
         "GeoServices GPServer SOAP Progress",
         "GeoServices GPServer Durable and Aliases",
         "GeoServices GPServer Endpoints",
+        "FeatureServer Replica Management",
+        "FeatureServer Replica Sync",
         "FeatureServer Replica"
       ],
       "granularity": "method"
@@ -507,6 +514,14 @@
         "Admin & Infrastructure 2",
         "Admin & Infrastructure 3",
         "Admin & Infrastructure 4"
+      ]
+    },
+    {
+      "name": "OData Core Before Endpoint Split",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData&FullyQualifiedName!~ODataAdvancedFeaturesTests&FullyQualifiedName!~ODataFilterFunctionTests&FullyQualifiedName!~ODataFilterMatrixTests&FullyQualifiedName!~ODataPaginationTests&FullyQualifiedName!~ODataSkipTokenTests&FullyQualifiedName!~ODataSpatialMatrixTests&FullyQualifiedName!~ODataSpatialReferenceTests&FullyQualifiedName!~ODataTemporalFilteringTests&FullyQualifiedName!~ODataCrudEndpointTests&FullyQualifiedName!~ODataCrudExceptionMappingTests&FullyQualifiedName!~ODataDeltaTests&FullyQualifiedName!~ODataETagConcurrencyTests&FullyQualifiedName!~ODataGeometryCrudTests&FullyQualifiedName!~ODataMultipartBatchTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.OData.Services&FullyQualifiedName!~ODataClientCertificationTests&FullyQualifiedName!~ODataClientIntegrationTests&FullyQualifiedName!~ODataErrorHandlingTests&FullyQualifiedName!~ODataV4ConformanceEndpointTests&FullyQualifiedName!~ODataLimitsEnforcementTests&FullyQualifiedName!~ODataExpansionBudgetRegressionTests",
+      "children": [
+        "OData Core Endpoints",
+        "OData Core"
       ]
     }
   ],
@@ -996,7 +1011,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "Offline TRX rebalance (#3711): combines the 2.1m-p90 RasterImport micro-shard with the 11.5m-p90 FileImport owner. October 2026 fleet re-base (#5884): the run-shard step peaked at 19.2m across full-matrix runs 38158644558 / 38164919834 / 38182837651 / 38193561888 against a 20m cap; 28m keeps that peak at the 0.7 target_utilization.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportCancellationMonitorTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService)",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Import.DirectImportCrsContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.ImportCancellationMonitorTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService)",
       "paths": [
         "src/Honua.Core/Core/Features/FileImport/",
         "src/Honua.Core/Core/Features/Import/",
@@ -1011,6 +1026,8 @@
         "tests/dotnet/Honua.Server.Tests/Import/CloudStorageShapefileImportTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/CloudStorageUploadProgressTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/CogImportEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/DirectImportCrsContractTests.Streams.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/DirectImportCrsContractTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/EmulatorCloudStorageImportTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ExternalFormatCorpusImportTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/FileGdbAdvancedConstructTests.cs",
@@ -1080,6 +1097,84 @@
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
     },
     {
+      "name": "FeatureServer Replica Management",
+      "shard_name": "FeatureServer Replica Management",
+      "dispatch_rank": 18.3,
+      "artifact_suffix": "featureserver-replica-management",
+      "log_name": "server-tests-featureserver-replica-management",
+      "timeout_minutes": 38,
+      "test_timeout_minutes": 28,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Whole-class capacity partition after repeated 28m timeouts with active output. Retains the parent project, paths, exclusions, tiers and 28m test/38m job budgets. Replica Management owns conflict/ownership/management; Replica Sync owns the sync class; Replica retains the exact complement and future classes. dispatch_rank conservatively retains the measured 18.3m parent value until complete child measurements are available.",
+      "filter": "(FullyQualifiedName~Replica&FullyQualifiedName!~MvtTile&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests)&(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaOwnershipEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests)",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/",
+        "src/Honua.Protocols/GeoServices/FeatureServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerAccessFilteringTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaDeliveryWindowTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaDownloadContractTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaEsriParityTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaSyncTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaUploadEditLimitTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MobileOfflineDemoFixtureReplicationTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ReplicaConflictReviewEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ReplicaManagementEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ReplicaOwnershipEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/FeatureServerReplicaClientStateSerializerTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/FeatureServerReplicaServerStateCapturerTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/ReplicaUploadIdempotencyStoreTests.cs",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "FeatureServer Replica Sync",
+      "shard_name": "FeatureServer Replica Sync",
+      "dispatch_rank": 18.3,
+      "artifact_suffix": "featureserver-replica-sync",
+      "log_name": "server-tests-featureserver-replica-sync",
+      "timeout_minutes": 38,
+      "test_timeout_minutes": 28,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Whole-class capacity partition after repeated 28m timeouts with active output. Retains the parent project, paths, exclusions, tiers and 28m test/38m job budgets. Replica Management owns conflict/ownership/management; Replica Sync owns the sync class; Replica retains the exact complement and future classes. dispatch_rank conservatively retains the measured 18.3m parent value until complete child measurements are available.",
+      "filter": "(FullyQualifiedName~Replica&FullyQualifiedName!~MvtTile&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/",
+        "src/Honua.Protocols/GeoServices/FeatureServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerAccessFilteringTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaDeliveryWindowTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaDownloadContractTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaEsriParityTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaSyncTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicaUploadEditLimitTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MobileOfflineDemoFixtureReplicationTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ReplicaConflictReviewEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ReplicaManagementEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ReplicaOwnershipEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/FeatureServerReplicaClientStateSerializerTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/FeatureServerReplicaServerStateCapturerTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/ReplicaUploadIdempotencyStoreTests.cs",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
       "name": "FeatureServer Replica",
       "shard_name": "FeatureServer Replica",
       "dispatch_rank": 18.3,
@@ -1090,8 +1185,8 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Capacity split of FeatureServer Tiles and Replica along the MvtTile | Replica filter boundary. Measured on the passing retry of run 37435142851 (TRX class spans, serial): replica classes occupy 17.3m of the 20.2m whole, under the unchanged 22m test budget. Excludes the replica-store and replication classes that belong to FeatureServer Query Services and Replication. October 2026 fleet re-base (#5884): the run-shard step peaked at 19.2m across full-matrix runs 38158644558 / 38164919834 / 38182837651 / 38193561888 against a 22m cap; 28m keeps that peak at the 0.7 target_utilization.",
-      "filter": "FullyQualifiedName~Replica&FullyQualifiedName!~MvtTile&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
+      "_comment": "Whole-class capacity partition after repeated 28m timeouts with active output. Retains the parent project, paths, exclusions, tiers and 28m test/38m job budgets. Replica Management owns conflict/ownership/management; Replica Sync owns the sync class; Replica retains the exact complement and future classes. dispatch_rank conservatively retains the measured 18.3m parent value until complete child measurements are available.",
+      "filter": "(FullyQualifiedName~Replica&FullyQualifiedName!~MvtTile&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaOwnershipEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/",
@@ -1763,6 +1858,34 @@
       "_comment": "September 2026 capacity rebalance (run 34025905230): owns the whole ApiSurfaceComplianceTests and TestQualityValidationTests classes from Core and Cloud Contracts, alongside API governance; unchanged 20-minute budget."
     },
     {
+      "name": "OData Core Endpoints",
+      "shard_name": "OData Core Endpoints",
+      "dispatch_rank": 19.9,
+      "artifact_suffix": "odata-core-endpoints",
+      "log_name": "server-tests-odata-core-endpoints",
+      "timeout_minutes": 39,
+      "test_timeout_minutes": 29,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
+      "_comment": "Capacity split of OData Core after an active-output 29-minute pre-PR timeout: owns the whole ODataEndpointTests class. Project, path triggers, test tiers and budgets remain unchanged.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData&FullyQualifiedName!~ODataAdvancedFeaturesTests&FullyQualifiedName!~ODataFilterFunctionTests&FullyQualifiedName!~ODataFilterMatrixTests&FullyQualifiedName!~ODataPaginationTests&FullyQualifiedName!~ODataSkipTokenTests&FullyQualifiedName!~ODataSpatialMatrixTests&FullyQualifiedName!~ODataSpatialReferenceTests&FullyQualifiedName!~ODataTemporalFilteringTests&FullyQualifiedName!~ODataCrudEndpointTests&FullyQualifiedName!~ODataCrudExceptionMappingTests&FullyQualifiedName!~ODataDeltaTests&FullyQualifiedName!~ODataETagConcurrencyTests&FullyQualifiedName!~ODataGeometryCrudTests&FullyQualifiedName!~ODataMultipartBatchTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.OData.Services&FullyQualifiedName!~ODataClientCertificationTests&FullyQualifiedName!~ODataClientIntegrationTests&FullyQualifiedName!~ODataErrorHandlingTests&FullyQualifiedName!~ODataV4ConformanceEndpointTests&FullyQualifiedName!~ODataLimitsEnforcementTests&FullyQualifiedName!~ODataExpansionBudgetRegressionTests)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/",
+        "src/Honua.Protocols/OData/",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAdvancedOperationsTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAuthorizationTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataErrorHandlingTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataLimitsEnforcementTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataParquetFormatTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataQueryHandlerTests.cs",
+        "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs"
+      ]
+    },
+    {
       "name": "OData Core",
       "shard_name": "OData Core",
       "dispatch_rank": 19.9,
@@ -1774,8 +1897,8 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
-      "_comment": "OData CATCH-ALL (#1899): converted from a class-name-keyed selector to a namespace-prefix selector so new OData test classes are auto-covered instead of silently falling outside every OData shard (the original #1899 finding \u2014 e.g. ODataBboxShorthandTests, ODataInOperatorTests, ODataParquetFormatTests, ODataServerPagingEndpointTests, ODataChangesetEditionGateTests, ODataQueryParameterAdapterOrderByTests all matched no OData filter). Selects everything in the Honua.Server.Tests.Features.Protocols.OData namespace EXCEPT the classes/sub-namespaces carved into the OData Query and Spatial, OData Mutations and Batch, and OData Client Certification sibling shards. The trailing FullyQualifiedName!~ exclusions mirror those siblings' selectors exactly, so the four OData shards partition the OData suite with no gaps; any newly added OData test class falls here by default.",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData&FullyQualifiedName!~ODataAdvancedFeaturesTests&FullyQualifiedName!~ODataFilterFunctionTests&FullyQualifiedName!~ODataFilterMatrixTests&FullyQualifiedName!~ODataPaginationTests&FullyQualifiedName!~ODataSkipTokenTests&FullyQualifiedName!~ODataSpatialMatrixTests&FullyQualifiedName!~ODataSpatialReferenceTests&FullyQualifiedName!~ODataTemporalFilteringTests&FullyQualifiedName!~ODataCrudEndpointTests&FullyQualifiedName!~ODataCrudExceptionMappingTests&FullyQualifiedName!~ODataDeltaTests&FullyQualifiedName!~ODataETagConcurrencyTests&FullyQualifiedName!~ODataGeometryCrudTests&FullyQualifiedName!~ODataMultipartBatchTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.OData.Services&FullyQualifiedName!~ODataClientCertificationTests&FullyQualifiedName!~ODataClientIntegrationTests&FullyQualifiedName!~ODataErrorHandlingTests&FullyQualifiedName!~ODataV4ConformanceEndpointTests&FullyQualifiedName!~ODataLimitsEnforcementTests&FullyQualifiedName!~ODataExpansionBudgetRegressionTests",
+      "_comment": "OData namespace catch-all: excludes the whole ODataEndpointTests class and existing specialized sibling selectors. New OData classes remain covered by default; the declared pre-split parent partition proves exact conservation with OData Core Endpoints.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData&FullyQualifiedName!~ODataAdvancedFeaturesTests&FullyQualifiedName!~ODataFilterFunctionTests&FullyQualifiedName!~ODataFilterMatrixTests&FullyQualifiedName!~ODataPaginationTests&FullyQualifiedName!~ODataSkipTokenTests&FullyQualifiedName!~ODataSpatialMatrixTests&FullyQualifiedName!~ODataSpatialReferenceTests&FullyQualifiedName!~ODataTemporalFilteringTests&FullyQualifiedName!~ODataCrudEndpointTests&FullyQualifiedName!~ODataCrudExceptionMappingTests&FullyQualifiedName!~ODataDeltaTests&FullyQualifiedName!~ODataETagConcurrencyTests&FullyQualifiedName!~ODataGeometryCrudTests&FullyQualifiedName!~ODataMultipartBatchTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.OData.Services&FullyQualifiedName!~ODataClientCertificationTests&FullyQualifiedName!~ODataClientIntegrationTests&FullyQualifiedName!~ODataErrorHandlingTests&FullyQualifiedName!~ODataV4ConformanceEndpointTests&FullyQualifiedName!~ODataLimitsEnforcementTests&FullyQualifiedName!~ODataExpansionBudgetRegressionTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/",

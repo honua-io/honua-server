@@ -679,7 +679,7 @@ def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
         assert [name for name in partition["children"]
                 if MODULE._eval(parsed[name], soap + "." + method)] == [expected]
     for name in partition["children"]:
-        if name == "FeatureServer Replica":
+        if name.startswith("FeatureServer Replica"):
             continue  # Its original independent budget is unchanged by packing.
         assert shards[name]["test_timeout_minutes"] == 22
         assert shards[name]["timeout_minutes"] == 32
@@ -706,8 +706,9 @@ def test_soap_mvt_pack_conserves_selection_triggers_and_partition_contracts() ->
         assert all(packed[key] == s[key] for s in members), key
     for override in config["targeted_override_prefixes"]:
         assert names.isdisjoint(override["shards"]), "Stale override references removed job"
-    for key, value in fixture["replica_budgets"].items():
-        assert shards["FeatureServer Replica"][key] == value
+    for name, budgets in fixture["replica_budgets"].items():
+        for key, value in budgets.items():
+            assert shards[name][key] == value
     parents = fixture["partitions"]
     partition = next(p for p in config["shard_partitions"]
                      if p["name"] == "GPServer NAServer Tiles and Replica capacity partition")

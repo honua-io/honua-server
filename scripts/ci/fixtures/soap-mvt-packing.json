@@ -71,12 +71,24 @@
       "filter": "(FullyQualifiedName~MvtTile|FullyQualifiedName~Replica)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
       "children": [
         "FeatureServer MVT Tiles",
+        "FeatureServer Replica Management",
+        "FeatureServer Replica Sync",
         "FeatureServer Replica"
       ]
     }
   ],
   "replica_budgets": {
-    "test_timeout_minutes": 28,
-    "timeout_minutes": 38
+    "FeatureServer Replica Management": {
+      "test_timeout_minutes": 28,
+      "timeout_minutes": 38
+    },
+    "FeatureServer Replica Sync": {
+      "test_timeout_minutes": 28,
+      "timeout_minutes": 38
+    },
+    "FeatureServer Replica": {
+      "test_timeout_minutes": 28,
+      "timeout_minutes": 38
+    }
   }
 }

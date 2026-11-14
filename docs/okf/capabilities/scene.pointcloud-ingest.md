@@ -18,7 +18,7 @@ Ingest LAS point clouds into a servable 3D Tiles point tileset preserving per-po
 | Edition | Enterprise |
 | Surface maturity | 1 experimental |
 | Registry entries | 1 |
-| Proving tests | 10 |
+| Proving tests | 11 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
