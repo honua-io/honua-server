@@ -160,8 +160,8 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         IReadOnlyList<EvidenceSourceEnvelope> storeSources,
         IReadOnlyList<OpsManagedTargetHealthView> managedTargets)
     {
-        var sections = new List<EvidenceSourceEnvelope>
-        {
+        List<EvidenceSourceEnvelope> sections =
+        [
             alertSource,
             EvidencePostureFactory.Complete(
                 EvidencePostureVocabulary.SourceIds.FindingsControlPlane,
@@ -193,7 +193,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 _batchBackends.Count > 0,
                 now,
                 EvidencePostureVocabulary.BackendKinds.InProcess),
-        };
+        ];
 
         if (managedTargets.Count > 0) sections.Add(ManagedComposeObserver.Source(managedTargets));
         var validated = sections.Select(source => EvidencePostureFactory.Validate(source, now)).ToArray();
