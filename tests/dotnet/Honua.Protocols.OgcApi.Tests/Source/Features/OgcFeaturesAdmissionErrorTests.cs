@@ -117,17 +117,19 @@ public sealed class OgcFeaturesAdmissionErrorTests : IClassFixture<OgcFeaturesAd
         content.Should().NotContain("Private pool diagnostics");
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("geojson")]
+    [InlineData("csv")]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task StreamingItems_WhenFirstAdmissionFails_ReturnsCompleteProblemDetails()
+    public async Task StreamingItems_WhenFirstAdmissionFails_ReturnsCompleteProblemDetails(string format)
     {
         var starts = _state.StreamStarts;
         var disposals = _state.StreamDisposals;
-        using var response = await _fixture.Client.GetAsync("/ogc/features/collections/0/items?limit=201&f=geojson");
+        using var response = await _fixture.Client.GetAsync($"/ogc/features/collections/0/items?limit=201&f={format}");
         var content = await response.Content.ReadAsStringAsync();
 
-        _state.StreamStarts.Should().Be(starts + 1, "COUNT succeeds before the streaming connection is acquired");
+        _state.StreamStarts.Should().Be(starts + 1, "the streaming connection is acquired before writing the response");
         _state.StreamDisposals.Should().Be(disposals + 1);
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, content);
         (response.Headers.RetryAfter?.Delta).Should().Be(TimeSpan.FromSeconds(7));
