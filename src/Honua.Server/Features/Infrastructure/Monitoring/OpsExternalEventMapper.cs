@@ -17,6 +17,11 @@ internal static class OpsExternalEventMapper
             throw new JsonException("Ops event exceeds the 256 KiB limit.");
         }
 
+        return ParseEnvelope(body);
+    }
+
+    private static OpsExternalEvent ParseEnvelope(string body)
+    {
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
         var id = Text(root, "id");
@@ -34,7 +39,7 @@ internal static class OpsExternalEventMapper
 
     internal static OpsFinding? Map(string body)
     {
-        var externalEvent = Parse(body);
+        var externalEvent = ParseEnvelope(body);
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
         var detail = root.GetProperty("detail");
@@ -62,9 +67,9 @@ internal static class OpsExternalEventMapper
     {
         var mapped = events.DistinctBy(e => e.Id).Where(e => e.OccurredAt <= now)
             .Select(e => Map(e.Body)).OfType<OpsFinding>().ToArray();
-        var findings = mapped.Where(f => !f.Rule.StartsWith("cloudwatch-alarm", StringComparison.Ordinal)).ToList();
-        findings.AddRange(mapped.Where(f => f.Rule.StartsWith("cloudwatch-alarm", StringComparison.Ordinal))
-            .GroupBy(f => f.Subject.TargetId, StringComparer.Ordinal)
+        var findings = mapped.Where(f => StateFamily(f) is null).ToList();
+        findings.AddRange(mapped.Where(f => StateFamily(f) is not null)
+            .GroupBy(f => (Family: StateFamily(f), f.Subject.TargetId))
             .Select(g => g.OrderByDescending(f => f.DetectedAt).ThenBy(f => f.Id, StringComparer.Ordinal).First()));
         var crashes = findings.Where(f => f.Rule is "ecs-task-stopped" or "ecs-task-oom")
             .Where(f => f.DetectedAt >= now - TimeSpan.FromMinutes(15) && f.DetectedAt <= now)
@@ -86,6 +91,13 @@ internal static class OpsExternalEventMapper
 
         return findings;
     }
+
+    private static string? StateFamily(OpsFinding finding) => finding.Rule switch
+    {
+        var rule when rule.StartsWith("cloudwatch-alarm", StringComparison.Ordinal) => "cloudwatch-alarm",
+        var rule when rule.StartsWith("ecs-deployment-", StringComparison.Ordinal) => "ecs-deployment",
+        _ => null,
+    };
 
     private static Template? SelectTemplate(JsonElement root, JsonElement detail)
     {
