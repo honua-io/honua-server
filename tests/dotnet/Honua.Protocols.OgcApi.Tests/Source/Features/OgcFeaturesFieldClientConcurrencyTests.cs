@@ -5,23 +5,32 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Events;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Collection("Database")]
-public sealed class OgcFeaturesFieldClientConcurrencyTests : IClassFixture<OgcFeaturesTransactionTestsFixture>
+public sealed class OgcFeaturesFieldClientConcurrencyTests : IAsyncLifetime
 {
+    private readonly IFeatureChangeEventPublisher _publisher = Substitute.For<IFeatureChangeEventPublisher>();
     private readonly WebAppFixture _fixture;
 
-    public OgcFeaturesFieldClientConcurrencyTests(OgcFeaturesTransactionTestsFixture fixture)
+    public OgcFeaturesFieldClientConcurrencyTests()
     {
-        _fixture = fixture.App;
+        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+            .ReplaceService(_publisher);
     }
+
+    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
     [InlineData("PUT")]
@@ -58,14 +67,57 @@ public sealed class OgcFeaturesFieldClientConcurrencyTests : IClassFixture<OgcFe
         using var rejected = await _fixture.Client.SendAsync(offlineEdit);
         rejected.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
 
+        await AssertCurrentVersionAsync(itemPath, winner.Headers.ETag!, winningBody);
+        var change = PublishedChanges().Should().ContainSingle().Subject;
+        change.ObjectId.Should().Be(id);
+        change.Operation.Should().Be("update");
+        change.LayerId.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create, Operations.Update, Operations.Delete)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task MutateFeature_CreateUpdateDelete_PublishesCommittedChanges()
+    {
+        using var content = new StringContent(
+            """{"type":"Feature","geometry":null,"properties":{"name":"Field observation"}}""",
+            Encoding.UTF8, "application/geo+json");
+        using var created = await _fixture.Client.PostAsync("/ogc/features/collections/0/items", content);
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var feature = JsonSerializer.Deserialize(await created.Content.ReadAsStringAsync(), OgcJsonContext.Default.GeoJsonFeature)!;
+        var path = $"/ogc/features/collections/0/items/{feature.Id}";
+        using var patch = BuildMutation("PATCH", path, "Updated observation");
+        using var updated = await _fixture.Client.SendAsync(patch);
+        updated.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var current = await _fixture.Client.GetAsync(path);
+        (await current.Content.ReadAsStringAsync()).Should().Contain("Updated observation");
+        using var deleted = await _fixture.Client.DeleteAsync(path);
+        deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        using var missing = await _fixture.Client.GetAsync(path);
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var changes = PublishedChanges();
+        changes.Select(change => change.Operation).Should().Equal("create", "update", "delete");
+        changes.Should().OnlyContain(change => change.ObjectId == Convert.ToInt64(feature.Id) && change.LayerId == 0);
+        changes.Should().OnlyContain(change => !string.IsNullOrWhiteSpace(change.RequestId));
+    }
+
+    private async Task AssertCurrentVersionAsync(string itemPath, System.Net.Http.Headers.EntityTagHeaderValue tag, string winningBody)
+    {
         using var current = await _fixture.Client.GetAsync(itemPath);
         current.StatusCode.Should().Be(HttpStatusCode.OK);
-        current.Headers.ETag.Should().Be(winner.Headers.ETag);
+        current.Headers.ETag.Should().Be(tag);
         var currentBody = await current.Content.ReadAsStringAsync();
         var feature = JsonSerializer.Deserialize(currentBody, OgcJsonContext.Default.GeoJsonFeature);
         feature!.Properties["name"]!.ToString().Should().Be("Online observation");
         currentBody.Should().Be(winningBody);
     }
+
+    private FeatureChangeEventRequest[] PublishedChanges() => _publisher.ReceivedCalls()
+        .Where(call => call.GetMethodInfo().Name == nameof(IFeatureChangeEventPublisher.PublishAsync))
+        .Select(call => (FeatureChangeEventRequest)call.GetArguments()[0]!).ToArray();
 
     private static HttpRequestMessage BuildMutation(string method, string itemPath, string name)
     {

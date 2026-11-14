@@ -63,3 +63,5 @@ Run this script with the exact client build and server configuration intended fo
 | Observe an enabled subscription | Accepted mutations are visible; reconnect or replay gaps trigger recovery rather than silent data loss. |
 
 Server regression coverage includes `OgcFeaturesTransactionTests` (CRUD and conditional writes), `OgcFeaturesFieldClientConcurrencyTests` (stale PUT/PATCH/DELETE preserve the accepted version), `OgcFeaturesEnhancementsTests` (paging), `OgcFeaturesSpatialReferenceTests` (CRS), and `WfsFallbackGeometryTransactionTests` (WFS geometry transactions). These tests exercise server behavior; they do not certify an external client, its offline workflow, or phone installation. Run the acceptance journey on the target device before recording client interoperability as passed.
+
+The field-client regression tests also assert change-event publication for successful OGC API Features and WFS create, update, and delete operations. A rejected stale OGC mutation must preserve the accepted feature and publish no additional event. These assertions exercise the publication boundary; they do not certify a third-party client or webhook delivery.
