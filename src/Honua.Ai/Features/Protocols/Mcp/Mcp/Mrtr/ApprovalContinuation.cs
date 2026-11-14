@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.Mrtr;
@@ -87,7 +88,13 @@ internal static class ApprovalContinuation
             throw new GeoprocessingValidationException("The proposal for this approval is not available.");
         }
 
-        return McpToolHelpers.SuccessResult(Project(proposal), McpJsonContext.Default.McpOperationToolOutput);
+        var operation = proposal.Audit.OperationInstanceId is { Length: > 0 } operationInstanceId
+            ? await (httpContext.RequestServices.GetService<IOperationInstanceStore>()
+                ?? throw new InvalidOperationException("The canonical operation instance store is unavailable."))
+                .GetAsync(operationInstanceId, cancellationToken).ConfigureAwait(false)
+            : null;
+        var execution = OperationProposalExecutionView.From(proposal, operation);
+        return McpToolHelpers.SuccessResult(Project(proposal, execution), McpJsonContext.Default.McpOperationToolOutput);
     }
 
     internal static OperationHandleStatus Map(OperationProposalStatus status) => status switch
@@ -114,9 +121,11 @@ internal static class ApprovalContinuation
         _ => "The approved change did not complete.",
     };
 
-    private static McpOperationToolOutput Project(OperationProposal proposal)
+    private static McpOperationToolOutput Project(OperationProposal proposal, OperationProposalExecutionView execution)
     {
-        var status = Map(proposal.Status);
+        var status = execution.Status == proposal.Status.ToString()
+            ? Map(proposal.Status)
+            : Enum.Parse<OperationHandleStatus>(execution.Status);
         return new McpOperationToolOutput
         {
             Status = status.ToString(),
@@ -126,9 +135,11 @@ internal static class ApprovalContinuation
             ProposalId = proposal.ProposalId,
             CorrelationId = proposal.Audit.CorrelationId ?? string.Empty,
             CreatedAt = proposal.CreatedAt,
-            UpdatedAt = proposal.UpdatedAt,
+            UpdatedAt = execution.UpdatedAt,
             JobId = proposal.ExecutionOperationId,
-            Message = Describe(proposal.Status),
+            Message = execution.Status == proposal.Status.ToString()
+                ? Describe(proposal.Status)
+                : execution.ResolutionReason ?? $"The approved change is {status.ToString().ToLowerInvariant()}.",
         };
     }
 }

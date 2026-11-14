@@ -11,6 +11,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
@@ -73,6 +75,41 @@ public sealed class McpMrtrApprovalTests
         var output = result.StructuredContent!.Value;
         output.GetProperty("status").GetString().Should().Be(expected);
         output.GetProperty("proposalId").GetString().Should().Be(ProposalId);
+    }
+
+    [UnitTheory]
+    [InlineData(OperationHandleStatus.Completed)]
+    [InlineData(OperationHandleStatus.Failed)]
+    [InlineData(OperationHandleStatus.Cancelled)]
+    [InlineData(OperationHandleStatus.Indeterminate)]
+    public async Task TryResume_SubmittedProposal_ReportsBoundTerminalExecution(OperationHandleStatus status)
+    {
+        var proposal = Proposal(OperationProposalStatus.Submitted) with
+        {
+            Audit = new() { OperationInstanceId = "opinst-1" },
+            ExecutionOperationId = "job-1",
+        };
+        _store.GetAsync(ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
+        var operations = Substitute.For<IOperationInstanceStore>();
+        var operation = Pending() with
+        {
+            Status = status,
+            JobId = "job-1",
+            UpdatedAt = DateTimeOffset.UnixEpoch.AddMinutes(1),
+            Reason = "canonical execution outcome",
+        };
+        operations.GetAsync("opinst-1", Arg.Any<CancellationToken>()).Returns(operation);
+        using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
+        var context = Attach(services, UrlCapable, "accept");
+        using var stores = new ServiceCollection().AddSingleton(_store).AddSingleton(operations).BuildServiceProvider();
+        context.RequestServices = stores;
+
+        var result = await ApprovalContinuation.TryResumeAsync(context, new(OperationId, "reader"), CancellationToken.None);
+
+        var output = result!.StructuredContent!.Value;
+        output.GetProperty("status").GetString().Should().Be(status.ToString());
+        output.GetProperty("updatedAt").GetDateTimeOffset().Should().Be(operation.UpdatedAt);
+        output.GetProperty("message").GetString().Should().Be(operation.Reason);
     }
 
     [UnitTheory]
