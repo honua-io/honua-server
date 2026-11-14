@@ -1509,7 +1509,7 @@ internal sealed partial class DeployWorkflowService
     {
         if (_workflowStore == null)
         {
-            throw new InvalidOperationException("Deploy workflow operations require Redis-backed durable storage.");
+            throw new InvalidOperationException("Deploy workflow operations require PostgreSQL-backed durable storage.");
         }
     }
 }
