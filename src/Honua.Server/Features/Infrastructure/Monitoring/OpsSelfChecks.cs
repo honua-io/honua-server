@@ -22,7 +22,7 @@ internal sealed record OpsIdentityProviderHealth(Guid ProviderId, bool IsReachab
 
 internal sealed record OpsPublishedRelease(string Version, Uri ReleaseNotes);
 
-internal sealed class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource source)
+internal sealed class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource source) : IDisposable
 {
     internal const string CertificateRule = "key-ring-certificate-expiry";
     internal const string IdentityProviderRule = "idp-unreachable";
@@ -61,7 +61,9 @@ internal sealed class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource sour
         }
     }
 
-    private async Task<IReadOnlyList<OpsFinding>> CollectAsync(
+    public void Dispose() => _gate.Dispose();
+
+    private static async Task<IReadOnlyList<OpsFinding>> CollectAsync(
         CollectionRequest request, CancellationToken cancellationToken)
     {
         try
