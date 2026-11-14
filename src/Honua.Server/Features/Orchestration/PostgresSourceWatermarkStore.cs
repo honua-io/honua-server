@@ -93,7 +93,7 @@ internal sealed class PostgresSourceWatermarkStore(JobStoreDatabase database) : 
         command.Parameters.AddWithValue("record", NpgsqlDbType.Jsonb,
             JsonSerializer.Serialize(watermark, SourceWatermarkJsonContext.Default.SourceWatermark));
         command.Parameters.AddWithValue("timestamp_ticks", NpgsqlDbType.Bigint,
-            (object?)watermark.AsTimestamp()?.UtcTicks ?? DBNull.Value);
+            watermark.AsTimestamp() is { } timestamp ? timestamp.UtcTicks : DBNull.Value);
         return command;
     }
 
