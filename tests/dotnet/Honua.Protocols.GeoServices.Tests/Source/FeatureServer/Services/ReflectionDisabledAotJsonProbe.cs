@@ -137,7 +137,11 @@ internal static class ReflectionDisabledAotJsonProbe
         };
         var store = new SeededProgressStore(progress);
 
-        var active = await ExecuteAsync(await OperationsProgressEndpoints.HandleListActiveOperations(store));
+        using var services = new ServiceCollection()
+            .AddSingleton<IUniversalProgressStore>(store)
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        var active = await ExecuteAsync(await OperationsProgressEndpoints.HandleListActiveOperations(context));
         var activeOperation = RequireProperty(RequireProperty(active.Body, "operations")[0], "operationId").GetString();
         if (active.Status != StatusCodes.Status200OK || !string.Equals(activeOperation, OperationId, StringComparison.Ordinal))
         {
@@ -145,7 +149,7 @@ internal static class ReflectionDisabledAotJsonProbe
                 $"GET /admin/operations/active returned {active.Status}: {active.Body.GetRawText()}");
         }
 
-        var byType = await ExecuteAsync(await OperationsProgressEndpoints.HandleGetOperationsByType("Upload", store, CancellationToken.None));
+        var byType = await ExecuteAsync(await OperationsProgressEndpoints.HandleGetOperationsByType("Upload", context, CancellationToken.None));
         var typedOperation = RequireProperty(RequireProperty(byType.Body, "operations")[0], "operationId").GetString();
         if (byType.Status != StatusCodes.Status200OK || !string.Equals(typedOperation, OperationId, StringComparison.Ordinal))
         {

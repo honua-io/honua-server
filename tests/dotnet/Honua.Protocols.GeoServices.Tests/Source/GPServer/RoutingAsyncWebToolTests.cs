@@ -21,11 +21,14 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 /// <summary>Exercises routing GP aliases through the real durable worker and canonical provider.</summary>
-// The class fixture keeps the reference-counted PostgreSQL infrastructure alive between cases;
-// each case owns its host, schema, provider, and worker.
+// One host and durable worker serve every case that changes only the routing provider: each case
+// installs its own provider substitute and starts from an empty job substrate. The Development
+// case needs a different environment and provider lifetime, so it owns its host; the PostgreSQL
+// class fixture keeps the reference-counted infrastructure alive for it.
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
-public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
+public sealed class RoutingAsyncWebToolTests
+    : IClassFixture<PostgresFixture>, IClassFixture<RoutingAsyncWebToolTests.RoutingHost>
 {
     private const string ServiceId = WebAppFixture.TestServiceId;
     private const string FirstPoint = """
@@ -35,6 +38,94 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
         {"geometryType":"esriGeometryPoint","spatialReference":{"wkid":4326},"features":[{"geometry":{"x":-121,"y":38},"attributes":{"OBJECTID":17,"Name":"Second","Weight":3}}]}
         """;
     private const string RouteGeometry = """{"type":"LineString","coordinates":[[-122,37],[-121,38]]}""";
+
+    private readonly RoutingHost _routing;
+
+    public RoutingAsyncWebToolTests(RoutingHost routing) => _routing = routing;
+
+    // Started on first use. A case that owns its host stops the shared one first, because a
+    // running shared worker would claim that case's jobs from the common job substrate.
+    public sealed class RoutingHost : IAsyncLifetime
+    {
+        private readonly ForwardingRoutingProvider _provider = new();
+        private WebAppFixture? _application;
+
+        public async Task<WebAppFixture> StartCaseAsync(IRoutingProvider provider)
+        {
+            _provider.Target = provider;
+            if (_application is null)
+            {
+                var application = Fixture(_provider);
+                try
+                {
+                    await NoRedisJobHost.StartAsync(application);
+                }
+                catch
+                {
+                    await application.DisposeAsync();
+                    throw;
+                }
+
+                _application = application;
+                return application;
+            }
+
+            await _application.Postgres.DataSource.ClearJobSubstrateAsync();
+            NoRedisJobHost.AssertJobsRunWithoutRedis(_application);
+            return _application;
+        }
+
+        public async Task StopAsync()
+        {
+            var application = _application;
+            _application = null;
+            if (application is not null)
+            {
+                await application.DisposeAsync();
+            }
+        }
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public Task DisposeAsync() => StopAsync();
+    }
+
+    private sealed class ForwardingRoutingProvider : IRoutingProvider
+    {
+        private IRoutingProvider _target = Provider();
+
+        public IRoutingProvider Target
+        {
+            get => Volatile.Read(ref _target);
+            set => Volatile.Write(ref _target, value);
+        }
+
+        public string Name => Target.Name;
+
+        public RoutingProviderCapabilities Capabilities => Target.Capabilities;
+
+        public Task<RoutingProviderCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
+            => Target.GetCapabilitiesAsync(cancellationToken);
+
+        public Task<RouteSolveResult> SolveRouteAsync(RouteSolveRequest request, CancellationToken cancellationToken = default)
+            => Target.SolveRouteAsync(request, cancellationToken);
+
+        public Task<ServiceAreaSolveResult> SolveServiceAreaAsync(
+            ServiceAreaSolveRequest request, CancellationToken cancellationToken = default)
+            => Target.SolveServiceAreaAsync(request, cancellationToken);
+
+        public Task<ClosestFacilitySolveResult> SolveClosestFacilityAsync(
+            ClosestFacilitySolveRequest request, CancellationToken cancellationToken = default)
+            => Target.SolveClosestFacilityAsync(request, cancellationToken);
+
+        public Task<OdCostMatrixSolveResult> SolveOdCostMatrixAsync(
+            OdCostMatrixSolveRequest request, CancellationToken cancellationToken = default)
+            => Target.SolveOdCostMatrixAsync(request, cancellationToken);
+
+        public Task<LocationAllocationSolveResult> SolveLocationAllocationAsync(
+            LocationAllocationSolveRequest request, CancellationToken cancellationToken = default)
+            => Target.SolveLocationAllocationAsync(request, cancellationToken);
+    }
 
     [IntegrationTheory]
     [InlineData("FindClosestFacilities", "Incidents", "Facilities", "Output_Routes", "IncidentID", "FacilityID", "GPServer")]
@@ -54,8 +145,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
         string task, string first, string second, string resultName, string firstId, string secondId, string family)
     {
         var provider = Provider();
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         client.Timeout = GPServerJobWait.RequestTimeout;
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint }, family);
@@ -107,8 +197,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
     [Endpoint("GET /rest/services/{serviceId}/NAServer/{layerName}")]
     public async Task TaskInfo_PublishesAsyncPointSchemaAndDocumentedOutputs(string task, string points, string output, string units)
     {
-        await using var fixture = Fixture(Provider());
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(Provider());
         using var client = fixture.CreateAdminClient();
         using var response = await client.GetAsync($"/rest/services/{ServiceId}/GPServer/{task}?f=json");
         using var alias = await client.GetAsync($"/rest/services/{ServiceId}/NAServer/{task}?f=json");
@@ -145,8 +234,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
     public async Task SubmitJob_NullAndZeroStockLocationDefaults_UseCanonicalSolve(string task, string first, string second)
     {
         var provider = Provider();
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         var defaults = FirstPoint.Replace("\"Name\":\"First\"", "\"Name\":\"First\",\"FacilityType\":0,\"AdditionalTime\":null,\"AdditionalDistance\":0,\"AdditionalCost\":null,\"CurbApproach\":null,\"Cutoff\":0,\"Capacity\":null,\"TargetFacilityCount\":null,\"TargetDestinationCount\":null", StringComparison.Ordinal);
         var jobId = await SubmitAsync(client, task, new() { [first] = defaults, [second] = SecondPoint });
@@ -164,8 +252,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
     public async Task SubmitJob_AdvertisedTravelModeJson_ReachesCanonicalProviderAsName(string task, string first, string second)
     {
         var provider = Provider();
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         const string mode = """{"name":"driving","id":"stable-profile-id","type":"CAR","impedanceAttributeName":"TravelTime","timeAttributeName":"TravelTime","distanceAttributeName":"Kilometers","restrictionAttributeNames":[],"attributeParameterValues":[],"useHierarchy":false,"uturnAtJunctions":"esriNFSBAllowBacktrack","simplificationTolerance":10,"simplificationToleranceUnits":"esriMeters"}""";
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint, ["Travel_Mode"] = mode });
@@ -194,8 +281,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
     public async Task SubmitJob_UnsupportedTravelModeSettings_FailWithoutSolverOrArtifacts(string task, string first, string second, string mode)
     {
         var provider = Provider();
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint, ["Travel_Mode"] = mode });
         using var terminal = await GPServerJobWait.UntilRestTerminalAsync(client, JobPath(task, jobId), jobId,
@@ -213,8 +299,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
     public async Task SubmitJob_ClosestFacilityReverseDirection_PreservesProviderDirectionAndRouteName()
     {
         var provider = Provider();
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, "FindClosestFacilities", new()
         {
@@ -240,8 +325,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
         string task, string first, string second, string output, string units)
     {
         var provider = Provider();
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         var inputs = new Dictionary<string, string>
         {
@@ -285,8 +369,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
     {
         var provider = Provider();
         provider.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new RoutingProviderCapabilities());
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint });
         using var terminal = await GPServerJobWait.UntilRestTerminalAsync(client, JobPath(task, jobId), jobId,
@@ -309,8 +392,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
     public async Task SubmitJob_UnsupportedLocationAllocationDirection_RejectsBeforeProvider(string direction)
     {
         var provider = Provider();
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -340,8 +422,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
             .Returns(new OdCostMatrixSolveResult([]));
         provider.SolveLocationAllocationAsync(Arg.Any<LocationAllocationSolveRequest>(), Arg.Any<CancellationToken>())
             .Returns(new LocationAllocationSolveResult([], [], 0, 0));
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint });
         using var terminal = await GPServerJobWait.UntilRestSucceededAsync(client, JobPath(task, jobId), jobId,
@@ -368,8 +449,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
             .Returns<Task<OdCostMatrixSolveResult>>(_ => throw new InvalidOperationException("fixture routing failure"));
         provider.SolveLocationAllocationAsync(Arg.Any<LocationAllocationSolveRequest>(), Arg.Any<CancellationToken>())
             .Returns<Task<LocationAllocationSolveResult>>(_ => throw new InvalidOperationException("fixture routing failure"));
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint });
         // The default policy retries after 30 s and 60 s. Retain the original
@@ -396,8 +476,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
     public async Task SubmitJob_ConflictingInputSpatialReferences_RejectsBeforeSolver(string task, string first, string second)
     {
         var provider = Provider();
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -425,8 +504,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
         var provider = Provider();
         provider.SolveLocationAllocationAsync(Arg.Any<LocationAllocationSolveRequest>(), Arg.Any<CancellationToken>())
             .Returns(new LocationAllocationSolveResult([0], [new(0, 0, 3, 2), new(1, -1, 4, double.PositiveInfinity)], 6, 3));
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, "SolveLocationAllocation", new()
         {
@@ -468,8 +546,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
             ? FirstPoint.Replace("\"x\":-122", "\"spatialReference\":" + reference + ",\"x\":-122", StringComparison.Ordinal)
             : FirstPoint.Replace("{\"wkid\":4326}", reference, StringComparison.Ordinal);
         var provider = Provider();
-        await using var fixture = Fixture(provider);
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -492,8 +569,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
     [Endpoint("GET /rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}")]
     public async Task SubmitJob_NaServerGetAlias_UsesTheSameDurableJobAndResults(string task, string first, string second, string output)
     {
-        await using var fixture = Fixture(Provider());
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(Provider());
         using var client = fixture.CreateAdminClient();
         var query = $"f=json&{first}={Uri.EscapeDataString(FirstPoint)}&{second}={Uri.EscapeDataString(SecondPoint)}";
         using var response = await client.GetAsync($"/rest/services/{ServiceId}/NAServer/{task}/submitJob?{query}");
@@ -521,8 +597,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
     [Endpoint("GET /rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}/results/{paramName}")]
     public async Task SubmitJob_NaServerAliases_ExposeDurableStatusAndNamedResults()
     {
-        await using var fixture = Fixture(Provider());
-        await NoRedisJobHost.StartAsync(fixture);
+        var fixture = await _routing.StartCaseAsync(Provider());
         using var client = fixture.CreateAdminClient();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -567,6 +642,7 @@ public sealed class RoutingAsyncWebToolTests : IClassFixture<PostgresFixture>
     public async Task SubmitJob_DevelopmentScopedProvider_ExecutesAndDisposesJobScope(string family)
     {
         var instances = new ConcurrentBag<(IRoutingProvider Provider, RoutingScopeProbe Scope)>();
+        await _routing.StopAsync();
         await using var fixture = Fixture(Provider()).UseEnvironment("Development")
             .ConfigureWebHost(builder =>
             {

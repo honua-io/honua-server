@@ -6,54 +6,9 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces the canonical Module Dependency Policy
-/// (<c>docs/internal/contributor/adr/0047-module-dependency-policy.md</c>): every
-/// <c>&lt;ProjectReference&gt;</c> declared by a runtime csproj must point at a
-/// provider that the consumer's matrix row permits.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The matrix in ADR-0047 is the single source of truth for module placement.
-/// This test parses every <c>.csproj</c> under <c>src/</c>, <c>tests/</c>,
-/// <c>samples/</c>, and <c>benchmarks/</c>, classifies it into one of the
-/// matrix roles by name pattern, and then walks every <c>ProjectReference</c>
-/// to verify the <c>(consumer-role, provider-role)</c> cell is allowed.
-/// </para>
-///
-/// <para>
-/// Unclassified csprojs (samples, benchmarks, tests, the test-kit) fall
-/// through to a default policy that permits any reference. Tooling assemblies
-/// are not part of the runtime topology and are governed by their own
-/// hygiene tests; this test only guards the runtime matrix.
-/// </para>
-///
-/// <para>
-/// Pre-existing matrix violations are tolerated through the
-/// <see cref="_techDebtAllowances"/> ratchet, identical in shape to the
-/// cross-protocol ratchet in <see cref="CrossProtocolIsolationTests"/>: each
-/// entry pins a <c>(consumer-role, provider-role, MaxCount)</c> triple and may
-/// only shrink. When a violation is paid down, decrement the cap (or delete
-/// the entry); the test fails if the cap is loose.
-/// </para>
-///
-/// <para>
-/// <strong>Editing protocol:</strong> the matrix in ADR-0047 and the
-/// <see cref="_allowedCells"/> set in this file must be edited together. A PR
-/// that touches only the test silently drifts from policy; a PR that touches
-/// only the ADR will fail this test. The two artefacts are linked in writing,
-/// in code, and in the diff.
-/// </para>
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class ModuleDependencyPolicyTests
 {
-    /// <summary>
-    /// Canonical module roles from ADR-0047. <see cref="ModuleRole.Unclassified"/>
-    /// is the catch-all for tooling (samples, benchmarks, tests, test-kit). The
-    /// default-policy branch treats <see cref="ModuleRole.Unclassified"/> consumers
-    /// as permitted to reference anything.
-    /// </summary>
     private enum ModuleRole
     {
         Unclassified,
@@ -87,7 +42,6 @@ public sealed class ModuleDependencyPolicyTests
         ServiceDefaults,
         AppHost,
         Worker,
-        Sample,
     }
 
     /// <summary>
@@ -372,10 +326,6 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Worker, ModuleRole.Jobs),
         (ModuleRole.Worker, ModuleRole.Aws),
         (ModuleRole.Worker, ModuleRole.Azure),
-
-        // Server may host a sample/demo app as static content (the StacOpsDemo
-        // Blazor WASM client). Samples never reference back into the runtime.
-        (ModuleRole.Server, ModuleRole.Sample),
     };
 
     /// <summary>
@@ -412,7 +362,7 @@ public sealed class ModuleDependencyPolicyTests
         {
             var consumerRole = ClassifyByCsprojName(Path.GetFileNameWithoutExtension(csprojPath));
 
-            // Unclassified consumers (samples / benchmarks / tests / test-kit)
+            // Unclassified consumers (benchmarks / tests / test-kit)
             // fall through to the default policy: tooling may reference anything.
             if (consumerRole == ModuleRole.Unclassified)
             {
@@ -547,7 +497,7 @@ public sealed class ModuleDependencyPolicyTests
 
     private static IEnumerable<string> EnumerateRuntimeCsprojs(string repositoryRoot)
     {
-        var roots = new[] { "src", "tests", "samples", "benchmarks" };
+        var roots = new[] { "src", "tests", "benchmarks" };
         foreach (var rootPath in roots.Select(root => ArchitectureTestHelpers.CombinePath(repositoryRoot, root)))
         {
             if (!Directory.Exists(rootPath))
@@ -606,8 +556,8 @@ public sealed class ModuleDependencyPolicyTests
         // Honua.Geoprocessing.Cli) are tooling, not runtime topology. They are
         // packaged as local dotnet tools (PackAsTool) and are DELIBERATELY kept
         // out of the AOT-published server surface — nothing in Honua.Server
-        // references them, so the AOT publish never pulls them in. Like tests /
-        // samples / benchmarks, they may reference whatever runtime module they
+        // references them, so the AOT publish never pulls them in. Like tests and
+        // benchmarks, they may reference whatever runtime module they
         // drive (the GP CLI re-uses the real Honua.Geoprocessing + Honua.Worker.Gdal
         // executor set), so they fall through to the default tooling policy
         // rather than the runtime dependency-direction matrix. This guard must
@@ -801,17 +751,7 @@ public sealed class ModuleDependencyPolicyTests
             return ModuleRole.Worker;
         }
 
-        // Hosted sample/demo apps (e.g. the Honua.StacOpsDemo Blazor WASM client
-        // that Server mounts as static assets behind a conditional reference).
-        // Server is the only runtime assembly allowed to reference a sample.
-        if (projectName.EndsWith("Demo", StringComparison.Ordinal) ||
-            projectName.EndsWith(".Sample", StringComparison.Ordinal) ||
-            projectName.EndsWith(".Samples", StringComparison.Ordinal))
-        {
-            return ModuleRole.Sample;
-        }
-
-        // Tooling (tests, samples, benchmarks, test-kit) is unclassified by
+        // Tooling (tests, benchmarks, test-kit) is unclassified by
         // design: the matrix governs the runtime topology, not the tools that
         // exercise it.
         return ModuleRole.Unclassified;
