@@ -66,6 +66,8 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
                 builder.UseSetting("Public:BaseUrl", "http://localhost");
                 // The development bypass would replace the scoped proposer key, which approval revalidates.
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
+                // Without the bypass, the post-restart admin client needs the configured admin key.
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             });
         _fixture.ConfigureServices(services =>
         {
