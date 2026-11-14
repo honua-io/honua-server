@@ -85,10 +85,10 @@ public sealed class AdminOperationLoopbackTlsTests
                 presented is not null && presented.GetCertHashString(HashAlgorithmName.SHA256) == servedHash;
             using var caller = new HttpClient(callerHandler);
 
-            var (pinnedStatus, pinnedBody) = await RequestReplayAsync(caller, address, pinned: true);
+            var (pinnedStatus, pinnedBody) = await RequestReplayAsync(caller, new Uri(address, "/replay-pinned"));
             pinnedStatus.Should().Be(HttpStatusCode.OK);
             pinnedBody.Should().Be("replayed");
-            var (unpinnedStatus, _) = await RequestReplayAsync(caller, address, pinned: false);
+            var (unpinnedStatus, _) = await RequestReplayAsync(caller, new Uri(address, "/replay-unpinned"));
             unpinnedStatus.Should().Be(HttpStatusCode.BadGateway,
                 "without the pin, default validation rejects the server's own untrusted certificate");
         }
@@ -105,19 +105,21 @@ public sealed class AdminOperationLoopbackTlsTests
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(certificate)));
         var app = builder.Build();
         app.MapGet("/target", () => Results.Text("replayed"));
-        app.MapGet("/replay", ReplayToSelfAsync);
+        app.MapGet("/replay-pinned", (Func<HttpContext, Task<IResult>>)(current =>
+            ReplayToSelfAsync(current, AdminOperationLoopbackTls.PinServedCertificate)));
+        app.MapGet("/replay-unpinned", (Func<HttpContext, Task<IResult>>)(current =>
+            ReplayToSelfAsync(current, static (_, _) => { })));
         await app.StartAsync();
         return app;
     }
 
     // Mirrors the executors: replay to 127.0.0.1 on the local port with the original Host header.
-    private static async Task<IResult> ReplayToSelfAsync(HttpContext current, bool pinned)
+    private static async Task<IResult> ReplayToSelfAsync(HttpContext current, Action<HttpRequestMessage, HttpContext> prepare)
     {
         using var message = new HttpRequestMessage(HttpMethod.Get,
             new UriBuilder(Uri.UriSchemeHttps, IPAddress.Loopback.ToString(), current.Connection.LocalPort, "/target").Uri);
         message.Headers.Host = current.Request.Host.Value;
-        if (pinned)
-            AdminOperationLoopbackTls.PinServedCertificate(message, current);
+        prepare(message, current);
         using var handler = AdminOperationLoopbackTls.CreateHandler();
         using var client = new HttpClient(handler);
         try
@@ -131,9 +133,9 @@ public sealed class AdminOperationLoopbackTlsTests
         }
     }
 
-    private static async Task<(HttpStatusCode Status, string Body)> RequestReplayAsync(HttpClient caller, Uri address, bool pinned)
+    private static async Task<(HttpStatusCode Status, string Body)> RequestReplayAsync(HttpClient caller, Uri replay)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(address, $"/replay?pinned={(pinned ? "true" : "false")}"));
+        using var request = new HttpRequestMessage(HttpMethod.Get, replay);
         request.Headers.Host = "honua.example";
         using var response = await caller.SendAsync(request);
         return (response.StatusCode, await response.Content.ReadAsStringAsync());
