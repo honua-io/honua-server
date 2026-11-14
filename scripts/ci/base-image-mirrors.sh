@@ -30,12 +30,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # "<mirror tag>|<repo-relative Dockerfile>|<ARG name>"
 MIRROR_MAP=(
-  "sdk-10.0|Dockerfile|DOTNET_SDK_IMAGE"
-  "aspnet-10.0|Dockerfile|DOTNET_ASPNET_IMAGE"
-  "sdk-10.0-aot|docker/Dockerfile.aot|DOTNET_SDK_IMAGE"
-  "runtime-deps-10.0-aot|docker/Dockerfile.aot|DOTNET_RUNTIME_DEPS_IMAGE"
-  "sdk-10.0-lambda|docker/Dockerfile.lambda.aot|DOTNET_SDK_IMAGE"
-  "runtime-deps-10.0|docker/Dockerfile.lambda.aot|DOTNET_RUNTIME_DEPS_IMAGE"
+  "sdk-11.0|Dockerfile|DOTNET_SDK_IMAGE"
+  "aspnet-11.0|Dockerfile|DOTNET_ASPNET_IMAGE"
+  "sdk-11.0-aot|docker/Dockerfile.aot|DOTNET_SDK_IMAGE"
+  "runtime-deps-11.0-aot|docker/Dockerfile.aot|DOTNET_RUNTIME_DEPS_IMAGE"
+  "sdk-11.0-lambda|docker/Dockerfile.lambda.aot|DOTNET_SDK_IMAGE"
+  "runtime-deps-11.0|docker/Dockerfile.lambda.aot|DOTNET_RUNTIME_DEPS_IMAGE"
   "lambda-adapter-0.9.1|docker/Dockerfile.lambda.aot|LAMBDA_ADAPTER_IMAGE"
 )
 
