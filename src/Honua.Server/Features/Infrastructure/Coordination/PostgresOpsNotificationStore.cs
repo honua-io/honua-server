@@ -165,9 +165,13 @@ internal sealed class PostgresOpsNotificationStore(
             {
                 schedules.Add(new()
                 {
-                    Source = reader.GetString(0), SubjectId = reader.GetString(1), EpisodeId = reader.GetGuid(2),
-                    FirstSeenAt = reader.GetFieldValue<DateTimeOffset>(3), Severity = (OpsFindingSeverity)reader.GetInt32(4),
-                    NoticeNumber = reader.GetInt32(5), Revision = reader.GetInt64(6)
+                    Source = reader.GetString(0),
+                    SubjectId = reader.GetString(1),
+                    EpisodeId = reader.GetGuid(2),
+                    FirstSeenAt = reader.GetFieldValue<DateTimeOffset>(3),
+                    Severity = (OpsFindingSeverity)reader.GetInt32(4),
+                    NoticeNumber = reader.GetInt32(5),
+                    Revision = reader.GetInt64(6)
                 });
             }
             return schedules;

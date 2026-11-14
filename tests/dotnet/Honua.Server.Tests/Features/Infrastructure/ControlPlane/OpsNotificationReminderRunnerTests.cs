@@ -65,16 +65,21 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(new[] { Finding(clock.GetUtcNow(), OpsFindingSeverity.Warning) });
         var proposal = new OperationProposal
         {
-            ProposalId = Guid.NewGuid().ToString("N"), TenantId = "public", Kind = OperationClass.AdminConfigChange,
-            Status = OperationProposalStatus.AwaitingApproval, RequestedBy = "requester",
+            ProposalId = Guid.NewGuid().ToString("N"),
+            TenantId = "public",
+            Kind = OperationClass.AdminConfigChange,
+            Status = OperationProposalStatus.AwaitingApproval,
+            RequestedBy = "requester",
             Plan = new OperationProposalPlan { Summary = "Approval required", RiskLevel = ProposalRiskLevel.Medium },
-            CreatedAt = clock.GetUtcNow().AddHours(-25), UpdatedAt = clock.GetUtcNow().AddHours(-25)
+            CreatedAt = clock.GetUtcNow().AddHours(-25),
+            UpdatedAt = clock.GetUtcNow().AddHours(-25)
         };
         await harness.CreateProposalStore().TryCreateAsync(proposal);
         var outbox = Substitute.For<IAlertOutboxWriter>();
         var notifications = CreateNotifications(outbox, new AlertOptions
         {
-            Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
+            Enabled = true,
+            Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
         });
         var runner = new OpsNotificationReminderRunner(harness.CreateNotificationStore(), findings,
             harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>());
@@ -98,10 +103,14 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
         var proposal = new OperationProposal
         {
-            ProposalId = Guid.NewGuid().ToString("N"), TenantId = "public", Kind = OperationClass.AdminConfigChange,
-            Status = OperationProposalStatus.AwaitingApproval, RequestedBy = "requester",
+            ProposalId = Guid.NewGuid().ToString("N"),
+            TenantId = "public",
+            Kind = OperationClass.AdminConfigChange,
+            Status = OperationProposalStatus.AwaitingApproval,
+            RequestedBy = "requester",
             Plan = new OperationProposalPlan { Summary = "Approval required", RiskLevel = ProposalRiskLevel.Medium },
-            CreatedAt = clock.Now.AddHours(-25), UpdatedAt = clock.Now.AddHours(-25)
+            CreatedAt = clock.Now.AddHours(-25),
+            UpdatedAt = clock.Now.AddHours(-25)
         };
         await harness.CreateProposalStore().TryCreateAsync(proposal);
         await harness.ExecuteAsync($"UPDATE {harness.Table("operation_proposals")} SET expires_at = now() - interval '1 second'");
@@ -134,7 +143,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var outbox = Substitute.For<IAlertOutboxWriter>();
         var notifications = CreateNotifications(outbox, new AlertOptions
         {
-            Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
+            Enabled = true,
+            Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
         });
         await new OpsNotificationReminderRunner(harness.CreateNotificationStore(), findings,
             harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>()).RunAsync(CancellationToken.None);
@@ -153,7 +163,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var outbox = Substitute.For<IAlertOutboxWriter>();
         var notifications = CreateNotifications(outbox, new AlertOptions
         {
-            Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
+            Enabled = true,
+            Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
         });
         var committed = new HashSet<string>(StringComparer.Ordinal);
         var crash = true;
@@ -186,7 +197,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));
         var clock = new ReminderClock(DateTimeOffset.UtcNow);
         var values = Enumerable.Range(0, 100).Select(index => Finding(clock.Now, OpsFindingSeverity.Warning)
-            with { Id = $"warning-{index:D3}" }).ToList();
+            with
+        { Id = $"warning-{index:D3}" }).ToList();
         var store = harness.CreateNotificationStore();
         foreach (var finding in values)
         {
@@ -198,7 +210,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var outbox = Substitute.For<IAlertOutboxWriter>();
         var notifications = CreateNotifications(outbox, new AlertOptions
         {
-            Enabled = true, Ops = new AlertOpsOptions
+            Enabled = true,
+            Ops = new AlertOpsOptions
             { Enabled = true, Channels = ["webhook"], MinSeverity = AlertSeverity.Critical }
         });
         OpsNotificationReminderRunner Runner() => new(harness.CreateNotificationStore(), findings,
@@ -221,15 +234,20 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
         await harness.CreateProposalStore().TryCreateAsync(new OperationProposal
         {
-            ProposalId = Guid.NewGuid().ToString("N"), TenantId = "public", Kind = OperationClass.AdminConfigChange,
-            Status = OperationProposalStatus.AwaitingApproval, RequestedBy = "requester",
+            ProposalId = Guid.NewGuid().ToString("N"),
+            TenantId = "public",
+            Kind = OperationClass.AdminConfigChange,
+            Status = OperationProposalStatus.AwaitingApproval,
+            RequestedBy = "requester",
             Plan = new OperationProposalPlan { Summary = "Critical approval", RiskLevel = ProposalRiskLevel.High },
-            CreatedAt = clock.Now.AddMinutes(-2), UpdatedAt = clock.Now.AddMinutes(-2)
+            CreatedAt = clock.Now.AddMinutes(-2),
+            UpdatedAt = clock.Now.AddMinutes(-2)
         });
         var outbox = Substitute.For<IAlertOutboxWriter>();
         var notifications = CreateNotifications(outbox, new AlertOptions
         {
-            Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
+            Enabled = true,
+            Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
         });
         await new OpsNotificationReminderRunner(harness.CreateNotificationStore(), findings,
             harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>()).RunAsync(CancellationToken.None);
@@ -255,7 +273,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var outbox = Substitute.For<IAlertOutboxWriter>();
         var notifications = CreateNotifications(outbox, new AlertOptions
         {
-            Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
+            Enabled = true,
+            Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
         });
         await new OpsNotificationReminderRunner(harness.CreateNotificationStore(), findings,
             harness.CreateProposalStore(), notifications, clock, health).RunAsync(CancellationToken.None);
@@ -296,7 +315,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
         findings.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(new OpsFindingsEvaluation
         {
-            EvaluatedAt = clock.Now, Findings = [],
+            EvaluatedAt = clock.Now,
+            Findings = [],
             Posture = EvidencePostureFactory.Build(clock.Now, [EvidencePostureFactory.Unavailable(
                 EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
                 EvidencePostureVocabulary.BackendKinds.DurableStore, "workflow-store",
@@ -334,7 +354,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var findings = CreateFindings();
         findings.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(new OpsFindingsEvaluation
         {
-            EvaluatedAt = clock.Now, Findings = [finding],
+            EvaluatedAt = clock.Now,
+            Findings = [finding],
             Posture = EvidencePostureFactory.Build(clock.Now, [EvidencePostureFactory.Unavailable(
                 EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
                 EvidencePostureVocabulary.BackendKinds.DurableStore, "workflow-store",
@@ -343,7 +364,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var outbox = Substitute.For<IAlertOutboxWriter>();
         var notifications = CreateNotifications(outbox, new AlertOptions
         {
-            Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
+            Enabled = true,
+            Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
         });
         OpsNotificationReminderRunner Runner() => new(store, findings, harness.CreateProposalStore(),
             notifications, clock, Substitute.For<IAlertDispatchHealth>());
@@ -379,8 +401,14 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
 
     private static OpsFinding Finding(DateTimeOffset now, OpsFindingSeverity severity) => new()
     {
-        Id = "finding-1", Rule = "test-rule", Severity = severity, Title = "Finding",
-        Explanation = "Needs operator attention", DetectedAt = now, Subject = new OpsFindingSubject(), EvidenceRefs = []
+        Id = "finding-1",
+        Rule = "test-rule",
+        Severity = severity,
+        Title = "Finding",
+        Explanation = "Needs operator attention",
+        DetectedAt = now,
+        Subject = new OpsFindingSubject(),
+        EvidenceRefs = []
     };
 
     private static OpsNotificationService CreateNotifications(IAlertOutboxWriter outbox, AlertOptions options)

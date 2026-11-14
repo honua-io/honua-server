@@ -88,8 +88,11 @@ public sealed class PostgresOperationProposalStoreTests(DatabaseFixtureAdapter d
         })).Should().BeTrue();
         var stored = (await store.GetAsync(proposal.ProposalId))!;
         stored.ApprovalExpiresAt.Should().BeCloseTo(proposal.ApprovalExpiresAt!.Value, TimeSpan.FromMilliseconds(1));
-        (await store.TrySetAsync(stored with { Status = OperationProposalStatus.Executing,
-            ApprovalExpiresAt = DateTimeOffset.UtcNow.AddDays(1) })).Should().BeFalse();
+        (await store.TrySetAsync(stored with
+        {
+            Status = OperationProposalStatus.Executing,
+            ApprovalExpiresAt = DateTimeOffset.UtcNow.AddDays(1)
+        })).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -123,7 +126,9 @@ public sealed class PostgresOperationProposalStoreTests(DatabaseFixtureAdapter d
                 Plan = new OperationProposalPlan { RiskLevel = risk },
                 AutonomyMetadata = new OperationProposalAutonomyMetadata
                 {
-                    FindingId = "finding", Rule = "rule", Severity = severity
+                    FindingId = "finding",
+                    Rule = "rule",
+                    Severity = severity
                 }
             };
             await store.TryCreateAsync(proposal);

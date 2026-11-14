@@ -103,8 +103,13 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
         await harness.CreateProposalStore().TryCreateAsync(proposal);
         await harness.CreateInstanceStore().TryCreateAsync(new OperationHandle
         {
-            OperationInstanceId = instanceId, OperationId = "admin.test.operation", ProposalId = proposal.ProposalId,
-            Status = OperationHandleStatus.RequiresApproval, CorrelationId = "correlation", CreatedAt = now, UpdatedAt = now
+            OperationInstanceId = instanceId,
+            OperationId = "admin.test.operation",
+            ProposalId = proposal.ProposalId,
+            Status = OperationHandleStatus.RequiresApproval,
+            CorrelationId = "correlation",
+            CreatedAt = now,
+            UpdatedAt = now
         });
         await harness.ExecuteAsync($"UPDATE {harness.Table("operation_proposals")} SET expires_at = now() - interval '1 second'");
         await harness.ExecuteAsync($"UPDATE {harness.Table("operation_instances")} SET expires_at = now() - interval '1 second'");
