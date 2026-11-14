@@ -39,6 +39,25 @@ public sealed class PostgresWorkflowDefinitionStoreTests
     }
 
     [IntegrationTest]
+    public async Task ListEventTriggeredAsync_DisabledDefinition_IsExcludedUntilEnabled()
+    {
+        await using var host = CreateHost();
+        await host.InitializeAsync();
+        var store = host.GetService<IWorkflowDefinitionStore>();
+        var definition = Definition() with
+        {
+            Trigger = new WorkflowTrigger { Kind = WorkflowTriggerKind.ChangeFeed, Enabled = false }
+        };
+        await store.SetAsync(definition);
+        (await store.ListEventTriggeredAsync()).Should().NotContain(item => item.WorkflowId == definition.WorkflowId);
+
+        var enabled = definition with { Trigger = definition.Trigger with { Enabled = true } };
+        await store.SetAsync(enabled);
+        (await store.ListEventTriggeredAsync()).Should().Contain(item => item.WorkflowId == definition.WorkflowId);
+        (await store.GetAsync(definition.WorkflowId)).Should().BeEquivalentTo(enabled);
+    }
+
+    [IntegrationTest]
     public async Task GetScheduleCursorAsync_LateCompletion_PreservesNewerPendingOccurrence()
     {
         await using var host = CreateHost();
