@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
+using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -64,9 +65,13 @@ public sealed partial class AdminDiscoveryMetadataEndpointsTests
     private static async Task ClearDescriptiveFieldsAsync(HttpClient client, string path,
         Dictionary<string, object?> fields)
     {
-        foreach (var field in fields.Keys.Where(key => key != "etag").ToArray())
-            fields[field] = field is "themes" or "links" ? Array.Empty<object>() : null;
-        using var clear = new StringContent(JsonSerializer.Serialize(fields), Encoding.UTF8, "application/json");
+        var request = new DiscoveryMetadataUpdateRequest
+        {
+            Etag = (string)fields["etag"]!, Themes = [], Links = [], Language = null,
+            License = null, Attribution = null, Publisher = null, ContactPoint = null
+        };
+        using var clear = new StringContent(JsonSerializer.Serialize(request,
+            DiscoveryMetadataJsonContext.Default.DiscoveryMetadataUpdateRequest), Encoding.UTF8, "application/json");
         (await client.PutAsync(path, clear)).StatusCode.Should().Be(HttpStatusCode.OK);
         using var cleared = JsonDocument.Parse(await client.GetStringAsync(path));
         var data = cleared.RootElement.GetProperty("data");

@@ -7,6 +7,7 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
 
+[JsonConverter(typeof(DiscoveryMetadataUpdateRequestJsonConverter))]
 public sealed record DiscoveryMetadataUpdateRequest
 {
     public required string Etag { get; init; }
@@ -17,7 +18,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private string[]? _themes;
     internal bool HasThemes { get; private set; }
 
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[]? Themes
     {
         get => _themes;
@@ -31,7 +31,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private string? _language;
     internal bool HasLanguage { get; private set; }
 
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Language
     {
         get => _language;
@@ -45,7 +44,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private string? _license;
     internal bool HasLicense { get; private set; }
 
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? License
     {
         get => _license;
@@ -59,7 +57,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private string? _attribution;
     internal bool HasAttribution { get; private set; }
 
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Attribution
     {
         get => _attribution;
@@ -73,7 +70,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private string? _publisher;
     internal bool HasPublisher { get; private set; }
 
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Publisher
     {
         get => _publisher;
@@ -87,7 +83,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private MetadataV2ContactPoint? _contactPoint;
     internal bool HasContactPoint { get; private set; }
 
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public MetadataV2ContactPoint? ContactPoint
     {
         get => _contactPoint;
@@ -101,7 +96,6 @@ public sealed record DiscoveryMetadataUpdateRequest
     private MetadataV2Link[]? _links;
     internal bool HasLinks { get; private set; }
 
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public MetadataV2Link[]? Links
     {
         get => _links;
@@ -134,5 +128,8 @@ public sealed record DiscoveryPublicationImpact(string PublicationId, string Ser
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(DiscoveryMetadataUpdateRequest))]
+[JsonSerializable(typeof(string[]))]
+[JsonSerializable(typeof(MetadataV2ContactPoint))]
+[JsonSerializable(typeof(MetadataV2Link[]))]
 [JsonSerializable(typeof(ApiResponse<DiscoveryMetadataResponse>))]
 public sealed partial class DiscoveryMetadataJsonContext : JsonSerializerContext;
