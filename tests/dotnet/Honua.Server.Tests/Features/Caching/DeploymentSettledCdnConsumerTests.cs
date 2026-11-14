@@ -148,8 +148,8 @@ public sealed partial class DeploymentSettledCdnConsumerTests(DatabaseFixtureAda
                 ready with { Deployments = [] },
                 ready with { Deployments = [ready.Deployments[0] with { DeploymentId = "not-yet-visible" }] },
                 ready with { Deployments = [ready.Deployments[0] with { RolloutState = "IN_PROGRESS" }] },
-                ready with { Deployments = [ready.Deployments[0] with { TaskDefinitionArn = " " }] },
-                ready with { Deployments = [ready.Deployments[0] with { TaskDefinitionArn = null }] } };
+                ready with { TaskDefinitionArn = " ", Deployments = [ready.Deployments[0] with { TaskDefinitionArn = " " }] },
+                ready with { TaskDefinitionArn = null, Deployments = [ready.Deployments[0] with { TaskDefinitionArn = null }] } };
             var cdn = Cdn(CdnInvalidationOutcome.Submitted);
             foreach (var state in states)
             {

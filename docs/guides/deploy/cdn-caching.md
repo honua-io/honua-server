@@ -156,6 +156,12 @@ Events for an explicitly superseded deployment do not trigger a purge, nor does
 a late event for a deployment ECS no longer lists once the current primary's
 own purge is recorded.
 
+Only completed deployments trigger this purge. When the ECS deployment circuit
+breaker rolls a failed deployment back, no second purge runs: responses cached
+from the failed tasks stay until their cache lifetime ends, and late events for
+older deployments of that service retry until the next completed deployment is
+recorded or the queue dead-letters them.
+
 PostgreSQL coordinates consumers across tasks and records a successful purge in
 `cdn_deployment_purges`. A task that finds another task already handling the
 same service returns the event to the queue instead of waiting for it. Repeated deliveries of that deployment do not purge

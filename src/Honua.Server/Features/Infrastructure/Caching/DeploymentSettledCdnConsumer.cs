@@ -76,6 +76,8 @@ internal sealed partial class DeploymentSettledCdnConsumer(
 
             // A late event for a deployment ECS no longer lists is covered once the current primary's
             // own completion purge is recorded; until then it may be a new deployment not yet visible.
+            // A new deployment is listed as PRIMARY from creation, minutes before its completion event,
+            // so a completed event whose deployment is unlisted behind a recorded primary is a late one.
             if (primary.DeploymentId is { Length: > 0 } current &&
                 await IsRecordedAsync(connection, transaction, deployment, current, token).ConfigureAwait(false))
             {
