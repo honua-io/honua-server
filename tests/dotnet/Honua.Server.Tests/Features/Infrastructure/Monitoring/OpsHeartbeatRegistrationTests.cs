@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpsHeartbeatRegistrationTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData(" ")]
@@ -29,7 +29,7 @@ public sealed class OpsHeartbeatRegistrationTests
         services.Should().NotContain(d => d.ServiceType == typeof(IHostedService));
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("1invalid")]
     [InlineData("stack/name")]
     [Operation(Operations.TestInfrastructure)]

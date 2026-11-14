@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpsHeartbeatPublisherTests
 {
-    [Fact]
+    [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task PublishAsync_HealthyService_SendsOnlyTheStackHeartbeatMetric()
     {
