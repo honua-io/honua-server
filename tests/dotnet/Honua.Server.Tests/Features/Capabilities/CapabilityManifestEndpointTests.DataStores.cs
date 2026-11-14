@@ -40,7 +40,7 @@ public sealed partial class CapabilityManifestEndpointTests
             .Should().Equal(expected);
         stores.GetProperty("fullImageTagSuffix").GetString().Should().Be("-full");
         stores.GetProperty("documentationHref").GetString().Should().Be(
-            "https://github.com/honua-io/honua-server/blob/trunk/docs/ops/nightly-images.md#data-store-variants");
+            "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/operate/nightly-images.md#data-store-variants");
     }
 
     [IntegrationTest]

@@ -143,6 +143,34 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         return (await ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false)).HasValue;
     }
 
+    public async ValueTask<CoordinateSystemSearchResult> SearchAsync(
+        string query, int limit, CancellationToken cancellationToken = default)
+    {
+        var search = CoordinateSystemSearchQuery.Parse(query, limit);
+        var exactCode = search.ExactCode;
+        query = search.Text;
+        const string sql = """
+            SELECT srid, srtext
+            FROM public.spatial_ref_sys
+            WHERE upper(auth_name) = 'EPSG' AND auth_srid = srid AND srid > 0 AND srtext IS NOT NULL
+              AND (srid = @code OR strpos(lower(split_part(srtext, '"', 2)), lower(@query)) > 0)
+            ORDER BY (srid = @code) DESC, split_part(srtext, '"', 2) COLLATE "C", srid
+            LIMIT @limit
+            """;
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("code", exactCode);
+        command.Parameters.AddWithValue("query", query);
+        command.Parameters.AddWithValue("limit", limit + 1);
+        var items = new List<CoordinateSystemEntry>(limit + 1);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (CoordinateSystemEntry.FromWkt(reader.GetInt32(0), reader.GetString(1)) is { } entry) items.Add(entry);
+        }
+        return new CoordinateSystemSearchResult { Items = items.Take(limit).ToArray(), HasMore = items.Count > limit };
+    }
+
     private static bool IsCacheExpired(CrsCacheEntry entry, DateTimeOffset now)
     {
         return now - entry.CreatedAt > _cacheRetention;

@@ -10,9 +10,7 @@ internal static class OperatorJourneyApproval
     public static bool IsDirectExecute(string operationId) => operationId is
         "admin.connections.create" or
         "admin.import.upload-url" or
-        "admin.import.upload-object" or
-        "admin.layer.publish" or
-        "admin.services.access-policy.set";
+        "admin.import.upload-object";
 
     public static OperationApprovalModel ForMutation(string operationId, bool mutating) =>
         mutating && !IsDirectExecute(operationId)

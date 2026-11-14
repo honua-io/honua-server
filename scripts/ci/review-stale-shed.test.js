@@ -102,13 +102,13 @@ const runShed = async (script, { payload = {}, env = {}, pull, associated = [] }
 const OPEN_PR = { number: 42, state: 'open', head: { sha: 'a'.repeat(40) } };
 const MERGED_PR = { number: 42, state: 'closed', head: { sha: 'a'.repeat(40) } };
 
-test('review-gate sheds a workflow_run whose subject head has moved', async () => {
+test('late old-head workflow_run still reconciles the current head after cancelling its resolver', async () => {
   const result = await runShed(GATE_SHED, {
     payload: { workflow_run: { head_sha: 'b'.repeat(40), pull_requests: [{ number: 42 }] } },
     pull: OPEN_PR,
   });
-  assert.equal(result.superseded, true);
-  assert.match(result.notices.join('\n'), /superseded: event subject b{40} is not current head a{40}/);
+  assert.equal(result.superseded, false);
+  assert.equal(result.failure, null);
 });
 
 test('review-gate admits a workflow_run that is still the current head', async () => {
@@ -168,7 +168,7 @@ test('review-gate sheds neutrally: a job summary line and no failure', async () 
   // must never turn a superseded event into a red run.
   const result = await runShed(GATE_SHED, {
     payload: { pull_request: { number: 42, head: { sha: 'b'.repeat(40) } } },
-    pull: OPEN_PR,
+    pull: MERGED_PR,
   });
   assert.equal(result.failure, null, 'the review-gate shed must not fail the run');
   assert.equal(result.summaryLines.length, 1);
@@ -211,15 +211,34 @@ test('the bridge admits a live review on the current head', async () => {
   assert.equal(result.failure, null);
 });
 
-test('review helpers and trusted attestation serialize without cancelling queued runs', () => {
+test('review helpers cancel superseded events per PR and skip draft payloads', () => {
   const gate = fs.readFileSync(path.join(WORKFLOWS, 'review-gate.yml'), 'utf8');
   const bridge = fs.readFileSync(path.join(WORKFLOWS, 'review-event-bridge.yml'), 'utf8');
-  // Superseded work reaches its neutral staleness check after queueing.
-  assert.match(gate, /group: review-resolve-pr-\$\{\{[\s\S]*?\n\s*cancel-in-progress: false\n\s*queue: max/);
-  assert.match(bridge, /group: review-event-bridge-pr-\$\{\{[^\n]*\n\s*cancel-in-progress: false\n\s*queue: max/);
-  // The trusted attestation must stay serialized and uncancellable: it is
-  // interrupted between accepting a rerun and recording the result otherwise.
-  assert.match(gate, /group: review-gate-\$\{\{ needs\.resolve\.outputs\.pr \}\}[\s\S]*?\n\s*cancel-in-progress: false/);
+  assert.match(gate, /group: review-resolve-pr-\$\{\{[^\n]*\n\s*cancel-in-progress: true/);
+  assert.match(bridge, /group: review-event-bridge-pr-\$\{\{[^\n]*\n\s*cancel-in-progress: true/);
+  assert.match(gate, /group: review-gate-\$\{\{ needs\.resolve\.outputs\.pr \}\}[^\n]*[\s\S]*?\n\s*cancel-in-progress: true/);
+  assert.doesNotMatch(gate + bridge, /queue: max/);
+  assert.match(gate, /!github\.event\.pull_request \|\| !github\.event\.pull_request\.draft/);
+  assert.match(bridge, /if: .*&& !github\.event\.pull_request\.draft/);
+  // CodeQL already implements the same admission policy, including ready events.
+  const codeql = fs.readFileSync(path.join(WORKFLOWS, 'codeql.yml'), 'utf8');
+  assert.match(codeql, /types: \[.*ready_for_review.*\]/);
+  assert.match(codeql, /group: codeql-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n\s*cancel-in-progress: true/);
+  assert.match(codeql, /github\.event_name != 'pull_request' \|\| !github\.event\.pull_request\.draft/);
+});
+
+test('review helpers shed live drafts even for payloads without a draft flag', async () => {
+  for (const [script, payload, env] of [
+    [BRIDGE_SHED, { pull_request: { number: 42 }, review: { commit_id: 'a'.repeat(40) } }, {}],
+    [ATTEST_SHED, {}, { PR: '42' }],
+  ]) {
+    const result = await runShed(script, {
+      payload, env, pull: { ...OPEN_PR, draft: true }, associated: [OPEN_PR],
+    });
+    assert.equal(result.superseded, true);
+    assert.equal(result.failure, null);
+    assert.match(result.notices.join('\n'), /PR #42 is a draft/);
+  }
 });
 
 // -- The second staleness window: `attest` queues, and the subject moves. ----
@@ -508,4 +527,64 @@ test('normalization consumer requires both jobs skipped for job-level draft admi
   await assert.rejects(runNormalizationHandoff({
     generatorConclusion: 'failure', skipped: false,
   }), /Expected one non-expired/);
+});
+
+// A draft transition must enter the same publication concurrency group as the
+// running attestation before it can return without publishing a status.
+test('draft conversion and later comments cancel active attestation before shedding the live draft', async () => {
+  const gate = fs.readFileSync(path.join(WORKFLOWS, 'review-gate.yml'), 'utf8');
+  assert.match(gate, /!github\.event\.pull_request\.draft \|\| github\.event\.action == 'converted_to_draft'/);
+  for (const payload of [
+    { action: 'converted_to_draft', pull_request: { number: 42, draft: true } },
+    { issue: { number: 42 } },
+    { workflow_run: { head_sha: 'b'.repeat(40), pull_requests: [{ number: 42 }] } },
+  ]) {
+    const pull = { ...OPEN_PR, draft: true };
+    const resolved = await runShed(GATE_SHED, { payload, pull });
+    assert.equal(resolved.superseded, false, 'must reach the shared attest cancellation group');
+    const attested = await runShed(ATTEST_SHED, { payload, pull, env: { PR: '42' } });
+    assert.equal(attested.superseded, true, 'must stop before checkout or publication');
+    assert.equal(attested.failure, null);
+  }
+});
+
+
+test('unresolved fork completions cannot cancel a resolver for another run', async () => {
+  const gate = fs.readFileSync(path.join(WORKFLOWS, 'review-gate.yml'), 'utf8');
+  const expression = /group: review-resolve-pr-\$\{\{ (.*?) \}\}/.exec(gate)[1];
+  const payload = {
+    workflow_run: {
+      head_sha: 'b'.repeat(40), pull_requests: [],
+      head_repository: { full_name: 'contributor/fork' }, head_branch: 'feature',
+    },
+  };
+  // GitHub expressions treat missing properties as empty, falsy values.
+  const optionalExpression = expression.replaceAll('.', '?.').replaceAll('[0]', '?.[0]');
+  const group = (event, run) => vm.runInNewContext(optionalExpression, {
+    github: { event, event_name: 'workflow_run', run_id: run },
+  });
+  const current = {
+    workflow_run: { ...payload.workflow_run, head_sha: OPEN_PR.head.sha },
+  };
+  assert.notEqual(group(payload, 101), group(current, 100));
+  // Even the same commit can have a missing/ambiguous association on a later event.
+  assert.notEqual(group(current, 102), group(current, 100));
+  assert.notEqual(group(payload, 101), group({
+    workflow_run: { ...current.workflow_run, pull_requests: [{ number: 42 }] },
+  }, 100));
+  assert.equal(group({ pull_request: { number: 42 } }, 100),
+    group({ workflow_run: { ...current.workflow_run, pull_requests: [{ number: 42 }] } }, 101));
+  for (const associated of [[], [OPEN_PR, { ...OPEN_PR, number: 43 }]]) {
+    const shed = await runShed(GATE_SHED, { payload, associated });
+    assert.equal(shed.superseded, false);
+    const target = extractStepScript('review-gate.yml', 'Resolve every event to one pull request');
+    const result = await vm.runInNewContext(`(async () => {${target}})()`, {
+      context: { payload, repo: { owner: 'honua-io', repo: 'honua-server' } },
+      github: { rest: { repos: {
+        listPullRequestsAssociatedWithCommit: async () => ({ data: associated }),
+      } } },
+      core: { notice() {} },
+    });
+    assert.equal(result, '');
+  }
 });

@@ -4,11 +4,14 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Honua.Core.Features.Scene.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -54,6 +57,23 @@ public class SceneGenerationEndpointsTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/generate")]
+    public async Task Generate_AgentAdministrator_RequiresHumanAndLeavesSceneAbsent()
+    {
+        var sceneId = $"agent-generation-{Guid.NewGuid():N}";
+        var key = await _fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "scene-generation-agent", ["admin", "agent"], null, "test", CancellationToken.None);
+        using var agent = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", key.Key));
+
+        using var response = await agent.PostAsJsonAsync("/api/v1/admin/scenes/generate",
+            new GenerateSceneRequest { LayerId = int.MaxValue, SceneId = sceneId }, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("ask one to make this change in Console", await response.Content.ReadAsStringAsync());
+        Assert.Null(await _fixture.Services.GetRequiredService<ISceneDatasetRegistry>().FindAsync(sceneId));
+    }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/scenes/generate")]

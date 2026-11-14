@@ -43,7 +43,7 @@ compiler, or a registry credential.
 
 The default serving image includes only the PostGIS data store and retains file-format
 import and export support. Keep the install's default image for PostGIS. Additional
-stores require the [full JIT image variant](../../ops/nightly-images.md#data-store-variants).
+stores require the [full JIT image variant](../operate/nightly-images.md#data-store-variants).
 
 ## Hardened evaluation install from the shipped Compose file
 
@@ -217,11 +217,13 @@ system database (`ConnectionStrings__DefaultConnection`) also holds the governed
 control plane and durable jobs: operation proposals and approvals, operation
 records, geoprocessing jobs and their queue, imports, and tile and export jobs.
 
-Redis is optional. Publishing a workflow package to a Schedule target still
-needs it: the durable workflow definition store is composed only with a Redis
-connection (`ConnectionStrings__Redis`). Without one, the publication is refused with a typed
-`dependency-unavailable` receipt naming `workflow-definition-store`, and no
-publication record is written. Publish to another target, or configure Redis.
+Redis is optional. Workflow definitions, runs, schedule claims and trigger
+cursors live in the system database, so publishing a workflow package to a
+Schedule target needs the PostGIS data source (`DataSource__Provider=postgis`,
+the default) with `ConnectionStrings__DefaultConnection`. Without it, the
+publication is refused with a typed `dependency-unavailable` receipt naming
+`workflow-definition-store`, and no publication record is written. Publish to
+another target, or configure the system database.
 
 A host started without a system database still serves every protocol, and the
 admin REST API and Console still connect sources, publish layers, configure
@@ -239,7 +241,8 @@ services, style and render. It refuses the following with a typed
 Two operations still execute directly on such a host: publishing a service
 (`service.publish`) and applying a style preset to a published layer
 (`style.apply-preset`). When `Operations:Policy` allows the caller (an `admin`
-or `scoped-admin-key` role, such as an `admin:write` API key),
+or `scoped-admin-key` role, such as an `admin:write` API key, and not an agent:
+an agent's publish files a proposal, which needs the system database),
 `honua_publish_service`, `honua_apply_style_preset` and
 `POST /api/v1/operations/{service.publish|style.apply-preset}/submit` make the
 change and return the usual handle: `operationId`, `operationInstanceId`,

@@ -306,6 +306,10 @@ internal static class ServiceCollectionExtensions
             new PostgresOpsHealthRollupStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
+        services.AddScoped<IOpsExternalEventStore>(serviceProvider =>
+            new PostgresOpsExternalEventStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
         services.AddScoped<IOpsAutonomyPolicyStore>(serviceProvider =>
             new PostgresOpsAutonomyPolicyStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
@@ -411,10 +415,14 @@ internal static class ServiceCollectionExtensions
             return new CachingMetadataV2GraphProvider(
                 store,
                 cache,
-                metadataEnvironment,
-                serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-                static loadScope => loadScope.GetRequiredService<IMetadataV2GraphStore>(),
-                revisionProbe);
+                new MetadataV2GraphCacheConfiguration
+                {
+                    Environment = metadataEnvironment,
+                    LoadScopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    ResolveLoader = static loadScope => loadScope.GetRequiredService<IMetadataV2GraphStore>(),
+                    RevisionProbe = revisionProbe,
+                    GenerationSource = serviceProvider.GetService<IConfigurationGenerationSource>()
+                });
         });
         // Legacy V1 catalog -> Metadata v2 graph projector (honua-server#2081). Lets compat
         // seeding paths (cloud-demo reset/startup) project freshly-seeded legacy services

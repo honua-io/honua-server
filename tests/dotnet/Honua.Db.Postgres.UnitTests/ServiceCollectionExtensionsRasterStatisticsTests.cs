@@ -18,11 +18,11 @@ public sealed class ServiceCollectionExtensionsRasterStatisticsTests
     [InlineData(1, 1)]
     [InlineData(1024, 1024)]
     [InlineData(PostgresRasterStatisticsOptions.MaximumDenseSampleSlots, PostgresRasterStatisticsOptions.MaximumDenseSampleSlots)]
-    public void RasterStatistics_ValidBudget_StartsWithConfiguredValue(int? configured, int expected)
+    public async Task RasterStatistics_ValidBudget_StartsWithConfiguredValue(int? configured, int expected)
     {
         using var provider = CreateProvider(configured);
 
-        provider.GetRequiredService<IStartupValidator>().Validate();
+        await provider.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(CancellationToken.None);
 
         provider.GetRequiredService<IOptions<PostgresRasterStatisticsOptions>>().Value
             .MaxDenseSampleSlots.Should().Be(expected);
@@ -33,13 +33,13 @@ public sealed class ServiceCollectionExtensionsRasterStatisticsTests
     [InlineData(0)]
     [InlineData(PostgresRasterStatisticsOptions.MaximumDenseSampleSlots + 1)]
     [InlineData(int.MaxValue)]
-    public void RasterStatistics_InvalidBudget_IsRejectedAtStartup(int configured)
+    public async Task RasterStatistics_InvalidBudget_IsRejectedAtStartup(int configured)
     {
         using var provider = CreateProvider(configured);
 
-        Action start = () => provider.GetRequiredService<IStartupValidator>().Validate();
+        Func<Task> start = () => provider.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(CancellationToken.None);
 
-        start.Should().Throw<OptionsValidationException>()
+        await start.Should().ThrowAsync<OptionsValidationException>()
             .WithMessage("*Database:RasterStatistics:MaxDenseSampleSlots must be between 1 and 16777216.*");
     }
 

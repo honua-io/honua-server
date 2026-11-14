@@ -9,6 +9,7 @@ using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -93,7 +94,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         // Derived like PostgreSQL's own implicit names. A plain "<table>_geom_idx" is truncated to 63
         // bytes, which for a 63-byte table name is the table's own name, so IF NOT EXISTS silently
         // skipped the index (#4600).
-        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(PostgresDerivedRelationNames.Build(tableName, "geom", "idx"))} ON {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} USING GIST (geom)";
+        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {SqlIdentifier.QuoteIdentifier(PostgresDerivedRelationNames.Build(tableName, "geom", "idx"))} ON {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)} USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
         Log.SpatialIndexCreated(_logger, tableName);
@@ -108,7 +109,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     {
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT to_regclass(@qualifiedName) IS NOT NULL";
-        cmd.Parameters.AddWithValue("qualifiedName", $"{QuoteIdentifier(schemaName)}.{QuoteIdentifier(relationName)}");
+        cmd.Parameters.AddWithValue("qualifiedName", $"{SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(relationName)}");
         return await cmd.ExecuteScalarAsync(cancellationToken) is true;
     }
 
@@ -147,7 +148,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     }
 
     private static string BuildTargetImportLockKey(string schemaName, string tableName)
-        => $"honua.geoservices-import:{QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}";
+        => $"honua.geoservices-import:{SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)}";
 
     /// <summary>
     /// Fences writes to the prior target for the rest of the import transaction. EXCLUSIVE mode
@@ -161,7 +162,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"LOCK TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} IN EXCLUSIVE MODE";
+        cmd.CommandText = $"LOCK TABLE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)} IN EXCLUSIVE MODE";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -193,13 +194,13 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     {
         var targetExists = await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, tableName, cancellationToken);
         await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, stagingTable, cancellationToken);
-        var schema = QuoteIdentifier(schemaName);
-        var target = QuoteIdentifier(tableName);
+        var schema = SqlIdentifier.QuoteIdentifier(schemaName);
+        var target = SqlIdentifier.QuoteIdentifier(tableName);
         await using (var swap = connection.CreateCommand())
         {
             swap.CommandText =
                 (targetExists ? $"DROP TABLE {schema}.{target} RESTRICT; " : string.Empty)
-                + $"ALTER TABLE {schema}.{QuoteIdentifier(stagingTable)} RENAME TO {target};";
+                + $"ALTER TABLE {schema}.{SqlIdentifier.QuoteIdentifier(stagingTable)} RENAME TO {target};";
             await swap.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -236,7 +237,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         }
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = buildRenameSql(QuoteIdentifier(currentName), QuoteIdentifier(renamedName));
+        cmd.CommandText = buildRenameSql(SqlIdentifier.QuoteIdentifier(currentName), SqlIdentifier.QuoteIdentifier(renamedName));
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -247,7 +248,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"ANALYZE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}";
+        cmd.CommandText = $"ANALYZE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)}";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -316,11 +317,6 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
         if (!TableNameRegex().IsMatch(tableName))
             throw new ArgumentException("Table name must start with a letter and contain only letters, digits, and underscores", nameof(tableName));
-    }
-
-    private static string QuoteIdentifier(string identifier)
-    {
-        return $"\"{identifier.Replace("\"", "\"\"")}\"";
     }
 
     private static partial class Log

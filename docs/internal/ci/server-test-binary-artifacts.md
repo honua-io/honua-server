@@ -36,7 +36,7 @@ is one day. No branch-prefix lookup or cross-run artifact search is used; the
 existing v1 exact-head shard cache remains a separate fallback in full CI.
 
 The producer exports its actual selected `dotnet --version`, rather than the
-floating `10.0.x` request. Managed consumers install that exact version into a
+floating `11.0.x` request. Managed consumers install that exact version into a
 private runner-temp SDK directory and verify both the selected version and
 effective host/runtime-root paths before restoration. This prevents an SDK
 rollout between jobs from changing the toolchain: a producer using 10.0.401 and
@@ -115,7 +115,8 @@ these outputs.
 `package-server-test-binaries.sh` creates a deterministic gzip-1 archive and a
 manifest keyed by exact commit, SDK version, project, and contract version. The
 default limits are 320 MiB compressed, 768 MiB staged, and 120 seconds to
-package. Evidence is valid for at most 24 hours; restore rejects future or
+package: about twice the largest project in the measurements below (server,
+158 MiB archived and 415 MiB staged). Evidence is valid for at most 24 hours; restore rejects future or
 expired manifests even if the transport still retains their bytes.
 `restore-server-test-binaries.sh` rejects toolchain/source/project
 mismatches, size drift, digest failures, unsafe paths, entries outside the

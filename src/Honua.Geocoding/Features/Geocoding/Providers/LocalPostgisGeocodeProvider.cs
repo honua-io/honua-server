@@ -4,6 +4,7 @@
 using System.Data.Common;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Honua.Core.Queries.Filters;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Npgsql;
@@ -400,7 +401,7 @@ internal sealed partial class LocalPostgisGeocodeProvider : BaseGeocodeProvider,
             };
         }
 
-        return "\"" + identifier + "\"";
+        return SqlIdentifier.QuoteIdentifier(identifier);
     }
 
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$")]

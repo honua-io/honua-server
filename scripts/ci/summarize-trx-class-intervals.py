@@ -21,7 +21,7 @@ whole interval. If they exceed it, use the union columns instead.
 
 Usage (see docs/internal/ci/shard-timeout-budgets.md, "Re-basing the budgets")::
 
-    gh run download <run-id> -n server-test-results-<suffix> -D ./artifacts/<run-id>
+    gh run download <run-id> -n server-test-results-<suffix>-attempt-<n> -D ./artifacts/<run-id>
     scripts/ci/summarize-trx-class-intervals.py --trx-dir ./artifacts
     scripts/ci/summarize-trx-class-intervals.py --trx-dir ./artifacts --group-depth 4
 """

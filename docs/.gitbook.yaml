@@ -185,3 +185,17 @@ redirects:
   operator/geoprocessing-aws-batch: guides/deploy/geoprocessing-aws-batch.md
   operator/geoprocessing-process-releases: guides/deploy/geoprocessing-process-releases.md
   user/gp-output-store-attestation: guides/gp-output-store-attestation.md
+  ci/affected-shards-promotion: internal/ci/affected-shards-promotion.md
+  ci/baseline-2026-08-29: internal/ci/ci-measurement-method.md
+  ci/pr-gate-build-cache: internal/ci/pr-gate-build-cache.md
+  contributor/i3s-sceneserver-smoke: internal/contributor/i3s-sceneserver-smoke.md
+  internal/operator/audit-coverage-matrix: internal/operations/audit-coverage-matrix.md
+  internal/operator/MARKETPLACE_OPERATIONS: internal/operations/MARKETPLACE_OPERATIONS.md
+  internal/operator/tile-cache-batch-worker-contract: internal/operations/tile-cache-batch-worker-contract.md
+  ops/capacity-soak-receipt: internal/operations/capacity-soak-runbook.md
+  ops/aot-image-attestations-proof: internal/operations/aot-image-attestations-proof.md
+  ops/nightly-images: guides/operate/nightly-images.md
+  ops/aot-image-attestations: internal/operations/aot-image-attestations.md
+  operator/data-enrichment: guides/operate/data-enrichment.md
+  user/console-catalog-discovery: guides/operate/console-catalog-discovery.md
+  user/namespaced-layer-publication: guides/publish/namespaced-layer-publication.md

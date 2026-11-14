@@ -19,7 +19,7 @@ internal static class GeoprocessingResultPackageFactory
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(processCatalog);
 
-        if (!IsTerminal(job.Status))
+        if (!job.Status.IsTerminal())
         {
             throw new InvalidOperationException(
                 $"Execution job '{job.OperationId}' is not terminal and cannot produce a result package.");
@@ -555,9 +555,4 @@ internal static class GeoprocessingResultPackageFactory
             : value.Split(
                 ExecutionJobParameterKeys.MetadataListSeparator,
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 }

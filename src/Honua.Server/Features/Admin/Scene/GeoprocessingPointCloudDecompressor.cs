@@ -116,14 +116,14 @@ internal sealed partial class GeoprocessingPointCloudDecompressor : IPointCloudD
         PointCloudDecompressionOptions opts,
         CancellationToken cancellationToken)
     {
-        if (IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             return job;
         }
 
         var deadline = _timeProvider.GetUtcNow() + opts.Timeout;
         var current = job;
-        while (!IsTerminal(current.Status))
+        while (!current.Status.IsTerminal())
         {
             if (_timeProvider.GetUtcNow() >= deadline)
             {
@@ -186,9 +186,6 @@ internal sealed partial class GeoprocessingPointCloudDecompressor : IPointCloudD
 
         return bytes.Length != 0;
     }
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 
     private static partial class Log
     {

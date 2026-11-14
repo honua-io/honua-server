@@ -65,7 +65,9 @@ class TrunkAffectedWorkflowTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("certified_selector", CERTIFIED_SELECTOR)
         selector = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(selector)
-        self.assertEqual(workflow("ci.yml")["run-name"], "CI ${{ inputs.merge_train_nonce }}")
+        self.assertEqual(workflow("ci.yml")["run-name"], "CI ${{ github.ref == 'refs/heads/trunk' && (github.event_name == 'schedule' || inputs.full_ci || !inputs.selective_base) && 'full ' || github.ref == 'refs/heads/trunk' && 'affected ' || '' }}${{ inputs.merge_train_nonce }}")
+        from trailing_selection import AFFECTED_RUN_TITLE_PREFIX
+        self.assertEqual(AFFECTED_RUN_TITLE_PREFIX, "CI affected ")
         scripts = step_scripts(self.job)
         selective_title = 'run_title="affected ${COMPLETED_BASE:0:12}..${HEAD_SHA:0:12}"'
         self.assertIn(selective_title, scripts)
@@ -125,12 +127,12 @@ class CompletedBaseExecutionTests(unittest.TestCase):
     def run_record(self, index, conclusion, updated):
         return {"head_sha": self.heads[index], "conclusion": conclusion, "updated_at": updated}
 
-    def test_failed_completed_head_bounds_execution_without_moving_green(self):
+    def test_failed_or_cancelled_head_cannot_advance_execution_base(self):
         green = self.run_record(0, "success", "2026-11-10T12:00:00Z")
         failed = self.run_record(1, "failure", "2026-11-10T13:00:00Z")
         cancelled = self.run_record(2, "cancelled", "2026-11-10T14:00:00Z")
         outputs = self.resolve([green, cancelled, failed], [green])
-        self.assertEqual(outputs["completed_base"], self.heads[1])
+        self.assertEqual(outputs["completed_base"], self.heads[0])
         self.assertEqual(outputs["last_green"], self.heads[0])
         self.assertEqual(outputs["head"], self.heads[2])
 
@@ -181,7 +183,7 @@ class CompletedBaseExecutionTests(unittest.TestCase):
                        check=True, capture_output=True, text=True)
         return (self.clone / "summary").read_text()
 
-    def test_ci_doctor_summary_keeps_failed_merge_in_green_range(self):
+    def test_investigation_summary_keeps_failed_merge_in_green_range(self):
         summary = self.run_investigation_summary(self.heads[0])
         self.assertIn(f"`{self.heads[0]}`..`{self.heads[2]}` (2 merges", summary)
         self.assertIn("change 1", summary)
@@ -237,7 +239,7 @@ class RuntimeBaseTests(unittest.TestCase):
                 patch.object(self.selector, "ancestor", side_effect=lambda a, b: (a, b) in ancestors):
             return self.selector.completed_base("d" * 40, "a" * 40)
 
-    def record(self, letter, conclusion="failure", updated="2"):
+    def record(self, letter, conclusion="success", updated="2"):
         return dict(head_sha=letter * 40, conclusion=conclusion, updated_at=updated)
 
     def test_completion_after_dispatch_advances_execution_base(self):
@@ -249,6 +251,11 @@ class RuntimeBaseTests(unittest.TestCase):
         self.assertEqual(self.resolve(records, {("a" * 40, "b" * 40),
                                               ("b" * 40, "d" * 40),
                                               ("a" * 40, "e" * 40)}), "a" * 40)
+
+    def test_failed_deferred_run_does_not_advance_base_when_cancel_api_failed(self):
+        records = [self.record("b", "failure")]
+        self.assertEqual(self.resolve(records, {("a" * 40, "b" * 40),
+                                              ("b" * 40, "d" * 40)}), "a" * 40)
 
     def test_history_outage_retains_dispatched_scope(self):
         with tempfile.TemporaryDirectory() as directory, \
@@ -262,37 +269,24 @@ class RuntimeBaseTests(unittest.TestCase):
             resolve.assert_called_once_with("base", "head")
             self.assertIn("base=base", Path(f"{directory}/output").read_text())
 
-    def test_small_selection_keeps_accumulated_range(self):
-        with patch.object(self.module, "selected_count", return_value=30):
-            base, reason = self.module.execution_base("base", "head")
-        self.assertEqual(base, "base")
-        self.assertIn("30 shards", reason)
+    def test_admitted_selection_keeps_complete_accumulated_range(self):
+        with patch.object(self.module, "admission", return_value=(True, "within cap")):
+            self.assertEqual(self.module.execution_base("base", "head"), ("base", "within cap"))
 
-    def test_large_selection_uses_entire_newest_merge_and_records_deferral(self):
-        with patch.object(self.module, "selected_count", side_effect=[160, 4]), \
-                patch.object(self.module, "git", return_value="first-parent") as git:
-            base, reason = self.module.execution_base("base", "head")
-        self.assertEqual(base, "first-parent")
-        git.assert_called_once_with("rev-parse", "head^1")
-        self.assertIn("deferred to scheduled full CI", reason)
-
-    def test_broad_newest_merge_is_never_arbitrarily_truncated(self):
-        with patch.object(self.module, "selected_count", side_effect=[160, 150]), \
-                patch.object(self.module, "git", return_value="parent"):
-            base, reason = self.module.execution_base("base", "head")
-        self.assertEqual(base, "parent")
-        self.assertIn("retain all of its shards", reason)
-
-    def test_router_failure_fails_selection_without_silently_skipping_tests(self):
-        with patch.object(self.module, "selected_count",
-                          side_effect=subprocess.CalledProcessError(1, "router")):
-            with self.assertRaises(subprocess.CalledProcessError):
+    def test_deferred_selection_cancels_before_publishing_outputs(self):
+        with patch.object(self.module, "admission", return_value=(False, "over cap")), \
+                patch.object(self.module, "record") as record, \
+                patch.object(self.module, "gh_api") as api, \
+                patch.dict(os.environ, GITHUB_RUN_ID="123", GITHUB_REPOSITORY="honua-io/honua-server"):
+            with self.assertRaises(SystemExit):
                 self.module.execution_base("base", "head")
+            record.assert_called_once_with("over cap")
+            api.assert_called_once_with("repos/honua-io/honua-server/actions/runs/123/cancel", "POST")
 
     def test_effective_base_reaches_routing_and_build_with_least_privilege(self):
         jobs = workflow("ci.yml")["jobs"]
         changes = jobs["changes"]
-        self.assertEqual(changes["permissions"], {"contents": "read", "actions": "read"})
+        self.assertEqual(changes["permissions"], {"contents": "read", "actions": "write"})
         self.assertEqual(changes["outputs"]["selective_base"], "${{ steps.diff.outputs.base }}")
         self.assertIn("resolve-trailing-base.py", step_scripts(changes))
         for job_name in ("targeted-shards", "build"):

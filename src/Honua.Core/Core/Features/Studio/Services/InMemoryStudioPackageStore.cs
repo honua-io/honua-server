@@ -111,6 +111,12 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
 
     /// <inheritdoc />
     public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
+        => DeleteDraftCoreAsync(draftId, null, cancellationToken);
+
+    public Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default)
+        => DeleteDraftCoreAsync(draftId, expectedGeneration, cancellationToken);
+
+    private Task<bool> DeleteDraftCoreAsync(Guid draftId, long? expectedGeneration, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
@@ -118,6 +124,11 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             if (!_drafts.TryGetValue(draftId, out var draft))
             {
                 return Task.FromResult(false);
+            }
+
+            if (expectedGeneration.HasValue && draft.Generation != expectedGeneration.Value)
+            {
+                throw new InvalidOperationException("Stale draft generation; refresh and retry.");
             }
 
             _drafts.Remove(draftId);

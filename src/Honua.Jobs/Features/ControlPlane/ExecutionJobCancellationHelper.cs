@@ -17,7 +17,10 @@ internal enum ExecutionJobCancellationState
 
 internal readonly record struct ExecutionJobCancellationResult(
     ExecutionJobCancellationState State,
-    ExecutionJobRecord? Job);
+    ExecutionJobRecord? Job)
+{
+    public ExecutionJobRecord? TerminalTransition { get; init; }
+}
 
 internal enum PreSubmissionCancelOutcome
 {
@@ -29,7 +32,10 @@ internal enum PreSubmissionCancelOutcome
 
 internal readonly record struct PreSubmissionCancelResult(
     PreSubmissionCancelOutcome Outcome,
-    ExecutionJobRecord? Job);
+    ExecutionJobRecord? Job)
+{
+    public ExecutionJobRecord? TerminalTransition { get; init; }
+}
 
 internal enum BackendCancelApplyOutcome
 {
@@ -42,7 +48,10 @@ internal enum BackendCancelApplyOutcome
 internal readonly record struct BackendCancelApplyResult(
     BackendCancelApplyOutcome Outcome,
     ExecutionJobRecord? Job,
-    ExecutionJobStatus? TerminalStatus = null);
+    ExecutionJobStatus? TerminalStatus = null)
+{
+    public ExecutionJobRecord? TerminalTransition { get; init; }
+}
 
 internal enum RemoteCancelStampOutcome
 {
@@ -60,10 +69,6 @@ internal readonly record struct RemoteCancelStampResult(
 
 internal static class ExecutionJobCancellationHelper
 {
-    public static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 
     public static bool HasSubmittedProviderMarker(ExecutionJobRecord job)
         => !string.IsNullOrEmpty(job.ProviderOperationId)
@@ -88,7 +93,7 @@ internal static class ExecutionJobCancellationHelper
         if (await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
             ControlPlaneTelemetry.RecordExecutionTransition(job, cancelled);
-            return new(PreSubmissionCancelOutcome.Cancelled, cancelled);
+            return new(PreSubmissionCancelOutcome.Cancelled, cancelled) { TerminalTransition = cancelled };
         }
 
         var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
@@ -102,7 +107,7 @@ internal static class ExecutionJobCancellationHelper
             return new(PreSubmissionCancelOutcome.Cancelled, fresh);
         }
 
-        if (IsTerminal(fresh.Status))
+        if (fresh.Status.IsTerminal())
         {
             return new(PreSubmissionCancelOutcome.TerminalConflict, fresh);
         }
@@ -130,7 +135,7 @@ internal static class ExecutionJobCancellationHelper
                 return new(ExecutionJobCancellationState.Cancelled, current);
             }
 
-            if (IsTerminal(current.Status))
+            if (current.Status.IsTerminal())
             {
                 return new(ExecutionJobCancellationState.TerminalConflict, current);
             }
@@ -168,7 +173,7 @@ internal static class ExecutionJobCancellationHelper
                 if (await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
                     ControlPlaneTelemetry.RecordExecutionTransition(current, cancelled);
-                    return new(ExecutionJobCancellationState.Cancelled, cancelled);
+                    return new(ExecutionJobCancellationState.Cancelled, cancelled) { TerminalTransition = cancelled };
                 }
             }
 
@@ -177,6 +182,11 @@ internal static class ExecutionJobCancellationHelper
             {
                 return new(ExecutionJobCancellationState.Missing, null);
             }
+
+            if (!IsSameExecutionAttempt(initialJob, current))
+            {
+                return new(ExecutionJobCancellationState.Unconfirmed, current);
+            }
         }
 
         if (current.Status == ExecutionJobStatus.Cancelled)
@@ -184,7 +194,7 @@ internal static class ExecutionJobCancellationHelper
             return new(ExecutionJobCancellationState.Cancelled, current);
         }
 
-        if (IsTerminal(current.Status))
+        if (current.Status.IsTerminal())
         {
             return new(ExecutionJobCancellationState.TerminalConflict, current);
         }
@@ -210,7 +220,7 @@ internal static class ExecutionJobCancellationHelper
         var current = job;
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            if (IsTerminal(current.Status))
+            if (current.Status.IsTerminal())
             {
                 return new(RemoteCancelStampOutcome.TerminalConflict, current, current.Status);
             }
@@ -237,10 +247,14 @@ internal static class ExecutionJobCancellationHelper
             {
                 return new(RemoteCancelStampOutcome.Missing, null);
             }
+            if (!IsSameExecutionAttempt(job, fresh))
+            {
+                return new(RemoteCancelStampOutcome.Unconfirmed, fresh);
+            }
             current = fresh;
         }
 
-        if (IsTerminal(current.Status))
+        if (current.Status.IsTerminal())
         {
             return new(RemoteCancelStampOutcome.TerminalConflict, current, current.Status);
         }
@@ -269,7 +283,7 @@ internal static class ExecutionJobCancellationHelper
         var errorMessage = status == ExecutionJobStatus.Failed
             ? observation.Message ?? job.ErrorMessage
             : job.ErrorMessage;
-        var terminal = IsTerminal(status);
+        var terminal = status.IsTerminal();
         var newCancellationRequestedAt = terminal
             ? job.CancellationRequestedAt
             : (job.CancellationRequestedAt ?? now);
@@ -299,10 +313,10 @@ internal static class ExecutionJobCancellationHelper
 
     public static async Task<BackendCancelApplyResult> TryApplyBackendCancelAsync(
         IExecutionJobStore jobStore,
-        ExecutionJobRecord job,
-        BatchComputeObservation observation,
+        (ExecutionJobRecord Job, BatchComputeObservation Observation) cancellation,
         CancellationToken cancellationToken = default)
     {
+        var (job, observation) = cancellation;
         ArgumentNullException.ThrowIfNull(jobStore);
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(observation);
@@ -318,9 +332,21 @@ internal static class ExecutionJobCancellationHelper
         if (await jobStore.TrySetAsync(merged, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
             ControlPlaneTelemetry.RecordExecutionTransition(job, merged);
-            return new(BackendCancelApplyOutcome.Applied, merged);
+            return new(BackendCancelApplyOutcome.Applied, merged)
+            {
+                TerminalTransition = !job.Status.IsTerminal() && merged.Status.IsTerminal() ? merged : null
+            };
         }
 
+        return await RetryBackendCancelAsync(jobStore, new BackendCancelRetry(job, observation), cancellationToken).ConfigureAwait(false);
+    }
+
+    private sealed record BackendCancelRetry(ExecutionJobRecord Job, BatchComputeObservation Observation);
+
+    private static async Task<BackendCancelApplyResult> RetryBackendCancelAsync(
+        IExecutionJobStore jobStore, BackendCancelRetry retry, CancellationToken cancellationToken)
+    {
+        var (job, observation) = retry;
         var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
         if (fresh == null)
         {
@@ -332,9 +358,16 @@ internal static class ExecutionJobCancellationHelper
             return new(BackendCancelApplyOutcome.Applied, fresh);
         }
 
-        if (IsTerminal(fresh.Status))
+        if (fresh.Status.IsTerminal())
         {
             return new(BackendCancelApplyOutcome.TerminalConflict, fresh, fresh.Status);
+        }
+
+        // Delayed backend responses must still match the requested execution attempt.
+        if (!IsSameExecutionAttempt(job, fresh)
+            || fresh.CancellationRequestedAt != job.CancellationRequestedAt)
+        {
+            return new(BackendCancelApplyOutcome.Unconfirmed, fresh);
         }
 
         var retryNow = DateTimeOffset.UtcNow;
@@ -350,7 +383,30 @@ internal static class ExecutionJobCancellationHelper
             return new(BackendCancelApplyOutcome.Unconfirmed, fresh);
         }
 
-        ControlPlaneTelemetry.RecordExecutionTransition(fresh, retryMerged);
-        return new(BackendCancelApplyOutcome.Applied, retryMerged);
+        return AppliedBackendCancel(fresh, retryMerged);
+    }
+
+    private static BackendCancelApplyResult AppliedBackendCancel(ExecutionJobRecord previous, ExecutionJobRecord current)
+    {
+        ControlPlaneTelemetry.RecordExecutionTransition(previous, current);
+        return new(BackendCancelApplyOutcome.Applied, current)
+        {
+            TerminalTransition = !previous.Status.IsTerminal() && current.Status.IsTerminal() ? current : null
+        };
+    }
+
+    private static bool IsSameExecutionAttempt(ExecutionJobRecord original, ExecutionJobRecord current)
+    {
+        var acquiredClaim = original.ClaimedBy == null && current.ClaimedBy != null;
+        var claimedScheduledRetry = acquiredClaim
+            && current.AttemptCount == original.AttemptCount + 1
+            && original.NextRetryAt.HasValue
+            && current.NextRetryAt == null;
+        return original.ManualRetryGeneration == current.ManualRetryGeneration
+            && (original.AttemptCount == current.AttemptCount
+                || (acquiredClaim && current.AttemptCount == original.AttemptCount + 1))
+            && (acquiredClaim || (original.ClaimedBy == current.ClaimedBy && original.ClaimedAt == current.ClaimedAt))
+            && original.ProviderOperationId == current.ProviderOperationId
+            && (original.NextRetryAt == current.NextRetryAt || claimedScheduledRetry);
     }
 }

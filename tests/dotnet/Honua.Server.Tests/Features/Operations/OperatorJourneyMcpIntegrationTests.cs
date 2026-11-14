@@ -158,7 +158,9 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 ? physical.GetString()
                 : tableName;
 
-            var published = await CallOkAsync(admin, "honua_admin_layer_publish", new
+            // MCP callers are agents: publishing and access-policy changes file a proposal for
+            // one human approval instead of executing, even with an administrator key.
+            await CallProposalAsync(admin, "honua_admin_layer_publish", new
             {
                 connectionId,
                 schema,
@@ -166,20 +168,12 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 layerName = "Parcels",
                 serviceName,
             });
-            using var publishBody = ResponseJson(published);
-            publishBody.RootElement.GetProperty("data").GetProperty("storageLayerId").GetInt32()
-                .Should().BeGreaterThan(0);
-
-            var policy = await CallOkAsync(admin, "honua_admin_services_access_policy_set", new
+            await CallProposalAsync(admin, "honua_admin_services_access_policy_set", new
             {
                 serviceName,
                 allowAnonymous = true,
                 allowAnonymousWrite = false,
             });
-            using var policyBody = ResponseJson(policy);
-            policyBody.RootElement.GetProperty("data").GetProperty("serviceName").GetString().Should().Be(serviceName);
-            policyBody.RootElement.GetProperty("data").GetProperty("accessPolicy").GetProperty("allowAnonymous")
-                .GetBoolean().Should().BeTrue();
         }
         finally
         {
@@ -205,6 +199,14 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 await fixture.DisposeAsync();
             }
         }
+    }
+
+    private static async Task CallProposalAsync(HttpClient client, string name, object arguments)
+    {
+        var root = await CallAsync(client, name, arguments);
+        var structured = root.GetProperty("result").GetProperty("structuredContent");
+        structured.GetProperty("status").GetString().Should().Be("RequiresApproval", structured.GetRawText());
+        structured.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace(structured.GetRawText());
     }
 
     private static async Task<JsonElement> CallOkAsync(HttpClient client, string name, object arguments)

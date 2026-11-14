@@ -18,16 +18,17 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Geoprocessing;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Tests.Admin;
+using Honua.Server.Tests.Features.Admin;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Npgsql;
-using StackExchange.Redis;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
@@ -46,8 +47,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter database, RedisFixture redis)
-    : IClassFixture<RedisFixture>
+public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter database)
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
 
@@ -61,7 +61,10 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     public async Task CommittedPostgisSink_ResultPackagePublishesAndQueriesAuthoredRows()
     {
         await database.DataSource.ClearJobSubstrateAsync();
-        var fixture = BuildWorkflowFixture();
+        using var identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
+        // Use the issued managed key as the proposer, including after the host restart.
+        var fixture = HumanApprovalHttpClient.Configure(BuildWorkflowFixture(), identityProvider)
+            .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
         await fixture.InitializeAsync();
         await McpPublicationFixtureSetup.InstallPromotionStoresAsync(fixture);
         var table = $"gp_result_{Guid.NewGuid():N}";
@@ -218,7 +221,7 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
             artifact.Metadata.Values.Should().NotContain(value => value.Contains("Host=", StringComparison.Ordinal));
 
             // Recreate the actual host and its DI graph while retaining only the
-            // owned Redis and Postgres substrate. Publication must consume the
+            // owned PostgreSQL substrate. Publication must consume the
             // committed job/package from those stores, not an in-memory handle.
             await fixture.RestartHostAsync();
             var restoredRun = await fixture.GetService<IWorkflowRunStore>().GetAsync(run.RunId);
@@ -255,6 +258,7 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
 
             using var client = fixture.CreateAdminClient();
             client.Timeout = TimeSpan.FromSeconds(90);
+            await McpPublicationFixtureSetup.UseManagedPublicationKeyAsync(fixture.Services, client);
             using (var resourceResponse = await client.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0",
@@ -300,12 +304,12 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
             toolResult.TryGetProperty("isError", out var isError);
             (isError.ValueKind == JsonValueKind.True).Should().BeFalse(publishBody);
             var result = toolResult.GetProperty("structuredContent");
-            result.GetProperty("status").GetString().Should().Be("Completed", publishBody);
-            var serviceUri = result.GetProperty("serviceUri").GetString();
-            serviceUri.Should().Be($"honua://published-services/{service}");
-            var publishedServiceId = result.GetProperty("serviceId").GetString();
+            using var human = await HumanApprovalHttpClient.AuthenticateAsync(fixture, identityProvider);
+            var completed = await McpPublicationFixtureSetup.ApprovePublicationAsync(human, client, result);
+            var publishedServiceId = completed.Result!.Details["serviceName"];
+            await AssertPublishedServiceResourceAsync(client, service);
             publishedServiceId.Should().Be(service);
-            var serviceLayerIndex = result.GetProperty("serviceLayerIndex").GetString();
+            var serviceLayerIndex = completed.Result.Details["serviceLayerIndex"];
             serviceLayerIndex.Should().NotBeNullOrWhiteSpace();
 
             using var query = await client.GetAsync($"/rest/services/{publishedServiceId}/FeatureServer/{serviceLayerIndex}" +
@@ -984,13 +988,9 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     private static WebAppFixture BuildFixture()
         => new WebAppFixture().WithProductionJobSubstrate();
 
-    // The workflow definition and run stores live in Redis, and the orchestration engine is composed only when a multiplexer is registered.
+    // The workflow stores live in the system database, so the engine is composed once the host's data source is registered.
     private WebAppFixture BuildWorkflowFixture()
-        => BuildFixture().ConfigureServices(services =>
-        {
-            services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis.ConnectionString));
-            services.AddOrchestration();
-        });
+        => BuildFixture().ConfigureServices(services => services.AddOrchestration());
 
     private static Polygon BuildBoxPolygon(double minX, double minY, double maxX, double maxY)
     {
@@ -1082,5 +1082,20 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
         root.GetProperty("type").GetString().Should().Be("MeasureResult");
         root.GetProperty("processId").GetString().Should().Be(expectedProcessId);
         return root;
+    }
+
+    private static async Task AssertPublishedServiceResourceAsync(HttpClient client, string service)
+    {
+        using var serviceResourceResponse = await client.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = 3,
+            method = "resources/read",
+            @params = new { uri = $"honua://published-services/{service}" }
+        });
+        serviceResourceResponse.EnsureSuccessStatusCode();
+        using var serviceResource = JsonDocument.Parse(await serviceResourceResponse.Content.ReadAsStringAsync());
+        var serviceUri = serviceResource.RootElement.GetProperty("result").GetProperty("contents")[0].GetProperty("uri").GetString();
+        serviceUri.Should().Be($"honua://published-services/{service}");
     }
 }

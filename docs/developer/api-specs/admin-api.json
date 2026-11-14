@@ -10671,7 +10671,7 @@
             "description": "Approval authority or durable control-plane storage is temporarily unavailable."
           },
           "422": {
-            "description": "The approved operation cannot be executed with the sealed evidence."
+            "description": "No operation executor is registered for the proposal's operation (problem code `operation-executor-unavailable`). The proposal is not approved and its state is unchanged."
           }
         },
         "security": [
@@ -14398,7 +14398,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "503": {
-            "description": "A large export was requested but the background export service, durable job storage, or cloud storage is not configured, or the export queue is full.",
+            "description": "A large export was requested but the background export service, durable job storage, or cloud storage is not configured, or five exports are already queued or running.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20204,7 +20204,7 @@
           "Tile Operations"
         ],
         "summary": "Start Tile Operation Job",
-        "description": "Queues a tile operation for asynchronous execution and returns 202 with the job id and status/cancel URLs. `operation` is required; `seed`/`warm` require `layerId` or `serviceId`; `archive` and `publish` require `layerId`; `bbox`, when supplied, must contain exactly four values `[minLon, minLat, maxLon, maxLat]` and `minZoom` must not exceed `maxZoom`. When a batch tile-cache backend is configured the job is submitted through the execution-job/batch path, otherwise through the in-process worker. Response property names are PascalCase.",
+        "description": "Queues a tile operation for asynchronous execution and returns 202 with the job id and status/cancel URLs. `operation` is required; `seed`/`warm` require `layerId` or `serviceId`; `archive` and `publish` require `layerId`; `bbox`, when supplied, must contain exactly four values `[minLon, minLat, maxLon, maxLat]` and `minZoom` must not exceed `maxZoom`. Every operation is submitted as a TileCache execution job, run once by whichever node claims it, on the configured batch backend or the `local` job worker. Response property names are PascalCase.",
         "operationId": "startTileOperationJob",
         "requestBody": {
           "required": true,
@@ -20235,6 +20235,16 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "This host has no system database job store, so no tile operation is accepted.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -22505,6 +22515,78 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/LayerSpatialUpdateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/coordinate-systems": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Search Coordinate Systems",
+        "operationId": "SearchCoordinateSystemsV1",
+        "description": "Search the configured coordinate-system catalog by name or code. Results include display names, units and areas when available.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Search text; leading and trailing whitespace is removed before validation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching coordinate systems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoordinateSystemSearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid search text or result limit.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "The coordinate-system catalog is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
               }
             }
           }
@@ -51818,6 +51900,51 @@
           "timestamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "CoordinateSystemSearchResult": {
+        "type": "object",
+        "required": [
+          "items",
+          "hasMore"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoordinateSystemEntry"
+            }
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "Whether more matches exist beyond this response limit."
+          }
+        }
+      },
+      "CoordinateSystemEntry": {
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "unit",
+          "area"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true
+          },
+          "area": {
+            "type": "string",
+            "nullable": true
           }
         }
       }

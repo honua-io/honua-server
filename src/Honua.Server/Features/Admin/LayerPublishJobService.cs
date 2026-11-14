@@ -11,6 +11,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Db.Postgres.Features.Admin;
 using Honua.Server.Features.Operations;
+using Honua.Infrastructure.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -119,10 +120,10 @@ internal sealed class LayerPublishJobService(
             }
 
             var durableJob = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-            return RecoverProgress(jobId, durableJob, tenantContext.TenantId);
+            return RecoverProgress(jobId, durableJob, TenantReadScope.For(tenantContext));
         }
 
-        if (!string.Equals(progress.TenantId, tenantContext.TenantId, StringComparison.Ordinal))
+        if (!TenantReadScope.For(tenantContext).Contains(progress.TenantId))
         {
             return null;
         }
@@ -136,7 +137,7 @@ internal sealed class LayerPublishJobService(
         return job is null ? progress : ProjectExecutionOutcome(progress, job);
     }
 
-    private static LayerPublishJobProgress? RecoverProgress(string jobId, ExecutionJobRecord? job, string? tenantId)
+    private static LayerPublishJobProgress? RecoverProgress(string jobId, ExecutionJobRecord? job, TenantReadScope tenantScope)
     {
         if (job is null
             || !string.Equals(job.OperationId, jobId, StringComparison.Ordinal)
@@ -144,7 +145,7 @@ internal sealed class LayerPublishJobService(
             || !LayerPublishJobPayload.TryParse(job.Spec.Parameters, out var payload, out _)
             || payload is null
             || payload.RowCount < 0
-            || !string.Equals(payload.TenantId, tenantId, StringComparison.Ordinal))
+            || !tenantScope.Contains(payload.TenantId))
         {
             return null;
         }

@@ -12,6 +12,7 @@
 // imply a false ownership.
 
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
@@ -48,7 +49,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         var schema = await ResolveCanonicalFeaturesSchemaAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
-        return $"{QuoteIdentifier(schema)}.{QuoteIdentifier("features")}";
+        return $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier("features")}";
     }
 
     private static async Task<string> ResolveCanonicalFeaturesSchemaAsync(
@@ -97,14 +98,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         foreach (var column in attributeColumns)
         {
             parts.Add(QuoteLiteral(column.Name));
-            parts.Add($"src.{QuoteIdentifier(column.Name)}");
+            parts.Add($"src.{SqlIdentifier.QuoteIdentifier(column.Name)}");
         }
 
         return $"jsonb_build_object({string.Join(", ", parts)})";
     }
-
-    private static string QuoteIdentifier(string identifier)
-        => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 
     private static string QuoteLiteral(string literal)
         => "'" + literal.Replace("'", "''", StringComparison.Ordinal) + "'";
