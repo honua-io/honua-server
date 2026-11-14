@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
@@ -348,7 +349,7 @@ internal static class McpEndpointExtensions
     /// <c>message</c> event until the session is terminated or the client
     /// disconnects.
     /// </summary>
-    private static async Task HandleGetAsync(HttpContext context, CancellationToken cancellationToken)
+    internal static async Task HandleGetAsync(HttpContext context, CancellationToken cancellationToken)
     {
         if (await McpModernHttp.TryRejectSessionVerbAsync(context).ConfigureAwait(false))
         {
@@ -408,6 +409,35 @@ internal static class McpEndpointExtensions
             return;
         }
 
+        await OpenNotificationStreamAsync(context, sessionId, reader, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task OpenNotificationStreamAsync(HttpContext context, string sessionId,
+        System.Threading.Channels.ChannelReader<string> reader, CancellationToken cancellationToken)
+    {
+        var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
+        if (!McpRealtimeStream.TryParsePosition(context.Request.Headers["Last-Event-ID"].ToString(), out var after))
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var provider = context.RequestServices.GetService<IRealtimeFanoutProvider>();
+        await using var streamLease = provider is null
+            ? null
+            : await provider.TryAcquireMcpStreamAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        if (provider is not null && (streamLease is null || !streamLease.IsHeld))
+        {
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            return;
+        }
+
+        var head = provider is null
+            ? 0
+            : (await provider.GetWindowAsync(RealtimeFamily.Mcp, cancellationToken).ConfigureAwait(false)).Head;
+        await using var subscription = provider is null
+            ? null
+            : new RealtimeStreamSubscription(provider, sessionId, after ?? head, streamLease!);
         using var watch = sessions.AcquireSessionWatch(sessionId);
         await BindTokenReplayContinuationAsync(context, sessionId).ConfigureAwait(false);
         StartEventStream(context);
@@ -418,10 +448,17 @@ internal static class McpEndpointExtensions
         // Close the stream when the client disconnects OR the session is terminated
         // (DELETE /mcp completes the channel, which ends the drain loop below).
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, sessions.GetLifetimeToken(sessionId));
+            cancellationToken, sessions.GetLifetimeToken(sessionId), streamLease?.LostToken ?? CancellationToken.None);
         try
         {
-            await PumpSessionStreamAsync(context.Response.Body, reader, linked.Token).ConfigureAwait(false);
+            if (subscription is null)
+            {
+                await PumpSessionStreamAsync(context.Response.Body, reader, linked.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                await McpRealtimeStream.PumpAsync(context.Response.Body, reader, subscription, linked.Token).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -907,7 +944,8 @@ internal static class McpEndpointExtensions
     {
         context.Response.ContentType = EventStreamMimeType;
         // SSE responses must not be cached or buffered along the path.
-        context.Response.Headers[HeaderNames.CacheControl] = "no-cache";
+        context.Response.Headers[HeaderNames.CacheControl] = "no-store, no-transform";
+        context.Response.Headers["X-Accel-Buffering"] = "no";
         context.Response.Headers[HeaderNames.Connection] = "keep-alive";
     }
 

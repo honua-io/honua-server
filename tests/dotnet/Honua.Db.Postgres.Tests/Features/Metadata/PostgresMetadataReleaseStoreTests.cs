@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
@@ -20,6 +21,38 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
 {
     private static readonly IDatabaseSchemaGuard _schemaGuard = new FixtureSchemaGuard();
+
+    [IntegrationTest]
+    public async Task EnvironmentReader_ByEtag_ReadsHistoricalSnapshotWithoutCrossingEnvironments()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataReleaseStoreTests));
+        try
+        {
+            await EnsureTablesAsync(schema);
+            await InsertSnapshotAsync(schema, BuildGraph("dev", 41), "shared-etag");
+            await InsertSnapshotAsync(schema, BuildGraph("production", 90), "shared-etag");
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"DELETE FROM \"{schema}\".metadata_v2_current WHERE environment = 'dev'";
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await InsertSnapshotAsync(schema, BuildGraph("dev", 42), "new-etag");
+            var reader = new PostgresMetadataV2EnvironmentSnapshotReader(
+                new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var historical = await reader.GetByEtagAsync("dev", "shared-etag");
+            historical.Should().NotBeNull();
+            historical!.Revision.Should().Be(41);
+            historical.Graph.Environment.Should().Be("dev");
+            var missing = await reader.GetByEtagAsync("missing", "shared-etag");
+            missing.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
 
     [IntegrationTest]
     public async Task EnvironmentReader_AndReleasePackageStore_RoundTripMetadataReleasePackage()

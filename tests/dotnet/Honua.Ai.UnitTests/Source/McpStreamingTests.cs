@@ -1,18 +1,22 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Realtime;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -76,19 +80,17 @@ public sealed class McpStreamingTests
     }
 
     [UnitTest]
-    public void Publisher_PublishProgress_EnqueuesWellFormedJsonRpcNotification()
+    public async Task Publisher_PublishProgress_AppendsWellFormedJsonRpcNotification()
     {
         var sessions = new McpSessionManager();
         var id = sessions.CreateSession();
-        var publisher = new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance);
+        var publisher = CreatePublisher(sessions, out var drafts);
 
-        publisher.PublishProgress(id, "job-9", progress: 42, total: 100, message: "Running").Should().BeTrue();
+        (await publisher.PublishProgress(id, "job-9", progress: 42, total: 100, message: "Running")).Should().BeTrue();
 
-        sessions.TryGetReader(id, out var reader).Should().BeTrue();
-        reader.TryRead(out var frame).Should().BeTrue();
-
-        using var document = JsonDocument.Parse(frame!);
-        var root = document.RootElement;
+        var draft = drafts.Should().ContainSingle().Subject;
+        draft.ScopeKey.Should().Be(id);
+        var root = draft.Payload;
         root.GetProperty("jsonrpc").GetString().Should().Be("2.0");
         root.GetProperty("method").GetString().Should().Be("notifications/progress");
         var parameters = root.GetProperty("params");
@@ -99,23 +101,33 @@ public sealed class McpStreamingTests
     }
 
     [UnitTest]
-    public void Publisher_Broadcast_ReachesEveryActiveSession()
+    public async Task Publisher_Broadcast_AppendsOneSharedNotification()
     {
         var sessions = new McpSessionManager();
         var first = sessions.CreateSession();
         var second = sessions.CreateSession();
-        var publisher = new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance);
+        var publisher = CreatePublisher(sessions, out var drafts);
 
-        publisher.BroadcastResourcesListChanged().Should().Be(2);
+        (await publisher.BroadcastResourcesListChanged()).Should().Be(2);
+        var draft = drafts.Should().ContainSingle().Subject;
+        draft.ScopeKey.Should().Be("*");
+        draft.Payload.GetProperty("method").GetString().Should().Be("notifications/resources/list_changed");
+    }
 
-        foreach (var id in new[] { first, second })
-        {
-            sessions.TryGetReader(id, out var reader).Should().BeTrue();
-            reader.TryRead(out var frame).Should().BeTrue();
-            using var document = JsonDocument.Parse(frame!);
-            document.RootElement.GetProperty("method").GetString()
-                .Should().Be("notifications/resources/list_changed");
-        }
+    [UnitTest]
+    public async Task Publisher_ConfiguredProviderFailure_DoesNotFallBackToLocalDelivery()
+    {
+        var sessions = new McpSessionManager();
+        var sessionId = sessions.CreateSession();
+        sessions.TryGetReader(sessionId, out var reader).Should().BeTrue();
+        var provider = new RecordingFanoutProvider([], failAppend: true);
+        var publisher = new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance, provider);
+
+        Func<Task> progress = () => publisher.PublishProgress(sessionId, "job-1", 42, 100, null).AsTask();
+        Func<Task> broadcast = () => publisher.BroadcastResourcesListChanged().AsTask();
+        await progress.Should().ThrowAsync<IOException>();
+        await broadcast.Should().ThrowAsync<IOException>();
+        reader.TryRead(out _).Should().BeFalse();
     }
 
     [UnitTest]
@@ -132,7 +144,7 @@ public sealed class McpStreamingTests
                 JobRecord(ExecutionJobStatus.Running, 60, "Executing"),
                 JobRecord(ExecutionJobStatus.Succeeded, 100, "Complete"));
 
-        var publisher = new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance);
+        var publisher = CreatePublisher(sessions, out var drafts);
         var bridge = new McpJobProgressBridge(
             publisher,
             sessions,
@@ -141,12 +153,11 @@ public sealed class McpStreamingTests
 
         await bridge.PumpAsync(id, "job-1", Principal, jobService, TimeSpan.Zero, CancellationToken.None);
 
-        sessions.TryGetReader(id, out var reader).Should().BeTrue();
         var progresses = new List<double>();
-        while (reader.TryRead(out var frame))
+        foreach (var draft in drafts)
         {
-            using var document = JsonDocument.Parse(frame!);
-            var root = document.RootElement;
+            draft.ScopeKey.Should().Be(id);
+            var root = draft.Payload;
             root.GetProperty("method").GetString().Should().Be("notifications/progress");
             root.GetProperty("params").GetProperty("progressToken").GetString().Should().Be("job-1");
             progresses.Add(root.GetProperty("params").GetProperty("progress").GetDouble());
@@ -156,6 +167,130 @@ public sealed class McpStreamingTests
         progresses.Should().Equal(expectedProgress,
             "the bridge emits a frame on each observed progress change and a final terminal frame");
         await jobService.Received(3).GetJobAsync("job-1", Principal, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task GetStream_WithoutProvider_DeliversLocalNotificationAndPreservesSession()
+    {
+        var sessions = new McpSessionManager();
+        var sessionId = sessions.CreateSession();
+        sessions.TryEnqueue(sessionId, "local-notification").Should().BeTrue();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(sessions);
+        services.AddSingleton(Options.Create(new McpOptions { ServerInitiatedStreamEnabled = true }));
+        await using var provider = services.BuildServiceProvider();
+        using var output = new MemoryStream();
+        using var cancellation = new CancellationTokenSource();
+        var context = new DefaultHttpContext { RequestServices = provider };
+        context.Request.Headers.Accept = "text/event-stream";
+        context.Request.Headers[McpSessionManager.SessionHeaderName] = sessionId;
+        context.Response.Body = output;
+
+        var streaming = McpEndpointExtensions.HandleGetAsync(context, cancellation.Token);
+        cancellation.Cancel();
+        await streaming;
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        Encoding.UTF8.GetString(output.ToArray()).Should().Contain("data: local-notification");
+        sessions.TryGetReader(sessionId, out _).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task GetStream_WhenOwnershipUnavailable_RejectsBeforeSubscribing()
+    {
+        var fanout = new RecordingFanoutProvider([]);
+        var (sessions, sessionId, services, context) = CreateStreamContext(fanout);
+        await using var scope = services;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await McpEndpointExtensions.HandleGetAsync(context, timeout.Token);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        fanout.Subscriptions.Should().Be(0);
+        sessions.TryGetReader(sessionId, out _).Should().BeTrue();
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetStream_WhenDisconnectedOrOwnershipLost_ReleasesLeaseAndPreservesSession(bool loseOwnership)
+    {
+        using var lease = new TestStreamLease();
+        var fanout = new RecordingFanoutProvider([]) { StreamLease = lease };
+        var (sessions, sessionId, services, context) = CreateStreamContext(fanout);
+        await using var scope = services;
+        using var cancellation = new CancellationTokenSource();
+        var streaming = McpEndpointExtensions.HandleGetAsync(context, cancellation.Token);
+        fanout.Subscriptions.Should().Be(1);
+        if (loseOwnership)
+        {
+            lease.Lose();
+        }
+        else
+        {
+            cancellation.Cancel();
+        }
+
+        await streaming.WaitAsync(TimeSpan.FromSeconds(5));
+
+        lease.Released.Should().BeTrue();
+        sessions.TryGetReader(sessionId, out _).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task GetStream_WhenOwnershipExpired_DoesNotDeliverQueuedFrame()
+    {
+        using var lease = new TestStreamLease { SuccessfulChecks = 1 };
+        var fanout = new RecordingFanoutProvider([]) { StreamLease = lease };
+        var (sessions, sessionId, services, context) = CreateStreamContext(fanout);
+        await using var scope = services;
+        sessions.TryEnqueue(sessionId, "must-not-deliver").Should().BeTrue();
+        using var output = new MemoryStream();
+        context.Response.Body = output;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await McpEndpointExtensions.HandleGetAsync(context, timeout.Token);
+
+        Encoding.UTF8.GetString(output.ToArray()).Should().NotContain("must-not-deliver");
+        lease.Released.Should().BeTrue();
+    }
+
+    private static (McpSessionManager Sessions, string SessionId, ServiceProvider Services, DefaultHttpContext Context)
+        CreateStreamContext(IRealtimeFanoutProvider fanout)
+    {
+        var sessions = new McpSessionManager();
+        var sessionId = sessions.CreateSession();
+        var services = new ServiceCollection().AddLogging().AddSingleton(sessions)
+            .AddSingleton(fanout)
+            .AddSingleton(Options.Create(new McpOptions { ServerInitiatedStreamEnabled = true }))
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Request.Headers.Accept = "text/event-stream";
+        context.Request.Headers[McpSessionManager.SessionHeaderName] = sessionId;
+        return (sessions, sessionId, services, context);
+    }
+
+    private sealed class TestStreamLease : IRealtimeStreamLease, IDisposable
+    {
+        private readonly CancellationTokenSource _lost = new();
+        public bool Held { get; set; } = true;
+        public int SuccessfulChecks { get; set; } = int.MaxValue;
+        public bool IsHeld => Held && SuccessfulChecks-- > 0;
+        public CancellationToken LostToken => _lost.Token;
+        public bool Released { get; private set; }
+        public void Lose()
+        {
+            Held = false;
+            _lost.Cancel();
+        }
+        public ValueTask DisposeAsync()
+        {
+            Released = true;
+            return ValueTask.CompletedTask;
+        }
+        public void Dispose() => _lost.Dispose();
     }
 
     [UnitTest]
@@ -199,4 +334,49 @@ public sealed class McpStreamingTests
             WorkloadName = "workload"
         }
     };
+    private static McpNotificationPublisher CreatePublisher(McpSessionManager sessions, out List<RealtimeEventDraft> drafts)
+    {
+        var recorded = new List<RealtimeEventDraft>();
+        drafts = recorded;
+        var provider = new RecordingFanoutProvider(recorded);
+        return new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance, provider);
+    }
+
+    private sealed class RecordingFanoutProvider(List<RealtimeEventDraft> drafts, bool failAppend = false) : IRealtimeFanoutProvider
+    {
+        public RealtimeProviderCapabilities Capabilities { get; } = new(true, true, true);
+
+        public ValueTask<RealtimePosition> AppendAsync(
+            RealtimeEventDraft draft, DbTransaction? transaction, CancellationToken cancellationToken)
+        {
+            if (failAppend)
+            {
+                return ValueTask.FromException<RealtimePosition>(new IOException("Realtime append failed."));
+            }
+
+            drafts.Add(draft);
+            return ValueTask.FromResult(new RealtimePosition(RealtimeFamily.Mcp, drafts.Count));
+        }
+
+        public void Enqueue(RealtimeEventDraft draft) => throw new NotSupportedException();
+
+        public IRealtimeStreamLease? StreamLease { get; init; }
+        public int Subscriptions { get; private set; }
+
+        public IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request)
+        {
+            Subscriptions++;
+            return Substitute.For<IRealtimeSubscription>();
+        }
+
+        public ValueTask<IRealtimeStreamLease?> TryAcquireMcpStreamAsync(string sessionId, CancellationToken cancellationToken)
+            => ValueTask.FromResult(StreamLease);
+
+        public ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(
+            string scopeKey, long after, long through, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+
+        public ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken)
+            => ValueTask.FromResult(new RealtimeLogWindow(family, 0, 0));
+    }
 }

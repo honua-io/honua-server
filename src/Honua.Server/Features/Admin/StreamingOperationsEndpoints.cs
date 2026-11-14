@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net.WebSockets;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Abstractions;
@@ -74,7 +75,7 @@ internal static class StreamingOperationsEndpoints
     }
 
     private static async Task<IResult> HandleAlertStream(
-        [FromServices] IAlertNotificationBroadcaster broadcaster,
+        [FromServices] Honua.Alerts.RealtimeAlertNotificationBroadcaster broadcaster,
         HttpContext context)
     {
         if (!context.WebSockets.IsWebSocketRequest)
@@ -85,10 +86,16 @@ internal static class StreamingOperationsEndpoints
                 "WebSocket upgrade required.");
         }
 
+        if (!TryParseAlertCursor(context.Request.Query["cursor"].ToString(), out var after))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context,
+                StatusCodes.Status400BadRequest, "Expected cursor=alerts:<sequence>.");
+        }
+
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
         using var sendLock = new SemaphoreSlim(1, 1);
-        using var subscription = broadcaster.Subscribe(
-            async (alertEvent, cancellationToken) =>
+        using var subscription = await broadcaster.SubscribeAsync(
+            async (alertEvent, position, cancellationToken) =>
             {
                 if (webSocket.State != WebSocketState.Open)
                 {
@@ -106,10 +113,8 @@ internal static class StreamingOperationsEndpoints
                         return;
                     }
 
-                    var payload = JsonSerializer.SerializeToUtf8Bytes(
-                        alertEvent,
-                        StreamingOperationsJsonContext.Default.AlertEventEnvelope);
-                    await webSocket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+                    await webSocket.SendAsync(SerializeAlertFrame(alertEvent, position),
+                        WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -131,7 +136,7 @@ internal static class StreamingOperationsEndpoints
                     }
                 }
             },
-            new SubscriptionOptions(context.Request.Query["clientLabel"].ToString()));
+            new SubscriptionOptions(context.Request.Query["clientLabel"].ToString(), after), context.RequestAborted).ConfigureAwait(false);
 
         var buffer = new byte[1];
         try
@@ -178,6 +183,41 @@ internal static class StreamingOperationsEndpoints
         }
 
         return Results.Empty;
+    }
+
+    private static bool TryParseAlertCursor(string cursor, out long? after)
+    {
+        after = null;
+        if (string.IsNullOrEmpty(cursor))
+        {
+            return true;
+        }
+        if (!cursor.StartsWith("alerts:", StringComparison.Ordinal) ||
+            !long.TryParse(cursor.AsSpan(7), NumberStyles.None, CultureInfo.InvariantCulture, out var sequence))
+        {
+            return false;
+        }
+        after = sequence;
+        return true;
+    }
+
+    private static byte[] SerializeAlertFrame(Honua.Core.Features.Alerts.Domain.AlertEventEnvelope alertEvent,
+        Honua.Core.Features.Realtime.RealtimePosition position)
+    {
+        using var payload = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(payload))
+        {
+            writer.WriteStartObject();
+            var envelope = JsonSerializer.SerializeToElement(alertEvent,
+                StreamingOperationsJsonContext.Default.AlertEventEnvelope);
+            foreach (var property in envelope.EnumerateObject())
+            {
+                property.WriteTo(writer);
+            }
+            writer.WriteString("cursor", position.ToString());
+            writer.WriteEndObject();
+        }
+        return payload.ToArray();
     }
 
     private static IResult HandleDisconnectSubscriber(
