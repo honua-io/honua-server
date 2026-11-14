@@ -66,7 +66,7 @@ public sealed class AttachmentPublicationScopeMigrationTests(PostgresFixture fix
         {
             root = root.Parent;
         }
-        var path = Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", "165_AddAttachmentPublicationScope.sql");
+        var path = Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", "184_AddAttachmentPublicationScope.sql");
         await ExecuteAsync(schema, (await File.ReadAllTextAsync(path)).Replace("$HonuaSchema$", "\"{schema}\"", StringComparison.Ordinal));
     }
 
