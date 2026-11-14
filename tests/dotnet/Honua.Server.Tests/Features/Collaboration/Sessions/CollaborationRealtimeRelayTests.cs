@@ -18,26 +18,20 @@ public sealed class CollaborationRealtimeRelayTests
     [UnitTest]
     public async Task Reset_ResumesFromSuppliedHead_WhenWindowAdvancesDuringRecovery()
     {
-        var after = await ObserveReconnectAsync(reset: true);
+        var after = await ObserveReconnectAsync([new RealtimeDelivery.Reset(RealtimeResetReasons.SlowConsumer, 12)]);
         after.Should().Be(12, "operations after the reset boundary must remain deliverable");
     }
 
     [UnitTest]
     public async Task Exception_ResumesAfterLastSuccessfulDelivery()
     {
-        var after = await ObserveReconnectAsync(reset: false);
+        var after = await ObserveReconnectAsync([Operation(11, 1), Operation(12, 2)]);
         after.Should().Be(11, "a later delivery failure must not replay completed deliveries");
     }
 
-    private static async Task<long?> ObserveReconnectAsync(bool reset)
+    private static async Task<long?> ObserveReconnectAsync(IReadOnlyList<RealtimeDelivery> deliveries)
     {
         var provider = Substitute.For<IRealtimeFanoutProvider>();
-        var repository = Substitute.For<ISavedMapOperationLogRepository>();
-        var empty = new InMemorySavedMapOperationLogRepository(new MvpSavedMapOperationConflictPolicy());
-        repository.ReplayAsync(Arg.Any<SavedMapId>(), Arg.Any<SavedMapOperationCursor>(), Arg.Any<CancellationToken>())
-            .Returns(call => call.Arg<SavedMapOperationCursor>().Value == 1
-                ? Task.FromException<SavedMapOperationReplayResult>(new IOException("Transient replay failure"))
-                : empty.ReplayAsync(call.Arg<SavedMapId>(), call.Arg<SavedMapOperationCursor>()));
         var subscriptions = 0;
         var reconnect = new TaskCompletionSource<long?>(TaskCreationOptions.RunContinuationsAsynchronously);
         provider.GetWindowAsync(Arg.Any<RealtimeFamily>(), Arg.Any<CancellationToken>())
@@ -49,14 +43,9 @@ public sealed class CollaborationRealtimeRelayTests
             {
                 if (Interlocked.Increment(ref subscriptions) == 1)
                 {
-                    if (reset)
+                    foreach (var delivery in deliveries)
                     {
-                        request.Writer.TryWrite(new RealtimeDelivery.Reset(RealtimeResetReasons.SlowConsumer, 12));
-                    }
-                    else
-                    {
-                        request.Writer.TryWrite(Operation(11, 1));
-                        request.Writer.TryWrite(Operation(12, 2));
+                        request.Writer.TryWrite(delivery);
                     }
                 }
                 else
@@ -67,7 +56,7 @@ public sealed class CollaborationRealtimeRelayTests
             return Substitute.For<IRealtimeSubscription>();
         });
         var services = new ServiceCollection();
-        services.AddSingleton(repository);
+        services.AddSingleton(CreateRepository());
         services.AddSingleton(new InMemoryCollaborationSessionService(
             Substitute.For<ISavedMapCollaborationAuthorizer>(), new SystemCollaborationSessionClock()));
         await using var container = services.BuildServiceProvider();
@@ -81,6 +70,17 @@ public sealed class CollaborationRealtimeRelayTests
         {
             await relay.StopAsync(CancellationToken.None);
         }
+    }
+
+    private static ISavedMapOperationLogRepository CreateRepository()
+    {
+        var repository = Substitute.For<ISavedMapOperationLogRepository>();
+        var empty = new InMemorySavedMapOperationLogRepository(new MvpSavedMapOperationConflictPolicy());
+        repository.ReplayAsync(Arg.Any<SavedMapId>(), Arg.Any<SavedMapOperationCursor>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<SavedMapOperationCursor>().Value == 1
+                ? Task.FromException<SavedMapOperationReplayResult>(new IOException("Transient replay failure"))
+                : empty.ReplayAsync(call.Arg<SavedMapId>(), call.Arg<SavedMapOperationCursor>()));
+        return repository;
     }
 
     private static RealtimeDelivery.Event Operation(long sequence, long cursor) => new(new RealtimeEvent(
