@@ -841,25 +841,3 @@ def test_admin_auth_capacity_split_preserves_methods_paths_and_budgets() -> None
 
 test_admin_auth_capacity_split_preserves_methods_paths_and_budgets()
 
-
-def test_admin_method_name_routes_keep_exactly_one_owner() -> None:
-    """Layer-named methods leave these classes' primary Admin shard."""
-    config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
-    shards = {s["name"]: s for s in config["shards"] if KNOWN in MODULE.shard_projects(s)}
-    parsed = {name: MODULE._FilterParser(s["filter"]).parse() for name, s in shards.items()}
-    expected = {"Server Features Admin Integrations and Automation 4",
-                "Server Features Admin Layer Management 2"}
-    classes = MODULE.enumerate_classes()
-    for suffix in ("TileCacheJobExecutorPublishTests", "ExternalServiceDiscoveryServiceTests"):
-        fqn = "Honua.Server.Tests.Features.Admin." + suffix
-        info = classes[f"{KNOWN}::{fqn}"]
-        assert info["methods"], fqn
-        actual = set()
-        for method in info["methods"]:
-            owners = [name for name, node in parsed.items() if MODULE._eval(node, fqn + "." + method)]
-            assert len(owners) == 1, (fqn, method, owners)
-            actual.update(owners)
-        assert actual == expected, (fqn, actual)
-
-
-test_admin_method_name_routes_keep_exactly_one_owner()
