@@ -70,7 +70,7 @@ public sealed class PostgresOpsExternalEventStoreTests(PostgresFixture fixture)
 
     private async Task ApplyMigrationAsync(string schema)
     {
-        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "161_CreateOpsExternalEvents.sql"));
+        var sql = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "161_CreateOpsExternalEvents.sql"));
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);

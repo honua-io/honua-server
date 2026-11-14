@@ -53,7 +53,7 @@ public sealed class LambdaAotDockerfileTests
         var dockerfile = File.ReadAllText(dockerfilePath);
 
         const string buildStageStart = "FROM restore AS build";
-        const string runtimeStageStart = "FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime";
+        const string runtimeStageStart = "FROM ${DOTNET_SDK_IMAGE} AS runtime-assets";
         var buildStart = dockerfile.IndexOf(buildStageStart, StringComparison.Ordinal);
         var runtimeStart = dockerfile.IndexOf(runtimeStageStart, StringComparison.Ordinal);
 
@@ -107,11 +107,17 @@ public sealed class LambdaAotDockerfileTests
         project.Should().Contain("'$(HonuaUseSkiaNoDependencies)' == 'true'");
         dockerfile.Should().Contain("-p:HonuaUseSkiaNoDependencies=true");
         dockerfile.Should().Contain("fonts-dejavu-core");
-        dockerfile.Should().Contain("test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+        var verification = File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/verify-native.sh"));
+        verification.Should().Contain("test -r \"$runtime_root/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf\"");
         dockerfile.Should().Contain(
             "HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
-        dockerfile.Should().Contain("ldd -r /var/task/libSkiaSharp.so");
-        dockerfile.Should().Contain("grep -Eq 'not found|undefined symbol'");
+        dockerfile.Should().Contain("sh docker/runtime/verify-native.sh /runtime-root /var/task");
+        dockerfile.Should().Contain("test -f /runtime-root/var/task/libduckdb.so");
+        verification.Should().Contain("test -f \"$runtime_root$app_directory/libSkiaSharp.so\"");
+        verification.Should().Contain("chroot \"$runtime_root\" /.verify-env \"$loader\"");
+        var verificationEnvironment = File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/verify-env.c"));
+        verificationEnvironment.Should().Contain("\"LD_TRACE_LOADED_OBJECTS=1\", \"LD_WARN=yes\", \"LD_BIND_NOW=yes\"");
+        verification.Should().Contain("grep -Eq 'not found|undefined symbol|not a dynamic executable'");
         typefaceProvider.Should().Contain("SKTypeface.FromFile(configuredPath)");
 
         foreach (var renderSource in RenderingSourcePaths.Select(relativePath =>
