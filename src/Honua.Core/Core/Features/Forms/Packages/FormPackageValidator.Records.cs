@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 
 namespace Honua.Core.Features.Forms.Packages;
@@ -35,5 +36,35 @@ public sealed partial class FormPackageValidator
         }
 
         return CreateResult(issues);
+    }
+    private static bool IsOutsideRange(FormFieldDomainDefinition domain, JsonElement value)
+    {
+        if (domain.Min is not JsonElement minimum || domain.Max is not JsonElement maximum)
+        {
+            return true;
+        }
+
+        if (ReadRangeDecimal(minimum) is decimal minDecimal &&
+            ReadRangeDecimal(maximum) is decimal maxDecimal &&
+            ReadRangeDecimal(value) is decimal numberDecimal)
+        {
+            return minDecimal > maxDecimal || numberDecimal < minDecimal || numberDecimal > maxDecimal;
+        }
+
+        return !TryReadFiniteDouble(minimum, out var min) || !TryReadFiniteDouble(maximum, out var max) ||
+            !TryReadFiniteDouble(value, out var number) || min > max || number < min || number > max;
+    }
+
+    private static decimal? ReadRangeDecimal(JsonElement value)
+    {
+        decimal number = default;
+        var parsed = value.ValueKind switch
+        {
+            JsonValueKind.Number => value.TryGetDecimal(out number),
+            JsonValueKind.String => decimal.TryParse(value.GetString(), NumberStyles.Float,
+                CultureInfo.InvariantCulture, out number),
+            _ => false
+        };
+        return parsed && TryReadFiniteDouble(value, out var original) && (double)number == original ? number : null;
     }
 }

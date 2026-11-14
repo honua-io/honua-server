@@ -6,8 +6,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Assets;
+using Honua.Core.Features.Forms.Packages;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Assets;
 
@@ -29,7 +32,7 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
     {
         await _fixture.InitializeAsync();
         await AssetTestData.ResetAsync(_fixture);
-        _form = await AssetTestData.PublishFormAsync(_fixture);
+        _form = await PublishRangedFormAsync();
         _assets = await AssetTestData.DiscoverAssetsAsync(_fixture);
         _profileId = await AssetTestData.CreateActiveProfileAsync(_fixture.Client, _form);
     }
@@ -150,6 +153,8 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
+    [InlineData("{\"name\":\"x\",\"rating\":0}")]
+    [InlineData("{\"name\":\"x\",\"rating\":100}")]
     [InlineData("{}")]
     [InlineData("{\"name\":123}")]
     [InlineData("{\"name\":\"x\",\"NAME\":\"y\"}")]
@@ -168,6 +173,48 @@ public sealed class WorkTaskCompletionTests : IAsyncLifetime
         (await AssetTestData.CountAsync(_fixture, "asset_command_receipts")).Should().Be(receipts);
         (await AssetTestData.ScalarAsync(_fixture, $"SELECT status FROM honua.work_tasks WHERE task_id = '{taskId}'"))
             .Should().Be(WorkTaskStatus.InProgress);
+    }
+
+    [IntegrationTheory]
+    [InlineData(1)]
+    [InlineData(5)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/tasks/{taskId}/completion")]
+    public async Task Complete_RangeBoundaryAnswer_CompletesTask(int rating)
+    {
+        var taskId = await StartedInspectionAsync(_assets[0].AssetId);
+        var response = await CompleteAsync(taskId, Completion(3, Later, 3) with
+        {
+            Answers = JsonSerializer.SerializeToElement(new Dictionary<string, object> { ["name"] = "Inspected sign", ["rating"] = rating }),
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(1);
+    }
+
+    private async Task<WorkTaskFormReference> PublishRangedFormAsync()
+    {
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field { Name = "rating", Type = MetadataV2FieldType.Double, Nullable = true });
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IFormPackageStore>();
+        var draft = await store.SaveDraftAsync(new FormPackageDocument
+        {
+            Title = "Inspection rating",
+            Target = new FormTargetDefinition { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId },
+            Fields =
+            [
+                new FormFieldDefinition { FieldId = "name", Label = "Name", Type = "text", TargetField = "name", Required = true },
+                new FormFieldDefinition
+                {
+                    FieldId = "rating", Label = "Rating", Type = "number", TargetField = "rating",
+                    Domain = new FormFieldDomainDefinition { Type = "range", Min = JsonSerializer.SerializeToElement(1), Max = JsonSerializer.SerializeToElement(5) },
+                },
+            ],
+            Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = ["name", "rating"] }],
+        }, "test-admin");
+        var published = await store.PublishAsync(draft.FormId, draft.Version, new FormPackageValidationResult { IsValid = true }, "test-admin")
+            ?? throw new InvalidOperationException("The test form did not publish.");
+        return new WorkTaskFormReference { FormId = published.FormId, Version = published.Version };
     }
 
     private Task<Guid> StartedInspectionAsync(string assetId) => StartedTaskAsync(assetId, WorkTaskType.Inspection);

@@ -765,6 +765,12 @@ public sealed partial class FormPackageValidator
             return;
         }
 
+        if (string.Equals(field.Domain.Type, "range", StringComparison.OrdinalIgnoreCase) &&
+            IsOutsideRange(field.Domain, value))
+        {
+            AddError(issues, "fieldValueOutsideDomain", $"Submitted value for '{field.FieldId}' is outside the form range.", field.FieldId);
+        }
+
         if (string.Equals(field.Domain.Type, "codedValue", StringComparison.OrdinalIgnoreCase))
         {
             var submitted = NormalizeJson(value);
