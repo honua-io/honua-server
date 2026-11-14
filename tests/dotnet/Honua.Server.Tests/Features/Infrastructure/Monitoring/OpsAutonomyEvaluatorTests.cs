@@ -22,6 +22,7 @@ public sealed class OpsAutonomyEvaluatorTests
     private const string FindingId = "alert-dispatch-backlog-test";
     private const string RedriveAction = "alerts.redrive_dead_letters";
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false, false, false)]
     [InlineData(true, false, false)]
@@ -43,6 +44,7 @@ public sealed class OpsAutonomyEvaluatorTests
         decision.ShouldAutoApply.Should().Be(expectedAutoApply);
     }
 
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Resolve_ProposeOnlyProfileAndUnknownRule_NeverDefaultToAutoApply()
     {
@@ -53,6 +55,7 @@ public sealed class OpsAutonomyEvaluatorTests
             .Mode.Should().Be(OpsAutonomyMode.ProposeOnly);
     }
 
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("AutApply")]
     [InlineData("999")]
