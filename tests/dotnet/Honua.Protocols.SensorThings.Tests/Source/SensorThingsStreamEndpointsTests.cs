@@ -28,7 +28,11 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
         builder.UseSetting("HONUA_DEV_AUTH", "false");
         builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-            new Dictionary<string, string?> { ["MultiTenancy:MultiTenantAdminRoles:0"] = "admin" }));
+            new Dictionary<string, string?>
+            {
+                ["MultiTenancy:Enabled"] = "true",
+                ["MultiTenancy:MultiTenantAdminRoles:0"] = "admin",
+            }));
     });
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();

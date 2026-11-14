@@ -55,7 +55,7 @@ internal static class MigrateOnlyCommand
                 .ConfigureAwait(false);
             var summary = new MigrateOnlySummary { MetadataSchema = ResolveMetadataSchema(configuration) };
             summary.Finish(MigrateOnlyOutcome.MigrationFailed, "Migrate-only run failed (" + ex.GetType().Name + ").");
-            await summaryWriter.WriteLineAsync(summary.ToJson()).ConfigureAwait(false);
+            await summaryWriter.WriteLineAsync(summary.ToJson().AsMemory(), CancellationToken.None).ConfigureAwait(false);
             await summaryWriter.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             return MigrateOnlyOutcome.MigrationFailed.ExitCode;
         }
@@ -107,7 +107,7 @@ internal static class MigrateOnlyCommand
             MigrateOnlyLog.Stopped(logger, summary.Outcome.Code, summary.Outcome.ExitCode, summary.Message ?? summary.Outcome.Code);
         }
 
-        await summaryWriter.WriteLineAsync(summary.ToJson()).ConfigureAwait(false);
+        await summaryWriter.WriteLineAsync(summary.ToJson().AsMemory(), CancellationToken.None).ConfigureAwait(false);
         await summaryWriter.FlushAsync(CancellationToken.None).ConfigureAwait(false);
         return summary.Outcome.ExitCode;
     }

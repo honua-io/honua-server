@@ -20,6 +20,7 @@ internal static class OutputCacheStatus
     private static readonly object TrackedKey = new();
     private static readonly object HitKey = new();
     private static readonly object RevisionKey = new();
+    private static readonly object MetricRecordedKey = new();
 
     internal static void Track(OutputCacheContext context) => context.HttpContext.Items[TrackedKey] = context;
 
@@ -34,6 +35,10 @@ internal static class OutputCacheStatus
         if (Describe(context) is { } status)
         {
             context.Response.Headers[HeaderName] = status;
+            if (context.Items.TryAdd(MetricRecordedKey, true))
+            {
+                SharedCacheMetrics.RecordOutput(context, Outcome(context)!);
+            }
         }
     }
 
@@ -41,20 +46,29 @@ internal static class OutputCacheStatus
     // stored; a hit and a bypass are known for certain by then.
     internal static string? Describe(HttpContext context)
     {
+        var outcome = Outcome(context);
+        if (outcome is null)
+        {
+            return null;
+        }
+        var status = outcome == "hit"
+            ? $"{CacheName}; hit; ttl={Seconds(Lifetime(context, (OutputCacheContext)context.Items[TrackedKey]!) - EntryAge(context.Response))}"
+            : $"{CacheName}; fwd={outcome}";
+        return WithRevision(context, status);
+    }
+
+    private static string? Outcome(HttpContext context)
+    {
         var tracked = context.Items.TryGetValue(TrackedKey, out var value) ? value as OutputCacheContext : null;
         if (tracked is null || !RouteUsesOutputCache(context))
         {
-            return SharedCacheResponse.DeclaredClass(context) is null ? null : WithRevision(context, $"{CacheName}; fwd=bypass");
+            return SharedCacheResponse.DeclaredClass(context) is null ? null : "bypass";
         }
-
         if (RequestBypassesOutputCache(context))
         {
-            return WithRevision(context, $"{CacheName}; fwd=bypass");
+            return "bypass";
         }
-
-        return tracked.AllowCacheLookup && context.Items.ContainsKey(HitKey)
-            ? WithRevision(context, $"{CacheName}; hit; ttl={Seconds(Lifetime(context, tracked) - EntryAge(context.Response))}")
-            : WithRevision(context, $"{CacheName}; fwd=miss");
+        return tracked.AllowCacheLookup && context.Items.ContainsKey(HitKey) ? "hit" : "miss";
     }
 
     internal static bool RouteUsesOutputCache(HttpContext context)
