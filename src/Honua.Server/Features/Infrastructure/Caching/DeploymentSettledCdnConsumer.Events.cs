@@ -37,7 +37,15 @@ internal sealed partial class DeploymentSettledCdnConsumer
         }
 
         var cluster = string.Join(':', arn.Take(5)) + ":cluster/" + address[1];
-        return new Deployment(cluster, address[1], service, address[2], arn[3], deploymentId);
+        return new Deployment
+        {
+            ClusterArn = cluster,
+            ClusterName = address[1],
+            ServiceArn = service,
+            ServiceName = address[2],
+            Region = arn[3],
+            DeploymentId = deploymentId,
+        };
     }
 
     // Targets come from the registry the deploy backends use, and parameters are read the way the ECS/ALB
@@ -67,7 +75,19 @@ internal sealed partial class DeploymentSettledCdnConsumer
         => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) &&
             value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
 
-    private sealed record Deployment(string ClusterArn, string ClusterName, string ServiceArn,
-        string ServiceName, string Region, string DeploymentId);
+    private sealed record Deployment
+    {
+        public required string ClusterArn { get; init; }
+
+        public required string ClusterName { get; init; }
+
+        public required string ServiceArn { get; init; }
+
+        public required string ServiceName { get; init; }
+
+        public required string Region { get; init; }
+
+        public required string DeploymentId { get; init; }
+    }
 }
 #endif

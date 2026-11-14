@@ -74,7 +74,7 @@ internal sealed partial class CatalogActivationWatcher(
         var store = scoped.GetRequiredService<ICatalogActivationWatchStore>();
         if (watch.RollbackRevision is not null)
         {
-            await PurgeRollbackAsync(scoped, store, watch, cancellationToken).ConfigureAwait(false);
+            await PurgeRollbackAsync(scoped, watch, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -101,14 +101,14 @@ internal sealed partial class CatalogActivationWatcher(
             var pending = await store.ReadPendingAsync(cancellationToken).ConfigureAwait(false);
             if (pending.FirstOrDefault(candidate => candidate.Id == watch.Id && candidate.RollbackRevision is not null) is { } rollback)
             {
-                await PurgeRollbackAsync(scoped, store, rollback, cancellationToken).ConfigureAwait(false);
+                await PurgeRollbackAsync(scoped, rollback, cancellationToken).ConfigureAwait(false);
             }
         }
     }
 
-    private async Task PurgeRollbackAsync(IServiceProvider scoped, ICatalogActivationWatchStore store,
-        CatalogActivationWatch watch, CancellationToken cancellationToken)
+    private async Task PurgeRollbackAsync(IServiceProvider scoped, CatalogActivationWatch watch, CancellationToken cancellationToken)
     {
+        var store = scoped.GetRequiredService<ICatalogActivationWatchStore>();
         var now = (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
         if (_nextPurgeAttempt.TryGetValue(watch.Id, out var next) && now < next)
         {
