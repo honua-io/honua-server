@@ -48,8 +48,14 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
                 && entry.AreaNorth is double areaNorth)
             {
                 var envelope = new DatumAreaEnvelope(areaWest, areaSouth, areaEast, areaNorth);
-                AddArea(byArea, (entry.FromSrid, entry.ToSrid), new(forward, envelope, entry.AreaPriority));
-                AddArea(byArea, (entry.ToSrid, entry.FromSrid), new(inverse, envelope, entry.AreaPriority));
+                AddArea(byArea, (entry.FromSrid, entry.ToSrid), new(forward, envelope, entry.AreaPriority)
+                {
+                    GridCoverage = entry.GridCoverage ?? []
+                });
+                AddArea(byArea, (entry.ToSrid, entry.FromSrid), new(inverse, envelope, entry.AreaPriority)
+                {
+                    GridCoverage = entry.GridCoverage ?? []
+                });
             }
         }
 
@@ -75,6 +81,7 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
             return false;
         }
 
+        var envelope = new DatumAreaEnvelope(west, south, east, north);
         int? priority = null;
         foreach (var candidate in candidates)
         {
@@ -83,7 +90,9 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
                 break;
             }
 
-            if (!Contains(candidate.Envelope, new(west, south, east, north)))
+            if (!Contains(candidate.Envelope, envelope)
+                || candidate.GridCoverage.Count > 0
+                    && !candidate.GridCoverage.Any(area => Contains(area, envelope)))
             {
                 continue;
             }
@@ -214,7 +223,10 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
     private readonly record struct AreaCandidate(
         DatumTransformationSelection Selection,
         DatumAreaEnvelope Envelope,
-        int Priority);
+        int Priority)
+    {
+        public IReadOnlyList<DatumAreaEnvelope> GridCoverage { get; init; } = [];
+    }
 }
 
 internal sealed record DatumTransformationTable
@@ -243,6 +255,8 @@ internal sealed record DatumTransformationEntry
     public double? AreaNorth { get; init; }
 
     public int AreaPriority { get; init; }
+
+    public IReadOnlyList<DatumAreaEnvelope>? GridCoverage { get; init; }
 
     public int? EpsgOperationCode { get; init; }
 

@@ -87,6 +87,32 @@
       "toSrid": 4269,
       "areaOfUse": "Canada - NAD27 to NAD83 (NTv2)",
       "areaPriority": 1,
+      "gridCoverage": [
+        {
+          "west": -88,
+          "south": 40,
+          "east": -44,
+          "north": 60
+        },
+        {
+          "west": -142,
+          "south": 47,
+          "east": -88,
+          "north": 60
+        },
+        {
+          "west": -142,
+          "south": 60,
+          "east": -44,
+          "north": 75
+        },
+        {
+          "west": -142,
+          "south": 75,
+          "east": -44,
+          "north": 84
+        }
+      ],
       "areaWest": -141.01,
       "areaSouth": 41.67,
       "areaEast": -52.62,

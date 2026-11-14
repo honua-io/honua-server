@@ -109,6 +109,36 @@ public sealed class GeoServicesDatumTransformationCatalogTests
         selection.Should().BeNull();
     }
 
+    [UnitTheory]
+    [InlineData(-79.4, 43.7)]
+    [InlineData(-110, 50)]
+    [InlineData(-110, 65)]
+    [InlineData(-110, 80)]
+    public void TryGetForEnvelope_InsideCanadianParentGrid_SelectsCanada(double longitude, double latitude)
+    {
+        _catalog.TryGetForEnvelope(Nad27, Nad83, longitude, latitude, longitude, latitude, out var selection)
+            .Should().BeTrue();
+        selection!.RequiredGrids.Should().Equal("ca_nrc_ntv2_0.tif");
+    }
+
+    [UnitTheory]
+    [InlineData(Nad27, Nad83)]
+    [InlineData(Nad83, Nad27)]
+    public void TryGetForEnvelope_InsideCanadianBoundsOutsideGrid_SelectsConus(int fromSrid, int toSrid)
+    {
+        _catalog.TryGetForEnvelope(fromSrid, toSrid, -100.1, 43.9, -99.9, 44.1, out var selection)
+            .Should().BeTrue();
+        selection!.RequiredGrids.Should().Equal("us_noaa_conus.tif");
+    }
+
+    [UnitTest]
+    public void TryGetForEnvelope_CrossesCanadianCoverageGap_SelectsConus()
+    {
+        _catalog.TryGetForEnvelope(Nad27, Nad83, -89, 46, -87, 48, out var selection)
+            .Should().BeTrue();
+        selection!.RequiredGrids.Should().Equal("us_noaa_conus.tif");
+    }
+
     [UnitTest]
     public void TryGetByWkid_ConusOperation_IgnoresRegionalPriority()
     {

@@ -49,7 +49,7 @@ later (a fixture with documented provenance) without restructuring.
 | NAD83(HARN) (4152) | WGS84 (4326) | NAD_1983_HARN_To_WGS_1984_1 | — | 1580 | 1e-9 deg | EPSG 1580 is a null transformation (`+proj=noop`). Seeded under #1501; validated against the runtime in both directions. No distinct Esri WKID — ArcGIS applies no geographic transformation by default for this pair. |
 | NAD83(NSRS2007) (4759) | WGS84 (4326) | NAD_1983_NSRS2007_To_WGS_1984_1 | — | 15931 | 1e-9 deg | EPSG 15931 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
 | NAD83(2011) (6318) | WGS84 (4326) | NAD_1983_2011_To_WGS_1984_1 | — | 9774 | 1e-9 deg | EPSG 9774 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
-| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 5e-6 deg | The no-envelope default is CONUS `us_noaa_conus.tif`. An envelope contained in a catalog area selects that grid (Alaska `us_noaa_alaska.tif`, Canada `ca_nrc_ntv2_0.tif`). Canada has explicit priority over overlapping CONUS/Alaska bounds. No match or an equal-priority ambiguity uses 2-argument `ST_Transform`. Wrapped Alaska bounds contain only their antimeridian arc. |
+| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 5e-6 deg | The no-envelope default is CONUS `us_noaa_conus.tif`. An envelope contained in a catalog area selects that grid (Alaska `us_noaa_alaska.tif`, Canada `ca_nrc_ntv2_0.tif`). Canada has explicit priority over overlapping CONUS/Alaska bounds only when the entire envelope fits one parent grid coverage region. No match or an equal-priority ambiguity uses 2-argument `ST_Transform`. Wrapped Alaska bounds contain only their antimeridian arc. |
 
 Tolerances are conservative upper bounds for the *selection* test: they prove Honua
 applies the correct pipeline, not that PROJ and EPSG agree to sub-millimeter. Tighten
@@ -135,7 +135,10 @@ with `ca_nrc_ntv2_0.tif`; Puerto Rico uses
 with `us_noaa_prvi.tif`. `projinfo EPSG:1313 -k operation -o PROJ` and
 `projinfo EPSG:1461 -k operation -o PROJ` expose the canonical PROJ pipelines.
 Explicit client WKIDs continue to select their named operation independently of
-area priority.
+area priority. Automatic Canadian selection additionally requires containment in one of the
+four parent regions encoded in the canonical TIFF; the operation's rectangular area
+of use includes a southern central coverage gap. Envelopes crossing parent-region
+boundaries conservatively fall back to another contained area or `ST_Transform`.
 
 The Alaska and Canadian integration cases also compare against independent `cct`
 outputs within **0.01 m horizontal distance** on the NAD83 ellipsoid. These
