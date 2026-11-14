@@ -530,14 +530,9 @@ internal sealed class CapabilityManifestService(
             Capability("collaboration.feature-locks", "collaboration", context,
                 configured: runtimeInventory.FeatureLockAuthorizerConfigured,
                 requiresAuthentication: true),
-            // The two recorded 2026.1 gaps, published rather than left to the docs page: a
-            // lease is node-local, and GeoServices applyEdits honours no client-supplied
-            // version token. Same wire shape as an unimplemented file-format writer. The
-            // version-token row is scoped to GeoServices because OGC API Features does
-            // enforce If-Match/412 — a global name would under-report the working surfaces.
+            // PostgreSQL-backed leases span nodes; the local fallback does not.
             Capability("collaboration.feature-locks.cross-node", "collaboration", context,
-                maturity: CapabilityMaturity.Planned,
-                supported: false),
+                supported: runtimeInventory.HasSharedFeatureLockStore),
             Capability("edit.geoservices-version-tokens", "edit", context,
                 maturity: CapabilityMaturity.Planned,
                 supported: false),
@@ -718,6 +713,10 @@ internal sealed class CapabilityManifestService(
             {
                 Configured = runtimeInventory.FeatureLockAuthorizerConfigured,
                 RequiresAuthentication = true,
+            },
+            ["collaboration.feature-locks.cross-node"] = new()
+            {
+                Supported = runtimeInventory.HasSharedFeatureLockStore,
             },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },

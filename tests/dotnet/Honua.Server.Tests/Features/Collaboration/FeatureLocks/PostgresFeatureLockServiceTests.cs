@@ -26,7 +26,7 @@ public sealed class PostgresFeatureLockServiceTests(DatabaseFixtureAdapter datab
     {
         await database.CreateSchemaUnderLockAsync(_schema);
         await using var stream = typeof(PostgresFeatureLockService).Assembly.GetManifestResourceStream(
-            "Honua.Server.Migrations.167_CreateFeatureLocks.sql")
+            "Honua.Server.Migrations.180_CreateFeatureLocks.sql")
             ?? throw new InvalidOperationException("Feature lock migration is missing.");
         using var reader = new StreamReader(stream);
         await database.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync())
@@ -74,6 +74,23 @@ public sealed class PostgresFeatureLockServiceTests(DatabaseFixtureAdapter datab
         (await otherNode.GetActiveLeaseAsync(_feature)).Should().BeNull();
         (await otherNode.RenewAsync(_feature, _holder, TimeSpan.FromMinutes(1), _write)).Status.Should().Be(FeatureLockRenewStatus.NotFound);
         (await otherNode.ReleaseAsync(_feature, _holder, _write)).Status.Should().Be(FeatureLockReleaseStatus.NotFound);
+    }
+
+    [IntegrationTest]
+    public async Task Mutations_DifferentPrincipal_PreserveOriginalLease()
+    {
+        var store = Store();
+        var claimed = await store.ClaimAsync(_feature, _holder, TimeSpan.FromMinutes(1), _write);
+        var differentPrincipal = _holder with { PrincipalName = "other-principal" };
+
+        (await Store().ClaimAsync(_feature, differentPrincipal, TimeSpan.FromMinutes(2), _write)).Status
+            .Should().Be(FeatureLockClaimStatus.HeldByOther);
+        (await Store().RenewAsync(_feature, differentPrincipal, TimeSpan.FromMinutes(2), _write)).Status
+            .Should().Be(FeatureLockRenewStatus.HeldByOther);
+        (await Store().ReleaseAsync(_feature, differentPrincipal, _write)).Status
+            .Should().Be(FeatureLockReleaseStatus.HeldByOther);
+        (await store.GetActiveLeaseAsync(_feature)).Should().BeEquivalentTo(claimed.Lease);
+        (await store.ReleaseAsync(_feature, _holder, _write)).Status.Should().Be(FeatureLockReleaseStatus.Released);
     }
 
     [IntegrationTest]

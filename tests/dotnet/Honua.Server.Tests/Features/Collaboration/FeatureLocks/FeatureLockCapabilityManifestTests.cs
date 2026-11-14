@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Collaboration.FeatureLocks;
 /// manifest "so a client can discover it without reading this page". These tests are what
 /// makes that sentence true and keeps it true: a client that reads
 /// <c>/api/v1/capabilities/manifest</c> learns that leases are enforced, that no lease can
-/// be granted until an authorizer is supplied, that leases do not span nodes, and that the
+/// be granted until an authorizer is supplied, that cross-node leases depend on the selected store, and that the
 /// GeoServices <c>applyEdits</c> surface honours no client-supplied version token.
 /// </para>
 /// <para>
@@ -97,8 +97,6 @@ public sealed class FeatureLockCapabilityManifestTests
     }
 
     [IntegrationTheory]
-    [InlineData(false, CrossNodeCapability)]
-    [InlineData(true, CrossNodeCapability)]
     [InlineData(false, VersionTokenCapability)]
     [InlineData(true, VersionTokenCapability)]
     [Endpoint("GET /api/v1/capabilities/manifest")]
@@ -118,6 +116,33 @@ public sealed class FeatureLockCapabilityManifestTests
         gap.GetProperty("available").GetBoolean().Should().BeFalse();
         gap.GetProperty("lifecycle").GetString().Should().Be("planned");
         gap.GetProperty("reasonCode").GetString().Should().Be("unsupported");
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task Manifest_CrossNodeSupport_FollowsSelectedStore(bool fromRegistry, bool localStore)
+    {
+        var fixture = CreateFixture(allowWrite: true, fromRegistry: fromRegistry);
+        if (localStore)
+        {
+            fixture = fixture.ConfigureServices(services =>
+            {
+                services.RemoveAll<IFeatureLockService>();
+                services.AddSingleton<IFeatureLockService, InMemoryFeatureLockService>();
+            });
+        }
+        await using var lifetime = fixture;
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var document = await GetManifestAsync(client);
+        var crossNode = Capability(document, CrossNodeCapability);
+        crossNode.GetProperty("supported").GetBoolean().Should().Be(!localStore);
+        crossNode.GetProperty("available").GetBoolean().Should().Be(!localStore);
+        crossNode.GetProperty("lifecycle").GetString().Should().Be("implemented");
     }
 
     [IntegrationTest]

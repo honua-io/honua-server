@@ -201,7 +201,8 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
 
     private static bool IsSameHolder(LockHolder existing, LockHolder candidate)
     {
-        if (!string.Equals(existing.HolderId, candidate.HolderId, StringComparison.Ordinal))
+        if (!string.Equals(existing.PrincipalName, candidate.PrincipalName, StringComparison.Ordinal)
+            || !string.Equals(existing.HolderId, candidate.HolderId, StringComparison.Ordinal))
         {
             return false;
         }

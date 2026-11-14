@@ -173,7 +173,6 @@ public sealed class CapabilityManifestRegistryProjectionTests
     // purpose so a client can read the gap off `capabilities[]`, but never served.
     private static readonly string[] KnownGapManifestCapabilityIds =
     [
-        "collaboration.feature-locks.cross-node",
         "edit.geoservices-version-tokens",
     ];
 

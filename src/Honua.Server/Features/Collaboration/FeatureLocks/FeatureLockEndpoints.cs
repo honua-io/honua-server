@@ -19,16 +19,15 @@ internal static class FeatureLockEndpoints
     // Published on every feature-lock route so a client discovers what a lease actually
     // guarantees from the API description itself, not only from the documentation site
     // (#4402). Every claim in this text is enforced by a test: FeatureServer, OGC API
-    // Features and OData all consult IFeatureEditGuard before mutating a feature, and the
-    // only lease store that ships is in-process.
+    // Features and OData all consult IFeatureEditGuard before mutating a feature, and PostgreSQL-backed hosts share durable leases across nodes.
     private const string EnforcementScopeDescription =
         "Feature-edit leases are ENFORCED on every write path: while another editor holds " +
         "a lease, a FeatureServer applyEdits slot for that feature fails with code 1005 " +
         "(FeatureLocked), and OGC API Features and OData writes return 423 Locked. " +
         "Claiming a lease is optional — a caller that holds none is unaffected. " +
-        "SCOPE LIMITS for 2026.1: enforcement is NODE-LOCAL (the shipped lease store is " +
-        "in-process, so a lease does not survive a restart and does not block a write " +
-        "routed to another node), client-supplied expected-version tokens are NOT enforced " +
+        "PostgreSQL-backed hosts share leases across nodes and preserve them across restarts " +
+        "until expiry. The in-memory fallback is NODE-LOCAL and loses leases on restart. " +
+        "SCOPE LIMITS for 2026.1: client-supplied expected-version tokens are NOT enforced " +
         "on GeoServices applyEdits, and the shipped lock authorizer denies every claim " +
         "until a deployment supplies its own. A lease is keyed on the routed service NAME, " +
         "the published layer id, and the feature's OBJECTID. " +
