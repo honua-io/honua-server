@@ -34,18 +34,16 @@ internal sealed partial class InMemoryCollaborationSessionService
     public InMemoryCollaborationSessionService(
         ISavedMapCollaborationAuthorizer authorizer,
         ICollaborationSessionClock clock,
-        IRealtimeFanoutProvider? provider = null,
-        CollaborationCapabilitySource? capabilities = null,
-        CollaborationRealtimeRelay? relay = null)
+        CollaborationSessionRealtimeServices? realtime = null)
     {
         _authorizer = authorizer ?? throw new ArgumentNullException(nameof(authorizer));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
-        _provider = provider;
-        _relay = relay;
+        _provider = realtime?.Provider;
+        _relay = realtime?.Relay;
         // Advertised capabilities must match what the endpoints will actually accept: when the
         // deployment fails edits closed, the stream must not claim operations are available
         // (honua-server#2999 review).
-        _capabilities = capabilities;
+        _capabilities = realtime?.Capabilities;
     }
 
     // Read provider capabilities on access so advertised flags match the active deployment.
@@ -948,3 +946,8 @@ internal sealed partial class InMemoryCollaborationSessionService
         }
     }
 }
+
+internal sealed record CollaborationSessionRealtimeServices(
+    IRealtimeFanoutProvider? Provider = null,
+    CollaborationCapabilitySource? Capabilities = null,
+    CollaborationRealtimeRelay? Relay = null);

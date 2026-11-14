@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Features.Realtime;
+using NSubstitute;
 using FluentAssertions;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.TestKit.Attributes;
@@ -298,7 +299,7 @@ public sealed class InMemoryCollaborationSessionServiceTests
         var clock = new FakeCollaborationClock(FixedUtcNow());
         var backplane = new RecordingProvider();
         var service = new InMemoryCollaborationSessionService(
-            new AllowSavedMapCollaborationAuthorizer(), clock, backplane);
+            new AllowSavedMapCollaborationAuthorizer(), clock, new CollaborationSessionRealtimeServices(backplane.Provider));
         var alice = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
         var bob = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Bob" }, Principal("bob"))).Response!;
         _ = service.DrainEvents(alice.SessionId);
@@ -332,7 +333,7 @@ public sealed class InMemoryCollaborationSessionServiceTests
         var clock = new FakeCollaborationClock(FixedUtcNow());
         var backplane = new RecordingProvider();
         var service = new InMemoryCollaborationSessionService(
-            new AllowSavedMapCollaborationAuthorizer(), clock, backplane);
+            new AllowSavedMapCollaborationAuthorizer(), clock, new CollaborationSessionRealtimeServices(backplane.Provider));
         var alice = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
         backplane.Published.Clear();
 
@@ -408,7 +409,7 @@ public sealed class InMemoryCollaborationSessionServiceTests
     {
         var clock = new FakeCollaborationClock(FixedUtcNow());
         var provider = new RecordingProvider();
-        var source = new InMemoryCollaborationSessionService(new AllowSavedMapCollaborationAuthorizer(), clock, provider);
+        var source = new InMemoryCollaborationSessionService(new AllowSavedMapCollaborationAuthorizer(), clock, new CollaborationSessionRealtimeServices(provider.Provider));
         var alice = (await source.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
         source.UpdateCursor(alice.SessionId, new CollaborationCursor { X = 12, Y = 34 });
         var retained = provider.Drafts[^1].Payload.Deserialize(CollaborationSessionJsonContext.Default.CollaborationPresenceMessage)!;
@@ -431,21 +432,22 @@ public sealed class InMemoryCollaborationSessionServiceTests
             e.Event.Type == CollaborationSessionEventTypes.ParticipantLeft && e.Event.ParticipantId == alice.ParticipantId);
     }
 
-    private sealed class RecordingProvider : IRealtimeFanoutProvider
+    private sealed class RecordingProvider
     {
         public List<CollaborationEventEnvelope> Published { get; } = [];
         public List<RealtimeEventDraft> Drafts { get; } = [];
-        public RealtimeProviderCapabilities Capabilities => new(true, true, true);
-        public void Enqueue(RealtimeEventDraft draft)
+        public IRealtimeFanoutProvider Provider { get; } = Substitute.For<IRealtimeFanoutProvider>();
+
+        public RecordingProvider()
         {
-            Drafts.Add(draft);
-            Published.Add(draft.Payload.Deserialize(CollaborationSessionJsonContext.Default.CollaborationPresenceMessage)!.Event);
+            Provider.Capabilities.Returns(new RealtimeProviderCapabilities(true, true, true));
+            Provider.When(p => p.Enqueue(Arg.Any<RealtimeEventDraft>())).Do(call =>
+            {
+                var draft = call.Arg<RealtimeEventDraft>();
+                Drafts.Add(draft);
+                Published.Add(draft.Payload.Deserialize(CollaborationSessionJsonContext.Default.CollaborationPresenceMessage)!.Event);
+            });
         }
-        public ValueTask<RealtimePosition> AppendAsync(RealtimeEventDraft draft, System.Data.Common.DbTransaction? transaction, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(string scopeKey, long after, long through, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public ValueTask<IRealtimeStreamLease?> TryAcquireMcpStreamAsync(string sessionId, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request) => throw new NotSupportedException();
-        public ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     [UnitTest]

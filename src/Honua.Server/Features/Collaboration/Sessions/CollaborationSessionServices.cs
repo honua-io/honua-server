@@ -37,6 +37,7 @@ internal static class CollaborationSessionServices
         // edits fail closed, the stream advertises operations/replay as unavailable. Computed on
         // demand rather than snapshotted at construction — see CollaborationCapabilitySource.
         services.TryAddSingleton<CollaborationCapabilitySource>();
+        services.TryAddSingleton<CollaborationSessionRealtimeServices>();
         services.TryAddSingleton<InMemoryCollaborationSessionService>();
         // The background sweep keeps the singleton presence/outbox state bounded when
         // participants stop polling or a socket dies without a close frame.
