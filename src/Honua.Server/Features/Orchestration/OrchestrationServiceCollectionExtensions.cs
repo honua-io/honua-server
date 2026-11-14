@@ -7,7 +7,6 @@ using Honua.Core.Features.Migration.Watermark;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using StackExchange.Redis;
 
 namespace Honua.Server.Features.Orchestration;
 
@@ -20,9 +19,9 @@ internal static class OrchestrationServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
 
         // The workflow stores live in the system database. A host without one (the DuckDB or
-        // MySQL data source) registers no engine, so the
-        // background services stay off, admin cancel returns its documented 503 and schedule
-        // publishing returns the workflow-definition-store capability refusal.
+        // MySQL data source) registers no engine, so the background services stay off, admin
+        // cancel returns its documented 503 and schedule publishing returns the
+        // workflow-definition-store capability refusal.
         if (!services.HasSystemDataSource())
         {
             return services;
@@ -38,11 +37,7 @@ internal static class OrchestrationServiceCollectionExtensions
             sp.GetRequiredService<WorkflowOrchestrationEngine>());
 
         // Durable per-pipeline+source high-water marks for incremental ("changed-since") extract.
-        if (services.Any(descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer)))
-        {
-            services.TryAddSingleton<ISourceWatermarkStore>(sp =>
-                new RedisSourceWatermarkStore(sp.GetRequiredService<IConnectionMultiplexer>()));
-        }
+        services.TryAddSingleton<ISourceWatermarkStore, PostgresSourceWatermarkStore>();
 
         // Event/CDC trigger probes. The change-feed probe adapts the scoped IChangeTracker; the
         // object-store probe is a poll-based file-system baseline whose StoreId->root bindings come
