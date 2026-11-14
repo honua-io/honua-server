@@ -1102,12 +1102,7 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
             harness.JobStore);
 
         // Drive ticks directly: a stalled database read can defer expiry until a later sweep.
-        var stored = await WaitForJobAsync(
-            harness.JobStore,
-            operationId,
-            job => job.Status == ExecutionJobStatus.Queued && job.ClaimedBy is null,
-            TimeSpan.FromSeconds(10),
-            () => service.SweepActiveJobsAsync(CancellationToken.None));
+        var stored = await ReconcileUntilQueuedAsync(harness.JobStore, service, operationId);
 
         stored.CurrentPhase.Should().StartWith("Retrying");
         stored.NextRetryAt.Should().BeNull();
@@ -1154,21 +1149,36 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
         };
     }
 
+    private static async Task<ExecutionJobRecord> ReconcileUntilQueuedAsync(
+        PostgresExecutionJobStore jobStore,
+        JobReconciliationService service,
+        string operationId)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await service.SweepActiveJobsAsync(CancellationToken.None);
+            var job = await jobStore.GetAsync(operationId);
+            if (job is { Status: ExecutionJobStatus.Queued, ClaimedBy: null })
+            {
+                return job;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
+
+        throw new TimeoutException($"Timed out reconciling job '{operationId}' for retry.");
+    }
+
     private static async Task<ExecutionJobRecord> WaitForJobAsync(
         PostgresExecutionJobStore jobStore,
         string operationId,
         Func<ExecutionJobRecord, bool> predicate,
-        TimeSpan timeout,
-        Func<Task>? beforePoll = null)
+        TimeSpan timeout)
     {
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            if (beforePoll is not null)
-            {
-                await beforePoll();
-            }
-
             var job = await jobStore.GetAsync(operationId);
             if (job != null && predicate(job))
             {
