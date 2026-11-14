@@ -17,6 +17,7 @@ namespace Honua.Server.Tests.Import;
 public sealed partial class ImportExecutionJobQueueTests
 {
     [Theory]
+    [Trait("Category", "Unit")]
     [InlineData(false)]
     [InlineData(true)]
     public async Task GetProgressAsync_JobCompletesDuringRead_ReturnsFinalProgress(bool expired)
