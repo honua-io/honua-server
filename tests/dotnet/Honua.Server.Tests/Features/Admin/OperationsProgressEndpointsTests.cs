@@ -1301,7 +1301,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
             var observed = current;
             if (++reads == 1)
             {
-                current = initial with { Version = 2, Status = ExecutionJobStatus.Queued, CurrentPhase = "Queued for manual retry" };
+                current = initial with { Version = 2, ManualRetryGeneration = 1, Status = ExecutionJobStatus.Queued, CurrentPhase = "Queued for manual retry" };
             }
 
             return observed;
@@ -1311,11 +1311,6 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(call => { current = call.Arg<ExecutionJobRecord>(); return true; });
         var queue = Substitute.For<IJobQueue>();
-        queue.RemoveAsync(operationId, Arg.Any<CancellationToken>()).Returns(_ =>
-        {
-            current = initial with { Version = 3, CurrentPhase = "Queued for manual retry" };
-            return Task.CompletedTask;
-        });
         var fixture = new WebAppFixture()
             .ReplaceRequestService<IExecutionJobStore>(store)
             .ReplaceRequestService<IJobQueue>(queue);
@@ -1330,6 +1325,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             current.Status.Should().Be(ExecutionJobStatus.Queued);
+            await queue.DidNotReceive().RemoveAsync(operationId, Arg.Any<CancellationToken>());
             await store.DidNotReceive().TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
         }
         finally

@@ -385,15 +385,9 @@ internal static class ExecutionJobCancellationHelper
 
     private static bool IsSameExecutionAttempt(ExecutionJobRecord original, ExecutionJobRecord current)
     {
-        // Cancel followed by manual retry needs at least two writes, even when all
-        // attempt fields remain unchanged. A single intervening write may be pickup.
-        if (original.ClaimedBy == null && current.Version > original.Version + 1)
-        {
-            return false;
-        }
-
         var acquiredClaim = original.ClaimedBy == null && current.ClaimedBy != null;
-        return (original.AttemptCount == current.AttemptCount
+        return original.ManualRetryGeneration == current.ManualRetryGeneration
+            && (original.AttemptCount == current.AttemptCount
                 || (acquiredClaim && current.AttemptCount == original.AttemptCount + 1))
             && (acquiredClaim || (original.ClaimedBy == current.ClaimedBy && original.ClaimedAt == current.ClaimedAt))
             && original.ProviderOperationId == current.ProviderOperationId

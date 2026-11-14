@@ -436,7 +436,8 @@ internal sealed partial class ConsoleJobService(
             NextRetryAt = retryDispatch.IsRemote ? now : null,
             Warnings = Array.Empty<string>(),
             ArtifactReferences = Array.Empty<string>(),
-            CurrentPhase = "Queued for manual retry"
+            CurrentPhase = "Queued for manual retry",
+            ManualRetryGeneration = checked(job.ManualRetryGeneration + 1)
         };
 
         if (!await AdmitRetryAsync(jobStore, retried, cancellationToken).ConfigureAwait(false))
@@ -1136,7 +1137,11 @@ internal sealed partial class ConsoleJobService(
                 return false;
             }
 
-            var restored = terminalJob with { Version = current!.Version };
+            var restored = terminalJob with
+            {
+                Version = current!.Version,
+                ManualRetryGeneration = current.ManualRetryGeneration
+            };
             if (await jobStore.TrySetAsync(restored, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
                 return true;
@@ -1159,6 +1164,7 @@ internal sealed partial class ConsoleJobService(
     private static bool IsUnclaimedManualRetryCandidate(ExecutionJobRecord? current, ExecutionJobRecord retryCandidate)
         => current != null
             && current.Status == ExecutionJobStatus.Queued
+            && current.ManualRetryGeneration == retryCandidate.ManualRetryGeneration
             && current.AttemptCount == retryCandidate.AttemptCount
             && current.CompletedAt == null
             && current.ClaimedBy == null

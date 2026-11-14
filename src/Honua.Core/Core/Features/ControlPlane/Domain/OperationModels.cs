@@ -1317,6 +1317,8 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
     /// </summary>
     public long Version { get; init; }
 
+    public long ManualRetryGeneration { get; init; }
+
     /// <summary>
     /// Relative operator priority.
     /// </summary>

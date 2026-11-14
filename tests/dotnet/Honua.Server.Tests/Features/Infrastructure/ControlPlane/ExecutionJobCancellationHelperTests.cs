@@ -22,7 +22,7 @@ public sealed class ExecutionJobCancellationHelperTests
     {
         var original = CreateJobRecord("queued-retry", ExecutionJobStatus.Queued, backend: "local") with { Version = 1 };
         // A queued job can be cancelled and manually retried without changing claim or attempt fields.
-        var successor = original with { Version = 3, CurrentPhase = "Queued for manual retry" };
+        var successor = original with { Version = 3, ManualRetryGeneration = 1, CurrentPhase = "Queued for manual retry" };
         var store = Substitute.For<IExecutionJobStore>();
         store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(false, true);

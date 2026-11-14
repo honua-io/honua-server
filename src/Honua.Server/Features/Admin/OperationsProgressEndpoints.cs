@@ -337,6 +337,12 @@ internal static partial class OperationsProgressEndpoints
                     TileOperationMetrics.RecordJobEnded(cancelledTileJob);
                 }
 
+                if (cancelOutcome.Job is { Spec.Kind: ExecutionJobKind.Geoprocessing } cancelledJob)
+                {
+                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                        progressStore, cancelledJob, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
+                }
+
                 await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                 return null;
             case ExecutionJobCancellationState.CancellationRequested:
@@ -461,12 +467,15 @@ internal static partial class OperationsProgressEndpoints
 
         if (progress.Status is OperationStatus.Cancelled)
         {
-            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext,
-                jobStore == null ? null : await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false),
-                progressStore, cancellationToken);
-            if (reconcileResult != null)
+            if (progress is GeoprocessingProgress)
             {
-                return reconcileResult;
+                var reconcileResult = await TryReconcileDurableCancelAsync(httpContext,
+                    jobStore == null ? null : await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false),
+                    progressStore, cancellationToken);
+                if (reconcileResult != null)
+                {
+                    return reconcileResult;
+                }
             }
 
             var alreadyCancelled = new CancelOperationResponse
@@ -573,12 +582,15 @@ internal static partial class OperationsProgressEndpoints
 
         if (latestProgress.Status is OperationStatus.Cancelled)
         {
-            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext,
-                jobStore == null ? null : await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false),
-                progressStore, cancellationToken);
-            if (reconcileResult != null)
+            if (latestProgress is GeoprocessingProgress)
             {
-                return reconcileResult;
+                var reconcileResult = await TryReconcileDurableCancelAsync(httpContext,
+                    jobStore == null ? null : await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false),
+                    progressStore, cancellationToken);
+                if (reconcileResult != null)
+                {
+                    return reconcileResult;
+                }
             }
 
             var alreadyCancelled = new CancelOperationResponse
@@ -872,12 +884,15 @@ internal static partial class OperationsProgressEndpoints
 
             if (current.Status is OperationStatus.Cancelled)
             {
-                var reconcileResult = await TryReconcileDurableCancelAsync(httpContext,
-                    jobStore == null ? null : await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false),
-                    progressStore, cancellationToken);
-                if (reconcileResult != null)
+                if (current is GeoprocessingProgress)
                 {
-                    return reconcileResult;
+                    var reconcileResult = await TryReconcileDurableCancelAsync(httpContext,
+                        jobStore == null ? null : await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false),
+                        progressStore, cancellationToken);
+                    if (reconcileResult != null)
+                    {
+                        return reconcileResult;
+                    }
                 }
 
                 var alreadyCancelled = new CancelOperationResponse
