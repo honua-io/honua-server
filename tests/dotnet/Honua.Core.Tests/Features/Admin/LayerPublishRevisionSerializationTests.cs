@@ -16,7 +16,11 @@ public sealed class LayerPublishRevisionSerializationTests
     {
         var request = new LayerPublishRequest
         {
-            Schema = "public", Table = "source", LayerName = "Layer", ExpectedMetadataRevision = 42, ExpectedMetadataEtag = "trusted"
+            Schema = "public",
+            Table = "source",
+            LayerName = "Layer",
+            ExpectedMetadataRevision = 42,
+            ExpectedMetadataEtag = "trusted"
         };
         var context = LayerPublishRevisionJsonContext.Default.LayerPublishRequest;
 
