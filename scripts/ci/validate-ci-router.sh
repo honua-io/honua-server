@@ -1700,6 +1700,8 @@ run_fixture scripts/ci/test-featureserver-capacity-partition.py "${PYTHON_BIN}" 
 run_fixture scripts/ci/test-mcp-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-mcp-capacity-partition.py
 run_fixture scripts/ci/test-console-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-console-capacity-partition.py
 run_fixture scripts/ci/test-odata-core-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-odata-core-capacity-partition.py
+run_fixture scripts/ci/test-full-run-capacity-partitions.py "${PYTHON_BIN}" scripts/ci/test-full-run-capacity-partitions.py
+run_fixture scripts/ci/test-shard-image-selection.py "${PYTHON_BIN}" scripts/ci/test-shard-image-selection.py
 run_fixture scripts/ci/test-replica-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-replica-capacity-partition.py
 run_fixture scripts/ci/test-streaming-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-streaming-capacity-partition.py
 run_fixture scripts/ci/test-live-output-capacity-partitions.py "${PYTHON_BIN}" scripts/ci/test-live-output-capacity-partitions.py
@@ -1783,11 +1785,11 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests" \
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
-    "STAC Protocol" \
+    "STAC Protocol 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Stac.RetiredHostedSampleTests" \
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
-    "STAC Protocol" \
+    "STAC Protocol 2" \
   `# #3204 September 2026 shard-headroom rebalance: pin one class on each side of` \
   `# every capacity split, so a later filter edit cannot quietly move a heavy` \
   `# class back onto the shard the split took it off (or orphan it entirely).` \
@@ -1806,7 +1808,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Collaboration Mobile and Identity" \
+    "Server Features Collaboration Mobile and Identity 1" \
   --assert-owner \
     "Honua.Server.Tests.Import.GeoservicesImportEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1818,7 +1820,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Migration" \
+    "Migration 1" \
   --assert-owner \
     "Honua.Server.Tests.Import.ImportCancellationMonitorTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1902,11 +1904,11 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Geoprocessing.GrpcProcessServiceIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Operator Eval Harness" \
+    "Operator Eval Harness 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.Eval.EvalHarnessTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Operator Eval Harness" \
+    "Operator Eval Harness 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerEndpointTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
@@ -1930,7 +1932,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.OData.ODataFilterMatrixTests" \
     "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
-    "OData Advanced and Filters" \
+    "OData Advanced and Filters 2" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
@@ -1968,9 +1970,9 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Authentication and Credentials" \
   --assert-owner \
-    "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests" \
+    "Honua.Server.Tests.Features.Admin.UserManagementEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Authorization" \
+    "Server Features Admin Authorization 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -2024,7 +2026,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Ai.Tests.Capabilities.McpRegistryCompositionTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "MCP and Sessions 2" \
   `# ADR-0076 (#3255) retired the server-side generation families, deleting` \
   `# AnalysisGenerationServiceTests along with them, so the #3259 owner` \
   `# assertion for that class is dropped rather than repointed.` \

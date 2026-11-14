@@ -33,7 +33,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             VALUES (@operation_id, @operation_type, @status, @payload, now() + @lifetime)
             ON CONFLICT (operation_id) DO UPDATE SET {SnapshotAssignments}
             """,
-            new SnapshotWrite(operationId, progress, ttl ?? _defaultLifetime),
+            new SnapshotWrite(operationId, progress, ttl ?? _defaultLifetime) { Repeat = StatementRepeat.SafeToRepeat },
             guard: null,
             cancellationToken);
 
@@ -51,13 +51,17 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             : await DescribeRefusalAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress expectedProgress, CancellationToken cancellationToken = default)
+    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(write.Progress);
-        ArgumentNullException.ThrowIfNull(expectedProgress);
-        if (write.Progress.Type != expectedProgress.Type)
+        if (expectedProgress is not null && write.Progress.Type != expectedProgress.Type)
         {
             throw new ArgumentException("A progress update cannot change the operation type.", nameof(write));
+        }
+
+        if (expectedProgress is null)
+        {
+            return await TryCreateProgressAsync(write, cancellationToken).ConfigureAwait(false);
         }
 
         var storedPayload = await ReadPayloadAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
@@ -78,6 +82,24 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             storedPayload,
             cancellationToken).ConfigureAwait(false);
         return updated
+            ? ProgressCompareAndSetResult.Updated
+            : await DescribeRefusalAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ProgressCompareAndSetResult> TryCreateProgressAsync(
+        OperationProgressWrite write, CancellationToken cancellationToken)
+    {
+        var created = await WriteAsync(
+            $"""
+            INSERT INTO {_progress} AS snapshot (operation_id, operation_type, status, payload, expires_at)
+            VALUES (@operation_id, @operation_type, @status, @payload, now() + @lifetime)
+            ON CONFLICT (operation_id) DO UPDATE SET {SnapshotAssignments}
+            WHERE snapshot.expires_at <= now()
+            """,
+            new SnapshotWrite(write.OperationId, write.Progress, write.Ttl ?? _defaultLifetime),
+            guard: null,
+            cancellationToken).ConfigureAwait(false);
+        return created
             ? ProgressCompareAndSetResult.Updated
             : await DescribeRefusalAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
     }
@@ -169,7 +191,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
 
                 return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
             },
-            guard is null ? StatementRepeat.SafeToRepeat : StatementRepeat.NotAfterSend,
+            write.Repeat,
             cancellationToken);
 
     private async Task<ProgressCompareAndSetResult> DescribeRefusalAsync(string operationId, CancellationToken cancellationToken)
@@ -217,5 +239,8 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             StatementRepeat.SafeToRepeat,
             cancellationToken);
 
-    private readonly record struct SnapshotWrite(string OperationId, IOperationProgress Progress, TimeSpan Lifetime);
+    private readonly record struct SnapshotWrite(string OperationId, IOperationProgress Progress, TimeSpan Lifetime)
+    {
+        public StatementRepeat Repeat { get; init; } = StatementRepeat.NotAfterSend;
+    }
 }

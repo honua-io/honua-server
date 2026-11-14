@@ -27,6 +27,8 @@ using Honua.Infrastructure.Progress;
 using Honua.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 
+using Honua.Server.Features.Admin.TileOperations;
+
 namespace Honua.Server.Features.Admin;
 
 internal static partial class OperationsProgressEndpoints
@@ -65,86 +67,6 @@ internal static partial class OperationsProgressEndpoints
             .WithName("GetOperationsByType")
             .WithSummary("Get all operations of a specific type")
             .WithDescription("Returns all operations (active and completed) of the specified type");
-    }
-
-    private static async Task<IResult> HandleGetOperationStatus(
-        string operationId,
-        [FromServices] IUniversalProgressStore progressStore,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrEmpty(operationId))
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                StatusCodes.Status400BadRequest,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Operation ID is required");
-        }
-
-        var progress = await progressStore.GetProgressAsync(operationId, cancellationToken);
-
-        if (progress == null)
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                StatusCodes.Status404NotFound,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
-                $"Operation '{operationId}' not found");
-        }
-
-        return CreateOperationStatusResult(progress);
-    }
-
-    private static IResult CreateOperationStatusResult(IOperationProgress progress)
-    {
-        return progress switch
-        {
-            UploadProgress uploadProgress => Results.Json(uploadProgress, OperationsProgressJsonContext.Default.UploadProgress),
-            ImportProgress importProgress => Results.Json(importProgress, OperationsProgressJsonContext.Default.ImportProgress),
-            IngestProgress ingestProgress => Results.Json(ingestProgress, OperationsProgressJsonContext.Default.IngestProgress),
-            GeoservicesImportProgress externalImportProgress => Results.Json(externalImportProgress, OperationsProgressJsonContext.Default.GeoservicesImportProgress),
-            TileOperationProgress tileOperationProgress => Results.Json(tileOperationProgress, OperationsProgressJsonContext.Default.TileOperationProgress),
-            ExportProgress exportProgress => Results.Json(exportProgress, OperationsProgressJsonContext.Default.ExportProgress),
-            PrintProgress printProgress => Results.Json(printProgress, OperationsProgressJsonContext.Default.PrintProgress),
-            RasterImportProgress rasterImportProgress => Results.Json(rasterImportProgress, OperationsProgressJsonContext.Default.RasterImportProgress),
-            GeoprocessingProgress geoprocessingProgress => Results.Json(geoprocessingProgress, OperationsProgressJsonContext.Default.GeoprocessingProgress),
-            PublishingProgress publishingProgress => Results.Json(publishingProgress, OperationsProgressJsonContext.Default.PublishingProgress),
-            WorkflowProgress workflowProgress => Results.Json(workflowProgress, OperationsProgressJsonContext.Default.WorkflowProgress),
-            DeploymentProgress deploymentProgress => Results.Json(deploymentProgress, OperationsProgressJsonContext.Default.DeploymentProgress),
-            TemporalCorrectiveJobProgress temporalCorrectiveJobProgress => Results.Json(temporalCorrectiveJobProgress, OperationsProgressJsonContext.Default.TemporalCorrectiveJobProgress),
-            _ => Results.Json(progress, OperationsProgressJsonContext.Default.IOperationProgress)
-        };
-    }
-
-    private static JsonElement SerializeOperationToElement(IOperationProgress progress)
-    {
-        var serialized = progress switch
-        {
-            UploadProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.UploadProgress),
-            ImportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.ImportProgress),
-            IngestProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.IngestProgress),
-            GeoservicesImportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.GeoservicesImportProgress),
-            TileOperationProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.TileOperationProgress),
-            ExportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.ExportProgress),
-            PrintProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.PrintProgress),
-            RasterImportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.RasterImportProgress),
-            GeoprocessingProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.GeoprocessingProgress),
-            PublishingProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.PublishingProgress),
-            WorkflowProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.WorkflowProgress),
-            DeploymentProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.DeploymentProgress),
-            TemporalCorrectiveJobProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.TemporalCorrectiveJobProgress),
-            _ => JsonSerializer.SerializeToElement(progress, OperationsProgressJsonContext.Default.IOperationProgress)
-        };
-
-        var operation = JsonNode.Parse(serialized.GetRawText())?.AsObject() ?? [];
-
-        // List payloads need stable cross-operation keys for generic admin clients
-        // while still preserving the type-specific fields from each concrete progress DTO.
-        NormalizeCanonicalProperty(operation, "operationId", JsonValue.Create(progress.OperationId));
-        NormalizeCanonicalProperty(operation, "type", JsonValue.Create((int)progress.Type));
-
-        // JsonObject has no reflection metadata when the shipped image sets
-        // JsonSerializerIsReflectionEnabledByDefault=false. The parameterless overload
-        // then throws, and the list fails only once an operation is actually present.
-        return JsonSerializer.SerializeToElement(operation, OperationsProgressJsonContext.Default.JsonObject);
     }
 
     private static async Task<IResult> HandleOrchestrationCancelAsync(
@@ -190,7 +112,7 @@ internal static partial class OperationsProgressEndpoints
 
     private static async Task<IResult?> TryReconcileDurableCancelAsync(
         HttpContext httpContext,
-        string operationId,
+        ExecutionJobRecord? executionJob,
         IUniversalProgressStore progressStore,
         CancellationToken cancellationToken)
     {
@@ -200,12 +122,12 @@ internal static partial class OperationsProgressEndpoints
             return null;
         }
 
-        var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (executionJob == null)
         {
             return null;
         }
 
+        var operationId = executionJob.OperationId;
         if (executionJob.Status.IsTerminal())
         {
             if (executionJob.Status == ExecutionJobStatus.Cancelled)
@@ -328,6 +250,8 @@ internal static partial class OperationsProgressEndpoints
         switch (cancelOutcome.State)
         {
             case ExecutionJobCancellationState.Cancelled:
+                await BridgeCancelledExecutionAsync(httpContext, cancelOutcome, cancellationToken).ConfigureAwait(false);
+
                 await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                 return null;
             case ExecutionJobCancellationState.CancellationRequested:
@@ -430,7 +354,9 @@ internal static partial class OperationsProgressEndpoints
                 "Operation ID is required");
         }
 
-        var progress = await progressStore.GetProgressAsync(operationId, cancellationToken);
+        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
+        var progressReader = new ExecutionJobProgressReader(progressStore, jobStore);
+        var progress = await progressReader.ReadAsync(operationId, cancellationToken);
 
         if (progress == null)
         {
@@ -450,19 +376,7 @@ internal static partial class OperationsProgressEndpoints
 
         if (progress.Status is OperationStatus.Cancelled)
         {
-            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, progressStore, cancellationToken);
-            if (reconcileResult != null)
-            {
-                return reconcileResult;
-            }
-
-            var alreadyCancelled = new CancelOperationResponse
-            {
-                OperationId = operationId,
-                Message = "Operation cancellation requested",
-                Type = progress.Type
-            };
-            return Results.Json(alreadyCancelled, OperationsProgressJsonContext.Default.CancelOperationResponse);
+            return await AlreadyCancelledAsync(httpContext, progress, cancellationToken).ConfigureAwait(false);
         }
 
         if (progress is not ICancellableOperationProgress cancellableProgress)
@@ -485,13 +399,28 @@ internal static partial class OperationsProgressEndpoints
                 cancellationToken).ConfigureAwait(false);
         }
 
+        // Persist local cancellation before the process-only signal so takeover after a
+        // worker crash observes the accepted request. The worker still owns its terminal state.
+        ExecutionJobRecord? cancellationTarget = null;
+        if (jobStore != null)
+        {
+            cancellationTarget = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (cancellationTarget?.Spec.Backend == LocalBatchComputeBackend.BackendId)
+            {
+                return await CancelLocalExecutionAsync(
+                    httpContext, (cancellationTarget, progress), cancellationToken).ConfigureAwait(false);
+            }
+        }
+
         // Signal in-flight job processors so they can begin aborting work.
         // When a notifier confirms the job is in-flight (returns true), the
         // background worker owns the terminal state transition — it will persist
         // Cancelled (if interrupted) or Completed (if rendering already finished).
         // Writing Cancelled here would race with the worker's Completed write and
         // could hide a successfully rendered result.
-        var workerOwnsTerminalState = cancellationNotifiers.CancelAny(operationId);
+        var workerOwnsTerminalState = cancellationTarget != null
+            ? ExecutionJobCancellationTokens.CancelAttempt(cancellationNotifiers, cancellationTarget)
+            : cancellationNotifiers.CancelAny(operationId);
 
         if (workerOwnsTerminalState)
         {
@@ -510,7 +439,7 @@ internal static partial class OperationsProgressEndpoints
         // No worker claimed the job (not yet dequeued, already finished, or
         // an operation type without a background worker).  Write Cancelled
         // directly after a re-read to narrow the TOCTOU window.
-        var latestProgress = await progressStore.GetProgressAsync(operationId, cancellationToken);
+        var latestProgress = await progressReader.ReadAsync(operationId, cancellationToken);
         if (latestProgress is null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -529,19 +458,7 @@ internal static partial class OperationsProgressEndpoints
 
         if (latestProgress.Status is OperationStatus.Cancelled)
         {
-            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, progressStore, cancellationToken);
-            if (reconcileResult != null)
-            {
-                return reconcileResult;
-            }
-
-            var alreadyCancelled = new CancelOperationResponse
-            {
-                OperationId = operationId,
-                Message = "Operation cancellation requested",
-                Type = progress.Type
-            };
-            return Results.Json(alreadyCancelled, OperationsProgressJsonContext.Default.CancelOperationResponse);
+            return await AlreadyCancelledAsync(httpContext, latestProgress, cancellationToken).ConfigureAwait(false);
         }
 
         if (latestProgress is not ICancellableOperationProgress latestCancellable)
@@ -555,7 +472,6 @@ internal static partial class OperationsProgressEndpoints
         // If this operation is backed by a durable execution job, synchronize the
         // cancellation to the authoritative job store and remove from the queue so
         // the job does not remain claimable after the admin cancel.
-        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
         if (jobStore != null)
         {
             var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
@@ -603,6 +519,11 @@ internal static partial class OperationsProgressEndpoints
                     {
                         var preResult = await ExecutionJobCancellationHelper.TryCancelPreSubmissionAsync(
                             jobStore, executionJob, cancellationToken).ConfigureAwait(false);
+
+                        if (preResult.TerminalTransition is { Spec.Kind: ExecutionJobKind.TileCache } preSubmissionTileJob)
+                        {
+                            TileOperationMetrics.RecordJobEnded(preSubmissionTileJob);
+                        }
 
                         switch (preResult.Outcome)
                         {
@@ -665,8 +586,12 @@ internal static partial class OperationsProgressEndpoints
 
                     var stampedJob = stampResult.Job!;
                     var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
-                    var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-                        jobStore, stampedJob, observation, cancellationToken).ConfigureAwait(false);
+                    var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (stampedJob, observation), cancellationToken).ConfigureAwait(false);
+
+                    if (applyResult.TerminalTransition is { Spec.Kind: ExecutionJobKind.TileCache } backendTileJob)
+                    {
+                        TileOperationMetrics.RecordJobEnded(backendTileJob);
+                    }
 
                     switch (applyResult.Outcome)
                     {
@@ -729,6 +654,16 @@ internal static partial class OperationsProgressEndpoints
                     {
                         case ExecutionJobCancellationState.Cancelled:
                             await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+                            if (executionJob.Spec.Kind is ExecutionJobKind.Export or ExecutionJobKind.TileCache)
+                            {
+                                var cancelled = new CancelOperationResponse
+                                {
+                                    OperationId = operationId,
+                                    Message = "Operation cancellation requested",
+                                    Type = progress.Type
+                                };
+                                return Results.Json(cancelled, OperationsProgressJsonContext.Default.CancelOperationResponse);
+                            }
                             break;
                         case ExecutionJobCancellationState.CancellationRequested:
                             var delegated = new CancelOperationResponse
@@ -807,20 +742,7 @@ internal static partial class OperationsProgressEndpoints
 
             if (current.Status is OperationStatus.Cancelled)
             {
-                var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, progressStore, cancellationToken);
-                if (reconcileResult != null)
-                {
-                    return reconcileResult;
-                }
-
-                var alreadyCancelled = new CancelOperationResponse
-                {
-                    OperationId = operationId,
-                    Message = "Operation cancellation requested",
-                    Type = progress.Type
-                };
-
-                return Results.Json(alreadyCancelled, OperationsProgressJsonContext.Default.CancelOperationResponse);
+                return await AlreadyCancelledAsync(httpContext, current, cancellationToken).ConfigureAwait(false);
             }
 
             if (current is not ICancellableOperationProgress currentCancellable)
@@ -841,139 +763,4 @@ internal static partial class OperationsProgressEndpoints
             $"Operation '{operationId}' status changed concurrently while cancellation was being applied; retry the cancel request");
     }
 
-    internal static async Task<IResult> HandleListActiveOperations(
-        [FromServices] IUniversalProgressStore progressStore,
-        string? type = null,
-        CancellationToken cancellationToken = default)
-    {
-        OperationType? operationType = null;
-
-        if (!string.IsNullOrEmpty(type))
-        {
-            if (!Enum.TryParse<OperationType>(type, true, out var parsedType))
-            {
-                return ProblemDetailsHelpers.CreateAdminProblem(
-                    StatusCodes.Status400BadRequest,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                    $"Invalid operation type '{type}'. Valid types: {string.Join(", ", Enum.GetNames<OperationType>())}");
-            }
-            operationType = parsedType;
-        }
-
-        var operationIds = await progressStore.GetActiveOperationIdsAsync(operationType, cancellationToken);
-        var operations = new List<JsonElement>();
-
-        await foreach (var progress in ProgressStoreReader.ReadAvailableAsync(
-            progressStore, operationIds, cancellationToken))
-        {
-            if (progress.Status is OperationStatus.Queued or OperationStatus.Processing)
-            {
-                operations.Add(SerializeOperationToElement(progress));
-            }
-        }
-
-        var response = new ActiveOperationsResponse
-        {
-            Operations = operations.ToArray(),
-            TotalCount = operations.Count,
-            FilteredByType = operationType
-        };
-
-        return Results.Json(response, OperationsProgressJsonContext.Default.ActiveOperationsResponse);
-    }
-
-    internal static async Task<IResult> HandleGetOperationsByType(
-        string operationType,
-        [FromServices] IUniversalProgressStore progressStore,
-        CancellationToken cancellationToken)
-    {
-        if (!Enum.TryParse<OperationType>(operationType, true, out var parsedType))
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                StatusCodes.Status400BadRequest,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                $"Invalid operation type '{operationType}'. Valid types: {string.Join(", ", Enum.GetNames<OperationType>())}");
-        }
-
-        var operationIds = await progressStore.GetActiveOperationIdsAsync(parsedType, cancellationToken);
-        var operations = new List<JsonElement>(operationIds.Count);
-
-        await foreach (var progress in ProgressStoreReader.ReadAvailableAsync(
-            progressStore, operationIds, cancellationToken))
-        {
-            if (progress.Type == parsedType)
-            {
-                operations.Add(SerializeOperationToElement(progress));
-            }
-        }
-
-        var response = new OperationsByTypeResponse
-        {
-            OperationType = parsedType,
-            Operations = operations.ToArray(),
-            TotalCount = operations.Count
-        };
-
-        return Results.Json(response, OperationsProgressJsonContext.Default.OperationsByTypeResponse);
-    }
-}
-
-internal sealed record CancelOperationResponse
-{
-    public required string OperationId { get; init; }
-
-    public required string Message { get; init; }
-
-    public required OperationType Type { get; init; }
-}
-
-internal sealed record ActiveOperationsResponse
-{
-    public required JsonElement[] Operations { get; init; }
-
-    public required int TotalCount { get; init; }
-
-    public OperationType? FilteredByType { get; init; }
-}
-
-internal sealed record OperationsByTypeResponse
-{
-    public required OperationType OperationType { get; init; }
-
-    public required JsonElement[] Operations { get; init; }
-
-    public required int TotalCount { get; init; }
-}
-
-[System.Text.Json.Serialization.JsonSourceGenerationOptions(System.Text.Json.JsonSerializerDefaults.General)]
-[System.Text.Json.Serialization.JsonSerializable(typeof(IOperationProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(UploadProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(ImportProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(IngestProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(GeoservicesImportProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(ExportProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(PrintProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(RasterImportProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(RasterImportPhase))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingWorkflowStatus))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingStageKind))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingStageStatus))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(PublishingProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(PublishIntentStatus))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(WorkflowProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(WorkflowRunStatus))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(DeploymentProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(DeploymentStatus))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(RolloutState))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(TemporalCorrectiveJobProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(CancelOperationResponse))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(ActiveOperationsResponse))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(OperationType))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(OperationStatus))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(System.Text.Json.Nodes.JsonObject))]
-internal sealed partial class OperationsProgressJsonContext : System.Text.Json.Serialization.JsonSerializerContext
-{
 }

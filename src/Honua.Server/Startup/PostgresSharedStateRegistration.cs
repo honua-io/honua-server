@@ -15,6 +15,7 @@ using Honua.Server.Features.Operations;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Infrastructure.SecurityState;
 using Honua.Server.Features.Infrastructure.McpSessions;
+using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Studio.Drafts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
@@ -77,6 +78,7 @@ internal static class PostgresSharedStateRegistration
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
         services.AddRetentionSweeps();
+        services.AddRealtimeEventLog(configuration);
         return services;
     }
 

@@ -593,17 +593,17 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
     }
 
-    private static OperationGatewayResult FolderProposalResult(OperationProposal existing, OperationGatewayRequest request,
-        OperationProposalPlan plan, GuardrailDecision decision)
-        => FolderOperationCredential.IsFolderMutation(request.OperationId ?? string.Empty) &&
-            !FolderApprovalAuthorization.MatchesExisting(existing, request.RequestedBy, plan)
-            ? new OperationGatewayResult
-            {
-                Outcome = OperationGatewayOutcome.Blocked,
-                Decision = decision,
-                Message = FolderApprovalAuthorization.NewIdempotencyKeyRequired
-            }
-            : ExistingProposalResult(existing, decision, request.IdempotencyKey!);
+    private static bool RequiresNewFolderIdempotencyKey(OperationProposal existing, FolderProposalReuseContext candidate)
+        => FolderOperationCredential.IsFolderMutation(candidate.Request.OperationId ?? string.Empty) &&
+            !FolderApprovalAuthorization.MatchesExisting(existing, candidate);
+
+    private static OperationGatewayResult NewIdempotencyKeyRequiredResult(GuardrailDecision decision)
+        => new()
+        {
+            Outcome = OperationGatewayOutcome.Blocked,
+            Decision = decision,
+            Message = FolderApprovalAuthorization.NewIdempotencyKeyRequired
+        };
 
     private async Task<OperationGatewayResult> CreateProposalAsync(
         OperationGatewayRequest request,
@@ -614,9 +614,11 @@ internal sealed partial class OperationGateway : IOperationGateway
         var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
         if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
             plan = plan with { ExecutionPayload = request.ExecutionPayload };
+        var clock = TimeProvider.System;
         if (FolderOperationCredential.IsFolderMutation(request.OperationId ?? string.Empty))
         {
             await using var authorizationScope = _scopeFactory.CreateAsyncScope();
+            clock = authorizationScope.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
             var context = authorizationScope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
             try
             {
@@ -644,7 +646,9 @@ internal sealed partial class OperationGateway : IOperationGateway
                 .ConfigureAwait(false);
             if (existing != null)
             {
-                return FolderProposalResult(existing, request, plan, decision);
+                return RequiresNewFolderIdempotencyKey(existing, new FolderProposalReuseContext(request, plan, clock))
+                    ? NewIdempotencyKeyRequiredResult(decision)
+                    : ExistingProposalResult(existing, decision, request.IdempotencyKey!);
             }
         }
 
@@ -749,7 +753,9 @@ internal sealed partial class OperationGateway : IOperationGateway
                 var winner = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false);
                 if (winner != null)
                 {
-                    return FolderProposalResult(winner, request, plan, decision);
+                    return RequiresNewFolderIdempotencyKey(winner, new FolderProposalReuseContext(request, plan, clock))
+                        ? NewIdempotencyKeyRequiredResult(decision)
+                        : ExistingProposalResult(winner, decision, request.IdempotencyKey!);
                 }
             }
 

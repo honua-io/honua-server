@@ -1,9 +1,9 @@
 # Tile-Cache / PMTiles Batch Worker Contract
 
-This runbook documents how to run long-running tile-cache / PMTiles operations
-(`seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`) as durable
-`ExecutionJobKind.TileCache` execution jobs on a batch compute backend (AWS Batch
-or Kubernetes Jobs) instead of in-process on the serving pod (honua-server#1697).
+Every tile-cache / PMTiles operation (`seed`, `warm`, `invalidate`, `purge`, `archive`,
+`publish`) runs as a durable `ExecutionJobKind.TileCache` execution job
+(honua-server#1697, honua-server#7354). This runbook documents how to send those jobs to a batch
+compute backend (AWS Batch or Kubernetes Jobs) instead of the `local` backend.
 
 It pairs with:
 
@@ -17,34 +17,27 @@ It pairs with:
 
 ## Why
 
-Tile-cache / PMTiles generation historically ran **in-process on the serving
-pod**, single-threaded through an in-memory channel and **hard-capped at 5,000
-tiles** per job. Large basemaps and customer onboarding stalled deploys and could
-not scale beyond one pod. Routing the work onto AWS Batch / Kubernetes Jobs offloads
-it to dedicated compute, lifts the tile cap, and lets retry/heartbeat/cancel flow
-through the shared execution-job reconciler.
-
-The in-process path remains the **zero-config default**. Batch dispatch is opt-in.
+Tile-cache / PMTiles generation once ran on the serving pod through an in-memory channel. It
+now always creates an execution job: the record and its queue position are rows in the system
+PostgreSQL database, so an accepted operation runs once on whichever node claims it and survives
+the node that accepted it. The default `local` backend runs
+the job on the job worker of a serving node and keeps the serving-process ceiling of 5,000 tiles.
+A batch backend offloads the work to dedicated compute and lifts that ceiling.
 
 ---
 
-## Enabling batch dispatch
+## Choosing a batch backend
 
-Batch dispatch is controlled by the `TileOperations:Batch` configuration section and
-requires the durable execution-job substrate (Redis-backed store + queue, the same
-substrate geoprocessing uses).
+The backend is selected by the `TileOperations:Batch` configuration section. Without it, jobs use
+the `local` backend.
 
 ```jsonc
 {
   "TileOperations": {
     "Batch": {
-      // Off by default — the in-process channel worker handles tile operations.
-      "Enabled": true,
-
-      // Batch compute backend adapter id. "local" runs the work in-process via the
-      // canonical execution-job machinery (durable record + queue + reconciler) on
-      // the same pod; cloud backends offload it.
-      //   - "local"            -> in-process worker (LocalBatchComputeBackend)
+      // Batch compute backend adapter id. "local" (the default) runs the job on the
+      // job worker of a serving node; cloud backends offload it.
+      //   - "local"            -> serving-node job worker (LocalBatchComputeBackend)
       //   - "honua-aws-batch"  -> AWS Batch (AwsBatchComputeBackend)
       //   - the Kubernetes Job backend id for K8s
       "Backend": "honua-aws-batch",
@@ -59,9 +52,9 @@ substrate geoprocessing uses).
       // Optional specialized runtime profile (for example a GDAL/tippecanoe image family).
       "RuntimeProfile": "native",
 
-      // Runaway guardrail. The in-process path is fixed at 5,000 tiles to protect
-      // the serving pod; batch jobs run on dedicated compute and are bounded by
-      // backend timeout/resources, so this defaults to 1,000,000.
+      // Runaway guardrail for remote backends. The "local" backend is fixed at 5,000
+      // tiles to protect the serving pod; batch jobs run on dedicated compute and are
+      // bounded by backend timeout/resources, so this defaults to 1,000,000.
       "MaxTiles": 1000000,
 
       // Backend-specific coordinates merged onto every tile-cache job's
@@ -79,13 +72,12 @@ substrate geoprocessing uses).
 }
 ```
 
-When `Enabled` is `true` the admin endpoint
-`POST /api/v1/admin/tile-operations/jobs` submits an `ExecutionJobKind.TileCache`
-execution job to the configured backend; when `false` (or the Redis substrate is
-absent) it uses the in-process channel path exactly as before. Job status and
-cancellation are served through the **same** admin endpoints in both modes
-(`GET /api/v1/admin/tile-operations/jobs/{jobId}`,
-`POST .../jobs/{jobId}/cancel`).
+The admin endpoint `POST /api/v1/admin/tile-operations/jobs`, the warming targets and the
+scheduled expiry sweep all submit an `ExecutionJobKind.TileCache` execution job to the configured
+backend. Job status, cancellation and retry are served through the admin endpoints
+(`GET /api/v1/admin/tile-operations/jobs/{jobId}`, `POST .../jobs/{jobId}/cancel`,
+`POST .../jobs/{jobId}/retry`). A host without the system database answers a submission with
+`503 Service Unavailable`.
 
 ---
 
@@ -110,8 +102,8 @@ worker image must honour:
 
 The target artifact location for `archive` / `publish` is resolved on the worker
 from the existing `CloudStorage` / `PMTilesPublish` configuration (`ICloudFileStorage`)
-— the produced `.pmtiles` artifact is uploaded to the same bucket/key the in-process
-path uses, so no additional parameter is required.
+— the produced `.pmtiles` artifact is uploaded to the same bucket/key whichever backend runs
+the job, so no additional parameter is required.
 
 ---
 
@@ -145,8 +137,8 @@ Job image) must:
    `PATH` for tile generation.
 2. Have network access and credentials for:
    - the Honua database / metadata store (to resolve layers and read features),
-   - Redis (durable execution-job store, queue, progress — the worker claims the job,
-     reports progress/heartbeat, and writes the terminal state through it),
+   - the system PostgreSQL database (execution-job store, queue, progress — the worker
+     claims the job, reports progress/heartbeat, and writes the terminal state through it),
    - the configured cloud object storage (`ICloudFileStorage`) for `archive` / `publish`
      artifact upload.
 3. Honour cooperative cancellation: the worker observes the durable
@@ -156,7 +148,7 @@ Job image) must:
 
 - **AWS Batch:** the submitting host needs `batch:SubmitJob`, `batch:DescribeJobs`,
   `batch:CancelJob`, `batch:TerminateJob` on the queue/job-definition. The job
-  execution role needs read access to the data store secrets, Redis, and
+  execution role needs read access to the data store secrets, the system database, and
   read/write to the PMTiles bucket.
 - **Kubernetes Jobs:** the API host needs a Role/RoleBinding allowing
   `create`/`get`/`delete` on `batch/jobs` in the target namespace; configure it via

@@ -8,7 +8,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using System.Runtime.CompilerServices;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -19,7 +18,7 @@ public sealed class TileCacheWarmingHostedServiceTests
     [UnitTest]
     public async Task StartAsync_WhenEnabled_QueuesConfiguredSeedAndWarmTargets()
     {
-        var jobService = new RecordingTileOperationJobService();
+        var jobService = new RecordingTileCacheJobService();
         var options = Options.Create(new TileCacheWarmingOptions
         {
             Enabled = true,
@@ -52,6 +51,7 @@ public sealed class TileCacheWarmingHostedServiceTests
         await service.StartAsync(CancellationToken.None);
 
         jobService.Requests.Should().HaveCount(2);
+        jobService.Submitters.Should().AllBe(TileCacheJobService.SchedulerIdentityName);
         jobService.Requests[0].Operation.Should().Be("seed");
         jobService.Requests[0].ServiceId.Should().Be("parks");
         jobService.Requests[0].LayerId.Should().Be(3);
@@ -64,7 +64,7 @@ public sealed class TileCacheWarmingHostedServiceTests
     [UnitTest]
     public async Task StartAsync_WhenCommunityDefaultDisabled_DoesNotQueueJobs()
     {
-        var jobService = new RecordingTileOperationJobService();
+        var jobService = new RecordingTileCacheJobService();
         var service = new TileCacheWarmingHostedService(
             jobService,
             Options.Create(new TileCacheWarmingOptions()),
@@ -75,38 +75,29 @@ public sealed class TileCacheWarmingHostedServiceTests
         jobService.Requests.Should().BeEmpty();
     }
 
-    private sealed class RecordingTileOperationJobService : ITileOperationJobService
+    private sealed class RecordingTileCacheJobService : ITileCacheJobService
     {
         public List<TileOperationStartRequest> Requests { get; } = [];
 
-        public Task<string> StartAsync(
-            TileOperationStartRequest request,
-            string? schemaName = null,
-            CancellationToken cancellationToken = default)
+        public List<string?> Submitters { get; } = [];
+
+        public Task<string> SubmitAsync(TileOperationSubmission submission, CancellationToken cancellationToken = default)
         {
-            Requests.Add(request);
+            Requests.Add(submission.Request);
+            Submitters.Add(submission.RequestedBy);
             return Task.FromResult($"job-{Requests.Count}");
         }
 
         public Task<TileOperationProgress?> GetAsync(string jobId, CancellationToken cancellationToken = default)
             => Task.FromResult<TileOperationProgress?>(null);
 
-        public Task<IReadOnlyList<TileOperationProgress>> ListAsync(bool activeOnly, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<TileOperationProgress>> ListAsync(TileOperationListScope scope, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<TileOperationProgress>>([]);
 
         public Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
 
-        public Task<string?> RetryAsync(string jobId, CancellationToken cancellationToken = default)
+        public Task<string?> RetryAsync(string jobId, string? requestedBy, CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);
-
-        public async IAsyncEnumerable<string> ReadQueuedJobIdsAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
     }
 }

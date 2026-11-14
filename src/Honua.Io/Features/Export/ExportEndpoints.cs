@@ -203,22 +203,9 @@ internal static partial class ExportEndpoints
             {
                 await exportJobService.StartAsync(job, cancellationToken).ConfigureAwait(false);
             }
-            catch (InvalidOperationException ex) when (string.Equals(
-                ex.Message,
-                "Large exports require durable background job storage to be configured.",
-                StringComparison.Ordinal))
-            {
-                HonuaTelemetry.RecordException(activity, ex);
-                HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
-                return ProblemDetailsHelpers.CreateAdminProblem(
-                    StatusCodes.Status503ServiceUnavailable,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
-                    ex.Message);
-            }
-            catch (InvalidOperationException ex) when (string.Equals(
-                ex.Message,
-                "Export queue is full. Please retry later.",
-                StringComparison.Ordinal))
+            catch (InvalidOperationException ex) when (
+                string.Equals(ex.Message, ExportJobService.DurableQueueUnavailableMessage, StringComparison.Ordinal)
+                || string.Equals(ex.Message, ExportJobService.QueueFullMessage, StringComparison.Ordinal))
             {
                 HonuaTelemetry.RecordException(activity, ex);
                 HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);

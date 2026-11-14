@@ -25,6 +25,56 @@ public sealed class UniversalProgressStoreCompareAndSetTests
         => UploadProgress.CreateInitial(uploadId, "data.bin", 100) with { Status = status };
 
     [UnitTest]
+    public async Task TryReplaceProgressAsync_MissingSnapshot_PreservesFirstWriter()
+    {
+        var store = CreateInMemoryStore();
+        var progress = CreateProgress("new-lease", OperationStatus.Processing);
+        (await store.TryReplaceProgressAsync(new OperationProgressWrite("new-lease", progress), null)).Outcome
+            .Should().Be(ProgressCompareAndSetOutcome.Updated);
+        (await store.TryReplaceProgressAsync(new OperationProgressWrite("new-lease", progress with { BytesUploaded = 30 }), null)).Outcome
+            .Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
+        (await store.GetProgressAsync<UploadProgress>("new-lease"))!.BytesUploaded.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task TryReplaceProgressAsync_ConcurrentReadersAndAdmissions_PreservesSingleWinner()
+    {
+        var store = CreateInMemoryStore();
+        for (var round = 0; round < 128; round++)
+        {
+            var id = $"concurrent-{round}";
+            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var writers = Enumerable.Range(0, 32).Select(writer => Task.Run(async () =>
+            {
+                await start.Task;
+                return await store.TryReplaceProgressAsync(
+                    new OperationProgressWrite(id, CreateProgress(id, OperationStatus.Processing) with { BytesUploaded = writer }), null);
+            })).ToArray();
+            var readers = Enumerable.Range(0, 4).Select(_ => Task.Run(async () =>
+            {
+                await start.Task;
+                var observed = false;
+                for (var read = 0; read < 64; read++)
+                {
+                    var current = await store.GetProgressAsync(id);
+                    var isVisible = current is not null;
+                    if (observed)
+                    {
+                        isVisible.Should().BeTrue("a published entry must remain visible for its entire TTL");
+                    }
+                    observed |= isVisible;
+                    await Task.Yield();
+                }
+            })).ToArray();
+            start.SetResult();
+            var results = await Task.WhenAll(writers);
+            await Task.WhenAll(readers);
+            results.Count(result => result.Outcome == ProgressCompareAndSetOutcome.Updated).Should().Be(1);
+            (await store.GetProgressAsync(id)).Should().NotBeNull();
+        }
+    }
+
+    [UnitTest]
     public async Task TryReplaceProgressAsync_RunningPrintHeartbeat_UpdatesDespiteComputedDuration()
     {
         var store = CreateInMemoryStore();

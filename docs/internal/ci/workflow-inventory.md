@@ -1,5 +1,36 @@
 # CI Workflow Inventory
 
+The latest full-run capacity audit partitions eleven additional parents into 26
+children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
+Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
+OGC API Features, GeoServices GPServer and NAServer, STAC Protocol, Operator
+Eval Harness, and Migration. The first ten crossed 80% of their test budgets in
+the last three full runs.
+Whole-class selections are retained except the GP/NAS routing class, whose
+methods are partitioned with a residual fallback for future tests. Method-union,
+future-method and mutation checks enforce complete, disjoint selection and
+unchanged projects, source triggers and budgets. Historical TRX interval weights
+guide the cuts; they are not measured child elapsed runtimes. Dispatch ranks stay
+inherited until complete child runs provide measurements.
+
+
+Migration exhausted its 29-minute test budget in full run `43564575677` while
+producing output two seconds before termination. Three children separate migration
+evidence/toolbox endpoints, scanner/run endpoints, and the residual migration
+selection. Historical passing TRX class intervals weigh these groups at about
+6.2, 5.7, and 5.2 minutes; these are sizing evidence, not measured child runtimes.
+STAC qualification exhausted child 1 at 15.04 minutes and measured child 2 at
+12.70 minutes. Four children now isolate search, spatial/temporal and queryables,
+paging, and the residual selection. Original budgets, source triggers and
+future-class fallback remain enforced by the conservation contracts.
+Focused one-worker qualification passed all seven revised children: Migration
+1/2/3 took 7.35/5.35/5.51 minutes and STAC 1/2/3/4 took
+11.94/4.01/5.93/4.68 minutes. The largest Migration child finishes
+21.65 minutes before the exhausted parent deadline; this is capacity headroom,
+not a measured end-to-end workflow saving. STAC Protocol 1 is the single
+class `StacSearchTests` at 11.94 of 15 minutes (80%); it cannot be split further by
+class and is the next method-level partition candidate.
+
 FeatureServer Replica now uses three whole-class shards: `FeatureServer Replica
 Management` (conflict review, ownership and management), `FeatureServer Replica
 Sync` (the sync class), and the residual `FeatureServer Replica` catch-all.
@@ -945,3 +976,5 @@ skipping or missing results fail the shell check. The required name and both
 `needs` dependencies stay unchanged. Normal runs add zero jobs; superseded runs
 avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
+
+The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
