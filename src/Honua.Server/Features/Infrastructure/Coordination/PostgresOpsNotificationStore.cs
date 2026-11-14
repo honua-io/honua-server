@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Observability.Domain;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -12,10 +13,12 @@ internal sealed record OpsNotificationSchedule(
     string Source, string SubjectId, Guid EpisodeId, DateTimeOffset FirstSeenAt,
     OpsFindingSeverity Severity, int NoticeNumber, long Revision);
 
-internal sealed class PostgresOpsNotificationStore(JobStoreDatabase database)
+internal sealed class PostgresOpsNotificationStore(
+    JobStoreDatabase database, IOptions<ControlPlaneRetentionOptions> retention)
 {
     private readonly string _schedules = database.Table("ops_notification_schedules");
     private readonly string _proposals = database.Table("operation_proposals");
+    private readonly string _instances = database.Table("operation_instances");
 
     public Task<int> ExpireApprovalsAsync(int limit, CancellationToken cancellationToken = default)
         => database.ExecuteAsync(async (connection, _, token) =>
@@ -34,9 +37,18 @@ internal sealed class PostgresOpsNotificationStore(JobStoreDatabase database)
                 ), expired AS (
                     UPDATE {_proposals} AS proposal
                     SET version = version + 1, updated_at = now(), active = FALSE,
-                        record = jsonb_set(record::jsonb, ARRAY['status'], '10'::jsonb)::json
+                        expires_at = now() + @proposal_retention,
+                        record = (record::jsonb || jsonb_build_object('status', 10, 'updatedAt', now()))::json
                     FROM candidates WHERE proposal.proposal_id = candidates.proposal_id
                     RETURNING proposal.proposal_id, proposal.record
+                ), cancelled_instances AS (
+                    UPDATE {_instances} AS instance
+                    SET version = version + 1, active = FALSE, expires_at = now() + @instance_retention,
+                        record = (instance.record::jsonb || jsonb_build_object('status', 'Cancelled',
+                            'updatedAt', now(), 'reason', 'Human approval expired without execution.'))::json
+                    FROM expired WHERE instance.operation_instance_id = expired.record->'audit'->>'operationInstanceId'
+                        AND instance.record->>'status' = 'RequiresApproval'
+                        AND instance.record->>'proposalId' = expired.proposal_id
                 )
                 INSERT INTO {_schedules} AS schedule
                     (source, subject_id, episode_id, first_seen_at, severity, next_notice_at, last_seen_at)
@@ -51,6 +63,10 @@ internal sealed class PostgresOpsNotificationStore(JobStoreDatabase database)
                 """, connection);
             command.Parameters.AddWithValue("limit", Math.Min(limit, 100));
             command.Parameters.AddWithValue("episode", Guid.NewGuid());
+            command.Parameters.Add(new NpgsqlParameter("proposal_retention", NpgsqlDbType.Interval)
+            { Value = retention.Value.Proposals });
+            command.Parameters.Add(new NpgsqlParameter("instance_retention", NpgsqlDbType.Interval)
+            { Value = retention.Value.OperationInstances });
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 

@@ -77,7 +77,7 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         => new(new ControlPlaneStorage(_jobs.Database, Leases), Options.Create(Retention), NullLogger<PostgresOperationProposalStore>.Instance);
 
     public PostgresOpsNotificationStore CreateNotificationStore()
-        => new(_jobs.Database);
+        => new(_jobs.Database, Options.Create(Retention));
 
     public PostgresOperationInstanceStore CreateInstanceStore()
         => new(_jobs.Database, Leases, Options.Create(Retention));

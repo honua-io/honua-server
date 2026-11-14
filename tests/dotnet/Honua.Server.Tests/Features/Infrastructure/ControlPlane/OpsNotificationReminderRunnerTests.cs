@@ -90,6 +90,38 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
     }
 
     [IntegrationTest]
+    public async Task ExpiredApproval_DeferredNoticeSurvivesRetentionSweepAndRunnerRestart()
+    {
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));
+        var clock = new ReminderClock(DateTimeOffset.UtcNow.AddMinutes(1));
+        var findings = Substitute.For<IOpsFindingsService>();
+        findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
+        var proposal = new OperationProposal
+        {
+            ProposalId = Guid.NewGuid().ToString("N"), TenantId = "public", Kind = OperationClass.AdminConfigChange,
+            Status = OperationProposalStatus.AwaitingApproval, RequestedBy = "requester",
+            Plan = new OperationProposalPlan { Summary = "Approval required", RiskLevel = ProposalRiskLevel.Medium },
+            CreatedAt = clock.Now.AddHours(-25), UpdatedAt = clock.Now.AddHours(-25)
+        };
+        await harness.CreateProposalStore().TryCreateAsync(proposal);
+        await harness.ExecuteAsync($"UPDATE {harness.Table("operation_proposals")} SET expires_at = now() - interval '1 second'");
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var options = new AlertOptions { Enabled = true, Ops = new AlertOpsOptions { Enabled = false, Channels = ["webhook"] } };
+        var notifications = CreateNotifications(outbox, options);
+        OpsNotificationReminderRunner Runner() => new(harness.CreateNotificationStore(), findings,
+            harness.CreateProposalStore(), notifications, clock);
+        await Runner().RunAsync(CancellationToken.None);
+        (await harness.CreateProposalStore().DeleteExpiredAsync(100, CancellationToken.None)).Should().Be(0);
+        clock.Now = clock.Now.AddMinutes(1);
+        options.Ops.Enabled = true;
+        await Runner().RunAsync(CancellationToken.None);
+        await Runner().RunAsync(CancellationToken.None);
+        await outbox.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Single().AlertEvent.ProposalId == proposal.ProposalId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
     public async Task InformationalFinding_DoesNotCreateImmediateNotification()
     {
         await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));

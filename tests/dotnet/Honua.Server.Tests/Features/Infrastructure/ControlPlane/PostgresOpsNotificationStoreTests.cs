@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -71,6 +72,35 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
         notice.SubjectId.Should().Be(waiting.ProposalId);
         (await harness.CreateProposalStore().TrySetAsync(expired with { Status = OperationProposalStatus.Executing }))
             .Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    public async Task Expire_AtomicallyCancelsAwaitingInstanceAndRefreshesTerminalRetention()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var now = DateTimeOffset.UtcNow;
+        var instanceId = $"opi-{Guid.NewGuid():N}";
+        var proposal = Proposal(now, OperationProposalStatus.AwaitingApproval) with
+        {
+            Audit = new OperationAuditInfo { OperationInstanceId = instanceId }
+        };
+        await harness.CreateProposalStore().TryCreateAsync(proposal);
+        await harness.CreateInstanceStore().TryCreateAsync(new OperationHandle
+        {
+            OperationInstanceId = instanceId, OperationId = "admin.test.operation", ProposalId = proposal.ProposalId,
+            Status = OperationHandleStatus.RequiresApproval, CorrelationId = "correlation", CreatedAt = now, UpdatedAt = now
+        });
+        await harness.ExecuteAsync($"UPDATE {harness.Table("operation_proposals")} SET expires_at = now() - interval '1 second'");
+        await harness.ExecuteAsync($"UPDATE {harness.Table("operation_instances")} SET expires_at = now() - interval '1 second'");
+        (await harness.CreateNotificationStore().ExpireApprovalsAsync(100)).Should().Be(1);
+        (await harness.CreateProposalStore().DeleteExpiredAsync(100, CancellationToken.None)).Should().Be(0);
+        (await harness.CreateInstanceStore().DeleteExpiredAsync(100, CancellationToken.None)).Should().Be(0);
+        var instance = (await harness.CreateInstanceStore().GetAsync(instanceId))!;
+        instance.Status.Should().Be(OperationHandleStatus.Cancelled);
+        instance.Reason.Should().Be("Human approval expired without execution.");
+        instance.Version.Should().Be(1);
+        (await harness.CreateInstanceStore().ListActiveAsync()).Should().BeEmpty();
+        (await harness.CreateNotificationStore().ListDueAsync(now.AddMinutes(1), 100)).Should().ContainSingle();
     }
 
     [IntegrationTest]
