@@ -139,7 +139,9 @@ public sealed class LayerPublishWorkerControlsTests
     public async Task Execute_NotificationThrowsAfterCommit_DoesNotRetryPublication()
     {
         using var fixture = new Fixture();
+#pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
         fixture.Notifications.BroadcastResourcesListChanged().Returns(ValueTask.FromException<int>(new IOException("notification failed")));
+#pragma warning restore CA2012
         fixture.Publisher.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(Summary());
         var result = await fixture.ExecuteAsync();

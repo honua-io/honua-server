@@ -16,7 +16,9 @@ public sealed class WebSocketAlertDeliverySinkTests
     public async Task DeliverAsync_AppendFailure_IsRetryable()
     {
         var provider = Substitute.For<IRealtimeFanoutProvider>();
+#pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
         provider.AppendAsync(default!, null, default).ReturnsForAnyArgs(ValueTask.FromException<RealtimePosition>(new InvalidOperationException("unavailable")));
+#pragma warning restore CA2012
         await using var broadcaster = new RealtimeAlertNotificationBroadcaster(
             provider, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
         var sink = new WebSocketAlertDeliverySink(broadcaster);
@@ -34,7 +36,9 @@ public sealed class WebSocketAlertDeliverySinkTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         var provider = Substitute.For<IRealtimeFanoutProvider>();
+#pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
         provider.AppendAsync(default!, null, default).ReturnsForAnyArgs(ValueTask.FromCanceled<RealtimePosition>(cancellation.Token));
+#pragma warning restore CA2012
         await using var broadcaster = new RealtimeAlertNotificationBroadcaster(
             provider, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
         var sink = new WebSocketAlertDeliverySink(broadcaster);
