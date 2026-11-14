@@ -91,6 +91,23 @@ public sealed class PostgresFeatureLockServiceTests(DatabaseFixtureAdapter datab
     }
 
     [IntegrationTest]
+    public async Task RetentionSweep_DeletesOnlyRequestedExpiredBatch()
+    {
+        var store = Store();
+        await store.ClaimAsync(_feature, _holder, TimeSpan.FromMinutes(1), _write);
+        await store.ClaimAsync(_feature with { FeatureId = "002" }, _holder, TimeSpan.FromMinutes(1), _write);
+        await database.ExecuteAsync($"UPDATE \"{_schema}\".feature_locks SET expires_at = clock_timestamp() - interval '1 second'");
+        var active = _feature with { FeatureId = "003" };
+        await store.ClaimAsync(active, _holder, TimeSpan.FromMinutes(1), _write);
+        IExpiredRowSweep sweep = store;
+        (await sweep.DeleteExpiredAsync(1, CancellationToken.None)).Should().Be(1);
+        (await sweep.DeleteExpiredAsync(10, CancellationToken.None)).Should().Be(1);
+        (await sweep.DeleteExpiredAsync(10, CancellationToken.None)).Should().Be(0);
+        (await store.GetActiveLeaseAsync(active)).Should().NotBeNull();
+        (await store.HasAnyActiveLeasesAsync()).Should().BeTrue();
+    }
+
+    [IntegrationTest]
     public async Task UnauthorizedMutations_CreateNoLease()
     {
         var meter = Store();

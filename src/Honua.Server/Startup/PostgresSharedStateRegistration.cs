@@ -93,9 +93,10 @@ internal static class PostgresSharedStateRegistration
         {
             services.Remove(descriptor);
         }
+        services.TryAddSingleton<PostgresFeatureLockService>();
         services.TryAddSingleton<IFeatureLockService>(provider =>
             provider.GetService<NpgsqlDataSource>() is not null
-                ? new PostgresFeatureLockService(provider.GetRequiredService<JobStoreDatabase>())
+                ? provider.GetRequiredService<PostgresFeatureLockService>()
                 : new InMemoryFeatureLockService(provider.GetService<TimeProvider>()));
     }
 
@@ -111,6 +112,7 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();
         services.AddRetentionSweep<PostgresPackageDraftBacking>();
         services.AddRetentionSweep<PostgresMcpSessionStore>();
+        services.AddRetentionSweep<PostgresFeatureLockService>();
     }
 
     // The lease store needs the system database; a host without one has no shared leases.

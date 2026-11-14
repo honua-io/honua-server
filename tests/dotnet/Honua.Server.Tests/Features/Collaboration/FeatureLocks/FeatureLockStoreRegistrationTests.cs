@@ -39,6 +39,7 @@ public sealed class FeatureLockStoreRegistrationTests
         var services = new ServiceCollection();
         var configuration = new ConfigurationBuilder().Build();
         using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=registration_only");
+        services.AddDataProtection();
         services.AddSingleton(dataSource);
         services.AddSingleton(new JobStoreDatabase(dataSource));
         services.AddFeatureLockCollaboration();
@@ -48,6 +49,8 @@ public sealed class FeatureLockStoreRegistrationTests
         services.AddFeatureLockCollaboration();
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IFeatureLockService>().Should().BeOfType<PostgresFeatureLockService>();
+        provider.GetServices<IExpiredRowSweep>().OfType<PostgresFeatureLockService>().Should().ContainSingle()
+            .Which.Should().BeSameAs(provider.GetRequiredService<IFeatureLockService>());
         services.Count(item => item.ServiceType == typeof(IFeatureLockService)).Should().Be(1);
     }
 

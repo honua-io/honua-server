@@ -11,7 +11,7 @@ using NpgsqlTypes;
 
 namespace Honua.Server.Features.Collaboration.FeatureLocks;
 
-internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IFeatureLockService
+internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IFeatureLockService, IExpiredRowSweep
 {
     private const string DeniedReason = "Feature lock mutation requires authorized write access.";
     private readonly string _table = database.Table("feature_locks");
@@ -89,7 +89,7 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
             await using var command = new NpgsqlCommand($"""
                 SELECT body FROM {_table}
                 WHERE service_name = @service AND layer_id = @layer AND feature_id = @feature
-                    AND expires_at > clock_timestamp()
+                    AND expires_at > statement_timestamp()
                 """, connection);
             AddKey(command, feature);
             return await command.ExecuteScalarAsync(token).ConfigureAwait(false) is string json ? Deserialize(json) : null;
@@ -100,16 +100,31 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
         => await database.ExecuteAsync(async (connection, _, token) =>
         {
             await using var command = new NpgsqlCommand(
-                $"SELECT EXISTS (SELECT 1 FROM {_table} WHERE expires_at > clock_timestamp())", connection);
+                $"SELECT EXISTS (SELECT 1 FROM {_table} WHERE expires_at > statement_timestamp())", connection);
             return (bool)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
         }, StatementRepeat.SafeToRepeat, cancellationToken).ConfigureAwait(false);
 
     public async ValueTask<int> PruneExpiredAsync(CancellationToken cancellationToken = default)
-        => await database.ExecuteAsync(async (connection, _, token) =>
+        => await DeleteExpiredAsync(int.MaxValue, cancellationToken).ConfigureAwait(false);
+
+    public Task<int> DeleteExpiredAsync(int batchSize, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(batchSize, 1);
+        return database.ExecuteAsync(async (connection, _, token) =>
         {
-            await using var command = new NpgsqlCommand($"DELETE FROM {_table} WHERE expires_at <= clock_timestamp()", connection);
+            await using var command = new NpgsqlCommand($"""
+                WITH expired AS (
+                    SELECT service_name, layer_id, feature_id FROM {_table}
+                    WHERE expires_at <= statement_timestamp()
+                    ORDER BY expires_at LIMIT @batch_size FOR UPDATE SKIP LOCKED)
+                DELETE FROM {_table} AS stored USING expired
+                WHERE stored.service_name = expired.service_name AND stored.layer_id = expired.layer_id
+                    AND stored.feature_id = expired.feature_id
+                """, connection);
+            command.Parameters.AddWithValue("batch_size", batchSize);
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
-        }, StatementRepeat.NotAfterSend, cancellationToken).ConfigureAwait(false);
+        }, StatementRepeat.NotAfterSend, cancellationToken);
+    }
 
     private async ValueTask<TResult> MutateAsync<TResult>(FeatureRef feature,
         Func<FeatureLockLease?, DateTimeOffset, (TResult Result, FeatureLockLease? Lease)> transition,
