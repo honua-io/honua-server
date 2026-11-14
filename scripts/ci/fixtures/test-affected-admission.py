@@ -99,7 +99,7 @@ class AdmissionTests(unittest.TestCase):
             self.assertIn("inputs.full_ci", jobs[name]["if"])
 
 
-CANCELLATION = re.compile(r"gh run cancel|actions/runs/\S*/cancel|cancelWorkflowRun|supersede_trailing_runs\.cancel\b"
+CANCELLATION = re.compile(r"gh run cancel|actions/runs/\S*/(force-)?cancel|cancelWorkflowRun|supersede_trailing_runs\.cancel\b"
                           r"|from supersede_trailing_runs import[^\n]*\bcancel\b|from supersede_trailing_runs import \([^)]*\bcancel\b")
 # Only these may cancel trunk CI: a full run cancels selective runs it covers, a
 # selective run cancels itself, and the native-image check lists the pattern as forbidden.
@@ -108,14 +108,15 @@ ALLOWED_CANCELLERS = {"supersede_trailing_runs.py", "resolve-trailing-base.py", 
 
 class CoexistenceTests(unittest.TestCase):
     def test_only_covering_or_own_runs_cancel_trunk_ci(self):
-        sources = [*(ROOT / ".github/workflows").glob("*.yml"),
+        sources = [*(path for pattern in ("*.yml", "*.yaml") for path in (ROOT / ".github").rglob(pattern)),
                    *(path for pattern in ("*.py", "*.sh", "*.mjs") for path in (ROOT / "scripts/ci").rglob(pattern)
                      if "fixtures" not in path.parts)]
         cancellers = {path.name for path in sources if CANCELLATION.search(path.read_text())}
         self.assertEqual(cancellers, ALLOWED_CANCELLERS)
 
     def test_cancellation_scan_detects_each_preemption_form(self):
-        for text in ("gh run cancel 1", "actions/runs/{id}/cancel", "supersede_trailing_runs.cancel(run)",
+        for text in ("gh run cancel 1", "actions/runs/{id}/cancel", "actions/runs/{id}/force-cancel",
+                     "supersede_trailing_runs.cancel(run)",
                      "from supersede_trailing_runs import active_trunk_runs, cancel",
                      "from supersede_trailing_runs import (\n    active_trunk_runs,\n    cancel,\n)"):
             self.assertRegex(text, CANCELLATION)

@@ -859,7 +859,7 @@ Two concurrent shards keep an affected run to usually one and at most two
 of waiting for an idle PR queue. The former PR Gate priority
 workflow cancelled affected runs whenever a PR Gate started and admission refused
 while one was active; with up to ten open PRs that admitted 0 of 32 dispatches
-from 05:52 to 17:02 UTC on 14 Nov. Required PR gates and shard definitions are
+from 05:52 to 17:02 UTC on 14 Nov 2026. Required PR gates and shard definitions are
 unchanged. The reported baseline incident (about 170 jobs, two hours queued,
 seven of eight heavy runners) predates the 40-job bound and the two-shard width.
 

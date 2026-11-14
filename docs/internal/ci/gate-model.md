@@ -1136,7 +1136,7 @@ Admitted affected runs use two concurrent server shards. Even matrix indices
 use the `honua-heavy` pool, so a run usually holds one heavy runner and at most
 two; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today.
 An active PR Gate does not defer or cancel an affected run. With up to ten open
-PRs a PR Gate is almost always active: from 05:52 to 17:02 UTC on 14 Nov the
+PRs a PR Gate is almost always active: from 05:52 to 17:02 UTC on 14 Nov 2026 the
 former PR-activity rule admitted 0 of 32 dispatches, leaving trunk with only the
 twice-daily full runs. Before that rule, completed affected runs
 took 4-62 minutes and PR Gate hosted jobs waited a median 4 s (p90 292 s) while
