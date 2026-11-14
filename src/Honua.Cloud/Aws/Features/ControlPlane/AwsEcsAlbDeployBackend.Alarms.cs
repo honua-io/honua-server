@@ -7,6 +7,10 @@ namespace Honua.ControlPlane;
 
 internal sealed partial class AwsEcsAlbDeployBackend
 {
+    public Task EnsurePreparationAdmittedAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken)
+        => EnsureAlarmAdmissionAsync(
+            operation.Deploy ?? throw new InvalidOperationException("Deploy metadata is missing."), cancellationToken);
+
     private async Task EnsureAlarmAdmissionAsync(DeployOperationSpec spec, CancellationToken cancellationToken)
     {
         if (AlarmAdmission is not null &&

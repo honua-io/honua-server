@@ -1376,6 +1376,27 @@ public sealed class DeployWorkflowServiceTests
     }
 
     [Fact]
+    public async Task AdvanceOrPromoteAsync_AdmissionRefused_KeepsObservedStateAndRecordsReason()
+    {
+        var backend = Substitute.For<IDeployBackend>();
+        backend.PromoteAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<DeployObservation>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
+        var current = CreateOperationRecord(WorkflowOperationStatus.Reconciling) with
+        {
+            CurrentPhase = "Candidate healthy.",
+            ObservedState = "rev-2"
+        };
+
+        var advanced = await DeployWorkflowReconciler.AdvanceOrPromoteAsync(current, backend, CancellationToken.None);
+
+        advanced.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        advanced.CurrentPhase.Should().Be("Candidate healthy.");
+        advanced.ObservedState.Should().Be("rev-2");
+        advanced.ErrorMessage.Should().Be("Deployment alarms are not OK.");
+        advanced.CompletedAt.Should().BeNull();
+    }
+
+    [Fact]
     public async Task PromoteAsync_AdmissionRefusedDuringCanary_PreservesRollback()
     {
         var store = new TestWorkflowOperationStore();
@@ -1400,11 +1421,14 @@ public sealed class DeployWorkflowServiceTests
     }
 
     [Theory]
-    [InlineData(ICheckpointedDeployBackend.PendingPhase)]
-    [InlineData(ICheckpointedDeployBackend.PreparedPhase)]
-    [InlineData(ICheckpointedDeployBackend.CutoverPhase)]
-    [InlineData(ICheckpointedDeployBackend.RampPhase)]
-    public async Task Reconciler_AdmissionRefusedDuringCheckpoint_PreservesRollback(string phase)
+    [InlineData(ICheckpointedDeployBackend.PendingPhase, WorkflowOperationStatus.Submitted)]
+    [InlineData(ICheckpointedDeployBackend.PendingPhase, WorkflowOperationStatus.Reconciling)]
+    [InlineData(ICheckpointedDeployBackend.PreparedPhase, WorkflowOperationStatus.Reconciling)]
+    [InlineData(ICheckpointedDeployBackend.CutoverPhase, WorkflowOperationStatus.Submitted)]
+    [InlineData(ICheckpointedDeployBackend.CutoverPhase, WorkflowOperationStatus.Reconciling)]
+    [InlineData(ICheckpointedDeployBackend.RampPhase, WorkflowOperationStatus.Reconciling)]
+    public async Task Reconciler_AdmissionRefusedDuringCheckpoint_PreservesRollback(
+        string phase, WorkflowOperationStatus status)
     {
         var store = new TestWorkflowOperationStore();
         var backend = Substitute.For<IDeployBackend, ICheckpointedDeployBackend>();
@@ -1413,15 +1437,15 @@ public sealed class DeployWorkflowServiceTests
         ((ICheckpointedDeployBackend)backend).RequiresCheckpoint(Arg.Any<WorkflowOperationRecord>()).Returns(true);
         backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
             .Returns<Task<DeploySubmissionResult>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
-        ((ICheckpointedDeployBackend)backend).PrepareCheckpointAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
-            .Returns<Task<DeployCheckpoint>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
+        ((ICheckpointedDeployBackend)backend).EnsurePreparationAdmittedAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
         ((ICheckpointedDeployBackend)backend).ActivateCheckpointAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
             .Returns<Task<DeployObservation>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
         backend.PromoteAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
             .Returns<Task<DeployObservation>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
         backend.RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
             .Returns(new DeployObservation { Status = WorkflowOperationStatus.RollbackRequested });
-        var operation = CreateOperationRecord(WorkflowOperationStatus.Reconciling) with
+        var operation = CreateOperationRecord(status) with
         {
             CurrentPhase = phase
         };
@@ -1430,9 +1454,12 @@ public sealed class DeployWorkflowServiceTests
         await CreateReconciler(store, backend).ReconcileWorkflowOperationAsync(operation.OperationId);
 
         var retained = await store.GetAsync(operation.OperationId);
-        retained!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        retained!.Status.Should().Be(status);
         retained.CurrentPhase.Should().Be(phase);
         retained.CompletedAt.Should().BeNull();
+        retained.ErrorMessage.Should().Be("Deployment alarms are not OK.");
+        await ((ICheckpointedDeployBackend)backend).DidNotReceive()
+            .PrepareCheckpointAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
         var rollback = await CreateService(store, backend).RequestRollbackAsync(operation.OperationId, "alice", "recover");
         rollback!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
         await backend.Received(1).RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());

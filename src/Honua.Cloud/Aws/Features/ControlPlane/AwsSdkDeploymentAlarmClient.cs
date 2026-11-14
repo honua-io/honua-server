@@ -19,6 +19,7 @@ internal sealed class AwsSdkDeploymentAlarmClient : IAwsDeploymentAlarmClient
         var response = await client.DescribeAlarmsAsync(new DescribeAlarmsRequest
         {
             AlarmNames = names.ToList(),
+            MaxRecords = 100,
             AlarmTypes = [AlarmType.MetricAlarm, AlarmType.CompositeAlarm]
         }, cancellationToken).ConfigureAwait(false);
 

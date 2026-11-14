@@ -378,6 +378,9 @@ public interface ICheckpointedDeployBackend
 
     /// <summary>True when this particular operation requires checkpointed preparation.</summary>
     bool RequiresCheckpoint(WorkflowOperationRecord operation);
+    /// <summary>Refuses preparation before PreparingPhase is persisted; throws DeployAdmissionBlockedException.</summary>
+    Task EnsurePreparationAdmittedAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken)
+        => Task.CompletedTask;
     /// <summary>Prepares the candidate and migration; callers must first persist PreparingPhase.</summary>
     Task<DeployCheckpoint> PrepareCheckpointAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken);
     /// <summary>Idempotently submits activation after the checkpoint has been persisted.</summary>

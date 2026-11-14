@@ -170,7 +170,6 @@ internal sealed partial class AwsEcsAlbDeployBackend
         var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy metadata is missing.");
         var target = ResolveTarget(spec);
         EnsureValidTarget(target);
-        await EnsureAlarmAdmissionAsync(spec, cancellationToken).ConfigureAwait(false);
         var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
             ?? throw new InvalidOperationException("Stable ECS service is required to verify rollback identity.");
         if (string.Equals(stableName, target.CanaryService, StringComparison.Ordinal))

@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -37,11 +38,11 @@ public sealed partial class AwsEcsAlbDeployBackendTests
         {
             "start" => async () => { await backend.StartAsync(operation); },
             "promote" => async () => { await backend.PromoteAsync(operation); },
-            "prepare" => async () => { await backend.PrepareCheckpointAsync(operation, default); },
+            "prepare" => async () => { await backend.EnsurePreparationAdmittedAsync(operation, default); },
             _ => async () => { await backend.ActivateCheckpointAsync(operation, default); }
         };
 
-        await execute.Should().ThrowAsync<InvalidOperationException>()
+        await execute.Should().ThrowExactlyAsync<DeployAdmissionBlockedException>()
             .WithMessage("Deployment alarm admission is blocked.");
         await admission.Received(1).GetBlockingReasonAsync("prod-ecs", Arg.Any<CancellationToken>());
         clients.Alb.ReceivedCalls().Should().BeEmpty();

@@ -842,10 +842,9 @@ internal sealed partial class DeployWorkflowService
         {
             observation = await backend.PromoteAsync(operation, cancellationToken).ConfigureAwait(false);
         }
-        catch (DeployAdmissionBlockedException)
+        catch (DeployAdmissionBlockedException ex)
         {
-            return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation,
-                "Deployment alarms are unavailable or not all OK; retry after they recover.");
+            return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation, ex.Message);
         }
         catch (OperationCanceledException)
         {

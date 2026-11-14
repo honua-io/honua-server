@@ -21,27 +21,13 @@ internal sealed partial class DeployWorkflowReconciler(
         if (operation.CurrentPhase == ICheckpointedDeployBackend.PendingPhase)
         {
             // The marker is committed before migration starts. An interrupted migration is never
-            // automatically repeated because its outcome may be unknown.
+            // automatically repeated because its outcome may be unknown, so admission is decided first.
+            await backend.EnsurePreparationAdmittedAsync(operation, cancellationToken).ConfigureAwait(false);
             var preparing = operation with { CurrentPhase = ICheckpointedDeployBackend.PreparingPhase, UpdatedAt = DateTimeOffset.UtcNow };
             if (!await workflowStore.TrySetAsync(preparing, cancellationToken: cancellationToken).ConfigureAwait(false)) return;
             var claimed = await workflowStore.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
             if (claimed is null || claimed.CurrentPhase != ICheckpointedDeployBackend.PreparingPhase) return;
-            DeployCheckpoint checkpoint;
-            try
-            {
-                checkpoint = await backend.PrepareCheckpointAsync(claimed, cancellationToken).ConfigureAwait(false);
-            }
-            catch (DeployAdmissionBlockedException)
-            {
-                // Admission is checked before migration, so the preparation can be retried safely.
-                await workflowStore.TrySetAsync(claimed with
-                {
-                    CurrentPhase = ICheckpointedDeployBackend.PendingPhase,
-                    UpdatedAt = DateTimeOffset.UtcNow
-                }, cancellationToken: cancellationToken).ConfigureAwait(false);
-                throw;
-            }
-
+            var checkpoint = await backend.PrepareCheckpointAsync(claimed, cancellationToken).ConfigureAwait(false);
             var prepared = claimed with
             {
                 CurrentPhase = ICheckpointedDeployBackend.PreparedPhase,
@@ -297,9 +283,11 @@ internal sealed partial class DeployWorkflowReconciler(
                 Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
             }
         }
-        catch (DeployAdmissionBlockedException)
+        catch (DeployAdmissionBlockedException ex)
         {
-            // Admission refused before mutation; preserve the operation so rollback remains available.
+            // Admission refused before mutation; keep the operation open so retry and rollback remain available.
+            Log.DeployAdmissionRefused(logger, operationId, ex.Message);
+            await RecordAdmissionRefusalAsync(reconciledVersion, ex, reconciliationCancellation.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1103,6 +1091,43 @@ internal sealed partial class DeployWorkflowReconciler(
         IDeployBackend backend,
         CancellationToken cancellationToken)
     {
+        try
+        {
+            return await AdvanceOrPromoteCoreAsync(current, backend, cancellationToken).ConfigureAwait(false);
+        }
+        catch (DeployAdmissionBlockedException ex)
+        {
+            // Keep this pass's observation and telemetry state; the next pass retries the step.
+            return current with { ErrorMessage = ex.Message, UpdatedAt = DateTimeOffset.UtcNow };
+        }
+    }
+
+    private async Task RecordAdmissionRefusalAsync(
+        WorkflowOperationRecord? operation, DeployAdmissionBlockedException refusal, CancellationToken cancellationToken)
+    {
+        if (operation is null || IsTerminal(operation.Status) || operation.ErrorMessage == refusal.Message)
+        {
+            return;
+        }
+
+        try
+        {
+            await workflowStore.TrySetAsync(
+                operation with { ErrorMessage = refusal.Message, UpdatedAt = DateTimeOffset.UtcNow },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // The refusal is already logged; the operation stays open and the next pass records it.
+            Log.WorkflowOperationReconcileFailed(logger, operation.OperationId, ex);
+        }
+    }
+
+    private static async Task<WorkflowOperationRecord> AdvanceOrPromoteCoreAsync(
+        WorkflowOperationRecord current,
+        IDeployBackend backend,
+        CancellationToken cancellationToken)
+    {
         var deploy = current.Deploy;
         var ramp = deploy?.CanaryRamp;
 
@@ -1204,6 +1229,9 @@ internal sealed partial class DeployWorkflowReconciler(
 
         [LoggerMessage(9024, LogLevel.Warning, "Deploy workflow reconciliation poll loop failed")]
         public static partial void WorkflowOperationPollLoopFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(9027, LogLevel.Warning, "Deploy admission refused for operation {OperationId}: {Reason}")]
+        public static partial void DeployAdmissionRefused(ILogger logger, string operationId, string reason);
 
         [LoggerMessage(9026, LogLevel.Debug, "Deploy workflow reconciliation lease was lost for operation {OperationId}; another node may continue processing.")]
         public static partial void WorkflowOperationLeaseLost(ILogger logger, string operationId);
