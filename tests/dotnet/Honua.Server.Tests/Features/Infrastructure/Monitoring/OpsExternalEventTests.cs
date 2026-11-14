@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpsExternalEventTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"containers\":[{\"exitCode\":137,\"reason\":\"OutOfMemoryError\"}]}", "ecs-task-oom")]
     [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"stoppedReason\":\"CannotPullContainerError: denied\"}", "image-pull-failed")]
     [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"stoppedReason\":\"Task failed to start\",\"containers\":[{\"reason\":\"CannotPullContainerError: denied\"}]}", "image-pull-failed")]
@@ -44,7 +44,7 @@ public sealed class OpsExternalEventTests
         finding.RecommendedAction.Should().BeNull();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("UserInitiated")]
     [InlineData("ServiceSchedulerInitiated")]
     [InlineData("SpotInterruption")]
@@ -60,7 +60,7 @@ public sealed class OpsExternalEventTests
             .Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public void Exit137WithoutMemoryEvidence_IsGenericCrash()
     {
@@ -68,7 +68,7 @@ public sealed class OpsExternalEventTests
         OpsExternalEventMapper.Map(body)!.Rule.Should().Be("ecs-task-stopped");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("{}")]
     [InlineData("[]")]
     [InlineData("not json")]
@@ -79,7 +79,7 @@ public sealed class OpsExternalEventTests
         parse.Should().Throw<JsonException>();
     }
 
-    [Fact]
+    [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task DuplicateDelivery_PersistsOneEventAndAcknowledgesBothReceipts()
     {
@@ -95,7 +95,7 @@ public sealed class OpsExternalEventTests
         OpsExternalEventMapper.MapRecent(store.Events.Values.ToArray(), DateTimeOffset.UtcNow).Should().ContainSingle();
     }
 
-    [Fact]
+    [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task StoreFailure_DoesNotAcknowledgeMessage()
     {
@@ -107,7 +107,7 @@ public sealed class OpsExternalEventTests
         queue.Deleted.Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task PoisonMessage_RemainsForQueueRedrive()
     {
@@ -119,7 +119,7 @@ public sealed class OpsExternalEventTests
         queue.Deleted.Should().BeEmpty();
     }
 
-    [Fact]
+    [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public void ThreeDistinctCrashesInFifteenMinutes_CreateCrashLoopFinding()
     {
@@ -131,7 +131,7 @@ public sealed class OpsExternalEventTests
             .Should().NotContain(f => f.Rule == "ecs-task-crash-loop");
     }
 
-    [Fact]
+    [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task HandlerFailure_RetriesPersistedEventBeforeAcknowledgment()
     {
@@ -151,7 +151,7 @@ public sealed class OpsExternalEventTests
         queue.Deleted.Should().Equal("retry");
     }
 
-    [Fact]
+    [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public void AlarmRecovery_ReplacesEarlierActiveAlarmRegardlessOfDeliveryOrder()
     {
@@ -162,7 +162,7 @@ public sealed class OpsExternalEventTests
         findings.Should().ContainSingle().Which.Rule.Should().Be("cloudwatch-alarm-recovered");
     }
 
-    [Fact]
+    [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public void Map_JsonbSeparatorExpansion_DoesNotRejectAcceptedEvent()
     {
@@ -176,7 +176,7 @@ public sealed class OpsExternalEventTests
         ingest.Should().Throw<JsonException>();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("SERVICE_DEPLOYMENT_COMPLETED", "ecs-deployment-completed")]
     [InlineData("SERVICE_DEPLOYMENT_ROLLBACK_COMPLETED", "ecs-deployment-rollback-completed")]
     [Operation(Operations.TestInfrastructure)]
