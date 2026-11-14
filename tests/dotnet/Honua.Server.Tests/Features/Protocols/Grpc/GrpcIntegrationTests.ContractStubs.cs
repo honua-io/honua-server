@@ -44,43 +44,19 @@ public sealed partial class GrpcIntegrationTests
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/UploadAttachmentChunk")]
     public async Task ContractRpc_WithoutImplementation_ReturnsUnimplemented(string method)
     {
-        Func<Task> call = async () =>
+        Func<Task> call = method switch
         {
-            switch (method)
-            {
-                case "AbortAttachmentUpload":
-                    await _client!.AbortAttachmentUploadAsync(new Proto.AbortAttachmentUploadRequest(), _headers);
-                    break;
-                case "BeginAttachmentUpload":
-                    await _client!.BeginAttachmentUploadAsync(new Proto.BeginAttachmentUploadRequest(), _headers);
-                    break;
-                case "CommitAttachmentUpload":
-                    await _client!.CommitAttachmentUploadAsync(new Proto.CommitAttachmentUploadRequest(), _headers);
-                    break;
-                case "DeleteAttachment":
-                    await _client!.DeleteAttachmentAsync(new Proto.DeleteAttachmentRequest(), _headers);
-                    break;
-                case "DescribeLayer":
-                    await _client!.DescribeLayerAsync(new Proto.DescribeLayerRequest(), _headers);
-                    break;
-                case "DescribeService":
-                    await _client!.DescribeServiceAsync(new Proto.DescribeServiceRequest(), _headers);
-                    break;
-                case "GetAttachmentUrl":
-                    await _client!.GetAttachmentUrlAsync(new Proto.GetAttachmentUrlRequest(), _headers);
-                    break;
-                case "ListAttachments":
-                    await _client!.ListAttachmentsAsync(new Proto.ListAttachmentsRequest(), _headers);
-                    break;
-                case "UploadAttachment":
-                    await _client!.UploadAttachmentAsync(new Proto.UploadAttachmentRequest(), _headers);
-                    break;
-                case "UploadAttachmentChunk":
-                    await _client!.UploadAttachmentChunkAsync(new Proto.UploadAttachmentChunkRequest(), _headers);
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(method));
-            }
+            "AbortAttachmentUpload" => async () => await _client!.AbortAttachmentUploadAsync(new Proto.AbortAttachmentUploadRequest(), _headers),
+            "BeginAttachmentUpload" => async () => await _client!.BeginAttachmentUploadAsync(new Proto.BeginAttachmentUploadRequest(), _headers),
+            "CommitAttachmentUpload" => async () => await _client!.CommitAttachmentUploadAsync(new Proto.CommitAttachmentUploadRequest(), _headers),
+            "DeleteAttachment" => async () => await _client!.DeleteAttachmentAsync(new Proto.DeleteAttachmentRequest(), _headers),
+            "DescribeLayer" => async () => await _client!.DescribeLayerAsync(new Proto.DescribeLayerRequest(), _headers),
+            "DescribeService" => async () => await _client!.DescribeServiceAsync(new Proto.DescribeServiceRequest(), _headers),
+            "GetAttachmentUrl" => async () => await _client!.GetAttachmentUrlAsync(new Proto.GetAttachmentUrlRequest(), _headers),
+            "ListAttachments" => async () => await _client!.ListAttachmentsAsync(new Proto.ListAttachmentsRequest(), _headers),
+            "UploadAttachment" => async () => await _client!.UploadAttachmentAsync(new Proto.UploadAttachmentRequest(), _headers),
+            "UploadAttachmentChunk" => async () => await _client!.UploadAttachmentChunkAsync(new Proto.UploadAttachmentChunkRequest(), _headers),
+            _ => throw new ArgumentOutOfRangeException(nameof(method)),
         };
 
         var failure = await call.Should().ThrowAsync<RpcException>();
