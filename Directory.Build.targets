@@ -51,16 +51,16 @@
   </Target>
 
   <!--
-    HonuaNobleRuntimePublish is set by the Ubuntu noble serving Dockerfiles.
-    That base ships libsasl2.so.2, and the GSSAPI librdkafka.so needs
-    libsasl2.so.3, so a linux-x64 noble publish keeps centos8-librdkafka.so.
+    HonuaUbuntuRuntimePublish is set by the Ubuntu (26.04, resolute) serving Dockerfiles.
+    That base has no libsasl2.so.3, which the GSSAPI librdkafka.so needs,
+    so a linux-x64 Ubuntu publish keeps centos8-librdkafka.so.
     linux-arm64 has no CentOS 8 build, and its librdkafka.so does not need sasl.
     alpine-librdkafka.so is musl. Other publishes keep every build: a host with
     libsasl2.so.3 needs the GSSAPI library, and a musl RID needs the Alpine one.
   -->
   <Target Name="RemoveUnloadedLibrdkafkaBuilds"
           AfterTargets="ComputeFilesToPublish"
-          Condition="'$(HonuaNobleRuntimePublish)' == 'true'">
+          Condition="'$(HonuaUbuntuRuntimePublish)' == 'true'">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
         Condition="'%(Extension)' == '.so' and '%(Filename)' == 'alpine-librdkafka'" />
@@ -68,5 +68,17 @@
         Condition="'$(RuntimeIdentifier)' == 'linux-x64' and '%(Extension)' == '.so' and '%(Filename)' == 'librdkafka'" />
     </ItemGroup>
   </Target>
+
+  <!--
+    .NET 11 moved these Microsoft.Extensions packages into the shared framework,
+    so restore reports NU1510 (as an error under TreatWarningsAsErrors) for a direct
+    reference. Drop the reference only on net11.0+ so a net10.0 build keeps it.
+  -->
+  <ItemGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net11.0'))">
+    <PackageReference Remove="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Remove="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Remove="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Remove="Microsoft.Extensions.Options" />
+  </ItemGroup>
 
 </Project>

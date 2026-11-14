@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Exceptions;
@@ -14,6 +13,7 @@ using Honua.Geoprocessing;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -211,15 +211,10 @@ internal static class OperationsEndpoints
             }
         }
 
-        if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+        if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
+            && OperatorGateRefusal(context, descriptor.OperationId) is { } refusal)
         {
-            var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-            var approvalResult = gate.EvaluateApproval(
-                context, OperatorResourceType.Catalog, OperatorOperation.Publish);
-            if (approvalResult != null)
-            {
-                return approvalResult;
-            }
+            return refusal;
         }
 
         if (!TryResolveIdempotencyKey(context, out var idempotencyKey, out var idempotencyError))
@@ -246,9 +241,7 @@ internal static class OperationsEndpoints
                     .GetSnapshot().Edition.ToString().ToLowerInvariant(),
                 SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
                 AuthorizationOutcome = authorization.AuthorizationOutcome,
-                Roles = context.User.FindAll(ClaimTypes.Role)
-                    .Select(claim => claim.Value)
-                    .ToArray(),
+                Roles = AgentPrincipal.EffectiveRoles(context.User),
                 ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(context.User),
                 RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(context.User)
                     .OrderBy(scope => scope, StringComparer.Ordinal)
@@ -412,6 +405,23 @@ internal static class OperationsEndpoints
             Fields = request.Fields ?? [],
             DryRun = request.DryRun
         };
+
+    // An agent's access-policy or publish change continues to the dispatcher, whose agent rule files
+    // a proposal for a person to approve. Any other operator-gated change is refused for an agent
+    // whatever the OperatorApproval settings.
+    private static IResult? OperatorGateRefusal(HttpContext context, string operationId)
+    {
+        var roles = AgentPrincipal.EffectiveRoles(context.User);
+        if (AgentApprovalRule.Applies(operationId, roles))
+        {
+            return null;
+        }
+
+        return AgentApprovalRule.IsAgent(roles)
+            ? OperatorApprovalGate.AgentApprovalRequired(context, AgentApprovalFilter.OperationRef, AgentApprovalFilter.ConsoleGuidance)
+            : context.RequestServices.GetRequiredService<OperatorApprovalGate>()
+                .EvaluateApproval(context, OperatorResourceType.Catalog, OperatorOperation.Publish);
+    }
 
     internal static bool TryResolveIdempotencyKey(HttpContext context, out string? key, out string? error)
     {

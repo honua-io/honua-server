@@ -32,6 +32,7 @@ public sealed partial class FeatureStreamEndpointsTests
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("MultiTenancy:Enabled", "true");
         });
         await fixture.InitializeAsync();
         fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with { Tenant = "tenant-a" });
@@ -128,6 +129,7 @@ public sealed partial class FeatureStreamEndpointsTests
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("MultiTenancy:Enabled", "true");
             builder.UseSetting("MultiTenancy:DefaultTenantId", "public");
             if (candidateAuthentication)
             {
@@ -237,6 +239,7 @@ public sealed partial class FeatureStreamEndpointsTests
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("MultiTenancy:Enabled", "true");
         });
         await fixture.InitializeAsync();
         fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with { Tenant = "tenant-a" });
@@ -388,6 +391,7 @@ public sealed partial class FeatureStreamEndpointsTests
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("MultiTenancy:Enabled", "true");
         });
         await fixture.InitializeAsync();
         fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with { Tenant = "tenant-a" });

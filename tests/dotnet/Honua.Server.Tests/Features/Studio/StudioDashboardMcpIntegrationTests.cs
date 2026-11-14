@@ -14,8 +14,9 @@ using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
-using Honua.TestKit.Extensions;
+using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
@@ -31,13 +32,14 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly RedisFixture _redis = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly string _studioSchema = $"dashboard_{Guid.NewGuid():N}";
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
     {
         await _redis.InitializeAsync();
-        _fixture.ConfigureWebHost(builder =>
+        HumanApprovalHttpClient.Configure(_fixture, _identityProvider).ConfigureWebHost(builder =>
         {
             builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
@@ -80,6 +82,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         await _fixture.Postgres.DropSchemaAsync(_studioSchema);
         await _fixture.DisposeAsync();
         await _redis.DisposeAsync();
+        _identityProvider.Dispose();
     }
 
     [IntegrationTest]
@@ -261,28 +264,44 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             reader.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
                 .Should().Be(StudioPackagePersistenceMode.Durable);
 
-            // Composition is complete. The class override still requires approval, and an
-            // admin publishes in the same call anyway: the proposal floor is not applied.
-            _fixture.Services.GetRequiredService<IOptions<GuardrailLadderOptions>>().Value
-                .Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
-            _fixture.Services.GetRequiredService<IGuardrailLadder>().Resolve(OperationClass.StudioDraftMutation)
-                .Tier.Should().Be(GuardrailTier.RequiresApproval);
-            const string route = "/studio/dashboard-fixture";
-            var intent = await CallAsync("propose_publication",
-                $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"{{route}}","visibility":"personal"}""");
-            intent.GetProperty("status").GetString().Should().Be("Published");
-            intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeFalse();
-            intent.GetProperty("shareUrl").GetString().Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
-            intent.TryGetProperty("proposalId", out _).Should().BeFalse();
-            var pointers = await lifecycle.GetPointersAsync(version.ItemId);
-            pointers!.CurrentVersionId.Should().Be(version.VersionId);
-            pointers.PublishedVersionId.Should().Be(version.VersionId);
-            (await lifecycle.GetVersionAsync(version.ItemId, version.VersionId))!.ContentHash.Should().Be(expectedHash);
+            await AssertHumanApprovedPublicationAsync(lifecycle, version, expectedHash);
         }
         finally
         {
             await replica.DisposeAsync();
         }
+    }
+
+    private async Task AssertHumanApprovedPublicationAsync(
+        IStudioPackageLifecycleService lifecycle, StudioContentVersion version, string expectedHash)
+    {
+        // Publication waits for a verified human decision even for an administrator.
+        _fixture.Services.GetRequiredService<IOptions<GuardrailLadderOptions>>().Value
+            .Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
+        _fixture.Services.GetRequiredService<IGuardrailLadder>().Resolve(OperationClass.StudioDraftMutation)
+            .Tier.Should().Be(GuardrailTier.RequiresApproval);
+        const string route = "/studio/dashboard-fixture";
+        var intent = await CallAsync("propose_publication",
+            $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"{{route}}","visibility":"personal"}""");
+        intent.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
+        intent.TryGetProperty("shareUrl", out _).Should().BeFalse();
+        (await lifecycle.GetPointersAsync(version.ItemId))!.PublishedVersionId.Should().BeNull();
+        using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "dashboard-human-publisher");
+        using var approval = await approver.ApproveAsync(intent.GetProperty("proposalId").GetString()!);
+        var approvalBody = await approval.Content.ReadAsStringAsync();
+        approval.StatusCode.Should().Be(HttpStatusCode.OK, approvalBody);
+        using var decision = JsonDocument.Parse(approvalBody);
+        decision.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", approvalBody);
+        var publication = await lifecycle.GetActivePublicationRequestByRouteAsync(route);
+        publication.Should().NotBeNull();
+        publication!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+        publication.PublicationUrl.Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
+        var pointers = await lifecycle.GetPointersAsync(version.ItemId);
+        pointers!.CurrentVersionId.Should().Be(version.VersionId);
+        pointers.PublishedVersionId.Should().Be(version.VersionId);
+        (await lifecycle.GetVersionAsync(version.ItemId, version.VersionId))!.ContentHash.Should().Be(expectedHash);
     }
 
     private async Task<JsonElement> CallAsync(string verb, string arguments)

@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
@@ -75,6 +76,34 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
         IsPublic = true,
         RequiresAuth = false
     };
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes")]
+    [Endpoint("PUT /api/v1/admin/scenes/{id}")]
+    public async Task AgentAdministrator_CannotRegisterOrWidenSceneAccess()
+    {
+        var request = BuildValidRequest(NewSceneId("agent"));
+        request.IsPublic = false;
+        request.RequiresAuth = true;
+        var initial = await CreateAsync(request);
+        var key = await _fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "scene-agent", ["admin", "agent"], null, "test", CancellationToken.None);
+        using var agent = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", key.Key));
+
+        using var registration = await agent.PostAsJsonAsync(
+            "/api/v1/admin/scenes", BuildValidRequest(NewSceneId("denied")), _jsonOptions);
+        Assert.Equal(HttpStatusCode.Forbidden, registration.StatusCode);
+        using var update = await agent.PutAsJsonAsync($"/api/v1/admin/scenes/{initial.DatasetId}",
+            new UpdateSceneDatasetRequest { IsPublic = true, RequiresAuth = false, ClearAllowedRoles = true }, _jsonOptions);
+        Assert.Equal(HttpStatusCode.Forbidden, update.StatusCode);
+        Assert.Contains("ask one to make this change in Console", await update.Content.ReadAsStringAsync());
+        var after = await _client.GetFromJsonAsync<SceneDatasetDetail>(
+            $"/api/v1/admin/scenes/{initial.DatasetId}", _jsonOptions);
+        Assert.NotNull(after);
+        Assert.False(after.IsPublic);
+        Assert.True(after.RequiresAuth);
+        Assert.Equal(initial.Revision, after.Revision);
+    }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/scenes")]

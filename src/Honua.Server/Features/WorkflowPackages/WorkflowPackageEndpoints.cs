@@ -7,6 +7,7 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
@@ -88,6 +89,7 @@ internal static class WorkflowPackageEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         group.MapPost("/workflow-packages/{packageId}/versions/{packageVersion:int}/publish", HandlePublishVersion)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithName("PublishWorkflowPackageVersion")
             .WithSummary("Publish a workflow package version to a job, schedule, or process endpoint target")
             .Accepts<PublishWorkflowPackageRequest>("application/json")
@@ -109,6 +111,7 @@ internal static class WorkflowPackageEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         group.MapPost("/workflow-publications/{publicationId}/status", HandleSetPublicationStatus)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithName("SetWorkflowPublicationStatus")
             .WithSummary("Enable or disable a workflow package publication and its schedule definition")
             .Accepts<SetWorkflowPublicationStatusRequest>("application/json")

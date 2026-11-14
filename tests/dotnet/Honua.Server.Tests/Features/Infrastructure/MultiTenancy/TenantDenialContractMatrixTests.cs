@@ -367,7 +367,12 @@ public sealed class TenantDenialContractMatrixTests
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
-        builder.Services.AddHonuaTenantContext(new ConfigurationBuilder().Build());
+        builder.Services.AddHonuaTenantContext(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{TenantContextOptions.SectionName}:{nameof(TenantContextOptions.Enabled)}"] = "true"
+            })
+            .Build());
         builder.Services.AddSingleton<ITenantCatalog>(new StubTenantCatalog(denial.TenantStatus));
 
         var app = builder.Build();

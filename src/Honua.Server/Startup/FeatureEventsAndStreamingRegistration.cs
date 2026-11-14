@@ -77,8 +77,12 @@ internal static class FeatureEventsAndStreamingRegistration
             KafkaFeatureChangeEventSinkOptionsValidator>();
         if (configuration.GetValue<bool>($"{KafkaFeatureChangeEventSinkOptions.SectionName}:Enabled"))
         {
+#if HONUA_EXCLUDE_EVENT_BROKERS
+            throw EventBrokerNotIncluded(KafkaFeatureChangeEventSinkOptions.SectionName);
+#else
             services.AddSingleton<IKafkaEventProducer, ConfluentKafkaEventProducer>();
             services.AddSingleton<IFeatureChangeEventSink, KafkaFeatureChangeEventSink>();
+#endif
         }
 
         // NATS JetStream sink adapter (#357). Bound and validated always, but the
@@ -94,8 +98,12 @@ internal static class FeatureEventsAndStreamingRegistration
             NatsFeatureChangeEventSinkOptionsValidator>();
         if (configuration.GetValue<bool>($"{NatsFeatureChangeEventSinkOptions.SectionName}:Enabled"))
         {
+#if HONUA_EXCLUDE_EVENT_BROKERS
+            throw EventBrokerNotIncluded(NatsFeatureChangeEventSinkOptions.SectionName);
+#else
             services.AddSingleton<INatsEventProducer, NatsJetStreamEventProducer>();
             services.AddSingleton<IFeatureChangeEventSink, NatsFeatureChangeEventSink>();
+#endif
         }
 
         services.AddSingleton<FeatureChangeEventSinkBroadcaster>();
@@ -171,4 +179,13 @@ internal static class FeatureEventsAndStreamingRegistration
 
         return services;
     }
+
+#if HONUA_EXCLUDE_EVENT_BROKERS
+    // The PostGIS-only default image compiles out the Kafka/NATS clients.
+    // Refuse to start rather than silently dropping events an operator asked for.
+    private static InvalidOperationException EventBrokerNotIncluded(string sectionName) =>
+        new($"{sectionName}:Enabled is true, but this build excludes the Kafka and NATS event-bus " +
+            "clients (HonuaIncludeEventBrokers=false, the default for HonuaStoreProfile=postgis). " +
+            "Use an image built with HonuaStoreProfile=full or HonuaIncludeEventBrokers=true.");
+#endif
 }

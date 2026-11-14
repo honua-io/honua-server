@@ -33,7 +33,7 @@ public static class LicenseTestSupport
         string[]? entitlements = null,
         string? keyId = null,
         bool tamperSignature = false,
-        LicenseCapacityTerms? capacity = null)
+        object? capacity = null)
         => CreateSignedLicenseWithOptions(edition, new SignedLicenseTestOptions
         {
             ExpiresAt = expiresAt,
@@ -97,8 +97,7 @@ public static class LicenseTestSupport
     public static LicenseSnapshot CreateSnapshot(
         HonuaEdition edition,
         LicenseValidationState validationState = LicenseValidationState.Valid,
-        string[]? entitlements = null,
-        LicenseCapacityTerms? capacityTerms = null)
+        string[]? entitlements = null)
     {
         var activeKeys = (entitlements ?? ActiveEntitlementsFor(edition))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -122,8 +121,7 @@ public static class LicenseTestSupport
             catalogEntitlements,
             activeKeys,
             SnapshotVersion: 1,
-            KeyId: KeyId,
-            CapacityTerms: capacityTerms);
+            KeyId: KeyId);
     }
 
     public static string Base64Url(byte[] bytes)
@@ -140,7 +138,7 @@ public sealed record SignedLicenseTestOptions
     public string[]? Entitlements { get; init; }
     public string KeyId { get; init; } = LicenseTestSupport.KeyId;
     public bool TamperSignature { get; init; }
-    public LicenseCapacityTerms? Capacity { get; init; }
+    public object? Capacity { get; init; }
     public byte[]? SigningSeed { get; init; }
 }
 
@@ -153,10 +151,9 @@ public sealed class TestLicenseEntitlementService : ILicenseEntitlementService, 
     public TestLicenseEntitlementService(
         HonuaEdition edition,
         LicenseValidationState validationState = LicenseValidationState.Valid,
-        string[]? entitlements = null,
-        LicenseCapacityTerms? capacityTerms = null)
+        string[]? entitlements = null)
     {
-        _snapshot = LicenseTestSupport.CreateSnapshot(edition, validationState, entitlements, capacityTerms);
+        _snapshot = LicenseTestSupport.CreateSnapshot(edition, validationState, entitlements);
     }
 
     public LicenseSnapshot GetSnapshot() => _snapshot;
@@ -170,8 +167,7 @@ public sealed class TestLicenseEntitlementService : ILicenseEntitlementService, 
             _snapshot.ValidationState,
             _snapshot.LicenseId,
             _snapshot.IssuedAt,
-            _snapshot.Entitlements,
-            _snapshot.CapacityTerms);
+            _snapshot.Entitlements);
 
     public Task<LicenseUploadResult> UploadLicenseAsync(
         Stream licenseStream,

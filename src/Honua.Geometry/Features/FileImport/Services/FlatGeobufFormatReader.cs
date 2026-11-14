@@ -99,20 +99,20 @@ internal static class FlatGeobufFormatReader
     /// for authority-based SRID lookup.
     /// The caller is responsible for resetting the stream position if needed.
     /// </summary>
-    internal static (int? Srid, string? CrsWkt) ReadCrsInfo(Stream stream)
+    internal static (int? Srid, string? CrsWkt, bool Declared) ReadCrsInfo(Stream stream)
     {
         try
         {
             var header = Helpers.ReadHeader(stream);
             var srid = ResolveSrid(header);
-            if (srid.HasValue) return (srid, null);
+            if (srid.HasValue) return (srid, null, true);
 
             var wkt = ExtractCrsWkt(header);
-            return (null, wkt);
+            return (null, wkt, header.Crs.HasValue);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return (null, null);
+            return (null, null, false);
         }
     }
 
