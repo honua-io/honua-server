@@ -250,6 +250,10 @@ gh run download <run-id> -p 'server-test-results-*' -D ./artifacts
 scripts/ci/audit-shard-headroom.py --timings-dir ./artifacts --markdown
 ```
 
+Shard artifacts are named `server-test-results-<suffix>-attempt-<n>`. For a run
+that was re-run, delete all but each shard's highest attempt directory before
+auditing, so a superseded (possibly cancelled) attempt does not skew the sample.
+
 Collect several runs into the same directory for a usable p90. Add
 `--fail-on-warn` to turn the audit into a gate.
 

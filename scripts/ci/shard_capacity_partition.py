@@ -4,6 +4,9 @@ from types import ModuleType
 from typing import NamedTuple
 
 
+REPORT_UPLOAD_FIELDS = ("upload_operator_eval_report", "upload_odata_evidence")
+
+
 class PartitionSource(NamedTuple):
     coverage: ModuleType
     classes: dict
@@ -34,9 +37,12 @@ def check_method_partition(source, original, children):
     assert set.union(*selected) == expected, "Lost original or leaked foreign methods."
     assert sum(map(len, selected)) == len(expected), "Duplicate method ownership."
     for child in children:
-        for field in ("paths", "csproj", "test_timeout_minutes", "timeout_minutes", "max_cpu_count",
-                      "upload_operator_eval_report", "upload_odata_evidence"):
+        for field in ("paths", "csproj", "test_timeout_minutes", "timeout_minutes", "max_cpu_count"):
             assert child[field] == original[field], f"Original {field} changed."
+    # Report uploads use one fixed artifact name per run, so exactly one child keeps each upload.
+    for field in REPORT_UPLOAD_FIELDS:
+        uploads = sum(bool(child[field]) for child in children)
+        assert uploads == int(bool(original[field])), f"Original {field} must move to exactly one child."
     return selected
 
 
