@@ -10,6 +10,7 @@ using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Console.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -57,9 +58,12 @@ internal static class ConsoleAccessEndpoints
 
         group.MapGet("/roles", HandleGetRoles);
         group.MapGet("/members", HandleGetMembers);
-        group.MapPost("/roles", HandleCreateRole);
-        group.MapPut("/roles/{roleId:guid}", HandleUpdateRole);
-        group.MapDelete("/roles/{roleId:guid}", HandleDeleteRole);
+        group.MapPost("/roles", HandleCreateRole)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+        group.MapPut("/roles/{roleId:guid}", HandleUpdateRole)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+        group.MapDelete("/roles/{roleId:guid}", HandleDeleteRole)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
         group.MapGet("/roles/audit", HandleGetRoleAudit);
     }
 

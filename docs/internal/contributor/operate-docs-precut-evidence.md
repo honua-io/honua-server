@@ -19,7 +19,7 @@ changes in #4726, #4724 and #4703 are preserved.
 This combines a source/receipt review with focused deployment-proposal fixtures.
 The fixtures exercise the MCP adapter with explicit source envelopes and recording
 gateway seams; they are not a live deployment or candidate transcript.
-The [Windows test receipt](../../guides/operate/evidence/3302-proposal-boundary-windows.json)
+The [Windows test receipt](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-proposal-boundary-windows.json)
 records 49 passing proposal/cache tests with no skips, including nine new
 finding-proposal cases, the tested commit and source/assembly hashes.
 
@@ -35,7 +35,7 @@ architecture/navigation changes and #4726 local-only SLO contract are preserved.
 The accepted manifest fetched from the release repository has SHA-256
 `8c71ca3c29d0a09676d579f918c1a2627556f257f7ac80454fe840ff7a6e3bec` and still
 pins `7ba4226` / `sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd`.
-The [fresh staging receipt](../../guides/operate/evidence/3302-candidate-staging-recheck.json)
+The [fresh staging receipt](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-candidate-staging-recheck.json)
 was produced by the unchanged `scripts/qualification/metadata-release-installed.py`
 with `--manifest /tmp/3302-current-platform-manifest.yaml --output /tmp/3302-installed-recheck`.
 It independently checks six EPSG:4326 feature values/coordinates and the absent
@@ -45,12 +45,12 @@ revision. All lane containers and the network were removed. The later recovery
 scenarios did not execute; the failed staging check was not bypassed.
 
 A separate instance using that harness's setup produced the
-[read observation](../../guides/operate/evidence/3302-candidate-read-observation.json).
+[read observation](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-candidate-read-observation.json).
 Four REST reads and four MCP calls passed the recorded status/shape checks.
 Independently specified fixture assertions establish empty findings/events,
 disabled alerting with absent observation/success clocks, and partial aggregate
 coverage on REST and MCP. No deployment-source outage or proposal attempt was
-made. A subsequent [catalog replay](../../guides/operate/evidence/3302-candidate-catalog.json)
+made. A subsequent [catalog replay](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-candidate-catalog.json)
 follows all five pages of the authenticated `full` view (56 descriptors), rejects
 duplicates/cursor cycles, finds all five named scenario tools, and checks the
 required string inputs `findingId` and `candidateId`. Descriptor hashes are retained.
@@ -77,7 +77,7 @@ contract #4726; `7ba4226` contains neither. The image was pulled by tag, and
 the harness checked its RepoDigest and OCI revision label against a temporary
 manifest carrying only that server entry.
 
-- [Staging replay](../../guides/operate/evidence/3302-repin-ff1a463-staging.json):
+- [Staging replay](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-repin-ff1a463-staging.json):
   the unchanged `metadata-release-installed.py` (SHA-256 `64825397…`, the same
   bytes that failed on `7ba4226`) passes all five scenarios. At
   `ServicePublication` the live revision stays at 3 with its ETag, and the
@@ -88,7 +88,7 @@ manifest carrying only that server entry.
   `allowAnonymous=false` and `allowedRoles=["recovery-reviewer"]`. The
   missing-resource, unregistered-ETL and cancelled-ETL preparations fail with
   their named blockers and leave the live graph unchanged.
-- [Read replay](../../guides/operate/evidence/3302-repin-ff1a463-read-observation.json):
+- [Read replay](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-repin-ff1a463-read-observation.json):
   produced by `scripts/qualification/operate-read-observation.py`, which retains
   the replay procedure and digest encoding in the receipt. It runs the recorded
   read procedure plus full catalog pagination in one session. Five REST reads
@@ -154,14 +154,14 @@ The unchanged manifest file was passed to each harness, with no temporary
 server-only manifest. Each harness checked the RepoDigest and OCI revision label
 before boot and removed its containers and network afterwards.
 
-- [Staging](../../guides/operate/evidence/3302-accepted-548b7a5-staging.json):
+- [Staging](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-accepted-548b7a5-staging.json):
   `metadata-release-installed.py`, unchanged (SHA-256 `64825397…`), passes all
   five scenarios. The fixture SHA-256 `83eb29ac…` is the one recorded for
   `7ba4226` and `ff1a463`. The two recovery scenarios end `RolledBack` with the
   prior graph and the seeded population edit of 1000007. The three rejected
   preparations fail with `metadata-release-resource-missing`,
   `metadata-release-etl-unproven-compensation` and `metadata-release-etl-failed`.
-- [Read observation](../../guides/operate/evidence/3302-accepted-548b7a5-read-observation.json):
+- [Read observation](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-accepted-548b7a5-read-observation.json):
   `operate-read-observation.py --accepted-manifest` records
   `qualificationStatus=accepted-pin-observation`. Five REST reads, four MCP
   calls, the fixture assertions and the status `1.1` contract pass. The full
@@ -171,7 +171,7 @@ before boot and removed its containers and network afterwards.
   tools are still present, `honua_propose_operation` is absent, and
   `findingId`/`candidateId` are still required. The harness's boot-only
   `receipt.json` lists no scenarios; `observation.json` is the receipt.
-- [Approval](../../guides/operate/evidence/3302-accepted-548b7a5-approval.json):
+- [Approval](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-accepted-548b7a5-approval.json):
   `scripts/certification/prove-admin-approve-candidate.py` passes the same five
   checks as the September 12 `7ba4226` receipt. This is server API approval in
   Development with a Pro dev grant, joining proposal, operation-instance and
@@ -238,24 +238,24 @@ The three installed harnesses are unchanged since September 15 (`metadata-releas
 `64825397…`, `operate-read-observation.py` `32e959a2…`, `prove-admin-approve-candidate.py`
 `df7947ab…`), and the manifest file was passed unmodified:
 
-- [Staging](../../guides/operate/evidence/3302-accepted-93cad86-staging.json):
+- [Staging](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-accepted-93cad86-staging.json):
   passes all five scenarios with fixture `83eb29ac…`. The two recovery scenarios
   end `RolledBack` with six EPSG:4326 rows, verified coordinates and values, no
   new field and anonymous admin denied. The three rejected preparations fail with
   `metadata-release-resource-missing`, `metadata-release-etl-unproven-compensation`
   and `metadata-release-etl-failed`.
-- [Read observation](../../guides/operate/evidence/3302-accepted-93cad86-read-observation.json):
+- [Read observation](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-accepted-93cad86-read-observation.json):
   `--accepted-manifest`, `qualificationStatus=accepted-pin-observation`, status
   `passed`. Five REST reads, the MCP calls, the fixture assertions and the status
   `1.1` contract pass. The full view holds 129 descriptors in 11 pages (124 on
   `548b7a5`). All five scenario tools are present, `honua_propose_operation` is
   absent, and `findingId`/`candidateId` are required. The version response still
   omits `sourceRevision`.
-- [Approval](../../guides/operate/evidence/3302-accepted-93cad86-approval.json):
+- [Approval](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-accepted-93cad86-approval.json):
   passes the same five server API checks, joining proposal, operation-instance
   and draft IDs for one approval and one rejection.
 
-The [Local Docker protected-recovery replay](../../guides/operate/evidence/3302-accepted-93cad86-protected-recovery.json)
+The [Local Docker protected-recovery replay](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-accepted-93cad86-protected-recovery.json)
 is the first deployment-actuator evidence on an accepted pin. It reuses the
 honua-devops#191 live harness (`certification/protected-recovery` at honua-devops
 `28a6419f`), which certified `80e23be` on 2026-09-19. 510 commits separate that
@@ -353,7 +353,7 @@ Paths are relative to the repository root.
 | Deployment proposal-path suppression | `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/McpPlatformOpsReaderTests.cs`: `ProposeFinding_IncompleteDeploymentEvidence_BlocksBeforeProposalOrActuation` passes five fixed-time deployment source envelopes through `ProposeFindingAsync`. It asserts literal expected completeness and blocked outcome, retained diagnostic target, null proposal/execution IDs, zero proposal/direct-route calls and zero canonical operation acceptance calls. The source and gateway are test seams: this proves the adapter gate, not live backend collection or durable actuator behavior. |
 | Complete evidence remains proposal-only | In the same file, `ProposeFinding_CompleteDeploymentEvidence_SealsOnlyTheBoundAction` asserts one approval-proposal call, zero direct-route calls, no execution ID, and the independently specified proposer, finding ID, target and desired revision. It does not substitute a recording gateway for the required durable receipt. |
 | Validity and coverage are source-derived | `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/EvidencePostureTests.cs`: fixed-time stale/future/malformed/replica/component fixtures; complete aggregate uses its oldest observation. |
-| Real backend outage and recovery | [Executed Windows receipt](../../guides/operate/evidence/3475-windows-outage.json), source `ee4f744a66491e7aa72e3efd22bf845e11b5869a`, plus [native runner instructions](../../guides/operate/evidence-posture.md). It records complete → unavailable → complete for `honua_ops_findings.alert_dispatch`, independently seeded pending/dead-letter counts of 0/1, REST/MCP outage parity, no new proposals and unchanged dispatch rows. `candidateQualification=false`: it proves that source outage, not deployment-actuator convergence or all incomplete cases. The opt-in `EvidencePostureLiveTests.cs` remains the deployed harness contract. |
+| Real backend outage and recovery | [Executed Windows receipt](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3475-windows-outage.json), source `ee4f744a66491e7aa72e3efd22bf845e11b5869a`, plus [native runner instructions](../../guides/operate/evidence-posture.md). It records complete → unavailable → complete for `honua_ops_findings.alert_dispatch`, independently seeded pending/dead-letter counts of 0/1, REST/MCP outage parity, no new proposals and unchanged dispatch rows. `candidateQualification=false`: it proves that source outage, not deployment-actuator convergence or all incomplete cases. The opt-in `EvidencePostureLiveTests.cs` remains the deployed harness contract. |
 | No opaque executable model payload | `tests/dotnet/Honua.Ai.Tests/Source/McpTaxonomyAlignmentTests.cs`: `McpComposition_DoesNotExposeOpaqueOperationProposalPath`; schema-closed tools in `src/Honua.Ai/Features/Protocols/Mcp/Mcp/Tools/PlatformOpsTools.cs`. |
 | Verified human approval; requester may approve | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalEndpointsTests.cs`: `ApproveProposal_RequesterInteractiveSession_ExecutesOnce`, `ApproveScopedKey_CanReadButRequiresHumanApprovalAndCannotMutateOtherAdminSurfaces`, `ReadOnlyScopedKey_ApproveNamesMissingGrant`. `ProposalEndpointsTests.HumanApproval.cs` covers nonhuman refusal. These are controlled integration checks, not a deployed human-channel receipt. |
 | Same actor cannot bypass tenant ownership | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalTenantOwnershipTests.cs`: `ProposalResource_ProposerIdentityDoesNotBypassTenantOwnership`. |
@@ -371,7 +371,7 @@ Dry runs of `getOperationProposal --path id=proposal-fixture` and
 GET `/proposals/{id}` and POST `/proposals/{id}/approve`, respectively, with the
 literal path ID and `executed=false`. This verifies installed syntax and request
 construction; it is not an authenticated CLI execution transcript.
-[The syntax receipt](../../guides/operate/evidence/3302-installed-cli-syntax.json)
+[The syntax receipt](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-installed-cli-syntax.json)
 retains the commands and independently specified method/path/ID assertions.
 A third dry run checks `honua admin release planDeployOperation`: POST
 `/deploy/plan` with independently specified target/current/desired revisions,
@@ -395,7 +395,7 @@ listed in [October 11 accepted-pin replay](#october-11-accepted-pin-replay).
 
 ### Executed approval slice
 
-[The September 12 receipt](../../guides/operate/evidence/3302-candidate-approval.json)
+[The September 12 receipt](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/guides/operate/evidence/3302-candidate-approval.json)
 records five passing checks from `scripts/certification/prove-admin-approve-candidate.py`
 on that exact image, using isolated real PostGIS and Redis containers. The harness
 independently specifies a query draft (`population > 42`), generation 1 and its

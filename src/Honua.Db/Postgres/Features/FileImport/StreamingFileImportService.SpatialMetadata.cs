@@ -46,19 +46,19 @@ internal sealed partial class StreamingFileImportService
         {
             if (!existed)
             {
-                await EnsureTableAsync(connection, schema, table, request.TargetSrid, cancellationToken, transaction);
+                await EnsureTableAsync(connection, schema, table, request.TargetSrid!.Value, cancellationToken, transaction);
                 identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
                     connection, transaction, schema, table, "geometry", cancellationToken);
                 await ImportedDatasetSpatialMetadata.WriteAsync(
                     connection, transaction, _schemaConfiguration.MetadataSchema, schema, table, "geometry",
-                    identity.Value, request.TargetSrid, coordinateEpoch, cancellationToken);
+                    identity.Value, request.TargetSrid!.Value, coordinateEpoch, cancellationToken);
             }
             else
             {
                 var facts = await ImportedDatasetSpatialMetadata.ReadAsync(
                     connection, transaction, _schemaConfiguration.MetadataSchema, schema, table, "geometry",
                     identity!.Value, cancellationToken);
-                ImportedDatasetSpatialMetadata.ValidateAppend(facts, request.TargetSrid, coordinateEpoch);
+                ImportedDatasetSpatialMetadata.ValidateAppend(facts, request.TargetSrid!.Value, coordinateEpoch);
             }
             if (mode == ImportLoadMode.Upsert)
             {
@@ -75,7 +75,7 @@ internal sealed partial class StreamingFileImportService
                 "This import must commit its receipt with the rows. The target is not an importer-owned table.");
         }
         var loadTable = mode == ImportLoadMode.Replace || stagedAppend
-            ? await CreateStagingTableAsync(connection, schema, table, request.TargetSrid, cancellationToken, transaction)
+            ? await CreateStagingTableAsync(connection, schema, table, request.TargetSrid!.Value, cancellationToken, transaction)
             : table;
         await transaction.CommitSafelyAsync(cancellationToken);
         return new ImportTargetPreparation(loadTable, existed, stagedAppend, identity);

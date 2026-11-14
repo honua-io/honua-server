@@ -13,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
@@ -79,7 +80,9 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     private bool RequiresProposalSubmission =>
         _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
-        && (IsFolderOperation || _descriptor.OperationId is "admin.api-key.create" or "admin.api-key.revoke");
+        && (IsFolderOperation
+            || _descriptor.OperationId is "admin.api-key.create" or "admin.api-key.revoke"
+            || AgentApprovalRule.IsGated(_descriptor.OperationId));
 
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.
@@ -175,8 +178,12 @@ internal sealed class PublishedOperationTool : IMcpTool
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         await EnsureOperationAuthorizationAsync(httpContext, principal, cancellationToken).ConfigureAwait(false);
 
-        var proposalOnly = RequiresProposalSubmission;
-        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate && !proposalOnly)
+        var dryRun = ReadBool(arguments, "dryRun");
+        // Supported previews use normal dispatch so configured preview restrictions
+        // still apply. Only mutations are submitted as approval proposals.
+        var supportedPreview = RequiresProposalSubmission && dryRun && _descriptor.Policy.SupportsDryRun;
+        var proposalOnly = RequiresProposalSubmission && !supportedPreview;
+        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate && !proposalOnly && !supportedPreview)
         {
             // Fail closed until #3586 replaces this refusal with the unified runtime's
             // transport-neutral approval proof. The MCP adapter must not implement an
@@ -196,7 +203,7 @@ internal sealed class PublishedOperationTool : IMcpTool
             SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
             AuthorizationOutcome = "authorized",
             Tier = ResolveTier(httpContext),
-            Roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
+            Roles = AgentPrincipal.EffectiveRoles(principal),
             ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
             RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
                 .OrderBy(scope => scope, StringComparer.Ordinal)
@@ -204,7 +211,6 @@ internal sealed class PublishedOperationTool : IMcpTool
         };
 
         var parameters = ReadParameters(arguments);
-        var dryRun = ReadBool(arguments, "dryRun");
         var connectionId = ReadString(arguments, "connectionId");
         var serviceName = ReadString(arguments, "serviceName");
         var request = new OperationRequest

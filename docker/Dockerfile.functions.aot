@@ -10,7 +10,8 @@
 # under the language-worker repositories, so the base is
 # `dotnet-isolated:<host>-dotnet-isolated10.0-appservice`: the same
 # `/azure-functions-host` and `/azure-functions-host/start.sh` entrypoint, built on
-# Ubuntu 24.04, with the 10.0.15 shared frameworks. Custom handlers are a host
+# Ubuntu 24.04, with the 10.0.15 shared frameworks (unused: Honua publishes
+# self-contained on .NET 11, and the build stage installs SDK 11). Custom handlers are a host
 # feature, not a worker feature, so the bundled dotnet-isolated worker is simply
 # unused once FUNCTIONS_WORKER_RUNTIME=custom is set below.
 ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-6-dotnet-isolated10.0-appservice@sha256:b67cd05d98ef75de3b7a8c439262e7ad299e3379cd88489974003623cde5d67c
@@ -27,7 +28,7 @@ ENV PATH="${DOTNET_ROOT}:${PATH}"
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates clang lld wget zlib1g-dev && \
     wget -nv https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && \
-    bash /tmp/dotnet-install.sh --channel 10.0 --install-dir "$DOTNET_ROOT" && \
+    bash /tmp/dotnet-install.sh --channel 11.0 --install-dir "$DOTNET_ROOT" && \
     ln -sf "$DOTNET_ROOT/dotnet" /usr/bin/dotnet && \
     rm -f /tmp/dotnet-install.sh && \
     rm -rf /var/lib/apt/lists/*

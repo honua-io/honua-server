@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using NetTopologySuite.Features;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
@@ -18,6 +19,35 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
+    private const string MixedSourceCrsMessage = "The file contains multiple source coordinate systems. Import each coordinate system separately or supply a source SRID override.";
+
+    private static bool HasConflictingSourceSrid(IFeature feature, int sourceSrid)
+        => feature.Geometry is { SRID: > 0 } geometry && geometry.SRID != sourceSrid;
+
+    private readonly record struct SourceCrsUniformityCheck(
+        SupportedFileFormat Format, int SourceSrid, CsvImportOptions? CsvOptions);
+
+    private static async Task<bool> HasUniformSourceCrsAsync(
+        Stream stream, SourceCrsUniformityCheck check, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var features = check.Format == SupportedFileFormat.Csv
+                ? CsvFormatReader.ReadStreamingAsync(stream, delimiterOverride: null, diagnostics: null,
+                    options: check.CsvOptions is null ? null : check.CsvOptions with { AddressGeocoder = null }, cancellationToken)
+                : WktFormatReader.ReadStreamingAsync(stream, cancellationToken);
+            await foreach (var feature in features.WithCancellation(cancellationToken))
+            {
+                if (HasConflictingSourceSrid(feature, check.SourceSrid)) return false;
+            }
+            return true;
+        }
+        finally
+        {
+            stream.Position = 0;
+        }
+    }
+
     /// <summary>
     /// Detect CRS from stream without loading entire file.
     /// </summary>
@@ -31,12 +61,10 @@ internal sealed partial class StreamingFileImportService
             return format switch
             {
                 SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(stream, cancellationToken),
-                SupportedFileFormat.GeoServicesJson => await GeoServicesJsonFormatReader.TryDetectSridAsync(stream, cancellationToken) ?? 4326,
+                SupportedFileFormat.GeoServicesJson => await GeoServicesJsonFormatReader.TryDetectSridAsync(stream, cancellationToken),
                 SupportedFileFormat.Kml => 4326,
                 SupportedFileFormat.Gpx => 4326,
-                // A PostGIS CSV export carries the CRS on each geometry (EWKT/EWKB). Honour
-                // that SRID instead of assuming 4326; lon/lat and plain WKT keep the default (#6171).
-                SupportedFileFormat.Csv => await CsvFormatReader.TryDetectGeometrySridAsync(stream, cancellationToken) ?? 4326,
+                SupportedFileFormat.Csv => await CsvFormatReader.TryDetectGeometrySridAsync(stream, cancellationToken),
                 SupportedFileFormat.Gml => await GmlFormatReader.TryDetectSridAsync(stream, cancellationToken),
                 SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
@@ -45,7 +73,7 @@ internal sealed partial class StreamingFileImportService
                 _ => null
             };
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
             // Intentionally generic: best-effort CRS auto-detection — on failure, log and return null
             // so the caller falls back to an explicit source SRID or the format's default rather than
@@ -115,18 +143,12 @@ internal sealed partial class StreamingFileImportService
     /// header embeds CRS as WKT only.
     /// </summary>
     private async Task<int?> DetectFlatGeobufCrsAsync(Stream stream, CancellationToken cancellationToken = default)
-    {
-        var (srid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfo(stream);
-        if (srid.HasValue) return srid;
-        if (!string.IsNullOrEmpty(crsWkt))
-            return await _crsDetectionService.DetectFromWktAsync(crsWkt, cancellationToken);
-        return null;
-    }
+        => (await InspectFlatGeobufCoordinateSystemAsync(stream, cancellationToken)).DetectedSrid;
 
     private static async Task<int?> DetectGeoJsonSridAsync(Stream stream, CancellationToken cancellationToken)
     {
-        var detected = await StreamingGeoJsonReader.DetectCrsAsync(stream, cancellationToken);
-        return detected ?? 4326;
+        var detected = await StreamingGeoJsonReader.InspectCoordinateSystemAsync(stream, cancellationToken);
+        return detected.DetectedSrid;
     }
 
     private static async Task<byte[]?> ReadHeaderAsync(Stream stream, CancellationToken cancellationToken)
@@ -157,10 +179,10 @@ internal sealed partial class StreamingFileImportService
         return format switch
         {
             SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(headerStream, cancellationToken),
-            SupportedFileFormat.GeoServicesJson => await GeoServicesJsonFormatReader.TryDetectSridAsync(headerStream, cancellationToken) ?? 4326,
+            SupportedFileFormat.GeoServicesJson => await GeoServicesJsonFormatReader.TryDetectSridAsync(headerStream, cancellationToken),
             SupportedFileFormat.Kml => 4326,
             SupportedFileFormat.Gpx => 4326,
-            SupportedFileFormat.Csv => await CsvFormatReader.TryDetectGeometrySridAsync(headerStream, cancellationToken) ?? 4326,
+            SupportedFileFormat.Csv => await CsvFormatReader.TryDetectGeometrySridAsync(headerStream, cancellationToken),
             SupportedFileFormat.Gml => await GmlFormatReader.TryDetectSridAsync(headerStream, cancellationToken),
             SupportedFileFormat.Wkt => await DetectWktSridAsync(headerStream, cancellationToken),
             // Defensive: currently unreachable — FlatGeobuf non-seekable paths spill to

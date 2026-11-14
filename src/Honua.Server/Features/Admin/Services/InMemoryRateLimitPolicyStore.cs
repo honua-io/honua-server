@@ -33,15 +33,18 @@ internal sealed class InMemoryRateLimitPolicyStore : IRateLimitPolicyStore
         return Task.FromResult(policy);
     }
 
-    public Task<RateLimitPolicy?> UpdatePolicyAsync(RateLimitPolicy policy, CancellationToken cancellationToken = default)
+    public Task<RateLimitPolicy?> UpdatePolicyAsync(Guid policyId, Func<RateLimitPolicy, RateLimitPolicy> update, CancellationToken cancellationToken = default)
     {
-        if (!_policies.ContainsKey(policy.PolicyId))
+        while (_policies.TryGetValue(policyId, out var current))
         {
-            return Task.FromResult<RateLimitPolicy?>(null);
+            cancellationToken.ThrowIfCancellationRequested();
+            var updated = update(current);
+            if (_policies.TryUpdate(policyId, updated, current))
+            {
+                return Task.FromResult<RateLimitPolicy?>(updated);
+            }
         }
-
-        _policies[policy.PolicyId] = policy;
-        return Task.FromResult<RateLimitPolicy?>(policy);
+        return Task.FromResult<RateLimitPolicy?>(null);
     }
 
     public Task<bool> DeletePolicyAsync(Guid policyId, CancellationToken cancellationToken = default)

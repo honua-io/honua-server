@@ -77,13 +77,13 @@ Observability__Prometheus__Path=/metrics
 
 > Verify the configured Prometheus target is **UP** and inspect the scraped `honua_*` series; `/metrics` is a scraper endpoint, not an OpenAPI-explorer operation.
 
-3. Load the pinned alert rules. The canonical PromQL ruleset is [`honua-core.yaml`](../../alerting/rules/honua-core.yaml); collector overlays for managed backends are at [`aws/collector-overlay.yaml`](../../alerting/aws/collector-overlay.yaml) and [`azure/collector-overlay.yaml`](../../alerting/azure/collector-overlay.yaml). On Amazon Managed Prometheus:
+3. Load the pinned alert rules. The canonical PromQL ruleset is [`honua-core.yaml`](../../../docker/monitoring/alerting/rules/honua-core.yaml); collector overlays for managed backends are at [`aws/collector-overlay.yaml`](../../../docker/monitoring/alerting/aws/collector-overlay.yaml) and [`azure/collector-overlay.yaml`](../../../docker/monitoring/alerting/azure/collector-overlay.yaml). On Amazon Managed Prometheus:
 
 ```bash
 aws amp put-rule-groups-namespace \
   --workspace-id "$AMP_WORKSPACE_ID" \
   --name honua-core \
-  --data fileb://docs/alerting/rules/honua-core.yaml
+  --data fileb://docker/monitoring/alerting/rules/honua-core.yaml
 ```
 
 On Azure Monitor managed Prometheus, define rule-group resources (ARM/Bicep/Terraform) using the same expressions and route notifications through Action Groups.

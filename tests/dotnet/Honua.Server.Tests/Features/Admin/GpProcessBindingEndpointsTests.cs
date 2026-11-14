@@ -10,6 +10,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Geoprocessing.ProcessRelease;
 using Honua.Geoprocessing.Release;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Geoprocessing.ProcessRelease;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -61,6 +62,35 @@ public sealed class GpProcessBindingEndpointsTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Endpoint("POST /api/v1/admin/gp/process-releases")]
+    [Endpoint("POST /api/v1/admin/gp/process-releases/bindings/{process}/activate")]
+    public async Task AgentAdministrator_CannotPublishOrActivateProcessReleases(bool publish)
+    {
+        using var published = await _client.PostAsync("/api/v1/admin/gp/process-releases", Json(Lock("1.0.0", 'a')));
+        published.StatusCode.Should().Be(HttpStatusCode.Created);
+        var digest = (await published.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("lockDigest").GetString()!;
+        using var activated = await _client.PostAsJsonAsync(
+            "/api/v1/admin/gp/process-releases/bindings/buffer-features/activate", Activate(digest, expected: 0));
+        activated.StatusCode.Should().Be(HttpStatusCode.OK);
+        var store = _fixture.Services.GetRequiredService<IGpProcessReleaseStore>();
+        var before = await store.GetBindingAsync("buffer-features");
+        var key = await _fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "gp-release-agent", ["admin", "agent"], null, "test", CancellationToken.None);
+        using var agent = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", key.Key));
+
+        using var refused = publish
+            ? await agent.PostAsync("/api/v1/admin/gp/process-releases", Json(Lock("2.0.0", 'b')))
+            : await agent.PostAsJsonAsync(
+                "/api/v1/admin/gp/process-releases/bindings/buffer-features/activate", Activate(digest, expected: 1));
+        refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await refused.Content.ReadAsStringAsync()).Should().Contain("Do not retry with another credential");
+        (await store.ListReleasesAsync("buffer-features")).Should().ContainSingle();
+        (await store.GetBindingAsync("buffer-features")).Should().BeEquivalentTo(before);
+    }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/gp/process-releases")]

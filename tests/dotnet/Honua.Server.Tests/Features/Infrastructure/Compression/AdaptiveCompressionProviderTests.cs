@@ -6,6 +6,7 @@ using FluentAssertions;
 using System.IO.Compression;
 using Honua.Core.Features.Infrastructure.IO;
 using Honua.Infrastructure.Compression;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Compression;
@@ -46,6 +47,36 @@ public sealed class AdaptiveCompressionProviderTests
         await stream.DisposeAsync();
 
         output.BytesWritten.Should().BeGreaterThan(0);
+    }
+
+    // .NET 11 GZipStream writes a 20-byte header and footer even for an empty payload; the
+    // adaptive stream creates its GZipStream only once there are bytes, so an empty response
+    // body stays empty on every runtime.
+    [UnitTest]
+    public async Task AdaptiveGzipStream_EmptyPayload_WritesNoBytes()
+    {
+        var output = new AsyncOnlyBufferingStream();
+        var stream = new AdaptiveGzipStream(output, new AdaptiveCompressionOptions());
+
+        await stream.FlushAsync();
+        await stream.DisposeAsync();
+
+        output.BytesWritten.Should().Be(0);
+    }
+
+    // Disposing a stream that never received bytes must not touch the released buffer
+    // (Stream.DisposeAsync calls Dispose(bool) again).
+    [UnitTest]
+    public async Task AdaptiveBrotliStream_EmptyPayload_DisposesWithoutWriting()
+    {
+        var output = new AsyncOnlyBufferingStream();
+        var stream = new AdaptiveBrotliStream(output, new AdaptiveCompressionOptions());
+
+        await stream.FlushAsync();
+        await stream.DisposeAsync();
+        await stream.DisposeAsync();
+
+        output.BytesWritten.Should().Be(0);
     }
 
     [Trait("Tier", "Fast")]

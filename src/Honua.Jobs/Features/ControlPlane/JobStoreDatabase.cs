@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Queries.Filters;
 using Npgsql;
 
 namespace Honua.ControlPlane;
@@ -26,8 +27,8 @@ internal sealed class JobStoreDatabase(NpgsqlDataSource dataSource, string? sche
 
     internal static string QuoteIdentifier(string identifier)
     {
-        using var builder = new NpgsqlCommandBuilder();
-        return builder.QuoteIdentifier(identifier);
+        ArgumentNullException.ThrowIfNull(identifier, "unquotedIdentifier");
+        return SqlIdentifier.QuoteIdentifier(identifier);
     }
 
     // Runs statement on a pooled connection. A transient failure to open the

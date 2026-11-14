@@ -30,7 +30,7 @@ methods, changed source triggers and changed budgets. The canonical router runs
 this check alongside its complete partition and ownership checks. Source-method
 counts are distinct from expanded, tier-filtered test-case counts.
 
-The [JSON receipt](admin-authorization-capacity-20261012.json) preserves run,
+The [JSON receipt](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/internal/ci/admin-authorization-capacity-20261012.json) preserves run,
 source and artifact identities, raw hashes, the complete baseline counters and
 the censored failure timing. Two actual fresh executions of each changed child
 and the normal PR gates remain required before merge. Full-server and release
