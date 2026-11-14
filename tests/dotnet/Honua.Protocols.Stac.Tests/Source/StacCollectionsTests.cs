@@ -35,12 +35,13 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
-    [InlineData(true)]
-    [InlineData(false)]
+    [InlineData("folder")]
+    [InlineData("environment")]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
-    public async Task GetCollection_ParentGovernance_UsesFolderOrEnvironment(bool useFolder)
+    public async Task GetCollection_ParentGovernance_UsesFolderOrEnvironment(string source)
     {
+        var useFolder = source == "folder";
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var governance = snapshot.Graph.Metadata with
         {
@@ -469,10 +470,9 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var providers = json.RootElement.GetProperty("providers").EnumerateArray().ToArray();
-        foreach (var name in new[] { "Catalog contact", "Rights owner" })
+        foreach (var provider in new[] { "Catalog contact", "Rights owner" }.Select(name =>
+                     providers.Should().ContainSingle(provider => provider.GetProperty("name").GetString() == name).Which))
         {
-            var provider = providers.Should().ContainSingle(provider =>
-                provider.GetProperty("name").GetString() == name).Which;
             var hasRoles = provider.TryGetProperty("roles", out var roles) && roles.ValueKind != JsonValueKind.Null;
             hasRoles.Should().BeFalse("these contact roles do not identify a STAC storage host");
         }

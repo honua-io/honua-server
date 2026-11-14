@@ -167,7 +167,7 @@ public sealed class DescriptiveMetadataResolverTests
     [Operation(Operations.Metadata)]
     public void ForCatalog_UsesEnvironmentMetadata()
     {
-        var graph = CrosswalkFixtures.Graph(environment: new MetadataV2ObjectMetadata { Id = "graph", Name = "graph", Fees = "Free of charge" });
+        var graph = CrosswalkFixtures.Graph() with { Metadata = new MetadataV2ObjectMetadata { Id = "graph", Name = "graph", Fees = "Free of charge" } };
 
         var record = DescriptiveMetadataResolver.ForCatalog(graph);
 

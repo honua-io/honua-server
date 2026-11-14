@@ -12,7 +12,12 @@ public enum DescribedItemKind
     Catalog,
 }
 
-public sealed record DescriptiveDistribution(string Url, string Protocol, string? Title = null, string? MediaType = null);
+public sealed record DescriptiveDistribution(string Url, string Protocol)
+{
+    public string? Title { get; init; }
+
+    public string? MediaType { get; init; }
+}
 
 // The effective descriptive metadata of one item after inheritance; every standard encoder and protocol reads this.
 public sealed record DescriptiveMetadata

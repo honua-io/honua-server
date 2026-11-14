@@ -13,14 +13,13 @@ internal static class CrosswalkFixtures
     public static MetadataV2Graph Graph(
         MetadataV2ObjectMetadata? resource = null,
         MetadataV2ObjectMetadata? service = null,
-        MetadataV2ObjectMetadata? folder = null,
-        MetadataV2ObjectMetadata? environment = null)
+        MetadataV2ObjectMetadata? folder = null)
     {
         return new()
         {
             Environment = "county",
             GeneratedAt = Updated,
-            Metadata = environment ?? new MetadataV2ObjectMetadata { Id = "graph", Name = "graph" },
+            Metadata = new MetadataV2ObjectMetadata { Id = "graph", Name = "graph" },
             Folders = [new MetadataV2Folder { Metadata = folder ?? new MetadataV2ObjectMetadata { Id = "folder.parks", Name = "parks" } }],
             Services =
             [
@@ -83,7 +82,7 @@ internal static class CrosswalkFixtures
         var graph = Graph(resource: FullDataset);
         return DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0])) with
         {
-            Distributions = [new DescriptiveDistribution("https://maps.example.org/ogc/collections/trails", "OGC API - Features", "Trails", "application/geo+json")],
+            Distributions = [new DescriptiveDistribution("https://maps.example.org/ogc/collections/trails", "OGC API - Features") { Title = "Trails", MediaType = "application/geo+json" }],
         };
     }
 }

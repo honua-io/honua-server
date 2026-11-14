@@ -487,7 +487,7 @@ internal static partial class WmsRequestHandlers
         if (isWms111 && commonCrs.Length == 0)
             sb.AppendLine("      <SRS />");
         var rootExtent = ComputeRootWgs84Extent(preparedLayers) ?? WorldWgs84Extent;
-        await AppendWmsGeographicBoundsAsync(sb, new(rootExtent, "      ", isWms111, []), context).ConfigureAwait(false);
+        await AppendWmsGeographicBoundsAsync(sb, new(rootExtent, "      ") { IsWms111 = isWms111 }, context).ConfigureAwait(false);
 
         foreach (var prepared in preparedLayers)
         {
@@ -508,7 +508,7 @@ internal static partial class WmsRequestHandlers
                     .Append("</").Append(crsElementName).AppendLine(">");
 
             var layerExtent = prepared.Extent ?? rootExtent;
-            await AppendWmsGeographicBoundsAsync(sb, new(layerExtent, "        ", isWms111, crsNames), context).ConfigureAwait(false);
+            await AppendWmsGeographicBoundsAsync(sb, new(layerExtent, "        ") { IsWms111 = isWms111, DeclaredCrs = crsNames }, context).ConfigureAwait(false);
 
             // Preserve the CITE fixture dimensions (elevation on cite:Lakes and
             // time on cite:Autos) alongside the dynamic dimensions advertised by
@@ -663,8 +663,12 @@ internal static partial class WmsRequestHandlers
         return aggregate;
     }
 
-    private readonly record struct WmsGeographicBounds(
-        Wgs84Extent Extent, string Indent, bool IsWms111, IReadOnlyList<string> DeclaredCrs);
+    private readonly record struct WmsGeographicBounds(Wgs84Extent Extent, string Indent)
+    {
+        public bool IsWms111 { get; init; }
+
+        public IReadOnlyList<string> DeclaredCrs { get; init; } = [];
+    }
 
     private static async Task AppendWmsGeographicBoundsAsync(
         StringBuilder builder, WmsGeographicBounds bounds, HttpContext context)

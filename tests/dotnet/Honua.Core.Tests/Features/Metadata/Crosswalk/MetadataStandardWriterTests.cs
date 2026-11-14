@@ -235,21 +235,30 @@ public sealed class MetadataStandardWriterTests
 
     [UnitTheory]
     [Operation(Operations.Metadata)]
-    [InlineData("not-an-email", "https://example.org/contact", false)]
-    [InlineData("gis@example.org", "javascript:alert(1)", false)]
-    [InlineData("gis@example.org", "https://user:secret@example.org/contact", false)]
-    [InlineData("gis@example.org", "https://example.org/contact", true)]
-    public void GraphValidation_ResponsibleParty_UsesPublicContactRules(string email, string url, bool valid)
+    [InlineData("not-an-email", "https://example.org/contact")]
+    [InlineData("gis@example.org", "javascript:alert(1)")]
+    [InlineData("gis@example.org", "https://user:secret@example.org/contact")]
+    public void GraphValidation_ResponsibleParty_RejectsUnsafeContact(string email, string url)
+    {
+        ContactErrors(email, url).Should().NotBeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void GraphValidation_ResponsibleParty_AcceptsPublicContact()
+    {
+        ContactErrors("gis@example.org", "https://example.org/contact").Should().BeEmpty();
+    }
+
+    private static IEnumerable<string> ContactErrors(string email, string url)
     {
         var graph = CrosswalkFixtures.Graph(resource: CrosswalkFixtures.FullDataset with
         {
             Contacts = [new MetadataV2ResponsibleParty { Email = email, Url = url }],
         });
 
-        var errors = MetadataV2GraphValidator.Validate(graph).Errors
+        return MetadataV2GraphValidator.Validate(graph).Errors
             .Where(error => error.Contains("metadata.contacts"));
-
-        errors.Any().Should().Be(!valid);
     }
 
     [UnitTheory]
