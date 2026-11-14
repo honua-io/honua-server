@@ -5,7 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import PartitionSource, check_partition
+from shard_capacity_partition import PartitionSource, capacity_split_names, check_partition
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/check-server-test-shard-coverage.py")
@@ -14,7 +14,7 @@ SPEC.loader.exec_module(MODULE)
 CONFIG = json.loads((ROOT / ".github/ci-shards.json").read_text())
 CONTRACT = json.loads((ROOT / "scripts/ci/fixtures/mcp-capacity-contract.json").read_text())
 ORIGINAL = CONTRACT["originalShard"]
-NAMES = ("MCP Endpoints", "MCP and Sessions")
+NAMES = ("MCP Endpoints", *capacity_split_names(CONFIG, "MCP and Sessions"))
 CHILDREN = [next(s for s in CONFIG["shards"] if s["name"] == name) for name in NAMES]
 MODULE.TEST_PROJECT_DIRS = {
     root: project for root, project in MODULE.TEST_PROJECT_DIRS.items() if project == ORIGINAL["csproj"]
@@ -31,9 +31,12 @@ assert ENDPOINTS and ENDPOINTS < EXPECTED
 def check_registration(config):
     parents = [p for p in config["shard_partitions"] if set(NAMES) & set(p["children"])]
     assert len(parents) == 1, "Partition children must have exactly one parent."
-    assert parents[0] == CONTRACT["parentPartition"], "The legacy parent contract changed."
+    expected_parent = copy.deepcopy(CONTRACT["parentPartition"])
+    expected_parent["children"] = [child for name in expected_parent["children"]
+                                   for child in capacity_split_names(config, name)]
+    assert parents[0] == expected_parent, "The legacy parent contract changed."
     for override in config["targeted_override_prefixes"]:
-        if ORIGINAL["name"] in override["shards"]:
+        if set(NAMES[1:]) & set(override["shards"]):
             assert "MCP Endpoints" in override["shards"], "Only half the override survived."
     for field in ("artifact_suffix", "log_name", "shard_name"):
         assert len({s[field] for s in config["shards"]}) == len(config["shards"]), field

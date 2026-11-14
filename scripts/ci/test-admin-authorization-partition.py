@@ -5,6 +5,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+from shard_capacity_partition import capacity_split_names
+
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location('coverage', ROOT / 'scripts/ci/check-server-test-shard-coverage.py')
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -15,7 +17,7 @@ PATHS = ['src/Honua.Server/Features/Admin/', 'src/Honua.Server/Features/Admin/Ad
 # Canonical shared Compile inputs retained by the full Server.Tests assembly.
 LINKED_INPUTS = ['tests/dotnet/RedisCollection.cs', 'tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs', 'tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs', 'tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs', 'tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs', 'tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs', 'tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs', 'tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs', 'tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs']
 PROJECT = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
-NAMES = ('Server Features Admin Authorization', 'Server Features Admin Authorization Matrix')
+NAMES = (*capacity_split_names(CONFIG, 'Server Features Admin Authorization'), 'Server Features Admin Authorization Matrix')
 CHILDREN = [next(s for s in CONFIG['shards'] if s['name'] == n) for n in NAMES]
 METHODS = MODULE.selection_pool(MODULE.enumerate_test_classes(), PROJECT)
 EXPECTED = {m for m in METHODS if MODULE._eval(MODULE._FilterParser(PARENT).parse(), m)}
@@ -38,7 +40,7 @@ counts = check(CHILDREN)
 for mutation in ('lost', 'duplicated', 'foreign', 'trigger', 'budget'):
     changed = copy.deepcopy(CHILDREN)
     if mutation == 'lost':
-        changed[1]['filter'] += '&FullyQualifiedName!~GetConfig_WithoutAuth_Returns401'
+        changed[-1]['filter'] += '&FullyQualifiedName!~GetConfig_WithoutAuth_Returns401'
     elif mutation == 'duplicated':
         changed[0]['filter'] += '|FullyQualifiedName~Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.'
     elif mutation == 'foreign':
