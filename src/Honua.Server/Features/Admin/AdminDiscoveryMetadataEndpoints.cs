@@ -96,7 +96,19 @@ internal static class AdminDiscoveryMetadataEndpoints
         if (request.Keywords is null || request.Keywords.Length > MaxKeywords ||
             request.Keywords.Any(keyword => string.IsNullOrWhiteSpace(keyword) || !ValidText(keyword, MaxKeywordLength)))
             return "Supply at most 100 nonempty keywords of at most 256 characters each.";
-        return null;
+        if (request.HasThemes && (request.Themes is null || request.Themes.Length > MaxKeywords ||
+            request.Themes.Any(theme => string.IsNullOrWhiteSpace(theme) || !ValidText(theme, MaxKeywordLength))))
+            return "Supply at most 100 nonempty themes of at most 256 characters each.";
+        if (!ValidText(request.Language, 64))
+            return "Language must not exceed 64 characters or contain invalid control characters.";
+        if (request.HasLinks && (request.Links is null || request.Links.Length > 100 || request.Links.Any(link => link is null)))
+            return "Supply at most 100 non-null links.";
+        var governance = MetadataV2GraphValidator.ValidateMetadata(new MetadataV2ObjectMetadata
+        {
+            License = request.License, Attribution = request.Attribution, Publisher = request.Publisher,
+            ContactPoint = request.ContactPoint, Links = request.Links ?? []
+        });
+        return governance.IsValid ? null : string.Join(" ", governance.Errors);
     }
 
     private static bool ValidText(string? value, int limit) => value is null ||
@@ -110,6 +122,13 @@ internal static class AdminDiscoveryMetadataEndpoints
             Title = target.Metadata.Title,
             Description = target.Metadata.Description,
             Keywords = target.Metadata.Keywords,
+            Themes = target.Metadata.Themes,
+            Language = target.Metadata.Language,
+            License = target.Metadata.License,
+            Attribution = target.Metadata.Attribution,
+            Publisher = target.Metadata.Publisher,
+            ContactPoint = target.Metadata.ContactPoint,
+            Links = target.Metadata.Links,
             AffectedPublications = target.Publications
         }), DiscoveryMetadataJsonContext.Default.ApiResponseDiscoveryMetadataResponse);
 

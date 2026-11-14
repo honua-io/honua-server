@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]
-public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
+public sealed partial class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().UseSeed("tests/seed/server.yaml")
         .ConfigureWebHost(builder => builder.UseEnvironment("Test")

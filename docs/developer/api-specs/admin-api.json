@@ -51535,8 +51535,95 @@
               "minLength": 1,
               "maxLength": 256
             }
+          },
+          "themes": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "language": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 64
+          },
+          "license": {
+            "type": "string",
+            "nullable": true,
+            "description": "Canonical SPDX expression or 'proprietary'."
+          },
+          "attribution": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 512
+          },
+          "publisher": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 256
+          },
+          "contactPoint": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "name": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 256
+              },
+              "email": {
+                "type": "string",
+                "nullable": true
+              },
+              "url": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 2048,
+                "description": "Absolute HTTP(S) URL without credentials."
+              }
+            }
+          },
+          "links": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "href",
+                "rel"
+              ],
+              "properties": {
+                "href": {
+                  "type": "string",
+                  "description": "License and describedby links require absolute HTTP(S) URLs without credentials, at most 2048 characters."
+                },
+                "rel": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "title": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "hreflang": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "managedBy": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
           }
-        }
+        },
+        "description": "ETag-guarded descriptive metadata update. Omitted title/description/keywords are cleared, preserving their existing replacement behavior. Omitted themes, language, license, attribution, publisher, contactPoint and links preserve stored values. Explicit null clears optional scalar/contact fields; empty arrays clear themes/links. Saving updates the canonical graph generation and invalidates discovery caches."
       },
       "DiscoveryPublicationImpact": {
         "type": "object",
@@ -51579,6 +51666,92 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DiscoveryPublicationImpact"
+            }
+          },
+          "themes": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "language": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 64
+          },
+          "license": {
+            "type": "string",
+            "nullable": true,
+            "description": "Canonical SPDX expression or 'proprietary'."
+          },
+          "attribution": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 512
+          },
+          "publisher": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 256
+          },
+          "contactPoint": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "name": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 256
+              },
+              "email": {
+                "type": "string",
+                "nullable": true
+              },
+              "url": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 2048,
+                "description": "Absolute HTTP(S) URL without credentials."
+              }
+            }
+          },
+          "links": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "href",
+                "rel"
+              ],
+              "properties": {
+                "href": {
+                  "type": "string",
+                  "description": "License and describedby links require absolute HTTP(S) URLs without credentials, at most 2048 characters."
+                },
+                "rel": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "title": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "hreflang": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "managedBy": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
             }
           }
         }

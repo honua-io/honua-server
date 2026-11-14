@@ -52,7 +52,14 @@ internal sealed record DiscoveryMetadataTarget(
         {
             Title = request.Title,
             Description = request.Description,
-            Keywords = request.Keywords
+            Keywords = request.Keywords,
+            Themes = request.HasThemes ? request.Themes! : metadata.Themes,
+            Language = request.HasLanguage ? request.Language : metadata.Language,
+            License = request.HasLicense ? request.License : metadata.License,
+            Attribution = request.HasAttribution ? request.Attribution : metadata.Attribution,
+            Publisher = request.HasPublisher ? request.Publisher : metadata.Publisher,
+            ContactPoint = request.HasContactPoint ? request.ContactPoint : metadata.ContactPoint,
+            Links = request.HasLinks ? request.Links! : metadata.Links
         };
 
     private static DiscoveryPublicationImpact[] Impact(MetadataV2GraphSnapshot snapshot,

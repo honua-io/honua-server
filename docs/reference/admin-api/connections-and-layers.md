@@ -230,3 +230,32 @@ managed copy, which has no source snapshot to refresh.
 - [Serve existing databases](../../guides/publish/serve-existing-databases.md)
 - [Publish layers](../../guides/publish/publish-layers.md)
 - [Access control](../../guides/secure/access-control.md)
+
+## Descriptive discovery metadata
+
+Read and edit canonical catalog metadata with `GET` and `PUT` on:
+
+- `/api/v1/admin/metadata/layers/{storageLayerId}/discovery` — storage-layer metadata, shared by its publications.
+- `/api/v1/admin/services/{serviceName}/discovery` — service metadata, shared by that service's protocol records.
+
+The operation IDs are `GetAdminLayerDiscovery`, `UpdateAdminLayerDiscovery`,
+`GetAdminServiceDiscovery`, and `UpdateAdminServiceDiscovery`. Reads and successful
+writes return an admin envelope containing `etag`, `entityId`, descriptive fields,
+and `affectedPublications`. A write must include the latest read's `etag`; a stale
+value returns `409` without saving. These endpoints require admin authorization.
+
+Alongside `title`, `description`, and `keywords`, authors can set `themes`,
+`language`, `license`, `attribution`, `publisher`, `contactPoint`, and `links`.
+Omitting any of these seven additional fields preserves its stored value. An
+explicit `null` clears an optional scalar or `contactPoint`; `[]` clears `themes`
+or `links`. The existing replacement behavior for `title`, `description`, and
+`keywords` remains: omitting them clears their values.
+
+Licenses use canonical SPDX expressions or `proprietary`. A contact has optional
+`name`, `email`, and `url` fields. Links have `href` and `rel`, with optional `type`,
+`title`, `hreflang`, and `managedBy`. Contact URLs and links whose relation is
+`license` or `describedby` must use absolute HTTP(S) URLs without credentials.
+The OpenAPI snapshot describes field size limits. Invalid input returns `400`
+without advancing the metadata revision. Successful saves persist in the canonical
+PostgreSQL metadata graph, advance its generation, and invalidate discovery caches;
+protocol projections read that same graph.
