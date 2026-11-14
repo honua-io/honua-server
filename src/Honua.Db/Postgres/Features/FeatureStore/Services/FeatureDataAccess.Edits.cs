@@ -1088,11 +1088,7 @@ internal sealed partial class FeatureDataAccess
             FeatureEditBatch editBatch,
             CancellationToken cancellationToken = default)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_completed)
-            {
-                throw new InvalidOperationException("The feature writer transaction has already completed.");
-            }
+            EnsureActive();
 
             return _owner.ApplyEditsWithinTransactionAsync(
                 layerId,
@@ -1102,14 +1098,45 @@ internal sealed partial class FeatureDataAccess
                 cancellationToken);
         }
 
+        public bool SupportsDurableReceipts => true;
+
         public async Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            FeatureWriterTransactionReceipt receipt,
             CancellationToken cancellationToken = default)
+        {
+            EnsureActive();
+            PostgresGrpcApplyEditsReceipt.ValidatePayload(receipt.Scope, receipt.Payload);
+            if (receipt.ExpiresAt <= DateTimeOffset.UtcNow)
+            {
+                throw new ArgumentException("The transaction receipt must expire in the future.", nameof(receipt));
+            }
+
+            var inserted = await PostgresGrpcApplyEditsReceipt.TryWriteAsync(
+                _connection, _transaction, _owner._grpcEditReceiptTable,
+                receipt.Scope, receipt.Payload, receipt.ExpiresAt.ToUniversalTime(),
+                _owner._queryTimeoutSeconds, cancellationToken).ConfigureAwait(false);
+            if (!inserted)
+            {
+                await RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                return FeatureWriterTransactionCommitOutcome.SupersededByExistingReceipt;
+            }
+
+            return await CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        private void EnsureActive()
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_completed)
             {
                 throw new InvalidOperationException("The feature writer transaction has already completed.");
             }
+        }
+
+        public async Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            CancellationToken cancellationToken = default)
+        {
+            EnsureActive();
 
             try
             {

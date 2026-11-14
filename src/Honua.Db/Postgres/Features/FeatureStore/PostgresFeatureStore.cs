@@ -770,6 +770,13 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             return await inner.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
         }
 
+        public bool SupportsDurableReceipts => inner.SupportsDurableReceipts;
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            FeatureWriterTransactionReceipt receipt,
+            CancellationToken cancellationToken = default)
+            => inner.CommitAsync(receipt, cancellationToken);
+
         public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(CancellationToken cancellationToken = default)
             => inner.CommitAsync(cancellationToken);
 

@@ -129,6 +129,13 @@ public interface IFeatureWriter
 /// </summary>
 public interface IFeatureWriterTransaction : IAsyncDisposable
 {
+    bool SupportsDurableReceipts => false;
+
+    Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+        FeatureWriterTransactionReceipt receipt,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This writer transaction does not support durable receipts.");
+
     /// <summary>
     /// Applies one layer batch without committing the enclosing transaction.
     /// </summary>
@@ -163,5 +170,7 @@ public enum FeatureWriterTransactionCommitOutcome
     Committed,
 
     /// <summary>The commit may be durable, but its acknowledgement was lost.</summary>
-    Unknown
+    Unknown,
+
+    SupersededByExistingReceipt
 }

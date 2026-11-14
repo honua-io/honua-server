@@ -31,7 +31,7 @@ namespace Honua.Server.Tests.Features.FeatureStore;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
-public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
+public partial class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 {
     private const int PointsLayerId = 11001;
     private const int PolygonsLayerId = 11002;
