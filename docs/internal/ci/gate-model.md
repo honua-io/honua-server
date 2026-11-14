@@ -1,5 +1,59 @@
 # CI Gate Model
 
+The latest full-run capacity audit partitions eleven additional parents into 26
+children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
+Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
+OGC API Features, GeoServices GPServer and NAServer, STAC Protocol, Operator
+Eval Harness, and Migration. The first ten crossed 80% of their test budgets in
+the last three full runs.
+Whole-class selections are retained except the GP/NAS routing class, whose
+methods are partitioned with a residual fallback for future tests. Method-union,
+future-method and mutation checks enforce complete, disjoint selection and
+unchanged projects, source triggers and budgets. Historical TRX interval weights
+guide the cuts; they are not measured child elapsed runtimes. The 14 Nov rank
+refresh measured 23 of those 26 children (see "Measured ranks" below).
+
+Server Features Packages and Temporal measured 12.7 minutes (full runs
+`43612492209` and `43580101834`), above the 10-minute PR shard budget, so PR Gate
+would have deferred the executing owner of temporal, form and package sources to
+trunk. Two children replace it, cut by the serial class spans of run
+`43580101834` (9.0 of 12.8 job minutes): child 1 owns the two temporal history
+classes, `PackageReviewEndpointTests`, `FormCompatibilityEndpointTests` and
+`WorkflowPackagePublishDegradedTests` (4.8 minutes), and child 2 is the exact
+complement of the parent filter (4.2 minutes). Both inherit the parent's paths,
+so a temporal change runs both. Their initial ranks (8.6 and 8.0) are the 3.8-minute
+job overhead plus each child's spans, recorded as `estimatedRanks` in the contract
+until a full run measures them. Budgets and source triggers are unchanged.
+
+Server Features Admin Layer Management exhausted its 35-minute test budget in
+full run `43580101834` while producing output one second before termination.
+Two children replace it: child 1 owns `AdminLayerDisplaySpatialTests`,
+`AdminLayerAuthoringEndpointsTests` and `LayerStyleEndpointsTests` (10.4 of 20.1
+minutes in the 13 Nov passing TRX), and child 2 is the exact complement of the
+parent filter, including its `~Layer` method-name matches in other Admin classes
+and any future ones. Host teardown in this test process grows from 0.4 to 16
+seconds across 133 in-process hosts, so shard wall time rises with the square of
+hosts per process. The split is capacity relief; the teardown leak is tracked
+separately. Budgets, source triggers and the inherited dispatch rank are unchanged.
+
+
+Migration exhausted its 29-minute test budget in full run `43564575677` while
+producing output two seconds before termination. Three children separate migration
+evidence/toolbox endpoints, scanner/run endpoints, and the residual migration
+selection. Historical passing TRX class intervals weigh these groups at about
+6.2, 5.7, and 5.2 minutes; these are sizing evidence, not measured child runtimes.
+STAC qualification exhausted child 1 at 15.04 minutes and measured child 2 at
+12.70 minutes. Four children now isolate search, spatial/temporal and queryables,
+paging, and the residual selection. Original budgets, source triggers and
+future-class fallback remain enforced by the conservation contracts.
+Focused one-worker qualification passed all seven revised children: Migration
+1/2/3 took 7.35/5.35/5.51 minutes and STAC 1/2/3/4 took
+11.94/4.01/5.93/4.68 minutes. The largest Migration child finishes
+21.65 minutes before the exhausted parent deadline; this is capacity headroom,
+not a measured end-to-end workflow saving. STAC Protocol 1 is the single
+class `StacSearchTests` at 11.94 of 15 minutes (80%); it cannot be split further by
+class and is the next method-level partition candidate.
+
 FeatureServer Replica now uses three whole-class shards: `FeatureServer Replica
 Management` (conflict review, ownership and management), `FeatureServer Replica
 Sync` (the sync class), and the residual `FeatureServer Replica` catch-all.
@@ -142,12 +196,13 @@ Stage 3 details:
   escalates an unknown range into a full run.
 - Optional affected CI admits at most 40 jobs using a conservative side-job
   bound plus selected shards, both before dispatch and again before execution
-  fanout. Full routing, unknown selection/history and an active PR Gate defer
-  the work to the twice-daily full run. Deferred execution cancels its workflow
-  before publishing change outputs, so it cannot record a successful CI base.
-- Admitted affected runs use two concurrent server shards. PR Gate's requested
-  and in-progress events cancel affected trunk dispatches to release the pool;
-  scheduled and manual full runs are never targeted. Full runs retain width 16.
+  fanout. Full routing and unknown selection/history defer the work to the
+  twice-daily full run; an active PR Gate does not. Deferred execution cancels
+  its workflow before publishing change outputs, so it cannot record a
+  successful CI base.
+- Admitted affected runs use two concurrent server shards and run beside PR
+  Gate; only a covering full run or their own admission recheck cancels them.
+  Full runs retain width 16.
 - Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)
@@ -654,6 +709,20 @@ and successful jobs. Full CI also checks the merged foundation TRX outcomes;
 foundation security build and test failures count even when built separately.
 `CI Gate` depends on these enforced test summaries.
 
+Each shard job uploads its results as `<artifact>-attempt-<run_attempt>`, and
+both aggregates download every attempt into its own directory. A failed-jobs
+rerun re-runs only failed or cancelled shards; each shard's highest attempt is
+the one counted, so a rerun's receipt replaces the earlier attempt's and a
+shard the rerun did not repeat keeps its earlier passing receipt. A newer
+failing attempt still overrides an older passing one. Before this change the
+aggregates merged same-named artifacts, and GitHub's artifact ids do not follow
+upload order: on honua-server#7648 run 43603773296 attempt 2, attempt 1's empty
+`Packages and Temporal` artifact outranked attempt 2's receipt, leaving 5/6
+receipts. This adds no jobs or runners and changes no required check names or
+`needs`; the receipt count, TRX re-verification and job-result checks are
+unchanged. The quarantine publisher keeps one artifact per shard, the newest
+attempt.
+
 The retained `*.timing.json` includes `execution` with actual result counts,
 TRX SHA-256, source SHA/dirty flag, project, and runner/verifier hashes. The timing
 record retains the effective filter and original shard status. Its count status
@@ -837,11 +906,24 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (11 Nov 2026): every `dispatch_rank` is the median passing job
-duration of trunk runs 42929935484, 42935981545, 42968585882 and 42986321489, the
-first full runs after the tiny-shard consolidation. The governance children measured
-5.2, 10.0 and 7.0 minutes. A shard with no passing job keeps the larger of its old rank
-and its failed duration.
+Measured ranks (14 Nov 2026): every `dispatch_rank` with a passing job is the
+median passing job duration of full trunk runs 43348507021, 43471044721,
+43540829683, 43564575677, 43580101834 and 43612492209. A run counts for a shard
+only when that shard's filter at the run's head equals the current filter, so
+re-split children are never ranked by their predecessor. 159 of 164 shards are
+measured (1 to 6 samples, median 3); `scripts/ci/fixtures/measured-dispatch-ranks.json`
+records the values and runs, and `test-full-run-capacity-partitions.py` fails when
+a rank drifts from it. Split-contract tests require each child to carry its
+measured rank, else its contract estimate, else its parent's rank. Unmeasured:
+Operator Eval Harness 2 and STAC Protocol 2 and 4 (cancelled in 43612492209) keep
+their parent's rank; the two Packages and Temporal children carry estimates. Ranks
+sum to 1,603 runner-minutes (was 1,818.5); 98 of 164 shards fit the 10-minute PR
+shard budget (was 84 of 163). Many unsplit shards measured slower than on 11 Nov
+(for example Core Endpoint Mutations 9.8 to 14.5): 20 shards, the replaced Packages
+and Temporal parent among them, leave the budget and 34, most of them split
+children, enter it. Of 794 shard source paths, 666 now have an owner that fits the
+budget (was 583): 140 gained one and 57 lost their last one, all owned by 15 shards
+now above 10 minutes, whose split is tracked in #7678.
 
 ### Standalone tooling in affected producer builds
 
@@ -859,8 +941,10 @@ outputs under disk pressure. The existing free-space thresholds and active-run
 protections remain; queued outputs may still be evicted as a fallback.
 
 [Stage 0 reuse assessment](stage-zero-reuse.md) records live queue/build timings,
-the five-run cache observation, and the protected issuer requirements for any
-future gate skip. Local receipts do not currently skip hosted tests. Compiled
+the five-run cache observation, completed affected-run job counts and queue
+timings, and the protected issuer requirements for any future gate skip. The
+completed samples have different selected work; green runs that skip managed
+tests do not establish a test speedup or resolve the comparable-run evidence gap. Local receipts do not currently skip hosted tests. Compiled
 output caching remains opt-in; no cross-phase promotion is authorized by the
 observational sample.
 
@@ -1071,14 +1155,19 @@ conditions would skip them. Router fixtures check the bound against the workflow
 including matrix expansion; new dynamic or reusable jobs require an explicit bound.
 
 There is no newest-merge narrowing or arbitrary shard truncation. Missing history,
-router full-coverage escalation, API failure, a larger bound or active PR Gate
+router full-coverage escalation, API failure or a larger bound
 leaves coverage to the unchanged twice-daily full runs. A deferred dispatcher does
 not launch CI. A previously queued execution rechecks admission and cancels itself
 before publishing change outputs; neither cancellation nor a failed cancellation request can advance the successful CI base.
-Admitted affected runs use two concurrent server shards. The separate
-`PR Gate priority` workflow handles requested and in-progress PR Gate events using
-trusted trunk code and cancels only same-repository affected trunk dispatches.
-Scheduled full runs, manual full runs and branch runs are excluded.
+Admitted affected runs use two concurrent server shards. Even matrix indices
+use the `honua-heavy` pool, so a run usually holds one heavy runner and at most
+two; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today.
+An active PR Gate does not defer or cancel an affected run. With up to ten open
+PRs a PR Gate is almost always active: from 05:52 to 17:02 UTC on 14 Nov 2026 the
+former PR-activity rule admitted 0 of 32 dispatches, leaving trunk with only the
+twice-daily full runs. Before that rule, completed affected runs
+took 4-62 minutes and PR Gate hosted jobs waited a median 4 s (p90 292 s) while
+one ran, against 3 s (p90 60 s) with no trunk CI, at the wider pre-cap width.
 
 Before this change, run 43544071705 expanded to roughly 170 jobs, queued for about
 120 minutes and occupied seven of eight heavy runners (founder incident report).
@@ -1278,3 +1367,28 @@ skipping or missing results fail the shell check. The required name and both
 `needs` dependencies stay unchanged. Normal runs add zero jobs; superseded runs
 avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
+
+The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
+
+### Compose readiness failure evidence
+
+The optional `Compose Release Lifecycle` job retains all four manual readiness
+checks and their 300-second timeout. A timeout names the initial published rc.1,
+candidate upgrade, restored rc.1, or candidate return stage and records service
+state plus at most eight redacted server error lines before existing cleanup.
+Diagnostic commands each have a 15-second limit; command failures omit output,
+and an unreadable generated-secret inventory suppresses all diagnostic capture.
+Only service/state/health/exit-code fields are retained; configuration, container
+environment and command stderr are never printed. Redaction tests run before
+image builds when the checked-out PR includes the diagnostic test module. Older
+PR heads omit that module and skip only its unit-test step; their lifecycle
+journeys and readiness assertions still run. Required checks and dependency
+contracts are unchanged.
+
+Run 43577434983 failed initial rc.1 readiness before candidate startup: its two
+manual tests reported one pass and one failure in 332 seconds (5.53 minutes).
+This change adds no runners or jobs: one lifecycle runner before and after.
+Live after-change readiness diagnostics and elapsed time await a new failure;
+no lifecycle rerun or runtime savings are claimed from unit validation.
+
+Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
