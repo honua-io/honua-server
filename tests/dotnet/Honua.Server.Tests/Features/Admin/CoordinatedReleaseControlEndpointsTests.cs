@@ -78,8 +78,8 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
     public async Task DisposeAsync()
     {
         _human?.Dispose();
-        try { await _fixture.DisposeAsync(); }
-        finally { _identity.Dispose(); }
+        using var identity = _identity;
+        await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]

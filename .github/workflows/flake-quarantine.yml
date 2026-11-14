@@ -37,12 +37,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p quarantine-evidence
-          # A re-run attempt uploads a second artifact under the same name, and
-          # `gh run download --name` extracts both into one directory, which
-          # collides. Keep only the newest artifact per name and fetch it by id.
+          # Shard artifacts carry an `-attempt-<n>` suffix, and an older
+          # artifact can outrank a rerun's by id. Keep each shard's newest
+          # attempt (older names have none) and fetch it by id under its shard name.
           gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts?per_page=100" \
-            --jq '.artifacts[] | select(.expired == false) | select(.name | test("^(server-test-results-|pr-gate-affected-shard-)[a-zA-Z0-9_-]+$")) | "\(.created_at) \(.id) \(.name)"' \
-            | sort -r | awk '!seen[$3]++' > quarantine-evidence/artifacts.txt
+            --jq '.artifacts[] | select(.expired == false) | select(.name | test("^(server-test-results-|pr-gate-affected-shard-)[a-zA-Z0-9_-]+$")) | (.name | capture("^(?<shard>.+?)(-attempt-(?<attempt>[0-9]+))?$")) as $n | "\($n.attempt // "0") \(.created_at) \(.id) \($n.shard)"' \
+            | sort -k1,1nr -k2,2r | awk '!seen[$4]++ { print $2, $3, $4 }' > quarantine-evidence/artifacts.txt
           while read -r _ artifact_id artifact; do
             gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "quarantine-evidence/${artifact}.zip"
             python3 -I -m zipfile -e "quarantine-evidence/${artifact}.zip" "quarantine-evidence/${artifact}"

@@ -174,7 +174,8 @@ public sealed class JobExecutionContextPublishFencingTests
         var reference = RasterOutputJson.Serialize(CreateDescriptor(checksumSeed: 'a'));
         var job = CreateRunningJob(attemptCount: 1) with
         {
-            ArtifactReferences = [reference]
+            ArtifactReferences = [reference],
+            CleanupArtifactReferences = [reference]
         };
 
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
@@ -186,6 +187,34 @@ public sealed class JobExecutionContextPublishFencingTests
 
         await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task PublishArtifact_IdenticalDescriptorWithoutCleanupOwnership_RecordsCleanupOnce()
+    {
+        var reference = RasterOutputJson.Serialize(CreateDescriptor(checksumSeed: 'a'));
+        var job = CreateRunningJob(attemptCount: 1) with
+        {
+            ArtifactReferences = [reference]
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job);
+        ExecutionJobRecord? written = null;
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                written = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+
+        using var context = CreateContext(job.OperationId, jobStore, claimedAttempt: 1);
+
+        (await context.TryPublishArtifactAsync(reference, CancellationToken.None)).Should().Be(true);
+
+        written.Should().NotBeNull();
+        written!.ArtifactReferences.Should().ContainSingle().Which.Should().Be(reference);
+        written.CleanupArtifactReferences.Should().ContainSingle().Which.Should().Be(reference);
     }
 
     [UnitTest]

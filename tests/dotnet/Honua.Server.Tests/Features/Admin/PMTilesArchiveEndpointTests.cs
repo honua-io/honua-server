@@ -8,23 +8,27 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles.PMTiles;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Formats;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-[Collection("Database")]
+// Tile operations run as execution jobs, so these hosts compose the job store, queue and worker.
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Tile)]
-public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
+public sealed class PMTilesArchiveEndpointTests(DatabaseFixtureAdapter database) : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
     {
+        await database.DataSource.ClearJobSubstrateAsync();
         await _fixture.InitializeAsync();
         _client = _fixture.Client;
     }
