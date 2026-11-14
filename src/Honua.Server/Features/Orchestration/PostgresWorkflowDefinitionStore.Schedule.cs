@@ -72,7 +72,7 @@ internal sealed partial class PostgresWorkflowDefinitionStore
     private Task WriteScheduleAsync(string sql, SchedulePosition position, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(position.WorkflowId);
-        return storage.Database.ExecuteAsync(async (connection, _, token) =>
+        return storage.Database.ExecuteAsync(async (connection, token) =>
         {
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("id", position.WorkflowId);

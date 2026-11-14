@@ -6,9 +6,12 @@ using Honua.Core.Features.Orchestration.Domain;
 
 namespace Honua.Server.Features.Orchestration;
 
+// PostgreSQL jsonb reorders object keys, so polymorphic discriminators such as raster source
+// "$type" can follow other properties when workflow records are read back.
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    AllowOutOfOrderMetadataProperties = true)]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(WorkflowDefinition))]
 [JsonSerializable(typeof(WorkflowRun))]

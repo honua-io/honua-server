@@ -34,7 +34,7 @@ internal sealed partial class PostgresWorkflowDefinitionStore
     public async Task SetTriggerCursorAsync(string workflowId, string cursorKind, string marker, CancellationToken cancellationToken = default)
     {
         ValidateTrigger(workflowId, cursorKind, marker);
-        await storage.Database.ExecuteAsync(async (connection, _, token) =>
+        await storage.Database.ExecuteAsync(async (connection, token) =>
         {
             await using var command = new NpgsqlCommand($"""
                 INSERT INTO {_triggers} AS current (workflow_id, cursor_kind, marker, ordinal)
