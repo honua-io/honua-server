@@ -30,7 +30,7 @@ public sealed class PostgresFeatureLockServiceTests(DatabaseFixtureAdapter datab
             ?? throw new InvalidOperationException("Feature lock migration is missing.");
         using var reader = new StreamReader(stream);
         await database.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync())
-            .Replace("$HonuaSchema$", _schema, StringComparison.Ordinal));
+            .Replace("$HonuaSchema$", new NpgsqlCommandBuilder().QuoteIdentifier(_schema), StringComparison.Ordinal));
     }
 
     public Task DisposeAsync() => database.DropSchemaAsync(_schema);
