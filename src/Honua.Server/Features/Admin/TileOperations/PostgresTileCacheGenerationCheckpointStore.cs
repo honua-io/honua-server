@@ -68,9 +68,7 @@ internal sealed partial class PostgresTileCacheGenerationCheckpointStore(
         }
         catch (JsonException exception)
         {
-            // The row is kept and the read fails: seed and warm callers treat a failed load as no
-            // resume point, while a destructive delete must not erase reservation accounting it
-            // cannot read.
+            // Keep the row so a failed resume read does not silently erase its checkpoint.
             Log.CorruptCheckpointReadFailed(logger, generationId, exception);
             throw new InvalidDataException(
                 $"Tile-cache checkpoint '{generationId}' is corrupt and cannot be resumed safely.",
