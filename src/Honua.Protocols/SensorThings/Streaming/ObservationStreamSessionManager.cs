@@ -250,6 +250,9 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
             return false;
         }
 
+        public override ValueTask WriteAsync(RealtimeDelivery item, CancellationToken cancellationToken = default)
+            => inner.WriteAsync(item, cancellationToken);
+
         public override bool TryComplete(Exception? error = null) => inner.TryComplete(error);
         public override ValueTask<bool> WaitToWriteAsync(CancellationToken cancellationToken = default)
             => inner.WaitToWriteAsync(cancellationToken);

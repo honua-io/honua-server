@@ -37,6 +37,31 @@ public sealed class ObservationStreamProviderTests
     }
 
     [UnitTest]
+    public async Task Replay_WhenBufferFills_WaitsForReaderWithoutDisconnecting()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        RealtimeSubscriptionRequest? request = null;
+        provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(value => request = value))
+            .Returns(Substitute.For<IRealtimeSubscription>());
+        await using var manager = new ObservationStreamSessionManager(
+            NullLogger<ObservationStreamSessionManager>.Instance, provider,
+            new ObservationStreamOptions { MaxBufferPerConnection = 1 });
+        await using var session = manager.TryCreateSession(new("SSE", 7, new("a", null), "alice", 0), out _)!;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var first = new RealtimeDelivery.Event(Event("a", null));
+        var second = new RealtimeDelivery.Event(Event("a", null) with { Sequence = 44 });
+        await request!.Writer.WriteAsync(first, timeout.Token);
+        var waiting = request.Writer.WriteAsync(second, timeout.Token).AsTask();
+        Assert.False(waiting.IsCompleted);
+        Assert.False(session.DisconnectToken.IsCancellationRequested);
+        Assert.Same(first, await session.Reader.ReadAsync(timeout.Token));
+        await waiting;
+        Assert.Same(second, await session.Reader.ReadAsync(timeout.Token));
+        Assert.Equal(0, manager.SlowConsumerDrops);
+        Assert.False(session.DisconnectToken.IsCancellationRequested);
+    }
+
+    [UnitTest]
     public async Task Dispose_ReleasesSubscriptionAndAdmissionSlotExactlyOnce()
     {
         var provider = Substitute.For<IRealtimeFanoutProvider>();
