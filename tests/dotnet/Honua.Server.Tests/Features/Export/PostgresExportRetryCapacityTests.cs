@@ -12,6 +12,7 @@ namespace Honua.Server.Tests.Features.Export;
 
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Export)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class PostgresExportRetryCapacityTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]

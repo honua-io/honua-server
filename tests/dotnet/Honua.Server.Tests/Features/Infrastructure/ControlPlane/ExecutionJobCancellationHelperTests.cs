@@ -7,6 +7,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using Honua.ServiceDefaults;
+using Honua.TestKit.Attributes;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -17,7 +18,7 @@ public sealed class ExecutionJobCancellationHelperTests
     private const string TransitionTestBackendNoOp = "execution-cancel-noop-test";
     private const string TransitionTestBackendCancelled = "execution-cancel-terminal-test";
 
-    [Fact]
+    [UnitTest]
     public async Task QueuedLocalCancellationCasLosesToManualRetry_DoesNotCancelSuccessor()
     {
         var original = CreateJobRecord("queued-retry", ExecutionJobStatus.Queued, backend: "local") with { Version = 1 };
@@ -34,7 +35,7 @@ public sealed class ExecutionJobCancellationHelperTests
         await store.Received(1).TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(0, 2)]
     [InlineData(1, 2)]
     [InlineData(1, 3)]
@@ -53,7 +54,7 @@ public sealed class ExecutionJobCancellationHelperTests
         await AssertWorkerPickupCancellationAsync(original, claimed);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(5)]
@@ -93,7 +94,7 @@ public sealed class ExecutionJobCancellationHelperTests
             Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("local")]
     [InlineData("remote")]
     public async Task CancellationCasLosesToRetry_DoesNotModifySuccessor(string backend)
@@ -127,7 +128,7 @@ public sealed class ExecutionJobCancellationHelperTests
         await store.Received(1).TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
-    [Fact]
+    [UnitTest]
     public async Task TryApplyBackendCancelAsync_RetryWinsBeforeReread_DoesNotCancelRetry()
     {
         var cancelledAttempt = CreateJobRecord("delayed-cancel", ExecutionJobStatus.Running) with

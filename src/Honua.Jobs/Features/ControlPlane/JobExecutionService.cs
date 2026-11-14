@@ -1620,7 +1620,9 @@ internal sealed partial class JobExecutionContext(
                 {
                     refs = [.. job.ArtifactReferences];
                 }
-                if (!appended && !committedEffect)
+                var cleanup = job.CleanupArtifactReferences;
+                var ownsCleanup = cleanup.Contains(artifactReference, StringComparer.Ordinal);
+                if (!appended && !committedEffect && ownsCleanup)
                 {
                     // Identical publication already durable — retried publish is a no-op.
                     return true;
@@ -1629,6 +1631,7 @@ internal sealed partial class JobExecutionContext(
                 var updated = job with
                 {
                     ArtifactReferences = refs,
+                    CleanupArtifactReferences = committedEffect || ownsCleanup ? cleanup : [.. cleanup, artifactReference],
                     CommittedEffectReferences = committedEffect ? [.. effects, artifactReference] : effects,
                     UpdatedAt = DateTimeOffset.UtcNow,
                     LastHeartbeatAt = DateTimeOffset.UtcNow

@@ -14,7 +14,7 @@ internal sealed class ExportJobTerminalCallback(
     public async ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
     {
         if (job.Spec.Kind != ExecutionJobKind.Export
-            || job.Status is not (ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled))
+            || job.Status is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled))
         {
             return;
         }
@@ -32,14 +32,19 @@ internal sealed class ExportJobTerminalCallback(
 
     private async Task DeleteArtifactsAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
     {
-        if (scopeFactory is null || job.ArtifactReferences.Count == 0)
+        if (scopeFactory is null)
         {
             return;
         }
 
         await using var scope = scopeFactory.CreateAsyncScope();
         var storage = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();
-        foreach (var fileId in job.ArtifactReferences)
+        var artifacts = job.CleanupArtifactReferences.Concat(job.ArtifactReferences).Distinct(StringComparer.Ordinal);
+        if (job.Status == ExecutionJobStatus.Succeeded)
+        {
+            artifacts = artifacts.Except(job.ArtifactReferences, StringComparer.Ordinal);
+        }
+        foreach (var fileId in artifacts)
         {
             try
             {

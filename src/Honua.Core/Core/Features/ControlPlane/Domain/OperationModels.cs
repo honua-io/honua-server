@@ -1450,6 +1450,8 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
     /// </summary>
     public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
 
+    public IReadOnlyList<string> CleanupArtifactReferences { get; init; } = Array.Empty<string>();
+
     /// <summary>
     /// Receipts for already committed sink effects, also exposed in artifact references.
     /// These survive operator cancellation and distinguish committed work from fenced output.
