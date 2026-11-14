@@ -87,11 +87,28 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
             receipts);
     }
 
-    [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
-    public async Task KeyedAddReplay_AfterGlobalIdBecomesMasked_ReturnsNoGlobalId(bool durable)
+    public Task CachedAddReplay_AfterGlobalIdBecomesMasked_ReturnsNoGlobalId() =>
+        AssertMaskedReplayAsync(_ => _sut);
+
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task DurableAddReplay_AfterGlobalIdBecomesMasked_ReturnsNoGlobalId()
+    {
+        var durableStore = Substitute.For<IFeatureEditIdempotencyReceipts>();
+        using var otherNodeReceipts = new GrpcApplyEditsReceipts(durableStore);
+        await AssertMaskedReplayAsync(original =>
+        {
+#pragma warning disable CA2012 // NSubstitute setup for ValueTask-returning members.
+            durableStore.TryReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(_ => new ValueTask<ReadOnlyMemory<byte>?>(GrpcApplyEditsReceipts.EncodeReceipt(original)));
+#pragma warning restore CA2012
+            return CreateService(otherNodeReceipts);
+        });
+    }
+
+    private async Task AssertMaskedReplayAsync(Func<Proto.ApplyEditsResponse, HonuaFeatureService> serviceFactory)
     {
         _featureWriter.ApplyEditsAsync(
                 Arg.Any<int>(), Arg.Any<FeatureEditBatch>(), Arg.Any<FeatureEditIdempotencyReceipt>(), Arg.Any<CancellationToken>())
@@ -106,13 +123,7 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
         var masks = Substitute.For<IFieldMaskSource>();
         masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(ImmutableArray.Create("globalid")));
-        var durableStore = Substitute.For<IFeatureEditIdempotencyReceipts>();
-#pragma warning disable CA2012 // NSubstitute setup for ValueTask-returning members.
-        durableStore.TryReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => new ValueTask<ReadOnlyMemory<byte>?>(GrpcApplyEditsReceipts.EncodeReceipt(original)));
-#pragma warning restore CA2012
-        using var otherNodeReceipts = new GrpcApplyEditsReceipts(durableStore);
-        var service = durable ? CreateService(otherNodeReceipts) : _sut;
+        var service = serviceFactory(original);
 
         var replayed = await service.ApplyEdits(request, MaskedContext(masks, "insert"));
 
