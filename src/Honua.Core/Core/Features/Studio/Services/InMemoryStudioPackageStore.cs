@@ -11,7 +11,7 @@ namespace Honua.Core.Features.Studio.Services;
 /// <summary>
 /// In-memory Studio package store for tests and local fallback scenarios.
 /// </summary>
-public sealed class InMemoryStudioPackageStore : IStudioPackageStore
+public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
 {
     private const int DefaultListLimit = 25;
     private const int MaxListLimit = 200;
@@ -96,6 +96,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
 
             EnsurePackageKeyAvailable(draft);
             var updated = draft with { Generation = existing.Generation + 1 };
+            ArchiveDraftRevision(existing);
             _drafts[draft.DraftId] = updated;
             _items[draft.ItemId] = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.TenantId, draft.CreatedBy, draft.CreatedAt) with
             {
@@ -132,6 +133,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             }
 
             _drafts.Remove(draftId);
+            _draftRevisions.Remove(draftId);
 
             // Cascade-delete an orphan content item: if this was the item's last remaining
             // draft and no version has ever been saved for it, the item has nothing openable
