@@ -45,7 +45,7 @@ public sealed class ServiceSettingsEndpointsTests
         return Task.CompletedTask;
     }
 
-    // Service settings live in the metadata graph, so the class shares one host.
+    // Cases write only the metadata graph, which the seeded host restores before each case.
     public sealed class SeededHost() : SeededMetadataHost(new WebAppFixture()
         .UseSeed("tests/seed/server.yaml")
         .ConfigureWebHost(builder =>
