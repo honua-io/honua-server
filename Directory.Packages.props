@@ -69,10 +69,8 @@
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0" />
     <!-- ASP.NET Core OpenApi 11.0.0 requires Microsoft.OpenApi [3.11.0, 4.0.0). -->
     <PackageVersion Include="Microsoft.OpenApi" Version="3.11.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" Version="11.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="11.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="11.0.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="11.0.0" />

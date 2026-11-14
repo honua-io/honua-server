@@ -20,10 +20,17 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-      - run: python3 scripts/ci/check-evidence-paths.test.py
-      - run: python3 scripts/ci/check-evidence-paths.py --base "$BASE_SHA"
+      - name: Check added paths with trusted base policy
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          policy_dir="$(mktemp -d)"
+          trap 'rm -rf "$policy_dir"' EXIT
+          git show "$BASE_SHA:scripts/ci/check-evidence-paths.py" > "$policy_dir/check-evidence-paths.py"
+          git show "$BASE_SHA:scripts/ci/check-evidence-paths.test.py" > "$policy_dir/check-evidence-paths.test.py"
+          python3 "$policy_dir/check-evidence-paths.test.py"
+          python3 "$policy_dir/check-evidence-paths.py" --base "$BASE_SHA" --head "$HEAD_SHA"
   shared-hygiene:
     uses: honua-io/.github/.github/workflows/repo-hygiene.yml@7e93a67a13dc498cc4e5032f00cd9e93171afb95 # light runner switch
   repo-hygiene:

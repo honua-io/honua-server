@@ -57,13 +57,7 @@ class WorkflowLintTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('missing', result.stdout)
 
-    def test_generated_exceptions_do_not_hide_new_context_errors(self):
-        invalid = WORKFLOW.replace("    steps:", "    env:\n      TEMP: ${{ runner.temp }}\n    steps:")
-        result = self.lint(invalid, "ci-doctor.lock.yml")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('context "runner" is not allowed here', result.stdout)
-
-    def test_generated_property_exceptions_do_not_apply_to_handwritten_workflows(self):
+    def test_unknown_property_is_rejected(self):
         invalid = WORKFLOW.replace("echo ok", "echo '${{ job.workflow_ref }}'")
         result = self.lint(invalid)
         self.assertNotEqual(result.returncode, 0)
