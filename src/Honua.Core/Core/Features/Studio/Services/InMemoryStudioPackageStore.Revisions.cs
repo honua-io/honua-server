@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Services;
@@ -17,7 +18,7 @@ public sealed partial class InMemoryStudioPackageStore
             var revision = _draftRevisions.TryGetValue(draftId, out var revisions)
                 ? revisions.Find(revision => revision.Generation == generation)
                 : null;
-            return Task.FromResult(revision);
+            return Task.FromResult(revision is null ? null : revision with { Envelope = SnapshotEnvelope(revision.Envelope) });
         }
     }
 
@@ -39,6 +40,11 @@ public sealed partial class InMemoryStudioPackageStore
         }
     }
 
+    private static StudioPackageEnvelope SnapshotEnvelope(StudioPackageEnvelope envelope) =>
+        JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(envelope, StudioJsonContext.Default.StudioPackageEnvelope),
+            StudioJsonContext.Default.StudioPackageEnvelope)!;
+
     private void ArchiveDraftRevision(StudioPackageDraft draft)
     {
         if (!_draftRevisions.TryGetValue(draft.DraftId, out var revisions))
@@ -50,7 +56,7 @@ public sealed partial class InMemoryStudioPackageStore
         revisions.Add(new()
         {
             Generation = draft.Generation,
-            Envelope = draft.Envelope,
+            Envelope = SnapshotEnvelope(draft.Envelope),
             UpdatedBy = draft.UpdatedBy,
             UpdatedAt = draft.UpdatedAt,
         });

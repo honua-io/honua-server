@@ -13,6 +13,34 @@ namespace Honua.Core.Tests.Features.Studio;
 public sealed partial class StudioPackageLifecycleServiceTests
 {
     [UnitTest]
+    public async Task GetDraftRevision_MutableEnvelopeCollections_CannotChangeStoredHistory()
+    {
+        foreach (IStudioPackageStore store in new IStudioPackageStore[]
+        {
+            new InMemoryStudioPackageStore(),
+            new BridgedStudioPackageStore(new InMemoryStudioPackageStore(), []),
+        })
+        {
+            var bindings = BuildEnvelope("original", "content.parcels").Bindings.ToList();
+            var service = BuildServiceProvider(store).GetRequiredService<IStudioPackageLifecycleService>();
+            var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+            {
+                PackageKey = "isolated-revision",
+                Envelope = BuildEnvelope("original", "content.parcels") with { Bindings = bindings },
+            });
+            await store.UpdateDraftAsync(draft with { Envelope = BuildEnvelope("changed", "content.roads") });
+            bindings.Clear();
+            var revision = await store.GetDraftRevisionAsync(draft.DraftId, draft.Generation);
+            Assert.NotNull(revision);
+            Assert.Single(revision.Envelope.Bindings);
+            Assert.IsAssignableFrom<IList<StudioPackageBinding>>(revision.Envelope.Bindings).Clear();
+            var reread = await store.GetDraftRevisionAsync(draft.DraftId, draft.Generation);
+            Assert.NotNull(reread);
+            Assert.Single(reread.Envelope.Bindings);
+        }
+    }
+
+    [UnitTest]
     public async Task UpdateDraft_RevisionsPreservePriorEnvelopeAndRejectStaleWrites()
     {
         foreach (IStudioPackageStore store in new IStudioPackageStore[]
