@@ -95,10 +95,10 @@ over 45 minutes still alert. A queued job's `started_at` alone does not prove ex
 Stage 3 details:
 
 - The execution base is the most recently completed `CI` run on trunk with
-  a success or failure conclusion and an ancestor head, selective or full.
+  a success conclusion and an ancestor head, selective or full.
   The newest 100 completed runs are ordered by completion update time.
-  Cancelled runs cannot advance the base. With no eligible ancestor, dispatch
-  a full matrix. A failed base bounds execution; it does not certify trunk.
+  Failed and cancelled runs cannot advance the base, including deferred runs whose
+  cancellation request fails. With no eligible ancestor, defer to scheduled full CI.
 - The dispatch summary separately lists the culprit range from the latest
   full green ancestor (searched among the newest 100 successful runs,
   excluding affected titles that cannot clear earlier failures). It passes
@@ -1058,7 +1058,7 @@ There is no newest-merge narrowing or arbitrary shard truncation. Missing histor
 router full-coverage escalation, API failure, a larger bound or active PR Gate
 leaves coverage to the unchanged twice-daily full runs. A deferred dispatcher does
 not launch CI. A previously queued execution rechecks admission and cancels itself
-before publishing change outputs; cancellation cannot advance the completed CI base.
+before publishing change outputs; neither cancellation nor a failed cancellation request can advance the successful CI base.
 Admitted affected runs use two concurrent server shards. The separate
 `PR Gate priority` workflow handles requested and in-progress PR Gate events using
 trusted trunk code and cancels only same-repository affected trunk dispatches.

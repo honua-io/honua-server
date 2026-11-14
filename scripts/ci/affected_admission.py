@@ -63,7 +63,17 @@ def record(reason):
         summary.write(message + "\n")
 
 
+def require_descriptor(raw):
+    allowed, reason = decision(json.loads(raw), pr_busy=False)
+    if not allowed:
+        record(reason)
+        raise SystemExit(1)
+
+
 def main():
+    if sys.argv[1] == "--descriptor":
+        require_descriptor(sys.argv[2])
+        return
     allowed, reason = admission(*sys.argv[1:])
     if not allowed:
         record(reason)

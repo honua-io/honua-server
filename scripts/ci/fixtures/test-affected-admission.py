@@ -2,9 +2,11 @@
 """Exercise fanout bounds, safe deferral and PR priority isolation."""
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -50,6 +52,23 @@ class AdmissionTests(unittest.TestCase):
                     "workflow_runs": [{"id": 1}] if f"status={active}&" in endpoint else []}), \
                     patch.dict("os.environ", GITHUB_REPOSITORY="honua-io/honua-server"):
                 self.assertTrue(admission.active_pr_gate(), active)
+
+    def test_recomputed_matrix_rejects_router_fallback_before_outputs(self):
+        job = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]["targeted-shards"]
+        script = next(step["run"] for step in job["steps"] if step.get("id") == "compute")
+        guard = script.split('echo "Descriptor: ${descriptor}"', 1)[1].split("# Build the matrix", 1)[0]
+        self.assertLess(script.index("--descriptor"), script.index("matrix_include="))
+        for expression, value in (("github.event_name", "workflow_dispatch"),
+                                  ("github.ref", "refs/heads/trunk"), ("inputs.full_ci", "false")):
+            guard = guard.replace("${{ " + expression + " }}", value)
+        with tempfile.TemporaryDirectory() as directory:
+            for count, full, expected in ((7, False, 0), (8, False, 1), (142, True, 1)):
+                environment = {**os.environ, "TRAILING_SELECTIVE_BASE": "a" * 40,
+                               "descriptor": json.dumps({"shards": list(range(count)), "run_all": full}),
+                               "GITHUB_STEP_SUMMARY": f"{directory}/summary"}
+                result = subprocess.run(["bash", "-e", "-c", guard], cwd=ROOT,
+                                        env=environment, capture_output=True, text=True)
+                self.assertEqual(result.returncode, expected, result.stderr)
 
     def test_side_job_bound_covers_workflow_and_matrix_expansion(self):
         jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]

@@ -125,12 +125,12 @@ class CompletedBaseExecutionTests(unittest.TestCase):
     def run_record(self, index, conclusion, updated):
         return {"head_sha": self.heads[index], "conclusion": conclusion, "updated_at": updated}
 
-    def test_failed_completed_head_bounds_execution_without_moving_green(self):
+    def test_failed_or_cancelled_head_cannot_advance_execution_base(self):
         green = self.run_record(0, "success", "2026-11-10T12:00:00Z")
         failed = self.run_record(1, "failure", "2026-11-10T13:00:00Z")
         cancelled = self.run_record(2, "cancelled", "2026-11-10T14:00:00Z")
         outputs = self.resolve([green, cancelled, failed], [green])
-        self.assertEqual(outputs["completed_base"], self.heads[1])
+        self.assertEqual(outputs["completed_base"], self.heads[0])
         self.assertEqual(outputs["last_green"], self.heads[0])
         self.assertEqual(outputs["head"], self.heads[2])
 
@@ -237,7 +237,7 @@ class RuntimeBaseTests(unittest.TestCase):
                 patch.object(self.selector, "ancestor", side_effect=lambda a, b: (a, b) in ancestors):
             return self.selector.completed_base("d" * 40, "a" * 40)
 
-    def record(self, letter, conclusion="failure", updated="2"):
+    def record(self, letter, conclusion="success", updated="2"):
         return dict(head_sha=letter * 40, conclusion=conclusion, updated_at=updated)
 
     def test_completion_after_dispatch_advances_execution_base(self):
@@ -249,6 +249,11 @@ class RuntimeBaseTests(unittest.TestCase):
         self.assertEqual(self.resolve(records, {("a" * 40, "b" * 40),
                                               ("b" * 40, "d" * 40),
                                               ("a" * 40, "e" * 40)}), "a" * 40)
+
+    def test_failed_deferred_run_does_not_advance_base_when_cancel_api_failed(self):
+        records = [self.record("b", "failure")]
+        self.assertEqual(self.resolve(records, {("a" * 40, "b" * 40),
+                                              ("b" * 40, "d" * 40)}), "a" * 40)
 
     def test_history_outage_retains_dispatched_scope(self):
         with tempfile.TemporaryDirectory() as directory, \

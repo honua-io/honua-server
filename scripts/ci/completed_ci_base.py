@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select the latest completed trunk CI ancestor without regressing a queued base."""
+"""Select the latest successful trunk CI ancestor without regressing a queued base."""
 
 import json
 import os
@@ -19,7 +19,7 @@ def completed_base(head, lower_bound=""):
     runs = sorted(payload["workflow_runs"], key=lambda run: run["updated_at"], reverse=True)
     for run in runs:
         candidate = run["head_sha"]
-        if (run["conclusion"] in {"success", "failure"} and len(candidate) == 40
+        if (run["conclusion"] == "success" and len(candidate) == 40
                 and all(character in "0123456789abcdef" for character in candidate)
                 and ancestor(candidate, head)
                 and (not lower_bound or ancestor(lower_bound, candidate))):
