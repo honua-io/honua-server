@@ -91,6 +91,8 @@ internal sealed class RealtimeOptions
     // Queued best-effort (presence) events are appended at most this often.
     public TimeSpan PresenceFlushInterval { get; set; } = TimeSpan.FromMilliseconds(250);
 
+    public TimeSpan ShutdownDrain { get; set; } = TimeSpan.FromSeconds(20);
+
     // The retention of every logged family, as written to realtime_log_heads.
     public IReadOnlyDictionary<string, TimeSpan> LoggedRetention()
     {
@@ -144,7 +146,8 @@ internal sealed class RealtimeOptionsValidator : IValidateOptions<RealtimeOption
                      (nameof(RealtimeOptions.DegradedPollInterval), options.DegradedPollInterval),
                      (nameof(RealtimeOptions.LocalPollInterval), options.LocalPollInterval),
                      (nameof(RealtimeOptions.ListenerReconnectMinDelay), options.ListenerReconnectMinDelay),
-                     (nameof(RealtimeOptions.PresenceFlushInterval), options.PresenceFlushInterval)
+                     (nameof(RealtimeOptions.PresenceFlushInterval), options.PresenceFlushInterval),
+                     (nameof(RealtimeOptions.ShutdownDrain), options.ShutdownDrain)
                  })
         {
             if (interval <= TimeSpan.Zero)
