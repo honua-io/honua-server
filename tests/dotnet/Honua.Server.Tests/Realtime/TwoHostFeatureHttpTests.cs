@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -209,6 +210,43 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         AssertCompleteOrderedDelivery(before.Concat(after).ToArray(), committed);
     }
 
+    [IntegrationTest(Timeout = 240000)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task TaskBStopsMidStream_ClientResumesOnTaskA_WithNoLossOrDuplicate()
+    {
+        const int beforeStop = 20;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var writer = _taskA.CreateAdminClient();
+        var committed = new List<long>();
+        using var subscriber = _taskB.CreateAdminClient();
+        using var response = await OpenStreamAsync(subscriber, null, timeout.Token);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(timeout.Token));
+        var reading = ReadUntilStreamClosesAsync(reader, timeout.Token);
+        Task? stopping = null;
+        for (var i = 0; i < Edits; i++)
+        {
+            if (i == beforeStop)
+            {
+                // Edits keep committing on task A while task B shuts down underneath an open
+                // stream, so the break lands at whatever point delivery had reached.
+                _taskBStopped = true;
+                stopping = _taskB.DisposeAsync().AsTask();
+            }
+            committed.Add(await AddAsync(writer, i, timeout.Token));
+        }
+        await stopping!;
+        var before = await reading;
+        before.Should().NotBeEmpty("task B served the stream before it stopped");
+        before.Count.Should().BeLessThan(Edits, "task B stopped before the edits finished");
+
+        using var resumed = _taskA.CreateAdminClient();
+        using var replay = await OpenStreamAsync(resumed, before[^1].Id, timeout.Token);
+        using var replayReader = new StreamReader(await replay.Content.ReadAsStreamAsync(timeout.Token));
+        var after = await ReadChangesAsync(replayReader, Edits - before.Count, timeout.Token);
+        AssertCompleteOrderedDelivery(before.Concat(after).ToArray(), committed);
+    }
+
     private static WebAppFixture NewHost() => new WebAppFixture().UseKestrel()
         .WithTestLicense(HonuaEdition.Pro)
         .OverrideConfiguration(new Dictionary<string, string?>
@@ -263,14 +301,46 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
     private async Task<IReadOnlyList<Frame>> ReadChangesAsync(
         StreamReader reader, int count, CancellationToken cancellationToken)
     {
+        var frames = new List<Frame>(count);
+        await foreach (var frame in ReadFramesAsync(reader, cancellationToken))
+        {
+            frames.Add(frame);
+            if (frames.Count == count)
+            {
+                return frames;
+            }
+        }
+        throw new EndOfStreamException("The feature SSE stream ended before all committed edits arrived.");
+    }
+
+    // Reads until the serving task goes away. The client only knows what it received, so
+    // whatever arrived before the connection broke is the resume point.
+    private async Task<IReadOnlyList<Frame>> ReadUntilStreamClosesAsync(
+        StreamReader reader, CancellationToken cancellationToken)
+    {
         var frames = new List<Frame>();
+        try
+        {
+            await foreach (var frame in ReadFramesAsync(reader, cancellationToken))
+            {
+                frames.Add(frame);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or HttpRequestException)
+        {
+            // An aborted response surfaces as a transport error rather than a clean end.
+        }
+        return frames;
+    }
+
+    private async IAsyncEnumerable<Frame> ReadFramesAsync(
+        StreamReader reader, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
         string? eventName = null;
         string? id = null;
         string? data = null;
-        while (frames.Count < count)
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
         {
-            var line = await reader.ReadLineAsync(cancellationToken)
-                ?? throw new EndOfStreamException("The feature SSE stream ended before all committed edits arrived.");
             if (line.Length == 0)
             {
                 eventName.Should().NotBe("reset", "the test stays within the retained feature window");
@@ -289,7 +359,7 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
                     {
                         var generation = envelope.GetProperty("cursor").GetInt64();
                         id.Should().Be(FeatureStreamCursor.Format(generation));
-                        frames.Add(new Frame(envelope.GetProperty("objectId").GetInt64(), generation, id!, Stopwatch.GetTimestamp()));
+                        yield return new Frame(envelope.GetProperty("objectId").GetInt64(), generation, id!, Stopwatch.GetTimestamp());
                     }
                 }
                 eventName = id = data = null;
@@ -307,7 +377,6 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
                 data = line[6..];
             }
         }
-        return frames;
     }
 
     private static void AssertCompleteOrderedDelivery(IReadOnlyList<Frame> frames, IEnumerable<long> committed)
