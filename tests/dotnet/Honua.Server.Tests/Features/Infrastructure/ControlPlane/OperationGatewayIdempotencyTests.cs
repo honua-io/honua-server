@@ -53,11 +53,10 @@ public sealed class OperationGatewayIdempotencyTests
         store.Single.Plan.Summary.Should().Be("Deploy proposal");
     }
 
-    [Theory]
-    [InlineData(OperationProposalStatus.Expired)]
-    [InlineData(OperationProposalStatus.Succeeded)]
-    public async Task RouteAsync_ApprovalTier_ExpiredOrSucceededProposal_RequestsFreshApproval(OperationProposalStatus finished)
+    [Fact]
+    public async Task RouteAsync_ApprovalTier_ExpiredProposal_RequestsFreshApproval()
     {
+        const OperationProposalStatus finished = OperationProposalStatus.Expired;
         var store = new MultiProposalStore();
         var sut = BuildGateway(store, ApprovalLadder());
         var request = new OperationGatewayRequest { Kind = OperationClass.Deploy, RequestedBy = "agent", IdempotencyKey = "finding-1" };
@@ -79,10 +78,32 @@ public sealed class OperationGatewayIdempotencyTests
         (await store.GetAsync(third.ProposalId!))!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
     }
 
+    [Fact]
+    public async Task RouteAsync_ApprovalTier_ConcurrentRequestsAfterExpiry_CreateOneFreshProposal()
+    {
+        var store = new MultiProposalStore();
+        var sut = BuildGateway(store, ApprovalLadder());
+        var request = new OperationGatewayRequest { Kind = OperationClass.Deploy, RequestedBy = "agent", IdempotencyKey = "finding-3" };
+        var first = await sut.RouteAsync(request);
+        store.SetStatus(first.ProposalId!, OperationProposalStatus.Expired);
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() => sut.RouteAsync(request))));
+
+        store.Count.Should().Be(2);
+        store.ActiveCount.Should().Be(1);
+        results.Where(result => result.ProposalId is not null)
+            .Select(result => result.ProposalId)
+            .Distinct()
+            .Should().ContainSingle().Which.Should().NotBe(first.ProposalId);
+    }
+
     [Theory]
+    [InlineData(OperationProposalStatus.Succeeded)]
     [InlineData(OperationProposalStatus.Rejected)]
     [InlineData(OperationProposalStatus.Failed)]
-    public async Task RouteAsync_ApprovalTier_RejectedOrFailedProposal_StaysSealed(OperationProposalStatus finished)
+    [InlineData(OperationProposalStatus.Cancelled)]
+    [InlineData(OperationProposalStatus.RolledBack)]
+    public async Task RouteAsync_ApprovalTier_DecidedProposal_StaysSealed(OperationProposalStatus finished)
     {
         var store = new MultiProposalStore();
         var sut = BuildGateway(store, ApprovalLadder());
@@ -94,7 +115,7 @@ public sealed class OperationGatewayIdempotencyTests
 
         second.Outcome.Should().Be(OperationGatewayOutcome.Failed);
         second.ProposalId.Should().BeNull();
-        store.Count.Should().Be(1, "a rejected or failed decision is not reopened by repeating the request");
+        store.Count.Should().Be(1, "a decided proposal is not reopened by repeating its idempotency key");
     }
 
     [Fact]
