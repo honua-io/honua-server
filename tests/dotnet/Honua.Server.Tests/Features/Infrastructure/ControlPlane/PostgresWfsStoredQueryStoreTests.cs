@@ -29,6 +29,25 @@ public sealed class PostgresWfsStoredQueryStoreTests(DatabaseFixtureAdapter data
     }
 
     [IntegrationTest]
+    public async Task UnicodeCaseEquivalentIds_ShareIdentityAcrossNodes()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var scope = Scope();
+        var first = harness.CreateWfsStoredQueryStore();
+        var second = harness.CreateWfsStoredQueryStore();
+        await first.TryCreateAsync(Entry(scope, "urn:test:σ", "sigma"), CancellationToken.None);
+
+        (await second.TryCreateAsync(Entry(scope, "urn:test:ς", "duplicate"), CancellationToken.None))
+            .Should().Be(WfsStoredQueryCreateResult.DuplicateId);
+        var alternateKey = new WfsStoredQueryKey(scope, "URN:TEST:Σ");
+        (await second.GetAsync(alternateKey, CancellationToken.None)).Should().Contain("sigma");
+        (await second.ListAsync(scope, CancellationToken.None)).Should().ContainSingle();
+        (await second.DeleteAsync(new WfsStoredQueryKey(scope, "urn:test:ς"), CancellationToken.None))
+            .Should().BeTrue();
+        (await first.GetAsync(alternateKey, CancellationToken.None)).Should().BeNull();
+    }
+
+    [IntegrationTest]
     public async Task Create_FullScope_IsRefusedAndOtherScopesAreUnaffected()
     {
         await using var harness = await CreateHarnessAsync();

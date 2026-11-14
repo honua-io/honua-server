@@ -10,6 +10,22 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public sealed class InMemoryWfsStoredQueryStoreTests
 {
     [UnitTest]
+    public async Task UnicodeCaseEquivalentIds_ShareIdentity()
+    {
+        var store = new InMemoryWfsStoredQueryStore();
+        var entry = new WfsStoredQueryEntry(new WfsStoredQueryKey("scope", "urn:test:σ"), "original");
+        await store.TryCreateAsync(entry, CancellationToken.None);
+        var alternateKey = new WfsStoredQueryKey("scope", "urn:test:ς");
+
+        (await store.TryCreateAsync(new WfsStoredQueryEntry(alternateKey, "duplicate"), CancellationToken.None))
+            .Should().Be(WfsStoredQueryCreateResult.DuplicateId);
+        (await store.GetAsync(alternateKey, CancellationToken.None)).Should().Be(entry.Definition);
+        (await store.ListAsync("scope", CancellationToken.None)).Should().ContainSingle();
+        (await store.DeleteAsync(alternateKey, CancellationToken.None)).Should().BeTrue();
+        (await store.GetAsync(entry.Key, CancellationToken.None)).Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task TryCreateAsync_CanceledRequest_DoesNotCreateQuery()
     {
         var store = new InMemoryWfsStoredQueryStore();

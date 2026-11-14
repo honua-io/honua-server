@@ -18,7 +18,10 @@ internal interface IWfsStoredQueryStore
     Task<bool> DeleteAsync(WfsStoredQueryKey key, CancellationToken cancellationToken);
 }
 
-internal readonly record struct WfsStoredQueryKey(string Scope, string QueryId);
+internal readonly record struct WfsStoredQueryKey(string Scope, string QueryId)
+{
+    public string NormalizedQueryId => QueryId.ToUpperInvariant();
+}
 
 internal sealed record WfsStoredQueryEntry(WfsStoredQueryKey Key, string Definition);
 

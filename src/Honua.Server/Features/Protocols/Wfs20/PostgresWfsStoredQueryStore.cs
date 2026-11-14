@@ -22,7 +22,7 @@ internal sealed class PostgresWfsStoredQueryStore(JobStoreDatabase database) : I
             RETURNING 1)
         SELECT (SELECT count(*) FROM inserted), (SELECT stored FROM scope_size),
             EXISTS (SELECT 1 FROM {database.Table("wfs_stored_queries")}
-                    WHERE scope = @scope AND lower(query_id) = lower(@query_id))
+                    WHERE scope = @scope AND query_id = @query_id)
         """;
 
     public Task<IReadOnlyList<string>> ListAsync(string scope, CancellationToken cancellationToken)
@@ -50,7 +50,7 @@ internal sealed class PostgresWfsStoredQueryStore(JobStoreDatabase database) : I
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
-                    $"SELECT definition FROM {_queries} WHERE scope = @scope AND lower(query_id) = lower(@query_id)",
+                    $"SELECT definition FROM {_queries} WHERE scope = @scope AND query_id = @query_id",
                     connection);
                 AddKey(command, key);
                 return await command.ExecuteScalarAsync(token).ConfigureAwait(false) as string;
@@ -77,7 +77,7 @@ internal sealed class PostgresWfsStoredQueryStore(JobStoreDatabase database) : I
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
-                    $"DELETE FROM {_queries} WHERE scope = @scope AND lower(query_id) = lower(@query_id)",
+                    $"DELETE FROM {_queries} WHERE scope = @scope AND query_id = @query_id",
                     connection);
                 AddKey(command, key);
                 return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
@@ -120,6 +120,6 @@ internal sealed class PostgresWfsStoredQueryStore(JobStoreDatabase database) : I
     private static void AddKey(NpgsqlCommand command, WfsStoredQueryKey key)
     {
         command.Parameters.Add(new NpgsqlParameter("scope", NpgsqlDbType.Text) { Value = key.Scope });
-        command.Parameters.Add(new NpgsqlParameter("query_id", NpgsqlDbType.Text) { Value = key.QueryId });
+        command.Parameters.Add(new NpgsqlParameter("query_id", NpgsqlDbType.Text) { Value = key.NormalizedQueryId });
     }
 }
