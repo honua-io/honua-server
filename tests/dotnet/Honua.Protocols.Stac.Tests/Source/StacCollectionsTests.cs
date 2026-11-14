@@ -366,9 +366,9 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
-    public async Task GetCollection_WithContactOnly_ProjectsHostProvider()
+    public async Task GetCollection_WithContactOnly_PreservesProviderWithoutRole()
     {
-        const string contactName = "Example data host";
+        const string contactName = "Example data contact";
         const string contactUrl = "https://example.test/contact";
         UpdateGovernanceMetadata(
             license: "MIT",
@@ -383,15 +383,13 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         var provider = json.RootElement.GetProperty("providers").EnumerateArray().Should().ContainSingle().Which;
         provider.GetProperty("name").GetString().Should().Be(contactName);
         provider.GetProperty("url").GetString().Should().Be(contactUrl);
-        provider.GetProperty("roles").EnumerateArray()
-            .Select(static role => role.GetString())
-            .Should().Equal("host");
+        provider.TryGetProperty("roles", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
-    public async Task GetCollection_WithUrlOnlyContact_DerivesHostProviderName()
+    public async Task GetCollection_WithUrlOnlyContact_DerivesProviderNameWithoutRole()
     {
         const string contactUrl = "https://catalog.example.test/contact";
         UpdateGovernanceMetadata(
@@ -407,15 +405,13 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         var provider = json.RootElement.GetProperty("providers").EnumerateArray().Should().ContainSingle().Which;
         provider.GetProperty("name").GetString().Should().Be("catalog.example.test");
         provider.GetProperty("url").GetString().Should().Be(contactUrl);
-        provider.GetProperty("roles").EnumerateArray()
-            .Select(static role => role.GetString())
-            .Should().Equal("host");
+        provider.TryGetProperty("roles", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
-    public async Task GetCollection_WithEmailOnlyContact_DerivesHostProviderName()
+    public async Task GetCollection_WithEmailOnlyContact_DerivesProviderNameWithoutRole()
     {
         UpdateGovernanceMetadata(
             license: "MIT",
@@ -429,9 +425,7 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var provider = json.RootElement.GetProperty("providers").EnumerateArray().Should().ContainSingle().Which;
         provider.GetProperty("name").GetString().Should().Be("example.test");
-        provider.GetProperty("roles").EnumerateArray()
-            .Select(static role => role.GetString())
-            .Should().Equal("host");
+        provider.TryGetProperty("roles", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -516,7 +510,7 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
-    public async Task GetCollection_WithPublisherAndContact_ProjectsProducerAndHostProviders()
+    public async Task GetCollection_WithPublisherAndContact_ProjectsProducerAndContactProviders()
     {
         UpdateGovernanceMetadata(
             license: "MIT",
@@ -524,7 +518,7 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             publisher: "Example producer",
             contactPoint: new MetadataV2ContactPoint
             {
-                Name = "Example data host",
+                Name = "Example data contact",
                 Url = "https://example.test/contact"
             });
 
@@ -538,8 +532,8 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             provider.GetProperty("name").GetString() == "Example producer" &&
             provider.GetProperty("roles")[0].GetString() == "producer");
         providers.Should().Contain(provider =>
-            provider.GetProperty("name").GetString() == "Example data host" &&
-            provider.GetProperty("roles")[0].GetString() == "host");
+            provider.GetProperty("name").GetString() == "Example data contact" &&
+            !provider.TryGetProperty("roles", out _));
     }
 
     [IntegrationTest]
