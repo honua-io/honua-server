@@ -13,6 +13,18 @@ unchanged projects, source triggers and budgets. Historical TRX interval weights
 guide the cuts; they are not measured child elapsed runtimes. Dispatch ranks stay
 inherited until complete child runs provide measurements.
 
+Server Features Packages and Temporal measured 12.7 minutes (full runs
+`43612492209` and `43580101834`), above the 10-minute PR shard budget, so PR Gate
+would have deferred the executing owner of temporal, form and package sources to
+trunk. Two children replace it, cut by the serial class spans of run
+`43580101834` (9.0 of 12.8 job minutes): child 1 owns the two temporal history
+classes, `PackageReviewEndpointTests`, `FormCompatibilityEndpointTests` and
+`WorkflowPackagePublishDegradedTests` (4.8 minutes), and child 2 is the exact
+complement of the parent filter (4.2 minutes). Both inherit the parent's paths,
+so a temporal change runs both. Their initial ranks (8.6 and 8.0) are the 3.8-minute
+job overhead plus each child's spans, recorded as `estimatedRanks` in the contract
+until a full run measures them. Budgets and source triggers are unchanged.
+
 Server Features Admin Layer Management exhausted its 35-minute test budget in
 full run `43580101834` while producing output one second before termination.
 Two children replace it: child 1 owns `AdminLayerDisplaySpatialTests`,
@@ -894,11 +906,21 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (11 Nov 2026): every `dispatch_rank` is the median passing job
-duration of trunk runs 42929935484, 42935981545, 42968585882 and 42986321489, the
-first full runs after the tiny-shard consolidation. The governance children measured
-5.2, 10.0 and 7.0 minutes. A shard with no passing job keeps the larger of its old rank
-and its failed duration.
+Measured ranks (14 Nov 2026): every `dispatch_rank` with a passing job is the
+median passing job duration of full trunk runs 43348507021, 43471044721,
+43540829683, 43564575677, 43580101834 and 43612492209. A run counts for a shard
+only when that shard's filter at the run's head equals the current filter, so
+re-split children are never ranked by their predecessor. 159 of 164 shards are
+measured (1 to 6 samples, median 3); `scripts/ci/fixtures/measured-dispatch-ranks.json`
+records the values and runs, and `test-full-run-capacity-partitions.py` fails when
+a rank drifts from it. Split-contract tests require each child to carry its
+measured rank, else its contract estimate, else its parent's rank. Unmeasured:
+Operator Eval Harness 2 and STAC Protocol 2 and 4 (cancelled in 43612492209) keep
+their parent's rank; the two Packages and Temporal children carry estimates. Ranks
+sum to 1,603 runner-minutes (was 1,818.5); 98 of 164 shards fit the 10-minute PR
+shard budget (was 95 of 163). Many unsplit shards measured slower than on 11 Nov
+(for example Core Endpoint Mutations 9.8 to 14.5), so 20 shards move to
+trunk-only coverage and 32, most of them split children, move into PR Gate.
 
 ### Standalone tooling in affected producer builds
 

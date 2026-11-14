@@ -13,6 +13,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+from shard_capacity_partition import expected_rank
+
 
 SCRIPT = Path(__file__).with_name("check-server-test-shard-coverage.py")
 SPEC = importlib.util.spec_from_file_location("shard_coverage", SCRIPT)
@@ -757,7 +759,7 @@ def test_miscellaneous_partition_detects_missing_moved_methods() -> None:
     assert methods
     assert MODULE.partition_claim_errors(partition["name"], parent, children, parsed,
         fqn, methods, partition["granularity"]) == []
-    moved = "Server Features Packages and Temporal"
+    moved = "Server Features Packages and Temporal 1"
     broken = dict(parsed)
     broken[moved] = MODULE._FilterParser("|".join(
         clause for clause in shards[moved]["filter"].split("|")
@@ -803,8 +805,9 @@ def test_admin_auth_capacity_split_preserves_methods_paths_and_budgets() -> None
         assert child["test_timeout_minutes"] == 22
         assert child["timeout_minutes"] == 32
         for field in ("paths", "csproj", "max_cpu_count", "upload_operator_eval_report",
-                      "upload_odata_evidence", "dispatch_rank"):
+                      "upload_odata_evidence"):
             assert child[field] == baseline[field], (name, field)
+        assert child["dispatch_rank"] == expected_rank(name, baseline["dispatch_rank"]), (name, "dispatch_rank")
     assert len({shards[name]["artifact_suffix"] for name in children}) == len(children)
     assert len({shards[name]["log_name"] for name in children}) == len(children)
 

@@ -10,8 +10,20 @@ Whole-class selections are retained except the GP/NAS routing class, whose
 methods are partitioned with a residual fallback for future tests. Method-union,
 future-method and mutation checks enforce complete, disjoint selection and
 unchanged projects, source triggers and budgets. Historical TRX interval weights
-guide the cuts; they are not measured child elapsed runtimes. Dispatch ranks stay
-inherited until complete child runs provide measurements.
+guide the cuts; they are not measured child elapsed runtimes. The 14 Nov rank
+refresh measured 23 of those 26 children (gate-model.md, "Measured ranks").
+
+Server Features Packages and Temporal measured 12.7 minutes (full runs
+`43612492209` and `43580101834`), above the 10-minute PR shard budget, so PR Gate
+would have deferred the executing owner of temporal, form and package sources to
+trunk. Two children replace it, cut by the serial class spans of run
+`43580101834` (9.0 of 12.8 job minutes): child 1 owns the two temporal history
+classes, `PackageReviewEndpointTests`, `FormCompatibilityEndpointTests` and
+`WorkflowPackagePublishDegradedTests` (4.8 minutes), and child 2 is the exact
+complement of the parent filter (4.2 minutes). Both inherit the parent's paths,
+so a temporal change runs both. Their initial ranks (8.6 and 8.0) are the 3.8-minute
+job overhead plus each child's spans, recorded as `estimatedRanks` in the contract
+until a full run measures them. Budgets and source triggers are unchanged.
 
 Server Features Admin Layer Management exhausted its 35-minute test budget in
 full run `43580101834` while producing output one second before termination.
