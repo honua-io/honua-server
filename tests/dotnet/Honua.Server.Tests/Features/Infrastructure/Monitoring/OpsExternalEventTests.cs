@@ -169,7 +169,7 @@ public sealed class OpsExternalEventTests
         var detail = "{\"status\":\"FAILED\",\"padding\":[" + string.Join(",", Enumerable.Repeat("0", 100000)) + "]}";
         var wire = Envelope("aws.batch", "Batch Job State Change", detail);
         OpsExternalEventMapper.Parse(wire);
-        var persisted = wire.Replace(",", ", ", StringComparison.Ordinal).Replace(":", ": ", StringComparison.Ordinal);
+        var persisted = wire.Replace(",", ", ", StringComparison.Ordinal);
         System.Text.Encoding.UTF8.GetByteCount(persisted).Should().BeGreaterThan(262144);
         OpsExternalEventMapper.Map(persisted)!.Rule.Should().Be("gp-job-failed");
         var ingest = () => OpsExternalEventMapper.Parse(persisted);
