@@ -176,8 +176,8 @@ class AffectedShardVerdictTests(unittest.TestCase):
             self.assertIn("| 1 | 0 | 0 | 1 |", outcome["summary"])
 
     def test_failed_jobs_rerun_counts_each_shard_newest_attempt(self) -> None:
-        # honua-server#7648 run 43603773296: attempt 1 was cancelled before any
-        # receipt, attempt 2 re-ran it, and a shard attempt 2 skipped keeps attempt 1.
+        # A failed-jobs rerun: attempt 1 was cancelled before any receipt, attempt 2
+        # re-ran it, and a shard attempt 2 did not repeat keeps its attempt-1 receipt.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "pr-gate-affected-shard-packages-attempt-1").mkdir()
