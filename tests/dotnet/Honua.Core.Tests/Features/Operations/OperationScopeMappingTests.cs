@@ -21,6 +21,10 @@ public sealed class OperationScopeMappingTests
     [InlineData("admin.connections.create", OperatorOperation.Create)]
     [InlineData("admin.import.upload", OperatorOperation.Create)]
     [InlineData("admin.layer.set-enabled", OperatorOperation.Update)]
+    [InlineData("admin.layer.display.get", OperatorOperation.Read)]
+    [InlineData("admin.layer.display.set", OperatorOperation.Update)]
+    [InlineData("admin.layer.spatial.get", OperatorOperation.Read)]
+    [InlineData("admin.layer.spatial.set", OperatorOperation.Update)]
     [InlineData("admin.connections.features.refresh", OperatorOperation.Update)]
     [InlineData("admin.connections.delete", OperatorOperation.Delete)]
     [InlineData("admin.import.jobs.cancel", OperatorOperation.Delete)]
@@ -34,6 +38,30 @@ public sealed class OperationScopeMappingTests
 
         resolved.Should().BeTrue();
         operation.Should().Be(expected);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("admin.layer.display.get", OperatorScopeCatalog.Read)]
+    [InlineData("admin.layer.spatial.set", OperatorScopeCatalog.Update)]
+    public void LayerConfiguration_ScopeAuthority_AllowsMatchingScope(string operationId, string scope)
+    {
+        OperationScopeMapping.ExceedsScopeAuthority(
+            new OperationRequest { OperationId = operationId },
+            new OperationPolicyContext { ScopeGoverned = true, RecognizedScopes = [scope] })
+            .Should().BeFalse();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("admin.layer.spatial.get", OperatorScopeCatalog.Discover)]
+    [InlineData("admin.layer.display.set", OperatorScopeCatalog.Read)]
+    public void LayerConfiguration_ScopeAuthority_RejectsInsufficientScope(string operationId, string scope)
+    {
+        OperationScopeMapping.ExceedsScopeAuthority(
+            new OperationRequest { OperationId = operationId },
+            new OperationPolicyContext { ScopeGoverned = true, RecognizedScopes = [scope] })
+            .Should().BeTrue();
     }
 
     // #3429: the dispatcher refuses every scope-governed submission it cannot map (#4722), so each
