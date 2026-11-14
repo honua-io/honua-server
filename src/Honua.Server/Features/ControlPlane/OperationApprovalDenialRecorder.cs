@@ -14,6 +14,12 @@ internal enum OperationApprovalDenialReason
     CurrentAuthority
 }
 
+internal enum OperationApprovalDecision
+{
+    Approve,
+    Reject
+}
+
 internal static class OperationApprovalDenialRecorder
 {
     internal const string UnavailableMessage = "The approval decision audit is unavailable.";
@@ -23,6 +29,7 @@ internal static class OperationApprovalDenialRecorder
         OperationProposal proposal,
         string actor,
         OperationApprovalDenialReason reason,
+        OperationApprovalDecision decision,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -32,6 +39,12 @@ internal static class OperationApprovalDenialRecorder
             OperationApprovalDenialReason.EvidenceInvalid => "evidence_invalid",
             OperationApprovalDenialReason.CurrentAuthority => "current_authority",
             _ => throw new ArgumentOutOfRangeException(nameof(reason))
+        };
+        var decisionCode = decision switch
+        {
+            OperationApprovalDecision.Approve => "approve",
+            OperationApprovalDecision.Reject => "reject",
+            _ => throw new ArgumentOutOfRangeException(nameof(decision))
         };
         var kind = Enum.IsDefined(proposal.Kind) ? proposal.Kind.ToString() : "Unknown";
         try
@@ -50,7 +63,8 @@ internal static class OperationApprovalDenialRecorder
                 Action = "operation.approval_denied",
                 Outcome = AuditOutcome.Denied,
                 CorrelationId = proposal.Audit.CorrelationId ?? proposal.ProposalId,
-                Details = "{\"kind\":\"" + kind + "\",\"reason\":\"" + reasonCode + "\"}"
+                Details = "{\"kind\":\"" + kind + "\",\"reason\":\"" + reasonCode
+                    + "\",\"decision\":\"" + decisionCode + "\"}"
             }, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(receipt)) throw new ServiceUnavailableException(UnavailableMessage);

@@ -5,7 +5,6 @@ using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using System.Net.Http.Json;
@@ -112,10 +111,7 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
                 claim => new Claim(claim.Type, claim.Value)), OidcAuthenticationExtensions.AdminSessionScheme));
             var actor = CanonicalSecurityActor.Resolve(principal);
             actor.Should().NotBeNull();
-            using var csrfResponse = await client.GetAsync("/api/v1/admin/auth/csrf");
-            csrfResponse.EnsureSuccessStatusCode();
-            using var csrf = JsonDocument.Parse(await csrfResponse.Content.ReadAsStringAsync());
-            client.DefaultRequestHeaders.Add("X-Honua-CSRF", csrf.RootElement.GetProperty("requestToken").GetString());
+            await BrowserCsrf.SetHeaderAsync(client);
             return new HumanApprovalHttpClient(client, actor!.ActorId);
         }
         catch

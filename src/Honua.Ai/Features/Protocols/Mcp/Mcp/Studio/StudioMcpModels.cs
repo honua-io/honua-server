@@ -590,13 +590,13 @@ internal sealed class McpStudioProposePublicationOutput
     [JsonPropertyName("operationInstanceId")]
     public required string OperationInstanceId { get; init; }
 
-    /// <summary>Proposal id when the call waits for a separate principal. Absent after an admin publish.</summary>
+    /// <summary>Proposal a person approves in Console before the publication pointer moves.</summary>
     [JsonPropertyName("proposalId")]
-    public string? ProposalId { get; init; }
+    public required string ProposalId { get; init; }
 
-    /// <summary>Proposal resource URI when <see cref="ProposalId"/> is present.</summary>
+    /// <summary>Resource URI of <see cref="ProposalId"/>.</summary>
     [JsonPropertyName("proposalUri")]
-    public string? ProposalUri { get; init; }
+    public required string ProposalUri { get; init; }
 
     [JsonPropertyName("auditId")]
     public required string AuditId { get; init; }
@@ -612,24 +612,6 @@ internal sealed class McpStudioProposePublicationOutput
 
     [JsonPropertyName("humanConfirmationRequired")]
     public bool HumanConfirmationRequired { get; init; } = true;
-
-    /// <summary>
-    /// Root-relative URL of the Active publication
-    /// (<see cref="StudioPublishedRoutes.BuildActiveUrl"/>). Present only when an admin
-    /// published the saved version in this call.
-    /// </summary>
-    [JsonPropertyName("shareUrl")]
-    public string? ShareUrl { get; init; }
-
-    /// <summary>Canonical deployment identity returned for a hosted map/app publication.</summary>
-    [JsonPropertyName("deploymentId")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? DeploymentId { get; init; }
-
-    /// <summary>Exact resource URI for that deployment, when present.</summary>
-    [JsonPropertyName("deploymentResourceUri")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? DeploymentResourceUri { get; init; }
 
     [JsonPropertyName("message")]
     public required string Message { get; init; }

@@ -29,8 +29,8 @@ agent for either change is refused with an approval-required error that says
 how to submit it for approval. Some changes are refused for agents outright:
 a layer's access settings, enabling or refreshing a layer, role permissions,
 OAuth scopes, scene generation, ingestion, registration and access settings, form package publication,
-and Console content publications and their sharing. Make those
-changes yourself in Console.
+Console content publications and their sharing, row and field policies, and the
+owner of Console content. Make those changes yourself in Console.
 
 Give each agent its own key with the `agent` grant and only the grants its task
 needs. Do not give an agent the bootstrap admin password or a full-admin key. An
@@ -77,8 +77,8 @@ approval. For rc.2, use the interactive Console approval channel.
 
 ## Migrate an automated approval setup
 
-API keys and agent bearer credentials cannot approve under the new model,
-even if they have an approval-related scope. Keep automation responsible for
+API keys and agent bearer credentials cannot approve or reject a proposal under
+the new model, even if they have an approval-related scope. Keep automation responsible for
 submission and observation, and route the pending proposal to a person signed
 in to Console. Existing administrative grants still apply to that person.
 

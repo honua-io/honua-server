@@ -107,7 +107,7 @@ public sealed partial class AdminAuthEndpointsTests
     public async Task PasswordSignIn_WithoutOidc_CreatesSecureSessionAndProtectsLogout()
     {
         _client.BaseAddress = new Uri("https://localhost");
-        await SetCsrfHeaderAsync(_client);
+        await BrowserCsrf.SetHeaderAsync(_client);
         var signIn = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
         signIn.StatusCode.Should().Be(HttpStatusCode.NoContent);
         var cookie = signIn.Headers.GetValues("Set-Cookie").Single(value => value.StartsWith("honua_admin_session=", StringComparison.Ordinal));
@@ -124,7 +124,7 @@ public sealed partial class AdminAuthEndpointsTests
         _client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
         var rejected = await _client.PostAsync("/api/v1/admin/auth/logout", null);
         rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await SetCsrfHeaderAsync(_client);
+        await BrowserCsrf.SetHeaderAsync(_client);
         var logout = await _client.PostAsync("/api/v1/admin/auth/logout", null);
         logout.StatusCode.Should().Be(HttpStatusCode.OK);
         var revoked = await _client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
@@ -140,7 +140,7 @@ public sealed partial class AdminAuthEndpointsTests
     public async Task PasswordSignIn_WithoutOidc_CanAccessStudio()
     {
         _client.BaseAddress = new Uri("https://localhost");
-        await SetCsrfHeaderAsync(_client);
+        await BrowserCsrf.SetHeaderAsync(_client);
         using var signIn = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
         signIn.StatusCode.Should().Be(HttpStatusCode.NoContent);
         using var studio = await _client.GetAsync("/api/v1/studio/package-families");
@@ -162,10 +162,10 @@ public sealed partial class AdminAuthEndpointsTests
         await fixture.InitializeAsync();
         using var browser = fixture.CreateClient();
         browser.BaseAddress = new Uri("https://localhost");
-        await SetCsrfHeaderAsync(browser);
+        await BrowserCsrf.SetHeaderAsync(browser);
         using var signIn = await browser.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
         signIn.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        await SetCsrfHeaderAsync(browser);
+        await BrowserCsrf.SetHeaderAsync(browser);
         using var bearer = await browser.PostAsync("/api/v1/admin/auth/bearer", null);
         bearer.StatusCode.Should().Be(HttpStatusCode.OK);
         var token = await bearer.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminOperatorBearerResponse);
@@ -192,7 +192,7 @@ public sealed partial class AdminAuthEndpointsTests
     public async Task PasswordSignIn_InvalidPassword_IsUnauthorized()
     {
         _client.BaseAddress = new Uri("https://localhost");
-        await SetCsrfHeaderAsync(_client);
+        await BrowserCsrf.SetHeaderAsync(_client);
         var response = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "incorrect-password" });
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Headers.TryGetValues("Set-Cookie", out var cookies).Should().BeFalse();
@@ -215,7 +215,7 @@ public sealed partial class AdminAuthEndpointsTests
     public async Task PasswordSignIn_WithDifferentOrigin_IsRejected()
     {
         _client.BaseAddress = new Uri("https://localhost");
-        await SetCsrfHeaderAsync(_client);
+        await BrowserCsrf.SetHeaderAsync(_client);
         _client.DefaultRequestHeaders.Add("Origin", "https://localhost:8443");
         var response = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -226,20 +226,11 @@ public sealed partial class AdminAuthEndpointsTests
     public async Task PasswordSignIn_WithInvalidCsrfToken_IsRejected()
     {
         _client.BaseAddress = new Uri("https://localhost");
-        await SetCsrfHeaderAsync(_client);
+        await BrowserCsrf.SetHeaderAsync(_client);
         _client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
         _client.DefaultRequestHeaders.Add("X-Honua-CSRF", "invalid-token");
         var response = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    private static async Task SetCsrfHeaderAsync(HttpClient client)
-    {
-        var response = await client.GetAsync("/api/v1/admin/auth/csrf");
-        response.EnsureSuccessStatusCode();
-        using var document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
-        client.DefaultRequestHeaders.Add("X-Honua-CSRF", document.RootElement.GetProperty("requestToken").GetString());
     }
 
     [IntegrationTheory]

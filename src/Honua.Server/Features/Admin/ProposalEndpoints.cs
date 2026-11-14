@@ -259,11 +259,32 @@ internal static class ProposalEndpoints
         {
             await OperationApprovalDenialRecorder.RecordAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(), proposal, actor,
-                OperationApprovalDenialReason.HumanSessionRequired, context.RequestAborted).ConfigureAwait(false);
+                OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Approve, context.RequestAborted).ConfigureAwait(false);
             return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
         }
 
         return null;
+    }
+
+    internal const string HumanRejectionRequiredMessage =
+        "Rejecting a proposal requires a live interactive OIDC session. Open the proposal in Console; MCP tokens and API keys cannot reject it.";
+
+    private static async Task<IResult?> DenyNonHumanRejectionAsync(
+        OperationProposal proposal, string actor, HttpContext context)
+    {
+        try
+        {
+            await context.RequestServices.GetRequiredService<OperationHumanApprovalAuthority>()
+                .VerifyRejectionAsync(proposal, context).ConfigureAwait(false);
+            return null;
+        }
+        catch (HumanApprovalRequiredException)
+        {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                context.RequestServices.GetRequiredService<IServiceScopeFactory>(), proposal, actor,
+                OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Reject, context.RequestAborted).ConfigureAwait(false);
+            return Results.Problem(detail: HumanRejectionRequiredMessage, statusCode: StatusCodes.Status403Forbidden);
+        }
     }
 
     private static async Task<IResult> HandleOpenApprovalReview(
@@ -331,6 +352,10 @@ internal static class ProposalEndpoints
         {
             return scopeDenied;
         }
+
+        // A rejection is a decision: only a person in an interactive Console session may make it.
+        var humanDenial = await DenyNonHumanRejectionAsync(proposal, actor!, context).ConfigureAwait(false);
+        if (humanDenial is not null) return humanDenial;
 
         try
         {
