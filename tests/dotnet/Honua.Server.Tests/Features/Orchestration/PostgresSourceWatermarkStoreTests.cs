@@ -82,7 +82,8 @@ public sealed class PostgresSourceWatermarkStoreTests
         };
         try
         {
-            await Task.WhenAll(Enumerable.Range(0, 8).Select(offset => store.AdvanceAsync(initial with
+            // Newest first, so a last-writer-wins upsert would leave an older timestamp behind.
+            await Task.WhenAll(Enumerable.Range(0, 8).Reverse().Select(offset => store.AdvanceAsync(initial with
             {
                 Value = SourceWatermark.Encode(Timestamp.AddMinutes(offset))
             })));
