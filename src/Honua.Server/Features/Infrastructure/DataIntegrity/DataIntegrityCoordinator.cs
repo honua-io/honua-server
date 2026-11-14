@@ -10,44 +10,7 @@ using Npgsql;
 
 namespace Honua.Infrastructure.DataIntegrity;
 
-public interface IDataIntegrityCoordinator
-{
-    Task<T> ExecuteCoordinatedTransactionAsync<T>(
-        string operationId,
-        Func<IDataIntegrityTransaction, CancellationToken, Task<T>> operation,
-        IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
-        TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default);
-
-    Task<IAsyncDisposable> AcquireDistributedLockAsync(
-        string lockKey,
-        TimeSpan timeout,
-        CancellationToken cancellationToken = default);
-}
-
-public interface IDataIntegrityTransaction : IAsyncDisposable
-{
-    NpgsqlTransaction DatabaseTransaction { get; }
-
-    NpgsqlConnection Connection { get; }
-
-    void RegisterFileOperation(
-        string operationType,
-        string filePath,
-        Func<CancellationToken, Task> commitAction,
-        Func<CancellationToken, Task> rollbackAction);
-
-    void RegisterCacheOperation(
-        string cacheKey,
-        Func<CancellationToken, Task> commitAction,
-        Func<CancellationToken, Task> rollbackAction);
-
-    Task CommitAsync(CancellationToken cancellationToken = default);
-
-    Task RollbackAsync(CancellationToken cancellationToken = default);
-}
-
-internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
+internal sealed class DataIntegrityCoordinator
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<DataIntegrityCoordinator> _logger;
@@ -92,7 +55,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
 
     public async Task<T> ExecuteCoordinatedTransactionAsync<T>(
         string operationId,
-        Func<IDataIntegrityTransaction, CancellationToken, Task<T>> operation,
+        Func<DataIntegrityTransaction, CancellationToken, Task<T>> operation,
         IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
@@ -212,7 +175,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
         return new DistributedLock(lockKey, operationId, entry, _logger);
     }
 
-    private sealed class DataIntegrityTransaction : IDataIntegrityTransaction
+    internal sealed class DataIntegrityTransaction : IAsyncDisposable
     {
         private readonly string _operationId;
         private readonly ILogger _logger;
@@ -521,7 +484,7 @@ public static class DataIntegrityCoordinatorServiceCollectionExtensions
 {
     public static IServiceCollection AddDataIntegrityCoordination(this IServiceCollection services)
     {
-        services.AddScoped<IDataIntegrityCoordinator, DataIntegrityCoordinator>();
+        services.AddScoped<DataIntegrityCoordinator>();
         return services;
     }
 }
