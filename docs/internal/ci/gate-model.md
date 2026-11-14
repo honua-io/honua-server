@@ -1355,7 +1355,10 @@ Diagnostic commands each have a 15-second limit; command failures omit output,
 and an unreadable generated-secret inventory suppresses all diagnostic capture.
 Only service/state/health/exit-code fields are retained; configuration, container
 environment and command stderr are never printed. Redaction tests run before
-image builds. Required checks and dependency contracts are unchanged.
+image builds when the checked-out PR includes the diagnostic test module. Older
+PR heads omit that module and skip only its unit-test step; their lifecycle
+journeys and readiness assertions still run. Required checks and dependency
+contracts are unchanged.
 
 Run 43577434983 failed initial rc.1 readiness before candidate startup: its two
 manual tests reported one pass and one failure in 332 seconds (5.53 minutes).
