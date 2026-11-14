@@ -649,6 +649,17 @@ def build_report(requirements: dict, verdicts: list[dict], mode: str, candidate:
     }
 
 
+def readiness_status(verdicts: list[dict]) -> int:
+    ready = bool(verdicts) and all(
+        verdict["result"] == "skip"
+        and [blocker["reason_code"] for blocker in verdict["blockers"]] == ["no-candidate"]
+        for verdict in verdicts)
+    print("READY: every required cell has a producer and denominator join; "
+          "no candidate is certified." if ready else
+          "NOT READY: required producer or denominator bindings are missing or stale.")
+    return 0 if ready else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify the bounded client-certification roster.")
     parser.add_argument("--mode", choices=("contract", "release"), default="contract")
@@ -715,14 +726,7 @@ def main(argv: list[str] | None = None) -> int:
     for owner, count in summary["byBlockerOwner"].items():
         print(f"  owner {owner}: {count}")
     if args.check_readiness:
-        ready = bool(verdicts) and all(
-            verdict["result"] == "skip"
-            and [blocker["reason_code"] for blocker in verdict["blockers"]] == ["no-candidate"]
-            for verdict in verdicts)
-        print("READY: every required cell has a producer and denominator join; "
-              "no candidate is certified." if ready else
-              "NOT READY: required producer or denominator bindings are missing or stale.")
-        return 0 if ready else 1
+        return readiness_status(verdicts)
     if summary["green"]:
         print("PASS: every required bounded-roster cell has a joined, candidate-bound pass.")
         return 0
