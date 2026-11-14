@@ -30,7 +30,7 @@ extract it into a dedicated local directory, and run `python3 quickstart.py` the
 Docker Compose, Python 3.11+, and OpenSSL 3 are required; use WSL on Windows.
 No compiler or host Docker CLI bind mounts are needed.
 
-The archive contains `compose.yaml`, `compose.executor.yaml`, `compose.console.yaml`, `quickstart.py`,
+The archive contains the `docker/proj-grids` build context, `compose.yaml`, `compose.executor.yaml`, `compose.console.yaml`, `quickstart.py`,
 `images.json`, a README, and `AGENTS.md`, the operating rules for AI coding agents
 working in the install directory (also published as
 [Work with AI coding agents](../guides/connect/working-with-ai-agents.md)). `images.json` pins the serving and executor images as
@@ -159,7 +159,11 @@ recovery checks scripted, see [Linux](linux-packages.md) or
 
 ## 1. Create the project
 
-Make a directory and put this in it as `compose.yaml`:
+Use the extracted customer package directory, which includes the
+`docker/proj-grids` build context, and put this in it as `compose.yaml`. The first
+start builds PostGIS with the regional datum grids and needs access to the image
+registry, Debian package repositories and PROJ CDN. Runtime transformations use
+the installed grids offline:
 
 <!-- docs-validation:install.compose mode=run -->
 ```yaml
@@ -222,7 +226,12 @@ services:
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
     secrets: [postgres_password, honua_admin_password, honua_audit_chain_key, honua_master_key, honua_keyring_password]
   postgres:
-    image: pgrouting/pgrouting:17-3.5-3.7.3
+    image: honua-postgis-proj-grids:17-3.5-3.7.3
+    build:
+      context: ./docker/proj-grids
+      args:
+        BASE_IMAGE: pgrouting/pgrouting:17-3.5-3.7.3
+    pull_policy: missing
     environment:
       POSTGRES_DB: honua
       POSTGRES_USER: honua

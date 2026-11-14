@@ -21,7 +21,7 @@ so the selected (Esri-parity) pipeline is used.
 - `IDatumTransformationCatalog` (`Honua.Core.Features.Infrastructure.Crs`) resolves a
   `(fromSrid, toSrid)` reprojection to a `DatumTransformationSelection` carrying the
   Esri WKID, EPSG operation code, and explicit PROJ pipeline string.
-- `EsriDatumTransformationCatalog` is backed by the embedded table
+- `GeoServicesDatumTransformationCatalog` is backed by the embedded table
   `src/Honua.Core/Core/Features/Infrastructure/Crs/Resources/esri-default-datum-transformations.json`.
 - The GeoServices FeatureServer query handler:
   - **Honors** a client-supplied `datumTransformation` (bare WKID or
@@ -49,7 +49,7 @@ later (a fixture with documented provenance) without restructuring.
 | NAD83(HARN) (4152) | WGS84 (4326) | NAD_1983_HARN_To_WGS_1984_1 | — | 1580 | 1e-9 deg | EPSG 1580 is a null transformation (`+proj=noop`). Seeded under #1501; validated against the runtime in both directions. No distinct Esri WKID — ArcGIS applies no geographic transformation by default for this pair. |
 | NAD83(NSRS2007) (4759) | WGS84 (4326) | NAD_1983_NSRS2007_To_WGS_1984_1 | — | 15931 | 1e-9 deg | EPSG 15931 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
 | NAD83(2011) (6318) | WGS84 (4326) | NAD_1983_2011_To_WGS_1984_1 | — | 9774 | 1e-9 deg | EPSG 9774 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
-| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 5e-6 deg | The no-envelope default is CONUS `us_noaa_conus.tif`. An envelope fully inside one catalog area selects that grid (Alaska `us_noaa_alaska.tif`, Canada `ca_nrc_ntv2_0.tif`). An envelope in none, or in more than one, uses 2-argument `ST_Transform` instead of CONUS. |
+| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 5e-6 deg | The no-envelope default is CONUS `us_noaa_conus.tif`. An envelope contained in a catalog area selects that grid (Alaska `us_noaa_alaska.tif`, Canada `ca_nrc_ntv2_0.tif`). Canada has explicit priority over overlapping CONUS/Alaska bounds only when the entire envelope fits one parent grid coverage region. No match or an equal-priority ambiguity uses 2-argument `ST_Transform`. Wrapped Alaska bounds contain only their antimeridian arc. |
 
 Tolerances are conservative upper bounds for the *selection* test: they prove Honua
 applies the correct pipeline, not that PROJ and EPSG agree to sub-millimeter. Tighten
@@ -116,22 +116,50 @@ Runtime observations on the base test image (`postgis/postgis:18-3.6`, PROJ 9.6.
 
 ### The `docker/proj-grids` image
 
-[`docker/proj-grids`](../../../docker/proj-grids/README.md) provisions the canonical PROJ
-grids into the PostGIS image's PROJ data directory (`/usr/share/proj`). It extends
-`postgis/postgis:18-3.6` and bakes in exactly the grids listed in
-[`docker/proj-grids/grids.txt`](../../../docker/proj-grids/grids.txt) (kept in sync with the
-catalog's `requiredGrids`), fetched from the PROJ CDN at build time. With the grids present,
-PROJ's 2-argument default resolves the **high-accuracy** NADCON operation, so the shared
-`DatumTransformSql` chokepoint (query + import reprojection) produces the canonical grid
-shift instead of the fallback. Measured: NAD27 (-100, 40) → NAD83 ≈ (-100.0004056, 40.0000058).
+[`docker/proj-grids`](../../../docker/proj-grids/README.md) provisions the canonical
+PROJ grids into `/usr/share/proj`. The default customer Compose deployment builds
+it on `pgrouting/pgrouting:17-3.5-3.7.3`, preserving PostgreSQL 17 and existing data
+volumes. The customer archive includes the complete build context. Grid downloads
+happen at image build time; `PROJ_NETWORK=OFF` prevents runtime network dependence.
+The standalone diagnostic composition retains its separate pinned PostGIS base.
 
-This image is **isolated and opt-in**: nothing in the default build / Fast-tier test / CITE
-path builds or pulls it, and the base PostGIS tag used elsewhere is unchanged. Wiring it (or
-its baked grids) into the integration/CITE compositions — which would bump those image tags —
-is a deliberate follow-up. The gated `DatumGridProvisioningTests` (env `HONUA_PROJ_GRID_TEST`,
-pointed at this image via `HONUA_TEST_DB_URL`) prove the grid-gated transform resolves
-in-tolerance when the grids are present; `DatumTransformationParityTests` continue to assert
-the default-path / explicit-failure contract on the grid-less fixture.
+`DatumGridProvisioningTests` builds the customer image and starts an isolated
+container as part of the ordinary Postgres integration tests. It requires no
+`HONUA_PROJ_GRID_TEST` opt-in. It executes selected CONUS, Alaska and Canadian
+pipelines through the shared SQL helper. Grid-free fixtures separately retain
+the explicit missing-grid failure contract.
+
+The Canadian operation is [EPSG 1313](https://epsg.org/transformation_1313/NAD27-to-NAD83-4.html)
+with `ca_nrc_ntv2_0.tif`; Puerto Rico uses
+[EPSG 1461](https://epsg.org/transformation_1461/Puerto-Rico-to-NAD83-1.html)
+with `us_noaa_prvi.tif`. `projinfo EPSG:1313 -k operation -o PROJ` and
+`projinfo EPSG:1461 -k operation -o PROJ` expose the canonical PROJ pipelines.
+Explicit client WKIDs continue to select their named operation independently of
+area priority. Automatic Canadian selection additionally requires containment in one of the
+four parent regions encoded in the canonical TIFF; the operation's rectangular area
+of use includes a southern central coverage gap. Envelopes crossing parent-region
+boundaries conservatively fall back to another contained area or `ST_Transform`.
+
+The Alaska and Canadian integration cases also compare against independent `cct`
+outputs within **0.01 m horizontal distance** on the NAD83 ellipsoid. These
+references were generated on 13 November 2026 using Debian Bookworm's `proj-bin`
+and the canonical grids downloaded by the image build, without loading the Honua
+catalog or executing its SQL helper:
+
+| Grid | NAD27 input (longitude, latitude) | NAD83 reference (longitude, latitude) |
+|---|---|---|
+| `us_noaa_alaska.tif` | `-149.9, 61.2` | `-149.902204940219, 61.199447934275` |
+| `ca_nrc_ntv2_0.tif` | `-79.4, 43.7` | `-79.399801388899, 43.700056900002` |
+
+Reproduce each reference with the corresponding input and grid:
+
+```bash
+printf '%s\n' '-149.9 61.2 0' | cct -d 12 \
+  +proj=pipeline \
+  +step +proj=unitconvert +xy_in=deg +xy_out=rad \
+  +step +proj=hgridshift +grids=us_noaa_alaska.tif \
+  +step +proj=unitconvert +xy_in=rad +xy_out=deg
+```
 
 ## Import / reprojection path
 
@@ -161,8 +189,8 @@ Details and guarantees:
   the inverse grid shift rather than PROJ's default pipeline.
 - Grid-gated selections (NADCON/NTv2/GEOID) follow the same explicit-failure contract as
   the query path: a missing grid surfaces as a PostGIS error (mapped to the shared problem
-  helper) rather than a silent Helmert approximation. Provisioning the grid data in the
-  PostGIS image remains the separate follow-up above.
+  helper) rather than a silent Helmert approximation. The default customer PostGIS image
+  provisions the grids as described above.
 - The legacy bulk helpers in `BulkImportExtensions` (`bulk_insert_import_features`, COPY)
   are not on the live import path (no production callers) and are not yet routed; if they
   are ever re-wired they must adopt the same overload.

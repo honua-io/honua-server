@@ -28,6 +28,10 @@ def package(destination, images, version):
     for name in ('compose.executor.yaml', 'compose.console.yaml'):
         shutil.copyfile(ROOT / 'docs/get-started' / name, destination / name)
     shutil.copyfile(Path(__file__).with_name('compose_quickstart.py'), destination / 'quickstart.py')
+    grid_context = destination / 'docker/proj-grids'
+    grid_context.mkdir(parents=True)
+    for name in ('Dockerfile', 'grids.txt', 'fetch-grids.sh'):
+        shutil.copyfile(ROOT / 'docker/proj-grids' / name, grid_context / name)
     # The agent guide is published once, in the docs; the package carries that exact text.
     guide = (ROOT / 'docs/guides/connect/working-with-ai-agents.md').read_text()
     guide = re.search(r'<!-- agent-guide:begin -->\n(.*?)<!-- agent-guide:end -->', guide, re.S).group(1)
@@ -39,6 +43,10 @@ def package(destination, images, version):
     (destination / 'README.md').write_text(
         '# Honua local Compose quickstart\n\n'
         'Run `python3 quickstart.py` with Docker Compose and OpenSSL installed. '
+        'The default database image builds from docker/proj-grids, downloading canonical PROJ grids '
+        'during the first build. PostgreSQL uses the baked grids with PROJ network access disabled. '
+        'The build needs access to the image registry, Debian repositories and cdn.proj.org. '
+        'Preserve the database volume when rebuilding this PostgreSQL 17 image.\n\n'
         'Each secret is created locally in its own file under `secrets/`, beside `secrets/keyring.pfx`; '
         'preserve that directory. `.env` holds only non-secret settings, so `docker compose config` '
         'never prints a secret. An install whose secrets are still in `.env` (an earlier package) '

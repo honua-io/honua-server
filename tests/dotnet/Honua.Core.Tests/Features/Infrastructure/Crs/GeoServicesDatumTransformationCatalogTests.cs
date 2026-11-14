@@ -70,6 +70,14 @@ public sealed class GeoServicesDatumTransformationCatalogTests
     }
 
     [UnitTest]
+    public void TryGetForEnvelope_AleutiansAcrossAntimeridian_SelectsAlaskaGrid()
+    {
+        _catalog.TryGetForEnvelope(Nad27, Nad83, 179, 51, -179, 53, out var selection)
+            .Should().BeTrue();
+        selection!.RequiredGrids.Should().Contain("us_noaa_alaska.tif");
+    }
+
+    [UnitTest]
     public void TryGetForEnvelope_Denver_SelectsConusGrid()
     {
         var found = _catalog.TryGetForEnvelope(Nad27, Nad83, -105.1, 39.6, -104.8, 39.8, out var selection);
@@ -80,12 +88,71 @@ public sealed class GeoServicesDatumTransformationCatalogTests
     }
 
     [UnitTest]
-    public void TryGetForEnvelope_BoxInsideConusAndCanada_DoesNotUseConus()
+    public void TryGetForEnvelope_BoxInsideConusAndCanada_SelectsCanadianPriority()
     {
         var found = _catalog.TryGetForEnvelope(Nad27, Nad83, -79.6, 43.6, -79.2, 43.9, out var selection);
 
-        found.Should().BeFalse();
+        found.Should().BeTrue();
+        selection!.RequiredGrids.Should().Contain("ca_nrc_ntv2_0.tif");
+    }
+
+    [UnitTheory]
+    [InlineData(new double[] { -170, 60, 170, 65 })]
+    [InlineData(new double[] { -180, 60, 180, 65 })]
+    [InlineData(new double[] { double.NaN, 60, -150, 65 })]
+    [InlineData(new double[] { -150, 65, -149, 60 })]
+    public void TryGetForEnvelope_InvalidOrOutsideAlaskaArc_ReturnsFalse(
+        double[] bounds)
+    {
+        _catalog.TryGetForEnvelope(Nad27, Nad83, bounds[0], bounds[1], bounds[2], bounds[3], out var selection)
+            .Should().BeFalse();
         selection.Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData(-79.4, 43.7)]
+    [InlineData(-110, 50)]
+    [InlineData(-110, 65)]
+    [InlineData(-110, 80)]
+    public void TryGetForEnvelope_InsideCanadianParentGrid_SelectsCanada(double longitude, double latitude)
+    {
+        _catalog.TryGetForEnvelope(Nad27, Nad83, longitude, latitude, longitude, latitude, out var selection)
+            .Should().BeTrue();
+        selection!.RequiredGrids.Should().Equal("ca_nrc_ntv2_0.tif");
+    }
+
+    [UnitTheory]
+    [InlineData(Nad27, Nad83)]
+    [InlineData(Nad83, Nad27)]
+    public void TryGetForEnvelope_InsideCanadianBoundsOutsideGrid_SelectsConus(int fromSrid, int toSrid)
+    {
+        _catalog.TryGetForEnvelope(fromSrid, toSrid, -100.1, 43.9, -99.9, 44.1, out var selection)
+            .Should().BeTrue();
+        selection!.RequiredGrids.Should().Equal("us_noaa_conus.tif");
+    }
+
+    [UnitTest]
+    public void TryGetForEnvelope_CrossesCanadianCoverageGap_SelectsConus()
+    {
+        _catalog.TryGetForEnvelope(Nad27, Nad83, -89, 46, -87, 48, out var selection)
+            .Should().BeTrue();
+        selection!.RequiredGrids.Should().Equal("us_noaa_conus.tif");
+    }
+
+    [UnitTest]
+    public void TryGetByWkid_ConusOperation_IgnoresRegionalPriority()
+    {
+        _catalog.TryGetByWkid(1241, Nad27, Nad83, out var selection).Should().BeTrue();
+        selection!.RequiredGrids.Should().Equal("us_noaa_conus.tif");
+    }
+
+    [UnitTest]
+    public void TryGetForEnvelope_CanadaInverse_UsesSamePriority()
+    {
+        _catalog.TryGetForEnvelope(Nad83, Nad27, -79.6, 43.6, -79.2, 43.9, out var selection)
+            .Should().BeTrue();
+        selection!.RequiredGrids.Should().Contain("ca_nrc_ntv2_0.tif");
+        selection.TransformForward.Should().BeFalse();
     }
 
     [UnitTest]

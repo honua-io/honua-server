@@ -1,43 +1,11 @@
 {
   "_comment": [
     "Esri default geotransformation parity table.",
-    "Each entry maps a (fromSrid -> toSrid) geographic-CRS reprojection to the",
-    "geotransformation ArcGIS selects by default for the listed area of use, plus",
-    "the EPSG coordinate-operation code and the explicit PROJ pipeline that PostGIS",
-    "executes via ST_TransformPipeline(geom, '<projPipeline>', toSrid).",
-    "",
-    "Provenance: WKID and name follow Esri's published geographic-transformation list;",
-    "epsgOperationCode references the EPSG Geodetic Parameter Dataset; projPipeline is",
-    "the PROJ pipeline string corresponding to that EPSG operation. Reverse lookups are",
-    "synthesized at load time (the runtime applies the inverse for toSrid -> fromSrid).",
-    "",
-    "Grid-backed pipelines (NADCON/NTv2/GEOID) list requiredGrids; the runtime fails",
-    "explicitly when a listed grid is absent from the PROJ data path rather than",
-    "silently degrading to a Helmert/geocentric approximation. The canonical PROJ grids",
-    "(us_noaa_conus.tif and the NADCON5/NTv2/GEOID set) are NOT in the base postgis/postgis",
-    "image's minimal libproj-data subset; the docker/proj-grids image (#1501) bakes them in",
-    "so PROJ resolves the grid operation at full accuracy. requiredGrids names the canonical",
-    "PROJ 9.x grid filename (resolved via projinfo -o PROJ) so it stays in sync with that image.",
-    "",
-    "Only pipelines verified against the PostGIS/PROJ runtime are seeded here. The seeded",
-    "WGS84-realization pairs (NAD83, NAD83(HARN), NAD83(NSRS2007), NAD83(2011)) are all",
-    "null transformations (EPSG considers the datums coincident at the meter level, which",
-    "matches the ArcGIS default of applying no geographic transformation), expressed as the",
-    "exact-identity, PROJ-version-stable +proj=noop. The Helmert parameters for these EPSG",
-    "operations (1188/1580/9774/15931) are all-zero geocentric translations, confirmed",
-    "against the runtime proj.db helmert_transformation table.",
-    "",
-    "IMPORTANT PostGIS constraint: ST_Transform's text overload is ST_Transform(geom,",
-    "from_proj_text, to_srid) -- the middle argument is the SOURCE CRS, not a coordinate",
-    "operation pipeline. PostGIS exposes no overload that injects a +proj=pipeline string,",
-    "so non-identity Helmert/grid pipelines cannot be forced through this chokepoint on the",
-    "current PostGIS/PROJ runtime; only proj strings that parse as a CRS (and +proj=noop,",
-    "which behaves as exact identity) apply. Multi-step Helmert pairs that need a specific",
-    "non-default operation (e.g. NAD83(HARN)_To_WGS_1984_2 / EPSG 1901, the rotation-bearing",
-    "WGS_1984_(ITRF00)_To_NAD_1983 family) therefore remain a documented follow-up gated on a",
-    "PostGIS pipeline-application mechanism; until then PROJ's default operation selection",
-    "(which already follows EPSG accuracy ranking, matching Esri's default for these pairs)",
-    "is used by the 2-argument path and a client WKID for them returns explicit 'unsupported'."
+    "WKIDs and names follow Esri's geographic-transformation list; EPSG codes identify the coordinate operation.",
+    "PROJ pipelines execute through ST_TransformPipeline; inverse lookups apply the same operation in reverse.",
+    "Required grids use canonical PROJ filenames and are included in the default customer Compose image.",
+    "Missing grids cause an error rather than a lower-accuracy fallback.",
+    "Area priority resolves overlapping regional bounds; explicit WKIDs retain their named operation."
   ],
   "transformations": [
     {
@@ -92,7 +60,9 @@
       "areaNorth": 49.38,
       "epsgOperationCode": 1241,
       "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=us_noaa_conus.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg",
-      "requiredGrids": ["us_noaa_conus.tif"]
+      "requiredGrids": [
+        "us_noaa_conus.tif"
+      ]
     },
     {
       "wkid": 1243,
@@ -106,7 +76,9 @@
       "areaNorth": 74.71,
       "epsgOperationCode": 1243,
       "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=us_noaa_alaska.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg",
-      "requiredGrids": ["us_noaa_alaska.tif"]
+      "requiredGrids": [
+        "us_noaa_alaska.tif"
+      ]
     },
     {
       "wkid": null,
@@ -114,13 +86,42 @@
       "fromSrid": 4267,
       "toSrid": 4269,
       "areaOfUse": "Canada - NAD27 to NAD83 (NTv2)",
+      "areaPriority": 1,
+      "gridCoverage": [
+        {
+          "west": -88,
+          "south": 40,
+          "east": -44,
+          "north": 60
+        },
+        {
+          "west": -142,
+          "south": 47,
+          "east": -88,
+          "north": 60
+        },
+        {
+          "west": -142,
+          "south": 60,
+          "east": -44,
+          "north": 75
+        },
+        {
+          "west": -142,
+          "south": 75,
+          "east": -44,
+          "north": 84
+        }
+      ],
       "areaWest": -141.01,
       "areaSouth": 41.67,
       "areaEast": -52.62,
       "areaNorth": 83.17,
       "epsgOperationCode": 1313,
       "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=ca_nrc_ntv2_0.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg",
-      "requiredGrids": ["ca_nrc_ntv2_0.tif"]
+      "requiredGrids": [
+        "ca_nrc_ntv2_0.tif"
+      ]
     },
     {
       "wkid": 1454,
@@ -134,7 +135,9 @@
       "areaNorth": 22.24,
       "epsgOperationCode": 1454,
       "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=us_noaa_hawaii.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg",
-      "requiredGrids": ["us_noaa_hawaii.tif"]
+      "requiredGrids": [
+        "us_noaa_hawaii.tif"
+      ]
     },
     {
       "wkid": 1461,
@@ -148,7 +151,9 @@
       "areaNorth": 18.52,
       "epsgOperationCode": 1461,
       "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=us_noaa_prvi.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg",
-      "requiredGrids": ["us_noaa_prvi.tif"]
+      "requiredGrids": [
+        "us_noaa_prvi.tif"
+      ]
     }
   ]
 }

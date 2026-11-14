@@ -158,7 +158,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
             if (_datumTransformationCatalog.HasAreaOfUse(sourceSrid, targetSrid))
             {
-                // The envelope is in no catalog area, or it meets more than one.
+                // No region contains the envelope, or matching regions have equal priority.
                 // Do not fall back to the CONUS NAD27 grid.
                 return null;
             }
