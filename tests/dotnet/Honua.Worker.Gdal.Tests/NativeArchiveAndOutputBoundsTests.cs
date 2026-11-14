@@ -123,6 +123,25 @@ public sealed class NativeArchiveAndOutputBoundsTests : IDisposable
     }
 
     [UnitTest]
+    public async Task SourceOgr_EntryWithCrcMismatch_IsRejectedBeforeOgrRuns()
+    {
+        // A stored entry with one payload byte flipped: headers and sizes stay valid, only the
+        // CRC32 is wrong. .NET 11 validates the CRC on read and throws InvalidDataException,
+        // which must surface as an input failure, not a crash or a half-extracted dataset.
+        var zip = CreateZip(CompressionLevel.NoCompression, ("roads.geojson", Encoding.UTF8.GetBytes(GeoJson)));
+        var payloadAt = zip.AsSpan().IndexOf(Encoding.UTF8.GetBytes(GeoJson));
+        payloadAt.Should().BePositive();
+        zip[payloadAt + 2] ^= 0x01;
+        var runner = WriteGeoJsonOutput();
+
+        var result = await ExecuteSourceOgrAsync(runner, zip, Options());
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("could not be read");
+        runner.Invocations.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public async Task SourceOgr_EntryCountAboveConfiguredLimit_IsRejectedBeforeOgrRuns()
     {
         var zip = CreateZip(

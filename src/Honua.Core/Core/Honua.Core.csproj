@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>$(HonuaTargetFramework)</TargetFramework>
+    <TargetFrameworks>$(HonuaPluginTargetFrameworks)</TargetFrameworks>
     <DisableMicrosoftExtensionsLoggingSourceGenerator>false</DisableMicrosoftExtensionsLoggingSourceGenerator>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Documentation and minor analyzer cleanup is still in progress for this package. -->

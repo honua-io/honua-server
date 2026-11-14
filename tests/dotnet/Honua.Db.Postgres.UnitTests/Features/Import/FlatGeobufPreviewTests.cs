@@ -76,6 +76,8 @@ public sealed class FlatGeobufPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.FlatGeobuf);
         preview.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.StoredSrid.Should().Be(4326);
         preview.TotalFeatureCount.Should().Be(1);
     }
 
@@ -93,6 +95,8 @@ public sealed class FlatGeobufPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.FlatGeobuf);
         preview.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.StoredSrid.Should().Be(4326);
         preview.TotalFeatureCount.Should().Be(0);
     }
 
@@ -108,6 +112,8 @@ public sealed class FlatGeobufPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.FlatGeobuf);
         preview.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.StoredSrid.Should().Be(4326);
     }
 
     [Fact]
@@ -122,6 +128,34 @@ public sealed class FlatGeobufPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.FlatGeobuf);
         preview.DetectedSrid.Should().Be(32632);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(32632);
+        preview.CoordinateSystem.StoredSrid.Should().Be(32632);
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_FlatGeobuf_UnknownAuthority_ReportsDeclaredSourceNeedingOverride()
+    {
+        await using var stream = CreateFlatGeobufStreamWithAuthorityCrs("CUSTOM", "MYCRS");
+
+        var preview = await CreateService().PreviewFileAsync(stream, "unknown_authority.fgb");
+
+        preview.CoordinateSystem!.DetectedSrid.Should().BeNull();
+        preview.CoordinateSystem.SourceCrsDeclared.Should().BeTrue();
+        preview.CoordinateSystem.DetectionMethod.Should().Be("file-metadata");
+        preview.CoordinateSystem.RequiresSourceOverride.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_FlatGeobuf_DeclaredUnresolvableWkt_ReportsDeclaredSourceNeedingOverride()
+    {
+        await using var stream = CreateFlatGeobufStreamWithWktCrs("LOCAL_CS[\"site grid\"]");
+
+        var preview = await CreateService().PreviewFileAsync(stream, "declared_wkt.fgb");
+
+        preview.CoordinateSystem!.DetectedSrid.Should().BeNull();
+        preview.CoordinateSystem.SourceCrsDeclared.Should().BeTrue();
+        preview.CoordinateSystem.DetectionMethod.Should().Be("file-metadata");
+        preview.CoordinateSystem.RequiresSourceOverride.Should().BeTrue();
     }
 
     [Fact]
@@ -215,9 +249,10 @@ public sealed class FlatGeobufPreviewTests
     public void ReadCrsInfo_NumericCode_ReturnsSridWithoutWkt()
     {
         using var stream = CreateFlatGeobufStreamWithCrs(4326);
-        var (srid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfo(stream);
+        var (srid, crsWkt, declared) = FlatGeobufFormatReader.ReadCrsInfo(stream);
         srid.Should().Be(4326);
         crsWkt.Should().BeNull();
+        declared.Should().BeTrue();
     }
 
     [Fact]
@@ -225,9 +260,10 @@ public sealed class FlatGeobufPreviewTests
     {
         var wkt = "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\"],AUTHORITY[\"EPSG\",\"4326\"]]";
         using var stream = CreateFlatGeobufStreamWithWktCrs(wkt);
-        var (srid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfo(stream);
+        var (srid, crsWkt, declared) = FlatGeobufFormatReader.ReadCrsInfo(stream);
         srid.Should().BeNull();
         crsWkt.Should().Be(wkt);
+        declared.Should().BeTrue();
     }
 
     [Fact]
@@ -487,7 +523,12 @@ public sealed class FlatGeobufPreviewTests
         var builder = new FlatBufferBuilder(512);
         var orgOffset = builder.CreateString(org);
         var codeStringOffset = builder.CreateString(codeString);
-        var crsOffset = FlatGeobuf.Crs.CreateCrs(builder, orgOffset, 0, default, default, default, codeStringOffset);
+        return CreateHeaderOnlyFlatGeobufStream(
+            builder, FlatGeobuf.Crs.CreateCrs(builder, orgOffset, 0, default, default, default, codeStringOffset));
+    }
+
+    private static MemoryStream CreateHeaderOnlyFlatGeobufStream(FlatBufferBuilder builder, Offset<FlatGeobuf.Crs> crsOffset)
+    {
         FlatGeobuf.Header.StartHeader(builder);
         FlatGeobuf.Header.AddGeometryType(builder, FlatGeobuf.GeometryType.Point);
         FlatGeobuf.Header.AddCrs(builder, crsOffset);

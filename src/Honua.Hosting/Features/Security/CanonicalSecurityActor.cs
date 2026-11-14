@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Infrastructure.Authentication;
 
 namespace Honua.Infrastructure.Security;
@@ -161,8 +162,9 @@ internal static class CanonicalSecurityActor
 
     internal static bool IsRequestBindingProjection(Claim claim) =>
         IsFrameworkOwnedClaim(claim)
-        && claim.Type is CanonicalActorClaim or EffectiveTenantClaim or ScopeCeilingClaim
-            or AuthenticationSchemeClaim or "honua:issuer";
+        && (claim.Type is CanonicalActorClaim or EffectiveTenantClaim or ScopeCeilingClaim
+            or AuthenticationSchemeClaim or "honua:issuer"
+            || (claim.Type == ClaimTypes.Role && claim.Value == AgentApprovalRule.AgentRole));
 
     internal static string ResolveScopeCeiling(ClaimsPrincipal principal)
     {

@@ -21,7 +21,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-public sealed class StudioDraftOperationRuntimeTests
+public sealed partial class StudioDraftOperationRuntimeTests
 {
     [Fact]
     public void PublicationRequest_UsesStudioApprovalLane()
@@ -1011,7 +1011,7 @@ public sealed class StudioDraftOperationRuntimeTests
         bridge.Request!.OperationId.Should().Be(StudioDraftOperations.Delete);
         bridge.Context!.ScopeGoverned.Should().BeTrue();
         bridge.Context.RecognizedScopes.Should().Equal("honua.mcp.delete");
-        await lifecycle.DidNotReceiveWithAnyArgs().DeleteDraftAsync(default, default);
+        await lifecycle.DidNotReceiveWithAnyArgs().DeleteDraftAsync(default, CancellationToken.None);
     }
 
     [UnitTest]

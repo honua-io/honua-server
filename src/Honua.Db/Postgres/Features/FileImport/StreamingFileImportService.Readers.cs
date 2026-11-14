@@ -17,6 +17,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
 
@@ -141,7 +142,7 @@ internal sealed partial class StreamingFileImportService
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT * FROM {QuoteIdentifier(layer.TableName)}";
+        command.CommandText = $"SELECT * FROM {SqlIdentifier.QuoteIdentifier(layer.TableName)}";
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var geometryOrdinal = reader.GetOrdinal(layer.GeometryColumn);

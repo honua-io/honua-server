@@ -41,7 +41,6 @@
       service dependencies that are not already in the transitive closure.
     -->
     <PackageReference Include="Geospatial.Grpc" />
-    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
   <ItemGroup>

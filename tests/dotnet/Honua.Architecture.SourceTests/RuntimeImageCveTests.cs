@@ -23,7 +23,7 @@ public sealed class RuntimeImageCveTests
             var runtimeStage = dockerfile[dockerfile.LastIndexOf("AS runtime", StringComparison.Ordinal)..];
 
             runtimeStage.Should().NotContain("wget", $"{relativePath} runtime stage must not install or call wget");
-            dockerfile.Should().Contain("10.0-noble-chiseled-extra@sha256:");
+            dockerfile.Should().Contain("11.0.0-resolute-chiseled-extra@sha256:");
             runtimeStage.Should().NotContain("RUN ");
             runtimeStage.Should().NotContain("bash");
             runtimeStage.Should().Contain("HEALTHCHECK", relativePath);
@@ -66,7 +66,7 @@ public sealed class RuntimeImageCveTests
         runtimeStage.Should().Contain("apt-get upgrade -y");
         runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' zlib1g");
         runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' apt");
-        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' libapt-pkg6.0t64");
+        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' libapt-pkg7.0");
         runtimeStage.Should().NotContain("dpkg-query -W -f '$${Version}'");
         runtimeStage.Should().NotContain("wget");
     }
