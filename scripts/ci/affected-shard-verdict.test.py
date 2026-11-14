@@ -199,6 +199,14 @@ class AffectedShardVerdictTests(unittest.TestCase):
             self.assertEqual(outcome["receipt"]["verdict"], "red")
             self.assertEqual(outcome["exit_code"], 1)
 
+    def test_older_receipt_cannot_pass_when_the_newest_attempt_failed_without_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_passing_receipt(root / "pr-gate-affected-shard-reporting-attempt-1")
+            outcome = decide(mode="enforce", shards_result="failure", timings=verdict._load_timings(root))
+            self.assertEqual(outcome["exit_code"], 1)
+            self.assertFalse(outcome["receipt"]["test_pass"])
+
     def test_shard_artifacts_are_named_per_attempt_and_not_merged(self) -> None:
         import yaml
 
