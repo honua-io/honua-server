@@ -1,6 +1,6 @@
 'use strict';
 
-const SHUTDOWN = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z ##\[error\]The runner has received a shutdown signal\. This can happen when the runner service is stopped, or a manually started runner is canceled\.\r?$/m;
+const SHUTDOWN = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z) ##\[error\]The runner has received a shutdown signal\. This can happen when the runner service is stopped, or a manually started runner is canceled\.\r?$/m;
 const SUMMARY_STEPS = new Map([
   ['Test Suite Summary', new Set(['Verify server shard execution receipts', 'Check required test job results'])],
   ['CI Gate', new Set(['Check required job results'])],
@@ -18,7 +18,14 @@ async function shutdownJob({ github, repo, job }) {
   if (!job.labels?.includes('honua-heavy') || job.conclusion !== 'failure') return false;
   const response = await github.rest.actions.downloadJobLogsForWorkflowRun({ ...repo, job_id: job.id });
   if (typeof response.data !== 'string') throw new Error(`Unreadable logs for job ${job.id}`);
-  return SHUTDOWN.test(response.data);
+  const signal = response.data.match(SHUTDOWN);
+  const failed = job.steps?.filter(step => step.conclusion === 'failure') || [];
+  if (!signal || failed.length !== 1) return false;
+  const timestamp = Date.parse(signal[1]);
+  const start = Date.parse(failed[0].started_at);
+  const end = Date.parse(failed[0].completed_at);
+  // Job API timestamps are truncated to seconds; logs retain subsecond precision.
+  return timestamp >= start && timestamp < end + 1000;
 }
 
 function dependentSummary(job) {

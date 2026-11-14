@@ -10,7 +10,9 @@ function fixture() {
     path: '.github/workflows/ci.yml', head_branch: 'trunk', status: 'completed',
     conclusion: 'failure', run_attempt: 1, event: 'schedule', display_title: 'CI full ' };
   const jobs = [{ id: 10, name: 'Server Tests (SensorThings)', labels: ['honua-heavy'],
-    conclusion: 'failure', status: 'completed' },
+    conclusion: 'failure', status: 'completed',
+    steps: [{ name: 'Run server test shard', conclusion: 'failure',
+      started_at: '2026-11-14T02:00:20Z', completed_at: '2026-11-14T02:15:21Z' }] },
   { id: 11, name: 'CI Gate', conclusion: 'failure', status: 'completed',
     steps: [{ name: 'Check required job results', conclusion: 'failure' }] },
   { id: 12, name: 'Build', conclusion: 'success', status: 'completed' }];
@@ -151,3 +153,23 @@ test('selective dispatch nonce cannot imitate the full-mode prefix', () => {
   const workflow = fs.readFileSync('.github/workflows/ci.yml', 'utf8');
   assert.match(workflow, /'full ' \|\| github.ref == 'refs\/heads\/trunk' && 'affected '/);
 });
+
+for (const [name, steps] of Object.entries({
+  earlierFailure: [{ name: 'Run server test shard', conclusion: 'failure',
+    started_at: '2026-11-14T02:00:20Z', completed_at: '2026-11-14T02:14:00Z' },
+  { name: 'Upload results', conclusion: 'cancelled',
+    started_at: '2026-11-14T02:14:00Z', completed_at: '2026-11-14T02:15:21Z' }],
+  twoFailures: [{ name: 'Run server test shard', conclusion: 'failure',
+    started_at: '2026-11-14T02:00:20Z', completed_at: '2026-11-14T02:14:00Z' },
+  { name: 'Upload results', conclusion: 'failure',
+    started_at: '2026-11-14T02:14:00Z', completed_at: '2026-11-14T02:15:21Z' }],
+  missingTimes: [{ name: 'Run server test shard', conclusion: 'failure' }],
+  missingSteps: [],
+})) {
+  test(`shutdown does not conceal ${name}`, async () => {
+    const f = fixture();
+    f.jobs[0].steps = steps;
+    await retryShutdown(f);
+    assert.deepEqual(f.calls, []);
+  });
+}
