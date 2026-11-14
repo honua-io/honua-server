@@ -145,6 +145,87 @@ public sealed partial class FeatureStreamEndpointsTests
         }
     }
 
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/streaming/features")]
+    [InlineData("delta")]
+    [InlineData("snapshot")]
+    [InlineData("snapshot-then-delta")]
+    public async Task WebSocket_ExpiredControlCursor_ResetsAndSnapshotsWithoutLosingSibling(string mode)
+    {
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IFeatureChangeEventStore>(FakeFeatureChangeEventStore.WithRetentionWindow(
+                FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50)));
+        await fixture.InitializeAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var socket = await fixture.CreateWebSocketClient().ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features"), timeout.Token);
+        _ = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        await SendWebSocketJsonAsync(socket,
+            """{"type":"subscribe","subscriptionId":"sibling","layerId":1}""", timeout.Token);
+        (await ReceiveWebSocketJsonAsync(socket, timeout.Token)).GetProperty("status").GetString().Should().Be("subscribed");
+        await SendWebSocketJsonAsync(socket,
+            $$"""{"type":"subscribe","subscriptionId":"expired","layerId":0,"cursor":"features:1","mode":"{{mode}}"}""",
+            timeout.Token);
+        var reset = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        reset.GetProperty("type").GetString().Should().Be("reset");
+        reset.GetProperty("reason").GetString().Should().Be("retention");
+        reset.GetProperty("head").GetString().Should().Be("features:60");
+        System.Text.Json.JsonElement frame;
+        do
+        {
+            frame = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        }
+        while (frame.GetProperty("type").GetString() is not ("snapshot-end" or "snapshot"));
+        frame.GetProperty("complete").GetBoolean().Should().BeTrue();
+        frame.GetProperty("resumeCursor").GetString().Should().Be("features:60");
+        (await ReceiveWebSocketJsonAsync(socket, timeout.Token)).GetProperty("status").GetString().Should().Be("subscribed");
+        await SendWebSocketJsonAsync(socket,
+            """{"type":"unsubscribe","subscriptionId":"sibling"}""", timeout.Token);
+        var sibling = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        sibling.GetProperty("status").GetString().Should().Be("unsubscribed");
+        sibling.GetProperty("subscriptionId").GetString().Should().Be("sibling");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_EmittedResumeCursor_ReplaysInterveningEventWithoutEpochReset()
+    {
+        var store = new FakeFeatureChangeEventStore();
+        for (var id = 1; id <= 2; id++)
+        {
+            store.Append(new FeatureChangeEventRequest
+            {
+                ServiceId = "test", LayerId = 0, ObjectId = id, Operation = "update",
+                Protocol = "rest", RequestId = $"roundtrip-{id}"
+            });
+        }
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IFeatureChangeEventStore>(store);
+        await fixture.InitializeAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        string checkpoint;
+        using (var socket = await fixture.CreateWebSocketClient().ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features?layers=0&cursor=features:1"), timeout.Token))
+        {
+            var delivered = await ReadWebSocketAfterStatusesAsync(socket, timeout.Token);
+            delivered.GetProperty("objectId").GetInt64().Should().Be(2);
+            checkpoint = delivered.GetProperty("resumeCursor").GetString()!;
+            checkpoint.Should().Be("features:2");
+        }
+        store.Append(new FeatureChangeEventRequest
+        {
+            ServiceId = "test", LayerId = 0, ObjectId = 3, Operation = "update",
+            Protocol = "rest", RequestId = "roundtrip-3"
+        });
+        using var resumed = await fixture.CreateWebSocketClient().ConnectAsync(
+            new Uri($"ws://localhost/api/v1/streaming/features?layers=0&cursor={checkpoint}"), timeout.Token);
+        var replay = await ReadWebSocketAfterStatusesAsync(resumed, timeout.Token);
+        replay.GetProperty("type").GetString().Should().Be("feature-change");
+        replay.GetProperty("objectId").GetInt64().Should().Be(3);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_ExpiredDeltaCursor_SendsRetentionResetThenSnapshot()

@@ -15,6 +15,8 @@ internal sealed record FeatureStreamEnvelope
     // The cursor is the store position, not a per-subscription sequence, because a filtered subscription skips values.
     public required long Cursor { get; init; }
 
+    public string ResumeCursor => FeatureStreamCursor.Format(Cursor);
+
     // Null when the path has no subscription sequence; absence is not sequence zero.
     public long? Sequence { get; init; }
 
@@ -165,6 +167,9 @@ internal sealed record FeatureStreamSnapshotEndFrame
 
     public required long Cursor { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ResumeCursor => Complete ? FeatureStreamCursor.Format(Cursor) : null;
+
     public required long FeatureCount { get; init; }
 
     // The client must not treat a truncated baseline as authoritative state.
@@ -182,6 +187,9 @@ internal sealed record FeatureStreamSnapshotFrame
     public required long Sequence { get; init; }
 
     public required long Cursor { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ResumeCursor => Complete ? FeatureStreamCursor.Format(Cursor) : null;
 
     public required string Reason { get; init; }
 

@@ -111,8 +111,8 @@ internal static partial class FeatureStreamEndpoints
                 ServiceId = begin.ServiceId,
                 LayerIds = begin.LayerIds,
                 FeatureCount = 0,
-                // False is one byte longer than true, so it safely reserves either outcome.
-                Complete = false,
+                // Reserve the complete frame, including its resumable checkpoint.
+                Complete = true,
                 Features = [],
                 // The emitted frame receives a fresh UtcNow timestamp. Reserve the longest
                 // DateTimeOffset JSON representation so fractional-second trimming can never
@@ -594,9 +594,10 @@ internal static partial class FeatureStreamEndpoints
             Sequence = sink.BatchesFrames ? beginFrame.Sequence : long.MaxValue,
             Cursor = baselineCursor,
             FeatureCount = 0,
-            Complete = false
+            Complete = true
         };
-        var fixedBytes = sink.MeasureFixedBytes(beginFrame, measuredEndFrame);
+        // Reserve the complete checkpoint and one extra byte for an incomplete boolean.
+        var fixedBytes = sink.MeasureFixedBytes(beginFrame, measuredEndFrame) + 1;
         if (fixedBytes > options.MaxSnapshotBytes)
         {
             return new SnapshotEmitResult(

@@ -858,7 +858,7 @@ internal static partial class FeatureStreamEndpoints
         // Snapshot-then-delta decision runs before the subscription is registered so the
         // add can be paused for the whole baseline-plus-catch-up window.
         string? snapshotReason = null;
-        if (IsSnapshotMode(mode))
+        if (replayCursor.HasValue || IsSnapshotMode(mode))
         {
             try
             {
@@ -868,6 +868,17 @@ internal static partial class FeatureStreamEndpoints
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                return;
+            }
+        }
+
+        if (snapshotReason is not null && replayCursor.HasValue)
+        {
+            var recoveryScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, filter);
+            if (recoveryScopeError is not null)
+            {
+                await SendWebSocketErrorAsync(webSocket, session.WriteLock, "invalid-subscription",
+                    recoveryScopeError, subscriptionId, cancellationToken).ConfigureAwait(false);
                 return;
             }
         }
@@ -945,6 +956,16 @@ internal static partial class FeatureStreamEndpoints
         {
             try
             {
+                if (replayCursor.HasValue)
+                {
+                    await SendWebSocketJsonAsync(webSocket, session.WriteLock,
+                        JsonSerializer.SerializeToUtf8Bytes(new FeatureStreamResetFrame
+                        {
+                            Reason = RealtimeResetReasons.Retention,
+                            Head = FeatureStreamCursor.Format(await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false))
+                        }, FeatureStreamJsonContext.Default.FeatureStreamResetFrame), cancellationToken).ConfigureAwait(false);
+                }
+
                 var snapshotResult = await EmitSnapshotAsync(
                     deps,
                     logger,
