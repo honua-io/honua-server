@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Realtime;
+using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -15,6 +16,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 
 namespace Honua.Server.Tests.Realtime;
 
@@ -71,6 +73,44 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task HttpEditsOnTaskA_ReachTaskBSse_OnceInOrderWithinTarget()
+        => await VerifyHttpDeliveryAsync(TimeSpan.FromMilliseconds(500));
+
+    [IntegrationTest(Timeout = 240000)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task ListenerKilledDuringHttpEdits_TaskBSseLosesNothingAndListenerReconnects()
+    {
+        var listener = _taskB.GetService<RealtimeListener>();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        while (!listener.IsConnected)
+        {
+            await Task.Delay(20, timeout.Token);
+        }
+        var reconnects = listener.Reconnects;
+        var processId = listener.ProcessId;
+        processId.Should().BeGreaterThan(0);
+
+        await VerifyHttpDeliveryAsync(TimeSpan.FromMilliseconds(1500), async (ordinal, cancellationToken) =>
+        {
+            if (ordinal != Edits / 2)
+            {
+                return;
+            }
+            await using var connection = new NpgsqlConnection(_taskB.DatabaseConnectionProvider.GetConnectionString());
+            await connection.OpenAsync(cancellationToken);
+            await using var command = new NpgsqlCommand("SELECT pg_terminate_backend(@pid)", connection);
+            command.Parameters.AddWithValue("pid", processId);
+            (await command.ExecuteScalarAsync(cancellationToken)).Should().Be(true);
+        });
+
+        while (!listener.IsConnected || listener.Reconnects <= reconnects)
+        {
+            await Task.Delay(20, timeout.Token);
+        }
+    }
+
+    private async Task VerifyHttpDeliveryAsync(
+        TimeSpan latencyTarget, Func<int, CancellationToken, Task>? beforeEdit = null)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
         using var writer = _taskA.CreateAdminClient();
@@ -81,6 +121,10 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         var committed = new Dictionary<long, long>();
         for (var i = 0; i < Edits; i++)
         {
+            if (beforeEdit is not null)
+            {
+                await beforeEdit(i, timeout.Token);
+            }
             var startedAt = Stopwatch.GetTimestamp();
             committed.Add(await AddAsync(writer, i, timeout.Token), startedAt);
         }
@@ -91,7 +135,7 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         // rather than understating latency when SSE beats the edit response back.
         var latencies = frames.Select(frame => Stopwatch.GetElapsedTime(committed[frame.ObjectId], frame.ReceivedAt))
             .Order().ToArray();
-        latencies[(int)Math.Ceiling(Edits * 0.95) - 1].Should().BeLessThanOrEqualTo(TimeSpan.FromMilliseconds(500));
+        latencies[(int)Math.Ceiling(Edits * 0.95) - 1].Should().BeLessThanOrEqualTo(latencyTarget);
     }
 
     [IntegrationTest(Timeout = 240000)]
