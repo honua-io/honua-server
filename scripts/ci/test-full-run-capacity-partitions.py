@@ -39,7 +39,7 @@ for contract in CONTRACTS:
     names = contract["children"]
     children = [next(shard for shard in CONFIG["shards"] if shard["name"] == name) for name in names]
     selected = verify(original, children)
-    for mutation in ("lost", "duplicate", "foreign", "budget", "trigger", "report"):
+    for mutation in ("lost", "duplicate", "foreign", "budget", "trigger", "report", "odata"):
         broken = copy.deepcopy(children)
         if mutation == "lost":
             broken[0]["filter"] += "&FullyQualifiedName!=" + min(selected[0])
@@ -52,8 +52,9 @@ for contract in CONTRACTS:
         elif mutation == "trigger":
             broken[0]["paths"] = broken[0]["paths"][1:]
         else:
+            field = "upload_operator_eval_report" if mutation == "report" else "upload_odata_evidence"
             for child in broken:
-                child["upload_operator_eval_report"] = True
+                child[field] = True
         try:
             verify(original, broken)
         except AssertionError:
@@ -68,7 +69,7 @@ for contract in CONTRACTS:
         assert original["name"] not in override["shards"]
         if set(names) & set(override["shards"]):
             assert set(names) <= set(override["shards"])
-    print(f"full-run-capacity=ok parent={original['name']} methods={list(map(len, selected))} negatives=6")
+    print(f"full-run-capacity=ok parent={original['name']} methods={list(map(len, selected))} negatives=7")
 
 for field in ("artifact_suffix", "log_name", "shard_name"):
     assert len({shard[field] for shard in CONFIG["shards"]}) == len(CONFIG["shards"]), field
