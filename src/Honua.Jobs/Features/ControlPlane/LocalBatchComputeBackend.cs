@@ -83,6 +83,7 @@ internal sealed class LocalBatchComputeBackend(
         }
 
         var mappedStatus = job.Spec.Kind is ExecutionJobKind.Export or ExecutionJobKind.TileCache
+            or ExecutionJobKind.GeoservicesImport or ExecutionJobKind.GeoServerImport
             ? job.Status
             : MapStatus(progress.Status, job.Status);
         return new BatchComputeObservation

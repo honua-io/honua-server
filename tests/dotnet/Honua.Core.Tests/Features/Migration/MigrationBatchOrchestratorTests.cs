@@ -643,9 +643,7 @@ public sealed class MigrationBatchOrchestratorTests
     {
         private readonly FakeProgressStore<GeoservicesImportProgress> _progress = new();
         private readonly FakeProgressStore<GeoservicesImportRequest> _requests = new();
-        private readonly FakeQueue _queue = new();
-
-        public IDistributedJobQueueService JobQueue => _queue;
+        private readonly List<string> _queue = [];
 
         public IDistributedLeaderElection LeaderElection => throw new NotSupportedException();
 
@@ -653,7 +651,22 @@ public sealed class MigrationBatchOrchestratorTests
 
         public IDistributedProgressStore<GeoservicesImportRequest> RequestStore => _requests;
 
-        public IReadOnlyList<string> Queue => _queue.Enqueued;
+        public IReadOnlyList<string> Queue => _queue;
+
+        public async Task SubmitAsync(GeoservicesImportRequest request, GeoservicesImportProgress initialProgress,
+            CancellationToken cancellationToken = default)
+        {
+            await _requests.SetProgressAsync(request.JobId, request, cancellationToken: cancellationToken);
+            if (await _progress.GetProgressAsync(request.JobId, cancellationToken) is null)
+            {
+                await _progress.SetProgressAsync(request.JobId, initialProgress, cancellationToken: cancellationToken);
+            }
+
+            _queue.Add(request.JobId);
+        }
+
+        public Task RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default)
+            => CompleteJobAsync(jobId, GeoservicesImportStatus.Cancelled);
 
         public async Task CompleteJobAsync(
             string jobId,
@@ -671,27 +684,6 @@ public sealed class MigrationBatchOrchestratorTests
             };
             await _progress.SetProgressAsync(jobId, updated);
         }
-    }
-
-    private sealed class FakeQueue : IDistributedJobQueueService
-    {
-        private readonly List<string> _enqueued = [];
-
-        public IReadOnlyList<string> Enqueued => _enqueued;
-
-        public Task EnqueueAsync(string jobId, CancellationToken cancellationToken = default)
-        {
-            _enqueued.Add(jobId);
-            return Task.CompletedTask;
-        }
-
-        public Task<string?> DequeueAsync(TimeSpan timeout, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
-
-        public Task CompleteAsync(string jobId, CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task RecoverInFlightAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task<long> GetQueueLengthAsync(CancellationToken cancellationToken = default) => Task.FromResult<long>(_enqueued.Count);
     }
 
     private sealed class FakeProgressStore<TProgress> : IDistributedProgressStore<TProgress>

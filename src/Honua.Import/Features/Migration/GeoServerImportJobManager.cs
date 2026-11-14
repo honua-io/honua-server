@@ -1,64 +1,83 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Import.Abstractions;
-using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Hosting;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
-using Honua.Core.Features.Migration.Services;
-using Honua.Core.Features.FileImport.Abstractions;
-using Honua.Core.Features.FileImport.Domain;
-using Honua.Core.Features.FileImport.Services;
-using Honua.Import;
-using Honua.Migration;
-using Honua.Import.FileImport;
-using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Redis-backed coordination for GeoServer import jobs with in-memory fallback in development and tests.
-/// </summary>
-internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>
+internal sealed class GeoServerImportJobManager
 {
     private readonly IUniversalProgressStore _universalProgressStore;
-    private readonly GeoServerImportProgressStore _progressStore;
-    private readonly ImportJobManagerState<GeoServerImportRequest, GeoServerImportProgress> _state;
+    private readonly ImportExecutionJobQueue<GeoServerImportRequest, GeoServerImportProgress> _jobs;
 
     public GeoServerImportJobManager(
         IUniversalProgressStore universalProgressStore,
-        IDistributedCache? distributedCache,
         ILogger<GeoServerImportJobManager> logger,
-        IHostEnvironment hostEnvironment,
-        ImportCoordinationStores? stores = null)
+        IExecutionJobStore? jobStore = null,
+        IJobQueue? jobQueue = null)
     {
-        _universalProgressStore = universalProgressStore;
-        _progressStore = new GeoServerImportProgressStore(universalProgressStore);
-        _state = new ImportJobManagerState<GeoServerImportRequest, GeoServerImportProgress>(
-            new ImportJobManagerContext(universalProgressStore, distributedCache, logger, hostEnvironment, stores ?? new ImportCoordinationStores()),
-            new ImportJobKeys("geoserver:import:queue", "geoserver:import:leader", "geoserver:import:request:"),
-            GeoServerImportApiJsonContext.Default.GeoServerImportRequest);
+        _universalProgressStore = universalProgressStore ?? throw new ArgumentNullException(nameof(universalProgressStore));
+        _jobs = new ImportExecutionJobQueue<GeoServerImportRequest, GeoServerImportProgress>(
+            new ImportExecutionJobKindSpec<GeoServerImportRequest, GeoServerImportProgress>(
+                ExecutionJobKind.GeoServerImport,
+                GeoServerImportApiJsonContext.Default.GeoServerImportRequest,
+                GeoServerImportApiJsonContext.Default.GeoServerImportProgress,
+                progress => IsTerminalStatus(progress.Status),
+                ProjectEndedJob),
+            new GeoServerImportProgressStore(universalProgressStore),
+            universalProgressStore,
+            jobStore,
+            jobQueue,
+            logger);
     }
 
-    public bool CanAcceptNewJobs => _state.CanAcceptNewJobs;
+    internal IDistributedProgressStore<GeoServerImportProgress> ProgressStore => _jobs.ProgressStore;
 
-    internal IDistributedJobQueueService JobQueue => _state.JobQueue;
-    internal IDistributedLeaderElection LeaderElection => _state.LeaderElection;
-    internal IDistributedProgressStore<GeoServerImportProgress> ProgressStore => _progressStore;
-    internal IDistributedProgressStore<GeoServerImportRequest> RequestStore => _state.RequestStore;
-    internal bool IsClusterDurable => _state.IsClusterDurable;
+    internal Task SubmitAsync(
+        GeoServerImportRequest request,
+        GeoServerImportProgress initialProgress,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return _jobs.SubmitAsync(request.JobId, request, initialProgress, "geoserver-import", cancellationToken);
+    }
 
-    IDistributedJobQueueService IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>.JobQueue => JobQueue;
-    IDistributedLeaderElection IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>.LeaderElection => LeaderElection;
-    IDistributedProgressStore<GeoServerImportProgress> IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>.ProgressStore => ProgressStore;
-    IDistributedProgressStore<GeoServerImportRequest> IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>.RequestStore => RequestStore;
+    internal Task RequestCancellationAsync(string jobId, CancellationToken cancellationToken)
+        => _jobs.RequestCancellationAsync(jobId, cancellationToken);
+
+    internal GeoServerImportRequest? ReadRequest(ExecutionJobRecord job) => _jobs.ReadRequest(job);
 
     internal Task<ProgressCompareAndSetResult> TryTransitionAsync(
         string jobId, GeoServerImportProgress progress, OperationStatus expectedStatus,
         CancellationToken cancellationToken)
-        => _universalProgressStore.TrySetProgressAsync(new OperationProgressWrite(jobId, progress, TimeSpan.FromHours(24)), expectedStatus, cancellationToken);
+        => _universalProgressStore.TrySetProgressAsync(
+            new OperationProgressWrite(jobId, progress, ImportExecutionJobQueue<GeoServerImportRequest, GeoServerImportProgress>.Retention),
+            expectedStatus,
+            cancellationToken);
+
+    internal static bool IsTerminalStatus(GeoServerImportStatus status)
+        => status is GeoServerImportStatus.Completed or GeoServerImportStatus.Failed or GeoServerImportStatus.Cancelled;
+
+    // The worker writes the terminal progress itself; this covers a worker that stopped first.
+    private static GeoServerImportProgress ProjectEndedJob(GeoServerImportProgress progress, ExecutionJobRecord job)
+        => job.Status == ExecutionJobStatus.Cancelled
+            ? progress with
+            {
+                Status = GeoServerImportStatus.Cancelled,
+                CompletedAt = job.CompletedAt ?? job.UpdatedAt,
+                CurrentPhase = "Import cancelled"
+            }
+            : progress with
+            {
+                Status = GeoServerImportStatus.Failed,
+                CompletedAt = job.CompletedAt ?? job.UpdatedAt,
+                ErrorMessage = job.ErrorMessage ?? "Import failed.",
+                CurrentPhase = "Import failed"
+            };
 }
