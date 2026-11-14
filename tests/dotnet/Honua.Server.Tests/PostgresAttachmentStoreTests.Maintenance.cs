@@ -3,6 +3,9 @@
 
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.Server.Tests.Infrastructure;
 
@@ -41,6 +44,35 @@ public partial class PostgresAttachmentStoreTests
         Assert.False(await _fileStorage.ExistsAsync(original.StoragePath));
         Assert.True(await _fileStorage.ExistsAsync(current.StoragePath));
         await AssertMaintenanceQueuesEmptyAsync(expired.SessionId);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AttachmentMaintenance_DeleteReturnsFalse_RetainsOnlyExistingObjects(bool exists)
+    {
+        const string path = "retired-object";
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.ExistsAsync(path, Arg.Any<CancellationToken>()).Returns(exists);
+        var store = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource), storage,
+            NullLogger<PostgresAttachmentStore>.Instance, _schemaName,
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO "{_schemaName}".import_attachment_cleanup (storage_path, layer_id, feature_id)
+            VALUES ('{path}', {TestLayerId}, {TestFeatureId});
+            """);
+        await store.DrainPendingAttachmentCleanupAsync(CancellationToken.None);
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var count = new Npgsql.NpgsqlCommand(
+            $"SELECT count(*) FROM \"{_schemaName}\".import_attachment_cleanup", connection);
+        Assert.Equal(exists ? 1L : 0L, await count.ExecuteScalarAsync());
+        if (exists)
+        {
+            storage.DeleteAsync(path, Arg.Any<CancellationToken>()).Returns(true);
+            await store.DrainPendingAttachmentCleanupAsync(CancellationToken.None);
+            Assert.Equal(0L, await count.ExecuteScalarAsync());
+        }
     }
 
     private async Task<string> UploadMaintenanceReplacementAsync()

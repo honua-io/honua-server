@@ -274,7 +274,12 @@ internal sealed partial class PostgresAttachmentStore
                     var isReferenced = await referenced.ExecuteScalarAsync(CancellationToken.None).ConfigureAwait(false) is true;
                     if (!isReferenced)
                     {
-                        await RequireFileStorage().DeleteAsync(item.Path, CancellationToken.None).ConfigureAwait(false);
+                        var storage = RequireFileStorage();
+                        if (!await storage.DeleteAsync(item.Path, CancellationToken.None).ConfigureAwait(false) &&
+                            await storage.ExistsAsync(item.Path, CancellationToken.None).ConfigureAwait(false))
+                        {
+                            continue;
+                        }
                     }
 
                     await using var remove = new NpgsqlCommand($"DELETE FROM {tables.Cleanup} WHERE storage_path = $1", connection);
