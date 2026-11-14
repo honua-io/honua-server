@@ -79,6 +79,7 @@ public sealed class OperationGatewayIdempotencyTests
     }
 
     [Theory]
+    [Trait("Tier", "Fast")]
     [InlineData(false)]
     [InlineData(true)]
     public async Task RouteAsync_ApprovalTier_RenewalDoesNotAliasLiteralCallerKey(bool literalFirst)
