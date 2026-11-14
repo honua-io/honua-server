@@ -31,7 +31,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.149_CreateSecurityState.sql",
         "Honua.Server.Migrations.150_CreateOAuthClientsAndOperationProgress.sql",
         "Honua.Server.Migrations.154_CreatePackageDraftsAndMcpSessions.sql",
-        "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql"
+        "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql",
+        "Honua.Server.Migrations.161_CreateOpsNotificationSchedules.sql"
     ];
 
     private readonly PostgresJobSubstrateHarness _jobs;
@@ -74,6 +75,9 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public PostgresOperationProposalStore CreateProposalStore()
         => new(new ControlPlaneStorage(_jobs.Database, Leases), Options.Create(Retention), NullLogger<PostgresOperationProposalStore>.Instance);
+
+    public PostgresOpsNotificationStore CreateNotificationStore()
+        => new(_jobs.Database);
 
     public PostgresOperationInstanceStore CreateInstanceStore()
         => new(_jobs.Database, Leases, Options.Create(Retention));
