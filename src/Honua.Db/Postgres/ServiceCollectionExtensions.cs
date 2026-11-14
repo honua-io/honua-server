@@ -364,6 +364,7 @@ internal static class ServiceCollectionExtensions
             services.AddHostedService<PostgresAttachmentMaintenanceService>();
         }
         services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IAttachmentNativeMetadataStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
         services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
         services.AddScoped<IAttachmentUploadSessionStore>(serviceProvider =>
             new PostgresAttachmentUploadSessionStore(

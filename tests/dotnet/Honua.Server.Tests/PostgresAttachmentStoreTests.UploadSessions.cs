@@ -129,11 +129,14 @@ public partial class PostgresAttachmentStoreTests
     private async Task<PostgresAttachmentUploadSessionStore> CreateUploadSessionStoreAsync()
     {
         var assembly = typeof(Program).Assembly;
-        var name = Assert.Single(assembly.GetManifestResourceNames(), name => name.EndsWith("162_CreateAttachmentUploadSessions.sql", StringComparison.Ordinal));
-        await using var stream = assembly.GetManifestResourceStream(name)!;
-        using var reader = new StreamReader(stream);
-        var sql = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", $"\"{_schemaName}\"", StringComparison.Ordinal);
-        await _fixture.ExecuteAsync(sql);
+        foreach (var filename in new[] { "162_CreateAttachmentUploadSessions.sql", "163_CreateAttachmentNativeMetadata.sql" })
+        {
+            var name = Assert.Single(assembly.GetManifestResourceNames(), name => name.EndsWith(filename, StringComparison.Ordinal));
+            await using var stream = assembly.GetManifestResourceStream(name)!;
+            using var reader = new StreamReader(stream);
+            var sql = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", $"\"{_schemaName}\"", StringComparison.Ordinal);
+            await _fixture.ExecuteAsync(sql);
+        }
         return NewUploadSessionStore();
     }
 

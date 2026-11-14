@@ -31,6 +31,7 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         var attachment = Attachment.CreateForUpload(0, request.FeatureId, request.LayerId, request.Filename,
             request.ContentType, request.ExpectedSize, preparedStoragePath, string.Join(',', request.Keywords));
         var published = await publisher.PublishUploadAsync(new AttachmentPublicationTransaction(connection, transaction, cancellationToken), attachment, request.ReplaceAttachmentId).ConfigureAwait(false);
+        await publisher.RecordNativeMetadataAsync(new AttachmentPublicationTransaction(connection, transaction, cancellationToken), published, request).ConfigureAwait(false);
         await SaveCommitReceiptAsync(database, key, published).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return published;
