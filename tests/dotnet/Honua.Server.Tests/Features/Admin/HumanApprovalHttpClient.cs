@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -51,6 +52,19 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
                     .ConfigurePrimaryHttpMessageHandler(provider.CreateMessageHandler);
             });
 
+    public static void Configure(IWebHostBuilder builder, AdminAuthEndpointsTests.StubHttpClientFactory provider)
+    {
+        AdminAuthEndpointsTests.ConfigureGenericOidcHost(builder);
+        builder.UseSetting("Public:BaseUrl", "http://localhost");
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton<IStartupFilter>(new IsolatedApprovalClientAddress());
+            services.RemoveAll<IHttpClientFactory>();
+            services.AddHttpClient(AdminAuthEndpoints.AdminAuthHttpClient)
+                .ConfigurePrimaryHttpMessageHandler(provider.CreateMessageHandler);
+        });
+    }
+
     // Browser sessions accept cookie-authenticated writes only over HTTPS, so a real-socket fixture also
     // listens with a test certificate. API-key clients stay on plain HTTP, and approved operations replayed
     // over the TLS loopback trust the same certificate.
@@ -66,11 +80,17 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
                 listeners.Listen(IPAddress.Loopback, 0, listener => listener.UseHttps(_loopbackCertificate));
             });
 
-    public static async Task<HumanApprovalHttpClient> AuthenticateAsync(
+    public static Task<HumanApprovalHttpClient> AuthenticateAsync(
         WebAppFixture fixture, AdminAuthEndpointsTests.StubHttpClientFactory provider, string subject = "human-approver", string? tenantId = null)
+        => AuthenticateAsync(() => CreateHttpsClient(fixture), provider, subject, tenantId);
+
+    public static async Task<HumanApprovalHttpClient> AuthenticateAsync(
+        Func<HttpClient> createClient, AdminAuthEndpointsTests.StubHttpClientFactory provider, string subject = "human-approver", string? tenantId = null)
     {
         provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(subject, subject, ["admin"], tenantId);
-        var client = CreateHttpsClient(fixture);
+        var client = createClient();
+        if (client.BaseAddress?.Scheme != Uri.UriSchemeHttps)
+            client.BaseAddress = new Uri("https://localhost");
         try
         {
             using var authorize = await client.PostAsJsonAsync("/api/v1/admin/auth/providers/oidc/authorize-url", new { });

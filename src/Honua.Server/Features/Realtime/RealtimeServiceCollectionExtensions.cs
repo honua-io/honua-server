@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Realtime;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -59,38 +60,50 @@ internal static class RealtimeServiceCollectionExtensions
             var log = provider.GetRequiredService<PostgresRealtimeEventLog>();
             var dispatcher = provider.GetRequiredService<RealtimeDispatcher>();
             var presence = provider.GetRequiredService<RealtimePresenceBatcher>();
+            var leases = provider.GetService<ILeaseStore>();
             return crossNode
-                ? new PostgresRealtimeFanoutProvider(log, dispatcher, presence)
-                : new InProcessRealtimeFanoutProvider(log, dispatcher, presence);
+                ? new PostgresRealtimeFanoutProvider(log, dispatcher, presence, leases)
+                : new InProcessRealtimeFanoutProvider(log, dispatcher, presence, leases);
         });
 
         if (crossNode)
         {
-            var listenerConnectionString = configuration.GetConnectionString(RealtimeOptions.ListenerConnectionStringName);
-            services.TryAddSingleton(provider => RealtimeListener.Create(
-                string.IsNullOrWhiteSpace(listenerConnectionString)
-                    ? provider.GetService<NpgsqlDataSource>()?.ConnectionString
-                    : listenerConnectionString,
-                provider.GetRequiredService<IOptions<RealtimeOptions>>(),
-                provider.GetRequiredService<ILogger<RealtimeListener>>()));
+            AddListener(services, configuration);
         }
 
         if (hostsDatabasePollingLoops)
         {
-            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeTailBackgroundService>(
-                provider =>
-                {
-                    var hasDatabase = provider.GetService<NpgsqlDataSource>() is not null;
-                    return new RealtimeTailBackgroundService(
-                        hasDatabase ? provider.GetRequiredService<RealtimeDispatcher>() : null,
-                        hasDatabase ? provider.GetRequiredService<RealtimePresenceBatcher>() : null,
-                        hasDatabase && crossNode ? provider.GetRequiredService<RealtimeListener>() : null,
-                        provider.GetRequiredService<IOptions<RealtimeOptions>>(),
-                        provider.GetRequiredService<ILogger<RealtimeTailBackgroundService>>());
-                }));
+            AddTailService(services, configuration);
         }
 
         return services;
+    }
+
+    private static void AddTailService(IServiceCollection services, IConfiguration configuration)
+    {
+        var crossNode = UsesPostgresProvider(configuration);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeTailBackgroundService>(
+            provider =>
+            {
+                var hasDatabase = provider.GetService<NpgsqlDataSource>() is not null;
+                return new RealtimeTailBackgroundService(
+                    hasDatabase ? provider.GetRequiredService<RealtimeDispatcher>() : null,
+                    hasDatabase ? provider.GetRequiredService<RealtimePresenceBatcher>() : null,
+                    hasDatabase && crossNode ? provider.GetRequiredService<RealtimeListener>() : null,
+                    provider.GetRequiredService<IOptions<RealtimeOptions>>(),
+                    provider.GetRequiredService<ILogger<RealtimeTailBackgroundService>>());
+            }));
+    }
+
+    private static void AddListener(IServiceCollection services, IConfiguration configuration)
+    {
+        var listenerConnectionString = configuration.GetConnectionString(RealtimeOptions.ListenerConnectionStringName);
+        services.TryAddSingleton(provider => RealtimeListener.Create(
+            string.IsNullOrWhiteSpace(listenerConnectionString)
+                ? provider.GetService<NpgsqlDataSource>()?.ConnectionString
+                : listenerConnectionString,
+            provider.GetRequiredService<IOptions<RealtimeOptions>>(),
+            provider.GetRequiredService<ILogger<RealtimeListener>>()));
     }
 
     // auto follows Deployment:Mode, as the collaboration topology does.

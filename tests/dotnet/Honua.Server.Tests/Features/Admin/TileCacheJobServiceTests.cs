@@ -95,7 +95,7 @@ public sealed class TileCacheJobServiceTests
         }, schemaName: null);
         var byLayer = await service.SubmitAsync(new TileOperationStartRequest
         {
-            Operation = "delete",
+            Operation = "invalidate",
             LayerId = 42,
             TileMatrixSetId = "Web_MercatorQuad",
             Style = "a_b"
@@ -120,8 +120,7 @@ public sealed class TileCacheJobServiceTests
 
         var jobId = await service.SubmitAsync(
             SeedRequest(),
-            schemaName: null,
-            tenantScope: "public");
+            schemaName: null);
 
         jobId.Should().StartWith("tile-");
         var record = await jobStore.GetAsync(jobId);
@@ -129,7 +128,6 @@ public sealed class TileCacheJobServiceTests
         record!.Status.Should().Be(ExecutionJobStatus.Queued);
         record.Spec.Kind.Should().Be(ExecutionJobKind.TileCache);
         record.Spec.Backend.Should().Be(LocalBatchComputeBackend.BackendId);
-        record.Spec.Parameters[TileCacheJobParameterKeys.TenantScope].Should().Be("public");
 
         await jobQueue.Received(1).EnqueueAsync(jobId, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
 
@@ -149,15 +147,15 @@ public sealed class TileCacheJobServiceTests
 
         var jobId = await service.SubmitAsync(SeedRequest() with
         {
-            Operation = " DELETE ",
+            Operation = " INVALIDATE ",
             TileMatrixSetId = " WebMercatorQuad ",
             Style = " default ",
         }, schemaName: null);
 
         var record = (await jobStore.GetAsync(jobId))!;
-        record.Spec.Parameters[TileCacheJobParameterKeys.Operation].Should().Be("delete");
+        record.Spec.Parameters[TileCacheJobParameterKeys.Operation].Should().Be("invalidate");
         var progress = (await progressStore.GetProgressAsync<TileOperationProgress>(jobId))!;
-        progress.Operation.Should().Be("delete");
+        progress.Operation.Should().Be("invalidate");
         progress.TileMatrixSetId.Should().Be("WebMercatorQuad");
     }
 

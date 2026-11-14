@@ -133,7 +133,7 @@ prepare_pack() {
     "$PACK_DIR/runbook"
 
   copy_required "docs/gis/client-templates/.env.example" "$PACK_DIR/templates/.env.example"
-  copy_required "docs/user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template" "$PACK_DIR/templates/desktop/qgis/Honua-Desktop-Smoke.qgs.template"
+  copy_required "docs/guides/client-templates/qgis/Honua-Desktop-Smoke.qgs.template" "$PACK_DIR/templates/desktop/qgis/Honua-Desktop-Smoke.qgs.template"
   copy_required "docs/gis/client-templates/power-bi/Honua-OData-Smoke.pq.template" "$PACK_DIR/templates/bi/power-bi/Honua-OData-Smoke.pq.template"
   copy_required "docs/gis/client-templates/power-bi/Honua-OData-Smoke.pbix.template.md" "$PACK_DIR/templates/bi/power-bi/Honua-OData-Smoke.pbix.template.md"
   copy_required "docs/gis/client-templates/excel/Honua-OData-Smoke.pq.template" "$PACK_DIR/templates/bi/excel/Honua-OData-Smoke.pq.template"

@@ -27,13 +27,14 @@ using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.ProcessRelease;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
-internal sealed class GeoprocessingJobService : IGeoprocessingJobService
+internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
 {
     private readonly IExecutionJobStore? _jobStore;
     private readonly IUniversalProgressStore _progressStore;
@@ -816,6 +817,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // incompatible image set can still acknowledge an already-accepted keyed job (#6069).
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey, ownerId, resolvedSecurityContext.TenantId);
+        var legacyTenantJobId = resolvedKey is not null && !resumingApproved
+            && !inheritsSubmitterSecurityContext && resolvedSecurityContext.TenantId is not null
+            && _authorizer.CaptureReadScope(principal, _rbacOptions).IncludesLegacy
+                ? CreateJobId(resolvedKey, ownerId, null) : null;
         var requestFingerprint = CreateRequestFingerprint(plan);
         var workload = await _dispatcher.ResolveWorkloadAsync(
             isCustomCode,
@@ -828,16 +833,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             ? protocolMetadata
             : ResolveEffectiveProtocolControls(protocolMetadata, workload);
 
-        async Task<bool> ConfirmKeyedReplayAsync(CancellationToken replayToken)
-        {
-            if (await jobStore.GetAsync(jobId, replayToken).ConfigureAwait(false) != null)
-            {
-                return true;
-            }
-
-            var priorFormatId = JobOwnershipSecurity.CreatePriorFormatJobId("gp", resolvedKey!);
-            return await jobStore.GetAsync(priorFormatId, replayToken).ConfigureAwait(false) != null;
-        }
+        Task<bool> ConfirmKeyedReplayAsync(CancellationToken replayToken)
+            => ConfirmKeyedReplayAsyncCore(jobStore, (jobId, legacyTenantJobId, resolvedKey!), replayToken);
 
         // Resolve authorized existing submissions before charging admission/quota or
         // minting new side effects (server#4627): a caller-supplied idempotency key whose
@@ -863,6 +860,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 return existingByKey;
             }
 
+            if (legacyTenantJobId is not null
+                && await jobStore.GetAsync(legacyTenantJobId, cancellationToken).ConfigureAwait(false) is { } legacyTenantJob)
+            {
+                EnsureMatchingIdempotentRequest(
+                    legacyTenantJob, requestFingerprint, ownerId, null, effectiveProtocolMetadata);
+                EnsureGPServerReplayBinding(legacyTenantJob, gpExecution, principal);
+                legacyTenantJob = await _dispatcher.RepairLocalDispatchAsync(legacyTenantJob, jobStore, cancellationToken)
+                    .ConfigureAwait(false);
+                EnsureSubmissionDidNotRollback(legacyTenantJob);
+                return legacyTenantJob;
+            }
+
             // A keyed job written before ids were scoped by tenant and owner lives under the
             // key-only id. Replay it to its own submitter and refuse the key to anyone else, so a
             // retry that crosses that change does not execute the same request twice. Only a live
@@ -878,7 +887,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     ownedByCaller: !resumingApproved
                         && !inheritsSubmitterSecurityContext
                         && JobOwnershipSecurity.MatchesPriorFormatSubmitter(
-                            priorFormat.Audit, principal, resolvedSecurityContext.TenantId),
+                            priorFormat.Audit, principal, legacyTenantJobId is not null
+                                && priorFormat.Audit.SubmitterSecurityContext?.TenantId is null
+                                    ? null : resolvedSecurityContext.TenantId),
                     effectiveProtocolMetadata);
                 EnsureGPServerReplayBinding(priorFormat, gpExecution, principal);
                 priorFormat = await _dispatcher.RepairLocalDispatchAsync(priorFormat, jobStore, cancellationToken)
@@ -918,7 +929,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         if (isCustomCode)
         {
             (ownerScope, mintedCustomCodeToken, workload) = await _customCodeGate.ValidateMintAndInjectAsync(
-                jobId, principal, specParams, workload, cancellationToken).ConfigureAwait(false);
+                new CustomCodeSubmission(jobId, principal, specParams, resolvedSecurityContext),
+                workload, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -947,23 +959,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var partitionKey = string.IsNullOrWhiteSpace(resolvedSecurityContext.TenantId)
             ? null
             : resolvedSecurityContext.TenantId;
-        specParams.Remove(ExecutionAdmissionEvaluator.PartitionKeyParameterKey);
-        specParams.Remove(ExecutionAdmissionEvaluator.CostWeightParameterKey);
-        // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
-        // the plan's steps, overridden by any explicit gp.resource.* request values. Resolved
-        // BEFORE the admission cost weight below (#4629) so the partition throttle can charge by
-        // the plan's actual catalog-derived resource class, not merely its node count.
-        var resourceProfile = ResolveResourceProfile(
-            plan,
-            specParams,
-            isCustomCode,
-            processCatalog);
-        // #4629: a static costWeight=stepCount treats a 1-step raster/native op the same as a
-        // 1-step managed op over ten features — neither reflects real resource cost. Charging the
-        // catalog-derived vCPU class (Managed=1, Native=2, Raster=4; see GpResourceProfile) makes
-        // the partition throttle in ExecutionAdmissionEvaluator admit fewer concurrent heavy jobs
-        // per partition than light ones, while never charging less than one unit per plan step.
-        var costWeight = (double)Math.Max(plan.Steps.Count, resourceProfile.Vcpus ?? 1);
+        var catalogResources = isCustomCode ? GpResourceProfile.Empty : ResolveCatalogResources(plan, processCatalog);
+        var (resourceProfile, costWeight) = ResolveAdmissionResources(plan, specParams, catalogResources);
         var priority = ResolvePriority(specParams);
 
         // Admission reads the durable active set and the record is created afterwards; the window
@@ -1148,6 +1145,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return await GetJobForTerminalAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
     }
 
+    public ClaimsPrincipal CaptureOrphanCleanupPrincipal(string jobId, ClaimsPrincipal principal)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
+        ArgumentNullException.ThrowIfNull(principal);
+
+        return new OrphanCleanupPrincipal(jobId, principal, _authorizer.CaptureReadScope(principal, _rbacOptions));
+    }
+
+    private sealed class OrphanCleanupPrincipal(
+        string jobId,
+        ClaimsPrincipal principal,
+        TenantReadScope readScope) : ClaimsPrincipal(principal.Identities.Select(identity => new ClaimsIdentity(identity)))
+    {
+        internal string JobId { get; } = jobId;
+        internal TenantReadScope ReadScope { get; } = readScope;
+    }
+
     public async Task<ExecutionJobRecord> GetJobForTerminalAsync(
         string jobId,
         ClaimsPrincipal principal,
@@ -1189,7 +1203,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             cancellationToken).ConfigureAwait(false);
 
         var jobStore = RequireJobStore();
-        var limit = Math.Clamp(filter.Limit, 1, MaxJobListPageSize);
 
         // #2753: scope the store query to the caller for a non-admin so paging
         // is not under-filled. Without this the store returns a page of up-to-`limit` jobs
@@ -1210,17 +1223,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // tenant-scoped before pagination so the returned cursor cannot expose a foreign
         // job identifier. The cursor lets the client walk history without dupes; a page
         // may carry fewer than `limit` items after post-filtering.
+        var tenantScope = _authorizer.CaptureReadScope(principal, _rbacOptions);
         var page = await jobStore.QueryAsync(
-            new ExecutionJobQuery
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                Statuses = filter.Statuses,
-                RequestedBy = ownerScope,
-                ApplyTenantScope = true,
-                TenantId = _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId,
-                Cursor = filter.Cursor,
-                Limit = limit
-            },
+            CreateJobListQuery(filter, ownerScope, tenantScope),
             cancellationToken).ConfigureAwait(false);
 
         var items = page.Items
@@ -1254,8 +1259,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     }
 
     private bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
-        => JobOwnershipSecurity.CanAccess(job.Audit,
-            _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId, principal);
+        => principal is OrphanCleanupPrincipal cleanup
+            ? string.Equals(job.OperationId, cleanup.JobId, StringComparison.Ordinal)
+                && JobOwnershipSecurity.CanAccess(job.Audit, cleanup.ReadScope, cleanup)
+            : _authorizer.CanReadJob(job.Audit, principal, _rbacOptions);
 
     public async Task<AnalysisResultPackage> GetJobResultsAsync(
         string jobId,
@@ -1293,7 +1300,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         EnsureJobOwnership(job, principal);
 
-        if (!IsTerminal(job.Status))
+        if (!job.Status.IsTerminal())
         {
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' has not reached a terminal state (current: {job.Status}).");
@@ -1307,7 +1314,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
         }
 
-        if (!IsTerminal(refreshed.Status))
+        if (!refreshed.Status.IsTerminal())
         {
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' has not reached a terminal state (current: {refreshed.Status}).");
@@ -1381,7 +1388,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             return;
         }
 
-        if (IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
                 _progressStore, job, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -1430,7 +1437,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' was not found on re-read and could not be cancelled.");
         }
 
-        if (!IsTerminal(latest.Status))
+        if (!latest.Status.IsTerminal())
         {
             var backendResult = await _dispatcher.TryCancelViaBackendAsync(latest, jobStore, cancellationToken).ConfigureAwait(false);
             switch (backendResult.Outcome)
@@ -1464,7 +1471,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        if (IsTerminal(latest.Status))
+        if (latest.Status.IsTerminal())
         {
             if (latest.Status == ExecutionJobStatus.Cancelled)
             {
@@ -1740,33 +1747,26 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return ManagedReprojectFastPath.RequiresNativeWorker(fromSrid, toSrid);
     }
 
-    private static GpResourceProfile ResolveResourceProfile(
-        AnalysisPlan plan,
-        IReadOnlyDictionary<string, string> specParams,
-        bool isCustomCode,
-        IProcessCatalog processCatalog)
+    private static GpResourceProfile ResolveCatalogResources(AnalysisPlan plan, IProcessCatalog processCatalog)
     {
         var derived = GpResourceProfile.Empty;
-        if (!isCustomCode)
+        foreach (var step in plan.Steps)
         {
-            foreach (var step in plan.Steps)
+            if (string.IsNullOrWhiteSpace(step.ProcessId))
             {
-                if (string.IsNullOrWhiteSpace(step.ProcessId))
-                {
-                    continue;
-                }
-
-                var definition = processCatalog.GetProcess(step.ProcessId);
-                if (definition == null)
-                {
-                    continue;
-                }
-
-                derived = derived.MergeMax(GpResourceProfile.ForProcess(definition));
+                continue;
             }
+
+            var definition = processCatalog.GetProcess(step.ProcessId);
+            if (definition == null)
+            {
+                continue;
+            }
+
+            derived = derived.MergeMax(GpResourceProfile.ForProcess(definition));
         }
 
-        return derived.OverrideWith(GpResourceProfile.FromRequestParameters(specParams));
+        return derived;
     }
 
     private static ExecutionJobSpec BuildSpec(
@@ -2288,9 +2288,4 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{existing.OperationId}' submission previously failed before queueing. Retry with a new idempotency key.");
         }
     }
-
-    internal static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 }

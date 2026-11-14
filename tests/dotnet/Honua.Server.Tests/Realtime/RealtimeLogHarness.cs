@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
@@ -33,17 +35,17 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
 
     public string ConnectionString => _fixture.ConnectionString;
 
-    // applyMigration false leaves the schema without the realtime tables, as before migrations run.
-    public static async Task<RealtimeLogHarness> CreateAsync(DatabaseFixtureAdapter fixture, bool applyMigration = true)
+    public static async Task<RealtimeLogHarness> CreateAsync(DatabaseFixtureAdapter fixture)
+    {
+        var harness = await CreateWithoutMigrationAsync(fixture);
+        await harness.ApplyMigrationAsync();
+        return harness;
+    }
+
+    public static async Task<RealtimeLogHarness> CreateWithoutMigrationAsync(DatabaseFixtureAdapter fixture)
     {
         var jobs = await PostgresJobSubstrateHarness.CreateAsync(fixture, nameof(RealtimeLogHarness));
-        var harness = new RealtimeLogHarness(jobs, fixture);
-        if (applyMigration)
-        {
-            await harness.ApplyMigrationAsync();
-        }
-
-        return harness;
+        return new RealtimeLogHarness(jobs, fixture);
     }
 
     public async Task ApplyMigrationAsync(string resource = MigrationResource)
@@ -71,6 +73,8 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
     // A serving task: its dispatcher following the log, woken by its listener when it has one.
     public RealtimeTailBackgroundService CreateTail(RealtimeDispatcher dispatcher, RealtimeListener? listener, RealtimeOptions options)
         => new(dispatcher, new RealtimePresenceBatcher(Log), listener, Options.Create(options), NullLogger<RealtimeTailBackgroundService>.Instance);
+
+    public ILeaseStore CreateLeaseStore() => new PostgresLeaseStore(_jobs.CreateNodeJobStore());
 
     public string Table(string name) => _jobs.Database.Table(name);
 

@@ -93,8 +93,6 @@ public sealed class ConfigurationBindingRoundTripTests
         var configuration = BuildConfiguration(
             ("Limits:Validation:MaxVertices", "321"),
             ("Limits:Imports:BatchSize", "42"),
-            ("TileOptions:Eviction:Enabled", "true"),
-            ("TileOptions:Eviction:MaxEntries", "1000"),
             ("TileOptions:TilesetLifecycle:roads:TtlSeconds", "120"));
         var services = new ServiceCollection();
         services.AddOptions<LimitsOptions>()
@@ -108,8 +106,6 @@ public sealed class ConfigurationBindingRoundTripTests
 
         Assert.Equal(321, limits.Validation.MaxVertices);
         Assert.Equal(42, limits.Imports.BatchSize);
-        Assert.True(tiles.Eviction.Enabled);
-        Assert.Equal(1000, tiles.Eviction.MaxEntries);
         Assert.NotNull(tiles.TilesetLifecycle);
         Assert.Equal(120, tiles.TilesetLifecycle["roads"].TtlSeconds);
     }

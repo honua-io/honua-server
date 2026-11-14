@@ -362,7 +362,7 @@ internal sealed partial class JobExecutionService(
 
             // Only remove the queue entry for terminal jobs. Requeued or reclaimed
             // jobs have a queue entry that belongs to the new attempt.
-            if (IsTerminal(job.Status))
+            if (job.Status.IsTerminal())
             {
                 await jobQueue.RemoveAsync(operationId, stoppingToken).ConfigureAwait(false);
             }
@@ -1356,11 +1356,6 @@ internal sealed partial class JobExecutionService(
     private static bool IsTerminalOrNotOwnedBy(ExecutionJobRecord job, string workerId)
         => job.Status is not (ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running)
            || job.ClaimedBy != workerId;
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 
     internal static string GenerateWorkerId()
         => GenerateWorkerId(Environment.MachineName, Guid.NewGuid());
