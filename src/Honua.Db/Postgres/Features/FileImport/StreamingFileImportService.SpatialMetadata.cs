@@ -9,6 +9,12 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
+    private sealed class ImportSridValidationException(IReadOnlyList<ImportValidationIssue> issues)
+        : Exception(issues[0].Message)
+    {
+        public IReadOnlyList<ImportValidationIssue> Issues { get; } = issues;
+    }
+
     private sealed record DirectImportGuard(ImportedDatasetSpatialMetadata.Identity Identity, double? CoordinateEpoch);
     private sealed record ImportTargetPreparation
     {
@@ -73,6 +79,11 @@ internal sealed partial class StreamingFileImportService
                     connection, transaction, _schemaConfiguration.MetadataSchema, options.Schema, options.Table, "geometry",
                     identity!.Value, cancellationToken);
                 storageSrid = ResolveAppendStorageSrid(facts, options);
+                var issues = await ValidateImportSridsAsync(options.SourceSrid, storageSrid, cancellationToken);
+                if (issues.Count > 0)
+                {
+                    throw new ImportSridValidationException(issues);
+                }
             }
             if (mode == ImportLoadMode.Upsert)
             {

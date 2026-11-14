@@ -69,11 +69,16 @@ public sealed partial class DirectImportCrsContractTests
         (await query.ExecuteScalarAsync()).Should().Be(2193);
     }
 
-    private sealed record AppendImportOptions(ImportLoadMode Mode, int? TargetSrid);
+    private sealed record AppendImportOptions(ImportLoadMode Mode, int? TargetSrid)
+    {
+        public bool IncludeNullGeometry { get; init; }
+    }
 
     private async Task<ImportResult> ImportCsvAsync(string tableName, string geometry, AppendImportOptions options)
     {
-        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes($"geometry,name\n\"{geometry}\",sample\n"));
+        var csv = $"geometry,name\n\"{geometry}\",sample\n";
+        if (options.IncludeNullGeometry) csv += ",null_geometry\n";
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         await using var scope = _fixture.Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<IFileImportService>().ImportFileAsync(new ImportRequest
         {

@@ -690,6 +690,13 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             };
             return result;
         }
+        catch (ImportSridValidationException ex)
+        {
+            errorMessage = ex.Message;
+            result = ImportResult.CreateFailure(request.TableName, format ?? SupportedFileFormat.GeoJson,
+                errorMessage, stopwatch.Elapsed, warnings, ex.Issues[0].Code, ex.Issues);
+            return result;
+        }
         catch (CsvImportOptionsException ex)
         {
             // The caller-supplied CSV options could not be applied (missing/conflicting
