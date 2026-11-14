@@ -12,7 +12,6 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 
 public sealed class PortalTokenSourceValidatorTests
 {
-    [Fact]
     [UnitTest]
     public async Task IsStillValidAsync_AfterRevocation_AllPreviouslyUsedInstancesRefuse()
     {
@@ -31,12 +30,10 @@ public sealed class PortalTokenSourceValidatorTests
         (await second.IsStillValidAsync(source, CancellationToken.None)).Should().BeFalse();
     }
 
-    [Fact]
     [UnitTest]
     public Task IsStillValidAsync_AfterSuccessfulRead_MissingAuthorityRefuses() =>
         AssertAuthorityRefusesAsync(() => Task.FromResult<AdminApiKeyRecord?>(null));
 
-    [Fact]
     [UnitTest]
     public Task IsStillValidAsync_AfterSuccessfulRead_UnavailableAuthorityRefuses() =>
         AssertAuthorityRefusesAsync(() => Task.FromException<AdminApiKeyRecord?>(new InvalidOperationException("unavailable")));

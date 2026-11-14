@@ -19,8 +19,7 @@ public sealed class PortalTokenSecretAuthorityTests
 {
     private const string Password = "Initial-Password-829!";
 
-    [Theory]
-    [UnitTest]
+    [UnitTheory]
     [InlineData("aws", "rotated")]
     [InlineData("aws", "removed")]
     [InlineData("aws", "unavailable")]
