@@ -251,7 +251,10 @@ public enum ExecutionJobKind
     /// in batches on the shared execution-job queue and reports rows materialized plus the
     /// published layer id. Same queue and worker loop as <see cref="FileImport"/>.
     /// </summary>
-    LayerPublish
+    LayerPublish,
+
+    // Asynchronous admin layer export (CSV, Shapefile, GeoPackage) above the synchronous threshold.
+    Export
 }
 
 /// <summary>
@@ -1314,6 +1317,8 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
     /// </summary>
     public long Version { get; init; }
 
+    public long ManualRetryGeneration { get; init; }
+
     /// <summary>
     /// Relative operator priority.
     /// </summary>
@@ -1444,6 +1449,8 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
     /// through the execution context.
     /// </summary>
     public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> CleanupArtifactReferences { get; init; } = Array.Empty<string>();
 
     /// <summary>
     /// Receipts for already committed sink effects, also exposed in artifact references.
