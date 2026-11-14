@@ -3,6 +3,8 @@
 
 using FluentAssertions;
 using Honua.Server.Features.Infrastructure.Configuration;
+using Honua.Core.Features.RateLimiting.Abstractions;
+using Honua.Infrastructure.RateLimiting;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -27,6 +29,21 @@ public sealed class ConfigurationRuntimeMiddlewareTests
         var configure = () => app.UseSharedConfiguration();
 
         configure.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task UseRateLimiting_DatabaseBackedPolicy_DefersConstructionUntilRequests()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IRateLimitPolicyStore>(_ => throw new ArgumentException("Malformed connection string."));
+        await using var provider = services.BuildServiceProvider();
+        var app = new ApplicationBuilder(provider);
+
+        app.UseRateLimiting();
+        var build = () => app.Build();
+
+        build.Should().NotThrow();
     }
 
     [Theory]
