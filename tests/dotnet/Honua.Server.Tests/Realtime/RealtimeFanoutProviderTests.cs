@@ -301,6 +301,7 @@ public sealed partial class RealtimeFanoutProviderTests(DatabaseFixtureAdapter d
         {
             await foreach (var _ in channel.Reader.ReadAllAsync())
             {
+                // Read until the closed subscription surfaces its reason.
             }
         };
         (await drain.Should().ThrowAsync<RealtimeSubscriptionClosedException>()).Which.Reason.Should().Be(RealtimeResetReasons.SlowConsumer);
