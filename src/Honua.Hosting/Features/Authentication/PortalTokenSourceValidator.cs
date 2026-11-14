@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -15,19 +14,11 @@ internal interface IPortalTokenSourceValidator
     ValueTask<bool> IsStillValidAsync(PortalTokenSourceRecord source, CancellationToken cancellationToken);
 }
 
-// The cache is keyed by the live credential, not the token, and the window is also the worst-case revocation delay.
+// Every restore reads the credential authority; a prior successful read grants no grace period.
 internal sealed class PortalTokenSourceValidator(
-    IMemoryCache memoryCache,
-    IOptions<PortalTokenAuthenticationOptions> portalTokenOptions,
     IServiceProvider serviceProvider,
     TimeProvider? timeProvider = null) : IPortalTokenSourceValidator
 {
-    private const string CacheKeyPrefix = "portal-auth:source-version:";
-    private const string AdminPasswordCacheKey = CacheKeyPrefix + "admin-password";
-    private const string ManagedKeyCacheKeyPrefix = CacheKeyPrefix + "managed-key:";
-
-    private readonly IMemoryCache _memoryCache = memoryCache;
-    private readonly IOptions<PortalTokenAuthenticationOptions> _portalTokenOptions = portalTokenOptions;
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
@@ -52,14 +43,12 @@ internal sealed class PortalTokenSourceValidator(
 
             case PortalCredentialSourceKind.ManagedApiKey:
                 return await MatchesAsync(
-                    ManagedKeyCacheKeyPrefix + source.Reference,
                     source.Version,
                     ct => ResolveManagedKeyVersionAsync(source.Reference, ct),
                     cancellationToken).ConfigureAwait(false);
 
             case PortalCredentialSourceKind.AdminPassword:
                 return await MatchesAsync(
-                    AdminPasswordCacheKey,
                     source.Version,
                     ResolveAdminPasswordVersionAsync,
                     cancellationToken).ConfigureAwait(false);
@@ -71,7 +60,6 @@ internal sealed class PortalTokenSourceValidator(
     }
 
     private async ValueTask<bool> MatchesAsync(
-        string cacheKey,
         string? recordedVersion,
         Func<CancellationToken, Task<string?>> resolveLiveVersion,
         CancellationToken cancellationToken)
@@ -81,37 +69,23 @@ internal sealed class PortalTokenSourceValidator(
             return false;
         }
 
-        if (!_memoryCache.TryGetValue(cacheKey, out LiveSourceVersion? cached) || cached is null)
+        string? live;
+        try
         {
-            string? live;
-            try
-            {
-                live = await resolveLiveVersion(cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception exception) when (exception is not OutOfMemoryException)
-            {
-                // The credential could not be read (store outage, a rotated value that now
-                // violates the credential policy). Refuse rather than honour a snapshot.
-                return false;
-            }
-
-            cached = new LiveSourceVersion(live);
-            var window = ResolveRevalidationWindow();
-            if (window > TimeSpan.Zero)
-            {
-                _memoryCache.Set(
-                    cacheKey,
-                    cached,
-                    new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = window });
-            }
+            live = await resolveLiveVersion(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // An unavailable authority cannot validate the stored credential snapshot.
+            return false;
         }
 
-        return cached.Version is not null
-            && string.Equals(cached.Version, recordedVersion, StringComparison.Ordinal);
+        return live is not null
+            && string.Equals(live, recordedVersion, StringComparison.Ordinal);
     }
 
     private async Task<string?> ResolveManagedKeyVersionAsync(string? reference, CancellationToken cancellationToken)
@@ -167,12 +141,4 @@ internal sealed class PortalTokenSourceValidator(
 
         return string.IsNullOrEmpty(resolved) ? null : PortalCredentialSourceVersion.ForAdminPassword(resolved);
     }
-
-    private TimeSpan ResolveRevalidationWindow()
-    {
-        var seconds = _portalTokenOptions.Value.SourceRevalidationSeconds;
-        return seconds <= 0 ? TimeSpan.Zero : TimeSpan.FromSeconds(seconds);
-    }
-
-    private sealed record LiveSourceVersion(string? Version);
 }
