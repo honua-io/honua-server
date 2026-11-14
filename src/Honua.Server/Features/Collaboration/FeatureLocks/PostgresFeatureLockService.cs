@@ -4,6 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.ControlPlane;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Core.Features.Collaboration.FeatureLocks;
 using Npgsql;
 using NpgsqlTypes;
@@ -132,7 +133,7 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
             var existing = await mutation.ReadAsync(now, token).ConfigureAwait(false);
             var (result, lease) = transition(existing, now);
             await mutation.WriteAsync(lease, token).ConfigureAwait(false);
-            await transaction.CommitAsync(token).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
             return result;
         }, StatementRepeat.NotAfterSend, cancellationToken).ConfigureAwait(false);
 
