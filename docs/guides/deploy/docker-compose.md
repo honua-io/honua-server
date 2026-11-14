@@ -219,7 +219,8 @@ records, geoprocessing jobs and their queue, imports, and tile and export jobs.
 
 Redis is optional. Workflow definitions, runs, schedule claims and trigger
 cursors live in the system database, so publishing a workflow package to a
-Schedule target needs `ConnectionStrings__DefaultConnection`. Without it, the
+Schedule target needs the PostGIS data source (`DataSource__Provider=postgis`,
+the default) with `ConnectionStrings__DefaultConnection`. Without it, the
 publication is refused with a typed `dependency-unavailable` receipt naming
 `workflow-definition-store`, and no publication record is written. Publish to
 another target, or configure the system database.
