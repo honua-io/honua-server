@@ -125,6 +125,9 @@ public sealed class PublishLayerRequest
     [StringLength(63)]
     public string? GlobalIdField { get; init; }
 
+    [StringLength(63)]
+    public string? TemporalColumn { get; init; }
+
     /// <summary>Expose the configured attachment store for this resource; independent of copy fidelity and edit grants.</summary>
     public bool SupportsAttachments { get; init; }
 

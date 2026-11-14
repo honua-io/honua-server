@@ -6510,6 +6510,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishWithTemporalColumn_ReportsHistoryAndServesAsOfReads",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.AsOf_ForNonTemporalLayer_ReturnsConflict",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.AsOf_ForTemporalLayer_ReturnsCollapsedChanges",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.AsOf_WhenUnchanged_ReturnsEmptyDeterministically",
@@ -6528,6 +6529,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishWithTemporalColumn_ReportsHistoryAndServesAsOfReads",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.TemporalEndpoint_AfterGaPromotion_IsNotExperimentalGated",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.Capability_ForNonTemporalLayer_ReportsHistoryUnsupported",
         "Honua.Server.Tests.Features.Temporal.TemporalHistoryEndpointsTests.Capability_ForTemporalLayer_ReportsHistorySupported",
@@ -16966,6 +16968,8 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishRetainedTable_AdvertisesTableAndQueriesRowsWithoutSpatialMetadata",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishRetainedTable_WithSourceMetadata_PreservesDimensionsDomainsSubtypesAndRules",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishWithTemporalColumn_RejectsUnpublishedOrNonTemporalColumn",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishWithTemporalColumn_ReportsHistoryAndServesAsOfReads",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentRoundTripUsesLiveParentInsteadOfSnapshot",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.QualifiedLayerMutations_ThroughConnectionRoute_PreserveEffectiveStorageOwnership",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshLayerExtents_WithEnabledEmptyLayer_NullsLayerExtentAndKeepsServiceExtentFromNonEmptyLayer",

@@ -167,10 +167,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
             now);
         var binding = BuildPublishedStorageBinding(
             request,
-            layerId,
-            resource.Metadata.Id,
             storage,
-            now);
+            new PublishedStorageBindingContext(layerId, resource.Metadata.Id, now)
+            {
+                TemporalColumn = ResolveTemporalColumnForPublish(request.TemporalColumn, fields)
+            });
         var featurePublication = BuildPublishedPublication(
             service,
             resource,
@@ -3430,6 +3431,26 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
+    // Accepts only a published date or date-time column and returns its canonical name.
+    private static string? ResolveTemporalColumnForPublish(
+        string? requested, IReadOnlyList<LayerFieldInsert> fields)
+    {
+        if (string.IsNullOrWhiteSpace(requested))
+        {
+            return null;
+        }
+
+        var field = fields.FirstOrDefault(candidate =>
+            candidate.Name.Equals(requested.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (field?.Type is not (MetadataV2FieldType.Date or MetadataV2FieldType.DateTime))
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
+                "TemporalColumn must reference a published date or date-time column.");
+        }
+
+        return field.Name;
+    }
+
     private static MetadataV2ResourceEditing? ResolveEditingForPublish(
         LayerPublishRequest request, IReadOnlyList<LayerFieldInsert> fields)
     {
@@ -3526,13 +3547,19 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return subtypes with { SubtypeField = publishedField.Name, Subtypes = prunedSubtypes };
     }
 
+    private sealed record PublishedStorageBindingContext(int LayerId, string ResourceId, DateTimeOffset Now)
+    {
+        public string? TemporalColumn { get; init; }
+    }
+
     private MetadataV2StorageBinding BuildPublishedStorageBinding(
         LayerPublishRequest request,
-        int layerId,
-        string resourceId,
         PublishedLayerStorage storage,
-        DateTimeOffset now)
+        PublishedStorageBindingContext context)
     {
+        var layerId = context.LayerId;
+        var resourceId = context.ResourceId;
+        var now = context.Now;
         var schema = storage.Schema;
         var table = storage.Table;
 
@@ -3588,6 +3615,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             options["attributesColumn"] = StringOption("attributes");
             options["layerDiscriminatorColumn"] = StringOption(DatabaseSchema.LayerIdColumn);
+        }
+
+        // The temporal history API reports history only for bindings that name a temporal
+        // column (FeatureStorageMapping.FromMetadata).
+        if (context.TemporalColumn is not null)
+        {
+            options["temporalColumn"] = StringOption(context.TemporalColumn);
         }
 
         return new MetadataV2StorageBinding

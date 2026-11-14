@@ -25175,6 +25175,12 @@
             "maxLength": 63,
             "description": "Existing published UUID column containing edit-stable global IDs. Does not enable editing."
           },
+          "temporalColumn": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 63,
+            "description": "Published date or date-time column that marks the layer as history-capable for the temporal API."
+          },
           "supportsAttachments": {
             "type": "boolean",
             "default": false,
