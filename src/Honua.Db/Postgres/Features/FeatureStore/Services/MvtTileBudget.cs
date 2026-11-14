@@ -1,61 +1,41 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Tiles;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// One deterministic pass of the low-zoom tile budget ladder. The first pass is the
-/// historical query. Later passes snap and simplify more aggressively, drop sub-pixel
-/// lines and polygons, then drop attributes and features until the encoded tile fits
-/// <c>Limits:Tiles:MaxTileSize</c>.
-/// </summary>
-internal readonly record struct MvtTileBudgetStep(
-    int Index,
-    double SimplifyScale,
-    double MinTileUnits,
-    int? FeatureCap,
-    bool OmitAttributes)
+// A bounded tile encoding retry. Retries remove optional attributes before increasing
+// topology-preserving simplification; they never impose an adaptive feature limit.
+internal readonly record struct MvtTileBudgetStep(int Index, double SimplifyScale, bool OmitAttributes)
 {
-    /// <summary>The historical query: no extra snap, pixel filter, or attribute drop.</summary>
-    public static MvtTileBudgetStep Full { get; } = new(0, 1d, 0d, null, false);
-
-    /// <summary>True for the query that existing callers already depend on.</summary>
+    public static MvtTileBudgetStep Full { get; } = new(0, 1d, false);
     public bool IsFull => Index == 0;
 
-    /// <summary>The next stricter pass, or null when a single feature still cannot fit.</summary>
     public MvtTileBudgetStep? Next() => Index switch
     {
-        0 => new MvtTileBudgetStep(1, 4d, 1d, null, false),
-        1 => new MvtTileBudgetStep(2, 8d, 2d, 4_000, true),
-        2 => new MvtTileBudgetStep(3, 16d, 4d, 800, true),
-        3 => new MvtTileBudgetStep(4, 16d, 0d, 200, true),
-        4 => new MvtTileBudgetStep(5, 32d, 0d, 40, true),
-        5 => new MvtTileBudgetStep(6, 64d, 0d, 8, true),
-        6 => new MvtTileBudgetStep(7, 64d, 0d, 1, true),
-        // No snap and no pixel filter. Earlier passes can collapse every line and
-        // polygon; this pass keeps one original feature when attributes were the cost.
-        7 => new MvtTileBudgetStep(8, 0d, 0d, 1, true),
+        0 => new MvtTileBudgetStep(1, 0d, true),
+        1 => new MvtTileBudgetStep(2, 4d, true),
+        2 => new MvtTileBudgetStep(3, 8d, true),
+        3 => new MvtTileBudgetStep(4, 16d, true),
+        4 => new MvtTileBudgetStep(5, 32d, true),
+        5 => new MvtTileBudgetStep(6, 64d, true),
         _ => null
     };
 }
 
-/// <summary>
-/// SQL fragments for a budget pass. The full pass reproduces the existing simplification
-/// rule so a tile that already fits stays byte-identical.
-/// </summary>
+internal readonly record struct MvtGeometryEncoding(string Envelope, string Extent, string Buffer);
+
+// SQL fragments for a budget pass. The full pass reproduces the existing simplification
+// rule so a tile that already fits retains its geometry and attributes.
 internal static class MvtTileBudget
 {
-    /// <summary>
-    /// Map-unit simplification distance for a pass. Full fidelity, and a pass with no
-    /// simplify scale, return 0 and the caller keeps the geometry it already had.
-    /// <paramref name="useWebMercatorZoomFloor"/> is true only for the built-in Web Mercator
-    /// pyramid, where the zoom table is a lower bound. Operator-defined gridsets pass false
-    /// so the tolerance is that tile's own resolution.
-    /// </summary>
+    // Map-unit simplification distance for a pass. Full fidelity, and a pass with no
+    // simplify scale, return 0 and the caller keeps the geometry it already had.
+    // useWebMercatorZoomFloor is true only for the built-in Web Mercator
+    // pyramid, where the zoom table is a lower bound. Operator-defined gridsets pass false
+    // so the tolerance is that tile's own resolution.
     internal static double Tolerance(
         int zoom,
         double tileSpan,
@@ -76,35 +56,7 @@ internal static class MvtTileBudget
         return Math.Max(zoomTolerance, tileUnit) * step.SimplifyScale;
     }
 
-    /// <summary>Map units of one tile pixel times the pass's minimum visible size. 0 disables the filter.</summary>
-    internal static double MinMapUnits(double tileSpan, int tileExtent, MvtTileBudgetStep step)
-    {
-        if (step.IsFull || step.MinTileUnits <= 0 || tileSpan <= 0 || tileExtent <= 0)
-        {
-            return 0;
-        }
-
-        return step.MinTileUnits * (tileSpan / tileExtent);
-    }
-
-    /// <summary>
-    /// Feature cap for this pass. Null means the query keeps its historical limit (including
-    /// no limit). A thinning pass never exceeds the caller's configured cap.
-    /// </summary>
-    internal static int? FeatureLimit(int configuredMax, MvtTileBudgetStep step)
-    {
-        if (step.IsFull || step.FeatureCap is not int cap || cap <= 0)
-        {
-            return configuredMax > 0 ? configuredMax : null;
-        }
-
-        return configuredMax > 0 ? Math.Min(configuredMax, cap) : cap;
-    }
-
-    /// <summary>
-    /// Zoom simplification for the full pass, or snap-and-simplify for a thinning pass.
-    /// Points are not snapped: moving them by a grid cell can push them out of the tile.
-    /// </summary>
+    // Historical zoom simplification, or topology-preserving retry simplification.
     internal static string ApplySimplification(
         string geometrySql,
         MvtTileBudgetStep step,
@@ -134,52 +86,30 @@ internal static class MvtTileBudget
         return Generalize(geometrySql, Tolerance(zoom, tileSpan, tileExtent, geographic, step), parameter);
     }
 
-    /// <summary>
-    /// Snaps lines and polygons to the tolerance grid, repairs the snap, then simplifies
-    /// without opening a self-intersection. A zero tolerance leaves the expression unchanged.
-    /// </summary>
+    // Topology-preserving simplification without snapping away small geometries.
     internal static string Generalize(string geometrySql, double tolerance, Func<double, string> parameter)
+        => tolerance <= 0
+            ? geometrySql
+            : $"ST_SimplifyPreserveTopology({geometrySql}, {parameter(tolerance)})";
+
+    // Keep the original visibility set: simplification must neither add nor remove a feature.
+    internal static string EncodeGeometry(string geometrySql, string originalSql, MvtGeometryEncoding encoding)
     {
-        if (tolerance <= 0)
+        var encoded = $"ST_AsMVTGeom({geometrySql}, {encoding.Envelope}, {encoding.Extent}, {encoding.Buffer})";
+        if (geometrySql == originalSql)
         {
-            return geometrySql;
+            return encoded;
         }
 
-        var token = parameter(tolerance);
-        return string.Create(CultureInfo.InvariantCulture, $"""
-            CASE WHEN ST_Dimension({geometrySql}) = 0 THEN {geometrySql}
-            ELSE ST_SimplifyPreserveTopology(
-                ST_CollectionExtract(
-                    ST_MakeValid(ST_SnapToGrid({geometrySql}, {token})),
-                    ST_Dimension({geometrySql})::integer + 1),
-                {token})
-            END
-            """);
-    }
-
-    /// <summary>
-    /// Drops lines and polygons smaller than <paramref name="minMapUnits"/>. Points stay;
-    /// they have no extent to measure. Null when the pass does not filter.
-    /// </summary>
-    internal static string? MinSizePredicate(string geometrySql, double minMapUnits, Func<double, string> parameter)
-    {
-        if (minMapUnits <= 0)
-        {
-            return null;
-        }
-
-        var token = parameter(minMapUnits);
-        return $"(ST_Dimension({geometrySql}) = 0 OR GREATEST(ST_XMax({geometrySql}) - ST_XMin({geometrySql}), ST_YMax({geometrySql}) - ST_YMin({geometrySql})) >= {token})";
+        var original = $"ST_AsMVTGeom({originalSql}, {encoding.Envelope}, {encoding.Extent}, {encoding.Buffer})";
+        return $"CASE WHEN {original} IS NULL THEN NULL ELSE COALESCE({encoded}, {original}) END";
     }
 }
 
-/// <summary>
-/// Re-encodes a vector tile with progressively stricter passes until it fits the byte budget.
-/// A pass that already fits is returned immediately. An empty thinning pass is not a fit:
-/// the next pass samples features the pixel filter removed. The last pass keeps one feature
-/// without snapping. An empty last pass, or a last pass that is still over budget, refuses.
-/// A genuinely empty first pass still returns no tile.
-/// </summary>
+// Re-encodes a vector tile with progressively stricter passes until it fits the byte budget.
+// A pass that already fits is returned immediately. An empty retry is not a fit.
+// Exhausting the bounded ladder refuses the tile instead of returning a feature subset.
+// A genuinely empty first pass still returns no tile.
 internal static class MvtTileBudgetFitter
 {
     internal static async Task<byte[]?> ReadAsync<TQuery>(
@@ -219,8 +149,7 @@ internal static class MvtTileBudgetFitter
                 continue;
             }
 
-            // The first pass was over budget, so this tile has features. Snapping can
-            // remove every one of them; that is a refusal, not an empty tile.
+            // The first pass was over budget, so an empty retry is a refusal, not an empty tile.
             throw refusal ?? new TileSizeLimitExceededException(-1, maxTileSize);
         }
     }
