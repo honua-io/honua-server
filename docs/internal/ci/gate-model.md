@@ -1280,7 +1280,7 @@ avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
 
-### Manual Compose readiness failure evidence
+### Compose readiness failure evidence
 
 The optional `Compose Release Lifecycle` job retains all four manual readiness
 checks and their 300-second timeout. A timeout names the initial published rc.1,
@@ -1297,3 +1297,5 @@ manual tests reported one pass and one failure in 332 seconds (5.53 minutes).
 This change adds no runners or jobs: one lifecycle runner before and after.
 Live after-change readiness diagnostics and elapsed time await a new failure;
 no lifecycle rerun or runtime savings are claimed from unit validation.
+
+Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.

@@ -1,4 +1,4 @@
-"""Bounded, secret-redacted failure evidence for the manual Compose journey."""
+"""Bounded, secret-redacted failure evidence for the Compose journeys."""
 import json
 import re
 import subprocess
@@ -33,6 +33,11 @@ def readiness_diagnostics(compose, env, install):
     except (OSError, UnicodeError):
         return "readiness diagnostics unavailable (secret inventory unreadable)"
     states = capture(compose, env, ["ps", "--all", "--format", "json"])
+    logs = capture(compose, env, ["logs", "--no-color", "--tail", "80", "honua"])
+    return format_diagnostics(states, logs, values)
+
+
+def format_diagnostics(states, logs, values):
     try:
         rows = json.loads(states) if states.lstrip().startswith("[") else [
             json.loads(line) for line in states.splitlines() if line.strip()]
@@ -40,7 +45,6 @@ def readiness_diagnostics(compose, env, install):
                               ("Service", "State", "Health", "ExitCode")} for row in rows])
     except (ValueError, TypeError, AttributeError):
         states = "unavailable"
-    logs = capture(compose, env, ["logs", "--no-color", "--tail", "80", "honua"])
     errors = [redact(line, values)[:300] for line in logs.splitlines()
               if re.search(r"exception|critical|fail|error", line, re.I)]
-    return f"services={redact(states, values)[:2000]}; server errors={errors[-8:]}"
+    return f"services={redact(states, values)[:2000]}; errors={errors[-8:]}"
