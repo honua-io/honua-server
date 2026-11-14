@@ -69,7 +69,7 @@ class InstalledEventTests(unittest.TestCase):
         self.records.insert(0, self.records.pop(-2))
         with self.assertRaisesRegex(AssertionError, 'immediately'):
             self.validate()
-        self.records.insert(-1, disclosure)
+        self.records.insert(-1, copy.deepcopy(disclosure))
         with self.assertRaisesRegex(AssertionError, 'immediately'):
             self.validate()
 
