@@ -116,7 +116,9 @@ internal sealed partial class Wfs20Handler
         {
             var requestedTypes = Wfs20Utilities.ParseTypeNames(typeNames);
             var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
-            var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+            var selectedTypes = requestedTypes.Length == 0
+                ? SelectAdvertisedFeatureTypes(publishedTypes)
+                : ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (selectedTypes.Length == 0 && requestedTypes.Length > 0)
             {
                 throw new ArgumentException($"Requested feature type(s) not found: {string.Join(", ", requestedTypes)}.");
@@ -194,14 +196,10 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    /// <summary>
-    /// Selects the feature types the global WFS advertises: one per storage layer, ordered by storage layer.
-    /// A storage layer published through several WFS-enabled services (for example the compat
-    /// <c>svc-*-ogc</c> and <c>svc-*-feature</c> pair) would otherwise appear once per publication with the
-    /// same title, which clients such as OWSLib reject as ambiguous. The advertised publication is the one
-    /// with the lowest service-local layer index, then the ordinal-lowest publication ID. Every publication
-    /// typename stays resolvable when a request names it explicitly.
-    /// </summary>
+    // A storage layer published through several WFS-enabled services (the compat svc-*-ogc and
+    // svc-*-feature pair) would otherwise be listed once per publication under the same title, which
+    // OWSLib rejects as ambiguous. Only discovery listings collapse; explicit typenames and RESOURCEID
+    // requests still resolve every publication.
     private static ImmutableArray<WfsFeatureTypeDescriptor> SelectAdvertisedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes)
         => publishedTypes
@@ -236,7 +234,7 @@ internal sealed partial class Wfs20Handler
     {
         if (requestedTypes.Length == 0)
         {
-            return SelectAdvertisedFeatureTypes(publishedTypes);
+            return publishedTypes;
         }
 
         var matches = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>();

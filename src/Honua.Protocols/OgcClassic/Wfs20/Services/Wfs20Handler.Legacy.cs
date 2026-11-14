@@ -79,7 +79,9 @@ internal sealed partial class Wfs20Handler
                     : $"Unknown feature types: {string.Join(", ", unknownTypes.Select(type => $"'{type}'"))}.");
         }
 
-        var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+        var selectedTypes = requestedTypes.Length == 0
+            ? SelectAdvertisedFeatureTypes(publishedTypes)
+            : ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
         if (selectedTypes.Length == 0 && requestedTypes.Length > 0)
         {
             throw new ArgumentException($"Requested feature type(s) not found: {string.Join(", ", requestedTypes)}.");

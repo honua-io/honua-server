@@ -17,11 +17,9 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Regression for honua-server#7653: a storage layer published through two WFS-enabled services (the compat
-/// snapshot's svc-*-ogc and svc-*-feature pair) must be advertised once by the global WFS, in storage-layer
-/// order, while each publication typename stays resolvable when requested explicitly.
-/// </summary>
+// A storage layer published through two WFS-enabled services (the compat snapshot's svc-*-ogc and
+// svc-*-feature pair) is advertised once by the global WFS, in storage-layer order, while each
+// publication typename and feature id stays resolvable.
 [Collection("Database")]
 [Protocol(TestProtocols.Wfs20)]
 public sealed class Wfs20AdvertisedFeatureTypeTests
@@ -30,6 +28,14 @@ public sealed class Wfs20AdvertisedFeatureTypeTests
     private const string HiddenDuplicate = "pub-dup-ogc-0";
     private const string ProjectedPublication = "pub-a-projected";
     private static readonly string[] CapabilitiesVersions = ["2.0.0", "1.1.0"];
+    private static readonly AccessPolicy Anonymous = new() { AllowAnonymous = true };
+
+    private static readonly MetadataV2Field[] Fields =
+    [
+        new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+        new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
+        new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = false }
+    ];
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
@@ -37,7 +43,7 @@ public sealed class Wfs20AdvertisedFeatureTypeTests
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
     public async Task Wfs_GetCapabilities_StorageLayerInTwoWfsServices_IsAdvertisedOnceInStorageLayerOrder()
     {
-        await WithFixtureAsync(async fixture =>
+        await WithFixtureAsync(BuildTwoLayerProvider(), async fixture =>
         {
             foreach (var version in CapabilitiesVersions)
             {
@@ -63,7 +69,7 @@ public sealed class Wfs20AdvertisedFeatureTypeTests
     [InterfaceOperation(TestProtocols.Wfs20, "DescribeFeatureType")]
     public async Task Wfs_DescribeFeatureType_WithoutTypeNames_DescribesEachStorageLayerOnce()
     {
-        await WithFixtureAsync(async fixture =>
+        await WithFixtureAsync(BuildTwoLayerProvider(), async fixture =>
         {
             var response = await fixture.Client.GetAsync(
                 "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0");
@@ -87,7 +93,7 @@ public sealed class Wfs20AdvertisedFeatureTypeTests
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_UnadvertisedDuplicatePublication_RemainsResolvable()
     {
-        await WithFixtureAsync(async fixture =>
+        await WithFixtureAsync(BuildTwoLayerProvider(), async fixture =>
         {
             var response = await fixture.Client.GetAsync(
                 $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES={HiddenDuplicate}&COUNT=1");
@@ -97,16 +103,41 @@ public sealed class Wfs20AdvertisedFeatureTypeTests
         });
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_ResourceIdOfUnadvertisedDuplicateWithoutTypeNames_ReturnsFeature()
+    {
+        await WithFixtureAsync(BuildDuplicateOnlyProvider(), async fixture =>
+        {
+            var byTypeResponse = await fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES={HiddenDuplicate}&COUNT=1");
+            var byTypeContent = await byTypeResponse.Content.ReadAsStringAsync();
+            byTypeResponse.StatusCode.Should().Be(HttpStatusCode.OK, byTypeContent);
+            var featureId = XDocument.Parse(byTypeContent)
+                .Descendants()
+                .Select(element => element.Attributes().FirstOrDefault(attribute => attribute.Name.LocalName == "id")?.Value)
+                .First(id => id is not null && id.StartsWith(HiddenDuplicate + ".", StringComparison.Ordinal))!;
+
+            var response = await fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&RESOURCEID={Uri.EscapeDataString(featureId)}");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            content.Should().Contain($"\"{featureId}\"");
+        });
+    }
+
     private static string LocalPart(string qualifiedName)
     {
         var separator = qualifiedName.IndexOf(':', StringComparison.Ordinal);
         return separator < 0 ? qualifiedName : qualifiedName[(separator + 1)..];
     }
 
-    private static async Task WithFixtureAsync(Func<WebAppFixture, Task> body)
+    private static async Task WithFixtureAsync(TestMetadataV2GraphProvider provider, Func<WebAppFixture, Task> body)
     {
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
-            .ReplaceService<IMetadataV2GraphProvider>(BuildProvider());
+            .ReplaceService<IMetadataV2GraphProvider>(provider);
         try
         {
             await fixture.InitializeAsync();
@@ -118,34 +149,47 @@ public sealed class Wfs20AdvertisedFeatureTypeTests
         }
     }
 
-    private static TestMetadataV2GraphProvider BuildProvider()
-    {
-        var anonymous = new AccessPolicy { AllowAnonymous = true };
-        var fields = new[]
-        {
-            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
-            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
-            new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = false }
-        };
+    // Without TYPENAMES, GetFeature queries every advertised type; the projected layer has no backing
+    // table in this fixture, so RESOURCEID cases use the duplicated layer alone.
+    private static TestMetadataV2GraphProvider BuildDuplicateOnlyProvider()
+        => new(AddDuplicatedLayer(new TestMetadataV2GraphBuilder()).Build());
 
-        var graph = new TestMetadataV2GraphBuilder()
+    private static TestMetadataV2GraphProvider BuildTwoLayerProvider()
+        => new(AddProjectedLayer(AddDuplicatedLayer(new TestMetadataV2GraphBuilder())).Build());
+
+    private static TestMetadataV2GraphBuilder AddDuplicatedLayer(TestMetadataV2GraphBuilder builder)
+        => builder
             .AddResource(
                 "res-dup-layer",
                 "Test Layer",
                 MetadataV2ResourceType.FeatureDataset,
-                accessPolicy: anonymous,
-                fields: fields,
+                accessPolicy: Anonymous,
+                fields: Fields,
                 spatial: new MetadataV2ResourceSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point
                 })
+            .AddStorageBinding("binding-dup-layer", "res-dup-layer", "features", storageLayerId: WebAppFixture.TestLayerId)
+            .AddService("svc-dup-ogc", "dup_ogc", accessPolicy: Anonymous,
+                protocols: [MetadataV2ServiceProtocols.OgcFeatures, MetadataV2ServiceProtocols.Wfs20])
+            .AddService("svc-dup-feature", "dup_feature", accessPolicy: Anonymous,
+                protocols: [MetadataV2ServiceProtocols.Wfs20])
+            .AddPublication(HiddenDuplicate, "svc-dup-ogc", "res-dup-layer", layerIndex: 0,
+                storageBindingId: "binding-dup-layer", serviceLocalId: "dup_layer",
+                publicationType: MetadataV2PublicationType.WfsFeatureType)
+            .AddPublication(AdvertisedDuplicate, "svc-dup-feature", "res-dup-layer", layerIndex: 0,
+                storageBindingId: "binding-dup-layer", serviceLocalId: "dup_layer",
+                publicationType: MetadataV2PublicationType.WfsFeatureType);
+
+    private static TestMetadataV2GraphBuilder AddProjectedLayer(TestMetadataV2GraphBuilder builder)
+        => builder
             .AddResource(
                 "res-projected-layer",
                 "Projected Layer",
                 MetadataV2ResourceType.FeatureDataset,
-                accessPolicy: anonymous,
-                fields: fields,
+                accessPolicy: Anonymous,
+                fields: Fields,
                 spatial: new MetadataV2ResourceSpatial
                 {
                     SpatialReference = new MetadataV2SpatialReference
@@ -156,44 +200,11 @@ public sealed class Wfs20AdvertisedFeatureTypeTests
                     },
                     GeometryType = MetadataV2GeometryType.Point
                 })
-            .AddStorageBinding("binding-dup-layer", "res-dup-layer", "features", storageLayerId: WebAppFixture.TestLayerId)
-            .AddStorageBinding(
-                "binding-projected-layer",
-                "res-projected-layer",
-                "projected_metadata_layer",
+            .AddStorageBinding("binding-projected-layer", "res-projected-layer", "projected_metadata_layer",
                 storageLayerId: ProjectedExtentLayerCatalog.LayerId)
-            .AddService("svc-dup-ogc", "dup_ogc", accessPolicy: anonymous,
-                protocols: [MetadataV2ServiceProtocols.OgcFeatures, MetadataV2ServiceProtocols.Wfs20])
-            .AddService("svc-dup-feature", "dup_feature", accessPolicy: anonymous,
+            .AddService("svc-a-projected", "a_projected", accessPolicy: Anonymous,
                 protocols: [MetadataV2ServiceProtocols.Wfs20])
-            .AddService("svc-a-projected", "a_projected", accessPolicy: anonymous,
-                protocols: [MetadataV2ServiceProtocols.Wfs20])
-            .AddPublication(
-                HiddenDuplicate,
-                "svc-dup-ogc",
-                "res-dup-layer",
-                layerIndex: 0,
-                storageBindingId: "binding-dup-layer",
-                serviceLocalId: "dup_layer",
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
-            .AddPublication(
-                AdvertisedDuplicate,
-                "svc-dup-feature",
-                "res-dup-layer",
-                layerIndex: 0,
-                storageBindingId: "binding-dup-layer",
-                serviceLocalId: "dup_layer",
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
-            .AddPublication(
-                ProjectedPublication,
-                "svc-a-projected",
-                "res-projected-layer",
-                layerIndex: 0,
-                storageBindingId: "binding-projected-layer",
-                serviceLocalId: "projected_layer",
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
-            .Build();
-
-        return new TestMetadataV2GraphProvider(graph);
-    }
+            .AddPublication(ProjectedPublication, "svc-a-projected", "res-projected-layer", layerIndex: 0,
+                storageBindingId: "binding-projected-layer", serviceLocalId: "projected_layer",
+                publicationType: MetadataV2PublicationType.WfsFeatureType);
 }
