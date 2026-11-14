@@ -25,29 +25,32 @@ def validate_journal(receipt_path):
         assert isinstance(record['kind'], str) and record['kind'], 'Missing kind'
         assert re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z', record['at']), 'Invalid UTC timestamp'
         datetime.fromisoformat(record['at'].replace('Z', '+00:00'))
-        kind = record['kind']
-        if kind in ('phase', 'progress'):
-            assert isinstance(record['phase'], str) and len(record['phase']) <= 500, 'Invalid phase'
-        if kind == 'progress':
-            assert type(record['percent']) in (int, float) and 0 <= record['percent'] <= 100, 'Invalid percent'
-        elif kind == 'log':
-            assert record['level'] in ('info', 'warning'), 'Invalid log level'
-            assert isinstance(record['message'], str) and len(record['message']) <= 2000, 'Invalid log message'
-        elif kind == 'artifact':
-            artifact = record['artifact']
-            assert isinstance(artifact['name'], str) and artifact['name'], 'Invalid artifact name'
-            assert type(artifact['sizeBytes']) is int and artifact['sizeBytes'] >= 0, 'Invalid artifact size'
-        elif kind == 'failure':
-            assert all(isinstance(record['error'][key], str) for key in ('type', 'message')), 'Invalid error'
-        elif kind == 'truncated':
-            assert all(type(record[key]) is int and record[key] > 0 for key in ('dropped', 'maxEvents', 'maxBytes')), 'Invalid truncation disclosure'
-        elif kind == 'terminal':
-            assert seq == len(records) - 1, 'Terminal event must be last'
-            assert record['status'] in ('succeeded', 'failed', 'setupFailed', 'cancelled'), 'Invalid terminal status'
-            assert type(record['exitCode']) is int, 'Invalid terminal exit code'
-            assert record['status'] == receipt['status'], 'Terminal status disagrees with receipt'
-            assert record['exitCode'] == receipt['exitCode'], 'Terminal exit code disagrees with receipt'
-        # Unknown kinds deliberately have no payload requirements. Readers can
-        # fall back to text without preventing inspection of later known events.
+        validate_payload(record, receipt, seq == len(records) - 1)
     assert records[-1]['kind'] == 'terminal', 'Missing terminal event'
     return records
+
+
+def validate_payload(record, receipt, is_last):
+    """Validate known payloads while allowing future event kinds."""
+    kind = record['kind']
+    if kind in ('phase', 'progress'):
+        assert isinstance(record['phase'], str) and len(record['phase']) <= 500, 'Invalid phase'
+    if kind == 'progress':
+        assert type(record['percent']) in (int, float) and 0 <= record['percent'] <= 100, 'Invalid percent'
+    elif kind == 'log':
+        assert record['level'] in ('info', 'warning'), 'Invalid log level'
+        assert isinstance(record['message'], str) and len(record['message']) <= 2000, 'Invalid log message'
+    elif kind == 'artifact':
+        artifact = record['artifact']
+        assert isinstance(artifact['name'], str) and artifact['name'], 'Invalid artifact name'
+        assert type(artifact['sizeBytes']) is int and artifact['sizeBytes'] >= 0, 'Invalid artifact size'
+    elif kind == 'failure':
+        assert all(isinstance(record['error'][key], str) for key in ('type', 'message')), 'Invalid error'
+    elif kind == 'truncated':
+        assert all(type(record[key]) is int and record[key] > 0 for key in ('dropped', 'maxEvents', 'maxBytes')), 'Invalid truncation disclosure'
+    elif kind == 'terminal':
+        assert is_last, 'Terminal event must be last'
+        assert record['status'] in ('succeeded', 'failed', 'setupFailed', 'cancelled'), 'Invalid terminal status'
+        assert type(record['exitCode']) is int, 'Invalid terminal exit code'
+        assert record['status'] == receipt['status'], 'Terminal status disagrees with receipt'
+        assert record['exitCode'] == receipt['exitCode'], 'Terminal exit code disagrees with receipt'

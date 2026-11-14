@@ -16,6 +16,38 @@ import gp_devkit_publication as publication
 from gp_installed_events import validate_journal
 
 
+def test_project(run, tool, project, *, expected=0):
+    output = run(tool, 'test', '--project', str(project), expected=expected)
+    receipts = re.findall(r'^receipt : (.+)$', output, re.MULTILINE)
+    assert len(receipts) == 1, 'Expected one local authoring receipt'
+    receipt = Path(receipts[0].strip())
+    validate_journal(receipt)
+    return output, receipt
+
+
+def copy_journal(receipt, destination):
+    destination = destination.resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    for name in ('receipt.json', 'events.jsonl'):
+        shutil.copyfile(receipt.parent / name, destination / name)
+
+
+def print_package_version(directory):
+    packages = list(directory.glob('Honua.Geoprocessing.Cli.*.nupkg'))
+    if len(packages) != 1:
+        raise RuntimeError('Expected exactly one packed devkit candidate')
+    with zipfile.ZipFile(packages[0]) as package:
+        specs = [name for name in package.namelist() if name.endswith('.nuspec')]
+        if len(specs) != 1:
+            raise RuntimeError('Expected exactly one package manifest')
+        metadata = ET.fromstring(package.read(specs[0]))
+        identity = metadata.find('.//{*}id')
+        version = metadata.find('.//{*}version')
+        if identity is None or identity.text != 'Honua.Geoprocessing.Cli' or version is None or not version.text:
+            raise RuntimeError('Candidate package identity/version is missing or incorrect')
+        print(version.text)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--tool')
@@ -26,19 +58,7 @@ def main():
     parser.add_argument('--event-journals', type=Path)
     args = parser.parse_args()
     if args.package_version:
-        packages = list(args.package_version.glob('Honua.Geoprocessing.Cli.*.nupkg'))
-        if len(packages) != 1:
-            raise RuntimeError('Expected exactly one packed devkit candidate')
-        with zipfile.ZipFile(packages[0]) as package:
-            specs = [name for name in package.namelist() if name.endswith('.nuspec')]
-            if len(specs) != 1:
-                raise RuntimeError('Expected exactly one package manifest')
-            metadata = ET.fromstring(package.read(specs[0]))
-            identity = metadata.find('.//{*}id')
-            version = metadata.find('.//{*}version')
-            if identity is None or identity.text != 'Honua.Geoprocessing.Cli' or version is None or not version.text:
-                raise RuntimeError('Candidate package identity/version is missing or incorrect')
-            print(version.text)
+        print_package_version(args.package_version)
         return
     if not args.tool:
         parser.error('--tool is required for the installed journey')
@@ -99,40 +119,29 @@ def main():
             assert discovery['runnableHere'] is True, discovery
             assert any(item['name'].startswith('dependency lock') and item['status'] == 'satisfied'
                        for item in discovery['prerequisites']), discovery
-            def test_project(project_path=project, expected=0):
-                output = run(tool, 'test', '--project', str(project_path), expected=expected)
-                receipts = re.findall(r'^receipt : (.+)$', output, re.MULTILINE)
-                assert len(receipts) == 1, 'Expected one local authoring receipt'
-                receipt = Path(receipts[0].strip())
-                validate_journal(receipt)
-                return output, receipt
-
-            output, receipt = test_project()
+            output, receipt = test_project(run, tool, project)
             if args.event_journals:
-                destination = args.event_journals.resolve() / language
-                destination.mkdir(parents=True, exist_ok=True)
-                for name in ('receipt.json', 'events.jsonl'):
-                    shutil.copyfile(receipt.parent / name, destination / name)
+                copy_journal(receipt, args.event_journals / language)
             assert 'PASS  summary.json' in output and 'summary : passed' in output
             if language == 'dotnet' and os.name != 'nt':
                 # A symlinked ancestor must share the direct-build dependency graph.
                 # Windows symlinks require privileges unavailable on some consumers.
                 alias = root / 'linked authoring project'
                 alias.symlink_to(project, target_is_directory=True)
-                linked, _ = test_project(alias)
+                linked, _ = test_project(run, tool, alias)
                 assert 'PASS  summary.json' in linked and 'summary : passed' in linked
             expected = project / 'expected/summary.json'
             original = expected.read_bytes()
             broken = json.loads(original)
             broken['mean'] = 999
             expected.write_text(json.dumps(broken))
-            negative, _ = test_project(expected=1)
+            negative, _ = test_project(run, tool, project, expected=1)
             assert 'FAIL  summary.json' in negative
             expected.write_bytes(original)
-            test_project()
+            test_project(run, tool, project)
             # Recreate the ignored payload exactly as a fresh source clone must do.
             shutil.rmtree(project / '.honua/toolchain')
-            test_project()
+            test_project(run, tool, project)
             if language == 'python':
                 harness = project / '.honua/toolchain/docker/worker-customcode-python/harness'
                 run(sys.executable, '-m', 'pip', 'install', '--no-deps', str(harness), cwd=project)
