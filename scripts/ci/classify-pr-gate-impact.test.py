@@ -140,6 +140,7 @@ for governed in sorted(MODULE.LEAN_GATE_GOVERNED_DOCS):
 # changes the classifier blob that observation receipts bind.
 REFERENCE_ONLY_DOCS = frozenset(
     {
+        "docs/internal/ci/affected-shards-promotion.md",
         "docs/internal/admin-api/studio-package-lifecycle.md",
         "docs/internal/contributor/adr/0041-core-abstractions-extraction.md",
         "docs/internal/contributor/entitlement-sweep-known-gaps.md",
