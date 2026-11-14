@@ -1740,15 +1740,11 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
     "OGC API Maps Rendering and Records 1" \
   --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests" \
-    "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
-    "WFS 9" \
-  --assert-owner \
     "Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEchoTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
     "WFS 8" \
-  `# the capacity split method-split classes (including ImageServerEndpointsTests) are pinned` \
-  `# by the full-run-capacity method contracts above, which check every method.` \
+  `# Method-split classes (including Wps20EndpointsTests and ImageServerEndpointsTests) are pinned` \
+  `# by shard_partitions and full-run-capacity contracts above, which check every method.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
