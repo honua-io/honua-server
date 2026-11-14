@@ -162,7 +162,10 @@ reports them. Ready PRs require every heavy dependency to succeed and run the
 complete gate, waking the trusted Claude observer after exact-head verification
 completes.
 
-Verification workflows cancel superseded admission per PR. Review Event Bridge
+PR Gate cancels superseded admission within each PR and readiness state. Draft
+events, including a delayed push or conversion, cannot cancel a ready gate.
+`ready_for_review` starts the full gate and retains both required context names.
+Other verification workflows cancel superseded admission per PR. Review Event Bridge
 and both Review Gate Attestation jobs also cancel older events by PR identity
 across head updates. Completion payloads without a PR number stay isolated by
 run ID until the trusted resolver identifies the PR, so an unresolvable old
