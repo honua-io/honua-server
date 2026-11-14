@@ -226,7 +226,9 @@ public sealed class MetadataStandardWriterTests
     {
         var graph = CrosswalkFixtures.Graph(folder: new MetadataV2ObjectMetadata
         {
-            Id = "folder.parks", Name = "parks", Fees = "fee\u0001",
+            Id = "folder.parks",
+            Name = "parks",
+            Fees = "fee\u0001",
         });
 
         MetadataV2GraphValidator.Validate(graph).Errors.Should()
