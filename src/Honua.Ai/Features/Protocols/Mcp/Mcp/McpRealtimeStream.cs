@@ -72,9 +72,11 @@ internal static class McpRealtimeStream
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+            // Cancellation or disconnect ends the stream normally.
         }
         catch (ChannelClosedException)
         {
+            // The frame channel closed; the stream is ending.
         }
     }
 
@@ -89,9 +91,11 @@ internal static class McpRealtimeStream
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+            // Cancellation or disconnect ends the stream normally.
         }
         catch (ChannelClosedException)
         {
+            // The frame channel closed; the stream is ending.
         }
         finally
         {
@@ -120,9 +124,11 @@ internal static class McpRealtimeStream
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+            // Cancellation or disconnect ends the stream normally.
         }
         catch (ChannelClosedException)
         {
+            // The frame channel closed; the stream is ending.
         }
         finally
         {

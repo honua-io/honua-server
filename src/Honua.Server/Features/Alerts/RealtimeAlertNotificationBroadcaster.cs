@@ -149,6 +149,7 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
             }
             catch (OperationCanceledException) when (DisconnectToken.IsCancellationRequested)
             {
+                // Cancellation or disconnect ends the stream normally.
             }
         }
 
@@ -176,6 +177,7 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
             }
             catch (OperationCanceledException) when (DisconnectToken.IsCancellationRequested)
             {
+                // Cancellation or disconnect ends the stream normally.
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {

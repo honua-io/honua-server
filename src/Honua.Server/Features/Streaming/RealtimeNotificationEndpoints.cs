@@ -162,6 +162,7 @@ internal static partial class RealtimeNotificationEndpoints
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {
+            // Cancellation or disconnect ends the stream normally.
         }
         catch (GeoprocessingAuthorizationException)
         {
@@ -169,6 +170,7 @@ internal static partial class RealtimeNotificationEndpoints
         }
         catch (GeoprocessingNotFoundException)
         {
+            // The job disappeared after admission: close without another frame.
         }
         finally
         {
@@ -203,6 +205,7 @@ internal static partial class RealtimeNotificationEndpoints
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+            // Cancellation or disconnect ends the stream normally.
         }
     }
 
