@@ -2,11 +2,14 @@
 """Package the customer Compose install with a lock of immutable release images."""
 import argparse
 import hashlib
+import io
 import json
 from pathlib import Path
 import re
 import shutil
+import stat
 import tarfile
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 IMMUTABLE = re.compile(r'(?:[a-z0-9./:_-]+@)?sha256:[a-f0-9]{64}')
@@ -46,6 +49,13 @@ README = (
     '`sha256sum -c agent-files.sha256` after verifying the release archive checksum.\n'
 )
 
+# Serves the static Console bundle and terminates its local HTTPS origin (compose.console.yaml).
+CONSOLE_WEB_IMAGE = ('docker.io/nginxinc/nginx-unprivileged:1.29-alpine@sha256:'
+                     '0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6')
+CONSOLE_ENTRYPOINTS = ('index.html', 'config.json')
+CONSOLE_MAX_FILES = 20000
+CONSOLE_MAX_BYTES = 1 << 30
+
 
 def package(destination, images, version):
     if any(name not in images for name in ('server', 'executor', 'worker')):
@@ -60,7 +70,7 @@ def package(destination, images, version):
     source = (ROOT / 'docs/get-started/quickstart.md').read_text()
     compose = re.search(r'<!-- docs-validation:install.compose mode=run -->\s*```yaml\n(.*?)\n```', source, re.S).group(1)
     (destination / 'compose.yaml').write_text(compose + '\n')
-    for name in ('compose.executor.yaml', 'compose.console.yaml'):
+    for name in ('compose.executor.yaml', 'compose.console.yaml', 'console.nginx.conf'):
         shutil.copyfile(ROOT / 'docs/get-started' / name, destination / name)
     shutil.copyfile(Path(__file__).with_name('compose_quickstart.py'), destination / 'quickstart.py')
     package_proj_grids(destination)
@@ -82,6 +92,81 @@ def package_proj_grids(destination):
         shutil.copyfile(ROOT / 'docker/proj-grids' / name, grid_context / name)
 
 
+def unsafe_entry(entry):
+    name = entry.filename
+    parts = name.rstrip('/').split('/')
+    return (name.startswith('/') or '\\' in name or ':' in parts[0]
+            or any(part in ('', '.', '..') for part in parts) or stat.S_ISLNK(entry.external_attr >> 16))
+
+
+def read_console_bundle(path, expected_sha256):
+    """Checks the released Console archive before anything is written."""
+    if not re.fullmatch(r'[a-f0-9]{64}', expected_sha256 or ''):
+        raise ValueError('The Console bundle needs its release sha256 (64 lower-case hex digits)')
+    data = Path(path).read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != expected_sha256:
+        raise ValueError('The Console bundle does not match its release sha256')
+    archive = zipfile.ZipFile(io.BytesIO(data))
+    entries = archive.infolist()
+    names, folded = set(), set()
+    total = 0
+    for entry in entries:
+        name = entry.filename
+        if unsafe_entry(entry):
+            raise ValueError('The Console bundle contains an unsafe path')
+        if not entry.is_dir():
+            if name.lower() in folded:
+                raise ValueError('The Console bundle contains duplicate paths')
+            folded.add(name.lower())
+            names.add(name)
+            total += entry.file_size
+    if len(entries) > CONSOLE_MAX_FILES or total > CONSOLE_MAX_BYTES:
+        raise ValueError('The Console bundle is larger than a Console release')
+    folders = {'/'.join(name.split('/')[:depth]).lower() for name in names for depth in range(1, name.count('/') + 1)}
+    for entry in entries:
+        if entry.is_dir():
+            parts = entry.filename.rstrip('/').lower().split('/')
+            folders |= {'/'.join(parts[:depth]) for depth in range(1, len(parts) + 1)}
+    if folders & folded:
+        raise ValueError('The Console bundle uses one path as both a file and a folder')
+    if any(name not in names for name in CONSOLE_ENTRYPOINTS) or not any(n.startswith('_framework/') for n in names):
+        raise ValueError('The Console bundle is missing index.html, config.json or _framework/')
+    if '<base href="/console/"' not in archive.read('index.html').decode('utf-8', 'replace'):
+        raise ValueError('The Console bundle must be built for /console/')
+    return archive, dict(sha256=digest, files=len(names))
+
+
+def add_console_bundle(destination, console):
+    """Adds a bundle checked by read_console_bundle to a package that package() wrote."""
+    archive, receipt = console
+    extract_console_bundle(archive, destination / 'console')
+    lock_file = destination / 'images.json'
+    lock = json.loads(lock_file.read_text())
+    lock.update(consoleWeb=CONSOLE_WEB_IMAGE, consoleBundle=receipt)
+    lock_file.write_text(json.dumps(lock, indent=2) + '\n')
+    with (destination / 'README.md').open('a', encoding='utf-8') as readme:
+        readme.write('\nConsole: run `python3 quickstart.py --profile console`, then open https://localhost:18083/console/ '
+                     'and trust the locally generated certificate in `secrets/console_tls_certificate`. Sign in with '
+                     'the serving admin password in `secrets/honua_admin_password`, or set HONUA_CONSOLE_AUTH_MODE=oidc '
+                     'to use your identity provider (see the quickstart guide).\n')
+
+
+def extract_console_bundle(archive, target):
+    target.mkdir()
+    for entry in archive.infolist():
+        path = target.joinpath(*entry.filename.rstrip('/').split('/'))
+        if entry.is_dir():
+            path.mkdir(parents=True, exist_ok=True)
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with archive.open(entry) as source, open(path, 'xb') as output:
+            shutil.copyfileobj(source, output)
+    # Readable by the web server's user; the bundle holds no credentials.
+    for path in [target, *target.rglob('*')]:
+        path.chmod(0o755 if path.is_dir() else 0o644)
+
+
 def package_agent_skills(destination):
     shutil.copytree(ROOT / 'skills', destination / 'skills')
     agent_files = [destination / 'AGENTS.md']
@@ -98,14 +183,19 @@ def main():
     parser.add_argument('--server-image', required=True)
     parser.add_argument('--executor-image', required=True)
     parser.add_argument('--worker-image', required=True)
-    parser.add_argument('--console-image')
+    parser.add_argument('--console-bundle', type=Path, help='released honua-console-<version>.zip')
+    parser.add_argument('--console-bundle-sha256', help='sha256 from the bundle\'s release receipt')
     parser.add_argument('--version', required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     images = dict(server=args.server_image, executor=args.executor_image, worker=args.worker_image)
-    if args.console_image is not None:
-        images['console'] = args.console_image
+    if (args.console_bundle is None) != (args.console_bundle_sha256 is None):
+        parser.error('--console-bundle and --console-bundle-sha256 go together')
+    # Check the bundle before writing anything.
+    console = read_console_bundle(args.console_bundle, args.console_bundle_sha256) if args.console_bundle else None
     package(args.output, images, args.version)
+    if console is not None:
+        add_console_bundle(args.output, console)
     with tarfile.open(args.output.with_suffix('.tar.gz'), 'w:gz') as archive:
         for file in sorted(args.output.iterdir()):
             archive.add(file, arcname=file.name)

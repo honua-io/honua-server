@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Data;
-using System.Data.Common;
 using System.Text.Json;
 using DbUp;
 using DbUp.Helpers;
@@ -13,7 +11,7 @@ using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Npgsql;
+using Honua.TestKit.Infrastructure;
 using TestOperations = Honua.TestKit.Constants.Operations;
 
 namespace Honua.Db.Postgres.Tests.Features.Collaboration;
@@ -32,7 +30,7 @@ public sealed class PostgresSavedMapOperationLogRepositoryTests(PostgresFixture 
         try
         {
             await ApplyMigrationAsync(schema);
-            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var provider = new TestDatabaseConnectionProvider(fixture.DataSource, () => schema);
             var initial = CreateRepository(provider, schema);
 
             await initial.AppendAsync(CreateRequest("map-restart", "op-1", 0));
@@ -68,7 +66,7 @@ public sealed class PostgresSavedMapOperationLogRepositoryTests(PostgresFixture 
         try
         {
             await ApplyMigrationAsync(schema);
-            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var provider = new TestDatabaseConnectionProvider(fixture.DataSource, () => schema);
             var initial = CreateRepository(provider, schema, retainedOperationCount: 2);
 
             await initial.AppendAsync(CreateRequest("map-prune", "op-1", 0));
@@ -154,47 +152,6 @@ public sealed class PostgresSavedMapOperationLogRepositoryTests(PostgresFixture 
         }
 
         throw new DirectoryNotFoundException("Repository root could not be located.");
-    }
-
-    private sealed class TestConnectionProvider(
-        NpgsqlDataSource dataSource,
-        string schemaName) : IAdoNetDatabaseConnectionProvider
-    {
-        public string GetConnectionString() => dataSource.ConnectionString;
-
-        public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
-        {
-            var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"SET search_path TO \"{schemaName}\", public;";
-            await command.ExecuteNonQueryAsync(cancellationToken);
-            return connection;
-        }
-
-        public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
-            IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
-            CancellationToken cancellationToken = default)
-        {
-            var connection = await OpenConnectionAsync(cancellationToken);
-            try
-            {
-                var transaction = await connection.BeginTransactionAsync(isolationLevel, cancellationToken);
-                return (connection, transaction);
-            }
-            catch
-            {
-                await connection.DisposeAsync();
-                throw;
-            }
-        }
-
-        public Task<T> ExecuteWithDeadlockRetryAsync<T>(
-            Func<Task<T>> operation,
-            CancellationToken cancellationToken = default) => operation();
-
-        public Task ExecuteWithDeadlockRetryAsync(
-            Func<Task> operation,
-            CancellationToken cancellationToken = default) => operation();
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
