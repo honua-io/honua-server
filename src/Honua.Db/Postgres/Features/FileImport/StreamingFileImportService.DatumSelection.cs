@@ -21,12 +21,12 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
-    private DatumTransformationSelection? ResolveRequestedDatumSelection(ImportRequest request, int sourceSrid)
+    private DatumTransformationSelection? ResolveRequestedDatumSelection(ImportRequest request, int sourceSrid, int targetSrid)
     {
         if (!string.IsNullOrWhiteSpace(request.DatumTransformationName))
         {
             var named = _datumTransformationCatalog?.FindByName(
-                request.DatumTransformationName, sourceSrid, request.TargetSrid!.Value);
+                request.DatumTransformationName, sourceSrid, targetSrid);
             if (named is null)
             {
                 throw new InvalidOperationException("The named datumTransformation does not apply to the requested reprojection.");
@@ -37,17 +37,17 @@ internal sealed partial class StreamingFileImportService
 
         if (request.DatumTransformationWkid is not { } wkid)
         {
-            return sourceSrid != request.TargetSrid!.Value && _datumTransformationCatalog is not null &&
-                !_datumTransformationCatalog.HasAreaOfUse(sourceSrid, request.TargetSrid!.Value) &&
-                _datumTransformationCatalog.TryGetDefault(sourceSrid, request.TargetSrid!.Value, out var defaultSelection) && defaultSelection.RequiresCoordinateEpoch
+            return sourceSrid != targetSrid && _datumTransformationCatalog is not null &&
+                !_datumTransformationCatalog.HasAreaOfUse(sourceSrid, targetSrid) &&
+                _datumTransformationCatalog.TryGetDefault(sourceSrid, targetSrid, out var defaultSelection) && defaultSelection.RequiresCoordinateEpoch
                 ? BindImportCoordinateEpoch(defaultSelection, request.CoordinateEpoch)
                 : null;
         }
 
         if (_datumTransformationCatalog is null ||
-            !_datumTransformationCatalog.TryGetByWkid(wkid, sourceSrid, request.TargetSrid!.Value, out var selection))
+            !_datumTransformationCatalog.TryGetByWkid(wkid, sourceSrid, targetSrid, out var selection))
         {
-            throw new InvalidOperationException($"datumTransformation WKID {wkid} is not supported for {sourceSrid} -> {request.TargetSrid!.Value}.");
+            throw new InvalidOperationException($"datumTransformation WKID {wkid} is not supported for {sourceSrid} -> {targetSrid}.");
         }
 
         return BindImportCoordinateEpoch(selection, request.CoordinateEpoch);

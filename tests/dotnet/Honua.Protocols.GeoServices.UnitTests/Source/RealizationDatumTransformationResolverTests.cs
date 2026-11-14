@@ -12,7 +12,7 @@ public sealed class RealizationDatumTransformationResolverTests
 {
     private readonly IDatumTransformationCatalog _catalog = GeoServicesDatumTransformationCatalog.Create();
 
-    [Theory]
+    [UnitTheory]
     [InlineData(null)]
     [InlineData("NaN")]
     [InlineData("Infinity")]
@@ -32,7 +32,7 @@ public sealed class RealizationDatumTransformationResolverTests
         result.Error.Should().Contain("coordinateEpoch");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(7912, 6319)]
     [InlineData(6319, 7912)]
     public void Resolve_TimedOperation_BindsEpochAndPreservesDirection(int from, int to)
@@ -53,7 +53,7 @@ public sealed class RealizationDatumTransformationResolverTests
         selection.ProjPipeline.Should().Contain("+v_4=2020.25").And.NotContain("{coordinateEpoch}");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(4759, 4326)]
     [InlineData(4326, 4759)]
     public void Resolve_NamedComposite_PreservesDirection(int from, int to)
@@ -75,7 +75,7 @@ public sealed class RealizationDatumTransformationResolverTests
         error.Should().Contain("coordinateEpoch");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(4269)]
     [InlineData(4152)]
     [InlineData(4759)]
@@ -87,5 +87,25 @@ public sealed class RealizationDatumTransformationResolverTests
 
         selection!.ProjPipeline.Should().Be("+proj=noop");
         selection.CoordinateEpoch.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void WithCoordinateEpoch_BoundSelection_PreservesExactEpoch()
+    {
+        var selection = new DatumTransformationSelection
+        {
+            Name = "Bound operation",
+            FromSrid = 7912,
+            ToSrid = 6319,
+            CoordinateEpoch = 2020.25
+        };
+
+        selection.WithCoordinateEpoch(2020.25).CoordinateEpoch.Should().Be(2020.25);
+
+        var changeEpoch = () => selection.WithCoordinateEpoch(Math.BitIncrement(2020.25));
+        var removeEpoch = () => selection.WithCoordinateEpoch(null);
+
+        changeEpoch.Should().Throw<ArgumentException>();
+        removeEpoch.Should().Throw<ArgumentException>();
     }
 }

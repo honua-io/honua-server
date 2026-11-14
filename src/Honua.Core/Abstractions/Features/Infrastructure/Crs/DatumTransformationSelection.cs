@@ -37,7 +37,7 @@ public sealed record DatumTransformationSelection
             throw new ArgumentException("This datum transformation requires coordinateEpoch in decimal years.", nameof(coordinateEpoch));
         }
 
-        if (CoordinateEpoch is { } boundEpoch && coordinateEpoch != boundEpoch)
+        if (CoordinateEpoch is { } boundEpoch && !coordinateEpoch.Equals(boundEpoch))
         {
             throw new ArgumentException("A bound datum transformation cannot change coordinateEpoch.", nameof(coordinateEpoch));
         }
