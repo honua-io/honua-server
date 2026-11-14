@@ -20,15 +20,44 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]
-public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
+public sealed class AdminLayerDisplaySpatialTests : IClassFixture<AdminLayerDisplaySpatialTests.Fixture>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureWebHost(builder => builder.UseEnvironment("Test")
-            .UseSetting("HONUA_DEV_AUTH", "false")
-            .UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword));
+    private readonly WebAppFixture _fixture;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public AdminLayerDisplaySpatialTests(Fixture fixture)
+    {
+        fixture.RestoreSeededGraph();
+        _fixture = fixture.Application;
+    }
+
+    // Cases write layer metadata into the metadata graph, so one host serves the class and each
+    // case restores the seeded graph under a new revision: revision-keyed caches and etags never
+    // return an earlier case's content.
+    public sealed class Fixture : IAsyncLifetime
+    {
+        private MetadataV2Graph? _seeded;
+
+        public WebAppFixture Application { get; } = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseEnvironment("Test")
+                .UseSetting("HONUA_DEV_AUTH", "false")
+                .UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword));
+
+        public async Task InitializeAsync()
+        {
+            await Application.InitializeAsync();
+            _seeded = Application.GetCurrentV2GraphSnapshot().Graph;
+        }
+
+        public void RestoreSeededGraph()
+        {
+            var seeded = _seeded ?? throw new InvalidOperationException("The fixture must be initialized first.");
+            var revision = Application.GetCurrentV2GraphSnapshot().Graph.Revision + 1;
+            ((TestMetadataV2GraphProvider)Application.GetService<IMetadataV2GraphProvider>())
+                .SetGraph(seeded with { Revision = revision }, schema: Application.CurrentSchema);
+        }
+
+        public Task DisposeAsync() => Application.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/display")]
