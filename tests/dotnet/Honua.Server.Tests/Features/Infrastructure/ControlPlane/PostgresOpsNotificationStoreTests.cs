@@ -91,6 +91,36 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
         (await store.ListDueAsync(now, 100)).Should().BeEmpty();
     }
 
+    [IntegrationTest]
+    public async Task ObserveAwaiting_BoundsNewRowsAndPreservesClosedAndAdvancedSchedules()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var now = DateTimeOffset.UtcNow;
+        var first = Proposal(now, OperationProposalStatus.AwaitingApproval) with
+        {
+            CreatedAt = now.AddMinutes(-10),
+            UpdatedAt = now.AddMinutes(-10)
+        };
+        var second = first with { ProposalId = Guid.NewGuid().ToString("N") };
+        await harness.CreateProposalStore().TryCreateAsync(first);
+        await harness.CreateProposalStore().TryCreateAsync(second);
+        var store = harness.CreateNotificationStore();
+        (await store.ObserveAwaitingAsync(1)).Should().Be(1);
+        var observed = (await store.ListDueAsync(now.AddMinutes(1), 100)).Single();
+        observed.FirstSeenAt.Should().BeCloseTo(first.CreatedAt, TimeSpan.FromMilliseconds(1));
+        (await store.TryAdvanceAsync(observed, now.AddDays(1))).Should().BeTrue();
+        (await harness.CreateNotificationStore().ObserveAwaitingAsync(100)).Should().Be(1);
+        var other = (await store.ListDueAsync(now.AddMinutes(1), 100)).Single();
+        other.SubjectId.Should().NotBe(observed.SubjectId);
+        (await store.TryCloseAsync(other, now)).Should().BeTrue();
+        (await store.TryCloseAsync(other, now)).Should().BeFalse();
+        (await harness.CreateNotificationStore().ObserveAwaitingAsync(100)).Should().Be(0);
+        (await store.ListDueAsync(now.AddMinutes(1), 100)).Should().BeEmpty();
+        var reminder = (await store.ListDueAsync(now.AddDays(1), 100)).Single();
+        reminder.EpisodeId.Should().Be(observed.EpisodeId);
+        reminder.NoticeNumber.Should().Be(1);
+    }
+
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
         => ControlPlaneStateHarness.CreateAsync(database, nameof(PostgresOpsNotificationStoreTests));
 

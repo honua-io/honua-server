@@ -649,6 +649,7 @@ if (hostHasSystemDatabase)
             // route auto-safe remediation findings back through the operation gateway. It is
             // only hosted with the Redis-backed operation gateway; no-Redis hosts stay inert.
             builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
+            builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>();
         }
     }
 

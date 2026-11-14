@@ -36,6 +36,13 @@ internal sealed partial class OpsNotificationService
 
     // When no channel is deliverable the event is still stored without a dispatch row so the evidence survives circuit breaking.
     public async Task NotifyAsync(OpsNotification notification, CancellationToken cancellationToken)
+        => _ = await NotifyCoreAsync(notification, requireChannel: false, cancellationToken).ConfigureAwait(false);
+
+    public Task<bool> TryNotifyAsync(OpsNotification notification, CancellationToken cancellationToken)
+        => NotifyCoreAsync(notification, requireChannel: true, cancellationToken);
+
+    private async Task<bool> NotifyCoreAsync(OpsNotification notification, bool requireChannel,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(notification);
 
@@ -43,17 +50,21 @@ internal sealed partial class OpsNotificationService
         if (!ops.Enabled)
         {
             _metrics.RecordOpsNotification(notification.Source, notification.Severity, "disabled");
-            return;
+            return false;
         }
 
         if ((int)notification.Severity < (int)ops.MinSeverity)
         {
             _metrics.RecordOpsNotification(notification.Source, notification.Severity, "below_min_severity");
             LogBelowMinSeverity(_logger, notification.Source, notification.Severity, ops.MinSeverity);
-            return;
+            return false;
         }
 
         var channels = ResolveChannels(ops.Channels, notification.Source, DateTimeOffset.UtcNow);
+        if (requireChannel && channels.IsDefaultOrEmpty)
+        {
+            return false;
+        }
         var envelope = BuildEnvelope(notification);
         await _dispatchWriter
             .PersistAsync([], [new PendingAlertDispatch(envelope, channels)], cancellationToken)
@@ -69,6 +80,7 @@ internal sealed partial class OpsNotificationService
             _metrics.RecordOpsNotification(notification.Source, notification.Severity, "enqueued");
             LogEnqueued(_logger, notification.Source, notification.Severity, channels.Length, notification.DedupeIdentifier);
         }
+        return true;
     }
 
     private ImmutableArray<AlertChannelType> ResolveChannels(IReadOnlyList<string> configured, string source, DateTimeOffset now)
