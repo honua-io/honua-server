@@ -13,6 +13,54 @@ namespace Honua.Core.Tests.Features.Studio;
 
 public sealed partial class StudioPackageLifecycleServiceTests
 {
+    [Theory]
+    [InlineData("create-input")]
+    [InlineData("create-result")]
+    [InlineData("read-result")]
+    [InlineData("list-result")]
+    [InlineData("update-input")]
+    [InlineData("update-result")]
+    public async Task UpdateDraft_MutableActiveEnvelope_CannotCorruptPriorRevision(string source)
+    {
+        foreach (IStudioPackageStore store in new IStudioPackageStore[]
+        {
+            new InMemoryStudioPackageStore(),
+            new BridgedStudioPackageStore(new InMemoryStudioPackageStore(), []),
+        })
+        {
+            var bindings = BuildEnvelope("original", "content.parcels").Bindings.ToList();
+            var service = BuildServiceProvider(store).GetRequiredService<IStudioPackageLifecycleService>();
+            var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+            {
+                PackageKey = "isolated-active-revision",
+                Envelope = BuildEnvelope("original", "content.parcels") with { Bindings = bindings },
+            });
+            StudioPackageEnvelope exposed = source switch
+            {
+                "create-input" => draft.Envelope with { Bindings = bindings },
+                "create-result" => draft.Envelope,
+                "read-result" => (await store.GetDraftAsync(draft.DraftId))!.Envelope,
+                "list-result" => (await store.ListDraftsAsync(new())).Items.Single().Envelope,
+                _ => draft.Envelope with { Bindings = bindings },
+            };
+            if (source.StartsWith("update-", StringComparison.Ordinal))
+            {
+                draft = (await store.UpdateDraftAsync(draft with { Envelope = exposed }))!;
+                if (source == "update-result")
+                {
+                    exposed = draft.Envelope;
+                }
+            }
+
+            Assert.IsAssignableFrom<IList<StudioPackageBinding>>(exposed.Bindings).Clear();
+            var current = (await store.GetDraftAsync(draft.DraftId))!;
+            Assert.Single(current.Envelope.Bindings);
+            await store.UpdateDraftAsync(current with { Envelope = BuildEnvelope("changed", "content.roads") });
+            var revision = (await store.GetDraftRevisionAsync(draft.DraftId, draft.Generation))!;
+            Assert.Single(revision.Envelope.Bindings);
+        }
+    }
+
     [UnitTest]
     public async Task GetDraftRevision_MutableEnvelopeCollections_CannotChangeStoredHistory()
     {

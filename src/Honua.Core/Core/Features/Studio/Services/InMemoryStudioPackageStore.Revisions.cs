@@ -40,6 +40,9 @@ public sealed partial class InMemoryStudioPackageStore
         }
     }
 
+    private static StudioPackageDraft SnapshotDraft(StudioPackageDraft draft) =>
+        draft with { Envelope = SnapshotEnvelope(draft.Envelope) };
+
     private static StudioPackageEnvelope SnapshotEnvelope(StudioPackageEnvelope envelope) =>
         JsonSerializer.Deserialize(
             JsonSerializer.Serialize(envelope, StudioJsonContext.Default.StudioPackageEnvelope),
