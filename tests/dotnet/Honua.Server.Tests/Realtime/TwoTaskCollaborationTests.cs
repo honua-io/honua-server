@@ -61,7 +61,8 @@ public sealed class TwoTaskCollaborationTests(DatabaseFixtureAdapter database) :
         using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
         {
             while (!second.Sessions.DrainEvents(bob.SessionId).Any(e =>
-                e.Event.Type == CollaborationSessionEventTypes.Cursor && e.Event.Cursor?.X == 12))
+                e.Event.Type == CollaborationSessionEventTypes.Cursor &&
+                e.Event.Cursor is { } cursor && Math.Abs(cursor.X - 12) < 0.000001))
             {
                 await Task.Delay(10, timeout.Token);
             }
