@@ -458,11 +458,10 @@ internal static class OpsObservabilityEndpoints
 
         rules.UnionWith(options.Rules.Keys.Where(OpsAutonomyPolicyDefaults.IsValidRule));
 
-        rules.UnionWith(OpsAutonomyPolicyDefaults.BuiltInAutoSafeRules);
+        rules.UnionWith(OpsAutonomyPolicyDefaults.BuiltInKnownRules);
         var activeFindings = await findingsService.EvaluateAsync(cancellationToken).ConfigureAwait(false);
         rules.UnionWith(activeFindings
-            .Where(finding => finding.RecommendedAction is { AutoSafe: true } &&
-                OpsAutonomyPolicyDefaults.IsValidRule(finding.Rule))
+            .Where(finding => OpsAutonomyPolicyDefaults.IsValidRule(finding.Rule))
             .Select(finding => finding.Rule));
 
         return rules.OrderBy(static rule => rule, StringComparer.Ordinal).ToArray();

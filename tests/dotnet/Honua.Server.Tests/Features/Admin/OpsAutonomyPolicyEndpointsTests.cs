@@ -68,6 +68,46 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/autonomy/policies/{rule}")]
     [Endpoint("GET /api/v1/admin/observability/autonomy/policies")]
+    public async Task PolicyRead_WithoutRuleConfiguration_KeepsApprovalGatedRuleDiscoverable()
+    {
+        var fixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IOpsAutonomyPolicyStore>();
+                services.AddSingleton<IOpsAutonomyPolicyStore, InMemoryOpsAutonomyPolicyStore>();
+            })
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            });
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var response = await client.GetAsync($"/api/v1/admin/observability/autonomy/policies/{Rule}");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal("ProposeOnly", document.RootElement.GetProperty("mode").GetString());
+            Assert.False(document.RootElement.GetProperty("isPersisted").GetBoolean());
+
+            var listResponse = await client.GetAsync("/api/v1/admin/observability/autonomy/policies");
+            Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+            using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+            Assert.Contains(listDocument.RootElement.GetProperty("policies").EnumerateArray(),
+                policy => policy.GetProperty("rule").GetString() == Rule);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/autonomy/policies/{rule}")]
+    [Endpoint("GET /api/v1/admin/observability/autonomy/policies")]
     public async Task PolicyRead_FreshStore_ReturnsRouteEffectiveConfiguredDefaultAsNotPersisted()
     {
         var getResponse = await _client.GetAsync($"/api/v1/admin/observability/autonomy/policies/{Rule}");
@@ -87,7 +127,8 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
         var listResponse = await _client.GetAsync("/api/v1/admin/observability/autonomy/policies");
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
         using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
-        var listed = Assert.Single(listDocument.RootElement.GetProperty("policies").EnumerateArray());
+        var listed = Assert.Single(listDocument.RootElement.GetProperty("policies").EnumerateArray(),
+            policy => policy.GetProperty("rule").GetString() == Rule);
         Assert.Equal(Rule, listed.GetProperty("rule").GetString());
         Assert.False(listed.GetProperty("isPersisted").GetBoolean());
     }
@@ -130,7 +171,8 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
         var listResponse = await _client.GetAsync("/api/v1/admin/observability/autonomy/policies");
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
         using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
-        var listed = Assert.Single(listDocument.RootElement.GetProperty("policies").EnumerateArray());
+        var listed = Assert.Single(listDocument.RootElement.GetProperty("policies").EnumerateArray(),
+            policy => policy.GetProperty("rule").GetString() == Rule);
         Assert.Equal(Rule, listed.GetProperty("rule").GetString());
 
         var settingsResponse = await _client.PutAsJsonAsync(

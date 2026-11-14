@@ -10,5 +10,5 @@ internal sealed record CapabilityManifestDataStores
     public string FullImageTagSuffix { get; } = "-full";
 
     public string DocumentationHref { get; } =
-        "https://github.com/honua-io/honua-server/blob/trunk/docs/ops/nightly-images.md#data-store-variants";
+        "https://github.com/honua-io/honua-server/blob/trunk/docs/guides/operate/nightly-images.md#data-store-variants";
 }

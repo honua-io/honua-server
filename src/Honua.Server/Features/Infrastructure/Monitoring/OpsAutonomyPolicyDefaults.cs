@@ -7,6 +7,11 @@ namespace Honua.Infrastructure.Monitoring;
 
 internal static class OpsAutonomyPolicyDefaults
 {
+    public static IReadOnlySet<string> BuiltInKnownRules { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        OpsFindingsService.RuleAlertDispatchBacklog,
+    };
+
     public static IReadOnlySet<string> BuiltInAutoSafeRules { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         // No current actuator has automatic compensation. Add only proven tier-1 rules.

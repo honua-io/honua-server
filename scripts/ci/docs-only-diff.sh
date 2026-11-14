@@ -69,7 +69,7 @@
 #   Server tests assert the CONTENT of dozens of documents (docs/cite-status.md,
 #   docs/reference/geoprocessing-operations.md,
 #   docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md,
-#   docs/internal/operator/audit-coverage-matrix.md, ...). A docs-only exit that
+#   docs/internal/operations/audit-coverage-matrix.md, ...). A docs-only exit that
 #   skipped those tests would let a documentation edit turn trunk red.
 #
 # THE GATE-INPUT SCAN

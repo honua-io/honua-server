@@ -1,14 +1,14 @@
 ---
 type: reference
-title: "Candidate capacity-soak receipt"
+title: "Candidate capacity-soak runbook"
 description: "Producing and verifying candidate-bound capacity observations and their attested evidence ZIP."
 ---
-# Candidate capacity-soak receipt
+# Candidate capacity-soak runbook
 
 The release gate consumes an attested **ZIP**, containing
 `capacity-soak-receipt.json` (schema version 2) and the exact raw files it cites.
 The approved producer is
-[capacity-soak-candidate.yml](../../.github/workflows/capacity-soak-candidate.yml).
+[capacity-soak-candidate.yml](../../../.github/workflows/capacity-soak-candidate.yml).
 The normative envelope, frozen queries and thresholds live in honua-release
 [`docs/CAPACITY-ENVELOPE-2026.1.md`](https://github.com/honua-io/honua-release/blob/trunk/docs/CAPACITY-ENVELOPE-2026.1.md).
 
@@ -69,14 +69,14 @@ until actual hosted/dedicated parity passes on the same immutable candidate and 
 
 ## Collection
 
-The substrate is [local Docker](../../docker/compose/docker-compose.soak.yml): one server
+The substrate is [local Docker](../../../docker/compose/docker-compose.soak.yml): one server
 replica, PostGIS, Redis and local file storage. All share one host failure domain.
 The server boots its Production policy with a real per-run Pro license and a
 throwaway password-protected key-ring certificate. Schema migrations run before
-[fixture seeding](../../scripts/soak/seed_envelope.py); the served catalogue is
+[fixture seeding](../../../scripts/soak/seed_envelope.py); the served catalogue is
 then republished. These observations carry no cloud or Preview capacity claim.
 
-[collect_capacity.py](../../scripts/soak/collect_capacity.py) owns the eight
+[collect_capacity.py](../../../scripts/soak/collect_capacity.py) owns the eight
 scenario populations in the soak profile: 30 feature, 15 spatial, 20 OGC feature,
 10 CQL, 60 connection-pool, 5 large-result, 15 OData and 15 tile users. Each user
 cycles independently. This collector replaces the legacy NBomber aggregate
@@ -148,7 +148,7 @@ those workloads carry `tier: "preview"` and do not decide completion.
 
 ## Evidence and verification
 
-[capacity_evidence.py](../../scripts/soak/capacity_evidence.py) computes the
+[capacity_evidence.py](../../../scripts/soak/capacity_evidence.py) computes the
 receipt's values and populations from the raw observations. The one
 `honua.capacity-observations/v1` artifact shares the receipt's candidate, window,
 topology, producer and lock hash. It is uploaded first so the receipt can cite the
