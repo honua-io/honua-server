@@ -35,14 +35,20 @@ internal sealed class AttachmentUploadContentVerifier(
     }
 
     private static FileStream CreateStagingFile()
-        => new(Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()), new FileStreamOptions
+    {
+        var options = new FileStreamOptions
         {
             Mode = FileMode.CreateNew,
             Access = FileAccess.ReadWrite,
             Share = FileShare.Read | FileShare.Delete,
-            Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose,
-            UnixCreateMode = OperatingSystem.IsWindows() ? null : UnixFileMode.UserRead | UnixFileMode.UserWrite
-        });
+            Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+        };
+        if (!OperatingSystem.IsWindows())
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
+        return new FileStream(Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()), options);
+    }
 
     private static void ValidateFilename(string filename)
     {

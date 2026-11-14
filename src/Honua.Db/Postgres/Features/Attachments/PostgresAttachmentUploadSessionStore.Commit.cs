@@ -9,8 +9,14 @@ namespace Honua.Db.Postgres.Features.Attachments;
 
 internal sealed partial class PostgresAttachmentUploadSessionStore
 {
-    public async Task<Attachment> CommitAsync(AttachmentUploadSessionKey key, string preparedStoragePath, CancellationToken cancellationToken = default)
+    public Task<Attachment> CommitAsync(AttachmentUploadSessionKey key, string preparedStoragePath, CancellationToken cancellationToken = default)
+        => CommitAsync(key, (_, _) => Task.FromResult(preparedStoragePath), cancellationToken);
+
+    public async Task<Attachment> CommitAsync(AttachmentUploadSessionKey key,
+        Func<AttachmentUploadSession, CancellationToken, Task<string>> publishContent,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(publishContent);
         var publisher = _attachmentStore ?? throw new InvalidOperationException("Attachment publication is not configured.");
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -25,8 +31,9 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         {
             throw Failure(AttachmentUploadFailure.InvalidState, "Upload content is incomplete.");
         }
-        ArgumentException.ThrowIfNullOrWhiteSpace(preparedStoragePath);
         await CopyVerifiedChunksAsync(database, session, Stream.Null).ConfigureAwait(false);
+        var preparedStoragePath = await publishContent(session, cancellationToken).ConfigureAwait(false);
+        ArgumentException.ThrowIfNullOrWhiteSpace(preparedStoragePath);
         var request = session.Request;
         var attachment = Attachment.CreateForUpload(0, request.FeatureId, request.LayerId, request.Filename,
             request.ContentType, request.ExpectedSize, preparedStoragePath, string.Join(',', request.Keywords));

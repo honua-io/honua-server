@@ -21,18 +21,17 @@ internal sealed class PostgresAttachmentMaintenance(
         var sessions = SchemaSearchPath.QualifyTable("attachment_upload_sessions", schema);
         var receipts = SchemaSearchPath.QualifyTable("attachment_mutation_receipts", schema);
         await using var connection = (NpgsqlConnection)await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await attachmentStore.ExpireUploadSessionsAsync(
+            new AttachmentPublicationTransaction(connection, transaction, cancellationToken), sessions).ConfigureAwait(false);
         await using var command = new NpgsqlCommand($"""
-            WITH expired AS (
-                SELECT session_id FROM {sessions} WHERE expires_at <= clock_timestamp()
-                ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED
-            )
-            DELETE FROM {sessions} WHERE session_id IN (SELECT session_id FROM expired);
             WITH expired AS (
                 SELECT ctid FROM {receipts} WHERE expires_at <= clock_timestamp()
                 ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED
             )
             DELETE FROM {receipts} WHERE ctid IN (SELECT ctid FROM expired);
-            """, connection);
+            """, connection, transaction);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
 }

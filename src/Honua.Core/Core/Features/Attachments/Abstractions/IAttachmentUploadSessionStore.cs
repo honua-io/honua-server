@@ -12,5 +12,6 @@ public interface IAttachmentUploadSessionStore
     Task<AttachmentUploadSession> AppendAsync(AttachmentUploadChunk chunk, CancellationToken cancellationToken = default);
     Task CopyContentAsync(AttachmentUploadSessionKey key, Stream destination, CancellationToken cancellationToken = default);
     Task<Attachment> CommitAsync(AttachmentUploadSessionKey key, string preparedStoragePath, CancellationToken cancellationToken = default);
+    Task<Attachment> CommitAsync(AttachmentUploadSessionKey key, Func<AttachmentUploadSession, CancellationToken, Task<string>> publishContent, CancellationToken cancellationToken = default);
     Task AbortAsync(AttachmentUploadSessionKey key, CancellationToken cancellationToken = default);
 }
