@@ -33,6 +33,12 @@
   ],
   "operations": [
     {
+      "operationId": "SearchCoordinateSystemsV1",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/coordinate-systems"
+    },
+    {
       "operationId": "acknowledgeObservabilityAlert",
       "catalogOperationId": null,
       "method": "POST",

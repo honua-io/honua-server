@@ -1,4 +1,23 @@
 <Project>
+  <!-- SDK 11 adds Hot Reload browser-tools JS modules to every Microsoft.NET.Sdk.Web project in
+       Debug. A web library that references another web library (Hosting -> ServiceDefaults) then
+       receives two assets for the same _framework/...HotReload.lib.module.js path and fails in
+       StaticWebAssets.JSModules.targets with "scoped css bundles do not have matching endpoints".
+       Libraries never serve a browser, so only executables keep the browser tools. Evaluated here
+       because OutputType is final and the SDK reads this property after Directory.Build.targets. -->
+  <PropertyGroup Condition="'$(OutputType)' == 'Library' and '$(UsingMicrosoftNETSdkWeb)' == 'true'">
+    <EnableHotReloadInRuntimeConfigDevFile>false</EnableHotReloadInRuntimeConfigDevFile>
+  </PropertyGroup>
+
+  <!-- Explicit maintenance command only: capture requested diagnostics as SARIF.
+       Normal builds retain warnings-as-errors and the checked-in baseline. -->
+  <PropertyGroup Condition="'$(HonuaCaptureAnalyzerBaseline)' == 'true'">
+    <ErrorLog>$(MSBuildThisFileDirectory)artifacts/analyzer-baseline/$(MSBuildProjectName).$(TargetFramework).sarif,version=2.1</ErrorLog>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CA2000;IDE0063;RS0030;S1244;S2486;S108;CA1508;CA1851</WarningsNotAsErrors>
+  </PropertyGroup>
+  <Target Name="HonuaPrepareAnalyzerBaselineCapture" BeforeTargets="CoreCompile" Condition="'$(HonuaCaptureAnalyzerBaseline)' == 'true'">
+    <MakeDir Directories="$(MSBuildThisFileDirectory)artifacts/analyzer-baseline" />
+  </Target>
   <!-- Evaluate ownership after SDK/NuGet imports, rather than guessing from paths.
        Multi-targeted projects stay in the source pass conservatively. -->
   <Target Name="HonuaGetAnalyzerOwnership" Returns="@(_HonuaAnalyzerOwnership)">
