@@ -62,6 +62,12 @@ public sealed class GeoservicesImportJobTests(DatabaseFixtureAdapter database)
         }
         finally
         {
+            await CleanupAsync(consumer, producer);
+        }
+    }
+
+    private async Task CleanupAsync(WebAppFixture? consumer, WebAppFixture? producer)
+    {
             if (consumer != null)
             {
                 await consumer.DisposeAsync();
@@ -73,7 +79,6 @@ public sealed class GeoservicesImportJobTests(DatabaseFixtureAdapter database)
             }
 
             await database.DataSource.ClearJobSubstrateAsync();
-        }
     }
 
     private static IGeoservicesImportService ObserveImport(
