@@ -9,6 +9,7 @@ using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.SharedCaching;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
