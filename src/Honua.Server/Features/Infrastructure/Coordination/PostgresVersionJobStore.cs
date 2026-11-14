@@ -5,16 +5,13 @@ using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Coordination;
 using Npgsql;
 using NpgsqlTypes;
 
 namespace Honua.Server.Features.Infrastructure.Coordination;
 
-// A job moves from pending to running to a terminal status. A save that would move it back, or
-// change a terminal status or job identity, is ignored while holding the row lock, so a late
-// write from any node never overwrites a later state or another job's authoritative record.
+// Stage and record predicates fence each atomic write against concurrent advances.
 internal sealed partial class PostgresVersionJobStore(JobStoreDatabase database, ILogger<PostgresVersionJobStore> logger)
     : IVersionJobStore, IExpiredRowSweep
 {
@@ -25,56 +22,65 @@ internal sealed partial class PostgresVersionJobStore(JobStoreDatabase database,
     public Task SaveAsync(VersionJob job, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(job);
-
         return database.ExecuteAsync(
             async (connection, token) =>
             {
-                await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
-                await using var command = new NpgsqlCommand(
-                    $"""
-                    INSERT INTO {_jobs} (job_id, stage, record, expires_at)
-                    VALUES (@job_id, @stage, @record, now() + @retention)
-                    ON CONFLICT (job_id) DO NOTHING
-                    """,
-                    connection, transaction);
-                var parameters = command.Parameters;
-                parameters.Add(new NpgsqlParameter("job_id", NpgsqlDbType.Uuid) { Value = job.JobId });
-                parameters.Add(new NpgsqlParameter("stage", NpgsqlDbType.Smallint) { Value = Stage(job.Status) });
-                parameters.Add(new NpgsqlParameter("record", NpgsqlDbType.Json)
+                while (true)
                 {
-                    Value = JsonSerializer.Serialize(job, VersionJobJsonContext.Default.VersionJob)
-                });
-                parameters.Add(new NpgsqlParameter("retention", NpgsqlDbType.Interval) { Value = _retention });
-                if (await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 0)
-                {
-                    await AdvanceAsync(command, job, token).ConfigureAwait(false);
-                }
+                    token.ThrowIfCancellationRequested();
+                    var record = await ReadRecordAsync(connection, job.JobId, token).ConfigureAwait(false);
+                    if (record is not null)
+                    {
+                        var current = Deserialize(job.JobId, record);
+                        if (current is null || !HasSameIdentity(current, job) || Stage(current.Status) >= Stage(job.Status))
+                        {
+                            return;
+                        }
+                    }
 
-                await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
+                    if (await TryAdvanceAsync(connection, new VersionJobWrite(job, record), token).ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                }
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken);
     }
 
-    private async Task AdvanceAsync(NpgsqlCommand command, VersionJob job, CancellationToken token)
+    private async Task<string?> ReadRecordAsync(NpgsqlConnection connection, Guid jobId, CancellationToken token)
     {
-        await using var read = new NpgsqlCommand(
-            $"SELECT record::text FROM {_jobs} WHERE job_id = @job_id FOR UPDATE",
-            command.Connection, command.Transaction);
-        read.Parameters.AddWithValue("job_id", job.JobId);
-        var record = await read.ExecuteScalarAsync(token).ConfigureAwait(false) as string;
-        var current = Deserialize(job.JobId, record);
-        if (current is null || !HasSameIdentity(current, job) || Stage(current.Status) >= Stage(job.Status))
-        {
-            return;
-        }
-
-        command.CommandText = $"""
-            UPDATE {_jobs} SET stage = @stage, record = @record, expires_at = now() + @retention
-            WHERE job_id = @job_id
-            """;
-        await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            $"SELECT record::text FROM {_jobs} WHERE job_id = @job_id", connection);
+        command.Parameters.AddWithValue("job_id", jobId);
+        return await command.ExecuteScalarAsync(token).ConfigureAwait(false) as string;
     }
+
+    private async Task<bool> TryAdvanceAsync(NpgsqlConnection connection, VersionJobWrite write, CancellationToken token)
+    {
+        await using var command = new NpgsqlCommand(
+            $"""
+            INSERT INTO {_jobs} AS current (job_id, stage, record, expires_at)
+            VALUES (@job_id, @stage, @record, now() + @retention)
+            ON CONFLICT (job_id) DO UPDATE
+            SET stage = EXCLUDED.stage, record = EXCLUDED.record, expires_at = EXCLUDED.expires_at
+            WHERE current.stage < EXCLUDED.stage AND current.record::text = @expected_record
+            """, connection);
+        command.Parameters.Add(new NpgsqlParameter("job_id", NpgsqlDbType.Uuid) { Value = write.Job.JobId });
+        command.Parameters.Add(new NpgsqlParameter("stage", NpgsqlDbType.Smallint) { Value = Stage(write.Job.Status) });
+        command.Parameters.Add(new NpgsqlParameter("record", NpgsqlDbType.Json)
+        {
+            Value = JsonSerializer.Serialize(write.Job, VersionJobJsonContext.Default.VersionJob)
+        });
+        command.Parameters.Add(new NpgsqlParameter("expected_record", NpgsqlDbType.Text)
+        {
+            Value = (object?)write.ExpectedRecord ?? DBNull.Value
+        });
+        command.Parameters.Add(new NpgsqlParameter("retention", NpgsqlDbType.Interval) { Value = _retention });
+        return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+    }
+
+    private sealed record VersionJobWrite(VersionJob Job, string? ExpectedRecord);
 
     // An unreadable record is reported and treated as an unknown job; the row is kept.
     public async Task<VersionJob?> GetAsync(Guid jobId, CancellationToken cancellationToken = default)
