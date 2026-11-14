@@ -15,6 +15,14 @@ select all siblings. Dispatch ranks remain inherited pending measured child runs
 once, keeps each class intact for future methods, and rejects lost, duplicated,
 foreign, budget-expanded or path-narrowed selections.
 
+FeatureServer Replica now uses three whole-class shards: `FeatureServer Replica
+Management` (conflict review, ownership and management), `FeatureServer Replica
+Sync` (the sync class), and the residual `FeatureServer Replica` catch-all.
+The original project, path triggers, exclusions, tier rules and 28-minute test /
+38-minute job budgets are retained. The coverage validator enforces the legacy
+parent inventory exactly once. This addresses repeated 28-minute capacity
+exhaustion with active output; complete child timings are still needed before
+claiming a speedup or replacing the conservative 18.3-minute parent dispatch rank.
 
 OData Core is partitioned into `OData Core Endpoints` (the whole
 `ODataEndpointTests` class) and the residual `OData Core` catch-all. Both retain
