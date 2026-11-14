@@ -22,26 +22,31 @@ public sealed class OpsAutonomyEvaluatorTests
     private const string FindingId = "alert-dispatch-backlog-test";
     private const string RedriveAction = "alerts.redrive_dead_letters";
 
+    public static TheoryData<OpsAutonomySettings, OpsAutonomyPolicy?> UnattendedRestrictions => new()
+    {
+        { new OpsAutonomySettings(), null },
+        { new OpsAutonomySettings { KillSwitchEnabled = true }, null },
+        { new OpsAutonomySettings(), AutoApplyPolicy() with { Mode = OpsAutonomyMode.ProposeOnly } },
+    };
+
     [Trait("Tier", "Fast")]
     [Theory]
-    [InlineData(false, false, false)]
-    [InlineData(true, false, false)]
-    [InlineData(false, true, false)]
+    [MemberData(nameof(UnattendedRestrictions))]
     public async Task EvaluateRoute_UnattendedDefault_RespectsKillSwitchAndPersistedPolicy(
-        bool killed, bool persistedProposeOnly, bool expectedAutoApply)
+        OpsAutonomySettings settings, OpsAutonomyPolicy? policy)
     {
         var store = new InMemoryOpsAutonomyPolicyStore();
-        await store.SetSettingsAsync(new OpsAutonomySettings { KillSwitchEnabled = killed }, "test");
-        if (persistedProposeOnly)
+        await store.SetSettingsAsync(settings, "test");
+        if (policy is not null)
         {
-            await store.SetPolicyAsync(AutoApplyPolicy() with { Mode = OpsAutonomyMode.ProposeOnly }, "test");
+            await store.SetPolicyAsync(policy, "test");
         }
 
         var sut = new OpsAutonomyEvaluator(
             new StaticOptionsMonitor<OpsAutonomyOptions>(new OpsAutonomyOptions()),
             store, new OpsActionSafetyCatalog());
         var decision = await sut.EvaluateRouteAsync(Request(), RequiresApproval(), RedriveAction);
-        decision.ShouldAutoApply.Should().Be(expectedAutoApply);
+        decision.ShouldAutoApply.Should().BeFalse();
     }
 
     [Trait("Tier", "Fast")]
