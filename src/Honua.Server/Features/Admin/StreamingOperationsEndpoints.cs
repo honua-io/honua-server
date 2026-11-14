@@ -161,15 +161,14 @@ internal static class StreamingOperationsEndpoints
         }
         finally
         {
-            await CloseAlertStreamAsync(webSocket, pendingReceive, subscription.Reset,
-                subscription.DisconnectToken.IsCancellationRequested, context.RequestAborted).ConfigureAwait(false);
+            await CloseAlertStreamAsync(webSocket, pendingReceive, subscription, context.RequestAborted).ConfigureAwait(false);
         }
 
         return Results.Empty;
     }
 
     private static async Task CloseAlertStreamAsync(WebSocket socket, Task<WebSocketReceiveResult>? pendingReceive,
-        Honua.Core.Features.Realtime.RealtimeDelivery.Reset? reset, bool disconnected, CancellationToken requestAborted)
+        IAlertNotificationSubscription subscription, CancellationToken requestAborted)
     {
         using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
         shutdown.CancelAfter(TimeSpan.FromSeconds(5));
@@ -177,9 +176,9 @@ internal static class StreamingOperationsEndpoints
         {
             if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {
-                await SendResetAsync(socket, reset, shutdown.Token).ConfigureAwait(false);
+                await SendResetAsync(socket, subscription.Reset, shutdown.Token).ConfigureAwait(false);
                 await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure,
-                    disconnected ? "Subscription disconnected." : "Stream closed.", shutdown.Token).ConfigureAwait(false);
+                    subscription.DisconnectToken.IsCancellationRequested ? "Subscription disconnected." : "Stream closed.", shutdown.Token).ConfigureAwait(false);
                 var buffer = new byte[1];
                 while (socket.State == WebSocketState.CloseSent)
                 {
