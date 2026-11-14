@@ -107,6 +107,38 @@ public sealed class OpsExternalEventTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task ChangedReplay_DispatchesOriginalDurableEvent()
+    {
+        var store = new MemoryStore();
+        var handler = new CapturingHandler();
+        var queue = new FakeQueue();
+        await using var services = new ServiceCollection().AddSingleton<IOpsExternalEventStore>(store)
+            .AddSingleton<IOpsExternalEventConsumer>(handler).BuildServiceProvider();
+        using var service = CreateService(queue, services);
+        var original = Envelope("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_FAILED\"}");
+        await service.ProcessAsync(new OpsEventQueueMessage("first", original), CancellationToken.None);
+        var changed = original.Replace("SERVICE_DEPLOYMENT_FAILED", "SERVICE_DEPLOYMENT_COMPLETED", StringComparison.Ordinal);
+        await service.ProcessAsync(new OpsEventQueueMessage("replay", changed), CancellationToken.None);
+        handler.Events.Should().HaveCount(2).And.OnlyContain(e => e.Body == original);
+        queue.Deleted.Should().Equal("first", "replay");
+    }
+
+    [UnitTheory]
+    [InlineData("task-one")]
+    [InlineData("")]
+    [Operation(Operations.TestInfrastructure)]
+    public void RepeatedTaskOrMissingIdentity_DoesNotCreateCrashLoop(string taskArn)
+    {
+        var detail = $$"""{"lastStatus":"STOPPED","taskArn":"{{taskArn}}","clusterArn":"cluster","group":"service:server","containers":[{"exitCode":1}]}""";
+        var body = Envelope("aws.ecs", "ECS Task State Change", detail);
+        var events = Enumerable.Range(0, 3).Select(i => OpsExternalEventMapper.Parse(
+            body.Replace("7a92fa24", $"7a92fa2{i}", StringComparison.Ordinal))).ToArray();
+        OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:05:00Z", CultureInfo.InvariantCulture))
+            .Should().NotContain(f => f.Rule == "ecs-task-crash-loop");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task StoreFailure_DoesNotAcknowledgeMessage()
     {
         var queue = new FakeQueue();
@@ -133,8 +165,9 @@ public sealed class OpsExternalEventTests
     [Operation(Operations.TestInfrastructure)]
     public void ThreeDistinctCrashesInFifteenMinutes_CreateCrashLoopFinding()
     {
-        var body = Envelope("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"clusterArn\":\"cluster\",\"group\":\"service:server\",\"containers\":[{\"exitCode\":1}]}");
-        var events = Enumerable.Range(0, 3).Select(i => OpsExternalEventMapper.Parse(body.Replace("7a92fa24", $"7a92fa2{i}", StringComparison.Ordinal))).ToArray();
+        var body = Envelope("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"taskArn\":\"task-0\",\"clusterArn\":\"cluster\",\"group\":\"service:server\",\"containers\":[{\"exitCode\":1}]}");
+        var events = Enumerable.Range(0, 3).Select(i => OpsExternalEventMapper.Parse(body.Replace("7a92fa24", $"7a92fa2{i}", StringComparison.Ordinal)
+            .Replace("task-0", $"task-{i}", StringComparison.Ordinal))).ToArray();
         var findings = OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:05:00Z", CultureInfo.InvariantCulture));
         findings.Should().ContainSingle(f => f.Rule == "ecs-task-crash-loop" && f.Severity == OpsFindingSeverity.Critical);
         OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:16:00Z", CultureInfo.InvariantCulture))
@@ -202,6 +235,16 @@ public sealed class OpsExternalEventTests
         findings.Should().ContainSingle(f => f.Rule == "ecs-deployment-failed" && f.Subject.TargetId!.EndsWith("/other", StringComparison.Ordinal));
     }
 
+    private sealed class CapturingHandler : IOpsExternalEventConsumer
+    {
+        internal List<OpsExternalEvent> Events { get; } = [];
+        public Task HandleAsync(OpsExternalEvent externalEvent, CancellationToken cancellationToken)
+        {
+            Events.Add(externalEvent);
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class RetryingHandler(MemoryStore store) : IOpsExternalEventConsumer
     {
         internal int Calls { get; private set; }
@@ -225,7 +268,7 @@ public sealed class OpsExternalEventTests
         internal Dictionary<string, OpsExternalEvent> Events { get; } = new(StringComparer.Ordinal);
         internal bool Fail { get; init; }
 
-        public Task AppendAsync(OpsExternalEvent externalEvent, CancellationToken cancellationToken = default)
+        public Task<OpsExternalEvent> AppendAsync(OpsExternalEvent externalEvent, CancellationToken cancellationToken = default)
         {
             if (Fail)
             {
@@ -233,7 +276,7 @@ public sealed class OpsExternalEventTests
             }
 
             Events.TryAdd(externalEvent.Id, externalEvent);
-            return Task.CompletedTask;
+            return Task.FromResult(Events[externalEvent.Id]);
         }
 
         public Task<IReadOnlyList<OpsExternalEvent>> ReadRecentAsync(DateTimeOffset since, CancellationToken cancellationToken = default) =>

@@ -48,7 +48,7 @@ internal sealed partial class OpsEventIngestionService(
         var externalEvent = OpsExternalEventMapper.Parse(message.Body);
         await using var scope = scopeFactory.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IOpsExternalEventStore>();
-        await store.AppendAsync(externalEvent, cancellationToken).ConfigureAwait(false);
+        externalEvent = await store.AppendAsync(externalEvent, cancellationToken).ConfigureAwait(false);
         foreach (var handler in scope.ServiceProvider.GetServices<IOpsExternalEventConsumer>())
         {
             await handler.HandleAsync(externalEvent, cancellationToken).ConfigureAwait(false);

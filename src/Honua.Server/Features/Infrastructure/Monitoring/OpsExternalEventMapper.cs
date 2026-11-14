@@ -58,7 +58,7 @@ internal static class OpsExternalEventMapper
             Title = template.Title,
             Explanation = template.Explanation,
             DetectedAt = externalEvent.OccurredAt,
-            Subject = new OpsFindingSubject { TargetId = resource },
+            Subject = new OpsFindingSubject { TargetId = resource, OperationId = Text(detail, "taskArn") is { Length: > 0 } taskArn ? taskArn : null },
             EvidenceRefs = [$"aws-event:{externalEvent.Id}"],
         };
     }
@@ -73,6 +73,8 @@ internal static class OpsExternalEventMapper
             .Select(g => g.OrderByDescending(f => f.DetectedAt).ThenBy(f => f.Id, StringComparer.Ordinal).First()));
         var crashes = findings.Where(f => f.Rule is "ecs-task-stopped" or "ecs-task-oom")
             .Where(f => f.DetectedAt >= now - TimeSpan.FromMinutes(15) && f.DetectedAt <= now)
+            .Where(f => !string.IsNullOrWhiteSpace(f.Subject.OperationId))
+            .DistinctBy(f => (f.Subject.TargetId, f.Subject.OperationId))
             .GroupBy(f => f.Subject.TargetId, StringComparer.Ordinal);
         foreach (var group in crashes.Where(g => g.Count() >= 3))
         {

@@ -7,7 +7,7 @@ namespace Honua.Core.Features.Observability.Abstractions;
 
 public interface IOpsExternalEventStore
 {
-    Task AppendAsync(OpsExternalEvent externalEvent, CancellationToken cancellationToken = default);
+    Task<OpsExternalEvent> AppendAsync(OpsExternalEvent externalEvent, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<OpsExternalEvent>> ReadRecentAsync(DateTimeOffset since, CancellationToken cancellationToken = default);
 }

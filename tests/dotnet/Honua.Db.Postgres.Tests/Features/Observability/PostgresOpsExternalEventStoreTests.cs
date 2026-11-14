@@ -26,7 +26,10 @@ public sealed class PostgresOpsExternalEventStoreTests(PostgresFixture fixture)
             await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
                 new PostgresOpsExternalEventStore(provider, schema).AppendAsync(original)));
             var restarted = new PostgresOpsExternalEventStore(provider, schema);
-            await restarted.AppendAsync(original with { Body = "{\"replacement\":true}" });
+            var replayed = await restarted.AppendAsync(original with { Body = "{\"replacement\":true}", OccurredAt = now.AddHours(1) });
+            replayed.Id.Should().Be(original.Id);
+            replayed.OccurredAt.Should().BeCloseTo(original.OccurredAt, TimeSpan.FromMilliseconds(1));
+            replayed.Body.Should().Contain("original").And.NotContain("replacement");
             var events = await restarted.ReadRecentAsync(now.AddMinutes(-1));
             events.Should().ContainSingle();
             events[0].Id.Should().Be(original.Id);

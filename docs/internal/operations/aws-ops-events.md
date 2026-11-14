@@ -23,7 +23,7 @@ it is not an audit export of all infrastructure events.
 Supported templates cover failed/OOM/image-pull ECS tasks, deployment failure and
 completion, failed Backup jobs and copies, RDS maintenance/failover/storage events,
 failed Batch jobs, ACM expiration warnings, AWS Health events, cost anomalies and
-CloudWatch alarm transitions. Three distinct error stops for one ECS service in
+CloudWatch alarm transitions. Three distinct task ARNs stopping with errors for one ECS service in
 fifteen minutes produce a Critical crash-loop finding. Only the latest received
 alarm event by event time is presented for an alarm resource. These templates do
 not authorize remediation or spending. Unknown event types are retained without
@@ -31,7 +31,7 @@ creating a finding. Invalid envelopes remain unacknowledged.
 
 `IOpsExternalEventConsumer` runs after persistence and before acknowledgment,
 including on duplicate deliveries. Handlers receive the original envelope with
-its identity and UTC event time. They must deduplicate their own side effects and
+its identity and UTC event time, even if a replay supplies a different body. They must deduplicate their own side effects and
 fence the current service/release identity before acting. An old receiving task
 is not evidence that its release completed. Handler failures retry through SQS.
 
