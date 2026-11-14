@@ -17,6 +17,26 @@ public sealed class InMemoryFeatureLockServiceTests
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
 
     [UnitTest]
+    [Operation(Operations.Security)]
+    public async Task Mutations_DifferentPrincipal_PreserveOriginalLease()
+    {
+        var service = new InMemoryFeatureLockService(new MutableTimeProvider(Instant()));
+        var owner = Alice with { PrincipalName = "alice@example.test" };
+        var other = owner with { PrincipalName = "other@example.test" };
+        var access = FeatureLockAccessContext.AuthorizedWrite;
+        var claimed = await service.ClaimAsync(Feature, owner, LeaseDuration, access);
+
+        (await service.ClaimAsync(Feature, other, LeaseDuration, access)).Status
+            .Should().Be(FeatureLockClaimStatus.HeldByOther);
+        (await service.RenewAsync(Feature, other, LeaseDuration, access)).Status
+            .Should().Be(FeatureLockRenewStatus.HeldByOther);
+        (await service.ReleaseAsync(Feature, other, access)).Status
+            .Should().Be(FeatureLockReleaseStatus.HeldByOther);
+        (await service.GetActiveLeaseAsync(Feature)).Should().BeEquivalentTo(claimed.Lease);
+        (await service.ReleaseAsync(Feature, owner, access)).Status.Should().Be(FeatureLockReleaseStatus.Released);
+    }
+
+    [UnitTest]
     [Operation(Operations.Update)]
     public async Task ClaimAsync_AuthorizedWriteAccess_ClaimsLease()
     {
