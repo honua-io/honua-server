@@ -13,24 +13,28 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Tiles.PMTiles;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-[Collection("Database")]
+// Tile operations run as execution jobs, so these hosts compose the job store, queue and worker.
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Tile)]
-public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
+public sealed class PMTilesPublishEndpointTests(DatabaseFixtureAdapter database) : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
     {
+        await database.DataSource.ClearJobSubstrateAsync();
         // The shared test host otherwise authenticates every caller as an admin API key,
         // which hides a restricted source-layer denial.
         _fixture.ConfigureWebHost(builder =>

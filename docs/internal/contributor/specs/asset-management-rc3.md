@@ -148,8 +148,8 @@ existing field-review surface without an explicit extension. Add an expand-only
 task command receipt table keyed by (service scope, commandId), storing actor,
 operation, body hash and outcome. Field sync forwards change_id = commandId into
 that same task receipt namespace; adapters never execute a task command twice.
-The existing generic feature-sync receipt table remains unchanged (global
-change_id primary key, insert/update/delete operations). Actor, operation or body
+The existing generic feature-sync receipt table remains unchanged (`client_id`, `change_id` composite primary key after migration 057,
+insert/update/delete operations). Actor, operation or body
 reuse inconsistent with an existing task receipt returns 409. Assignee, status,
 cycle keys and completion fields cannot
 be edited around the service through generic layer edits. Protocol edit adapters
@@ -187,6 +187,13 @@ not recursively create duplicate tasks. Overdue means nonterminal and due-at
 before the query instant; dispatch deduplicates by task/version/alert policy.
 
 ## Offline sync contract
+
+[ADR-0088](../adr/0088-one-first-party-field-sync-contract.md) selects the
+fieldcollection family for first-party offline exchange, maps every conflict
+row below to proposed named responses, and records current implementation gaps.
+Task commands still execute through the shared domain service; generic feature
+pushes cannot bypass task rules. This is a proposed release/2027.1 extension,
+not a claim that the current API implements this table.
 
 Reuse the existing GeoPackage store, durable command queue, field sync and
 conflict review. Map-area download includes the user's assigned tasks, asset
