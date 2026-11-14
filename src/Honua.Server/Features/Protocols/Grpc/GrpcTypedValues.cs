@@ -132,6 +132,19 @@ internal static partial class GrpcTypedValues
         return number;
     }
 
+    // Read-side text for values without a dedicated wire case. Dates and times stay invariant
+    // ISO text on string_value because clients before geospatial-grpc 1.2 cannot read the
+    // date/time cases; the declared field type already says DATE or TIME. Metadata has no
+    // exact-decimal field type, so decimals keep going out as doubles.
+    public static string ToInvariantText(object value) => value switch
+    {
+        DateOnly date => FormatDate(date),
+        TimeOnly time => FormatTime(time),
+        Guid guid => guid.ToString("D"),
+        IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString() ?? string.Empty,
+    };
+
     public static string FormatDate(DateOnly date) => date.ToString(DateFormat, CultureInfo.InvariantCulture);
 
     // Without trailing fractional zeros.

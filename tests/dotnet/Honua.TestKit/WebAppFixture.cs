@@ -372,15 +372,8 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     // Replaces the resource published at layerIndex. Delegates to
     // Mixins.WebAppFixtureMetadataV2GraphMutationMixin.
-    public Task UpdateV2ResourceAsync(
-        int layerIndex,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate,
-        CancellationToken cancellationToken = default)
-        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceAsync(
-            this,
-            layerIndex,
-            mutate,
-            cancellationToken);
+    public Task UpdateV2ResourceAsync(int layerIndex, Func<MetadataV2Resource, MetadataV2Resource> mutate)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceAsync(this, layerIndex, mutate);
 
     /// <summary>
     /// Sets (or clears with <c>null</c>) the Esri attribute-rule set on the resource

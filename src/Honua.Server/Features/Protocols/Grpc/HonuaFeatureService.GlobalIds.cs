@@ -24,15 +24,48 @@ internal sealed partial class HonuaFeatureService
     private readonly record struct GlobalIdEdit(
         Proto.ApplyEditsRequest Request,
         GrpcLayerContext Layer,
-        IServiceProvider Services,
-        string? Field)
+        IServiceProvider Services)
     {
+        public string? Field { get; init; }
+
         public ImmutableArray<string> ClientAddIds { get; init; } = [];
 
         public ImmutableArray<string> AssignedAddIds { get; init; } = [];
     }
 
     private readonly record struct QueryGlobalIds(GrpcLayerContext Layer, IServiceProvider Services, string? Field);
+
+    // Wire edits to a domain batch: lexically invalid input is INVALID_ARGUMENT, a valid value the
+    // server cannot hold is FAILED_PRECONDITION; both before any write.
+    private static FeatureEditBatch ToEditBatch(Proto.ApplyEditsRequest request)
+    {
+        try
+        {
+            return GrpcConversionHelpers.ToFeatureEditBatch(request);
+        }
+        catch (UnstorableValueException ex)
+        {
+            throw new RpcException(new Status(StatusCode.FailedPrecondition, ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+        }
+    }
+
+    // After the authorization, capability and limit gates: storability, the caller-visible
+    // global-ID field and insert global IDs.
+    private static async Task<(FeatureEditBatch Batch, GlobalIdEdit Edit)> PrepareGlobalIdsAsync(
+        EditCall call,
+        FeatureEditBatch batch)
+    {
+        GrpcTypedValues.EnsureStorable(call.Layer.Resource, batch);
+        var services = call.Context.GetHttpContext().RequestServices;
+        var field = await VisibleGlobalIdFieldAsync(call.Layer, services, call.Context.CancellationToken).ConfigureAwait(false);
+        return AssignInsertGlobalIds(new GlobalIdEdit(call.Request, call.Layer, services) { Field = field }, batch);
+    }
+
+    private readonly record struct EditCall(Proto.ApplyEditsRequest Request, GrpcLayerContext Layer, ServerCallContext Context);
 
     // The layer's global-ID field when the caller may see it: not schema-hidden and not masked.
     private static async Task<string?> VisibleGlobalIdFieldAsync(
@@ -185,21 +218,7 @@ internal sealed partial class HonuaFeatureService
         FeatureEditBatch batch,
         CancellationToken cancellationToken)
     {
-        // Best effort: the check sees only rows the caller may read (it must not reveal hidden
-        // rows) and runs outside the write transaction. Managed storage has no unique index on
-        // the global-ID attribute, so concurrent or RLS-hidden duplicates are not excluded yet.
-        var addIds = edit.ClientAddIds;
-        if (!addIds.IsEmpty)
-        {
-            var existing = await ResolveObjectIdsAsync(edit, addIds, cancellationToken).ConfigureAwait(false);
-            if (existing.Count > 0)
-            {
-                throw new RpcException(new Status(
-                    StatusCode.InvalidArgument,
-                    $"Global ID {existing.Keys.First()} already identifies a feature."));
-            }
-        }
-
+        await EnsureClientAddIdsAreNewAsync(edit, cancellationToken).ConfigureAwait(false);
         if (!edit.Request.UseGlobalIds)
         {
             return batch;
@@ -220,6 +239,24 @@ internal sealed partial class HonuaFeatureService
             Updates = [.. batch.Updates.Select((update, index) => update with { Id = objectIds[updateIds[index]] })],
             Deletes = [.. deleteIds.Select(id => objectIds[id])],
         };
+    }
+
+    private async Task EnsureClientAddIdsAreNewAsync(GlobalIdEdit edit, CancellationToken cancellationToken)
+    {
+        // Best effort: the check sees only rows the caller may read (it must not reveal hidden
+        // rows) and runs outside the write transaction. Managed storage has no unique index on
+        // the global-ID attribute, so concurrent or RLS-hidden duplicates are not excluded yet.
+        var addIds = edit.ClientAddIds;
+        if (!addIds.IsEmpty)
+        {
+            var existing = await ResolveObjectIdsAsync(edit, addIds, cancellationToken).ConfigureAwait(false);
+            if (existing.Count > 0)
+            {
+                throw new RpcException(new Status(
+                    StatusCode.InvalidArgument,
+                    $"Global ID {existing.Keys.First()} already identifies a feature."));
+            }
+        }
     }
 
     private async Task<Dictionary<string, long>> ResolveObjectIdsAsync(

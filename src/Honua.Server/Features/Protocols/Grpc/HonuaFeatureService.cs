@@ -295,31 +295,12 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
         // Geometry and attributes go through FeatureMutationValidator before the write (#6193).
 
-        FeatureEditBatch editBatch;
-        try
-        {
-            editBatch = GrpcConversionHelpers.ToFeatureEditBatch(request);
-        }
-        catch (UnstorableValueException ex)
-        {
-            throw new RpcException(new Status(StatusCode.FailedPrecondition, ex.Message));
-        }
-        catch (ArgumentException ex)
-        {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
-        }
-
+        var editBatch = ToEditBatch(request);
         await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
         EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, editBatch);
         EnsureEditLimits(editBatch, _editLimits);
-        GrpcTypedValues.EnsureStorable(layer.Resource, editBatch);
-        var requestServices = context.GetHttpContext().RequestServices;
-        var globalIds = new GlobalIdEdit(
-            request,
-            layer,
-            requestServices,
-            await VisibleGlobalIdFieldAsync(layer, requestServices, context.CancellationToken).ConfigureAwait(false));
-        (editBatch, globalIds) = AssignInsertGlobalIds(globalIds, editBatch);
+        (editBatch, var globalIds) = await PrepareGlobalIdsAsync(new EditCall(request, layer, context), editBatch)
+            .ConfigureAwait(false);
         editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
             .ConfigureAwait(false);
 
@@ -1091,9 +1072,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             projected,
             responseSpatialReference,
             GrpcConversionHelpers.CreateEffectiveGeometryLimits(_geometryLimits, request),
-            request.ReturnGeometry,
-            globalIdField,
-            attributeHiddenFields);
+            request.ReturnGeometry)
+        {
+            GlobalIdField = globalIdField,
+            AttributeHiddenFields = attributeHiddenFields,
+        };
     }
 
     // A where clause that names a masked field is refused.
@@ -1373,9 +1356,13 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         FeatureQuery Query,
         SpatialReference ResponseSpatialReference,
         GeometryLimits GeometryLimits,
-        bool ReturnGeometry,
-        string? GlobalIdField,
-        IReadOnlySet<string> AttributeHiddenFields);
+        bool ReturnGeometry)
+    {
+        // The caller-visible global-ID field, and the attributes kept out of responses.
+        public string? GlobalIdField { get; init; }
+
+        public IReadOnlySet<string> AttributeHiddenFields { get; init; } = new HashSet<string>();
+    }
 
     private readonly record struct GrpcLayerContext(
         MetadataV2Service Service,

@@ -390,10 +390,8 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     internal static Task UpdateResourceAsync(
         WebAppFixture fixture,
         int layerIndex,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate,
-        CancellationToken cancellationToken = default)
+        Func<MetadataV2Resource, MetadataV2Resource> mutate)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         var provider = RequireProvider(fixture);
         var snapshot = ReadCurrent(fixture, provider);
         var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex)

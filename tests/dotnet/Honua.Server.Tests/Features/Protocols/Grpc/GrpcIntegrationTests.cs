@@ -133,26 +133,42 @@ public sealed class GrpcIntegrationTests : IAsyncLifetime
             .Should().Be(SeededFeatureCount);
     }
 
-    [IntegrationTheory]
-    [InlineData("invalid-global-id", false)]
-    [InlineData("4e886876-f3d3-4fc1-adfd-765880396ff2", true)]
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryFeatures")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeatures")]
-    public async Task QueryFeatures_InvalidOrMixedGlobalIdSelector_RejectsWholeCall(string globalId, bool includeObjectIds)
+    public async Task QueryFeatures_MalformedGlobalIdSelector_RejectsWholeCall()
+    {
+        var request = GlobalIdQuery("invalid-global-id");
+
+        await AssertInvalidArgumentAsync(request);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.FeatureService/QueryFeatures")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_ObjectAndGlobalIdSelectorsTogether_RejectsWholeCall()
+    {
+        var request = GlobalIdQuery("4e886876-f3d3-4fc1-adfd-765880396ff2");
+        request.ObjectIds.Add(1);
+
+        await AssertInvalidArgumentAsync(request);
+    }
+
+    private static Proto.QueryFeaturesRequest GlobalIdQuery(string globalId)
     {
         var request = new Proto.QueryFeaturesRequest
         {
             ServiceId = WebAppFixture.TestServiceId,
             LayerId = WebAppFixture.TestLayerId
         };
-        if (includeObjectIds)
-        {
-            request.ObjectIds.Add(1);
-        }
-
         request.GlobalIds.Add(globalId);
+        return request;
+    }
 
+    private async Task AssertInvalidArgumentAsync(Proto.QueryFeaturesRequest request)
+    {
         var act = async () => await _client!.QueryFeaturesAsync(request, _headers);
         var failure = await act.Should().ThrowAsync<RpcException>();
         failure.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);

@@ -75,7 +75,7 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
             _receipts);
-        UseLayer(GlobalIdResource(hidden: false), capabilities: null);
+        UseLayer(GlobalIdResource(), capabilities: null);
         _featureReader.GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult<Feature?>(Feature.Create(call.ArgAt<long>(1), geometry: null)));
         _featureReader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -96,7 +96,7 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task DeleteByGlobalId_WithoutDeleteCapability_FailsPreconditionBeforeAnyRead()
     {
-        UseLayer(GlobalIdResource(hidden: false), capabilities: ["Query", "Update"]);
+        UseLayer(GlobalIdResource(), capabilities: ["Query", "Update"]);
 
         var act = async () => await _sut.ApplyEdits(DeleteRequest(), CallContext("update", "delete"));
 
@@ -137,7 +137,7 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task GlobalIdSelectors_OnHiddenGlobalIdField_FailPreconditionWithoutReading()
     {
-        UseLayer(GlobalIdResource(hidden: true), capabilities: null);
+        UseLayer(HiddenGlobalIdResource(), capabilities: null);
 
         var act = async () => await _sut.ApplyEdits(DeleteRequest(), CallContext("delete"));
 
@@ -254,7 +254,13 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
             .Returns(ResourceValidationResult.Success(triple));
     }
 
-    private static MetadataV2Resource GlobalIdResource(bool hidden)
+    private static MetadataV2Resource GlobalIdResource()
+        => ResourceWith(new MetadataV2Field { Name = "GlobalID", Type = MetadataV2FieldType.Uuid, Nullable = true });
+
+    private static MetadataV2Resource HiddenGlobalIdResource()
+        => ResourceWith(new MetadataV2Field { Name = "GlobalID", Type = MetadataV2FieldType.Uuid, Nullable = true, Hidden = true });
+
+    private static MetadataV2Resource ResourceWith(MetadataV2Field globalIdField)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-test", Name = "test" },
@@ -267,7 +273,7 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
             SchemaFields =
             [
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },
-                new MetadataV2Field { Name = "GlobalID", Type = MetadataV2FieldType.Uuid, Nullable = true, Hidden = hidden },
+                globalIdField,
             ]
         };
 

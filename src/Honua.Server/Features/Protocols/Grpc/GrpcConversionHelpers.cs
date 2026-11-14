@@ -352,26 +352,10 @@ internal static class GrpcConversionHelpers
                 av.Int32Value = s;
                 break;
             case decimal dec:
-                // Metadata declares numeric columns as double; decimal_value is reserved
-                // for a declared exact-decimal field type, which metadata does not have yet.
                 av.DoubleValue = (double)dec;
                 break;
-            // Invariant ISO text on string_value: clients before geospatial-grpc 1.2 cannot
-            // read the date/time cases, and the declared field type already says DATE or TIME.
-            case DateOnly date:
-                av.StringValue = GrpcTypedValues.FormatDate(date);
-                break;
-            case TimeOnly time:
-                av.StringValue = GrpcTypedValues.FormatTime(time);
-                break;
-            case Guid guid:
-                av.StringValue = guid.ToString("D");
-                break;
-            case IFormattable formattable:
-                av.StringValue = formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture);
-                break;
             default:
-                av.StringValue = value.ToString() ?? string.Empty;
+                av.StringValue = GrpcTypedValues.ToInvariantText(value);
                 break;
         }
         return av;

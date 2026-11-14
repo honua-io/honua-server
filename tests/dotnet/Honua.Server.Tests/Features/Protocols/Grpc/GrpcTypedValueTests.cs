@@ -124,29 +124,33 @@ public sealed class GrpcTypedValueTests
     }
 
     [UnitTheory]
-    [InlineData(false, true, false, false)]
-    [InlineData(true, false, true, false)]
-    [InlineData(true, false, false, true)]
-    public void EnsureSelectorMode_MixedSelectors_RejectsBeforeWrites(
-        bool useGlobalIds, bool deleteGlobalIds, bool integerDeletes, bool integerUpdate)
+    [InlineData("delete_global_ids without use_global_ids")]
+    [InlineData("integer deletes with use_global_ids")]
+    [InlineData("integer update ID with use_global_ids")]
+    public void EnsureSelectorMode_MixedSelectors_RejectsBeforeWrites(string scenario)
     {
-        var request = new Proto.ApplyEditsRequest { UseGlobalIds = useGlobalIds };
-        if (deleteGlobalIds)
-        {
-            request.DeleteGlobalIds.Add(GlobalId);
-        }
-
-        if (integerDeletes)
-        {
-            request.Deletes.Add(1);
-        }
-
-        if (integerUpdate)
-        {
-            request.Updates.Add(new Proto.Feature { Id = 1, GlobalId = GlobalId });
-        }
+        var request = MixedSelectorRequest(scenario);
 
         FluentActions.Invoking(() => GrpcGlobalIds.EnsureSelectorMode(request)).Should().Throw<ArgumentException>();
+    }
+
+    private static Proto.ApplyEditsRequest MixedSelectorRequest(string scenario)
+    {
+        var request = new Proto.ApplyEditsRequest { UseGlobalIds = scenario != "delete_global_ids without use_global_ids" };
+        switch (scenario)
+        {
+            case "delete_global_ids without use_global_ids":
+                request.DeleteGlobalIds.Add(GlobalId);
+                break;
+            case "integer deletes with use_global_ids":
+                request.Deletes.Add(1);
+                break;
+            default:
+                request.Updates.Add(new Proto.Feature { Id = 1, GlobalId = GlobalId });
+                break;
+        }
+
+        return request;
     }
 
     [UnitTest]
@@ -195,27 +199,25 @@ public sealed class GrpcTypedValueTests
     }
 
     [UnitTheory]
-    [InlineData(MetadataV2FieldType.Double, "0.1", false)]
-    [InlineData(MetadataV2FieldType.Double, "0.12345678901234567890", true)]
-    [InlineData(MetadataV2FieldType.Integer, "1.5", true)]
-    [InlineData(MetadataV2FieldType.BigInteger, "9223372036854775808", true)]
-    [InlineData(MetadataV2FieldType.String, "1.5", false)]
-    public void EnsureStorable_DecimalThatWouldRound_FailsPrecondition(MetadataV2FieldType type, string value, bool refused)
-    {
-        var resource = new MetadataV2Resource { SchemaFields = [new MetadataV2Field { Name = "n", TypeValue = type }] };
-        var batch = Batch(ImmutableDictionary<string, object?>.Empty.Add("n", GrpcTypedValues.ParseDecimal(value)));
+    [InlineData(MetadataV2FieldType.Double, "0.12345678901234567890")]
+    [InlineData(MetadataV2FieldType.Integer, "1.5")]
+    [InlineData(MetadataV2FieldType.BigInteger, "9223372036854775808")]
+    public void EnsureStorable_DecimalThatWouldRound_FailsPrecondition(MetadataV2FieldType type, string value)
+        => FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(NumericResource(type), DecimalBatch(value)))
+            .Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
 
-        var act = () => GrpcTypedValues.EnsureStorable(resource, batch);
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Double, "0.1")]
+    [InlineData(MetadataV2FieldType.String, "1.5")]
+    public void EnsureStorable_DecimalTheColumnHolds_IsAccepted(MetadataV2FieldType type, string value)
+        => FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(NumericResource(type), DecimalBatch(value)))
+            .Should().NotThrow();
 
-        if (refused)
-        {
-            act.Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
-        }
-        else
-        {
-            act.Should().NotThrow();
-        }
-    }
+    private static MetadataV2Resource NumericResource(MetadataV2FieldType type)
+        => new() { SchemaFields = [new MetadataV2Field { Name = "n", TypeValue = type }] };
+
+    private static FeatureEditBatch DecimalBatch(string value)
+        => Batch(ImmutableDictionary<string, object?>.Empty.Add("n", GrpcTypedValues.ParseDecimal(value)));
 
     [UnitTest]
     public void EnsureStorable_OffsetTimestamp_FailsPrecondition()
