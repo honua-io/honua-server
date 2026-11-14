@@ -60,6 +60,7 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
             builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
+            builder.UseSetting("MultiTenancy:Enabled", "true");
 
             // Reuse the multi-authority OIDC stack (#2849) — a single generic
             // provider validated against a static symmetric key so tokens can be
@@ -1201,6 +1202,7 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("MultiTenancy:Enabled", "true");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
                 builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
                 builder.UseSetting("Oidc:Enabled", "true");
@@ -1226,6 +1228,7 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("MultiTenancy:Enabled", "true");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
                 builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
                 builder.UseSetting("Oidc:Enabled", "true");
@@ -1311,6 +1314,7 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("MultiTenancy:Enabled", "true");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
                 builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
                 builder.UseSetting("Oidc:Enabled", oidcEnabled ? "true" : "false");

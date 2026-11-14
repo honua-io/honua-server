@@ -14,6 +14,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
 
@@ -76,7 +77,7 @@ internal sealed partial class GeoservicesImportService
             ? $", CASE WHEN @geom IS NULL THEN NULL ELSE ST_IsValid(ST_GeomFromText(@geom, {targetSrid})) END"
             : string.Empty;
         var insertSql =
-            $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders}) RETURNING {FieldNames.ObjectId}{sourceValidity}";
+            $"INSERT INTO {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)} ({columnNames}) VALUES ({parameterPlaceholders}) RETURNING {FieldNames.ObjectId}{sourceValidity}";
 
         // Create the command once, add parameters with placeholder values, and prepare
         await using var cmd = connection.CreateCommand();

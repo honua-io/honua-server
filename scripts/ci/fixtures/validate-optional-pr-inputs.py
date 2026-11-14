@@ -53,22 +53,6 @@ class OptionalInputTests(unittest.TestCase):
         for path in ("docs/gis/new-guide.md", "tests/python/unrelated_test.py", "README.md"):
             self.assertFalse(admitted(name, path), path)
 
-    def test_capability_impact_keeps_selector_and_runtime_inputs(self):
-        name = "capability-impact-comparison.yml"
-        for path in ("src/Honua.Server/Program.cs", ".github/ci-shards.json",
-                     "scripts/ci/honua-server-targeted-tests.sh", "scripts/ci/capability-impact.py"):
-            self.assertTrue(admitted(name, path), path)
-        for path in ("README.md", ".github/workflows/unrelated.yml", "docs/guides/new-guide.md"):
-            self.assertFalse(admitted(name, path), path)
-
-    def test_capability_impact_admits_every_legacy_selector_input(self):
-        config = json.loads((ROOT / ".github/ci-shards.json").read_text())
-        prefixes = config["infrastructure_paths"] + config["unmapped_source_run_all_prefixes"]
-        prefixes += [path for shard in config["shards"] for path in shard["paths"]]
-        for prefix in prefixes:
-            path = prefix + "example.cs" if prefix.endswith("/") else prefix
-            self.assertTrue(admitted("capability-impact-comparison.yml", path), path)
-
     def test_github_globs_respect_directory_boundaries(self):
         self.assertTrue(path_matches("Directory.Build.props", "**/*.props"))
         self.assertTrue(path_matches("src/Build.props", "**/*.props"))

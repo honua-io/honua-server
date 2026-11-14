@@ -31,6 +31,6 @@ internal sealed class PostgresSqlDialect : ISqlDialect
             throw new ArgumentException("Identifier must not be empty or whitespace.", nameof(identifier));
         }
 
-        return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+        return SqlIdentifier.QuoteIdentifier(identifier);
     }
 }

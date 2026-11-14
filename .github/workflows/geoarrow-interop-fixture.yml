@@ -34,7 +34,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
   HONUA_GEOARROW_FIXTURE_OUTPUT_DIR: ${{ github.workspace }}/artifacts/test-results/geoarrow-interop

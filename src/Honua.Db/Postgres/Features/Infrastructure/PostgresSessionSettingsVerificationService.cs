@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Health;
 using Microsoft.Extensions.Hosting;
@@ -180,7 +181,7 @@ internal static class PostgresSessionSettingsVerifier
     }
 
     internal static string QuoteIdentifier(string identifier)
-        => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+        => SqlIdentifier.QuoteIdentifier(identifier);
 
     private static void CheckTimeout(
         string role,

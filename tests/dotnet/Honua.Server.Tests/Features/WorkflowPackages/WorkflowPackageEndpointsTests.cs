@@ -38,6 +38,7 @@ namespace Honua.Server.Tests.Features.WorkflowPackages;
 [Operation(Operations.ProcessExecution)]
 public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
 {
+    private const string AdminPassword = "workflow-package-admin-key";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly InMemoryExecutionJobStore _jobStore = new();
@@ -52,6 +53,12 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
     {
         _fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IExecutionJobStore>();
@@ -64,11 +71,10 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
                 // Capture the publishâ†’metadata-release bridge deterministically without requiring an
                 // active Metadata v2 snapshot in the test environment (#2176).
                 services.AddSingleton<IMetadataReleaseService>(_releaseService);
-                // Stand in for the Redis-backed IWorkflowDefinitionStore that
-                // AddOrchestration composes only when IConnectionMultiplexer is registered. Without
-                // it a Schedule publication has no durable receipt and is refused (#3585); these
-                // tests cover the durable path, so they must supply the store the way a Redis-backed
-                // deployment does. WorkflowPackagePublishDegradedTests covers the absent case.
+                // Stand in for the PostgreSQL IWorkflowDefinitionStore that AddOrchestration composes
+                // only when the host has a system database. Without it a Schedule publication has no
+                // durable receipt and is refused; these tests cover the durable path.
+                // WorkflowPackagePublishDegradedTests covers the absent case.
                 services.RemoveAll<IWorkflowDefinitionStore>();
                 services.AddSingleton<IWorkflowDefinitionStore>(_definitionStore);
             });
@@ -77,7 +83,7 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _client = _fixture.CreateAdminClient();
+        _client = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -224,7 +230,7 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
 
         // The Schedule publication's success claim is only honest if the compiled workflow
         // definition actually reached the durable store — that record is what the cron scheduler
-        // enumerates, and it is what a Redis-less install used to skip while still returning 200
+        // enumerates, and a host without a durable store must refuse rather than return 200
         // (#3585). Assert the durable receipt, not just the response.
         var persistedDefinition = await _definitionStore.GetAsync(
             $"workflow-package:{packageId}:v{version.Version}:pub-schedule-1185");

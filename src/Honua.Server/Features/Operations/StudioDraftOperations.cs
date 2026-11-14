@@ -114,6 +114,7 @@ internal sealed record StudioDraftCreatePayload
 internal sealed record StudioDraftUpdatePayload
 {
     public required Guid DraftId { get; init; }
+    public long? ExpectedGeneration { get; init; }
     public required UpdateStudioPackageDraftCommand Command { get; init; }
     public string? TenantId { get; init; }
     public string? SchemaName { get; init; }
@@ -122,6 +123,7 @@ internal sealed record StudioDraftUpdatePayload
 internal sealed record StudioDraftDeletePayload
 {
     public required Guid DraftId { get; init; }
+    public long? ExpectedGeneration { get; init; }
     public string? TenantId { get; init; }
     public string? SchemaName { get; init; }
 }
@@ -335,10 +337,17 @@ internal sealed class StudioDraftUpdateExecutor(IStudioPackageLifecycleService l
 
     protected override async Task<StudioPackageDraft> ActuateAsync(
         StudioDraftUpdatePayload payload,
-        CancellationToken cancellationToken) => await Lifecycle
-            .UpdateDraftAsync(payload.DraftId, payload.Command, cancellationToken)
+        CancellationToken cancellationToken)
+    {
+        if (payload.ExpectedGeneration is { } expected && payload.Command.Generation != expected)
+        {
+            throw new InvalidOperationException("Stale draft generation; refresh and retry.");
+        }
+
+        return await Lifecycle.UpdateDraftAsync(payload.DraftId, payload.Command, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Studio draft '{payload.DraftId:D}' was not found.");
+    }
 
     protected override IReadOnlyDictionary<string, string> ResourceIds(StudioPackageDraft result) =>
         new Dictionary<string, string>(StringComparer.Ordinal) { ["draftId"] = result.DraftId.ToString("D") };
@@ -353,7 +362,9 @@ internal sealed class StudioDraftDeleteExecutor(IStudioPackageLifecycleService l
 
     protected override Task<bool> ActuateAsync(
         StudioDraftDeletePayload payload,
-        CancellationToken cancellationToken) => Lifecycle.DeleteDraftAsync(payload.DraftId, cancellationToken);
+        CancellationToken cancellationToken) => payload.ExpectedGeneration is { } generation
+            ? Lifecycle.DeleteDraftAsync(payload.DraftId, generation, cancellationToken)
+            : Lifecycle.DeleteDraftAsync(payload.DraftId, cancellationToken);
 }
 
 internal sealed class StudioDraftValidateExecutor(IStudioPackageLifecycleService lifecycle, TimeProvider clock)
@@ -812,10 +823,14 @@ internal sealed class StudioDraftMutationRuntime(
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, string>? pendingResourceIds = null)
     {
-        var storedOwnerId = await ResolveStoredOwnerAsync(payload, cancellationToken).ConfigureAwait(false);
+        var storedDraft = await ResolveStoredDraftAsync(payload, cancellationToken).ConfigureAwait(false);
+        if (storedDraft is not null)
+        {
+            payload = BindDraftGeneration(payload, storedDraft.Generation);
+        }
         var request = new OperationRequest
         {
-            VerifiedStudioDraftOwnerId = storedOwnerId,
+            VerifiedStudioDraftOwnerId = storedDraft?.OwnerId,
             OperationId = operationId,
             Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -878,7 +893,7 @@ internal sealed class StudioDraftMutationRuntime(
         return new StudioDraftMutationReceipt<TResult> { Operation = durable, Value = value };
     }
 
-    private async Task<string?> ResolveStoredOwnerAsync<TPayload>(TPayload payload, CancellationToken cancellationToken)
+    private async Task<StudioPackageDraft?> ResolveStoredDraftAsync<TPayload>(TPayload payload, CancellationToken cancellationToken)
     {
         Guid? draftId = payload switch
         {
@@ -887,8 +902,23 @@ internal sealed class StudioDraftMutationRuntime(
             _ => null,
         };
         return draftStore is not null && draftId.HasValue
-            ? (await draftStore.GetDraftAsync(draftId.Value, cancellationToken).ConfigureAwait(false))?.OwnerId
+            ? await draftStore.GetDraftAsync(draftId.Value, cancellationToken).ConfigureAwait(false)
             : null;
+    }
+
+    private static TPayload BindDraftGeneration<TPayload>(TPayload payload, long generation)
+    {
+        object bound = payload switch
+        {
+            StudioDraftUpdatePayload update => update with
+            {
+                ExpectedGeneration = generation,
+                Command = update.Command with { Generation = update.Command.Generation ?? generation },
+            },
+            StudioDraftDeletePayload delete => delete with { ExpectedGeneration = generation },
+            _ => payload!,
+        };
+        return (TPayload)bound;
     }
 
     private static Guid PublicationRequestId(StudioDraftMutationContext context)

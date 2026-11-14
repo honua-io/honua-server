@@ -40,11 +40,11 @@ public sealed class JsonContextRegistrationTests
         // Act + Assert: the [FromBody] DTOs for the enrichment admin endpoints (#2280) must be
         // resolvable, otherwise the RegisterEnrichmentDataset / UpdateEnrichmentDataset MapPost/
         // MapPut endpoints fail to build and the host aborts at startup.
-        serializerOptions.GetTypeInfo(typeof(RegisterEnrichmentDatasetRequest))
+        serializerOptions.GetTypeInfo<RegisterEnrichmentDatasetRequest>()
             .Should().NotBeNull("the enrichment register-dataset [FromBody] type must be in the configured HTTP JSON resolver");
-        serializerOptions.GetTypeInfo(typeof(UpdateEnrichmentDatasetRequest))
+        serializerOptions.GetTypeInfo<UpdateEnrichmentDatasetRequest>()
             .Should().NotBeNull("the enrichment update-dataset [FromBody] type must be in the configured HTTP JSON resolver");
-        serializerOptions.GetTypeInfo(typeof(EnrichmentDatasetMetadata))
+        serializerOptions.GetTypeInfo<EnrichmentDatasetMetadata>()
             .Should().NotBeNull("the enrichment dataset response body must be serializable through the configured HTTP JSON resolver");
     }
 

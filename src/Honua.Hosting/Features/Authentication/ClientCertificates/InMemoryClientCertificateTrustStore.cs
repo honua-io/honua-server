@@ -56,16 +56,8 @@ internal sealed class InMemoryClientCertificateTrustStore : IClientCertificateTr
 
         lock (_gate)
         {
-            var next = _profiles.TryGetValue(profile.ProfileId, out var existing)
-                ? profile with
-                {
-                    Revision = existing.Revision + 1,
-                    PrincipalMappings = profile.PrincipalMappings.Count == 0
-                        ? existing.PrincipalMappings
-                        : profile.PrincipalMappings,
-                    Revocations = profile.Revocations.Count == 0 ? existing.Revocations : profile.Revocations,
-                }
-                : profile with { Revision = Math.Max(1, profile.Revision) };
+            _profiles.TryGetValue(profile.ProfileId, out var existing);
+            var next = ClientCertificateTrustMutations.Upsert(existing, profile);
 
             _profiles[profile.ProfileId] = next;
             return Task.FromResult(next);
@@ -106,24 +98,10 @@ internal sealed class InMemoryClientCertificateTrustStore : IClientCertificateTr
                 return Task.FromResult<ClientCertificatePrincipalMapping?>(null);
             }
 
-            var mappings = profile.PrincipalMappings.ToList();
-            var index = mappings.FindIndex(existing =>
-                string.Equals(existing.MappingId, mapping.MappingId, StringComparison.OrdinalIgnoreCase));
-            var nextMapping = index >= 0 ? mapping with { Revision = mappings[index].Revision + 1 } : mapping;
-            if (index >= 0)
-            {
-                mappings[index] = nextMapping;
-            }
-            else
-            {
-                mappings.Add(nextMapping);
-            }
-
-            _profiles[profileId] = profile with
-            {
-                PrincipalMappings = mappings.ToArray(),
-                Revision = profile.Revision + 1,
-            };
+            var next = ClientCertificateTrustMutations.UpsertMapping(profile, mapping);
+            _profiles[profileId] = next;
+            var nextMapping = next.PrincipalMappings.First(candidate =>
+                string.Equals(candidate.MappingId, mapping.MappingId, StringComparison.OrdinalIgnoreCase));
 
             return Task.FromResult<ClientCertificatePrincipalMapping?>(nextMapping);
         }
@@ -143,26 +121,10 @@ internal sealed class InMemoryClientCertificateTrustStore : IClientCertificateTr
                 return Task.FromResult<ClientCertificatePrincipalMapping?>(null);
             }
 
-            var mappings = profile.PrincipalMappings.ToList();
-            var index = mappings.FindIndex(existing =>
-                string.Equals(existing.MappingId, mappingId, StringComparison.OrdinalIgnoreCase));
-            if (index < 0)
-            {
-                return Task.FromResult<ClientCertificatePrincipalMapping?>(null);
-            }
-
-            var nextMapping = mappings[index] with
-            {
-                Enabled = false,
-                Revision = mappings[index].Revision + 1,
-            };
-            mappings[index] = nextMapping;
-
-            _profiles[profileId] = profile with
-            {
-                PrincipalMappings = mappings.ToArray(),
-                Revision = profile.Revision + 1,
-            };
+            var next = ClientCertificateTrustMutations.DisableMapping(profile, mappingId);
+            _profiles[profileId] = next;
+            var nextMapping = next.PrincipalMappings.FirstOrDefault(candidate =>
+                string.Equals(candidate.MappingId, mappingId, StringComparison.OrdinalIgnoreCase));
 
             return Task.FromResult<ClientCertificatePrincipalMapping?>(nextMapping);
         }

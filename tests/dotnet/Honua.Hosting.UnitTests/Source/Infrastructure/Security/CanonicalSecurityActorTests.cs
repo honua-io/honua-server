@@ -6,6 +6,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
@@ -45,6 +46,36 @@ public sealed class CanonicalSecurityActorTests
 
         Assert.Equal($"apikey:api-key:{apiKeyId}", actor.ActorId);
         Assert.Equal(apiKeyId, actor.ApiKeyId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    public void ResolveAuthorityFingerprint_McpAgentProjection_PreservesCredentialAuthority()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "owner"), new Claim(ClaimTypes.Role, "reader")], "Bearer"));
+        var fingerprint = CanonicalSecurityActor.ResolveAuthorityFingerprint(principal);
+        var context = new DefaultHttpContext { User = principal };
+        context.Request.Path = "/mcp";
+
+        AgentPrincipal.MarkRequestPrincipal(context);
+
+        Assert.True(AgentPrincipal.IsAgent(principal));
+        Assert.Equal(fingerprint, CanonicalSecurityActor.ResolveAuthorityFingerprint(principal));
+    }
+
+    [UnitTheory]
+    [InlineData("agent")]
+    [InlineData("admin")]
+    [Operation(Operations.Security)]
+    public void ResolveAuthorityFingerprint_CredentialRoleChanges_ChangesFingerprint(string role)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "owner")], "Bearer"));
+        var fingerprint = CanonicalSecurityActor.ResolveAuthorityFingerprint(principal);
+
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim(ClaimTypes.Role, role));
+
+        Assert.NotEqual(fingerprint, CanonicalSecurityActor.ResolveAuthorityFingerprint(principal));
     }
 
     private static ClaimsPrincipal ApiKeyPrincipal(params Claim[] claims) =>

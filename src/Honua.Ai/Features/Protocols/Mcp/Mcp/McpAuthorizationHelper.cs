@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Middleware;
@@ -23,7 +24,8 @@ internal static class McpAuthorizationHelper
             throw new Geoprocessing.GeoprocessingAuthorizationException(requiresAuthentication: true);
         }
 
-        return principal;
+        AgentPrincipal.MarkRequestPrincipal(context);
+        return context.User;
     }
 
     // Display names are never used once a durable subject or API-key identity is present.

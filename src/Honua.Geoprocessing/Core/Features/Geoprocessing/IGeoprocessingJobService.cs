@@ -107,6 +107,10 @@ internal interface IGeoprocessingJobService
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default);
 
+    // This detached snapshot is used only for cleanup of the specified job.
+    ClaimsPrincipal CaptureOrphanCleanupPrincipal(string jobId, ClaimsPrincipal principal)
+        => new(principal.Identities.Select(identity => new ClaimsIdentity(identity)));
+
     // Ownership is enforced here without a separate job-read grant, and protocol adapters must not expose this seam.
     Task<ExecutionJobRecord> GetJobForTerminalAsync(
         string jobId,

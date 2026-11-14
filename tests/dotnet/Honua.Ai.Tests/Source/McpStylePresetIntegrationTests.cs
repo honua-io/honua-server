@@ -15,6 +15,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SkiaSharp;
@@ -25,19 +26,41 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
 {
+    private readonly RedisFixture _redis = new();
+
     // The Test host adds its real Postgres catalog after the production MCP
     // composition gate runs. Advertise the same concrete style tools once the
     // fixture supplies that catalog; keep authorization and persistence real.
-    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureServices(services =>
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate().ConfigureServices(services =>
     {
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ApplyStylePresetTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GetStyleTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RenderMapTool>());
+    }).ConfigureWebHost(builder =>
+    {
+        builder.UseSetting("HONUA_DEV_AUTH", "false");
+        builder.UseSetting("Operations:Policy:Enabled", "true");
+        builder.UseSetting("Operations:Policy:Rules:0:OperationId", "style.apply-preset");
+        builder.UseSetting("Operations:Policy:Rules:0:Decision", "RequireApproval");
     });
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _redis.InitializeAsync();
+        _fixture.ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
+            builder.UseSetting("Public:BaseUrl", "http://localhost");
+            builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+        });
+        await _fixture.InitializeAsync();
+    }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        await _fixture.DisposeAsync();
+        await _redis.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Operation(Operations.Update)]
@@ -45,7 +68,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ApplyingPreset_ReplacesPrimaryInCatalogGraphAndMcpReadback()
     {
-        using var client = _fixture.CreateAdminClient();
+        using var client = await HumanApprovedOperation.CreateProposerClientAsync(_fixture);
         await SeedTestLayerStyleAsync(client);
         using var scope = _fixture.Services.CreateScope();
         var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
@@ -65,9 +88,8 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
 
         foreach (var styleId in new[] { oldStyle, newStyle, newStyle })
         {
-            var applied = await CallMcpStyleAsync(client, session, "honua_apply_style_preset", styleId);
-            applied.GetProperty("applied").GetBoolean().Should().BeTrue();
-            applied.GetProperty("styleId").GetString().Should().Be(styleId);
+            var applied = await ApplyApprovedPresetAsync(client, session, styleId);
+            applied.GetProperty("status").GetString().Should().Be("Completed");
 
             var styles = await catalog.GetStylesForLayerAsync(WebAppFixture.TestLayerId);
             styles[0].StyleId.Should().Be(styleId, "a successful preset application must select the effective primary");
@@ -76,7 +98,9 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
             associations.Count(association => association.Ordinal == 0).Should().Be(1);
             associations.Single(association => association.Ordinal == 0).StyleId.Should().Be(styleId);
 
-            var readback = await CallMcpStyleAsync(client, session, "honua_get_style", null);
+            var readback = await CallMcpToolAsync(client, session, "honua_get_style", $$"""
+                {"serviceId":"{{WebAppFixture.TestServiceId}}","serviceLayerIndex":{{WebAppFixture.TestLayerId}}}
+                """);
             readback.GetProperty("styleId").GetString().Should().Be(styleId);
             var snapshot = _fixture.GetCurrentV2GraphSnapshot();
             var resource = snapshot.Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId];
@@ -94,7 +118,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ConcurrentPrimaryPromotions_PreserveOnePrimaryAndMissingStyleLeavesOrderUnchanged()
     {
-        using var client = _fixture.CreateAdminClient();
+        using var client = await HumanApprovedOperation.CreateProposerClientAsync(_fixture);
         await SeedTestLayerStyleAsync(client);
         using var scope = _fixture.Services.CreateScope();
         var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
@@ -128,7 +152,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task PrimaryPromotion_PreservesExplicitAlternateOrdinalsForMigrationReplay()
     {
-        using var client = _fixture.CreateAdminClient();
+        using var client = await HumanApprovedOperation.CreateProposerClientAsync(_fixture);
         await SeedTestLayerStyleAsync(client);
         using var scope = _fixture.Services.CreateScope();
         var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
@@ -158,7 +182,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         // Terminal promise journey stage 4: apply a solid-red preset to a published layer whose
         // stored default style is blue, render it, and decode the centre pixel. Before the fix
         // render_map named the preset but drew the stored default (rgba(45,105,165)).
-        using var client = _fixture.CreateAdminClient();
+        using var client = await HumanApprovedOperation.CreateProposerClientAsync(_fixture);
         await SeedTestLayerStyleAsync(client);
         using var scope = _fixture.Services.CreateScope();
         var layerStyles = scope.ServiceProvider.GetRequiredService<ILayerStyleCatalog>();
@@ -171,9 +195,8 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         await InsertPointFeatureAsync(WebAppFixture.TestLayerId, CentreX, CentreY);
 
         var session = await InitializeMcpSessionAsync(client);
-        var applied = await CallMcpStyleAsync(client, session, "honua_apply_style_preset", presetId);
-        applied.GetProperty("applied").GetBoolean().Should().BeTrue();
-        applied.GetProperty("styleId").GetString().Should().Be(presetId);
+        var applied = await ApplyApprovedPresetAsync(client, session, presetId);
+        applied.GetProperty("status").GetString().Should().Be("Completed");
         applied.GetProperty("operationId").GetString().Should().Be("style.apply-preset");
         applied.GetProperty("operationInstanceId").GetString().Should().NotBeNullOrWhiteSpace();
         applied.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
@@ -202,7 +225,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task AppliedZeroLayerPreset_DrawsNothingInsteadOfTheStoredDefault()
     {
-        using var client = _fixture.CreateAdminClient();
+        using var client = await HumanApprovedOperation.CreateProposerClientAsync(_fixture);
         await SeedTestLayerStyleAsync(client);
         using var scope = _fixture.Services.CreateScope();
         var layerStyles = scope.ServiceProvider.GetRequiredService<ILayerStyleCatalog>();
@@ -213,8 +236,8 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         await InsertPointFeatureAsync(WebAppFixture.TestLayerId, EmptyCentreX, EmptyCentreY);
 
         var session = await InitializeMcpSessionAsync(client);
-        (await CallMcpStyleAsync(client, session, "honua_apply_style_preset", presetId))
-            .GetProperty("applied").GetBoolean().Should().BeTrue();
+        (await ApplyApprovedPresetAsync(client, session, presetId))
+            .GetProperty("status").GetString().Should().Be("Completed");
 
         var rendered = await CallMcpToolAsync(client, session, "honua_render_map", $$"""
             {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","serviceLayerIndex":{{WebAppFixture.TestLayerId}}}],
@@ -290,15 +313,14 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         return result.GetProperty("structuredContent").Clone();
     }
 
-    private static async Task<JsonElement> CallMcpStyleAsync(HttpClient client, string session,
-        string toolName, string? styleId)
+    private static async Task<JsonElement> CallRefusedPresetAsync(HttpClient client, string session, string styleId)
     {
-        var styleArgument = styleId is null ? string.Empty : $",\"styleId\":\"{styleId}\"";
+        var styleArgument = $",\"styleId\":\"{styleId}\"";
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
         {
             Content = new StringContent($$"""
                 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
-                  "name":"{{toolName}}","arguments":{"serviceId":"{{WebAppFixture.TestServiceId}}",
+                  "name":"honua_apply_style_preset","arguments":{"serviceId":"{{WebAppFixture.TestServiceId}}",
                   "serviceLayerIndex":{{WebAppFixture.TestLayerId}}{{styleArgument}}
                 }
                 }
@@ -312,8 +334,39 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         var root = document.RootElement;
         root.TryGetProperty("error", out _).Should().BeFalse(root.ToString());
         var result = root.GetProperty("result");
-        result.GetProperty("isError").GetBoolean().Should().BeFalse(result.ToString());
+        result.GetProperty("isError").GetBoolean().Should().BeTrue(result.ToString());
         return result.GetProperty("structuredContent").Clone();
+    }
+
+    private async Task<JsonElement> ApplyApprovedPresetAsync(HttpClient client, string session, string styleId)
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var before = await catalog.GetStylesForLayerAsync(WebAppFixture.TestLayerId);
+        var denied = await CallRefusedPresetAsync(client, session, styleId);
+        denied.GetProperty("code").GetString().Should().Be("failed_precondition");
+        denied.GetProperty("policyRef").GetString().Should().Be("operator.publish");
+
+        using var submission = await client.PostAsJsonAsync("/api/v1/operations/style.apply-preset/submit", new
+        {
+            parameters = new Dictionary<string, string>
+            {
+                ["serviceId"] = _fixture.GetCurrentV2GraphSnapshot().Graph.Publications
+                    .First(publication => publication.LayerIndex == WebAppFixture.TestLayerId
+                        && publication.PublicationType == MetadataV2PublicationType.EsriMapLayer).ServiceId,
+                ["serviceLayerIndex"] = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["styleId"] = styleId,
+            },
+        });
+        var body = await submission.Content.ReadAsStringAsync();
+        submission.IsSuccessStatusCode.Should().BeTrue(body);
+        using var receipt = JsonDocument.Parse(body);
+        var proposal = receipt.RootElement.GetProperty("data");
+        proposal.GetProperty("status").GetString().Should().Be("RequiresApproval", body);
+        (await catalog.GetStylesForLayerAsync(WebAppFixture.TestLayerId))
+            .Should().BeEquivalentTo(before, options => options.WithStrictOrdering(),
+                "neither the refused convenience call nor proposal submission may apply the preset");
+        return await HumanApprovedOperation.ApproveAndReadHandleAsync(_fixture, proposal.GetProperty("proposalId").GetString()!);
     }
 
     private static async Task SeedTestLayerStyleAsync(HttpClient adminClient)

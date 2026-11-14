@@ -9,7 +9,7 @@ Use these standard names at workflow top-level `env:` blocks or as reusable work
 
 | Variable | Standard value | Used by |
 |---|---|---|
-| `DOTNET_VERSION` | `'10.0.x'` | All .NET workflows |
+| `DOTNET_VERSION` | `'11.0.x'` | All .NET workflows |
 | `DOTNET_SKIP_FIRST_TIME_EXPERIENCE` | `true` | All .NET workflows |
 | `DOTNET_NOLOGO` | `true` | All .NET workflows |
 | `PYTHON_VERSION` | `'3.11'` | Conformance and script workflows |
