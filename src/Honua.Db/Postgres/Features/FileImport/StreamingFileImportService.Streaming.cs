@@ -76,6 +76,7 @@ internal sealed partial class StreamingFileImportService
                 },
                 cancellationToken);
             request = request with { TargetSrid = target.StorageSrid };
+            var requestedDatumSelection = target.RequestedDatumSelection;
             var loadTableName = target.LoadTableName;
             var hadExistingTarget = target.HadExistingTarget;
             appendUsesStaging = target.AppendUsesStaging;
@@ -168,19 +169,20 @@ internal sealed partial class StreamingFileImportService
                     if (batch.Count >= _limits.BatchSize)
                     {
                         directBatchAttempted |= directGuard is not null;
-                        var (imported, failed) = await InsertBatchAsync(
-                            connection,
-                            targetSchema,
-                            loadTableName,
-                            batch,
-                            sourceSrid,
-                            request.TargetSrid!.Value,
-                            wkbWriter,
-                            loadMode,
-                            request.KeyColumns,
-                            repairTally,
-                            cancellationToken,
-                            directGuard);
+                        var (imported, failed) = await InsertBatchAsync(connection, new ImportBatchRequest
+                        {
+                            SchemaName = targetSchema,
+                            TableName = loadTableName,
+                            Features = batch,
+                            SourceSrid = sourceSrid,
+                            TargetSrid = request.TargetSrid!.Value,
+                            WkbWriter = wkbWriter,
+                            LoadMode = loadMode,
+                            KeyColumns = request.KeyColumns,
+                            RepairTally = repairTally,
+                            DirectGuard = directGuard,
+                            RequestedDatumSelection = requestedDatumSelection
+                        }, cancellationToken);
 
                         totalImported += imported;
                         totalFailed += failed;
@@ -220,19 +222,20 @@ internal sealed partial class StreamingFileImportService
                 if (batch.Count > 0)
                 {
                     directBatchAttempted |= directGuard is not null;
-                    var (imported, failed) = await InsertBatchAsync(
-                        connection,
-                        targetSchema,
-                        loadTableName,
-                        batch,
-                        sourceSrid,
-                        request.TargetSrid!.Value,
-                        wkbWriter,
-                        loadMode,
-                        request.KeyColumns,
-                        repairTally,
-                        cancellationToken,
-                        directGuard);
+                    var (imported, failed) = await InsertBatchAsync(connection, new ImportBatchRequest
+                    {
+                        SchemaName = targetSchema,
+                        TableName = loadTableName,
+                        Features = batch,
+                        SourceSrid = sourceSrid,
+                        TargetSrid = request.TargetSrid!.Value,
+                        WkbWriter = wkbWriter,
+                        LoadMode = loadMode,
+                        KeyColumns = request.KeyColumns,
+                        RepairTally = repairTally,
+                        DirectGuard = directGuard,
+                        RequestedDatumSelection = requestedDatumSelection
+                    }, cancellationToken);
 
                     totalImported += imported;
                     totalFailed += failed;
