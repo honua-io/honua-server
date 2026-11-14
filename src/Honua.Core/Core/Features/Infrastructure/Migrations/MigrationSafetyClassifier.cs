@@ -293,115 +293,127 @@ public static class MigrationSafetyClassifier
     }
 
     private static void AppendExecutableSql(string sql, StringBuilder result, bool insideRoutineBody)
+        => new ExecutableSqlParser(sql, result, insideRoutineBody).Append();
+
+    private sealed class ExecutableSqlParser(string sql, StringBuilder result, bool insideRoutineBody)
     {
-        var i = 0;
-        var length = sql.Length;
-        var statementStart = result.Length;
-        var dynamicSql = new StringBuilder();
-        var dynamicFragments = new List<string>();
+        private int _index;
+        private int _statementStart = result.Length;
+        private readonly StringBuilder _dynamicSql = new();
+        private readonly List<string> _dynamicFragments = new();
 
-        while (i < length)
+        public void Append()
         {
-            var current = sql[i];
-
-            // Quoted identifiers preserve their boundaries: comment markers and quote
-            // characters inside them are identifier text, not executable SQL syntax.
-            if (current == '"')
+            while (_index < sql.Length)
             {
-                i = AppendQuotedIdentifier(sql, result, i);
-                continue;
+                if (sql[_index] == '"')
+                {
+                    _index = AppendQuotedIdentifier(sql, result, _index);
+                    continue;
+                }
+
+                var commentEnd = MigrationSqlComments.FindEnd(sql, _index);
+                if (commentEnd > _index)
+                {
+                    _index = commentEnd;
+                    result.Append(' ');
+                    continue;
+                }
+
+                if (TryAppendLiteral())
+                {
+                    continue;
+                }
+
+                var current = sql[_index++];
+                result.Append(current);
+                if (current == ';')
+                {
+                    CompleteStatement();
+                }
             }
 
-            var commentEnd = MigrationSqlComments.FindEnd(sql, i);
-            if (commentEnd > i)
-            {
-                i = commentEnd;
-                result.Append(' ');
-                continue;
-            }
+            FlushDynamicSql();
+        }
 
-            var escapeString = (current is 'E' or 'e') && i + 1 < length && sql[i + 1] == '\''
-                && (i == 0 || !(char.IsAsciiLetterOrDigit(sql[i - 1]) || sql[i - 1] >= 128 || sql[i - 1] is '_' or '$'));
-            if (current == '\'' || escapeString)
+        private bool TryAppendLiteral()
+        {
+            var escapeString = IsEscapeString();
+            if (sql[_index] == '\'' || escapeString)
             {
                 if (escapeString)
                 {
-                    i++;
+                    _index++;
                 }
 
                 var literal = escapeString
-                    ? MigrationStringLiterals.ReadEscaped(sql, i)
-                    : MigrationStringLiterals.ReadStandard(sql, i);
-                var contents = literal.Contents;
-                i = literal.NextIndex;
-                if (IsRoutineBodyPrefix(result, statementStart))
-                {
-                    var routineSql = new StringBuilder(contents.Length);
-                    AppendExecutableSql(contents, routineSql, insideRoutineBody: true);
-                    AppendExecutionScope(result, routineSql);
-                }
-                else if (insideRoutineBody
-                    && IsDynamicExecutePrefix(result, statementStart)
-                    && IsDynamicSqlTemplatePosition(result, statementStart))
-                {
-                    AppendExecutionScope(dynamicSql, ExtractDynamicSql(contents,
-                        result.ToString(statementStart, result.Length - statementStart), sql.AsSpan(i)));
-                    dynamicFragments.Add(contents);
-                }
-
-                result.Append(' ');
-                continue;
+                    ? MigrationStringLiterals.ReadEscaped(sql, _index)
+                    : MigrationStringLiterals.ReadStandard(sql, _index);
+                _index = literal.NextIndex;
+                AppendLiteral(literal.Contents);
+                return true;
             }
 
-            if (current == '$' && TryReadDollarTag(sql, i) is { } tag)
+            if (sql[_index] != '$' || TryReadDollarTag(sql, _index) is not { } tag)
             {
-                var closeIndex = sql.IndexOf(tag, i + tag.Length, StringComparison.Ordinal);
-                var contentsStart = i + tag.Length;
-                var contentsLength = (closeIndex < 0 ? length : closeIndex) - contentsStart;
-                var contents = sql.Substring(contentsStart, contentsLength);
-                i = closeIndex < 0 ? length : closeIndex + tag.Length;
-
-                if (IsRoutineBodyPrefix(result, statementStart))
-                {
-                    var routineSql = new StringBuilder(contents.Length);
-                    AppendExecutableSql(contents, routineSql, insideRoutineBody: true);
-                    AppendExecutionScope(result, routineSql);
-                }
-                else if (insideRoutineBody
-                    && IsDynamicExecutePrefix(result, statementStart)
-                    && IsDynamicSqlTemplatePosition(result, statementStart))
-                {
-                    AppendExecutionScope(dynamicSql, ExtractDynamicSql(contents,
-                        result.ToString(statementStart, result.Length - statementStart), sql.AsSpan(i)));
-                    dynamicFragments.Add(contents);
-                }
-
-                result.Append(' ');
-                continue;
+                return false;
             }
 
-            result.Append(current);
-            i++;
-
-            if (current == ';')
-            {
-                if (dynamicSql.Length > 0)
-                {
-                    AppendExecutionScope(result, dynamicSql);
-                    AppendDynamicFragments(result, dynamicFragments);
-                    result.Append(';');
-                    dynamicSql.Clear();
-                    dynamicFragments.Clear();
-                }
-
-                statementStart = result.Length;
-            }
+            var contentsStart = _index + tag.Length;
+            var closeIndex = sql.IndexOf(tag, contentsStart, StringComparison.Ordinal);
+            var contentsLength = (closeIndex < 0 ? sql.Length : closeIndex) - contentsStart;
+            _index = closeIndex < 0 ? sql.Length : closeIndex + tag.Length;
+            AppendLiteral(sql.Substring(contentsStart, contentsLength));
+            return true;
         }
 
-        if (dynamicSql.Length > 0)
+        private bool IsEscapeString()
+            => (sql[_index] is 'E' or 'e') && _index + 1 < sql.Length && sql[_index + 1] == '\''
+                && (_index == 0 || !(char.IsAsciiLetterOrDigit(sql[_index - 1])
+                    || sql[_index - 1] >= 128 || sql[_index - 1] is '_' or '$'));
+
+        private void AppendLiteral(string contents)
         {
-            AppendExecutionScope(result, dynamicSql);
-            AppendDynamicFragments(result, dynamicFragments);
+            if (IsRoutineBodyPrefix(result, _statementStart))
+            {
+                var routineSql = new StringBuilder(contents.Length);
+                AppendExecutableSql(contents, routineSql, insideRoutineBody: true);
+                AppendExecutionScope(result, routineSql);
+            }
+            else if (insideRoutineBody
+                && IsDynamicExecutePrefix(result, _statementStart)
+                && IsDynamicSqlTemplatePosition(result, _statementStart))
+            {
+                AppendExecutionScope(_dynamicSql, ExtractDynamicSql(contents,
+                    result.ToString(_statementStart, result.Length - _statementStart), sql.AsSpan(_index)));
+                _dynamicFragments.Add(contents);
+            }
+
+            result.Append(' ');
+        }
+
+        private void CompleteStatement()
+        {
+            if (_dynamicSql.Length > 0)
+            {
+                FlushDynamicSql();
+                result.Append(';');
+            }
+
+            _statementStart = result.Length;
+        }
+
+        private void FlushDynamicSql()
+        {
+            if (_dynamicSql.Length == 0)
+            {
+                return;
+            }
+
+            AppendExecutionScope(result, _dynamicSql);
+            AppendDynamicFragments(result, _dynamicFragments);
+            _dynamicSql.Clear();
+            _dynamicFragments.Clear();
         }
     }
 
