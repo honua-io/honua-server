@@ -4,6 +4,7 @@ set -euo pipefail
 
 TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export TRAIN_APPLY=0
+export GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-honua-io/honua-server}"
 . "${TRAIN_DIR}/lib.sh"
 . "${TRAIN_DIR}/smart-ci.sh"
 . "${TRAIN_DIR}/classify-timeout.sh"
@@ -850,12 +851,23 @@ export TRAIN_RESUME_STARTUP_TEST_ONLY=0
 
 unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
 : >"${record}"
-gh() { [[ "$*" == issue\ list* ]] && return 1; fail "state-list startup failure attempted unexpected gh operation: $*"; }
+. "${TRAIN_DIR}/fixtures/timeout-review-history.sh"
+gh() {
+  if [[ "$*" == "${review_history_operation}" ]]; then
+    timeout_fixture_review_history
+  elif [[ "$*" == issue\ list* ]]; then
+    return 1
+  else
+    fail "state-list startup failure attempted unexpected gh operation: $*"
+  fi
+}
 train_select() { fail "state-list startup failure reached selection"; }
 rc=0
 main || rc=$?
 [[ "${rc}" == "1" && ! -s "${record}" ]] || fail "state-list failure did not stop controller before selection"
 pass "startup state-list failure stops before selection"
+
+validate_timeout_review_history
 export TRAIN_STATE_ISSUE_OVERRIDE=1
 
 # Known terminal phases from the production controller must release every member
@@ -1423,7 +1435,15 @@ trunk_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 included=101
 fwdfix=0
 flake_reruns=0
-gh() { [[ "$*" == *'--json attempt'* ]] && printf '1\n' || fail "rejected rerun attempted unexpected gh operation: $*"; }
+gh() {
+  if [[ "$*" == "${review_history_operation}" ]]; then
+    timeout_fixture_review_history
+  elif [[ "$*" == *'--json attempt'* ]]; then
+    printf '1\n'
+  else
+    fail "rejected rerun attempted unexpected gh operation: $*"
+  fi
+}
 rc=0
 train_classify_retry_candidate 333 0 0 'Server Tests (OData Core)' _persist_retry_intent || rc=$?
 [[ "${rc}" == "5" ]] || fail "definitive requester rejection was not classified separately"
