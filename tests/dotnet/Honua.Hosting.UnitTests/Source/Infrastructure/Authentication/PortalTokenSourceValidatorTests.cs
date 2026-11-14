@@ -10,10 +10,10 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-[UnitTest]
 public sealed class PortalTokenSourceValidatorTests
 {
     [Fact]
+    [UnitTest]
     public async Task IsStillValidAsync_AfterRevocation_AllPreviouslyUsedInstancesRefuse()
     {
         var store = new InMemoryAdminApiKeyStore();
@@ -32,10 +32,12 @@ public sealed class PortalTokenSourceValidatorTests
     }
 
     [Fact]
+    [UnitTest]
     public Task IsStillValidAsync_AfterSuccessfulRead_MissingAuthorityRefuses() =>
         AssertAuthorityRefusesAsync(() => Task.FromResult<AdminApiKeyRecord?>(null));
 
     [Fact]
+    [UnitTest]
     public Task IsStillValidAsync_AfterSuccessfulRead_UnavailableAuthorityRefuses() =>
         AssertAuthorityRefusesAsync(() => Task.FromException<AdminApiKeyRecord?>(new InvalidOperationException("unavailable")));
 
