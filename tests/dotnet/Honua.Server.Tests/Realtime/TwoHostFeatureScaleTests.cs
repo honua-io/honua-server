@@ -91,66 +91,79 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
         using var clientB = SubscriberClient(_taskB);
         var subscribers = new List<Subscriber>(_profile.Subscribers);
         var checkpoints = new List<string>();
-        for (var i = 0; i < _profile.Subscribers; i++)
+        Task[] reading = [];
+        try
         {
-            if (i > 0 && i % 500 == 0)
+            for (var i = 0; i < _profile.Subscribers; i++)
             {
-                checkpoints.Add($"at {i}: {await DescribeDatabaseSessionsAsync()}");
+                if (i > 0 && i % 500 == 0)
+                {
+                    checkpoints.Add($"at {i}: {await DescribeDatabaseSessionsAsync()}");
+                }
+                HttpResponseMessage response;
+                try
+                {
+                    response = await TwoHostFeatureHarness.OpenStreamAsync(i % 2 == 0 ? clientA : clientB, null, run.Token);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    throw new InvalidOperationException(
+                        $"Opening subscriber {i} of {_profile.Subscribers} failed; database sessions: {await DescribeDatabaseSessionsAsync()}; " +
+                        $"earlier: {string.Join(" | ", checkpoints)}",
+                        exception);
+                }
+                subscribers.Add(new Subscriber(response));
             }
-            HttpResponseMessage response;
-            try
-            {
-                response = await TwoHostFeatureHarness.OpenStreamAsync(i % 2 == 0 ? clientA : clientB, null, run.Token);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                throw new InvalidOperationException(
-                    $"Opening subscriber {i} of {_profile.Subscribers} failed; database sessions: {await DescribeDatabaseSessionsAsync()}; " +
-                    $"earlier: {string.Join(" | ", checkpoints)}",
-                    exception);
-            }
-            subscribers.Add(new Subscriber(response));
-        }
-        _output.WriteLine($"after opening subscribers: {await DescribeDatabaseSessionsAsync()}");
-        var context = new DeliveryContext(_marker, startedAt, latencies);
-        var reading = subscribers.Select(subscriber => subscriber.ReadAsync(context, total, run.Token)).ToArray();
+            _output.WriteLine($"after opening subscribers: {await DescribeDatabaseSessionsAsync()}");
+            var context = new DeliveryContext(_marker, startedAt, latencies);
+            reading = subscribers.Select(subscriber => subscriber.ReadAsync(context, total, run.Token)).ToArray();
 
-        var writeClock = Stopwatch.StartNew();
-        await WriteAtRateAsync(startedAt, run.Token);
-        var writeElapsed = writeClock.Elapsed;
-        using (var settle = CancellationTokenSource.CreateLinkedTokenSource(run.Token))
-        {
-            settle.CancelAfter(SettleTimeout);
-            try
+            var writeClock = Stopwatch.StartNew();
+            await WriteAtRateAsync(startedAt, run.Token);
+            var writeElapsed = writeClock.Elapsed;
+            using (var settle = CancellationTokenSource.CreateLinkedTokenSource(run.Token))
             {
-                await Task.WhenAll(reading).WaitAsync(settle.Token);
+                settle.CancelAfter(SettleTimeout);
+                try
+                {
+                    await Task.WhenAll(reading).WaitAsync(settle.Token);
+                }
+                catch (OperationCanceledException exception)
+                {
+                    throw new TimeoutException(
+                        $"Subscribers received between {subscribers.Min(subscriber => subscriber.Received)} and " +
+                        $"{subscribers.Max(subscriber => subscriber.Received)} of {total} edits.", exception);
+                }
             }
-            catch (OperationCanceledException exception)
-            {
-                throw new TimeoutException(
-                    $"Subscribers received between {subscribers.Min(subscriber => subscriber.Received)} and " +
-                    $"{subscribers.Max(subscriber => subscriber.Received)} of {total} edits.", exception);
-            }
-        }
 
-        _output.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"subscribers={_profile.Subscribers} edits={total} write_seconds={writeElapsed.TotalSeconds:F1} " +
-            $"achieved_eps={total / writeElapsed.TotalSeconds:F1} p50_ms={latencies.Percentile(0.50)} " +
-            $"p95_ms={latencies.Percentile(0.95)} p99_ms={latencies.Percentile(0.99)} max_ms={latencies.Max} " +
-            $"listener_pids={string.Join(',', listeners.Select(listener => listener.ProcessId))}"));
-        foreach (var subscriber in subscribers)
-        {
-            subscriber.Received.Should().Be(total, "every subscriber receives every committed edit exactly once");
-            subscriber.Dispose();
+            _output.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                $"subscribers={_profile.Subscribers} edits={total} write_seconds={writeElapsed.TotalSeconds:F1} " +
+                $"achieved_eps={total / writeElapsed.TotalSeconds:F1} p50_ms={latencies.Percentile(0.50)} " +
+                $"p95_ms={latencies.Percentile(0.95)} p99_ms={latencies.Percentile(0.99)} max_ms={latencies.Max} " +
+                $"listener_pids={string.Join(',', listeners.Select(listener => listener.ProcessId))}"));
+            foreach (var subscriber in subscribers)
+            {
+                subscriber.Received.Should().Be(total, "every subscriber receives every committed edit exactly once");
+            }
+            if (_profile.Subscribers > 0)
+            {
+                latencies.Percentile(0.95).Should().BeLessThanOrEqualTo((long)DeliveryTarget.TotalMilliseconds);
+            }
+            // One listener connection per task for the whole run, independent of subscriber count.
+            listeners.Should().OnlyContain(listener => listener.IsConnected);
+            listeners.Select(listener => listener.ProcessId).Should().OnlyHaveUniqueItems();
+            listeners.Select(listener => listener.Reconnects).Should().Equal(reconnectsBefore);
         }
-        if (_profile.Subscribers > 0)
+        finally
         {
-            latencies.Percentile(0.95).Should().BeLessThanOrEqualTo((long)DeliveryTarget.TotalMilliseconds);
+            // Failed opens, writes and assertions must release every already-open stream too.
+            await run.CancelAsync();
+            foreach (var subscriber in subscribers)
+            {
+                subscriber.Dispose();
+            }
+            await Task.WhenAll(reading).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
-        // One listener connection per task for the whole run, independent of subscriber count.
-        listeners.Should().OnlyContain(listener => listener.IsConnected);
-        listeners.Select(listener => listener.ProcessId).Should().OnlyHaveUniqueItems();
-        listeners.Select(listener => listener.Reconnects).Should().Equal(reconnectsBefore);
     }
 
     // Who holds database connections: a subscriber that keeps one, or a pool that grows with
