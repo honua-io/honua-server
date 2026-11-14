@@ -306,6 +306,14 @@ internal static class ServiceCollectionExtensions
             new PostgresOpsHealthRollupStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
+        services.AddScoped<PostgresOpsIncidentEpisodeStore>(serviceProvider =>
+            new PostgresOpsIncidentEpisodeStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IOpsIncidentEpisodeStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<PostgresOpsIncidentEpisodeStore>());
+        services.AddScoped<IOpsIncidentEpisodeResolver>(serviceProvider =>
+            serviceProvider.GetRequiredService<PostgresOpsIncidentEpisodeStore>());
         services.AddScoped<IOpsExternalEventStore>(serviceProvider =>
             new PostgresOpsExternalEventStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
