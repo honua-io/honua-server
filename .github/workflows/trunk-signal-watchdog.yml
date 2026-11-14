@@ -29,6 +29,9 @@ jobs:
           MAX_HOURS_WITHOUT_RESULT: "2"
           MAX_MINUTES_QUEUED: "45"
           MAX_HOURS_WITHOUT_SCHEDULE: "14"
+          # Cancellation churn is judged on recent runs only: trunk CI is sparse, so the last ten
+          # runs can span a day and old churn would otherwise keep the watchdog red long after it stopped.
+          CANCELLATION_WINDOW_HOURS: "6"
           ISSUE_TITLE: "Trunk CI signal is stale"
         with:
           script: |
@@ -92,8 +95,13 @@ jobs:
               const problem = await queueProblem(run);
               if (problem) problems.push(problem);
             }
-            const cancelled = runs.slice(0, 10).filter(run => run.conclusion === 'cancelled').length;
-            if (cancelled >= 6) problems.push(`${cancelled} of the last 10 trunk CI runs were cancelled.`);
+            const cancellationWindowMs = Number(process.env.CANCELLATION_WINDOW_HOURS) * 3600 * 1000;
+            const cancelled = runs.slice(0, 10)
+              .filter(run => run.conclusion === 'cancelled' && now - Date.parse(run.created_at) <= cancellationWindowMs)
+              .length;
+            if (cancelled >= 6) {
+              problems.push(`${cancelled} of the last 10 trunk CI runs were cancelled in the last ${process.env.CANCELLATION_WINDOW_HOURS} h.`);
+            }
 
             const { data: open } = await github.rest.issues.listForRepo({ ...repo, state: 'open', labels: 'trunk-signal', per_page: 10 });
             const existing = open.find(issue => issue.title === process.env.ISSUE_TITLE);

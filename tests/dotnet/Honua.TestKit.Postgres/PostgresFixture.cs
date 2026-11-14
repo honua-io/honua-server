@@ -27,6 +27,7 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
             "148_CreateControlPlaneState.sql", "149_CreateSecurityState.sql",
             "150_CreateOAuthClientsAndOperationProgress.sql", "153_CreateVersionJobsAndTileGenerationCheckpoints.sql",
             "154_CreatePackageDraftsAndMcpSessions.sql", "156_CreateConfigurationDocuments.sql",
+            "166_CreateSourceWatermarks.sql",
             "167_CreateWorkflowStores.sql"];
 
     // Upload tests run with HONUA_SKIP_MIGRATIONS and a seed that mirrors older import
