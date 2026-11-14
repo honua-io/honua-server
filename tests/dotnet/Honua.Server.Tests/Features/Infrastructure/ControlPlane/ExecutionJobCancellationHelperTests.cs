@@ -7,6 +7,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using Honua.ServiceDefaults;
+using Honua.TestKit.Attributes;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -15,6 +17,146 @@ public sealed class ExecutionJobCancellationHelperTests
 {
     private const string TransitionTestBackendNoOp = "execution-cancel-noop-test";
     private const string TransitionTestBackendCancelled = "execution-cancel-terminal-test";
+
+    [UnitTest]
+    public async Task QueuedLocalCancellationCasLosesToManualRetry_DoesNotCancelSuccessor()
+    {
+        var original = CreateJobRecord("queued-retry", ExecutionJobStatus.Queued, backend: "local") with { Version = 1 };
+        // A queued job can be cancelled and manually retried without changing claim or attempt fields.
+        var successor = original with { Version = 3, ManualRetryGeneration = 1, CurrentPhase = "Queued for manual retry" };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+        store.GetAsync(original.OperationId, Arg.Any<CancellationToken>()).Returns(successor);
+
+        var result = await ExecutionJobCancellationHelper.TryApplyAsync(store, original.OperationId, original, "Cancelled");
+
+        result.State.Should().Be(ExecutionJobCancellationState.Unconfirmed);
+        await store.Received(1).TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData(0, 2)]
+    [InlineData(1, 2)]
+    [InlineData(1, 3)]
+    [InlineData(1, 5)]
+    public async Task QueuedCancellationCasLosesToWorkerPickup_RequestsDurableCancellation(int attemptIncrement, long version)
+    {
+        var original = CreateJobRecord("queued-pickup", ExecutionJobStatus.Queued, backend: "local") with { Version = 1 };
+        var claimed = original with
+        {
+            Version = version,
+            Status = ExecutionJobStatus.Running,
+            AttemptCount = original.AttemptCount + attemptIncrement,
+            ClaimedBy = "worker",
+            ClaimedAt = DateTimeOffset.UtcNow
+        };
+        await AssertWorkerPickupCancellationAsync(original, claimed);
+    }
+
+    [UnitTheory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public async Task QueuedRetryCancellationCasLosesToWorkerPickup_RequestsDurableCancellation(long version)
+    {
+        var original = CreateJobRecord("queued-retry-pickup", ExecutionJobStatus.Queued, backend: "local") with
+        {
+            Version = 1,
+            AttemptCount = 1,
+            NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(-1)
+        };
+        var claimed = original with
+        {
+            Version = version,
+            Status = ExecutionJobStatus.Running,
+            AttemptCount = original.AttemptCount + 1,
+            ClaimedBy = "worker",
+            ClaimedAt = DateTimeOffset.UtcNow,
+            NextRetryAt = null
+        };
+        await AssertWorkerPickupCancellationAsync(original, claimed);
+    }
+
+    private static async Task AssertWorkerPickupCancellationAsync(ExecutionJobRecord original, ExecutionJobRecord claimed)
+    {
+        var store = Substitute.For<IExecutionJobStore>();
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+        store.GetAsync(original.OperationId, Arg.Any<CancellationToken>()).Returns(claimed);
+
+        var result = await ExecutionJobCancellationHelper.TryApplyAsync(store, original.OperationId, original, "Cancelled");
+
+        result.State.Should().Be(ExecutionJobCancellationState.CancellationRequested);
+        result.Job!.CancellationRequestedAt.Should().NotBeNull();
+        await store.Received(1).TrySetAsync(Arg.Is<ExecutionJobRecord>(job =>
+            job.ClaimedBy == "worker" && job.CancellationRequestedAt.HasValue),
+            Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData("local")]
+    [InlineData("remote")]
+    public async Task CancellationCasLosesToRetry_DoesNotModifySuccessor(string backend)
+    {
+        var original = CreateJobRecord("cancel-retry", ExecutionJobStatus.Running) with
+        { AttemptCount = 1, ClaimedBy = "worker", ClaimedAt = DateTimeOffset.UtcNow };
+        var successor = original with
+        {
+            Status = ExecutionJobStatus.Queued,
+            Version = original.Version + 1,
+            ClaimedBy = null,
+            ClaimedAt = null,
+            NextRetryAt = DateTimeOffset.UtcNow
+        };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+        store.GetAsync(original.OperationId, Arg.Any<CancellationToken>()).Returns(successor);
+
+        if (backend == "remote")
+        {
+            var result = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(store, original);
+            result.Outcome.Should().Be(RemoteCancelStampOutcome.Unconfirmed);
+        }
+        else
+        {
+            var result = await ExecutionJobCancellationHelper.TryApplyAsync(store, original.OperationId, original, "Cancelled");
+            result.State.Should().Be(ExecutionJobCancellationState.Unconfirmed);
+        }
+
+        await store.Received(1).TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task TryApplyBackendCancelAsync_RetryWinsBeforeReread_DoesNotCancelRetry()
+    {
+        var cancelledAttempt = CreateJobRecord("delayed-cancel", ExecutionJobStatus.Running) with
+        {
+            AttemptCount = 1,
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            ProviderOperationId = "old-provider"
+        };
+        // Console retry preserves AttemptCount until pickup, but clears the cancellation and provider.
+        var retried = cancelledAttempt with
+        {
+            Status = ExecutionJobStatus.Queued,
+            Version = 2,
+            CancellationRequestedAt = null,
+            ProviderOperationId = null,
+            NextRetryAt = DateTimeOffset.UtcNow
+        };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+        store.GetAsync(retried.OperationId, Arg.Any<CancellationToken>()).Returns(retried);
+
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(store, (cancelledAttempt, new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled }));
+
+        result.Outcome.Should().Be(BackendCancelApplyOutcome.Unconfirmed);
+        result.TerminalTransition.Should().BeNull();
+        await store.Received(1).TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
 
     [Fact]
     public async Task TryApplyBackendCancelAsync_IdenticalNonterminalObservation_IsNoOpAndDoesNotBumpUpdatedAt()
@@ -49,8 +191,7 @@ public sealed class ExecutionJobCancellationHelperTests
         var transitions = ListenForTransitions(TransitionTestBackendNoOp);
         using var listener = transitions.Listener;
 
-        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, job, observation);
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (job, observation));
 
         result.Outcome.Should().Be(BackendCancelApplyOutcome.Applied);
         result.Job.Should().BeSameAs(job,
@@ -91,8 +232,7 @@ public sealed class ExecutionJobCancellationHelperTests
             Message = "Running"
         };
 
-        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, job, observation);
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (job, observation));
 
         result.Outcome.Should().Be(BackendCancelApplyOutcome.Applied);
         result.Job.Should().NotBeSameAs(job);
@@ -122,8 +262,7 @@ public sealed class ExecutionJobCancellationHelperTests
         var transitions = ListenForTransitions(TransitionTestBackendCancelled);
         using var listener = transitions.Listener;
 
-        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, job, observation);
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (job, observation));
 
         result.Outcome.Should().Be(BackendCancelApplyOutcome.Applied);
         result.Job!.Status.Should().Be(ExecutionJobStatus.Cancelled);
@@ -163,8 +302,7 @@ public sealed class ExecutionJobCancellationHelperTests
             Message = "Cancelled by user"
         };
 
-        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, job, observation);
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (job, observation));
 
         result.Outcome.Should().Be(BackendCancelApplyOutcome.TerminalConflict);
         result.TerminalStatus.Should().Be(ExecutionJobStatus.Failed);
@@ -183,8 +321,7 @@ public sealed class ExecutionJobCancellationHelperTests
             Message = "Cancelled"
         };
 
-        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, job, observation);
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (job, observation));
 
         result.Outcome.Should().Be(BackendCancelApplyOutcome.Missing);
         result.Job.Should().BeNull();
