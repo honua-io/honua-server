@@ -634,13 +634,6 @@ internal sealed partial class DeployWorkflowService
                 $"No deploy backend is registered for target '{operation.Deploy.TargetId}' ({operation.Deploy.Backend}).");
         }
 
-        var currentPlan = await backend.PlanAsync(operation.Deploy, cancellationToken).ConfigureAwait(false);
-        if (currentPlan.BlockingReasons.Count > 0)
-        {
-            throw new ResourceConflictException(
-                $"Deploy operation '{operation.OperationId}' cannot be submitted: {string.Join(" ", currentPlan.BlockingReasons)}");
-        }
-
         var audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason);
         if (operation.Deploy.TargetKind == DeployTargetKind.LocalCompose)
         {

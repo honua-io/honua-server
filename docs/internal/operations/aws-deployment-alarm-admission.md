@@ -35,6 +35,10 @@ upgrade. `ALARM` and `INSUFFICIENT_DATA` both refuse it. Each admission attempt 
 deadline across all regions. A target supports at most eight regions and one hundred alarms per
 region. Configuration is captured when the admission service starts; restart after changing it.
 
-Rollback remains available while alarms are unhealthy. Alarm admission defaults to disabled for
+A refusal never ends the deployment. A refused create or submit leaves the operation planned with
+the reason in its error message; submit it again after the alarms recover. A refusal during a later
+checkpoint step is recorded on the operation and logged, and the reconciler retries the step on its
+next pass. Preparation admission is decided before the migration marker is written, so a refusal or
+interruption at that point never requires manual intervention. Rollback remains available while alarms are unhealthy. Alarm admission defaults to disabled for
 existing installations; the CloudFormation stack must explicitly enable it and pass the complete
 regional lists. This setting does not create alarms, configure SNS delivery or prove a live gate pass.

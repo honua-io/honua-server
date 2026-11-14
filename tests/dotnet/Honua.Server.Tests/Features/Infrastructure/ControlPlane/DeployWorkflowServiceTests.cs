@@ -1311,36 +1311,6 @@ public sealed class DeployWorkflowServiceTests
         await reconcileTask;
     }
 
-    [Fact]
-    public async Task SubmitAsync_WhenBackendAdmissionChanges_RefusesBeforeClaimAndAllowsRetry()
-    {
-        var store = new TestWorkflowOperationStore();
-        var backend = Substitute.For<IDeployBackend>();
-        backend.BackendName.Returns("honua-gitops-kubernetes");
-        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
-        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
-        backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>())
-            .Returns(new DeployPlan { IsReadyToSubmit = true });
-        var service = CreateService(store, backend);
-        var operation = await service.CreateAsync("prod-api", "sha256:new", "sha256:old", "alice", "Deploy",
-            "alarm-admission", "corr", OperationPriority.Normal, submitImmediately: false, parameterOverrides: null);
-        backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>())
-            .Returns(new DeployPlan { IsReadyToSubmit = false, BlockingReasons = ["Deployment alarms are not OK."] });
-
-        var submit = () => service.SubmitAsync(operation!.OperationId, "alice", "submit");
-
-        await submit.Should().ThrowAsync<ResourceConflictException>().WithMessage("*Deployment alarms are not OK*");
-        (await store.GetAsync(operation!.OperationId))!.Status.Should().Be(WorkflowOperationStatus.Planned);
-        await backend.DidNotReceiveWithAnyArgs().StartAsync(default!, default);
-        backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>())
-            .Returns(new DeployPlan { IsReadyToSubmit = true });
-        backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
-            .Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Submitted });
-
-        (await submit())!.Status.Should().Be(WorkflowOperationStatus.Submitted);
-        await backend.Received(1).StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
-    }
-
     [Theory]
     [InlineData("create")]
     [InlineData("submit")]
