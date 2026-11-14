@@ -132,7 +132,7 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
 
     def test_full_crons_are_twice_daily_off_hour(self):
         ci = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
-        self.assertEqual(ci['on']['schedule'], [{'cron': '23 9 * * *'}, {'cron': '23 21 * * *'}])
+        self.assertEqual(ci['on']['schedule'], [{'cron': '23 7 * * *'}, {'cron': '23 13 * * *'}])
 
     def test_missing_schedule_fails_despite_recent_affected_result(self):
         calls = self.run_watchdog([])
