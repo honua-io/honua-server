@@ -7,6 +7,7 @@ using Honua.Core.Features.Assets;
 using Honua.Server.Features.Assets;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Assets;
 
@@ -31,6 +32,7 @@ public sealed class AssetCommandIdentityTests
 
     private static DefaultHttpContext Context(string scheme, string issuer) => new()
     {
+        RequestServices = new ServiceCollection().AddOptions().BuildServiceProvider(),
         User = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.NameIdentifier, "same-subject"), new Claim("iss", issuer)], scheme)),
     };

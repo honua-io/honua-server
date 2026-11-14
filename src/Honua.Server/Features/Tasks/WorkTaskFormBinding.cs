@@ -5,12 +5,11 @@ using Honua.Core.Features.Assets;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Assets;
-using Honua.Server.Features.Forms;
 
 namespace Honua.Server.Features.Tasks;
 
 // Pins the published form version a task is completed with; later publications never change a pinned task.
-internal sealed class WorkTaskFormBinding(IAssetProfileStore profiles, AssetFormLookup forms)
+internal sealed class WorkTaskFormBinding(IAssetProfileStore profiles, AssetFormLookup forms, FormPackageValidator validator)
 {
     public async Task<(WorkTaskFormReference? Form, AssetFieldError? Error)> PinAsync(
         WorkTaskCreateRequest request,
@@ -57,9 +56,7 @@ internal sealed class WorkTaskFormBinding(IAssetProfileStore profiles, AssetForm
             return false;
         }
 
-        var resolved = FormTargetMetadataResolver.Resolve(grant.Snapshot!, target);
-        var fields = resolved.Resource!.SchemaFields;
-        return form.Package.Fields.All(field => string.IsNullOrWhiteSpace(field.TargetField) ||
-            fields.Any(mapped => string.Equals(mapped.Name, field.TargetField, StringComparison.OrdinalIgnoreCase)));
+        var validation = await validator.ValidateForPublishAsync(form.Package, context.RequestAborted).ConfigureAwait(false);
+        return validation.IsValid;
     }
 }
