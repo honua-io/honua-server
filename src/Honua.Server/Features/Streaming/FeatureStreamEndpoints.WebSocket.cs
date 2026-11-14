@@ -839,7 +839,21 @@ internal static partial class FeatureStreamEndpoints
         // (watermark already past the event). Dedup at send time handles any overlap
         // when the broadcast did see the sub. With-cursor subscribes do not need this:
         // their post-unpause-sweep advances the watermark to the last delivered cursor.
-        var replayCursor = control.Cursor;
+        var requested = control.Cursor.ValueKind switch
+        {
+            JsonValueKind.Undefined or JsonValueKind.Null => FeatureStreamCursor.None,
+            JsonValueKind.String => FeatureStreamCursor.Parse(control.Cursor.GetString(), lastEventId: null),
+            JsonValueKind.Number => FeatureStreamCursor.Parse(control.Cursor.GetRawText(), lastEventId: null),
+            _ => new FeatureStreamCursor(FeatureStreamCursorKind.Invalid, 0)
+        };
+        if (requested.Kind == FeatureStreamCursorKind.Invalid)
+        {
+            await SendWebSocketErrorAsync(webSocket, session.WriteLock, "invalid-cursor",
+                "cursor must be a features:<generation> position.", subscriptionId, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var replayCursor = requested.Position;
 
         // Snapshot-then-delta decision runs before the subscription is registered so the
         // add can be paused for the whole baseline-plus-catch-up window.
@@ -913,6 +927,16 @@ internal static partial class FeatureStreamEndpoints
                 subscriptionId,
                 subscriptionGeneration,
                 preAddCursor);
+        }
+
+        if (requested.Kind == FeatureStreamCursorKind.Epoch)
+        {
+            await SendWebSocketJsonAsync(webSocket, session.WriteLock,
+                JsonSerializer.SerializeToUtf8Bytes(new FeatureStreamResetFrame
+                {
+                    Reason = RealtimeResetReasons.CursorEpoch,
+                    Head = FeatureStreamCursor.Format(preAddCursor)
+                }, FeatureStreamJsonContext.Default.FeatureStreamResetFrame), cancellationToken).ConfigureAwait(false);
         }
 
         // Emit the baseline while paused, then resume delta delivery from the baseline

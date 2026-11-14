@@ -96,6 +96,55 @@ public sealed partial class FeatureStreamEndpointsTests
         reset.GetProperty("head").GetString().Should().StartWith("features:");
     }
 
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/streaming/features")]
+    [InlineData("1", "reset")]
+    [InlineData("\"1\"", "reset")]
+    [InlineData("\"features:1\"", "feature-change")]
+    [InlineData("\"features:invalid\"", "error")]
+    [InlineData("true", "error")]
+    public async Task WebSocket_ControlCursor_EnforcesFeatureEpoch(string cursorJson, string expectedType)
+    {
+        var store = new FakeFeatureChangeEventStore();
+        store.Append(new FeatureChangeEventRequest
+        {
+            ServiceId = "test", LayerId = 0, ObjectId = 734201, Operation = "update",
+            Protocol = "rest", RequestId = "control-cursor-first"
+        });
+        store.Append(new FeatureChangeEventRequest
+        {
+            ServiceId = "test", LayerId = 0, ObjectId = 734202, Operation = "update",
+            Protocol = "rest", RequestId = "control-cursor-second"
+        });
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IFeatureChangeEventStore>(store);
+        await fixture.InitializeAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var socket = await fixture.CreateWebSocketClient().ConnectAsync(
+            new Uri("ws://localhost/api/v1/streaming/features"), timeout.Token);
+        _ = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+        await SendWebSocketJsonAsync(socket,
+            $$"""{"type":"subscribe","subscriptionId":"epoch-test","layerId":0,"cursor":{{cursorJson}}}""",
+            timeout.Token);
+        var frame = await ReadWebSocketAfterStatusesAsync(socket, timeout.Token);
+        frame.GetProperty("type").GetString().Should().Be(expectedType);
+        if (expectedType == "reset")
+        {
+            frame.GetProperty("reason").GetString().Should().Be("cursor-epoch");
+            frame.GetProperty("head").GetString().Should().Be("features:2");
+        }
+        else if (expectedType == "feature-change")
+        {
+            frame.GetProperty("objectId").GetInt64().Should().Be(734202);
+            frame.GetProperty("subscriptionId").GetString().Should().Be("epoch-test");
+        }
+        else
+        {
+            frame.GetProperty("code").GetString().Should().Be("invalid-cursor");
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_ExpiredDeltaCursor_SendsRetentionResetThenSnapshot()
