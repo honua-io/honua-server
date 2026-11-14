@@ -88,6 +88,12 @@ logs, format smoke evidence and scan results. It verifies that default publish o
 has no excluded store assemblies or native libraries, retains file I/O libraries, and
 contains no satellite resource assemblies.
 
+The Lambda AOT image also uses chiseled-extra, with the Lambda Web Adapter and
+its existing full provider profile (including DuckDB). Fonts and native dependencies
+are staged and verified during the build. Lambda uses the writable `/tmp/honua`
+home, cache, temporary-file and local-storage paths; mount that directory when
+running the image locally with a read-only root filesystem.
+
 ## One sha per image
 
 Image contents, `HONUA_GIT_SHA`, the `org.opencontainers.image.revision`

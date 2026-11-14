@@ -18,23 +18,20 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// The closed operator roster is advertised by the default Postgres composition, and its
-/// direct writes are not operator-gated.
-/// </summary>
 public sealed class OperatorJourneyMcpRosterTests
 {
-    private static readonly string[] DirectWrites =
-    [
-        "admin.connections.create",
-        "admin.import.upload-object",
-        "admin.import.upload-url",
-        "admin.layer.publish",
-        "admin.services.access-policy.set",
-    ];
+    private static readonly Dictionary<string, OperationApprovalModel> WriteApprovalModels =
+        new Dictionary<string, OperationApprovalModel>(StringComparer.Ordinal)
+        {
+            ["admin.connections.create"] = OperationApprovalModel.None,
+            ["admin.import.upload-object"] = OperationApprovalModel.None,
+            ["admin.import.upload-url"] = OperationApprovalModel.None,
+            ["admin.layer.publish"] = OperationApprovalModel.OperatorGate,
+            ["admin.services.access-policy.set"] = OperationApprovalModel.OperatorGate,
+        };
 
     [UnitTest]
-    public async Task Roster_IsAdvertisedByTheDefaultComposition_AndWritesAreNotOperatorGated()
+    public async Task Roster_DefaultComposition_AdvertisesToolsWithExpectedApprovalModels()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(RepositoryPaths.Resolve(
             "docs", "gis", "data", "operator-journey-mcp-roster.v1.json")));
@@ -65,10 +62,10 @@ public sealed class OperatorJourneyMcpRosterTests
                 .Order(StringComparer.Ordinal);
             row.GetProperty("inputFields").EnumerateArray().Select(field => field.GetString())
                 .Should().BeEquivalentTo(fields, $"{toolName} input fields must match the published schema");
-            if (DirectWrites.Contains(operationId, StringComparer.Ordinal))
+            if (WriteApprovalModels.TryGetValue(operationId, out var approvalModel))
             {
                 mode.Should().Be("execute");
-                descriptor.ApprovalModel.Should().Be(OperationApprovalModel.None, toolName);
+                descriptor.ApprovalModel.Should().Be(approvalModel, toolName);
             }
             else
             {
@@ -77,9 +74,9 @@ public sealed class OperatorJourneyMcpRosterTests
             }
         }
 
-        foreach (var operationId in DirectWrites)
+        foreach (var (operationId, approvalModel) in WriteApprovalModels)
         {
-            descriptors[operationId].ApprovalModel.Should().Be(OperationApprovalModel.None, operationId);
+            descriptors[operationId].ApprovalModel.Should().Be(approvalModel, operationId);
         }
 
         descriptors["admin.connections.delete"].ApprovalModel.Should().Be(OperationApprovalModel.OperatorGate);

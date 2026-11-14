@@ -1,5 +1,36 @@
 # CI Workflow Inventory
 
+The latest full-run capacity audit partitions eleven additional parents into 26
+children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
+Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
+OGC API Features, GeoServices GPServer and NAServer, STAC Protocol, Operator
+Eval Harness, and Migration. The first ten crossed 80% of their test budgets in
+the last three full runs.
+Whole-class selections are retained except the GP/NAS routing class, whose
+methods are partitioned with a residual fallback for future tests. Method-union,
+future-method and mutation checks enforce complete, disjoint selection and
+unchanged projects, source triggers and budgets. Historical TRX interval weights
+guide the cuts; they are not measured child elapsed runtimes. Dispatch ranks stay
+inherited until complete child runs provide measurements.
+
+
+Migration exhausted its 29-minute test budget in full run `43564575677` while
+producing output two seconds before termination. Three children separate migration
+evidence/toolbox endpoints, scanner/run endpoints, and the residual migration
+selection. Historical passing TRX class intervals weigh these groups at about
+6.2, 5.7, and 5.2 minutes; these are sizing evidence, not measured child runtimes.
+STAC qualification exhausted child 1 at 15.04 minutes and measured child 2 at
+12.70 minutes. Four children now isolate search, spatial/temporal and queryables,
+paging, and the residual selection. Original budgets, source triggers and
+future-class fallback remain enforced by the conservation contracts.
+Focused one-worker qualification passed all seven revised children: Migration
+1/2/3 took 7.35/5.35/5.51 minutes and STAC 1/2/3/4 took
+11.94/4.01/5.93/4.68 minutes. The largest Migration child finishes
+21.65 minutes before the exhausted parent deadline; this is capacity headroom,
+not a measured end-to-end workflow saving. STAC Protocol 1 is the single
+class `StacSearchTests` at 11.94 of 15 minutes (80%); it cannot be split further by
+class and is the next method-level partition candidate.
+
 FeatureServer Replica now uses three whole-class shards: `FeatureServer Replica
 Management` (conflict review, ownership and management), `FeatureServer Replica
 Sync` (the sync class), and the residual `FeatureServer Replica` catch-all.
@@ -34,7 +65,7 @@ once, including future methods. This addresses a 29-minute pre-PR capacity
 exhaustion with active output at termination; it does not extend timeouts.
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (124 files). Other Honua repositories keep their own inventories;
+> repository (129 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
@@ -153,6 +184,13 @@ Markdown sources and doctor-only tooling have been removed.
 | `claude-review.yml` | Claude Review | completed `PR Gate` `workflow_run`, `issue_comment` containing `@claude review` | Second attesting reviewer for the required `Review Gate` context (#3213, #3314; rebuilt on a trusted trigger by #3341), so a PR can still land while Codex is rate-limited. Trusted default-branch lane: **never** triggered by `pull_request`, read-only `GITHUB_TOKEN`, and it posts comments and inline threads only — never a review verdict. `scripts/ci/review-gate-evidence.js` accepts `claude` evidence alongside Codex. Both action invocations admit only the named dependency, GitHub Actions, and `honua-io-bot` automation actors after trusted exact-head resolution. Inert until an auth secret exists. See [gate-model.md → Attesting reviewers](gate-model.md#attesting-reviewers). |
 | `review-event-bridge.yml` | Review Event Bridge | `pull_request_review`, `pull_request_review_comment` | Best-effort latency hint only; cancels superseded events per PR and skips drafts. GitHub runs these event workflows from the PR merge branch, so the bridge is credential-free/no-checkout and is never trusted for invalidation or landing. |
 
+The analyzer jobs enforce the [review prevention rules](analyzer-baseline.md) as
+build errors. Existing findings use an explicit per-finding baseline; normal CI
+never regenerates it. Format excludes only the eight build-enforced IDs because
+its current SDK does not load diagnostic suppressors; required analyzer builds
+retain their full enforcement. The baseline records both supported SDK spellings
+of eight existing CA2000 findings.
+
 ### Docs-only exit (`PR Gate`)
 
 Operator ruling A (2026-09-11, #3213): a documentation-only pull request does
@@ -237,6 +275,7 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
+| `telemetry-selector.yml` | Telemetry selector | path-scoped `pull_request` (ready heads only), `push` to `trunk` | Runs the six canonical platform-fault selector cases with checksum-pinned Prometheus promtool 3.5.0 on a GitHub-hosted runner. Missing tools and selector regressions fail the job; draft conversion cancels admission. |
 | `compose-release-lifecycle.yml` | Compose Release Lifecycle | `pull_request` (base `trunk`, relevant executor, control-plane, and test paths) | Builds the Native AOT candidate (reads registry cache `buildcache:honua-aot-amd64` on same-repo PRs) and exercises the published rc.1 to approved MCP convergence and verified PostGIS restore journey, including negative controls. |
 | `close-external-prs.yml` | Close external pull requests | `pull_request_target` (`opened`, `reopened`) | Closes pull requests whose author association is not `OWNER`, `MEMBER` or `COLLABORATOR` (bots exempt) with a comment pointing to issues and `SECURITY.md`; this repository does not accept external contributions. Never checks out PR code; `pull-requests: write` only. Durable complement to the six-month repository interaction limits set 2026-10-23. |
 | `clean-code.yml` | Clean code | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Calls the shared honua-io/.github clean-code check, pinned by SHA: the Clean Code rules judged only on what the PR makes worse (comment, size, function, parameter and duplication ratchets), each finding titled with its smell code. `edited` re-runs it when a `quality-exception:` line is added to the PR body. Read-only `contents` permission. |
@@ -476,7 +515,7 @@ which is why both the run count and exact observed span are recorded.
 | `routing-nightly.yml` | Routing Nightly (pgRouting) | weekly `schedule` (Sun 05:00 UTC), `workflow_dispatch` | `Category=Routing` with `HONUA_ROUTING_TEST=1`; `PgRoutingFixture` manages its own `pgrouting/pgrouting` Testcontainers image. |
 | `warehouse-nightly.yml` | Warehouse Providers Nightly (Creds-Gated) | weekly `schedule` (Sun 06:00 UTC), `workflow_dispatch` | Matrix over Snowflake/Redshift/Databricks/SqlServer test projects using optional repository secrets; a missing secret reads as "not configured", not "absent from CI". |
 | `sdk-server-compatibility.yml` | SDK Server Compatibility | weekly `schedule` (Mon 08:35 UTC), `workflow_dispatch` | Manifest-driven last-3-servers × last-3-SDK-sets matrix from `docs/developer/sdk-compatibility-versions.json`; runs SDK sources from an isolated `$RUNNER_TEMP` copy and publishes `sdk-compatibility-matrix-<run-id>`. |
-| `codeql.yml` | CodeQL | path-filtered `pull_request` (base `trunk`), weekly `schedule` (Mon 00:00 UTC), `workflow_dispatch` | Two lanes in one workflow, and the **only** CodeQL security analysis this repository has. On `pull_request` (paths: `src/**`, central build files, CodeQL config; test-only PRs are left to the weekly scan, which builds and analyzes the test projects too) it uses C# `build-mode: none` extraction with the default high-precision suite to stay on the PR critical path; on the weekly schedule it performs a full instrumented build with `security-extended` to catch lower-confidence findings and dependency churn. |
+| `codeql.yml` | CodeQL | path-filtered `pull_request` (base `trunk`), weekly `schedule` (Mon 00:00 UTC), `workflow_dispatch` | Two lanes in one workflow, and the **only** CodeQL security analysis this repository has. On `pull_request` (paths: `src/**`, central build files, CodeQL config; test-only PRs are left to the weekly scan, which builds and analyzes the test projects too) it uses C# `build-mode: none` extraction with the default high-precision suite to stay on the PR critical path; on the weekly schedule it performs a full instrumented build with `security-extended` to catch lower-confidence findings and dependency churn. The shared config excludes `cs/linq/missed-where` and `cs/linq/missed-select`; this does not configure the separate managed Code Quality commenter. See [review prevention analyzers](analyzer-baseline.md). |
 | `geoservices-import-fidelity-external.yml` | GeoServices Import Fidelity (External) | `workflow_dispatch` | External parity against live Esri services; deliberately on-demand because upstream data drifts. Enforces the correctness regression gate and the perf-parity latency gate (#1249). |
 
 ## OGC CITE / conformance
@@ -937,3 +976,5 @@ skipping or missing results fail the shell check. The required name and both
 `needs` dependencies stay unchanged. Normal runs add zero jobs; superseded runs
 avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
+
+The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
