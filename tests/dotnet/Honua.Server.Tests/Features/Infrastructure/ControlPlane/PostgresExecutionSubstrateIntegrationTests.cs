@@ -1101,35 +1101,29 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
             harness.JobStore,
             harness.JobStore);
 
-        await service.StartAsync(CancellationToken.None);
-        try
-        {
-            var stored = await WaitForJobAsync(
-                harness.JobStore,
-                operationId,
-                job => job.Status == ExecutionJobStatus.Queued && job.ClaimedBy is null,
-                TimeSpan.FromSeconds(10));
+        // Drive ticks directly: a stalled database read can defer expiry until a later sweep.
+        var stored = await WaitForJobAsync(
+            harness.JobStore,
+            operationId,
+            job => job.Status == ExecutionJobStatus.Queued && job.ClaimedBy is null,
+            TimeSpan.FromSeconds(10),
+            () => service.SweepActiveJobsAsync(CancellationToken.None));
 
-            stored.CurrentPhase.Should().StartWith("Retrying");
-            stored.NextRetryAt.Should().BeNull();
+        stored.CurrentPhase.Should().StartWith("Retrying");
+        stored.NextRetryAt.Should().BeNull();
 
-            callback.IsCompleted.Should().BeFalse();
+        callback.IsCompleted.Should().BeFalse();
 
-            var queueDepth = await WaitForQueueDepthAsync(
-                harness.Queue,
-                depth => depth == 1,
-                TimeSpan.FromSeconds(5));
-            queueDepth.Should().Be(1);
+        var queueDepth = await WaitForQueueDepthAsync(
+            harness.Queue,
+            depth => depth == 1,
+            TimeSpan.FromSeconds(5));
+        queueDepth.Should().Be(1);
 
-            var reclaimed = await harness.Queue.TryClaimAsync(
-                "worker-reclaim",
-                new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing });
-            reclaimed.Should().Be(operationId);
-        }
-        finally
-        {
-            await service.StopAsync(CancellationToken.None);
-        }
+        var reclaimed = await harness.Queue.TryClaimAsync(
+            "worker-reclaim",
+            new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing });
+        reclaimed.Should().Be(operationId);
     }
 
     private static ExecutionJobRecord CreateQueuedJob(
@@ -1164,11 +1158,17 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
         PostgresExecutionJobStore jobStore,
         string operationId,
         Func<ExecutionJobRecord, bool> predicate,
-        TimeSpan timeout)
+        TimeSpan timeout,
+        Func<Task>? beforePoll = null)
     {
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
         while (DateTimeOffset.UtcNow < deadline)
         {
+            if (beforePoll is not null)
+            {
+                await beforePoll();
+            }
+
             var job = await jobStore.GetAsync(operationId);
             if (job != null && predicate(job))
             {
