@@ -32,7 +32,7 @@ internal sealed class GeoservicesImportJobManager : IDistributedImportJobManager
                 progress => IsTerminalStatus(progress.Status),
                 ProjectEndedJob,
                 (current, next) => current.Status == GeoservicesImportStatus.Cancelled &&
-                    next.Status == GeoservicesImportStatus.NeedsReview),
+                    next.DataCommitted && IsTerminalStatus(next.Status)),
             new DistributedProgressStoreAdapter<GeoservicesImportProgress>(progressStore),
             progressStore,
             jobStore,

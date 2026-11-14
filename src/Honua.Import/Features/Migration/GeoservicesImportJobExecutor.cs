@@ -61,7 +61,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
             jobId,
             _jobManager.ProgressStore,
             finalProgressTtl: ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
-        var run = new ImportRun(jobId, request with { JobId = jobId }, progress, Stopwatch.StartNew(), licenseCancellation, jobCancellation.Token);
+        var run = new ImportRun(jobId, request with { JobId = jobId }, progress, context, Stopwatch.StartNew(), licenseCancellation, jobCancellation.Token);
 
         return await ExecuteRunAsync(run).ConfigureAwait(false);
     }
@@ -106,6 +106,11 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
         run.Progress.Seed(stored);
         if (stored != null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status))
         {
+            if (stored.DataCommitted)
+            {
+                await RecordCommitAsync(run).ConfigureAwait(false);
+            }
+
             return ReplayTerminal(stored);
         }
 
@@ -155,6 +160,11 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
     private async Task<JobExecutionResult> CompleteAsync(ImportRun run, GeoservicesImportResult result)
     {
         var jobId = run.JobId;
+        if (result.DataCommitted)
+        {
+            await RecordCommitAsync(run).ConfigureAwait(false);
+        }
+
         if (run.LicenseCancellation.IsCancellationRequested)
         {
             var message = result.DataCommitted ? "license expired; imported rows were already committed" : LicenseExpiredMessage;
@@ -163,6 +173,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
                     ? "Failed: license expired after data was committed"
                     : "Failed: license expired; partial import is incomplete") with
             {
+                DataCommitted = result.DataCommitted,
                 FeaturesProcessed = result.FeatureCount,
                 FailedFeatures = result.FailedFeatures
             }, CancellationToken.None).ConfigureAwait(false);
@@ -187,7 +198,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
         LogOutcome(jobId, result, run.Stopwatch.Elapsed.TotalSeconds);
         return finalProgress.Status == GeoservicesImportStatus.Failed
             ? NotRetryable(result.ErrorMessage ?? ImportFailedMessage, result.Warnings)
-            : JobExecutionResult.Succeeded(result.Warnings);
+            : JobExecutionResult.Succeeded(result.Warnings) with { CompletedWithCommittedEffects = result.DataCommitted };
     }
 
     private static GeoservicesImportProgress BuildFinalProgress(ImportRun run, GeoservicesImportResult result)
@@ -200,6 +211,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
         {
             JobId = run.JobId,
             Status = finalStatus,
+            DataCommitted = result.DataCommitted,
             FeaturesProcessed = result.FeatureCount,
             FailedFeatures = result.FailedFeatures,
             SourceServiceUrl = request.ServiceUrl,
@@ -295,8 +307,11 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
     {
         GeoservicesImportStatus.Cancelled => throw new OperationCanceledException("The import was cancelled before it started."),
         GeoservicesImportStatus.Failed => NotRetryable(progress.ErrorMessage ?? ImportFailedMessage),
-        _ => JobExecutionResult.Succeeded(progress.Warnings)
+        _ => JobExecutionResult.Succeeded(progress.Warnings) with { CompletedWithCommittedEffects = progress.DataCommitted }
     };
+
+    private static Task RecordCommitAsync(ImportRun run)
+        => run.Context.RecordCommittedEffectAsync($"honua:import:{run.JobId}:committed", CancellationToken.None);
 
     private static JobExecutionResult NotRetryable(string message, IReadOnlyList<string>? warnings = null)
         => JobExecutionResult.Failed(message, warnings) with { IsRetryable = false };
@@ -305,6 +320,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
         string JobId,
         GeoservicesImportRequest Request,
         ImportJobProgressController<GeoservicesImportProgress> Progress,
+        IJobExecutionContext Context,
         Stopwatch Stopwatch,
         CancellationToken LicenseCancellation,
         CancellationToken Token)

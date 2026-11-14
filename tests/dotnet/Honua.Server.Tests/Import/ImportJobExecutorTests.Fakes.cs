@@ -125,7 +125,7 @@ public sealed partial class ImportJobExecutorTests
             => throw new NotSupportedException();
     }
 
-    private sealed class CommittedCancelGeoservicesImportService : IGeoservicesImportService
+    private sealed class CommittedCancelGeoservicesImportService(GeoservicesImportResult? outcome = null) : IGeoservicesImportService
     {
         public TaskCompletionSource<bool> Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -153,7 +153,7 @@ public sealed partial class ImportJobExecutorTests
         {
             Started.TrySetResult(true);
             await Release.Task.ConfigureAwait(false);
-            return GeoservicesImportResult.CreateFailure(
+            return outcome ?? GeoservicesImportResult.CreateFailure(
                 request.TableName,
                 request.ServiceUrl,
                 request.LayerId,

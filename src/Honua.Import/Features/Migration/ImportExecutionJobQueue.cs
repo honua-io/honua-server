@@ -218,6 +218,12 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
             return progress;
         }
 
+        // Successful outcomes cannot be reconstructed from the admission snapshot after expiry.
+        if (progress is null && job.Status == ExecutionJobStatus.Succeeded)
+        {
+            return null;
+        }
+
         if (progress is null && job.Spec.Parameters.TryGetValue("honua.import.initialProgress", out var json))
         {
             progress = JsonSerializer.Deserialize(json, _spec.ProgressJsonTypeInfo);
