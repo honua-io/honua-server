@@ -63,19 +63,11 @@ internal static class ReportingServiceCollectionExtensions
     }
 
     private static void AddReportStore(this IServiceCollection services, IConfiguration configuration)
-    {
-        var hasCustomStore = services.Any(descriptor => descriptor.ServiceType == typeof(IAnalysisReportStore));
-        services.AddAnalysisReportingCore(configuration);
-        if (!hasCustomStore)
-        {
-            var localStore = services.Last(descriptor => descriptor.ServiceType == typeof(IAnalysisReportStore));
-            services.Replace(ServiceDescriptor.Singleton<IAnalysisReportStore>(sp =>
-                sp.GetService<NpgsqlDataSource>() is not null
-                    ? new PostgresAnalysisReportStore(sp.GetRequiredService<JobStoreDatabase>(),
-                        sp.GetRequiredService<IOptions<ReportingConfiguration>>())
-                    : (IAnalysisReportStore)localStore.ImplementationFactory!(sp)));
-        }
-    }
+        => services.AddAnalysisReportingCore(configuration, sp =>
+            sp.GetService<NpgsqlDataSource>() is not null
+                ? new PostgresAnalysisReportStore(sp.GetRequiredService<JobStoreDatabase>(),
+                    sp.GetRequiredService<IOptions<ReportingConfiguration>>())
+                : null);
 
     private static bool IsReportingEnabled(IConfigurationSection section)
         => section.GetValue("Enabled", defaultValue: true);

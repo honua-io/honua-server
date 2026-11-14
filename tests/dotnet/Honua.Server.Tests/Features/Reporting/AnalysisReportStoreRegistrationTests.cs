@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Server.Features.Reporting;
 using Honua.TestKit.Attributes;
@@ -38,7 +39,9 @@ public sealed class AnalysisReportStoreRegistrationTests
         using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=registration_only");
         services.AddSingleton(dataSource);
         services.AddSingleton(new JobStoreDatabase(dataSource));
+        services.AddAnalysisReportingCore(configuration);
         services.AddAnalysisReporting(configuration);
+        services.AddAnalysisReportingCore(configuration);
         services.AddAnalysisReporting(configuration);
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IAnalysisReportStore>().Should().BeOfType<PostgresAnalysisReportStore>();
