@@ -54,6 +54,7 @@ public sealed class OperationGatewayIdempotencyTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task RouteAsync_ApprovalTier_ExpiredProposal_RequestsFreshApproval()
     {
         const OperationProposalStatus finished = OperationProposalStatus.Expired;
@@ -104,6 +105,7 @@ public sealed class OperationGatewayIdempotencyTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task RouteAsync_ApprovalTier_ConcurrentRequestsAfterExpiry_CreateOneFreshProposal()
     {
         var store = new MultiProposalStore();
@@ -123,6 +125,7 @@ public sealed class OperationGatewayIdempotencyTests
     }
 
     [Theory]
+    [Trait("Tier", "Fast")]
     [InlineData(OperationProposalStatus.Succeeded)]
     [InlineData(OperationProposalStatus.Rejected)]
     [InlineData(OperationProposalStatus.Failed)]

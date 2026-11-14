@@ -13,6 +13,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 public sealed class OpsNotificationCadenceTests
 {
     [Theory]
+    [Trait("Tier", "Fast")]
     [InlineData(0, 30)]
     [InlineData(30, 120)]
     [InlineData(120, 840)]
@@ -26,7 +27,7 @@ public sealed class OpsNotificationCadenceTests
         Assert.Equal(firstSeen.AddMinutes(nextMinutes), next);
     }
 
-    [Fact]
+    [UnitTest]
     public void Warning_UsesDailyReminderFromSuccessfulEnqueue()
     {
         var firstSeen = new DateTimeOffset(2026, 11, 14, 0, 0, 0, TimeSpan.Zero);
