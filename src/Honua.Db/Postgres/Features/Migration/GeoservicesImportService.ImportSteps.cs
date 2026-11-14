@@ -83,7 +83,8 @@ internal sealed partial class GeoservicesImportService
         var failedFeatures = 0;
         try
         {
-            var committed = await ReadCommittedImportAsync(connection, transaction, request, targetSchema, cancellationToken);
+            var receiptContext = new ImportCommitReceiptContext(connection, transaction, request, targetSchema);
+            var committed = await ReadCommittedImportAsync(receiptContext, cancellationToken);
             if (committed is not null)
             {
                 return committed;
@@ -379,17 +380,11 @@ internal sealed partial class GeoservicesImportService
                 await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
             }
 
-            await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
-
-            await RecordImportCommitAsync(connection, transaction, request, targetSchema,
-                featuresProcessed, failedFeatures, cancellationToken);
-            await JoinCommitAsync(request.CommitParticipant, new ImportCommitScope
+            await PrepareImportCommitAsync(receiptContext with
             {
-                Transaction = transaction,
-                Schema = targetSchema,
-                PhysicalTable = request.TableName,
-                FeatureCount = featuresProcessed
-            }, cancellationToken).ConfigureAwait(false);
+                Features = featuresProcessed,
+                Failures = failedFeatures
+            }, cancellationToken);
 
             stage = ImportFailureStage.Committing;
             await transaction.CommitSafelyAsync(cancellationToken);

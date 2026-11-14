@@ -236,25 +236,30 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
             progress = latest ?? progress;
         }
 
-        if (progress is null && job.Spec.Parameters.TryGetValue("honua.import.initialProgress", out var json))
-        {
-            progress = JsonSerializer.Deserialize(json, _spec.ProgressJsonTypeInfo);
-            if (progress is not null && !job.Status.IsTerminal())
-            {
-                // Recover the progress index after a crash between admission and the first read.
-                // Snapshot comparison prevents a late reader from resetting a running worker.
-                var seeded = await _universalProgressStore.TryReplaceProgressAsync(
-                    new OperationProgressWrite(jobId, progress, Retention), null, cancellationToken).ConfigureAwait(false);
-                if (seeded.CurrentProgress is TProgress current)
-                {
-                    progress = current;
-                }
-            }
-        }
+        progress ??= await RecoverInitialProgressAsync(job, cancellationToken).ConfigureAwait(false);
 
         return progress is not null && job.Status.IsTerminal()
             ? _spec.ProjectEndedJob(progress, job)
             : progress;
+    }
+
+    private async Task<TProgress?> RecoverInitialProgressAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        if (!job.Spec.Parameters.TryGetValue("honua.import.initialProgress", out var json))
+        {
+            return null;
+        }
+
+        var progress = JsonSerializer.Deserialize(json, _spec.ProgressJsonTypeInfo);
+        if (progress is not null && !job.Status.IsTerminal())
+        {
+            // Snapshot comparison prevents a late reader from resetting a running worker.
+            var seeded = await _universalProgressStore.TryReplaceProgressAsync(
+                new OperationProgressWrite(job.OperationId, progress, Retention), null, cancellationToken).ConfigureAwait(false);
+            return seeded.CurrentProgress as TProgress ?? progress;
+        }
+
+        return progress;
     }
 
     private sealed class EndedJobProgressStore(

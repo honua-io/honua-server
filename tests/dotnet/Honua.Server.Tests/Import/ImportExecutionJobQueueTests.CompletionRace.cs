@@ -16,11 +16,13 @@ namespace Honua.Server.Tests.Import;
 
 public sealed partial class ImportExecutionJobQueueTests
 {
+    public enum ProgressRetention { Available, Expired }
+
     [Theory]
     [Trait("Category", "Unit")]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task GetProgressAsync_JobCompletesDuringRead_ReturnsFinalProgress(bool expired)
+    [InlineData(ProgressRetention.Available)]
+    [InlineData(ProgressRetention.Expired)]
+    public async Task GetProgressAsync_JobCompletesDuringRead_ReturnsFinalProgress(ProgressRetention retention)
     {
         var jobs = ImportExecutionTestJobs.Create();
         var store = Substitute.For<IUniversalProgressStore>();
@@ -33,10 +35,10 @@ public sealed partial class ImportExecutionJobQueueTests
         var record = (await jobs.GetAsync(request.JobId!))!;
         (await jobs.TrySetAsync(record with { Status = ExecutionJobStatus.Succeeded })).Should().BeTrue();
         store.GetProgressAsync<GeoservicesImportProgress>(request.JobId!, Arg.Any<CancellationToken>())
-            .Returns(working, expired ? null : completed);
+            .Returns(working, retention == ProgressRetention.Expired ? null : completed);
 
         var result = await manager.ProgressStore.GetProgressAsync(request.JobId!);
 
-        result.Should().BeEquivalentTo(expired ? null : completed);
+        result.Should().BeEquivalentTo(retention == ProgressRetention.Expired ? null : completed);
     }
 }

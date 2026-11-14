@@ -9,10 +9,14 @@ namespace Honua.Db.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {
+    private sealed record ImportCommitReceiptContext(
+        NpgsqlConnection Connection, NpgsqlTransaction Transaction, GeoservicesImportRequest Request,
+        string Schema, int Features = 0, int Failures = 0);
+
     private async Task<GeoservicesImportResult?> ReadCommittedImportAsync(
-        NpgsqlConnection connection, NpgsqlTransaction transaction, GeoservicesImportRequest request,
-        string schema, CancellationToken cancellationToken)
+        ImportCommitReceiptContext context, CancellationToken cancellationToken)
     {
+        var (connection, transaction, request, schema, _, _) = context;
         if (string.IsNullOrWhiteSpace(request.JobId))
         {
             return null;
@@ -47,10 +51,22 @@ internal sealed partial class GeoservicesImportService
         };
     }
 
-    private async Task RecordImportCommitAsync(
-        NpgsqlConnection connection, NpgsqlTransaction transaction, GeoservicesImportRequest request,
-        string schema, int features, int failures, CancellationToken cancellationToken)
+    private async Task PrepareImportCommitAsync(ImportCommitReceiptContext context, CancellationToken cancellationToken)
     {
+        await AnalyzeTableAsync(context.Connection, context.Schema, context.Request.TableName, cancellationToken);
+        await RecordImportCommitAsync(context, cancellationToken);
+        await JoinCommitAsync(context.Request.CommitParticipant, new ImportCommitScope
+        {
+            Transaction = context.Transaction,
+            Schema = context.Schema,
+            PhysicalTable = context.Request.TableName,
+            FeatureCount = context.Features
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task RecordImportCommitAsync(ImportCommitReceiptContext context, CancellationToken cancellationToken)
+    {
+        var (connection, transaction, request, schema, features, failures) = context;
         if (string.IsNullOrWhiteSpace(request.JobId))
         {
             return;

@@ -149,7 +149,10 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
         var importService = scope.ServiceProvider.GetRequiredService<IGeoservicesImportService>();
         var reporter = new Progress<GeoservicesImportProgress>(p =>
         {
-            if (p.Status != GeoservicesImportStatus.Queued)
+            // Only the returned result contains the complete committed/publication outcome.
+            // Terminal callbacks must not win the durable progress terminal-write guard.
+            if (p.Status != GeoservicesImportStatus.Queued &&
+                !GeoservicesImportJobManager.IsTerminalStatus(p.Status))
             {
                 _ = run.Progress.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed);
             }

@@ -9,16 +9,18 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 
 public sealed partial class GeoservicesImportReplacementTests
 {
+    public enum CommitRecoveryMode { Create, Overwrite }
+
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ImportLayerAsync_RestartAfterCommit_ReportsCommittedRowsWithoutReplaying(bool overwrite)
+    [InlineData(CommitRecoveryMode.Create)]
+    [InlineData(CommitRecoveryMode.Overwrite)]
+    public async Task ImportLayerAsync_RestartAfterCommit_ReportsCommittedRowsWithoutReplaying(CommitRecoveryMode mode)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("ImportRestartAfterCommit");
         try
         {
             using var firstSource = new ReplacementFeatureServerHandler(["CCC"]);
-            var request = BuildRequest(schema, overwrite) with { JobId = Guid.NewGuid().ToString("N") };
+            var request = BuildRequest(schema, mode == CommitRecoveryMode.Overwrite) with { JobId = Guid.NewGuid().ToString("N") };
             var first = await CreateService(firstSource, schema).ImportLayerAsync(request, new InterruptAfterCommit());
             first.DataCommitted.Should().BeTrue();
 
