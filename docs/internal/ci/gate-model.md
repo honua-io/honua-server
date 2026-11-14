@@ -1212,3 +1212,17 @@ All cases and assertions remain in the Security and Authorization 5 shard on
 selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
 definition.
+
+
+### Superseded repository hygiene
+
+The required `repo-hygiene / Repository hygiene` aggregate uses `!cancelled()`
+and excludes cancelled dependency results. GitHub can cancel it when concurrency
+supersedes a run; an already cancelled dependency skips the aggregate instead of
+starting a runner solely to report failure. The skipped job is neutral admission
+for superseded work, not a successful execution of either hygiene check. Active
+runs still require both evidence-path and shared-hygiene success; failure,
+skipping or missing results fail the shell check. The required name and both
+`needs` dependencies stay unchanged. Normal runs add zero jobs; superseded runs
+avoid the aggregate runner. Live after-change timing awaits a superseding event.
+See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).

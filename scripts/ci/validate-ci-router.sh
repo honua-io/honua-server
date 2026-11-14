@@ -47,6 +47,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-router-fixtures.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-router-fixtures.py
 fi
 
+run_fixture hygiene-cancellation python3 scripts/ci/fixtures/test-repo-hygiene-cancellation.py
 run_fixture review-revalidation node --test .github/scripts/revalidate-exact-head-review.test.cjs
 
 echo "Validating review-first PR Gate transition..."
