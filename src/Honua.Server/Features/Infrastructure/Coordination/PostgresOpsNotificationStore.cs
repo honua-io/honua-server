@@ -11,21 +11,29 @@ internal sealed record OpsNotificationSchedule(
 
 internal sealed class PostgresOpsNotificationStore
 {
-    internal PostgresOpsNotificationStore(JobStoreDatabase database) => ArgumentNullException.ThrowIfNull(database);
+    private readonly JobStoreDatabase _database;
+
+    internal PostgresOpsNotificationStore(JobStoreDatabase database) => _database = database;
+
+    private Task<T> NoOp<T>(T value)
+    {
+        ArgumentNullException.ThrowIfNull(_database);
+        return Task.FromResult(value);
+    }
 
     public Task ObserveAsync(string source, string subjectId, OpsFindingSeverity severity,
-        DateTimeOffset now, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        DateTimeOffset now, CancellationToken cancellationToken = default) => NoOp(false);
 
     public Task<IReadOnlyList<OpsNotificationSchedule>> ListDueAsync(DateTimeOffset now, int limit,
         CancellationToken cancellationToken = default)
-        => Task.FromResult<IReadOnlyList<OpsNotificationSchedule>>([]);
+        => NoOp<IReadOnlyList<OpsNotificationSchedule>>([]);
 
     public Task<bool> TryAdvanceAsync(OpsNotificationSchedule schedule, DateTimeOffset nextNoticeAt,
-        CancellationToken cancellationToken = default) => Task.FromResult(false);
+        CancellationToken cancellationToken = default) => NoOp(false);
 
     public Task CloseMissingAsync(string source, IReadOnlyList<string> activeSubjects, DateTimeOffset now,
-        CancellationToken cancellationToken = default) => Task.CompletedTask;
+        CancellationToken cancellationToken = default) => NoOp(false);
 
     public Task<int> ExpireApprovalsAsync(int limit, CancellationToken cancellationToken = default)
-        => Task.FromResult(0);
+        => NoOp(0);
 }
