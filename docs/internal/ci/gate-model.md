@@ -492,10 +492,12 @@ wake/wait orchestration. Both sparse checkouts include the shared validator.
 ## PR Gate compute runner selection
 
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
-`server-test-producer` run. Format/analyzers and all four Fast/architecture
+`server-test-producer` run. The selector itself, Format/analyzers and all four Fast/architecture
 groups use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with
 `ubuntu-latest` fallback, independently of gate admission or heavy settings.
-These eight jobs never inherit the producer label. With the repository variable
+These nine jobs never inherit the producer label. The selector can start on the
+light pool without waiting for hosted capacity; forks and an unset light-runner
+variable retain the hosted fallback. With the repository variable
 `HONUA_PR_GATE_RUNNER` unset, its steps skip and the two producers stay on
 `ubuntu-latest`. Set it to `honua-build` to use the ephemeral runners on the lane
 build host (honua-iac `bootstrap/aws-build-host`, "PR Gate runners"). It also
