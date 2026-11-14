@@ -1435,6 +1435,31 @@ public sealed class DeployWorkflowServiceTests
         await backend.Received(1).RollbackAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task Reconciler_PreparationAdmittedAfterRefusal_ClearsRefusalMessage()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = Substitute.For<IDeployBackend, ICheckpointedDeployBackend>();
+        backend.BackendName.Returns("honua-gitops-kubernetes");
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        var checkpointed = (ICheckpointedDeployBackend)backend;
+        checkpointed.RequiresCheckpoint(Arg.Any<WorkflowOperationRecord>()).Returns(true);
+        checkpointed.PrepareCheckpointAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new DeployCheckpoint { CandidateRevision = "rev-2", StableRevision = "rev-1", OriginalServiceRevision = "rev-0" });
+        var operation = CreateOperationRecord(WorkflowOperationStatus.Submitted) with
+        {
+            CurrentPhase = ICheckpointedDeployBackend.PendingPhase,
+            ErrorMessage = "Deployment alarms are not OK."
+        };
+        await store.TryCreateAsync(operation);
+
+        await CreateReconciler(store, backend).ReconcileWorkflowOperationAsync(operation.OperationId);
+
+        var prepared = await store.GetAsync(operation.OperationId);
+        prepared!.CurrentPhase.Should().Be(ICheckpointedDeployBackend.PreparedPhase);
+        prepared.ErrorMessage.Should().BeNull();
+    }
+
     private static DeployWorkflowService CreateService(
         TestWorkflowOperationStore store,
         IDeployBackend backend,

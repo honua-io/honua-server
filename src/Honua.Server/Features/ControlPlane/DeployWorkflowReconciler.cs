@@ -23,7 +23,12 @@ internal sealed partial class DeployWorkflowReconciler(
             // The marker is committed before migration starts. An interrupted migration is never
             // automatically repeated because its outcome may be unknown, so admission is decided first.
             await backend.EnsurePreparationAdmittedAsync(operation, cancellationToken).ConfigureAwait(false);
-            var preparing = operation with { CurrentPhase = ICheckpointedDeployBackend.PreparingPhase, UpdatedAt = DateTimeOffset.UtcNow };
+            var preparing = operation with
+            {
+                CurrentPhase = ICheckpointedDeployBackend.PreparingPhase,
+                ErrorMessage = null,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
             if (!await workflowStore.TrySetAsync(preparing, cancellationToken: cancellationToken).ConfigureAwait(false)) return;
             var claimed = await workflowStore.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
             if (claimed is null || claimed.CurrentPhase != ICheckpointedDeployBackend.PreparingPhase) return;
@@ -64,6 +69,7 @@ internal sealed partial class DeployWorkflowReconciler(
             {
                 Status = WorkflowOperationStatus.Reconciling,
                 CurrentPhase = step.Message ?? "Canary step submitted.",
+                ErrorMessage = null,
                 UpdatedAt = DateTimeOffset.UtcNow,
                 Deploy = operation.Deploy! with { CanaryRamp = ramp with { CurrentStepStartedAt = DateTimeOffset.UtcNow } }
             };
@@ -95,6 +101,7 @@ internal sealed partial class DeployWorkflowReconciler(
             {
                 Status = cutover.Status,
                 CurrentPhase = cutover.Message ?? "Deploy traffic shift submitted.",
+                ErrorMessage = cutover.Status == WorkflowOperationStatus.Failed ? cutover.Message : null,
                 UpdatedAt = DateTimeOffset.UtcNow,
                 CompletedAt = IsTerminal(cutover.Status) ? DateTimeOffset.UtcNow : null,
                 Deploy = operation.Deploy! with
@@ -1116,7 +1123,7 @@ internal sealed partial class DeployWorkflowReconciler(
                 operation with { ErrorMessage = refusal.Message, UpdatedAt = DateTimeOffset.UtcNow },
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
             // The refusal is already logged; the operation stays open and the next pass records it.
             Log.WorkflowOperationReconcileFailed(logger, operation.OperationId, ex);
