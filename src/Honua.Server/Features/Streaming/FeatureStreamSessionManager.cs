@@ -345,6 +345,82 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     // Delivers to this task's sessions; every task receives each change from the change log.
     public int Broadcast(FeatureStreamMessage message) => BroadcastLocally(message);
 
+    // The task's realtime relay follows the feature log once and broadcasts every change in
+    // generation order, so a session has nothing to read from the store while it has been offered
+    // everything the relay has broadcast. Its periodic store read then becomes a memory check
+    // instead of one query per session per interval (specification section 12 item 9). Without an
+    // attached, positioned relay, or once a session falls behind it, the session reads the store.
+    // SSE sessions use this; WebSocket control subscriptions advance their own poll cursors and
+    // still read the store on every interval.
+    private Func<long>? _relayPosition;
+    private long _relayStart;
+    private long _relayedThrough;
+
+    internal void AttachRelay(Func<long> position)
+    {
+        Interlocked.Exchange(ref _relayStart, 0);
+        Volatile.Write(ref _relayPosition, position);
+    }
+
+    internal void DetachRelay() => Volatile.Write(ref _relayPosition, null);
+
+    // Called after a change has been offered to every local session.
+    internal void MarkRelayed(long generation) => InterlockedMax(ref _relayedThrough, generation);
+
+    // Called when the relay could not offer a change to local sessions. Every session must then
+    // read the store through it, even after later changes are offered live.
+    internal void MarkUnrelayed(long generation) => InterlockedMax(ref _storeReadRequiredThrough, generation);
+
+    private long _storeReadRequiredThrough;
+
+    // Null when the session must read the store. Otherwise the cursor it may move to without one:
+    // everything offered to it once its channel is empty (written or discarded by its writer), or
+    // its current cursor while offered frames are still queued. Moving the cursor keeps the next
+    // real store read, and the delivered-cursor floor, as current as a read would have.
+    internal long? StorePollSkipCursor(Guid sessionId, long replayCursor)
+    {
+        var relay = Volatile.Read(ref _relayPosition);
+        if (relay is null || replayCursor < Interlocked.Read(ref _storeReadRequiredThrough) ||
+            !_sessions.TryGetValue(sessionId, out var entry) ||
+            replayCursor < entry.StoreReadRequiredThrough)
+        {
+            return null;
+        }
+
+        var position = relay();
+        if (position <= 0)
+        {
+            return null;
+        }
+
+        // The first positioned reading marks where the relay began; a session that started
+        // before it reads the store once to cover what came before. Relayed is read before
+        // considered: a change is marked considered before it is marked relayed.
+        Interlocked.CompareExchange(ref _relayStart, position, 0);
+        var relayed = Math.Max(Interlocked.Read(ref _relayedThrough), Interlocked.Read(ref _relayStart));
+        var considered = entry.ConsideredThrough;
+        if (Math.Max(considered, replayCursor) < relayed)
+        {
+            return null;
+        }
+
+        return entry.Channel.Reader.TryPeek(out _) ? replayCursor : Math.Max(replayCursor, considered);
+    }
+
+    private static void InterlockedMax(ref long target, long value)
+    {
+        var seen = Interlocked.Read(ref target);
+        while (value > seen)
+        {
+            var prior = Interlocked.CompareExchange(ref target, value, seen);
+            if (prior == seen)
+            {
+                return;
+            }
+            seen = prior;
+        }
+    }
+
     private int BroadcastLocally(FeatureStreamMessage message)
     {
         var delivered = 0;
@@ -375,6 +451,17 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 ref propertiesParsed);
             if (matches.Length == 0)
             {
+                // A change the session does not want needs no store read either, unless only a
+                // possibly stale routability snapshot turned it away.
+                if (entry.AnyRejectedByRoutability(message.Envelope))
+                {
+                    entry.RequireStoreRead(message.Envelope.Cursor);
+                }
+                else
+                {
+                    entry.MarkConsidered(message.Envelope.Cursor);
+                }
+
                 continue;
             }
 
@@ -388,6 +475,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             // with the frame so the writer can reject queued frames whose
             // subscription was unsubscribed or replaced before drain.
             var matchIndex = 0;
+            var allQueued = true;
             while (matchIndex < matches.Length)
             {
                 var match = matches[matchIndex];
@@ -396,8 +484,22 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                     Envelope = (match.Envelope ?? message.Envelope) with { SubscriptionId = match.SubscriptionId },
                     SubscriptionGeneration = match.Generation
                 };
-                delivered += TryQueueMessage(id, entry, subscriptionMessage) ? 1 : 0;
+                var queued = TryQueueMessage(id, entry, subscriptionMessage);
+                delivered += queued ? 1 : 0;
+                allQueued &= queued;
                 matchIndex++;
+            }
+
+            // Only a queued change counts as offered. One dropped while the session stays open
+            // (before drain, or within drain grace) is in the store only, so the session must
+            // read the store through it however much is offered live afterwards.
+            if (allQueued)
+            {
+                entry.MarkConsidered(message.Envelope.Cursor);
+            }
+            else
+            {
+                entry.RequireStoreRead(message.Envelope.Cursor);
             }
         }
 
@@ -726,6 +828,36 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         public void UpdateLastQueuedCursor(long cursor)
         {
             Interlocked.Exchange(ref _lastQueuedCursor, cursor);
+        }
+
+        private long _consideredThrough;
+
+        // The highest generation offered to this session by a live broadcast.
+        public long ConsideredThrough => Interlocked.Read(ref _consideredThrough);
+
+        public void MarkConsidered(long cursor) => InterlockedMax(ref _consideredThrough, cursor);
+
+        private long _storeReadRequiredThrough;
+
+        // The highest generation dropped from this session's channel while it stayed open.
+        public long StoreReadRequiredThrough => Interlocked.Read(ref _storeReadRequiredThrough);
+
+        public void RequireStoreRead(long cursor) => InterlockedMax(ref _storeReadRequiredThrough, cursor);
+
+        public bool AnyRejectedByRoutability(FeatureStreamEnvelope envelope)
+        {
+            lock (_subscriptionLock)
+            {
+                foreach (var state in _subscriptions.Values)
+                {
+                    if (!state.Paused && state.Filter is StreamSubscriptionFilter filter && filter.RejectedByRoutability(envelope))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         public void SetDrainGrace(long count)
