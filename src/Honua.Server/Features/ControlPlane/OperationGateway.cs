@@ -252,6 +252,11 @@ internal sealed partial class OperationGateway : IOperationGateway
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
         }
 
+        if (OperationProposalApprovalWindow.IsElapsed(proposal, DateTimeOffset.UtcNow))
+        {
+            throw new InvalidOperationException("The proposal approval window has expired. Create a new proposal.");
+        }
+
         await VerifyHumanApprovalAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
 
         try
@@ -1118,6 +1123,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             {
                 FindingId = proposal.AutonomyMetadata.FindingId,
                 Rule = proposal.AutonomyMetadata.Rule,
+                Severity = proposal.AutonomyMetadata.Severity,
                 ActionDiscriminator = proposal.AutonomyMetadata.ActionDiscriminator,
                 ActionMarkedAutoSafe = proposal.AutonomyMetadata.ActionMarkedAutoSafe,
                 BlastRadius = proposal.AutonomyMetadata.BlastRadius,
@@ -1661,6 +1667,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             FindingId = context.FindingId,
             Rule = context.Rule,
+            Severity = context.Severity,
             ActionDiscriminator = IsBoundedIdentifier(actionDiscriminator ?? context.ActionDiscriminator, 128)
                 ? actionDiscriminator ?? context.ActionDiscriminator
                 : null,

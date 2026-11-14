@@ -39,7 +39,11 @@ internal sealed partial class PostgresOperationProposalStore(
     {
         ArgumentNullException.ThrowIfNull(proposal);
 
-        var created = proposal with { Version = 0 };
+        var created = proposal with
+        {
+            Version = 0,
+            ApprovalExpiresAt = proposal.ApprovalExpiresAt ?? OperationProposalApprovalWindow.GetDeadline(proposal)
+        };
         var inserted = await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
@@ -107,11 +111,31 @@ internal sealed partial class PostgresOperationProposalStore(
                     $"""
                     UPDATE {_proposals}
                     SET version = @version, kind = @kind, active = @active, updated_at = now(),
-                        expires_at = now() + @retention, record = @record
+                        expires_at = now() + @retention,
+                        record = jsonb_set(@record::jsonb, ARRAY['approvalExpiresAt'],
+                            to_jsonb(COALESCE((record->>'approvalExpiresAt')::timestamptz,
+                                (record->>'createdAt')::timestamptz +
+                                CASE WHEN record->'autonomyMetadata'->>'severity' = '2'
+                                OR (record->'autonomyMetadata'->>'severity' IS NULL
+                                    AND record->'plan'->>'riskLevel' = '2')
+                                    THEN interval '72 hours' ELSE interval '24 hours' END)))::json
                     WHERE proposal_id = @proposal_id AND version = @expected_version
+                        AND (record->>'status' <> '10' OR @next_status = 10)
+                        AND (@executing = FALSE OR record->>'status' = '8' OR now() < COALESCE(
+                            (record->>'approvalExpiresAt')::timestamptz,
+                            (record->>'createdAt')::timestamptz +
+                            CASE WHEN record->'autonomyMetadata'->>'severity' = '2'
+                                OR (record->'autonomyMetadata'->>'severity' IS NULL
+                                    AND record->'plan'->>'riskLevel' = '2')
+                                THEN interval '72 hours' ELSE interval '24 hours' END))
                     """,
                     connection);
                 AddRecordParameters(command, next, ttl);
+                command.Parameters.Add(new NpgsqlParameter("next_status", NpgsqlDbType.Integer) { Value = (int)next.Status });
+                command.Parameters.Add(new NpgsqlParameter("executing", NpgsqlDbType.Boolean)
+                {
+                    Value = next.Status == OperationProposalStatus.Executing
+                });
                 command.Parameters.Add(new NpgsqlParameter("expected_version", NpgsqlDbType.Bigint) { Value = expectedVersion });
                 return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
             },
@@ -211,7 +235,8 @@ internal sealed partial class PostgresOperationProposalStore(
             or OperationProposalStatus.Failed
             or OperationProposalStatus.Rejected
             or OperationProposalStatus.RolledBack
-            or OperationProposalStatus.Cancelled;
+            or OperationProposalStatus.Cancelled
+            or OperationProposalStatus.Expired;
 
     private static partial class Log
     {

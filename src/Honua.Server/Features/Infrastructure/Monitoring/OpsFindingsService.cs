@@ -397,6 +397,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
             {
                 FindingId = finding.Id,
                 Rule = finding.Rule,
+                Severity = finding.Severity,
                 ActionDiscriminator = action.ActionDiscriminator,
                 ActionMarkedAutoSafe = action.AutoSafe,
                 BlastRadius = Math.Max(1, action.BlastRadius),
