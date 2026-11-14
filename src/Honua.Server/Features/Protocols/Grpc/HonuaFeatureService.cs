@@ -339,7 +339,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         if (keyedEdit?.Response is not null)
         {
-            return keyedEdit.Response;
+            return FilterResultGlobalIds(globalIds, keyedEdit.Response);
         }
 
         editBatch = await ResolveGlobalIdTargetsAsync(globalIds, editBatch, context.CancellationToken).ConfigureAwait(false);
@@ -443,7 +443,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             && await RecordKeyedOutcomeAsync(keyedEdit, keyedApplication!.Value, response, context.CancellationToken)
                 .ConfigureAwait(false) is { } committed)
         {
-            return committed;
+            return FilterResultGlobalIds(globalIds, committed);
         }
 
         await PublishFeatureChangeEventsAsync(

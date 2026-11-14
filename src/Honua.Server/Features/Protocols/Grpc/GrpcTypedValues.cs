@@ -150,9 +150,8 @@ internal static partial class GrpcTypedValues
     // Without trailing fractional zeros.
     public static string FormatTime(TimeOnly time) => time.ToString(TimeFormat, CultureInfo.InvariantCulture);
 
-    // Refuses, before any write, values whose target column cannot keep them: an offset
-    // timestamp (metadata has no offset-preserving field type; UTC instants use
-    // datetime_value) and a decimal that a double or integer column would round.
+    // Metadata has no offset-preserving timestamp or exact decimal type. Refuse these
+    // values before writes rather than coerce them to a UTC instant, binary float or text.
     public static void EnsureStorable(MetadataV2Resource resource, FeatureEditBatch batch)
     {
         var creates = batch.Creates.IsDefault ? ImmutableArray<Feature>.Empty : batch.Creates;
@@ -161,7 +160,7 @@ internal static partial class GrpcTypedValues
         {
             foreach (var (name, value) in feature.Attributes)
             {
-                if (Unstorable(resource, name, value) is { } reason)
+                if (Unstorable(name, value) is { } reason)
                 {
                     throw new RpcException(new Status(StatusCode.FailedPrecondition, reason));
                 }
@@ -169,30 +168,12 @@ internal static partial class GrpcTypedValues
         }
     }
 
-    private static string? Unstorable(MetadataV2Resource resource, string name, object? value) => value switch
+    private static string? Unstorable(string name, object? value) => value switch
     {
         DateTimeOffset => $"Field '{name}' cannot preserve a timestamp offset; send datetime_value for a UTC instant.",
-        decimal number when !FitsField(FieldType(resource, name), number)
-            => $"Field '{name}' cannot hold decimal_value {number.ToString(CultureInfo.InvariantCulture)} without rounding.",
+        decimal => $"Field '{name}' cannot preserve decimal_value and its scale; exact decimal storage is unavailable.",
         _ => null,
     };
-
-    private static MetadataV2FieldType? FieldType(MetadataV2Resource resource, string name)
-        => resource.SchemaFields.FirstOrDefault(field => field.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.Type;
-
-    private static bool FitsField(MetadataV2FieldType? type, decimal number) => type switch
-    {
-        MetadataV2FieldType.Double => RoundTrips(((double)number).ToString("R", CultureInfo.InvariantCulture), number),
-        MetadataV2FieldType.Float => RoundTrips(((float)number).ToString("R", CultureInfo.InvariantCulture), number),
-        MetadataV2FieldType.Integer => decimal.Truncate(number) == number && number is >= int.MinValue and <= int.MaxValue,
-        MetadataV2FieldType.BigInteger => decimal.Truncate(number) == number && number is >= long.MinValue and <= long.MaxValue,
-        _ => true,
-    };
-
-    // The binary value's shortest decimal text must denote the same number: 0.1 fits a double,
-    // 0.12345678901234567890 does not.
-    private static bool RoundTrips(string text, decimal number)
-        => decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var back) && back == number;
 
     // decimal keeps "-0" only as "0"; scale and trailing zeros otherwise round-trip.
     private static string NormalizeNegativeZero(string value)

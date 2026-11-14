@@ -299,7 +299,7 @@ internal sealed partial class HonuaFeatureService
 
     // Fills result global IDs the writer did not report from the request's selectors, and removes
     // every global ID when the caller may not see the field. Runs before the receipt is stored,
-    // so replays return exactly what was committed.
+    // so receipts retain the committed identity. Replay applies the current field visibility.
     private static Proto.ApplyEditsResponse StampResultGlobalIds(GlobalIdEdit edit, Proto.ApplyEditsResponse response)
     {
         var request = edit.Request;
@@ -338,6 +338,18 @@ internal sealed partial class HonuaFeatureService
         {
             results[index].GlobalId = results[index].Success && index < assigned.Length ? assigned[index] : string.Empty;
         }
+    }
+
+    // Receipt identities remain tied to the committed attempt, but access is evaluated anew.
+    // Never restamp a replay with this retry's newly generated insert IDs.
+    private static Proto.ApplyEditsResponse FilterResultGlobalIds(GlobalIdEdit edit, Proto.ApplyEditsResponse response)
+    {
+        if (edit.Field is null)
+        {
+            ClearGlobalIds(response);
+        }
+
+        return response;
     }
 
     private static void ClearGlobalIds(Proto.ApplyEditsResponse response)

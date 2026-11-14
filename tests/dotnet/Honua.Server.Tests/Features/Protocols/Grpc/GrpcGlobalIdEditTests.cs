@@ -60,11 +60,21 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
 
     public GrpcGlobalIdEditTests()
     {
+        _sut = CreateService(_receipts);
+        UseLayer(GlobalIdResource(), capabilities: null);
+        _featureReader.GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult<Feature?>(Feature.Create(call.ArgAt<long>(1), geometry: null)));
+        _featureReader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, [Feature.Create(ResolvedObjectId, null, StoredGlobalId())]));
+    }
+
+    private HonuaFeatureService CreateService(GrpcApplyEditsReceipts receipts)
+    {
         var crsRegistry = Substitute.For<ICrsRegistry>();
 #pragma warning disable CA2012 // NSubstitute setup for ValueTask-returning members.
         crsRegistry.IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(_ => new ValueTask<bool>(true));
 #pragma warning restore CA2012
-        _sut = new HonuaFeatureService(
+        return new HonuaFeatureService(
             _resourceValidator, _featureReader, _featureWriter, Substitute.For<IStreamingFeatureStore>(),
             new CommonQueryValidator(Options.Create(new LimitsOptions())),
             new SpatialReferenceResolver(Substitute.For<ICrsDetectionService>(), crsRegistry),
@@ -74,12 +84,61 @@ public sealed class GrpcGlobalIdEditTests : IDisposable
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance,
-            _receipts);
-        UseLayer(GlobalIdResource(), capabilities: null);
-        _featureReader.GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
-            .Returns(call => Task.FromResult<Feature?>(Feature.Create(call.ArgAt<long>(1), geometry: null)));
-        _featureReader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(QueryResult<Feature>.Create(1, [Feature.Create(ResolvedObjectId, null, StoredGlobalId())]));
+            receipts);
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task KeyedAddReplay_AfterGlobalIdBecomesMasked_ReturnsNoGlobalId(bool durable)
+    {
+        _featureWriter.ApplyEditsAsync(
+                Arg.Any<int>(), Arg.Any<FeatureEditBatch>(), Arg.Any<FeatureEditIdempotencyReceipt>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new FeatureEditApplication
+            {
+                Result = FeatureEditResult.Success(1, 0, 0, createResults: [EditOperationResult.Success(7)]),
+            }));
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0, IdempotencyKey = "add-retry" };
+        request.Adds.Add(new Proto.Feature());
+        var original = await _sut.ApplyEdits(request, CallContext("insert"));
+        original.AddResults.Single().GlobalId.Should().NotBeEmpty();
+        var masks = Substitute.For<IFieldMaskSource>();
+        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(ImmutableArray.Create("globalid")));
+        var durableStore = Substitute.For<IFeatureEditIdempotencyReceipts>();
+#pragma warning disable CA2012 // NSubstitute setup for ValueTask-returning members.
+        durableStore.TryReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<ReadOnlyMemory<byte>?>(GrpcApplyEditsReceipts.EncodeReceipt(original)));
+#pragma warning restore CA2012
+        using var otherNodeReceipts = new GrpcApplyEditsReceipts(durableStore);
+        var service = durable ? CreateService(otherNodeReceipts) : _sut;
+
+        var replayed = await service.ApplyEdits(request, MaskedContext(masks, "insert"));
+
+        replayed.AddResults.Single().ObjectId.Should().Be(7);
+        replayed.AddResults.Single().GlobalId.Should().BeEmpty();
+        _featureWriter.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+            .Should().Be(1);
+        original.AddResults.Single().GlobalId.Should().NotBeEmpty("filtering a replay must not mutate the committed receipt");
+    }
+
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Double)]
+    [InlineData(MetadataV2FieldType.String)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task DecimalWithoutExactStorage_RejectsBeforeWriting(MetadataV2FieldType type)
+    {
+        UseLayer(ResourceWith(new MetadataV2Field { Name = "n", Type = type, Nullable = true }), capabilities: null);
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        var add = new Proto.Feature();
+        add.Attributes["n"] = new Proto.AttributeValue { DecimalValue = "0.10" };
+        request.Adds.Add(add);
+
+        var act = async () => await _sut.ApplyEdits(request, CallContext("insert"));
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        AssertNothingRead();
     }
 
     [UnitTest]

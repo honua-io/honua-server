@@ -200,18 +200,16 @@ public sealed class GrpcTypedValueTests
 
     [UnitTheory]
     [InlineData(MetadataV2FieldType.Double, "0.12345678901234567890")]
+    [InlineData(MetadataV2FieldType.Double, "0.10")]
+    [InlineData(MetadataV2FieldType.Float, "0.1")]
+    [InlineData(MetadataV2FieldType.String, "1.50")]
+    [InlineData(MetadataV2FieldType.Integer, "1")]
+    [InlineData(MetadataV2FieldType.BigInteger, "1.0")]
     [InlineData(MetadataV2FieldType.Integer, "1.5")]
     [InlineData(MetadataV2FieldType.BigInteger, "9223372036854775808")]
-    public void EnsureStorable_DecimalThatWouldRound_FailsPrecondition(MetadataV2FieldType type, string value)
+    public void EnsureStorable_DecimalWithoutExactStorage_FailsPrecondition(MetadataV2FieldType type, string value)
         => FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(NumericResource(type), DecimalBatch(value)))
             .Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
-
-    [UnitTheory]
-    [InlineData(MetadataV2FieldType.Double, "0.1")]
-    [InlineData(MetadataV2FieldType.String, "1.5")]
-    public void EnsureStorable_DecimalTheColumnHolds_IsAccepted(MetadataV2FieldType type, string value)
-        => FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(NumericResource(type), DecimalBatch(value)))
-            .Should().NotThrow();
 
     private static MetadataV2Resource NumericResource(MetadataV2FieldType type)
         => new() { SchemaFields = [new MetadataV2Field { Name = "n", TypeValue = type }] };
