@@ -68,6 +68,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/source-inventory-pilot/test_run.py "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
   run_fixture scripts/ci/fixtures/validate-mcp-server-auth.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
   run_fixture scripts/ci/validate-pr-gate-impact.sh env HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
+  run_fixture scripts/ci/check-evidence-workflow.test.py "${PYTHON_BIN}" scripts/ci/check-evidence-workflow.test.py
   run_fixture scripts/ci/audit-impact-routing-evidence.test.py "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   run_fixture scripts/ci/collect-impact-routing-runs.test.py "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
   run_fixture scripts/ci/audit-affected-shards.test.py "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py

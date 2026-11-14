@@ -6,11 +6,9 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.TestKit.Eval;
 
-/// <summary>
-/// Declarative end-to-end eval scenario describing the canonical operator workflow
-/// from intent capture through terminal result validation. Scenarios are authored as
-/// JSON under <c>tests/dotnet/eval/scenarios/</c> and consumed by <see cref="EvalRunner"/>.
-/// </summary>
+// Declarative end-to-end eval scenario describing the canonical operator workflow
+// from intent capture through terminal result validation. Scenarios are authored as
+// JSON under tests/fixtures/eval/ and consumed by EvalRunner.
 public sealed record EvalScenario
 {
     /// <summary>Stable scenario identifier used in reports and CI filters.</summary>

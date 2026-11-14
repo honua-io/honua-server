@@ -8,7 +8,7 @@ description: "HTTP contract for optional tenant-owned publication namespaces."
 This reference documents the additive `namespace` request field for client
 implementers and interoperability tests. The endpoint is
 `POST /api/v1/admin/connections/{connectionId}/layers`; its request schema is
-`PublishLayerRequest` in the [admin OpenAPI contract](../developer/api-specs/admin-api.json).
+`PublishLayerRequest` in the [admin OpenAPI contract](../../developer/api-specs/admin-api.json).
 The JSON body below is a contract example, not an operator command. The new field
 must be projected into CLI, SDK, and MCP product surfaces before they can expose it.
 
@@ -53,6 +53,6 @@ same-tenant administrators can operate across their own grouping namespaces.
 
 To discover these services in Console, configure an explicit workspace mapping to
 the same tenant and namespace as described in
-[Console catalog discovery](console-catalog-discovery.md). Mapping scopes discovery;
+[Console catalog discovery](../operate/console-catalog-discovery.md). Mapping scopes discovery;
 the canonical service URL remains `/rest/services/{serviceName}/FeatureServer`,
 where normal tenant and publication access policies still apply.
