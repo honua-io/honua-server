@@ -64,6 +64,6 @@ internal static class McpModernResults
         }
 
         return McpModernProtocol.ReadString(request, "method") is "server/discover" or "tools/list"
-            or "prompts/list" or "resources/list" or "resources/templates/list" or "resources/read";
+            or "skills/list" or "skills/get" or "prompts/list" or "resources/list" or "resources/templates/list" or "resources/read";
     }
 }

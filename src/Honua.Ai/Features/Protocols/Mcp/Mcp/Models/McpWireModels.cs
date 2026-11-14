@@ -281,6 +281,10 @@ internal sealed class McpInitializeResultMeta
 
 internal sealed class McpServerCapabilities
 {
+    [JsonPropertyName("extensions")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, JsonElement>? Extensions { get; set; }
+
     [JsonPropertyName("tools")]
     public McpCapabilityFlag Tools { get; set; } = new();
 

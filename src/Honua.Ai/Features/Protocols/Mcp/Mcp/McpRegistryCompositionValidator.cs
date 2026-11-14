@@ -33,7 +33,12 @@ internal static class McpRegistryCompositionValidator
 
         foreach (var resource in surface.Resources)
         {
-            foreach (var descriptor in resource.Describe().Where(d => !registryResourceUris.Contains(d.Uri)))
+            // Skill files are enumerated from the immutable release bundle. The registry
+            // declares their family template; the bundle owns the concrete file roster.
+            var registeredSkills = resource is Resources.OperatingSkillsResource
+                && registryResourceUris.Contains("skill://{skill}/{path}");
+            foreach (var descriptor in resource.Describe().Where(d => !registryResourceUris.Contains(d.Uri)
+                         && !(registeredSkills && resource.CanHandle(d.Uri))))
             {
                 problems.Add(
                     $"served /mcp resource '{descriptor.Uri}' (family '{resource.Family}') "
