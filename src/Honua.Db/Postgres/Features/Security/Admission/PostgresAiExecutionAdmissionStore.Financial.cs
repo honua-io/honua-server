@@ -59,6 +59,8 @@ internal sealed partial class PostgresAiExecutionAdmissionStore
                     || reader.GetDecimal(3 + index * 2) + money > limits[index].Money)
                     return ("financial_budget_exceeded", null);
         }
+        if (await ExceedsMonthlyActorAsync(new(connection, transaction, context, policy, now, tokens, money), cancellationToken).ConfigureAwait(false))
+            return ("financial_monthly_actor_exceeded", null);
         await using var insert = new NpgsqlCommand($"""
             INSERT INTO {_financial} (deployment_id, attempt_id, generation_id, grant_epoch, deadline_at, lease_expires_at, actor_key, use_case, workflow_key,
                 period_start, reserved_at, request_digest, provider, destination_digest, basis_digest, basis_json, currency, money_scale,
