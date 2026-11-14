@@ -190,12 +190,12 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(CatalogFailure.Throws)]
+    [InlineData(CatalogFailure.Stalls)]
     [Trait("Tier", "Integration")]
     [Operation(Operations.ReadinessCheck)]
     [Endpoint("GET /healthz/deep")]
-    public async Task DeepHealthEndpoint_OutputCacheEnabled_CatalogFailureRemainsBoundedAndSanitized(bool stalls)
+    public async Task DeepHealthEndpoint_OutputCacheEnabled_CatalogFailureRemainsBoundedAndSanitized(CatalogFailure failure)
     {
         var checker = Substitute.For<IDatabaseHealthChecker>();
         checker.IsDatabaseHealthyAsync(Arg.Any<CancellationToken>()).Returns(true);
@@ -211,7 +211,7 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
         using var client = host.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(15);
 #pragma warning disable CA2012 // NSubstitute configures the ValueTask-returning member without consuming it.
-        catalog.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(call => stalls
+        catalog.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(call => failure == CatalogFailure.Stalls
             ? new ValueTask<MetadataV2GraphSnapshot>(pending.Task)
             : throw new InvalidOperationException("secret catalog failure"));
 #pragma warning restore CA2012
@@ -223,7 +223,7 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
             (await response.Content.ReadAsStringAsync()).Should().Be("Not Ready");
             response.Headers.CacheControl!.NoStore.Should().BeTrue();
             await checker.Received(1).IsDatabaseHealthyAsync(Arg.Any<CancellationToken>());
-            if (stalls)
+            if (failure == CatalogFailure.Stalls)
             {
                 pending.Task.IsCompleted.Should().BeFalse();
             }
@@ -232,6 +232,12 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
         {
             pending.TrySetResult(new MetadataV2GraphSnapshot(new MetadataV2Graph(), "empty", DateTimeOffset.UtcNow));
         }
+    }
+
+    public enum CatalogFailure
+    {
+        Throws,
+        Stalls
     }
 
     private WebApplicationFactory<Program> Configure(IDatabaseHealthChecker checker, IMetadataV2GraphProvider catalog)

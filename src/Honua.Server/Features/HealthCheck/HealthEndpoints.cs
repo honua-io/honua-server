@@ -50,17 +50,7 @@ internal static class HealthEndpoints
             .WithDisplayName("Readiness Probe Method Not Allowed")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
-        _ = endpoints.MapMethods("/healthz/deep", [HttpMethods.Get], HandleDeepProbe)
-            .WithDisplayName("Deep Health Probe")
-            .WithMetadata(SkipCatalogOutputCacheMetadata.Instance)
-            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))
-            .AllowAnonymous()
-            .CacheOutput(static policy => policy.NoCache())
-            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
-        _ = endpoints.MapMethods("/healthz/deep", NonGetMethods, HandleGetMethodNotAllowed)
-            .WithDisplayName("Deep Health Probe Method Not Allowed")
-            .AllowAnonymous()
-            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+        MapDeepHealthEndpoints(endpoints);
 
         // PERFORMANCE OPTIMIZATION: Add performance metrics endpoint for monitoring
         var metricsEndpoint = endpoints.MapMethods("/healthz/metrics", [HttpMethods.Get], HandlePerformanceMetrics)
@@ -72,6 +62,21 @@ internal static class HealthEndpoints
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
         metricsEndpoint.RequireAdminAuthorization();
+    }
+
+    private static void MapDeepHealthEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        _ = endpoints.MapMethods("/healthz/deep", [HttpMethods.Get], HandleDeepProbe)
+            .WithDisplayName("Deep Health Probe")
+            .WithMetadata(SkipCatalogOutputCacheMetadata.Instance)
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))
+            .AllowAnonymous()
+            .CacheOutput(static policy => policy.NoCache())
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
+        _ = endpoints.MapMethods("/healthz/deep", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithDisplayName("Deep Health Probe Method Not Allowed")
+            .AllowAnonymous()
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
     }
 
     private static async Task HandleLivenessProbe(HttpContext context)
