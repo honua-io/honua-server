@@ -161,19 +161,19 @@ internal sealed partial class StreamingFileImportService
                     {
                         directBatchAttempted |= directGuard is not null;
                         var (imported, failed) = await InsertBatchAsync(connection, new ImportBatchRequest
-                {
-                    SchemaName = targetSchema,
-                    TableName = loadTableName,
-                    Features = batch,
-                    SourceSrid = sourceSrid,
-                    TargetSrid = request.TargetSrid!.Value,
-                    WkbWriter = wkbWriter,
-                    LoadMode = loadMode,
-                    KeyColumns = request.KeyColumns,
-                    RepairTally = repairTally,
-                    DirectGuard = directGuard,
-                    RequestedDatumSelection = requestedDatumSelection
-                }, cancellationToken);
+                        {
+                            SchemaName = targetSchema,
+                            TableName = loadTableName,
+                            Features = batch,
+                            SourceSrid = sourceSrid,
+                            TargetSrid = request.TargetSrid!.Value,
+                            WkbWriter = wkbWriter,
+                            LoadMode = loadMode,
+                            KeyColumns = request.KeyColumns,
+                            RepairTally = repairTally,
+                            DirectGuard = directGuard,
+                            RequestedDatumSelection = requestedDatumSelection
+                        }, cancellationToken);
 
                         totalImported += imported;
                         totalFailed += failed;
@@ -214,19 +214,19 @@ internal sealed partial class StreamingFileImportService
                 {
                     directBatchAttempted |= directGuard is not null;
                     var (imported, failed) = await InsertBatchAsync(connection, new ImportBatchRequest
-                {
-                    SchemaName = targetSchema,
-                    TableName = loadTableName,
-                    Features = batch,
-                    SourceSrid = sourceSrid,
-                    TargetSrid = request.TargetSrid!.Value,
-                    WkbWriter = wkbWriter,
-                    LoadMode = loadMode,
-                    KeyColumns = request.KeyColumns,
-                    RepairTally = repairTally,
-                    DirectGuard = directGuard,
-                    RequestedDatumSelection = requestedDatumSelection
-                }, cancellationToken);
+                    {
+                        SchemaName = targetSchema,
+                        TableName = loadTableName,
+                        Features = batch,
+                        SourceSrid = sourceSrid,
+                        TargetSrid = request.TargetSrid!.Value,
+                        WkbWriter = wkbWriter,
+                        LoadMode = loadMode,
+                        KeyColumns = request.KeyColumns,
+                        RepairTally = repairTally,
+                        DirectGuard = directGuard,
+                        RequestedDatumSelection = requestedDatumSelection
+                    }, cancellationToken);
 
                     totalImported += imported;
                     totalFailed += failed;

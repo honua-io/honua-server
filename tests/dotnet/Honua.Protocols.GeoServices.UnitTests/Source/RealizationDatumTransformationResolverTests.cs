@@ -22,7 +22,10 @@ public sealed class RealizationDatumTransformationResolverTests
         var result = GeoServicesDatumTransformationResolver.Resolve(_catalog,
             new GeoServicesDatumTransformationResolver.ResolutionRequest
             {
-                Value = "108574", FromSrid = 7912, ToSrid = 6319, CoordinateEpoch = epoch
+                Value = "108574",
+                FromSrid = 7912,
+                ToSrid = 6319,
+                CoordinateEpoch = epoch
             });
 
         result.Selection.Should().BeNull();
@@ -37,7 +40,10 @@ public sealed class RealizationDatumTransformationResolverTests
         var result = GeoServicesDatumTransformationResolver.Resolve(_catalog,
             new GeoServicesDatumTransformationResolver.ResolutionRequest
             {
-                Value = "108574", FromSrid = from, ToSrid = to, CoordinateEpoch = "2020.25"
+                Value = "108574",
+                FromSrid = from,
+                ToSrid = to,
+                CoordinateEpoch = "2020.25"
             });
 
         result.Error.Should().BeNull();
