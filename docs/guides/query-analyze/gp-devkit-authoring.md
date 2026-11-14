@@ -16,9 +16,9 @@ Start with the local devkit, use Docker for native dependencies, and use the
 | Managed geometry and transforms on inline data | Repository checkout and .NET 11 SDK |
 | Native GDAL/PDAL operations | The above plus Docker and the heavy-worker image |
 | Processes reading layers, databases, or object storage | Their configured input services and credentials |
-| Python SDK, GPServer, OGC, or MCP integration | Local server, PostGIS, Redis, and a heavy worker for native jobs |
+| Python SDK, GPServer, OGC, or MCP integration | Local server, PostGIS, and a heavy worker for native jobs |
 
-The local runner needs no Redis or job queue. It registers both managed and
+The local runner executes directly without a server or job queue. It registers both managed and
 native executors; listing a function does not install its external dependencies.
 Python SDK calls execute against a server, including a server running locally.
 
@@ -262,7 +262,7 @@ supports reflection and does not require an AOT build.
 
 Complete the [sample checkout](gp-local-dev-quickstart.md#prerequisites), then
 build a named worker image using the same Compose definition as the integration
-stack. This builds the image without starting PostGIS, Redis, or the server:
+stack. This builds the image without starting PostGIS or the server:
 
 ```bash
 docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile gdal-worker build gdal-worker
@@ -304,7 +304,7 @@ and scratch paths for local debugging; inspect them before sharing logs.
    tested image digest, with a remote workload declaring the matching
    `managed` or `native` runtime profile. Per-job Kubernetes and AWS Batch
    workers receive an assigned operation and exit after recording its outcome.
-   Persistent Compose workers continue consuming their shared Redis queue.
+   Persistent Compose workers continue consuming their shared PostgreSQL queue.
 
 Workflow publication is a separate operation: `publish` saves a workflow draft,
 creates a version, validates it, and performs a dry run; `--publish` additionally

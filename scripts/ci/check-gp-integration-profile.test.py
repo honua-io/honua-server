@@ -39,6 +39,23 @@ class IntegrationProfileTests(unittest.TestCase):
                               if mount["target"] == "/docker-entrypoint-initdb.d/init-db.sql")
         self.assertEqual(str(ROOT / "docker/init-db.sql"), database_mount["source"])
 
+    def test_rendered_workers_use_postgres_without_a_redis_dependency(self):
+        if not CHECKER.docker_available():
+            self.skipTest("docker is not installed")
+        config = CHECKER.compose_config(COMPOSE, CHECKER.PROFILE)
+        services = config["services"]
+        self.assertNotIn("redis", services)
+        self.assertNotIn("gp_redis_data", config.get("volumes", {}))
+        for name in ("honua", *CHECKER.WORKERS):
+            with self.subTest(service=name):
+                environment = services[name]["environment"]
+                self.assertIn("Host=postgres;", environment["ConnectionStrings__DefaultConnection"])
+                self.assertFalse(any(key.lower() == "connectionstrings__redis" for key in environment))
+                dependencies = services[name]["depends_on"]
+                self.assertNotIn("redis", dependencies)
+                self.assertEqual("service_healthy", dependencies["postgres"]["condition"])
+        self.assertEqual("service_healthy", services["managed-worker"]["depends_on"]["honua"]["condition"])
+
     def test_missing_profile_worker_volume_or_mount_fails(self):
         document = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
         cases = {

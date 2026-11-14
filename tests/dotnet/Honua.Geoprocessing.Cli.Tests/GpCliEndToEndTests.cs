@@ -260,7 +260,8 @@ public sealed class GpCliEndToEndTests
         root.GetProperty("serviceBacked").GetString().Should().Be("requiresIntegrationStack");
         var integrationProfile = root.GetProperty("integrationProfile").GetString();
         integrationProfile.Should().Contain("Docker Compose v2");
-        integrationProfile.Should().Contain("5432").And.Contain("6379").And.Contain("8080").And.Contain("8081");
+        integrationProfile.Should().Contain("5432").And.Contain("8080").And.Contain("8081");
+        integrationProfile.Should().NotContain("6379").And.NotContain("Redis");
         integrationProfile.Should().Contain("docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration up --build -d");
         foreach (var tool in new[] { "docker", "kind", "kubectl", "helm" })
         {

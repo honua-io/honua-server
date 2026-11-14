@@ -16,17 +16,9 @@
 #     inside the honua container via GeoprocessingDispatchJobExecutor. The
 #     LocalBatchComputeBackend (Backend: "local") bridges their progress back to
 #     the canonical reconciler — there is no `docker run` per job and no Batch.
-#   * The worker loop, job queue, execution-job store, and result-package store
-#     are all Redis-backed and self-gate on a Redis IConnectionMultiplexer
-#     (JobOrchestrationServiceCollectionExtensions.AddJobOrchestration /
-#     AddJobWorker). So Redis is REQUIRED for any GP job to run locally.
-#   * IConnectionMultiplexer is only wired when the `caching.redis` entitlement
-#     (Pro) is present at bootstrap. In a non-Production environment the bootstrap
-#     license snapshot honors `Licensing:DevGrantEdition`
-#     (StartupConfigurationHelpers.IsRedisCacheEntitledAsync ->
-#     FileBackedLicenseService.LoadBootstrapSnapshotAsync(honorDevGrant: true)),
-#     so `Licensing__DevGrantEdition=Pro` grants caching.redis WITHOUT a signed
-#     license. That is the zero-cloud-cred, no-manual-license dev path.
+#   * The worker loop claims durable jobs from PostgreSQL. The serving host and
+#     native worker share DefaultConnection, so all execution profiles use the
+#     same job queue and result store without an additional service.
 #
 # The optional `gdal-worker` profile adds the heavyweight GDAL/PDAL worker for
 # the native-profile `gdal.*` raster/surface family (ADR-0038). The geometry.*
@@ -46,17 +38,10 @@
 # Shared by `honua` and the profile-gated `managed-worker` so both join the
 # same dev substrate. Not an application config section.
 x-gp-dev-environment: &gp-dev-environment
-  # Development environment => requiresDurableDistributedEvents is false and
-  # the bootstrap license snapshot honors the dev grant below.
+  # The bootstrap license snapshot honors the dev grant in Development.
   ASPNETCORE_ENVIRONMENT: Development
   ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
-  # Drives both the cache and the durable job substrate. Resolved by
-  # GetConnectionString("redis") in Program.cs (config keys are
-  # case-insensitive). Matches the root compose's ConnectionStrings__Redis.
-  ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
-  # Dev grant: unlocks the Pro `caching.redis` entitlement at bootstrap so
-  # IConnectionMultiplexer (and therefore the GP job substrate) is wired —
-  # WITHOUT a signed license or any cloud credentials. Never use in prod.
+  # Enable local Pro features without a signed license. Never use in prod.
   Licensing__DevGrantEdition: "${HONUA_DEV_GRANT_EDITION:-Pro}"
   # Admin password doubles as the X-API-Key for authenticated calls. The
   # admin role holds the process-execute grant the GP submit path requires.
@@ -85,7 +70,7 @@ services:
   # PostGIS — required at startup (the server connects to DefaultConnection on
   # boot and runs migrations). The geometry.* GP sample is self-contained
   # (inline WKB) and does not query Postgres, but the host still needs a healthy
-  # database connection to come up.
+  # database connection to come up and persist its jobs and results.
   postgres:
     image: pgrouting/pgrouting:17-3.5-3.7.3
     environment:
@@ -106,23 +91,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Redis — REQUIRED for GP. Backs the job queue, execution-job store, log store,
-  # and result-package store, and gates the in-process worker loop. Without it,
-  # submitted jobs are stuck in `accepted` and never drain.
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
-    command: redis-server --appendonly yes
-    volumes:
-      - gp_redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
-
   # Honua server — the lean serving image. Runs the in-process GP worker loop.
   honua:
     image: "${HONUA_SERVER_IMAGE:-honua-server:gp-local}"
@@ -138,8 +106,6 @@ services:
     environment: *gp-dev-environment
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/app/honua-healthcheck"]
@@ -176,8 +142,6 @@ services:
     environment: *gp-dev-environment
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       honua:
         condition: service_healthy
@@ -247,7 +211,6 @@ services:
 
 volumes:
   gp_postgres_data:
-  gp_redis_data:
   gp_honua_logs:
   gp_honua_cache:
   gp_managed_worker_logs:
