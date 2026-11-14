@@ -147,7 +147,7 @@ internal sealed partial class RealtimeDispatcher(
 
             if (batch.Count == 0 || batch[0].Sequence != dispatched + 1)
             {
-                currentHead = await DeliverRetentionGapAsync(new(family, batch), cancellationToken).ConfigureAwait(false);
+                currentHead = await DeliverRetentionGapAsync(new(family, batch, subscribers), cancellationToken).ConfigureAwait(false);
                 if (batch.Count == 0)
                 {
                     // Appends after the empty read belong to the next probe.
@@ -185,22 +185,15 @@ internal sealed partial class RealtimeDispatcher(
         }
 
         return dispatched;
-
     }
 
-    private sealed record RetentionGap(string Family, IReadOnlyList<RealtimeEvent> Batch);
+    private sealed record RetentionGap(string Family, IReadOnlyList<RealtimeEvent> Batch, RealtimeSubscription[] Subscribers);
 
     private async Task<long> DeliverRetentionGapAsync(RetentionGap gap, CancellationToken cancellationToken)
     {
         var window = await log.ReadWindowAsync(gap.Family, cancellationToken).ConfigureAwait(false);
-        RealtimeSubscription[] subscribers;
-        lock (_gate)
-        {
-            subscribers = _subscriptions.GetValueOrDefault(gap.Family) ?? [];
-        }
-
         var firstAfterGap = gap.Batch.Count == 0 ? window.Oldest : gap.Batch[0].Sequence;
-        foreach (var subscriber in subscribers)
+        foreach (var subscriber in gap.Subscribers)
         {
             subscriber.DeliverGap(firstAfterGap, window.Head);
         }

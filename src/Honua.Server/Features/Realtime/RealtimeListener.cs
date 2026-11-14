@@ -92,6 +92,12 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
             return;
         }
 
+        await RunWithReconnectAsync(wake, cancellationToken).ConfigureAwait(false);
+        SetDisconnected();
+    }
+
+    private async Task RunWithReconnectAsync(Action wake, CancellationToken cancellationToken)
+    {
         var options = _options.Value;
         var delay = options.ListenerReconnectMinDelay;
         var failed = false;
@@ -103,10 +109,8 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
                 {
                     if (failed)
                     {
-                        Interlocked.Increment(ref _reconnects);
-                        LogReconnected(_logger);
+                        RecordReconnect();
                     }
-
                     failed = false;
                     delay = options.ListenerReconnectMinDelay;
                 }, cancellationToken).ConfigureAwait(false);
@@ -117,8 +121,7 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
-                _connected = false;
-                Volatile.Write(ref _processId, 0);
+                SetDisconnected();
                 failed = true;
                 LogDisconnected(_logger, delay, exception);
                 wake();
@@ -131,7 +134,16 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
 
             delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, options.ListenerReconnectMaxDelay.Ticks));
         }
+    }
 
+    private void RecordReconnect()
+    {
+        Interlocked.Increment(ref _reconnects);
+        LogReconnected(_logger);
+    }
+
+    private void SetDisconnected()
+    {
         _connected = false;
         Volatile.Write(ref _processId, 0);
     }

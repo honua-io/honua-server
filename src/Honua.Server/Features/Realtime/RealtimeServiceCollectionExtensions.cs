@@ -73,20 +73,25 @@ internal static class RealtimeServiceCollectionExtensions
 
         if (hostsDatabasePollingLoops)
         {
-            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeTailBackgroundService>(
-                provider =>
-                {
-                    var hasDatabase = provider.GetService<NpgsqlDataSource>() is not null;
-                    return new RealtimeTailBackgroundService(
-                        hasDatabase ? provider.GetRequiredService<RealtimeDispatcher>() : null,
-                        hasDatabase ? provider.GetRequiredService<RealtimePresenceBatcher>() : null,
-                        hasDatabase && crossNode ? provider.GetRequiredService<RealtimeListener>() : null,
-                        provider.GetRequiredService<IOptions<RealtimeOptions>>(),
-                        provider.GetRequiredService<ILogger<RealtimeTailBackgroundService>>());
-                }));
+            AddTailService(services, configuration);
         }
 
         return services;
+    }
+
+    private static void AddTailService(IServiceCollection services, IConfiguration configuration)
+    {
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeTailBackgroundService>(
+            provider =>
+            {
+                var hasDatabase = provider.GetService<NpgsqlDataSource>() is not null;
+                return new RealtimeTailBackgroundService(
+                    hasDatabase ? provider.GetRequiredService<RealtimeDispatcher>() : null,
+                    hasDatabase ? provider.GetRequiredService<RealtimePresenceBatcher>() : null,
+                    hasDatabase && UsesPostgresProvider(configuration) ? provider.GetRequiredService<RealtimeListener>() : null,
+                    provider.GetRequiredService<IOptions<RealtimeOptions>>(),
+                    provider.GetRequiredService<ILogger<RealtimeTailBackgroundService>>());
+            }));
     }
 
     private static void AddListener(IServiceCollection services, IConfiguration configuration)
