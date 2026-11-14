@@ -964,3 +964,5 @@ skipping or missing results fail the shell check. The required name and both
 `needs` dependencies stay unchanged. Normal runs add zero jobs; superseded runs
 avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
+
+The numbered MCP, GPServer/NAServer, Admin Authorization and Operator Eval capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child and unrelated controls.

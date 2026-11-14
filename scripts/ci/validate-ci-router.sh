@@ -1701,6 +1701,7 @@ run_fixture scripts/ci/test-mcp-capacity-partition.py "${PYTHON_BIN}" scripts/ci
 run_fixture scripts/ci/test-console-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-console-capacity-partition.py
 run_fixture scripts/ci/test-odata-core-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-odata-core-capacity-partition.py
 run_fixture scripts/ci/test-full-run-capacity-partitions.py "${PYTHON_BIN}" scripts/ci/test-full-run-capacity-partitions.py
+run_fixture scripts/ci/test-shard-image-selection.py "${PYTHON_BIN}" scripts/ci/test-shard-image-selection.py
 run_fixture scripts/ci/test-replica-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-replica-capacity-partition.py
 run_fixture scripts/ci/test-streaming-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-streaming-capacity-partition.py
 run_fixture scripts/ci/test-live-output-capacity-partitions.py "${PYTHON_BIN}" scripts/ci/test-live-output-capacity-partitions.py
