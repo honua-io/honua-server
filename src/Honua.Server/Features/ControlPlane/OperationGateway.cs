@@ -743,22 +743,30 @@ internal sealed partial class OperationGateway : IOperationGateway
             Initiation = await CreateInitiationEvidenceAsync(proposal, cancellationToken).ConfigureAwait(false),
         };
 
-        var created = await _proposalStore.TryCreateAsync(proposal, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        if (!created)
+        for (var renewal = 0; ; renewal++)
         {
-            // Lost a race (or an idempotent replay landed) under the same id: fetch and
-            // return the winning proposal instead of failing the caller.
-            if (hasIdempotencyKey)
+            if (await _proposalStore.TryCreateAsync(proposal, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
-                var winner = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false);
-                if (winner != null)
-                {
-                    return FolderProposalResult(winner, request, plan, decision);
-                }
+                break;
             }
 
-            throw new InvalidOperationException("Failed to durably persist the operation proposal.");
+            // Lost a race (or an idempotent replay landed) under the same id: return the winner,
+            // unless it expired or succeeded, in which case the next id asks for a fresh approval.
+            var winner = hasIdempotencyKey
+                ? await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false)
+                : null;
+            if (winner is null)
+            {
+                throw new InvalidOperationException("Failed to durably persist the operation proposal.");
+            }
+
+            if (!IsRenewable(winner) || renewal == MaxProposalRenewals)
+            {
+                return FolderProposalResult(winner, request, plan, decision);
+            }
+
+            var renewedId = DeriveProposalId(request.Kind, request.OperationId, $"{request.IdempotencyKey}#{renewal + 1}", request.TenantId);
+            proposal = proposal with { ProposalId = renewedId, Audit = proposal.Audit with { ProposalId = renewedId } };
         }
 
         string? auditId = null;
@@ -928,6 +936,11 @@ internal sealed partial class OperationGateway : IOperationGateway
             Message = $"Existing proposal returned for idempotency key '{idempotencyKey}'.",
         };
     }
+
+    private const int MaxProposalRenewals = 64;
+
+    private static bool IsRenewable(OperationProposal proposal)
+        => proposal.Status is OperationProposalStatus.Expired or OperationProposalStatus.Succeeded;
 
     // Derive a stable proposal id from (kind, descriptor, idempotency key) so a repeated proposal
     // maps to the same durable record. This makes TryCreate collide on a duplicate,

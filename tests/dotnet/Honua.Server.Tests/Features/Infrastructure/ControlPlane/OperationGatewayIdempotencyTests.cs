@@ -53,6 +53,50 @@ public sealed class OperationGatewayIdempotencyTests
         store.Single.Plan.Summary.Should().Be("Deploy proposal");
     }
 
+    [Theory]
+    [InlineData(OperationProposalStatus.Expired)]
+    [InlineData(OperationProposalStatus.Succeeded)]
+    public async Task RouteAsync_ApprovalTier_ExpiredOrSucceededProposal_RequestsFreshApproval(OperationProposalStatus finished)
+    {
+        var store = new MultiProposalStore();
+        var sut = BuildGateway(store, ApprovalLadder());
+        var request = new OperationGatewayRequest { Kind = OperationClass.Deploy, RequestedBy = "agent", IdempotencyKey = "finding-1" };
+
+        var first = await sut.RouteAsync(request);
+        store.SetStatus(first.ProposalId!, finished);
+        var second = await sut.RouteAsync(request);
+        var repeated = await sut.RouteAsync(request);
+        store.SetStatus(second.ProposalId!, finished);
+        var third = await sut.RouteAsync(request);
+
+        second.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, second.Message);
+        second.ProposalId.Should().NotBe(first.ProposalId);
+        repeated.ProposalId.Should().Be(second.ProposalId, "an awaiting renewal folds like any active proposal");
+        third.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, third.Message);
+        third.ProposalId.Should().NotBe(first.ProposalId).And.NotBe(second.ProposalId);
+        store.Count.Should().Be(3);
+        store.ActiveCount.Should().Be(1);
+        (await store.GetAsync(third.ProposalId!))!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+    }
+
+    [Theory]
+    [InlineData(OperationProposalStatus.Rejected)]
+    [InlineData(OperationProposalStatus.Failed)]
+    public async Task RouteAsync_ApprovalTier_RejectedOrFailedProposal_StaysSealed(OperationProposalStatus finished)
+    {
+        var store = new MultiProposalStore();
+        var sut = BuildGateway(store, ApprovalLadder());
+        var request = new OperationGatewayRequest { Kind = OperationClass.Deploy, RequestedBy = "agent", IdempotencyKey = "finding-2" };
+
+        var first = await sut.RouteAsync(request);
+        store.SetStatus(first.ProposalId!, finished);
+        var second = await sut.RouteAsync(request);
+
+        second.Outcome.Should().Be(OperationGatewayOutcome.Failed);
+        second.ProposalId.Should().BeNull();
+        store.Count.Should().Be(1, "a rejected or failed decision is not reopened by repeating the request");
+    }
+
     [Fact]
     public async Task RouteAsync_ApprovalTier_DifferentIdempotencyKeys_CreateDistinctProposals()
     {
@@ -184,6 +228,14 @@ public sealed class OperationGatewayIdempotencyTests
         actuator.ExecutedPayload.Should().Be("validated-plan-payload");
     }
 
+    private static IGuardrailLadder ApprovalLadder()
+    {
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"));
+        return ladder;
+    }
+
     private static OperationGateway BuildGateway(
         IOperationProposalStore store,
         IGuardrailLadder ladder,
@@ -281,6 +333,14 @@ public sealed class OperationGatewayIdempotencyTests
             get { lock (_lock) { return _proposals.Values.Single(); } }
         }
 
+        public void SetStatus(string proposalId, OperationProposalStatus status)
+        {
+            lock (_lock)
+            {
+                _proposals[proposalId] = _proposals[proposalId] with { Status = status };
+            }
+        }
+
         public Task<OperationProposal?> GetAsync(string proposalId, CancellationToken cancellationToken = default)
         {
             lock (_lock)
@@ -351,6 +411,7 @@ public sealed class OperationGatewayIdempotencyTests
                 or OperationProposalStatus.Failed
                 or OperationProposalStatus.Rejected
                 or OperationProposalStatus.RolledBack
-                or OperationProposalStatus.Cancelled);
+                or OperationProposalStatus.Cancelled
+                or OperationProposalStatus.Expired);
     }
 }
