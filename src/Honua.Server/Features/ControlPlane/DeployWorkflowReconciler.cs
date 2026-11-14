@@ -1093,22 +1093,6 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    internal static async Task<WorkflowOperationRecord> AdvanceOrPromoteAsync(
-        WorkflowOperationRecord current,
-        IDeployBackend backend,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await AdvanceOrPromoteCoreAsync(current, backend, cancellationToken).ConfigureAwait(false);
-        }
-        catch (DeployAdmissionBlockedException ex)
-        {
-            // Keep this pass's observation and telemetry state; the next pass retries the step.
-            return current with { ErrorMessage = ex.Message, UpdatedAt = DateTimeOffset.UtcNow };
-        }
-    }
-
     private async Task RecordAdmissionRefusalAsync(
         WorkflowOperationRecord? operation, DeployAdmissionBlockedException refusal, CancellationToken cancellationToken)
     {
@@ -1236,9 +1220,6 @@ internal sealed partial class DeployWorkflowReconciler(
 
         [LoggerMessage(9024, LogLevel.Warning, "Deploy workflow reconciliation poll loop failed")]
         public static partial void WorkflowOperationPollLoopFailed(ILogger logger, Exception exception);
-
-        [LoggerMessage(9027, LogLevel.Warning, "Deploy admission refused for operation {OperationId}: {Reason}")]
-        public static partial void DeployAdmissionRefused(ILogger logger, string operationId, string reason);
 
         [LoggerMessage(9026, LogLevel.Debug, "Deploy workflow reconciliation lease was lost for operation {OperationId}; another node may continue processing.")]
         public static partial void WorkflowOperationLeaseLost(ILogger logger, string operationId);
