@@ -51,6 +51,8 @@ public sealed class LocalSubstratePostgresFixture : IAsyncLifetime
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Exception messages can contain container credentials and connection strings.
+            Console.Error.WriteLine($"PostgreSQL fixture startup failed ({ex.GetType().Name}).");
             Available = false;
             if (_container is not null)
             {

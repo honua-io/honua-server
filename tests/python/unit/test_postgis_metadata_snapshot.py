@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 
 import pytest
 
@@ -35,12 +36,35 @@ def test_seed_metadata_snapshot_keeps_logical_geometry_reference_separate_from_s
         assert publication["storageBindingId"] == binding["metadata"]["id"]
 
 
+@pytest.mark.parametrize("entry_point", ["_seed_metadata_and_configuration", "seed_metadata_v2_snapshot"])
+def test_metadata_seed_applies_configuration_migration_after_snapshot(entry_point, monkeypatch):
+    connection = SnapshotConnection("geometry")
+    fixture = PostGISFixture()
+    monkeypatch.setattr(fixture, "get_connection", lambda schema: nullcontext(connection))
+
+    if entry_point == "seed_metadata_v2_snapshot":
+        fixture.seed_metadata_v2_snapshot()
+    else:
+        fixture._seed_metadata_and_configuration(connection)
+
+    snapshot_index = next(i for i, sql in enumerate(connection.statements)
+                          if "INSERT INTO honua.metadata_v2_snapshots" in sql)
+    migration_index = next(i for i, sql in enumerate(connection.statements)
+                           if "CREATE TABLE IF NOT EXISTS honua.configuration_documents" in sql)
+    assert migration_index > snapshot_index
+
+
 class SnapshotConnection:
     def __init__(self, geometry_field):
         self.geometry_field = geometry_field
         self.documents = {}
+        self.statements = []
+
+    def commit(self):
+        pass
 
     def execute(self, sql, parameters=None):
+        self.statements.append(sql)
         if "FROM honua.service_layers sl" in sql:
             return SnapshotRows([("test_service", "Test service", 741, "logical_layer", "Test layer",
                                   "public", "features", "Point", 4326, -180, -90, 180, 90, "created_at")])

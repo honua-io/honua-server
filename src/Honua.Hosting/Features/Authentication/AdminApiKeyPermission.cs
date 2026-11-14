@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -113,6 +114,12 @@ internal static class AdminApiKeyPermission
     {
         ArgumentNullException.ThrowIfNull(principal);
 
+        // An agent minting a key without the agent grant would leave the approval requirement behind.
+        if (AgentPrincipal.IsAgent(principal))
+        {
+            return false;
+        }
+
         var permissions = principal.FindAll(PermissionClaimType).Select(claim => claim.Value?.Trim()).ToList();
         if (permissions.Count == 0)
         {
@@ -149,6 +156,16 @@ internal static class AdminApiKeyPermission
     {
         // An explicit empty binding preserves accepted single-tenant invocations.
         return [CreateApprovedOperationGrant(httpMethod, requestPath), ApprovedOperationTenantGrantPrefix + tenantId];
+    }
+
+    // Only the API-key handler mints framework-owned permission claims; an identity provider's
+    // role claim alone cannot pass as an approved-operation credential.
+    internal static bool IsServerMintedApprovedOperation(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        return principal.IsInRole(ApprovedOperationRole)
+            && principal.FindAll(PermissionClaimType).Any(static claim =>
+                IsApprovedOperationGrant(claim.Value) && CanonicalSecurityActor.IsFrameworkOwnedClaim(claim));
     }
 
     internal static bool IsApprovedOperationGrant(string? grant)

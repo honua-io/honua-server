@@ -1,0 +1,6 @@
+# GitHub supports concurrency.queue; actionlint 1.7.12 does not model it yet.
+# Match this one diagnostic, never all syntax errors or expression contexts.
+paths:
+  .github/workflows/*.yml:
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'

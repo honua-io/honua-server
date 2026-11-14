@@ -176,6 +176,26 @@ in deployment manifests. Defaults are unchanged when a key is absent. Existing
 `Alerts:Enabled` / `Alerts__Enabled` behavior is unchanged; this correction applies to
 the nested evaluation, dispatch, delivery-channel, and operations settings.
 
+### Single-tenant deployments are the default
+
+`MultiTenancy:Enabled` now defaults to `false` for request resolution and Studio
+ownership checks. Single-tenant requests use `MultiTenancy:DefaultTenantId`
+(`public` by default); provider tenant claims and tenant headers do not select a
+separate tenant. Previously stamped Studio content remains accessible within the
+deployment rather than being selected by an identity provider's tenant claim.
+
+Deployments intentionally using tenant isolation must explicitly set
+`MultiTenancy__Enabled=true` before upgrading to retain claim-based resolution and
+Studio isolation. Schema routing now refuses startup unless multi-tenancy is
+explicitly enabled. Review existing tenant IDs and workspace mappings before
+changing this setting. See [authentication configuration](../secure/authentication.md).
+
+Proposals and operation handles created under the previous default carry the tenant
+from the identity provider's claim (for example an Entra `tid`). In single-tenant mode
+they no longer match the deployment tenant, so only `MultiTenancy:MultiTenantAdminRoles`
+holders (`platform_admin` or `multi_tenant_admin` by default) can read or approve them.
+Finish or reject pending proposals before upgrading, or keep `MultiTenancy__Enabled=true`.
+
 ### Credential and identity management requires full-administrator authority
 
 API keys that hold only `admin:write` or `admin:manage` now receive `403` on the routes
@@ -498,6 +518,69 @@ submission outcome uncertain, the operation fails and requires operator attentio
 it does not submit another restore blindly. Inspect the operation and the database
 before attempting recovery. Success is recorded only after the restored deployment
 and its protection window complete and the restore is verified.
+
+The automated MCP upgrade/restore journey uses a test-only rc.2-era prior image
+built from pinned launcher-compatible source, with embedded migrations capped at
+schema 140. It pins both images by digest and retains the approval, backup,
+checksum and isolation checks. This fixture is never published as a release or
+candidate. rc.1 predates the launcher, so its rollback follows the separate manual
+procedure below against the real published rc.1 image.
+
+### Manual Compose rollback to rc.1
+
+Retain the deployment configuration together with each immutable image. The rc.2
+Compose file uses `/app/honua-entrypoint`; rc.1 does not contain that executable.
+Starting rc.1 with the rc.2 configuration cannot restore service. The rc.1
+image-only executor cannot switch configuration files, so this boundary requires
+an operator-managed rollback. Automated paired rollback applies only to releases
+whose executor supports their matching configuration.
+
+Before upgrading, retain the installation directory, secret files, named volumes
+and an off-host backup of file storage. Stop serving writes, take a custom-format
+PostgreSQL dump, record its SHA-256 and the prior image digest, and protect both
+the dump and its checksum. Retain the exact rc.2 installation package for the
+return trip. A rollback restores the database to the backup's point in time.
+
+Select the historical configuration from a trusted, pinned checkout of the
+release repository. Establish trust in that checkout before running its selector;
+checksums detect file changes but do not authenticate the checkout itself:
+
+```bash
+python3 tools/deployment_configuration.py --image \
+  ghcr.io/honua-io/honua-server@sha256:c8d7aef98761618145725530b6a4e4b25ea4a9ae121da168362f9be4cf5f7d37 \
+  --kind compose
+```
+
+The selector validates the catalog and all retained checksums before returning
+the absolute Compose path and `rollbackMode: manual`. Use that path with explicit
+`docker compose --project-directory <existing-install> -p <existing-project> -f
+<retained-compose>` arguments. Keep the project name and volumes unchanged. Do
+not run the historical dependency services over the current installation: stop
+only `honua`, restore the verified database dump through the existing Postgres
+service, and start only `honua` with `up -d --no-deps` under the retained file.
+Never restore while a serving process can write to the database.
+
+The retained rc.1 file reads `POSTGRES_PASSWORD`, `HONUA_ADMIN_PASSWORD`,
+`HONUA_MASTER_KEY` and `HONUA_KEYRING_PASSWORD` from the operator process
+environment. Supply the existing values through a private, short-lived process
+using the installation's secret files. Do not write them into `.env`, enable
+shell tracing, or render that legacy configuration into logs. rc.2 keeps those
+secrets out of Compose interpolation; the historical boundary requires this
+restricted process until rc.2 is restored.
+
+Add a local override disabling the inherited rc.1 container health check; its
+image lacks the rc.2 compiled readiness probe. Check `/healthz/ready` from the
+host, verify the running image identity against the selected digest, and check
+the restored schema and known pre-upgrade data before admitting traffic. Preserve
+an explicit record that this uses historical configuration, rather than current
+install certification.
+
+To return to rc.2, stop rc.1 serving, restore the matching rc.2 package's Compose
+files and immutable image lock, then start its serving service against the same
+volumes and secret files. Remove the legacy secret environment from that process.
+Wait for readiness and verify the candidate image, migrated schema and retained
+data. The manual lifecycle integration test exercises rc.1 -> rc.2 -> restored
+rc.1 -> rc.2 with the catalog-selected file and a checksum-verified backup.
 
 ### Rollback target eligibility
 

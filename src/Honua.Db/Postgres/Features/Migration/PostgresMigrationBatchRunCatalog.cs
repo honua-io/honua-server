@@ -21,16 +21,14 @@ namespace Honua.Db.Postgres.Features.Migration;
 /// </summary>
 internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatchRunCatalog
 {
-    // Resolved once from PostgresConnectionStringCache (PA-077): awaiting an already-completed
-    // Task<string> is effectively free and avoids blocking the thread pool on secret calls.
-    private readonly Task<string> _connectionStringTask;
+    private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<PostgresMigrationBatchRunCatalog> _logger;
 
     public PostgresMigrationBatchRunCatalog(
-        Task<string> connectionStringTask,
+        NpgsqlDataSource dataSource,
         ILogger<PostgresMigrationBatchRunCatalog> logger)
     {
-        _connectionStringTask = connectionStringTask ?? throw new ArgumentNullException(nameof(connectionStringTask));
+        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -44,8 +42,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         ArgumentException.ThrowIfNullOrWhiteSpace(record.BatchId);
         ArgumentNullException.ThrowIfNull(children);
 
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         const string insertBatchSql = """
@@ -142,8 +139,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(batchId);
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         return await GetInternalAsync(connection, batchId, cancellationToken).ConfigureAwait(false);
     }
 
@@ -152,8 +148,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(batchId);
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         const string sql = """
             SELECT batch_id, ordinal, source_resource_id, service_url, source_layer_id,
@@ -181,8 +176,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(batchId);
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         const string sql = """
             SELECT manifest_body::text FROM honua.migration_batch_runs
@@ -212,8 +206,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(batchId);
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         // Terminal child states are sticky: don't overwrite a row that already
         // reached succeeded/failed/cancelled/needs-review.
@@ -260,8 +253,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(batchId);
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         // Terminal batch states are sticky.
         const string sql = """
@@ -303,8 +295,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
     public async Task<IReadOnlyList<string>> GetActiveBatchIdsAsync(
         CancellationToken cancellationToken = default)
     {
-        await using var connection = new NpgsqlConnection(await _connectionStringTask.ConfigureAwait(false));
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         const string sql = """
             SELECT batch_id FROM honua.migration_batch_runs

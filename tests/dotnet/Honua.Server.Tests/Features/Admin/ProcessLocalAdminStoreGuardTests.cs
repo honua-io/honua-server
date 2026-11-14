@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
 using Honua.TestKit;
@@ -15,6 +16,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -73,10 +75,12 @@ public sealed class ProcessLocalAdminStoreGuardEndpointTests
 {
     private const string AdminPassword = "process-local-guard-admin-key";
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(true, HttpStatusCode.Conflict)]
+    [InlineData(false, HttpStatusCode.Created)]
     [Endpoint("POST /api/v1/admin/rate-limits")]
     [Endpoint("GET /api/v1/admin/rate-limits")]
-    public async Task CreateRateLimitPolicy_DeploymentOfTwoTasks_IsRefusedAndListStillAnswers()
+    public async Task CreateRateLimitPolicy_DeploymentOfTwoTasks_RefusesOnlyProcessLocalWrites(bool processLocal, HttpStatusCode expected)
     {
         var fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
@@ -87,6 +91,14 @@ public sealed class ProcessLocalAdminStoreGuardEndpointTests
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             });
+        if (processLocal)
+        {
+            fixture.ConfigureServices(services =>
+            {
+                services.RemoveAll<IRateLimitPolicyStore>();
+                services.AddSingleton<IRateLimitPolicyStore, InMemoryRateLimitPolicyStore>();
+            });
+        }
         await fixture.InitializeAsync();
         try
         {
@@ -103,8 +115,11 @@ public sealed class ProcessLocalAdminStoreGuardEndpointTests
             });
             using var list = await client.GetAsync("/api/v1/admin/rate-limits");
 
-            create.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            (await create.Content.ReadAsStringAsync()).Should().Contain("Rate-limit policies").And.Contain("more than one task");
+            create.StatusCode.Should().Be(expected);
+            if (processLocal)
+            {
+                (await create.Content.ReadAsStringAsync()).Should().Contain("Rate-limit policies").And.Contain("more than one task");
+            }
             list.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally

@@ -1,5 +1,5 @@
 name: CI
-run-name: "CI ${{ inputs.merge_train_nonce }}"
+run-name: "CI ${{ github.ref == 'refs/heads/trunk' && (github.event_name == 'schedule' || inputs.full_ci || !inputs.selective_base) && 'full ' || github.ref == 'refs/heads/trunk' && 'affected ' || '' }}${{ inputs.merge_train_nonce }}"
 
 on:
   schedule:
@@ -26,12 +26,12 @@ on:
         type: boolean
         default: false
       selective_base:
-        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the latest completed CI head). The base refreshes when execution starts; selections above 30 shards use the newest merge. Gates only affected shards/lanes. Empty = full lane. Overridden by full_ci=true.'
+        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the latest completed CI head). The base refreshes when execution starts; selections above 40 total jobs defer to scheduled full CI. Gates only affected shards/lanes. Empty = full lane. Overridden by full_ci=true.'
         required: false
         type: string
         default: ''
       investigation_base:
-        description: 'Last green trunk ancestor for the CI doctor suspect range; independent of selective execution scope. Empty = unknown.'
+        description: 'Last green trunk ancestor for the CI suspect range; independent of selective execution scope. Empty = unknown.'
         required: false
         type: string
         default: ''
@@ -52,7 +52,7 @@ concurrency:
 env:
   # Preserve the upstream reaper index while avoiding Docker Hub authentication.
   TESTCONTAINERS_RYUK_CONTAINER_IMAGE: 'mirror.gcr.io/testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0'
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   # Keep one persistent MSBuild server alive across restore/build/test calls in
   # each job. Roslyn shared compilation remains enabled by default.
   DOTNET_CLI_USE_MSBUILD_SERVER: true
@@ -322,7 +322,7 @@ jobs:
     name: Detect Non-Test Changes
     permissions:
       contents: read
-      actions: read
+      actions: write
     # Skips on merge_group: the lean merge-queue gate does not consult the
     # change-detection / shard-routing graph (it always runs build + format +
     # fast smoke). Skipping `changes` cascades a skip to every heavy job that
@@ -353,6 +353,7 @@ jobs:
           FULL_CI_INPUT: ${{ inputs.full_ci }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           # Fetch the base branch with FULL history (NOT --depth=1). The filter below
           # uses a three-dot range (base...head) that needs a merge-base; a shallow
           # base fetch makes `git diff` fail with "fatal: no merge base", which the
@@ -374,9 +375,8 @@ jobs:
             if git cat-file -e "${SELECTIVE_BASE}^{commit}" 2>/dev/null; then
               python3 scripts/ci/resolve-trailing-base.py "${SELECTIVE_BASE}" "${GITHUB_SHA}"
             else
-              echo "::warning::selective_base ${SELECTIVE_BASE} not found in history; forcing full CI."
-              echo "range=origin/trunk...${{ github.sha }}" >> "$GITHUB_OUTPUT"
-              echo "trailing_selective=false" >> "$GITHUB_OUTPUT"
+              # The admission helper defers unknown history and cancels before fanout.
+              python3 scripts/ci/resolve-trailing-base.py "${SELECTIVE_BASE}" "${GITHUB_SHA}"
             fi
           else
             git fetch --no-tags origin trunk
@@ -641,6 +641,12 @@ jobs:
               '{run_all: true, shards: $shards, reason: $reason}')
           fi
           echo "Descriptor: ${descriptor}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
+             [ "${{ github.ref }}" = "refs/heads/trunk" ] &&
+             [ -n "${TRAILING_SELECTIVE_BASE:-}" ] &&
+             [ "${{ inputs.full_ci }}" != "true" ]; then
+            python3 scripts/ci/affected_admission.py --descriptor "${descriptor}"
+          fi
 
           # Build the matrix include list by joining the selected shard names
           # against the ci-shards.json shard metadata. Drop the routing-only
@@ -999,7 +1005,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -1011,6 +1017,11 @@ jobs:
           # The server family runs TierTraitEnforcementTests, which compares the
           # baseline with HEAD's first parent. Checkout's default depth 1 omits it.
           fetch-depth: 2
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       # Reclaim runner disk before the build + coverage run; the modular
       # topology pushed some runners over the free-disk limit. Best-effort.
@@ -1316,6 +1327,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Several self-hosted runners share one host and its /tmp; each job keeps temp files and the
+      # app's local storage directories under its own runner temp. Set in a step because the runner
+      # context is unavailable in job env.
+      - name: Use the job's own temp directory
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TemporaryFiles__StorageDirectory=${RUNNER_TEMP}/honua-temp"
+            echo "FileStorage__LocalStorage__BasePath=${RUNNER_TEMP}/honua-storage"
+          } >> "${GITHUB_ENV}"
+
       - name: Load validated flaky-test quarantine
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1602,8 +1624,8 @@ jobs:
             'Server Features Admin Alert Endpoints'| \
             'Server Features Streaming Snapshot and Conformance'| \
             'Server Features Data Enrichment and Capabilities'| \
-            'Server Features Miscellaneous'| \
-            'Server Features Studio Packaging') images+=(redis) ;;
+            'Server Features Miscellaneous '[0-9]*| \
+            'Server Features Studio Packaging '[0-9]*) images+=(redis) ;;
           esac
           if [[ "${SERVER_SHARD}" == 'Operator Eval Harness' ]]; then
             images+=(postgis17)
@@ -2148,7 +2170,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2156,6 +2178,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -2288,7 +2315,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2296,6 +2323,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -2404,7 +2436,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2412,6 +2444,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -2544,7 +2581,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2552,6 +2589,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       # Design: skip-if-absent is intentional for cross-repo coordination.
       # Test code lives in honua-sdk-js; this repo provides only CI jobs,
@@ -2644,7 +2686,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2652,6 +2694,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup Honua MCP environment
         id: setup
@@ -2742,7 +2789,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -2750,6 +2797,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2785,7 +2837,6 @@ jobs:
 
       - name: Run Postgres compatibility tests
         env:
-          HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
           HONUA_TEST_CONFIGURATION: Release
           COLLECT_COVERAGE: ${{ matrix.collect_coverage }}
           PG_IMAGE: ${{ matrix.pg_image }}
@@ -3046,7 +3097,7 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -3055,6 +3106,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure PostgreSQL connection
+        uses: ./.github/actions/configure-postgres-connection
+        with:
+          port: ${{ job.services.postgres.ports['5432'] }}
 
       - name: Pre-pull BuildKit image with retries
         timeout-minutes: 3
@@ -3180,7 +3236,7 @@ jobs:
           SERVER_URL="http://127.0.0.1:$SERVER_PORT"
           CONTAINER="$(docker run -d \
             --network host \
-            -e ConnectionStrings__DefaultConnection="Host=localhost;Database=honua_test;Username=honua;Password=honua" \
+            -e ConnectionStrings__DefaultConnection="Host=localhost;Port=${PGPORT};Database=honua_test;Username=honua;Password=honua" \
             -e ASPNETCORE_ENVIRONMENT=Development \
             -e HONUA_ADMIN_PASSWORD=ci-docker-admin-password \
             -e Security__ConnectionEncryption__MasterKey="0123456789abcdef0123456789abcdef" \
@@ -3303,6 +3359,29 @@ jobs:
           # outside a diff. Do not "align" this with PR Gate either.
           format-scope: full
 
+  store-image-proofs:
+    name: Store image proofs
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
+    uses: ./.github/workflows/store-image-size.yml
+    permissions:
+      contents: read
+      packages: read
+  # Pull requests run these two interop proofs only for Parquet/Arrow-named
+  # inputs; the full run covers every shared build, model and host change.
+  geoparquet-interop:
+    name: GeoParquet interop evidence
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
+    uses: ./.github/workflows/geoparquet-interop.yml
+    permissions:
+      contents: read
+      packages: read
+  geoarrow-interop:
+    name: GeoArrow interop fixture
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
+    uses: ./.github/workflows/geoarrow-interop-fixture.yml
+    permissions:
+      contents: read
+      packages: read
   # Scheduled runtime coverage shares the full-CI managed build producer.
   runtime-proofs:
     name: Full CI / Runtime proofs
@@ -3541,6 +3620,24 @@ jobs:
           # here would bury that step's real failure under a second one.
           if-no-files-found: ${{ steps.fidelity-proof.outcome != 'skipped' && 'error' || 'warn' }}
 
+      - name: Verify default PostGIS store profile
+        env:
+          HONUA_EXPECTED_STORE_PROFILE: postgis
+        run: |
+          started=$SECONDS
+          dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release -p:HonuaStoreProfile=postgis -p:TreatWarningsAsErrors=true
+          dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release -p:HonuaStoreProfile=postgis --filter 'FullyQualifiedName~StoreProfileWritePolicyTests|FullyQualifiedName~ActivateRevisionAsync_StoreProfile' --logger 'trx;LogFileName=core-profile.trx' --results-directory artifacts/pr-gate/postgis-policy -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release -p:HonuaStoreProfile=postgis --filter 'FullyQualifiedName~StoreProfileWritePolicyTests|FullyQualifiedName~ActivateRevisionAsync_StoreProfile' --logger 'trx;LogFileName=persistence-profile.trx' --results-directory artifacts/pr-gate/postgis-policy -- RunConfiguration.TreatNoTestsAsError=true
+          printf 'Default PostGIS profile verification: %s seconds\n' "$((SECONDS - started))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload PostGIS policy proof
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: postgis-policy-proof
+          path: artifacts/pr-gate/postgis-policy/
+          if-no-files-found: warn
+
   # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.
   ci-gate:
@@ -3554,7 +3651,7 @@ jobs:
     # NOT this one. Keeping CI Gate off merge_group avoids a misleading all-
     # skipped "pass" status appearing in the queue context.
     if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
-    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, runtime-proofs, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
+    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, runtime-proofs, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke, store-image-proofs, geoparquet-interop, geoarrow-interop]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -3562,9 +3659,13 @@ jobs:
         env:
           REQUIRE_MANAGED_BUILD: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
           REQUIRE_FORMAT: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
+          REQUIRE_STORE_IMAGES: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
           RUNTIME_PROOFS_RESULT: ${{ needs.runtime-proofs.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
+          STORE_IMAGE_RESULT: ${{ needs.store-image-proofs.result }}
+          GEOPARQUET_RESULT: ${{ needs.geoparquet-interop.result }}
+          GEOARROW_RESULT: ${{ needs.geoarrow-interop.result }}
         run: |
           if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${BUILD_RESULT}" != success ]]; then
             echo "::error::Selected managed producer must succeed, got ${BUILD_RESULT}."
@@ -3578,6 +3679,14 @@ jobs:
             echo "::error::Selected full-format verification must succeed, got ${FORMAT_RESULT}."
             exit 1
           fi
+          if [[ "${REQUIRE_STORE_IMAGES}" == true && "${STORE_IMAGE_RESULT}" != success ]]; then
+            echo "::error::Selected store image proofs must succeed, got ${STORE_IMAGE_RESULT}."
+            exit 1
+          fi
+          if [[ "${REQUIRE_STORE_IMAGES}" == true && ( "${GEOPARQUET_RESULT}" != success || "${GEOARROW_RESULT}" != success ) ]]; then
+            echo "::error::Full-run interop proofs must succeed, got geoparquet=${GEOPARQUET_RESULT}, geoarrow=${GEOARROW_RESULT}."
+            exit 1
+          fi
           if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
             echo "::error::One or more required CI jobs failed."
             exit 1
@@ -3587,25 +3696,3 @@ jobs:
             exit 1
           fi
           echo "All required CI jobs passed."
-
-  # workflow_run notifications from workflow-token dispatches can be suppressed.
-  # Explicit workflow_dispatch is exempt from that token recursion restriction.
-  doctor-notify:
-    name: Notify CI doctor of trunk failure
-    needs: ci-gate
-    if: ${{ always() && needs.ci-gate.result == 'failure' && github.ref == 'refs/heads/trunk' && github.repository == 'honua-io/honua-server' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: write
-    steps:
-      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              ...context.repo,
-              workflow_id: 'ci-doctor-triage.lock.yml',
-              ref: context.payload.repository.default_branch,
-              inputs: { source_run_id: String(context.runId) }
-            });
-            core.info(`Notified CI doctor triage of failed CI run ${context.runId}`);

@@ -48,6 +48,7 @@ internal static class McpBearerAuthenticationEndpointExtensions
                 if (trustedPrincipal is not null)
                 {
                     httpContext.User = trustedPrincipal;
+                    AgentPrincipal.MarkRequestPrincipal(httpContext);
                     httpContext.Items[ValidatedPrincipalKey] = trustedPrincipal;
                     await next().ConfigureAwait(false);
                     return;
@@ -130,6 +131,7 @@ internal static class McpBearerAuthenticationEndpointExtensions
             if (trustedPrincipal is not null)
             {
                 httpContext.User = trustedPrincipal;
+                AgentPrincipal.MarkRequestPrincipal(httpContext);
                 return await next(context).ConfigureAwait(false);
             }
         }

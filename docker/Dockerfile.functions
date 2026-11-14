@@ -5,20 +5,16 @@
 # Pin manifest digests to avoid mutable-tag noise in Trivy nightly scans.
 # Refresh cadence + remediation rationale: docs/internal/security/code-scanning-2026-Q2-remediation.md.
 #
-# Base selection (honua-server#3036): the `azure-functions/base` repository is
-# abandoned — its newest published tags (`4`/`4-appservice`, host 4.636.2,
-# 2025-03-06; `4-nightly*`, host 4.637.1, 2025-04-22) are all still built from
-# EOL Debian 11 (bullseye). The Functions host itself is very much alive, but
-# Microsoft only republishes it under the language-worker repositories, and
-# those moved to Debian 12 (bookworm). `dotnet-isolated:4-dotnet-isolated9.0-appservice`
-# is the same `/azure-functions-host` with the same `/azure-functions-host/start.sh`
-# entrypoint on a supported distro, ~15 months newer (host 4.1051.300.6).
-# Custom handlers are a host feature, not a worker feature, so the bundled
-# dotnet-isolated worker is simply unused once FUNCTIONS_WORKER_RUNTIME=custom
-# is set below.
-# The pinned host 4.1055.300.2 (2026-11-03) ships the ASP.NET Core and
-# Microsoft.NETCore.App shared frameworks 8.0.33, 9.0.22 and 10.0.14.
-ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-2-dotnet-isolated9.0-appservice@sha256:4bed140e217027464567f68e3e630486663922e4bc4d5ec6ecd5408b5bbb540f
+# Base selection: the `azure-functions/base` repository is abandoned (its newest
+# tags are still EOL Debian 11). Microsoft ships the maintained Functions host only
+# under the language-worker repositories, so the base is
+# `dotnet-isolated:<host>-dotnet-isolated10.0-appservice`: the same
+# `/azure-functions-host` and `/azure-functions-host/start.sh` entrypoint, built on
+# Ubuntu 24.04, with the 10.0.15 shared frameworks (unused: Honua publishes
+# self-contained on .NET 11, and the build stage installs SDK 11). Custom handlers are a host
+# feature, not a worker feature, so the bundled dotnet-isolated worker is simply
+# unused once FUNCTIONS_WORKER_RUNTIME=custom is set below.
+ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-6-dotnet-isolated10.0-appservice@sha256:b67cd05d98ef75de3b7a8c439262e7ad299e3379cd88489974003623cde5d67c
 
 FROM ${AZURE_FUNCTIONS_BASE_IMAGE} AS build
 WORKDIR /src
@@ -32,12 +28,12 @@ ENV PATH="${DOTNET_ROOT}:${PATH}"
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates wget && \
     wget -nv https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && \
-    bash /tmp/dotnet-install.sh --channel 10.0 --install-dir "$DOTNET_ROOT" && \
+    bash /tmp/dotnet-install.sh --channel 11.0 --install-dir "$DOTNET_ROOT" && \
     ln -sf "$DOTNET_ROOT/dotnet" /usr/bin/dotnet && \
     rm -f /tmp/dotnet-install.sh && \
     rm -rf /var/lib/apt/lists/*
 
-COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
 # eng/ carries Honua.BuildProfiles.props (HonuaIncludeAws/Azure defaults).
 # Directory.Build.props imports it with an Exists() guard, so omitting it
 # makes restore and publish evaluate DIFFERENT project graphs: restore sees

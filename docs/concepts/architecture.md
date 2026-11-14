@@ -5,7 +5,7 @@ description: "Honua is a geospatial server that publishes, queries, edits, and r
 ---
 # Architecture
 
-Honua is a geospatial server that publishes, queries, edits, and renders spatial data through standard protocols. It ships as a single container running one ASP.NET Core (.NET 10) process. There is no site model, no separate tile server, and no required sidecar: one process serves every protocol, the admin API, and the web endpoints.
+Honua is a geospatial server that publishes, queries, edits, and renders spatial data through standard protocols. It ships as a single container running one ASP.NET Core (.NET 11) process. There is no site model, no separate tile server, and no required sidecar: one process serves every protocol, the admin API, and the web endpoints.
 
 That is the *serving* tier. Heavyweight geoprocessing runs in a separate container or batch service — see [Compute tier](#compute-tier) — and the shapes the serving tier is deployed in are in [Deployment topology](#deployment-topology).
 

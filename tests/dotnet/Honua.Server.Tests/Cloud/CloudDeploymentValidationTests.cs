@@ -315,19 +315,19 @@ public sealed class CloudDeploymentValidationTests
         var serviceLayer = await WaitForPublishedServiceLayerAsync(
             client,
             publishedLayer.ServiceName,
-            publishedLayer.LayerId,
+            publishedLayer.StorageLayerId,
             timeout);
         var publicLayer = await WaitForPublishedLayerMetadataAsync(
             client,
             publishedLayer.ServiceName,
-            publishedLayer.LayerId,
+            publishedLayer.StorageLayerId,
             timeout);
 
         var expectedLayerName = $"Cloud Validation {tableName}";
-        serviceLayer.GetProperty("id").GetInt32().Should().Be(publishedLayer.LayerId);
+        serviceLayer.GetProperty("id").GetInt32().Should().Be(publishedLayer.StorageLayerId);
         serviceLayer.GetProperty("name").GetString().Should().Be(expectedLayerName);
 
-        publicLayer.GetProperty("id").GetInt32().Should().Be(publishedLayer.LayerId);
+        publicLayer.GetProperty("id").GetInt32().Should().Be(publishedLayer.StorageLayerId);
         publicLayer.GetProperty("name").GetString().Should().Be(expectedLayerName);
         publicLayer.GetProperty("type").GetString().Should().Be("Feature Layer");
         publicLayer.GetProperty("geometryType").GetString().Should().NotBeNullOrWhiteSpace();
@@ -770,9 +770,14 @@ public sealed class CloudDeploymentValidationTests
         using var document = JsonDocument.Parse(payload);
         var data = document.RootElement.GetProperty("data");
 
+        // Older deployed releases name the storage handle "layerId".
+        var storageLayerId = data.TryGetProperty("storageLayerId", out var storageLayerIdElement)
+            ? storageLayerIdElement
+            : data.GetProperty("layerId");
+
         return new PublishedLayerHandle(
             data.GetProperty("serviceName").GetString() ?? serviceName,
-            data.GetProperty("layerId").GetInt32());
+            storageLayerId.GetInt32());
     }
 
     private static async Task<JsonElement> WaitForPublishedServiceLayerAsync(
@@ -978,5 +983,5 @@ public sealed class CloudDeploymentValidationTests
         string PrimaryKey,
         IReadOnlyList<string> Fields);
 
-    private sealed record PublishedLayerHandle(string ServiceName, int LayerId);
+    private sealed record PublishedLayerHandle(string ServiceName, int StorageLayerId);
 }

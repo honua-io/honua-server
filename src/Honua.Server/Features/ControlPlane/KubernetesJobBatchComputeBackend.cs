@@ -561,7 +561,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         // Preserve any terminal state we already reached: if a prior observation promoted
         // the job to Succeeded/Failed/Cancelled, a later TTL-driven cleanup must not
         // rewrite that outcome.
-        if (IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             return new BatchComputeObservation
             {
@@ -596,14 +596,6 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             Message = "Kubernetes Job is no longer present on the cluster."
         };
     }
-
-    private static bool IsTerminal(ExecutionJobStatus status) => status switch
-    {
-        ExecutionJobStatus.Succeeded => true,
-        ExecutionJobStatus.Failed => true,
-        ExecutionJobStatus.Cancelled => true,
-        _ => false
-    };
 
     private string? ResolveImage(ExecutionJobRecord job)
     {

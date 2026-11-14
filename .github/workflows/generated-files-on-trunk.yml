@@ -8,13 +8,6 @@ on:
   schedule:
     - cron: '30 10 * * *'
   workflow_dispatch:
-    inputs:
-      retry_count:
-        description: 'Internal nightly retry count (maximum 2)'
-        default: '0'
-      retry_date:
-        description: 'Internal nightly UTC date; empty for a manual run'
-        default: ''
 
 permissions:
   actions: read
@@ -26,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
 
@@ -97,10 +90,3 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Retry a stale nightly source on current trunk
-        if: steps.publish.outputs.stale_source == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}
-          RETRY_COUNT: ${{ inputs.retry_count }}
-          RETRY_DATE: ${{ inputs.retry_date }}
-        run: bash scripts/ci/retry-generated-files.sh

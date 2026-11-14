@@ -8,9 +8,6 @@ internal static partial class RateLimitingLog
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to check rate limit for {KeyFamily} {KeyHash}, allowing request")]
     public static partial void RateLimitCheckFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Redis rate limit counter failed for {KeyFamily} {KeyHash}; enforcing the process-local limit")]
-    public static partial void RedisCounterFallback(ILogger logger, string keyFamily, string keyHash, Exception exception);
-
     [LoggerMessage(Level = LogLevel.Warning, Message = "Rate limit exceeded for {KeyFamily} {KeyHash}. Requests: {RequestCount}/{Limit}")]
     public static partial void RateLimitExceeded(ILogger logger, string keyFamily, string keyHash, int requestCount, int limit);
 
@@ -19,4 +16,7 @@ internal static partial class RateLimitingLog
         Level = LogLevel.Warning,
         Message = "Process-local rate-limit table is at capacity ({Capacity}); evicting the least-recently-used counter")]
     public static partial void MemoryCounterCapacityEvicted(ILogger logger, int capacity);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rate limit policies could not be read; enforcing the global limit")]
+    public static partial void PolicyStoreUnavailable(ILogger logger, Exception exception);
 }
