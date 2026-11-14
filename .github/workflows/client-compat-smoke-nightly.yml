@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
   CLIENT_COMPAT_SERVICE_ID: 'test_service'
@@ -98,7 +98,7 @@ jobs:
             .schemaVersion == "1.0" and
             .profile == "client-compat-server-v1" and
             .serverMode == "source" and
-            .dotnetVersion == "10.0.x" and
+            .dotnetVersion == "11.0.x" and
             .databaseImage == "postgis/postgis:16-3.4" and
             .aspnetcoreEnvironment == "Development" and
             .baseUrl == "http://localhost:5000" and

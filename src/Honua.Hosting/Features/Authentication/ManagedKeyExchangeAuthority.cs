@@ -24,7 +24,9 @@ internal static class ManagedKeyExchangeAuthority
         // handler: an operation/tenant-bound replay key is not full admin even when
         // it also holds an admin grant.
         if (!LayerScopedWriteKey.ConfersFullAdmin(permissions) ||
-            permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+            permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant) ||
+            permissions.Any(static permission => string.Equals(
+                permission?.Trim(), AgentPrincipal.AgentGrant, StringComparison.OrdinalIgnoreCase)))
         {
             return null;
         }

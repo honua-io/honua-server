@@ -1502,12 +1502,12 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "Source-generated EnrichmentJsonContext keeps the catalog/request wire shapes AOT-safe; the enrichment join reuses the shared ISpatialAnalyticsReader spatial-join pipeline rather than reimplementing data access, and the operator-curated catalog/registered-layers-only scope plus MVP deferrals are documented in docs/operator/data-enrichment.md.",
+          "proofMechanism": "Source-generated EnrichmentJsonContext keeps the catalog/request wire shapes AOT-safe; the enrichment join reuses the shared ISpatialAnalyticsReader spatial-join pipeline rather than reimplementing data access, and the operator-curated catalog/registered-layers-only scope plus MVP deferrals are documented in docs/guides/operate/data-enrichment.md.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Server/Features/DataEnrichment/Models/EnrichmentJsonContext.cs",
             "src/Honua.Server/Features/DataEnrichment/DataEnrichmentRequestHandlers.cs",
-            "docs/operator/data-enrichment.md"
+            "docs/guides/operate/data-enrichment.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",

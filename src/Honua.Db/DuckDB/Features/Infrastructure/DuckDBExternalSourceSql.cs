@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.DuckDB.Features.Infrastructure;
@@ -152,7 +153,7 @@ internal static class DuckDBExternalSourceSql
             throw new ArgumentException("Identifier cannot be empty.", nameof(identifier));
         }
 
-        return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+        return SqlIdentifier.QuoteIdentifier(identifier);
     }
 
     /// <summary>

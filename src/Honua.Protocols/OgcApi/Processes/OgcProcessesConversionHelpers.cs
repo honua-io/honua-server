@@ -52,7 +52,7 @@ internal static class OgcProcessesConversionHelpers
         // Pending asynchronous jobs must expose an explicit monitor relation.
         // Although it targets the same status resource as self, the relation is
         // what OGC API Processes clients use to discover the polling workflow.
-        if (!IsTerminal(job.Status))
+        if (!job.Status.IsTerminal())
         {
             linksBuilder.Add(Link.Create(
                 jobUrl,
@@ -104,12 +104,4 @@ internal static class OgcProcessesConversionHelpers
             Message = "Job dismissed"
         };
     }
-
-    /// <summary>
-    /// Returns true if the job status is a terminal state.
-    /// </summary>
-    public static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 }
