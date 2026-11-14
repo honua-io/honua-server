@@ -63,12 +63,7 @@ internal sealed class InMemoryOAuthScopeCatalogue : IOAuthScopeCatalogue
         ArgumentNullException.ThrowIfNull(definition);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var normalized = definition with
-        {
-            Scope = definition.Scope.Trim(),
-            Description = definition.Description?.Trim() ?? string.Empty,
-            Permissions = NormalizePermissions(definition.Permissions),
-        };
+        var normalized = OAuthScopePolicy.Normalize(definition);
 
         _scopes[normalized.Scope] = normalized;
         return Task.FromResult(normalized);
@@ -93,25 +88,40 @@ internal sealed class InMemoryOAuthScopeCatalogue : IOAuthScopeCatalogue
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var allowed = new HashSet<string>(
-            allowedScopes ?? [],
-            StringComparer.OrdinalIgnoreCase);
+        return Task.FromResult(OAuthScopePolicy.Resolve(requestedScope, allowedScopes, _scopes));
+    }
+}
 
-        // A request that omits scope is granted the client's full allowed-scope set
-        // (RFC 6749 §3.3: the authorization server MAY use a default scope). An empty
-        // allowed-scope set therefore grants nothing — never an implicit escalation.
-        IEnumerable<string> candidates = string.IsNullOrWhiteSpace(requestedScope)
+internal static class OAuthScopePolicy
+{
+    public static OAuthScopeDefinition Normalize(OAuthScopeDefinition definition)
+    {
+        return definition with
+        {
+            Scope = definition.Scope.Trim(),
+            Description = definition.Description?.Trim() ?? string.Empty,
+            Permissions = NormalizePermissions(definition.Permissions),
+        };
+    }
+
+    public static string[] Candidates(string? requestedScope, IReadOnlyList<string> allowedScopes)
+    {
+        var allowed = new HashSet<string>(allowedScopes ?? [], StringComparer.OrdinalIgnoreCase);
+        return (string.IsNullOrWhiteSpace(requestedScope)
             ? allowed
-            : requestedScope
-                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(allowed.Contains);
+            : requestedScope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(allowed.Contains)).ToArray();
+    }
 
+    public static OAuthScopeGrant Resolve(string? requestedScope, IReadOnlyList<string> allowedScopes,
+        IReadOnlyDictionary<string, OAuthScopeDefinition> definitions)
+    {
         var grantedScopes = new List<string>();
         var grantedPermissions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var candidate in candidates)
+        foreach (var candidate in Candidates(requestedScope, allowedScopes))
         {
-            if (!_scopes.TryGetValue(candidate, out var definition))
+            if (!definitions.TryGetValue(candidate, out var definition))
             {
                 // A scope the client may request but that is not defined in the
                 // catalogue grants no permissions (cannot escalate to undefined).
@@ -128,7 +138,7 @@ internal sealed class InMemoryOAuthScopeCatalogue : IOAuthScopeCatalogue
         var grant = new OAuthScopeGrant(
             grantedScopes.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             grantedPermissions.ToArray());
-        return Task.FromResult(grant);
+        return grant;
     }
 
     private static string[] NormalizePermissions(IReadOnlyList<string>? permissions)

@@ -4,6 +4,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Honua.Ai.Protocols.Mcp;
 using Honua.ControlPlane;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
@@ -74,6 +75,19 @@ internal static class PostgresSharedStateRegistration
         // MCP session manager keeps sessions in process.
         services.TryAddSingleton<IMcpSessionStore>(provider =>
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
+
+        // Replace only the built-in default when protocol registration ran first.
+        // Explicit customer stores and repeated shared-state composition remain intact.
+        foreach (var descriptor in services.Where(item =>
+            item.ServiceType == typeof(IOAuthScopeCatalogue) &&
+            item.ImplementationType == typeof(InMemoryOAuthScopeCatalogue)).ToArray())
+        {
+            services.Remove(descriptor);
+        }
+        services.TryAddSingleton<IOAuthScopeCatalogue>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null
+                ? new PostgresOAuthScopeCatalogue(provider.GetRequiredService<JobStoreDatabase>())
+                : new InMemoryOAuthScopeCatalogue());
 
         services.AddRetentionSweeps();
         return services;
