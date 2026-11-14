@@ -128,8 +128,13 @@ internal sealed class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource sour
 
     private static OpsFinding CreateFinding(FindingIdentity identity, FindingMessage message) => new()
     {
-        Id = OpsFindingId.Create(identity.Rule, identity.Subject), Rule = identity.Rule,
-        Subject = identity.Subject, DetectedAt = identity.Now, Severity = message.Severity,
-        Title = message.Title, Explanation = message.Explanation, EvidenceRefs = [identity.Rule]
+        Id = OpsFindingId.Create(identity.Rule, identity.Subject),
+        Rule = identity.Rule,
+        Subject = identity.Subject,
+        DetectedAt = identity.Now,
+        Severity = message.Severity,
+        Title = message.Title,
+        Explanation = message.Explanation,
+        EvidenceRefs = [identity.Rule]
     };
 }
