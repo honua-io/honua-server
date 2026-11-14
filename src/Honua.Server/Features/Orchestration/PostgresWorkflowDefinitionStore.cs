@@ -89,7 +89,7 @@ internal sealed partial class PostgresWorkflowDefinitionStore(ControlPlaneStorag
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("id", definition.WorkflowId);
             command.Parameters.AddWithValue("record", NpgsqlDbType.Jsonb,
-                JsonSerializer.Serialize(definition, OrchestrationJsonContext.Default.WorkflowDefinition));
+                WorkflowJsonb.Serialize(definition, OrchestrationJsonContext.Default.WorkflowDefinition));
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) > 0;
         }, StatementRepeat.NotAfterSend, cancellationToken);
     }

@@ -60,8 +60,8 @@ those columns, `expires_at`. Create is `INSERT ... ON CONFLICT DO NOTHING`; upda
 | A10 | WFS stored queries: set plus strings, no atomicity | Truth | `wfs_stored_queries`, key `(scope, lower(query_id))`, 1,000 per scope. No process-static copy | Two creates of one id: one succeeds. `PostgresWfsStoredQueryStoreTests.Create_SameIdOnTwoNodes_SecondIsRefused` |
 | A11 | `RedisAiExecutionAdmissionStore` behind keyed `auto\|postgres\|redis` | Truth | `PostgresAiExecutionAdmissionStore` registered directly; the Redis store, keyed selection and `Backend` option deleted | Existing `PostgresAiExecutionAdmissionStoreTests` |
 | A12 | `RedisWorkflowDefinitionStore`: definitions, schedule and trigger cursors | Truth | `workflow_definitions`; `workflow_schedule_cursors` retains completed/pending UTC ticks; `workflow_trigger_cursors` retains opaque markers with UTF-16 ordinal ordering. Cursors advance forward only in SQL | A cursor never moves backwards. `PostgresWorkflowDefinitionStoreTests.AdvanceScheduleCursorAsync_OlderFireTime_IsIgnored` |
-| A13 | Schedule and trigger fire claims: `SET NX` 24 h | Truth | Rows in `leases` under `workflow-fire:schedule:` and `workflow-fire:trigger:` with hashed composite identities | One node fires a schedule minute. `...TryClaimScheduleFireAsync_EightNodes_ExactlyOneClaims` |
-| A14 | `RedisWorkflowRunStore`, `RedisSourceWatermarkStore` | Truth | `workflow_runs`, `source_watermarks` (monotonic merge in SQL), moved minimally for the same reason | Create-once run; a watermark never regresses. `PostgresWorkflowRunStoreTests.TryCreateAsync_Twice_SecondIsRefused`, `PostgresSourceWatermarkStoreTests` (converted) |
+| A13 | Schedule and trigger fire claims: `SET NX` 24 h | Truth | Rows in `leases` under `workflow-fire:schedule:` and `workflow-fire:trigger:` with hashed composite identities | Eight concurrent claims from two hosts fire a schedule minute once. `PostgresWorkflowDefinitionStoreTests.TryClaimScheduleFireAsync_EightConcurrentClaims_ExactlyOneSucceeds` |
+| A14 | `RedisWorkflowRunStore`, `RedisSourceWatermarkStore` | Truth | `workflow_runs`, moved minimally for the same reason. `source_watermarks` (monotonic merge in SQL) follows in its own change; nothing reads `ISourceWatermarkStore` yet | Create-once run. `PostgresWorkflowRunStoreTests.TryCreateAsync_Twice_SecondIsRefused` |
 
 Retention (closes #3606): an active proposal, instance, workflow operation or run is never deleted.
 Once terminal they are kept for `ControlPlane:Retention:Proposals` (default 365 days),
@@ -269,6 +269,9 @@ it.
   a refused group join as "no backplane" and fall back to refresh; once joins always succeed they
   must keep refreshing while connected, because live events are node-local.
 - Release note: "Redis is no longer used. Let running jobs and pending approvals finish before
-  upgrading from an earlier pre-release build; sessions and tokens are not carried over."
+  upgrading from an earlier pre-release build; sessions and tokens are not carried over.
+  Workflow definitions, runs and schedule and trigger cursors held in Redis are not imported:
+  republish each workflow package with a Schedule target after the upgrade, and expect
+  scheduled and event-triggered workflows to start from the current time."
 
 Workflow definition and run `SetAsync` retain the unconditional replacement contract. Workflow history reads remain unbounded; occurrence fencing and bounded history are separate pipeline follow-up work. Active runs, including cancelled runs with unsettled children, remain discoverable for reconciliation past their retention deadline.

@@ -217,11 +217,12 @@ system database (`ConnectionStrings__DefaultConnection`) also holds the governed
 control plane and durable jobs: operation proposals and approvals, operation
 records, geoprocessing jobs and their queue, imports, and tile and export jobs.
 
-Redis is optional. Publishing a workflow package to a Schedule target still
-needs it: the durable workflow definition store is composed only with a Redis
-connection (`ConnectionStrings__Redis`). Without one, the publication is refused with a typed
-`dependency-unavailable` receipt naming `workflow-definition-store`, and no
-publication record is written. Publish to another target, or configure Redis.
+Redis is optional. Workflow definitions, runs, schedule claims and trigger
+cursors live in the system database, so publishing a workflow package to a
+Schedule target needs `ConnectionStrings__DefaultConnection`. Without it, the
+publication is refused with a typed `dependency-unavailable` receipt naming
+`workflow-definition-store`, and no publication record is written. Publish to
+another target, or configure the system database.
 
 A host started without a system database still serves every protocol, and the
 admin REST API and Console still connect sources, publish layers, configure

@@ -63,6 +63,26 @@ public sealed class PostgresWorkflowRunStoreTests
     }
 
     [IntegrationTest]
+    public async Task SetAsync_StepErrorWithNul_StoresReplacementCharacter()
+    {
+        await using var host = CreateHost();
+        await host.InitializeAsync();
+        var store = host.GetService<IWorkflowRunStore>();
+        var run = Run();
+        run = run with
+        {
+            Status = WorkflowRunStatus.Failed,
+            StepStates = [run.StepStates[0] with { Status = WorkflowStepStatus.Failed, ErrorMessage = "tool\u0000output \\u0000" }]
+        };
+
+        await store.SetAsync(run);
+
+        var stored = await store.GetAsync(run.RunId);
+        stored!.StepStates[0].ErrorMessage.Should().Be("tool\uFFFDoutput \\u0000");
+        stored.Status.Should().Be(WorkflowRunStatus.Failed);
+    }
+
+    [IntegrationTest]
     public async Task ListActiveAsync_CancelledRunWithRunningChild_RemainsUntilChildFinishes()
     {
         await using var host = CreateHost();

@@ -97,7 +97,7 @@ internal sealed class PostgresWorkflowRunStore(
             command.Parameters.AddWithValue("created", write.Run.CreatedAt.ToUniversalTime());
             command.Parameters.AddWithValue("retention", write.Retention);
             command.Parameters.AddWithValue("record", NpgsqlDbType.Jsonb,
-                JsonSerializer.Serialize(write.Run, OrchestrationJsonContext.Default.WorkflowRun));
+                WorkflowJsonb.Serialize(write.Run, OrchestrationJsonContext.Default.WorkflowRun));
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) > 0;
         }, StatementRepeat.NotAfterSend, cancellationToken);
     }

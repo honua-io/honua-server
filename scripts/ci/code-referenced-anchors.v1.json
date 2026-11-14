@@ -51,7 +51,7 @@
       "sources": [
         "src/Honua.Core/Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
       ],
-      "why": "CapabilityUnavailableCodes.WorkflowDefinitionStoreRemediationRef \u2014 the remediationRef when a Schedule workflow publication is refused because the durable workflow definition store, which is still composed only with a Redis connection, is absent. It must not move or be renamed while that refusal can be emitted."
+      "why": "CapabilityUnavailableCodes.WorkflowDefinitionStoreRemediationRef \u2014 the remediationRef when a Schedule workflow publication is refused because the durable workflow definition store in the system database is absent. It must not move or be renamed while that refusal can be emitted."
     },
     {
       "url": "https://honua.io/docs/guides/deploy/cloud-deployments/#background-file-imports-run-on-aws-batch",

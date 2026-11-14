@@ -19,6 +19,15 @@ internal static class OrchestrationServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
 
+        // The workflow stores live in the system database. A host without one (DuckDB or MySQL
+        // data sources, or PostgreSQL without DefaultConnection) registers no engine, so the
+        // background services stay off, admin cancel returns its documented 503 and schedule
+        // publishing returns the workflow-definition-store capability refusal.
+        if (!services.HasSystemDataSource())
+        {
+            return services;
+        }
+
         services.TryAddSingleton<PostgresWorkflowDefinitionStore>();
         services.TryAddSingleton<IWorkflowDefinitionStore>(sp => sp.GetRequiredService<PostgresWorkflowDefinitionStore>());
         services.TryAddSingleton<PostgresWorkflowRunStore>();
