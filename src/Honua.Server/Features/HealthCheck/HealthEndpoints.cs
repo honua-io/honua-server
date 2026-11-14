@@ -7,6 +7,7 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
@@ -51,6 +52,7 @@ internal static class HealthEndpoints
 
         _ = endpoints.MapMethods("/healthz/deep", [HttpMethods.Get], HandleDeepProbe)
             .WithDisplayName("Deep Health Probe")
+            .WithMetadata(SkipCatalogOutputCacheMetadata.Instance)
             .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))
             .AllowAnonymous()
             .CacheOutput(static policy => policy.NoCache())

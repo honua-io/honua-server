@@ -19,6 +19,12 @@ internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
 
     public async ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)
     {
+        if (context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<SkipCatalogOutputCacheMetadata>() is not null)
+        {
+            DisableCaching(context);
+            return;
+        }
+
         AddRouteTags(context);
         if (!MayUseOutputCache(context.HttpContext))
         {

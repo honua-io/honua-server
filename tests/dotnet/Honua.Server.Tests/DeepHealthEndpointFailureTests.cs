@@ -199,11 +199,9 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
     {
         var checker = Substitute.For<IDatabaseHealthChecker>();
         checker.IsDatabaseHealthyAsync(Arg.Any<CancellationToken>()).Returns(true);
-        var catalog = Substitute.For<IMetadataV2GraphProvider>();
+        var catalog = HealthyCatalog();
         var pending = new TaskCompletionSource<MetadataV2GraphSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
-        catalog.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(call => stalls
-            ? new ValueTask<MetadataV2GraphSnapshot>(pending.Task)
-            : throw new InvalidOperationException("secret catalog failure"));
+
         using var host = Configure(checker, catalog).WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             var license = new TestLicenseEntitlementService(HonuaEdition.Pro);
@@ -212,9 +210,14 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
         }));
         using var client = host.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(15);
+#pragma warning disable CA2012 // NSubstitute configures the ValueTask-returning member without consuming it.
+        catalog.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(call => stalls
+            ? new ValueTask<MetadataV2GraphSnapshot>(pending.Task)
+            : throw new InvalidOperationException("secret catalog failure"));
+#pragma warning restore CA2012
         try
         {
-            using var response = await client.GetAsync("/healthz/deep");
+            using var response = await client.GetAsync("/healthz/deep").WaitAsync(TimeSpan.FromSeconds(15));
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
             (await response.Content.ReadAsStringAsync()).Should().Be("Not Ready");
