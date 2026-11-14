@@ -14,10 +14,11 @@ namespace Honua.Server.Tests.Realtime;
 
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
-[Operation(Operations.Create)]
 public sealed class ObservationStoreEventAttributionTests
 {
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /sta/v1.1/Observations")]
     public async Task CreateEntity_PreservesRequestTenantAndSchemaInCommittedEvents()
     {
         var tenant = Substitute.For<ITenantContext>();
@@ -44,6 +45,32 @@ public sealed class ObservationStoreEventAttributionTests
 
             var scopes = await ReadScopesAsync(fixture, [first, second]);
             scopes.Should().Equal(("tenant-a", fixture.CurrentSchema!), ("tenant-b", fixture.CurrentSchema!));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /sta/v1.1/Datastreams({id})")]
+    public async Task PatchEntity_InlineObservationsRejectsWithoutPublishingEvents()
+    {
+        var fixture = new WebAppFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            await ApplyCaptureMigrationsAsync(fixture);
+            var store = fixture.GetService<ISensorThingsEntityStore>();
+            using var patch = JsonDocument.Parse("""
+                {"Observations":[{"phenomenonTime":"2026-01-01T00:00:00Z","result":42}]}
+                """);
+            var apply = () => store.PatchEntityAsync("Datastreams", 1, patch.RootElement, default);
+            await apply.Should().ThrowAsync<SensorThingsValidationException>();
+            await using var command = fixture.Postgres.DataSource.CreateCommand(
+                $"SELECT count(*) FROM \"{fixture.CurrentSchema}\".realtime_events WHERE family='observations'");
+            (await command.ExecuteScalarAsync()).Should().Be(0L);
         }
         finally
         {
