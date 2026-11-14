@@ -372,7 +372,8 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
         // clean close (disconnect, drain) loses nothing the client still wanted.
         if (error is not null)
         {
-            RecordDropped(_handoff.Count(MatchesOrFalse));
+            // Held events at or below the position were already written by the replay pages.
+            RecordDropped(_handoff.Count(held => held.Sequence > _position && MatchesOrFalse(held)));
         }
 
         _handoff.Clear();
