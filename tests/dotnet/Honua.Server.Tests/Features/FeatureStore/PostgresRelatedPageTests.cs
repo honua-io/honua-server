@@ -24,8 +24,8 @@ public partial class PostgresFeatureStoreIntegrationTests
             await store.CreateAsync(layerId, Feature.Create(0, layerId == LinesLayerId ? CreateLineStringWkb([(0, 0), (1, 1)]) : CreatePointWkb(0, 0),
                 ImmutableDictionary<string, object?>.Empty.Add(field, value)), CancellationToken.None);
         var originA = await AddAsync(PointsLayerId, "category", "page-key");
-        var originB = await AddAsync(PointsLayerId, "category", "page-key");
         var empty = await AddAsync(PointsLayerId, "category", null);
+        var originB = await AddAsync(PointsLayerId, "category", "page-key");
         var childA = await AddAsync(LinesLayerId, "road_type", "page-key");
         var childB = await AddAsync(LinesLayerId, "road_type", "page-key");
         var query = RelatedQuery.ForObjects([empty.Id, originB.Id, originA.Id], LinesLayerId, "category", "road_type")
@@ -34,8 +34,8 @@ public partial class PostgresFeatureStoreIntegrationTests
         RelatedPageCursor? cursor = null;
         for (var pageNumber = 0; pageNumber < 5; pageNumber++)
         {
-            var page = await store.QueryRelatedPageAsync(PointsLayerId, new RelatedPageQuery(query, 2, cursor));
-            page.Positions.Length.Should().BeLessThanOrEqualTo(2);
+            var page = await store.QueryRelatedPageAsync(PointsLayerId, new RelatedPageQuery(query, 1, cursor));
+            page.Positions.Should().ContainSingle();
             positions.AddRange(page.Positions);
             if (!page.HasMore)
             {
@@ -46,7 +46,7 @@ public partial class PostgresFeatureStoreIntegrationTests
         }
         positions.Select(p => (p.OriginId, p.RelatedFeature?.Id)).Should().Equal(
             (originA.Id, (long?)childA.Id), (originA.Id, childB.Id),
-            (originB.Id, childA.Id), (originB.Id, childB.Id), (empty.Id, null));
+            (empty.Id, null), (originB.Id, childA.Id), (originB.Id, childB.Id));
         positions.Where(p => p.RelatedFeature.HasValue).Should().OnlyContain(p =>
             p.RelatedFeature!.Value.Attributes.Keys.SequenceEqual(new[] { "objectid" }));
     }
