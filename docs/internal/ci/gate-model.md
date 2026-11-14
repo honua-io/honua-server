@@ -1338,3 +1338,23 @@ avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
 The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
+
+### Compose readiness failure evidence
+
+The optional `Compose Release Lifecycle` job retains all four manual readiness
+checks and their 300-second timeout. A timeout names the initial published rc.1,
+candidate upgrade, restored rc.1, or candidate return stage and records service
+state plus at most eight redacted server error lines before existing cleanup.
+Diagnostic commands each have a 15-second limit; command failures omit output,
+and an unreadable generated-secret inventory suppresses all diagnostic capture.
+Only service/state/health/exit-code fields are retained; configuration, container
+environment and command stderr are never printed. Redaction tests run before
+image builds. Required checks and dependency contracts are unchanged.
+
+Run 43577434983 failed initial rc.1 readiness before candidate startup: its two
+manual tests reported one pass and one failure in 332 seconds (5.53 minutes).
+This change adds no runners or jobs: one lifecycle runner before and after.
+Live after-change readiness diagnostics and elapsed time await a new failure;
+no lifecycle rerun or runtime savings are claimed from unit validation.
+
+Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
