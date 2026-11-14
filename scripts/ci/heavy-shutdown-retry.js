@@ -1,7 +1,10 @@
 'use strict';
 
-const SHUTDOWN = 'The runner has received a shutdown signal.';
-const SUMMARIES = new Set(['.NET Foundation Tests', 'Test Suite Summary', 'CI Gate']);
+const SHUTDOWN = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z ##\[error\]The runner has received a shutdown signal\. This can happen when the runner service is stopped, or a manually started runner is canceled\.\r?$/m;
+const SUMMARY_STEPS = new Map([
+  ['Test Suite Summary', new Set(['Verify server shard execution receipts', 'Check required test job results'])],
+  ['CI Gate', new Set(['Check required job results'])],
+]);
 
 function eligibleRun(run, repository) {
   return run.head_repository?.full_name === repository &&
@@ -15,7 +18,17 @@ async function shutdownJob({ github, repo, job }) {
   if (!job.labels?.includes('honua-heavy') || job.conclusion !== 'failure') return false;
   const response = await github.rest.actions.downloadJobLogsForWorkflowRun({ ...repo, job_id: job.id });
   if (typeof response.data !== 'string') throw new Error(`Unreadable logs for job ${job.id}`);
-  return response.data.includes(SHUTDOWN);
+  return SHUTDOWN.test(response.data);
+}
+
+function dependentSummary(job) {
+  const allowed = SUMMARY_STEPS.get(job.name);
+  const failed = job.steps?.filter(step => step.conclusion === 'failure') || [];
+  return allowed && failed.length > 0 && failed.every(step => allowed.has(step.name));
+}
+
+function sameRun(run, source, repository) {
+  return eligibleRun(run, repository) && run.head_sha === source.head_sha;
 }
 
 async function retryShutdown({ github, context, core }) {
@@ -24,7 +37,7 @@ async function retryShutdown({ github, context, core }) {
   const event = context.payload.workflow_run;
   if (!eligibleRun(event, repository)) return core.info('Not a first-attempt full trunk failure.');
   const { data: run } = await github.rest.actions.getWorkflowRun({ ...repo, run_id: event.id });
-  if (!eligibleRun(run, repository) || run.head_sha !== event.head_sha) {
+  if (!sameRun(run, event, repository)) {
     return core.info('Source run changed before inspection.');
   }
   const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt,
@@ -32,7 +45,7 @@ async function retryShutdown({ github, context, core }) {
   const failed = jobs.filter(job => job.conclusion === 'failure');
   const interrupted = [];
   for (const job of failed) {
-    if (SUMMARIES.has(job.name)) continue;
+    if (dependentSummary(job)) continue;
     if (!await shutdownJob({ github, repo, job })) {
       return core.info(`No retry: ${job.id} (${job.name}) is not a proven heavy-runner shutdown.`);
     }
@@ -42,7 +55,7 @@ async function retryShutdown({ github, context, core }) {
     return core.info('No retry: no interrupted jobs, or attempt contains cancellation/incomplete jobs.');
   }
   const { data: current } = await github.rest.actions.getWorkflowRun({ ...repo, run_id: run.id });
-  if (!eligibleRun(current, repository) || current.head_sha !== run.head_sha) {
+  if (!sameRun(current, run, repository)) {
     return core.info('Source attempt changed before retry.');
   }
   await github.rest.actions.reRunWorkflowFailedJobs({ ...repo, run_id: run.id });

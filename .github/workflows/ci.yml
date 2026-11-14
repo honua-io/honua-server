@@ -1,5 +1,5 @@
 name: CI
-run-name: "CI ${{ github.ref == 'refs/heads/trunk' && (github.event_name == 'schedule' || inputs.full_ci || !inputs.selective_base) && 'full ' || '' }}${{ inputs.merge_train_nonce }}"
+run-name: "CI ${{ github.ref == 'refs/heads/trunk' && (github.event_name == 'schedule' || inputs.full_ci || !inputs.selective_base) && 'full ' || github.ref == 'refs/heads/trunk' && 'selective ' || '' }}${{ inputs.merge_train_nonce }}"
 
 on:
   schedule:

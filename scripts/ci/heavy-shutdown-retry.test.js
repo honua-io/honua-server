@@ -11,10 +11,11 @@ function fixture() {
     conclusion: 'failure', run_attempt: 1, event: 'schedule', display_title: 'CI full ' };
   const jobs = [{ id: 10, name: 'Server Tests (SensorThings)', labels: ['honua-heavy'],
     conclusion: 'failure', status: 'completed' },
-  { id: 11, name: 'CI Gate', conclusion: 'failure', status: 'completed' },
+  { id: 11, name: 'CI Gate', conclusion: 'failure', status: 'completed',
+    steps: [{ name: 'Check required job results', conclusion: 'failure' }] },
   { id: 12, name: 'Build', conclusion: 'success', status: 'completed' }];
   const calls = [];
-  const logs = new Map([[10, '##[error]The runner has received a shutdown signal. This can happen when the runner service is stopped.']]);
+  const logs = new Map([[10, '2026-11-14T02:15:21.4030389Z ##[error]The runner has received a shutdown signal. This can happen when the runner service is stopped, or a manually started runner is canceled.']]);
   const actions = {
     getWorkflowRun: async () => ({ data: run }),
     listJobsForWorkflowRunAttempt: Symbol('paginated jobs'),
@@ -110,4 +111,43 @@ test('observer executes trusted trunk code with bounded permissions and no PR tr
   assert.match(workflow, /ref: refs\/heads\/trunk/);
   assert.match(workflow, /persist-credentials: false/);
   assert.doesNotMatch(workflow, /pull_request:|contents: write|secrets\./);
+});
+
+for (const name of ['.NET Foundation Tests', 'Test Suite Summary', 'CI Gate']) {
+  test(`rejects independent failure in ${name}`, async () => {
+    const f = fixture();
+    f.jobs.push({ id: 99, name, conclusion: 'failure', status: 'completed',
+      steps: [{ name: 'Download artifacts', conclusion: 'failure' }] });
+    await retryShutdown(f);
+    assert.deepEqual(f.calls, []);
+  });
+}
+
+test('accepts only known dependent summary verdict steps', async () => {
+  const f = fixture();
+  f.jobs.push({ id: 99, name: 'Test Suite Summary', conclusion: 'failure', status: 'completed',
+    steps: [{ name: 'Verify server shard execution receipts', conclusion: 'failure' }] });
+  await retryShutdown(f);
+  assert.equal(f.calls.length, 1);
+});
+
+for (const log of [
+  'A test quotes: The runner has received a shutdown signal.',
+  '2026-11-14T02:15:21.4030389Z ordinary output: The runner has received a shutdown signal.',
+  '2026-11-14T02:15:21.4030389Z ##[error]The runner has received a shutdown signal. Extra text',
+]) {
+  test(`does not retry ordinary or incomplete shutdown text: ${log}`, async () => {
+    const f = fixture();
+    f.logs.set(10, log);
+    await retryShutdown(f);
+    assert.deepEqual(f.calls, []);
+  });
+}
+
+test('selective dispatch nonce cannot imitate the full-mode prefix', () => {
+  const f = fixture();
+  assert.equal(eligibleRun({ ...f.run, event: 'workflow_dispatch',
+    display_title: 'CI selective full nonce' }, 'honua-io/honua-server'), false);
+  const workflow = fs.readFileSync('.github/workflows/ci.yml', 'utf8');
+  assert.match(workflow, /'full ' \|\| github.ref == 'refs\/heads\/trunk' && 'selective '/);
 });
