@@ -1699,7 +1699,8 @@ public sealed class OpsFindingsServiceTests
             new FakeAlertDispatchHealth(), new FakeDeployPreflightProbe(BuildDeploySnapshot()),
             extendedSignals: new OpsFindingsExtendedSignals
             {
-                CatalogActivationWatches = store, ManagedComposeObserver = observer
+                CatalogActivationWatches = store,
+                ManagedComposeObserver = observer
             });
 
         var evaluation = await service.EvaluateWithEvidenceAsync();

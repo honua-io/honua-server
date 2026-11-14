@@ -113,7 +113,10 @@ public sealed class CatalogActivationWatcherTests
 
     private static CatalogActivationWatch Watch() => new()
     {
-        Id = 1, Revision = 2, ExpectedEtag = "etag", ActivatedAt = Now.AddMinutes(-8),
+        Id = 1,
+        Revision = 2,
+        ExpectedEtag = "etag",
+        ActivatedAt = Now.AddMinutes(-8),
     };
 
     private static OpsHealthLatencyRow Row(int minute, long errors) => new()
