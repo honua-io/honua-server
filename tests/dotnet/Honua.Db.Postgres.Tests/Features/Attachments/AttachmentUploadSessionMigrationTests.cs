@@ -132,7 +132,7 @@ public sealed class AttachmentUploadSessionMigrationTests(PostgresFixture fixtur
         {
             root = root.Parent;
         }
-        var path = Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", "162_CreateAttachmentUploadSessions.sql");
+        var path = Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", "181_CreateAttachmentUploadSessions.sql");
         await ExecuteAsync(schema, (await File.ReadAllTextAsync(path)).Replace("$HonuaSchema$", "\"{schema}\"", StringComparison.Ordinal));
     }
 
