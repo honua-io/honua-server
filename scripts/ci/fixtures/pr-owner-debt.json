@@ -1,7 +1,6 @@
 {
   "description": "Existing paths without a PR-budget owner outside the fifteen repaired capacity families. This list may only shrink; new gaps fail the time-budget fixture. Remove entries as their owners are measured or split.",
   "paths": [
-    "src/Honua.Protocols/OgcClassic/Wmts/",
     "src/Honua.Server/Features/Admin/AdminInfoEndpoints.cs",
     "src/Honua.Server/Features/Admin/ConfigurationDiscovery",
     "src/Honua.Server/Features/Admin/EmbedGovernance/",
