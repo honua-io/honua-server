@@ -34,18 +34,20 @@ public static class RateLimitingMiddlewareExtensions
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        // The policy store and options are singletons, so a single middleware instance is safe
-        // to reuse across requests.
-        var services = app.ApplicationServices;
-        var policyStore = services.GetRequiredService<IRateLimitPolicyStore>();
-        var options = services.GetRequiredService<IOptions<RateLimitingOptions>>();
-        var logger = services.GetRequiredService<ILogger<RateLimitingMiddleware>>();
-        var timeProvider = services.GetService<TimeProvider>() ?? TimeProvider.System;
-
+        // Resolve database-backed policies only after guarded startup has completed.
+        // Lazy preserves one middleware instance for each pipeline branch.
         return app.Use(next =>
         {
-            var middleware = new RateLimitingMiddleware(next, policyStore, options, logger, timeProvider);
-            return middleware.InvokeAsync;
+            var middleware = new Lazy<RateLimitingMiddleware>(() =>
+            {
+                var services = app.ApplicationServices;
+                return new RateLimitingMiddleware(next,
+                    services.GetRequiredService<IRateLimitPolicyStore>(),
+                    services.GetRequiredService<IOptions<RateLimitingOptions>>(),
+                    services.GetRequiredService<ILogger<RateLimitingMiddleware>>(),
+                    services.GetService<TimeProvider>() ?? TimeProvider.System);
+            });
+            return context => middleware.Value.InvokeAsync(context);
         });
     }
 }
