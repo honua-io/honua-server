@@ -1234,3 +1234,16 @@ recovery. No after-change recovery timing is claimed before a live interruption.
 The companion IaC drain marker blocks fresh registration and listener restart
 before stopping all runner services on a spot notice. GitHub records interrupted
 jobs as failed until the observer requests the bounded rerun after completion.
+
+### Superseded repository hygiene
+
+The required `repo-hygiene / Repository hygiene` aggregate uses `!cancelled()`
+and excludes cancelled dependency results. GitHub can cancel it when concurrency
+supersedes a run; an already cancelled dependency skips the aggregate instead of
+starting a runner solely to report failure. The skipped job is neutral admission
+for superseded work, not a successful execution of either hygiene check. Active
+runs still require both evidence-path and shared-hygiene success; failure,
+skipping or missing results fail the shell check. The required name and both
+`needs` dependencies stay unchanged. Normal runs add zero jobs; superseded runs
+avoid the aggregate runner. Live after-change timing awaits a superseding event.
+See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
