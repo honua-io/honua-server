@@ -107,11 +107,10 @@ the private directory containing its process and container state.
 
 The scale launcher also allocates a private local Compose project, network, and
 published ports, including optional monitoring services. It prints the actual
-monitoring URLs, stop command, and project/HTTP-port exports needed by
-`scripts/scale/transaction-test.sh`. Both scripts require the selected project's
-live nginx container to own the HTTP listener before running tests. Preserve the
-printed exports when attaching transaction tests to that running stack. CI keeps
-the declared Compose defaults, and explicit port/project overrides still apply.
+monitoring URLs, stop command, and project/HTTP-port exports for that running
+stack. The launcher requires the selected project's live nginx container to own
+the HTTP listener before running tests. CI keeps the declared Compose defaults,
+and explicit port/project overrides still apply.
 
 The capacity candidate workflow retains its serialized, receipt-bound project
 and ports. Its private substrate state records the launched server container ID;
@@ -129,7 +128,7 @@ The launch paths fall into these ownership models:
 | OpenLayers `tests/js/openlayers/rendering/global-setup.ts` | Per-run page-server nonce; an existing page server cannot satisfy readiness. |
 | .NET `Honua.TestKit/WebAppFixture.cs` | In-process `WebApplicationFactory` client, with no shared HTTP port. |
 | Shell CI, quickstart, SDK migration and local post-apply launchers | Launched process or exact container through `scripts/ci/owned-server.py`. |
-| Scale and transaction scripts | Selected Compose project's nginx container and its published listener. |
+| Scale launcher | Selected Compose project's nginx container and its published listener. |
 | Capacity candidate startup and republish | Exact container ID captured by `scripts/soak/capacity-substrate.sh`. |
 | Load/soak drivers and external post-apply probes | Deliberately supplied target URL; these clients do not launch the server. |
 

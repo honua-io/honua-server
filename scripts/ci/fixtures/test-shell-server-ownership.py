@@ -123,14 +123,6 @@ class ShellServerOwnershipTests(unittest.TestCase):
                 self.assertNotEqual(code, 0, output)
                 self.assertIn("Expected exactly one", output)
 
-    def test_transaction_launcher_rejects_foreign_listener_before_mutating_data(self):
-        with patch.dict(os.environ, {"HONUA_SCALE_TEST_READY_SECONDS": "0.25",
-                                    "OWNERSHIP_FAKE_CONTAINER_PID": "1"}):
-            code, output = self.run_harness("scripts/scale/transaction-test.sh")
-        self.assertNotEqual(code, 0, output)
-        self.assertIn("owned listener", output)
-        self.assertNotIn("Setting up test layer", output)
-
     def test_capacity_startup_checks_the_recorded_candidate_listener(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/capacity-soak-candidate.yml").read_text())
         steps = workflow["jobs"]["soak"]["steps"]

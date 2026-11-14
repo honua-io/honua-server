@@ -34,9 +34,9 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// registers. If it regresses to dead code, the worker assertion fails immediately and the
 /// end-to-end poll would otherwise time out, reproducing the original bug.
 /// </remarks>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
-public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis)
+public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis) : IClassFixture<RedisFixture>
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;

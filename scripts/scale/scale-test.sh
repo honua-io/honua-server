@@ -510,7 +510,7 @@ show_monitoring_urls() {
 }
 
 print_stop_command() {
-    log_info "For follow-up transaction tests, export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-honua-scale-test} HONUA_SCALE_TEST_NETWORK=${HONUA_SCALE_TEST_NETWORK:-honua-scale-test} HONUA_SCALE_TEST_HTTP_PORT=${HONUA_SCALE_TEST_HTTP_PORT:-8080}"
+    log_info "To reuse the running stack, export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-honua-scale-test} HONUA_SCALE_TEST_NETWORK=${HONUA_SCALE_TEST_NETWORK:-honua-scale-test} HONUA_SCALE_TEST_HTTP_PORT=${HONUA_SCALE_TEST_HTTP_PORT:-8080}"
     if [ -n "${COMPOSE_PROJECT_NAME:-}" ]; then
         log_info "To stop the environment: HONUA_SCALE_TEST_NETWORK=${HONUA_SCALE_TEST_NETWORK:-honua-scale-test} docker compose -p ${COMPOSE_PROJECT_NAME} -f $COMPOSE_FILE --profile canary down"
         return
