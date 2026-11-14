@@ -1,0 +1,31 @@
+name: PR Gate priority
+
+on:
+  workflow_run:
+    workflows: [PR Gate]
+    types: [requested, in_progress]
+
+permissions: {}
+
+concurrency:
+  group: pr-gate-priority
+  cancel-in-progress: false
+
+jobs:
+  reserve:
+    if: github.repository == 'honua-io/honua-server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: trunk
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+      - name: Release affected CI capacity for PR Gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/pr_gate_priority.py

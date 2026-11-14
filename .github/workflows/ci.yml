@@ -26,7 +26,7 @@ on:
         type: boolean
         default: false
       selective_base:
-        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the latest completed CI head). The base refreshes when execution starts; selections above 30 shards use the newest merge. Gates only affected shards/lanes. Empty = full lane. Overridden by full_ci=true.'
+        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the latest completed CI head). The base refreshes when execution starts; selections above 40 total jobs defer to scheduled full CI. Gates only affected shards/lanes. Empty = full lane. Overridden by full_ci=true.'
         required: false
         type: string
         default: ''
@@ -322,7 +322,7 @@ jobs:
     name: Detect Non-Test Changes
     permissions:
       contents: read
-      actions: read
+      actions: write
     # Skips on merge_group: the lean merge-queue gate does not consult the
     # change-detection / shard-routing graph (it always runs build + format +
     # fast smoke). Skipping `changes` cascades a skip to every heavy job that
@@ -353,6 +353,7 @@ jobs:
           FULL_CI_INPUT: ${{ inputs.full_ci }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           # Fetch the base branch with FULL history (NOT --depth=1). The filter below
           # uses a three-dot range (base...head) that needs a merge-base; a shallow
           # base fetch makes `git diff` fail with "fatal: no merge base", which the
@@ -374,9 +375,8 @@ jobs:
             if git cat-file -e "${SELECTIVE_BASE}^{commit}" 2>/dev/null; then
               python3 scripts/ci/resolve-trailing-base.py "${SELECTIVE_BASE}" "${GITHUB_SHA}"
             else
-              echo "::warning::selective_base ${SELECTIVE_BASE} not found in history; forcing full CI."
-              echo "range=origin/trunk...${{ github.sha }}" >> "$GITHUB_OUTPUT"
-              echo "trailing_selective=false" >> "$GITHUB_OUTPUT"
+              # The admission helper defers unknown history and cancels before fanout.
+              python3 scripts/ci/resolve-trailing-base.py "${SELECTIVE_BASE}" "${GITHUB_SHA}"
             fi
           else
             git fetch --no-tags origin trunk
@@ -641,6 +641,12 @@ jobs:
               '{run_all: true, shards: $shards, reason: $reason}')
           fi
           echo "Descriptor: ${descriptor}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
+             [ "${{ github.ref }}" = "refs/heads/trunk" ] &&
+             [ -n "${TRAILING_SELECTIVE_BASE:-}" ] &&
+             [ "${{ inputs.full_ci }}" != "true" ]; then
+            python3 scripts/ci/affected_admission.py --descriptor "${descriptor}"
+          fi
 
           # Build the matrix include list by joining the selected shard names
           # against the ci-shards.json shard metadata. Drop the routing-only

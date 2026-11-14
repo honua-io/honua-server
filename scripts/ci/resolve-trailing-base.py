@@ -8,33 +8,19 @@ import subprocess
 import sys
 
 from completed_ci_base import completed_base
-from trailing_selection import SHARD_BACKLOG_LIMIT
-
-
-def git(*arguments):
-    return subprocess.check_output(["git", *arguments], text=True).strip()
-
-
-def selected_count(base, head):
-    changed = git("diff", "--no-renames", "--name-only", f"{base}...{head}")
-    descriptor = subprocess.check_output(
-        ["bash", "scripts/ci/honua-server-targeted-tests.sh", "--stdin"],
-        input=changed + "\n", text=True)
-    return len(json.loads(descriptor)["shards"])
+from affected_admission import admission, record
+from supersede_trailing_runs import gh_api, repository_endpoint
 
 
 def execution_base(base, head):
-    count = selected_count(base, head)
-    if count <= SHARD_BACKLOG_LIMIT:
-        return base, f"Accumulated selection: {count} shards."
-    newest_parent = git("rev-parse", f"{head}^1")
-    newest_count = selected_count(newest_parent, head)
-    message = (f"Accumulated selection ({count} shards) exceeds {SHARD_BACKLOG_LIMIT}; "
-               f"verify newest merge only ({newest_count} shards). Earlier merges are deferred "
-               "to scheduled full CI. Required PR gates are unchanged.")
-    if newest_count > SHARD_BACKLOG_LIMIT:
-        message += " The newest merge itself requires broad coverage; retain all of its shards."
-    return newest_parent, message
+    allowed, reason = admission(base, head)
+    if not allowed:
+        record(reason)
+        # Cancel before changes publishes outputs, so no build/test fanout can
+        # start and this head cannot become a successful completed CI baseline.
+        gh_api(repository_endpoint(f"actions/runs/{os.environ['GITHUB_RUN_ID']}/cancel"), "POST")
+        raise SystemExit(1)
+    return base, reason
 
 
 def main():
