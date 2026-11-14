@@ -55,7 +55,7 @@ public sealed class ConfigurationRuntimeMiddlewareTests
         var resolutions = 0;
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(NpgsqlDataSource.Create("Host=localhost;Database=unmigrated;Username=test;Password=test"));
+        services.AddSingleton(_ => NpgsqlDataSource.Create("Host=localhost;Database=unmigrated;Username=test;Password=test"));
         services.AddSingleton<ConfigurationRuntimeRefresh>(_ =>
         {
             resolutions++;
