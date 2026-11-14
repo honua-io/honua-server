@@ -14,7 +14,7 @@ namespace Honua.Infrastructure.Monitoring;
 
 internal sealed class OpsNotificationReminderRunner(
     PostgresOpsNotificationStore schedules,
-    IOpsFindingsService findingsService,
+    IOpsFindingsEvidenceSource findingsService,
     IOperationProposalStore proposals,
     OpsNotificationService notifications,
     TimeProvider timeProvider,
@@ -24,7 +24,8 @@ internal sealed class OpsNotificationReminderRunner(
     {
         await schedules.ExpireApprovalsAsync(100, cancellationToken).ConfigureAwait(false);
         await alertHealth.RefreshBacklogAsync(cancellationToken).ConfigureAwait(false);
-        var findings = await findingsService.EvaluateAsync(cancellationToken).ConfigureAwait(false);
+        var evaluation = await findingsService.EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
+        var findings = evaluation.Findings;
         var actionable = findings.Where(finding => finding.Severity >= OpsFindingSeverity.Warning)
             .ToDictionary(finding => finding.Id, StringComparer.Ordinal);
         var now = timeProvider.GetUtcNow();
@@ -33,8 +34,17 @@ internal sealed class OpsNotificationReminderRunner(
             await schedules.ObserveAsync(new("finding", finding.Id, finding.Severity), now, cancellationToken)
                 .ConfigureAwait(false);
         }
-        await schedules.CloseMissingFindingsAsync(actionable.Keys.ToArray(), now, cancellationToken)
-            .ConfigureAwait(false);
+        // Absence resolves an episode only after every configured source was successfully read.
+        // Composite posture includes unconfigured sources, so inspect the individual sources instead.
+        var sources = evaluation.Posture.Sources.Where(source =>
+            source.BackendKind != EvidencePostureVocabulary.BackendKinds.Composite).ToArray();
+        if (sources.Length > 0 && sources.All(source =>
+            source.Completeness == EvidencePostureVocabulary.Completeness.NotConfigured ||
+            EvidencePostureFactory.IsActionable(EvidencePostureFactory.Validate(source, now))))
+        {
+            await schedules.CloseMissingFindingsAsync(actionable.Keys.ToArray(), now, cancellationToken)
+                .ConfigureAwait(false);
+        }
         await schedules.ObserveAwaitingAsync(100, cancellationToken).ConfigureAwait(false);
         var due = await schedules.ListDueAsync(now, 100, cancellationToken).ConfigureAwait(false);
         foreach (var schedule in due)
