@@ -13,6 +13,17 @@ unchanged projects, source triggers and budgets. Historical TRX interval weights
 guide the cuts; they are not measured child elapsed runtimes. Dispatch ranks stay
 inherited until complete child runs provide measurements.
 
+Server Features Admin Layer Management exhausted its 35-minute test budget in
+full run `43580101834` while producing output one second before termination.
+Two children replace it: child 1 owns `AdminLayerDisplaySpatialTests`,
+`AdminLayerAuthoringEndpointsTests` and `LayerStyleEndpointsTests` (10.4 of 20.1
+minutes in the 13 Nov passing TRX), and child 2 is the exact complement of the
+parent filter, including its `~Layer` method-name matches in other Admin classes
+and any future ones. Host teardown in this test process grows from 0.4 to 16
+seconds across 133 in-process hosts, so shard wall time rises with the square of
+hosts per process. The split is capacity relief; the teardown leak is tracked
+separately. Budgets, source triggers and the inherited dispatch rank are unchanged.
+
 
 Migration exhausted its 29-minute test budget in full run `43564575677` while
 producing output two seconds before termination. Three children separate migration
