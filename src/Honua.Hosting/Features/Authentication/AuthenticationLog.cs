@@ -104,8 +104,8 @@ internal static partial class AuthenticationLog
     [LoggerMessage(
         EventId = 4114,
         Level = LogLevel.Warning,
-        Message = "Scoped admin API key denied {Method} admin request: key permissions do not authorize this operation")]
-    public static partial void ScopedAdminKeyDenied(ILogger logger, string method);
+        Message = "Admin authorization denied {Method} request for {AuthenticationType}: principal permissions do not authorize this operation")]
+    public static partial void AdminPermissionDenied(ILogger logger, string method, string authenticationType);
 
     [LoggerMessage(
         EventId = 4115,
