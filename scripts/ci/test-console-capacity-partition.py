@@ -37,6 +37,11 @@ assert set.union(*selected[:len(ISOLATED_NAMES)]) == isolated, "The measured Con
 parents = [parent for parent in CONFIG["shard_partitions"] if set(NAMES) & set(parent["children"])]
 expected_parent = copy.deepcopy(CONTRACT["parentPartition"])
 expected_parent["granularity"] = "method"
+# The former class-level parent used broad exclusions (e.g. Layer) that
+# differ from the original children's runtime method selections. Freeze
+# those original filters as the method-level conservation contract.
+expected_parent["filter"] = "|".join("(" + expression + ")"
+    for expression in CONTRACT["parentMethodFilters"].values())
 expected_parent["children"] = [child for name in expected_parent["children"] for child in capacity_split_names(CONFIG, name)]
 assert parents == [expected_parent], "The legacy parent contract changed."
 for field in ("artifact_suffix", "log_name", "shard_name"):
