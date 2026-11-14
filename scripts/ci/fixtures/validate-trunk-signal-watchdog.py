@@ -90,8 +90,27 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
     def test_cancellation_churn_still_alerts_with_fresh_result(self):
         calls = self.run_watchdog([
             {'status': 'completed', 'run_started_at': '2026-11-11T11:00:00Z'},
-        ], runs=[self.recent_result()] + [{'status': 'completed', 'conclusion': 'cancelled'}] * 6)
+        ], runs=[self.recent_result()] + [{'status': 'completed', 'conclusion': 'cancelled',
+                                           'created_at': '2026-11-11T10:00:00Z'}] * 6)
         self.assertTrue(any(kind == 'failed' and '6 of the last 10' in value for kind, value in calls))
+
+    def test_cancellations_older_than_window_do_not_alert(self):
+        # Trunk CI is sparse; ten runs can span a day. Churn that stopped hours ago must not keep
+        # the watchdog red after later runs produced results.
+        old = [{'status': 'completed', 'conclusion': 'cancelled', 'created_at': '2026-11-11T05:59:00Z'}]
+        calls = self.run_watchdog([
+            {'status': 'completed', 'run_started_at': '2026-11-11T11:00:00Z'},
+        ], runs=[self.recent_result()] + old * 8)
+        self.assertFalse(any(kind == 'failed' for kind, _ in calls))
+
+    def test_cancellation_window_boundary_counts_runs_inside_it(self):
+        inside = [{'status': 'completed', 'conclusion': 'cancelled', 'created_at': '2026-11-11T06:00:00Z'}]
+        outside = [{'status': 'completed', 'conclusion': 'cancelled', 'created_at': '2026-11-11T05:59:59Z'}]
+        calls = self.run_watchdog([
+            {'status': 'completed', 'run_started_at': '2026-11-11T11:00:00Z'},
+        ], runs=[self.recent_result()] + inside * 6 + outside * 3)
+        self.assertTrue(any(kind == 'failed' and '6 of the last 10' in value and '6 h' in value
+                            for kind, value in calls))
 
     def test_workflow_with_no_jobs_retains_queue_alert(self):
         calls = self.run_watchdog([

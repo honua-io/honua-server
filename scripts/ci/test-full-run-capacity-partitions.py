@@ -5,7 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import PartitionSource, check_method_partition
+from shard_capacity_partition import PartitionSource, check_measured_ranks, check_method_partition, expected_rank
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/check-server-test-shard-coverage.py")
@@ -16,7 +16,7 @@ CONTRACTS = json.loads((ROOT / "scripts/ci/fixtures/full-run-capacity-contracts.
 CLASSES = MODULE.enumerate_test_classes()
 
 
-def verify(original, children):
+def verify(original, children, estimates):
     original = {**original, "csproj": original.get("csproj", "")}
     children = [{**child, "csproj": child.get("csproj", "")} for child in children]
     selected = check_method_partition(PartitionSource(MODULE, CLASSES), original, children)
@@ -29,17 +29,25 @@ def verify(original, children):
         for method in entry["methods"] | {"FutureRegressionTest"}:
             name = entry["fqn"] + "." + method
             assert sum(MODULE._eval(expression, name) for expression in parsed) == int(MODULE._eval(parent, name)), name
+    # A child keeps its parent's rank until a full run measures it (fixtures/measured-dispatch-ranks.json);
+    # a contract may instead record an estimate from the parent's TRX. Estimates may not shrink the parent's cost.
+    assert set(estimates) <= {child["name"] for child in children}, "Estimated rank for a foreign shard."
+    assert not estimates or sum(estimates.values()) >= original["dispatch_rank"], "Estimates shrink the parent."
     for child in children:
-        assert child["dispatch_rank"] == original["dispatch_rank"], "Unmeasured dispatch rank changed."
+        expected = expected_rank(child["name"], original["dispatch_rank"], estimates)
+        assert child["dispatch_rank"] == expected, f"Dispatch rank differs from its measurement: {child['name']}"
     return selected
 
+
+MUTATIONS = ("lost", "duplicate", "foreign", "budget", "trigger", "report", "odata", "rank")
 
 for contract in CONTRACTS:
     original = contract["originalShard"]
     names = contract["children"]
     children = [next(shard for shard in CONFIG["shards"] if shard["name"] == name) for name in names]
-    selected = verify(original, children)
-    for mutation in ("lost", "duplicate", "foreign", "budget", "trigger", "report"):
+    estimates = contract.get("estimatedRanks", {}).get("ranks", {})
+    selected = verify(original, children, estimates)
+    for mutation in MUTATIONS:
         broken = copy.deepcopy(children)
         if mutation == "lost":
             broken[0]["filter"] += "&FullyQualifiedName!=" + min(selected[0])
@@ -51,11 +59,14 @@ for contract in CONTRACTS:
             broken[0]["test_timeout_minutes"] += 1
         elif mutation == "trigger":
             broken[0]["paths"] = broken[0]["paths"][1:]
+        elif mutation == "rank":
+            broken[0]["dispatch_rank"] += 1
         else:
+            field = "upload_operator_eval_report" if mutation == "report" else "upload_odata_evidence"
             for child in broken:
-                child["upload_operator_eval_report"] = True
+                child[field] = True
         try:
-            verify(original, broken)
+            verify(original, broken, estimates)
         except AssertionError:
             continue
         raise AssertionError(f"Accepted {mutation}: {original['name']}")
@@ -68,7 +79,9 @@ for contract in CONTRACTS:
         assert original["name"] not in override["shards"]
         if set(names) & set(override["shards"]):
             assert set(names) <= set(override["shards"])
-    print(f"full-run-capacity=ok parent={original['name']} methods={list(map(len, selected))} negatives=6")
+    print(f"full-run-capacity=ok parent={original['name']} methods={list(map(len, selected))} negatives={len(MUTATIONS)}")
+
+print(f"measured-ranks=ok shards={check_measured_ranks(CONFIG)}")
 
 for field in ("artifact_suffix", "log_name", "shard_name"):
     assert len({shard[field] for shard in CONFIG["shards"]}) == len(CONFIG["shards"]), field
