@@ -1,6 +1,7 @@
 """Exercise a packed GP devkit with no source checkout on the consuming runner."""
 import argparse
 import json
+from functools import partial
 import os
 import re
 import shutil
@@ -16,8 +17,8 @@ import gp_devkit_publication as publication
 from gp_installed_events import validate_journal
 
 
-def test_project(run, tool, project, *, expected=0):
-    output = run(tool, 'test', '--project', str(project), expected=expected)
+def test_project(run_test, project, expected=0):
+    output = run_test('--project', str(project), expected=expected)
     receipts = re.findall(r'^receipt : (.+)$', output, re.MULTILINE)
     assert len(receipts) == 1, 'Expected one local authoring receipt'
     receipt = Path(receipts[0].strip())
@@ -81,6 +82,7 @@ def main():
                             print(artifact.read_text())
                 raise RuntimeError(f'{command[0]} exited {result.returncode}, expected {expected}')
             return result.stdout
+        run_test = partial(run, tool, 'test')
         for language in ('python', 'dotnet'):
             run(tool, 'init', '--language', language, '--name', f'summary-{language}', '--output', str(root))
             project = root / f'summary-{language}'
@@ -119,7 +121,7 @@ def main():
             assert discovery['runnableHere'] is True, discovery
             assert any(item['name'].startswith('dependency lock') and item['status'] == 'satisfied'
                        for item in discovery['prerequisites']), discovery
-            output, receipt = test_project(run, tool, project)
+            output, receipt = test_project(run_test, project)
             if args.event_journals:
                 copy_journal(receipt, args.event_journals / language)
             assert 'PASS  summary.json' in output and 'summary : passed' in output
@@ -128,20 +130,20 @@ def main():
                 # Windows symlinks require privileges unavailable on some consumers.
                 alias = root / 'linked authoring project'
                 alias.symlink_to(project, target_is_directory=True)
-                linked, _ = test_project(run, tool, alias)
+                linked, _ = test_project(run_test, alias)
                 assert 'PASS  summary.json' in linked and 'summary : passed' in linked
             expected = project / 'expected/summary.json'
             original = expected.read_bytes()
             broken = json.loads(original)
             broken['mean'] = 999
             expected.write_text(json.dumps(broken))
-            negative, _ = test_project(run, tool, project, expected=1)
+            negative, _ = test_project(run_test, project, expected=1)
             assert 'FAIL  summary.json' in negative
             expected.write_bytes(original)
-            test_project(run, tool, project)
+            test_project(run_test, project)
             # Recreate the ignored payload exactly as a fresh source clone must do.
             shutil.rmtree(project / '.honua/toolchain')
-            test_project(run, tool, project)
+            test_project(run_test, project)
             if language == 'python':
                 harness = project / '.honua/toolchain/docker/worker-customcode-python/harness'
                 run(sys.executable, '-m', 'pip', 'install', '--no-deps', str(harness), cwd=project)

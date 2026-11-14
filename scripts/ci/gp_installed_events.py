@@ -5,6 +5,9 @@ from pathlib import Path
 import re
 
 SCHEMA = 'honua.gp.events/v1'
+PHASE_LIMIT = 500
+MESSAGE_LIMIT = 2000
+PERCENT_LIMIT = 100
 
 
 def validate_journal(receipt_path):
@@ -34,12 +37,12 @@ def validate_payload(record, receipt, is_last):
     """Validate known payloads while allowing future event kinds."""
     kind = record['kind']
     if kind in ('phase', 'progress'):
-        assert isinstance(record['phase'], str) and len(record['phase']) <= 500, 'Invalid phase'
+        assert isinstance(record['phase'], str) and len(record['phase']) <= PHASE_LIMIT, 'Invalid phase'
     if kind == 'progress':
-        assert type(record['percent']) in (int, float) and 0 <= record['percent'] <= 100, 'Invalid percent'
+        assert type(record['percent']) in (int, float) and 0 <= record['percent'] <= PERCENT_LIMIT, 'Invalid percent'
     elif kind == 'log':
         assert record['level'] in ('info', 'warning'), 'Invalid log level'
-        assert isinstance(record['message'], str) and len(record['message']) <= 2000, 'Invalid log message'
+        assert isinstance(record['message'], str) and len(record['message']) <= MESSAGE_LIMIT, 'Invalid log message'
     elif kind == 'artifact':
         artifact = record['artifact']
         assert isinstance(artifact['name'], str) and artifact['name'], 'Invalid artifact name'
