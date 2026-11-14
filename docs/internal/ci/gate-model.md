@@ -132,8 +132,10 @@ for helper check names and queue policy. Helper completion does not grant
 admission: draft helpers skip without publishing success; `ready_for_review`
 re-enters attestation. Blocking reviews retain failure, and real attestation/API
 errors fail. Review helpers cancel superseded events per PR and re-read live
-review/admission state before acting. Superseded normalization producers
-and consumers exit neutrally before producing data or mutating a branch.
+review/admission state before acting. Normalization producers and consumers
+cancel superseded runs per PR; consumers without a PR association use the head
+repository and branch as their group. Live-head checks and compare-and-swap
+remain required before producing data or mutating a branch.
 
 Completions without a PR number use an isolated resolver group per run; once resolved, publication cancels older work by PR number. An unresolvable completion cannot cancel a resolver for another run.
 
@@ -1392,3 +1394,13 @@ Live after-change readiness diagnostics and elapsed time await a new failure;
 no lifecycle rerun or runtime savings are claimed from unit validation.
 
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
+
+GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so their
+workflow cannot declare repository-owned concurrency. `code-quality-supersession.yml`
+reconciles PR and managed-workflow start events using trusted default-branch code.
+It cancels only active managed Code Quality runs for the same PR whose SHA differs
+from the live PR head, rechecking that head before each cancellation. Current-head
+coverage, trunk scans, required checks and other PRs remain protected. The helper
+checks out no PR code and grants only Actions write, contents read and PR read.
+CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
+already cancel superseded PR runs through their existing per-PR concurrency groups.

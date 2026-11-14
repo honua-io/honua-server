@@ -182,9 +182,11 @@ Existing release cancellation policy is retained.
 ## Neutral automation helpers
 
 Derived Artifact Normalization (`Generate bounded normalization projections`,
-`Produce data-only normalization envelope`) retains `cancel-in-progress: false`
-and `queue: max`. Superseded normalization subjects skip production and consumer
-mutation. Review helpers instead cancel superseded events; their replacement
+`Produce data-only normalization envelope`) cancels superseded runs per PR with
+`cancel-in-progress: true`. Its consumer groups by PR, falling back to head
+repository plus branch when GitHub omits the association. Live-head checks and
+compare-and-swap still prevent superseded subjects from producing data or mutating
+branches. Review helpers instead cancel superseded events; their replacement
 re-reads live review evidence and admission state. Closed/draft review subjects
 finish neutrally before publication. Missing admission prerequisites finish the
 attestation helper neutrally while the separate required `Review Gate` status
@@ -1004,3 +1006,13 @@ avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
 The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
+
+GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so their
+workflow cannot declare repository-owned concurrency. `code-quality-supersession.yml`
+reconciles PR and managed-workflow start events using trusted default-branch code.
+It cancels only active managed Code Quality runs for the same PR whose SHA differs
+from the live PR head, rechecking that head before each cancellation. Current-head
+coverage, trunk scans, required checks and other PRs remain protected. The helper
+checks out no PR code and grants only Actions write, contents read and PR read.
+CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
+already cancel superseded PR runs through their existing per-PR concurrency groups.

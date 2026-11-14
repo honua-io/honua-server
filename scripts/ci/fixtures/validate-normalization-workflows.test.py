@@ -42,6 +42,15 @@ class NormalizationContractTests(unittest.TestCase):
     def test_current_tree_passes(self) -> None:
         self.assertIn(run(), {"observe", "enforce"})
 
+    def test_superseded_heads_cannot_queue_or_share_other_pr_groups(self) -> None:
+        for workflow in ("producer", "consumer"):
+            for old, new in (("cancel-in-progress: true", "cancel-in-progress: false"),
+                             ("cancel-in-progress: true", "cancel-in-progress: true\n  queue: max"),
+                             ("  group: normalization-", "  group: shared-")):
+                with self.subTest(workflow=workflow, mutation=new):
+                    with self.assertRaisesRegex(AssertionError, "cancel superseded"):
+                        run(**{workflow: SOURCES[workflow].replace(old, new, 1)})
+
     def test_generator_in_packaging_is_rejected(self) -> None:
         marker = "      - name: Download bounded projection data\n"
         producer = SOURCES["producer"].replace(

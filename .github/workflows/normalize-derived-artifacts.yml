@@ -39,8 +39,7 @@ permissions:
 
 concurrency:
   group: normalization-producer-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
-  queue: max
+  cancel-in-progress: true
 
 env:
   DOTNET_VERSION: '11.0.x'

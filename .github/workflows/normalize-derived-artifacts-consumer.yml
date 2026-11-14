@@ -18,9 +18,8 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: normalization-consumer-${{ github.event.workflow_run.head_sha }}
-  cancel-in-progress: false
-  queue: max
+  group: normalization-consumer-${{ github.event.workflow_run.pull_requests[0].number || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) }}
+  cancel-in-progress: true
 
 # Enforce since the 2026-11-12 v3 shadow audit (#3219): 76 valid envelopes, all
 # byte-reproduced independently, with the release App token configured.

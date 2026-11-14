@@ -93,6 +93,13 @@ def validate(
 
     producer_document = validate_permissions(producer, {"actions", "contents", "packages", "pull-requests"}, "untrusted producer")
     consumer_document = validate_permissions(consumer, {"actions", "contents", "pull-requests"}, "consumer GITHUB_TOKEN")
+    expected_groups = {
+        "producer": "normalization-producer-${{ github.event.pull_request.number }}",
+        "consumer": "normalization-consumer-${{ github.event.workflow_run.pull_requests[0].number || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) }}",
+    }
+    for label, document in (("producer", producer_document), ("consumer", consumer_document)):
+        if document.get("concurrency") != {"group": expected_groups[label], "cancel-in-progress": True}:
+            raise AssertionError(f"{label} must cancel superseded normalization runs per PR")
     validate_checkout_credentials(producer_document)
     validate_checkout_credentials(consumer_document)
     require(producer, "name: Derived Artifact Normalization", "producer identity changed")
