@@ -7,16 +7,12 @@ using System.Text.RegularExpressions;
 using Grpc.Core;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
-/// <summary>
-/// Lossless geospatial-grpc 1.2 attribute values: calendar dates, local times, offset
-/// timestamps and exact decimals (specification "AttributeValue"). Lexically invalid
-/// input throws <see cref="ArgumentException"/>, which the edit path reports as
-/// <c>INVALID_ARGUMENT</c> before any write.
-/// </summary>
+// Lossless geospatial-grpc 1.2 attribute values: calendar dates, local times, offset
+// timestamps and exact decimals. Lexically invalid input throws ArgumentException, which
+// the edit path reports as INVALID_ARGUMENT before any write.
 internal static partial class GrpcTypedValues
 {
     private const string DateFormat = "yyyy'-'MM'-'dd";
@@ -31,21 +27,21 @@ internal static partial class GrpcTypedValues
 
     private static readonly TimeSpan MaxOffset = TimeSpan.FromHours(14);
 
-    [GeneratedRegex(@"^\d{4}-\d{2}-\d{2}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[0-9]{4}-[0-9]{2}-[0-9]{2}\z", RegexOptions.CultureInvariant)]
     private static partial Regex DatePattern();
 
-    [GeneratedRegex(@"^\d{2}:\d{2}:\d{2}(\.\d{1,7})?$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,7})?\z", RegexOptions.CultureInvariant)]
     private static partial Regex TimePattern();
 
     [GeneratedRegex(
-        @"^(?<local>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,7})?)(?<zone>Z|(?<sign>[+-])(?<hours>\d{2}):(?<minutes>\d{2}))$",
+        @"^(?<local>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,7})?)(?<zone>Z|(?<sign>[+-])(?<hours>[0-9]{2}):(?<minutes>[0-9]{2}))\z",
         RegexOptions.CultureInvariant)]
     private static partial Regex TimestampOffsetPattern();
 
-    [GeneratedRegex(@"^-?(0|[1-9][0-9]*)(\.[0-9]+)?$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^-?(0|[1-9][0-9]*)(\.[0-9]+)?\z", RegexOptions.CultureInvariant)]
     private static partial Regex DecimalPattern();
 
-    /// <summary>Parses a <c>date_value</c> (Gregorian <c>YYYY-MM-DD</c>, years 0001-9999).</summary>
+    // Parses a date_value (Gregorian YYYY-MM-DD, years 0001-9999).
     public static DateOnly ParseDate(string value)
     {
         if (!DatePattern().IsMatch(value)
@@ -57,7 +53,7 @@ internal static partial class GrpcTypedValues
         return date;
     }
 
-    /// <summary>Parses a <c>time_value</c> (<c>HH:mm:ss</c> with 0-7 fractional digits, 00:00:00-23:59:59.9999999).</summary>
+    // Parses a time_value (HH:mm:ss with 0-7 fractional digits, 00:00:00-23:59:59.9999999).
     public static TimeOnly ParseTime(string value)
     {
         // TimeOnly parsing accepts 24:00:00; the wire range ends at 23:59:59.9999999.
@@ -71,7 +67,7 @@ internal static partial class GrpcTypedValues
         return time;
     }
 
-    /// <summary>Parses a <c>timestamp_offset_value</c> (RFC 3339 with a required offset within ±14:00).</summary>
+    // Parses a timestamp_offset_value (RFC 3339 with a required offset within ±14:00).
     public static DateTimeOffset ParseTimestampOffset(string value)
     {
         var match = TimestampOffsetPattern().Match(value);
@@ -110,10 +106,8 @@ internal static partial class GrpcTypedValues
         }
     }
 
-    /// <summary>
-    /// Parses a <c>decimal_value</c> exactly. Values the server cannot hold without rounding
-    /// (more than 28-29 significant digits or out of range) are refused, never rounded.
-    /// </summary>
+    // Parses a decimal_value exactly. Values the server cannot hold without rounding
+    // (more than 28-29 significant digits or out of range) are refused, never rounded.
     public static decimal ParseDecimal(string value)
     {
         if (!DecimalPattern().IsMatch(value)
@@ -133,19 +127,14 @@ internal static partial class GrpcTypedValues
         return number;
     }
 
-    /// <summary>Formats a calendar date as <c>date_value</c>.</summary>
-    public static Proto.AttributeValue FromDate(DateOnly date)
-        => new() { DateValue = date.ToString(DateFormat, CultureInfo.InvariantCulture) };
+    public static string FormatDate(DateOnly date) => date.ToString(DateFormat, CultureInfo.InvariantCulture);
 
-    /// <summary>Formats a local time as <c>time_value</c>, without trailing fractional zeros.</summary>
-    public static Proto.AttributeValue FromTime(TimeOnly time)
-        => new() { TimeValue = time.ToString(TimeFormat, CultureInfo.InvariantCulture) };
+    // Without trailing fractional zeros.
+    public static string FormatTime(TimeOnly time) => time.ToString(TimeFormat, CultureInfo.InvariantCulture);
 
-    /// <summary>
-    /// Refuses, before any write, values whose target column cannot keep them: an offset
-    /// timestamp (metadata has no offset-preserving field type; UTC instants use
-    /// <c>datetime_value</c>) and a decimal that a double or integer column would round.
-    /// </summary>
+    // Refuses, before any write, values whose target column cannot keep them: an offset
+    // timestamp (metadata has no offset-preserving field type; UTC instants use
+    // datetime_value) and a decimal that a double or integer column would round.
     public static void EnsureStorable(MetadataV2Resource resource, FeatureEditBatch batch)
     {
         var creates = batch.Creates.IsDefault ? ImmutableArray<Feature>.Empty : batch.Creates;

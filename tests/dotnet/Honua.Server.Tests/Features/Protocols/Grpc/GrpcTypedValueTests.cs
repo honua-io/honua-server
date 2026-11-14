@@ -58,6 +58,8 @@ public sealed class GrpcTypedValueTests
     [InlineData("2026-11-14T01:02:03")]
     [InlineData("2026-11-14 01:02:03Z")]
     [InlineData("2026-11-14T01:02:03+05:60")]
+    [InlineData("2026-11-14T01:02:03Z\n")]
+    [InlineData("2026-11-14T01:02:03+\u0660\u0661:00")]
     public void ParseTimestampOffset_InvalidValue_Throws(string value)
         => FluentActions.Invoking(() => GrpcTypedValues.ParseTimestampOffset(value)).Should().Throw<ArgumentException>();
 
@@ -87,7 +89,7 @@ public sealed class GrpcTypedValueTests
         => GrpcTypedValues.ParseDecimal(value).Should().Be(decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture));
 
     [UnitTest]
-    public void ToProtoFeature_DateTimeAndGuidValues_UseInvariantWireForms()
+    public void ToProtoFeature_DateTimeAndGuidValues_UseInvariantStrings()
     {
         var feature = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
             .Add("day", new DateOnly(2026, 11, 14))
@@ -96,14 +98,15 @@ public sealed class GrpcTypedValueTests
             .Add("span", TimeSpan.FromMinutes(90))
             .Add("GlobalID", Guid.Parse(GlobalId.ToUpperInvariant())));
 
-        var proto = GrpcConversionHelpers.ToProtoFeature(feature, globalIdFieldName: "globalid");
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature);
 
-        proto.Attributes["day"].DateValue.Should().Be("2026-11-14");
-        proto.Attributes["opens"].TimeValue.Should().Be("08:30:00");
-        proto.Attributes["opens_precise"].TimeValue.Should().Be("08:30:00.0000005");
-        proto.Attributes["span"].TimeValue.Should().Be("01:30:00");
+        // Clients before geospatial-grpc 1.2 cannot read date_value/time_value, so reads stay strings.
+        proto.Attributes["day"].StringValue.Should().Be("2026-11-14");
+        proto.Attributes["opens"].StringValue.Should().Be("08:30:00");
+        proto.Attributes["opens_precise"].StringValue.Should().Be("08:30:00.0000005");
+        proto.Attributes["span"].StringValue.Should().Be("01:30:00");
         proto.Attributes["GlobalID"].StringValue.Should().Be(GlobalId);
-        proto.GlobalId.Should().Be(GlobalId);
+        GrpcGlobalIds.Read(feature.Attributes, "globalid").Should().Be(GlobalId);
     }
 
     [UnitTest]
@@ -123,33 +126,68 @@ public sealed class GrpcTypedValueTests
         bool useGlobalIds, bool deleteGlobalIds, bool integerDeletes, bool integerUpdate)
     {
         var request = new Proto.ApplyEditsRequest { UseGlobalIds = useGlobalIds };
-        if (deleteGlobalIds) request.DeleteGlobalIds.Add(GlobalId);
-        if (integerDeletes) request.Deletes.Add(1);
-        if (integerUpdate) request.Updates.Add(new Proto.Feature { Id = 1, GlobalId = GlobalId });
+        if (deleteGlobalIds)
+        {
+            request.DeleteGlobalIds.Add(GlobalId);
+        }
+
+        if (integerDeletes)
+        {
+            request.Deletes.Add(1);
+        }
+
+        if (integerUpdate)
+        {
+            request.Updates.Add(new Proto.Feature { Id = 1, GlobalId = GlobalId });
+        }
 
         FluentActions.Invoking(() => GrpcGlobalIds.EnsureSelectorMode(request)).Should().Throw<ArgumentException>();
     }
 
     [UnitTest]
-    public void ParseSelectors_NormalisesAndRejectsBraces()
+    public void ParseDistinctSelectors_NormalisesAndRejectsBracesAndDuplicates()
     {
-        GrpcGlobalIds.ParseSelectors([GlobalId.ToUpperInvariant(), GlobalId], "global_ids").Should().Equal(GlobalId);
+        GrpcGlobalIds.ParseDistinctSelectors([GlobalId.ToUpperInvariant()], "global_ids").Should().Equal(GlobalId);
         FluentActions.Invoking(() => GrpcGlobalIds.ParseSelector("{" + GlobalId + "}", "global_ids"))
-            .Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+            .Should().Throw<ArgumentException>();
+        FluentActions.Invoking(() => GrpcGlobalIds.ParseDistinctSelectors([GlobalId, GlobalId.ToUpperInvariant()], "global_ids"))
+            .Should().Throw<ArgumentException>().WithMessage("*repeats*");
     }
 
     [UnitTest]
-    public void CombineWhere_NarrowsTheCallersWhere()
+    public void EnsureSelectorMode_RepeatedGlobalIds_RejectsBeforeWrites()
     {
-        GrpcGlobalIds.CombineWhere("1=1", "GlobalID", [GlobalId]).Should().Be($"GlobalID IN ('{GlobalId}')");
-        GrpcGlobalIds.CombineWhere("status = 'open'", "GlobalID", [GlobalId])
-            .Should().Be($"(status = 'open') AND GlobalID IN ('{GlobalId}')");
+        var overlapping = new Proto.ApplyEditsRequest { UseGlobalIds = true };
+        overlapping.Updates.Add(new Proto.Feature { GlobalId = GlobalId });
+        overlapping.DeleteGlobalIds.Add(GlobalId);
+        var duplicateAdds = new Proto.ApplyEditsRequest();
+        duplicateAdds.Adds.Add(new Proto.Feature { GlobalId = GlobalId });
+        duplicateAdds.Adds.Add(new Proto.Feature { GlobalId = GlobalId.ToUpperInvariant() });
+
+        FluentActions.Invoking(() => GrpcGlobalIds.EnsureSelectorMode(overlapping)).Should().Throw<ArgumentException>();
+        FluentActions.Invoking(() => GrpcGlobalIds.EnsureSelectorMode(duplicateAdds)).Should().Throw<ArgumentException>();
     }
 
     [UnitTest]
-    public void RequireField_LayerWithoutGlobalIdField_FailsPrecondition()
-        => FluentActions.Invoking(() => GrpcGlobalIds.RequireField(new MetadataV2Resource()))
-            .Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+    public void ToFeatureEditBatch_GlobalIdDeletes_CountAsDeletesForAuthorizationAndLimits()
+    {
+        var request = new Proto.ApplyEditsRequest { UseGlobalIds = true };
+        request.DeleteGlobalIds.Add(GlobalId);
+        request.DeleteGlobalIds.Add("7f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f");
+
+        GrpcConversionHelpers.ToFeatureEditBatch(request).Deletes.Should().HaveCount(2);
+    }
+
+    [UnitTest]
+    public void Predicate_UuidColumnMatchesLowercase_TextColumnMatchesStoredSpellings()
+    {
+        var uuid = new MetadataV2Resource { SchemaFields = [new MetadataV2Field { Name = "GlobalID", TypeValue = MetadataV2FieldType.Uuid }] };
+        var text = new MetadataV2Resource { SchemaFields = [new MetadataV2Field { Name = "GlobalID", TypeValue = MetadataV2FieldType.String }] };
+
+        GrpcGlobalIds.Predicate(uuid, "GlobalID", [GlobalId]).Should().Be($"GlobalID IN ('{GlobalId}')");
+        GrpcGlobalIds.Predicate(text, "GlobalID", [GlobalId]).Should().Contain($"'{{{GlobalId.ToUpperInvariant()}}}'");
+        FluentActions.Invoking(() => GrpcGlobalIds.Predicate(uuid, "Global ID", [GlobalId])).Should().Throw<ArgumentException>();
+    }
 
     [UnitTheory]
     [InlineData(MetadataV2FieldType.Double, "0.1", false)]

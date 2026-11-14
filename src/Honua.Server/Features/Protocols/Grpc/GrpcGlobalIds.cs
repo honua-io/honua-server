@@ -3,48 +3,50 @@
 
 using System.Collections.Immutable;
 using System.Text.RegularExpressions;
-using Grpc.Core;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
-/// <summary>
-/// geospatial-grpc 1.2 global feature identity (specification "Global feature identity"):
-/// hyphenated UUIDs without braces, case-insensitive on input, lowercase on output.
-/// </summary>
+// geospatial-grpc 1.2 global feature identity: hyphenated UUIDs without braces,
+// case-insensitive on input and lowercase on output.
 internal static partial class GrpcGlobalIds
 {
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*\\z", RegexOptions.CultureInvariant)]
     private static partial Regex PlainIdentifier();
 
-    /// <summary>Lowercase hyphenated form of a stored global ID; non-UUID values pass through.</summary>
+    // Lowercase hyphenated form of a stored global ID; non-UUID values pass through.
     public static string Normalize(string value)
         => Guid.TryParse(value, out var guid) ? guid.ToString("D") : value;
 
-    /// <summary>Parses one wire selector, failing the call with INVALID_ARGUMENT.</summary>
+    // One wire selector; throws ArgumentException (INVALID_ARGUMENT) for anything else.
     public static string ParseSelector(string value, string fieldName)
     {
         if (!Guid.TryParseExact(value, "D", out var guid))
         {
-            throw new RpcException(new Status(
-                StatusCode.InvalidArgument,
-                $"{fieldName} must contain hyphenated UUIDs without braces; '{value}' is not one."));
+            throw new ArgumentException(
+                $"{fieldName} must contain hyphenated UUIDs without braces; '{value}' is not one.");
         }
 
         return guid.ToString("D");
     }
 
-    /// <summary>Parses selectors, keeping first-seen order and removing duplicates.</summary>
-    public static ImmutableArray<string> ParseSelectors(IEnumerable<string> values, string fieldName)
-        => values.Select(value => ParseSelector(value, fieldName)).Distinct(StringComparer.Ordinal).ToImmutableArray();
-
-    /// <summary>
-    /// Enforces the selector modes: with <c>use_global_ids</c> every update names a global ID and
-    /// no integer update ID or <c>deletes</c> appears; otherwise <c>delete_global_ids</c> is empty.
-    /// </summary>
-    /// <exception cref="ArgumentException">The request mixes or misplaces selectors.</exception>
-    public static void EnsureSelectorMode(Geospatial.V1.ApplyEditsRequest request)
+    // Selectors in request order; duplicates are rejected so results stay aligned with requests.
+    public static ImmutableArray<string> ParseDistinctSelectors(IEnumerable<string> values, string fieldName)
     {
+        var parsed = values.Select(value => ParseSelector(value, fieldName)).ToImmutableArray();
+        EnsureDistinct(parsed, fieldName);
+        return parsed;
+    }
+
+    // With use_global_ids every update names one global ID and no integer update ID or deletes
+    // appear; otherwise delete_global_ids is empty. No global ID may repeat across adds, or
+    // across updates and deletes.
+    public static void EnsureSelectorMode(Proto.ApplyEditsRequest request)
+    {
+        ParseDistinctSelectors(
+            request.Adds.Where(static add => add.GlobalId.Length > 0).Select(static add => add.GlobalId),
+            "add Feature.global_id");
         if (!request.UseGlobalIds)
         {
             if (request.DeleteGlobalIds.Count > 0)
@@ -64,9 +66,13 @@ internal static partial class GrpcGlobalIds
         {
             throw new ArgumentException("With use_global_ids every update supplies Feature.global_id and no Feature.id.");
         }
+
+        ParseDistinctSelectors(
+            request.Updates.Select(static update => update.GlobalId).Concat(request.DeleteGlobalIds),
+            "update and delete global IDs");
     }
 
-    /// <summary>The layer's declared global-ID field, or <c>null</c> when it declares none.</summary>
+    // The layer's declared global-ID field, or null when it declares none.
     public static string? ResolveField(MetadataV2Resource resource)
     {
         var declared = resource.Editing?.GlobalIdField;
@@ -75,32 +81,26 @@ internal static partial class GrpcGlobalIds
             : resource.SchemaFields.FirstOrDefault(field => field.Name.Equals(declared, StringComparison.OrdinalIgnoreCase))?.Name;
     }
 
-    /// <summary>The declared global-ID field, failing with FAILED_PRECONDITION when absent.</summary>
-    public static string RequireField(MetadataV2Resource resource)
+    // A where predicate selecting ids. Every id is a parsed UUID and the field a plain identifier,
+    // so the text needs no escaping; it is bound on its own and ANDed with the caller's filter.
+    // Text columns may hold braced or uppercase forms, so those spellings are matched too.
+    public static string Predicate(MetadataV2Resource resource, string field, ImmutableArray<string> ids)
     {
-        var field = ResolveField(resource);
-        if (field is null || !PlainIdentifier().IsMatch(field))
+        if (!PlainIdentifier().IsMatch(field))
         {
-            throw new RpcException(new Status(
-                StatusCode.FailedPrecondition,
-                "The layer does not declare a global-ID field, so global-ID selectors are unavailable."));
+            throw new ArgumentException($"Global-ID field '{field}' cannot be used as a selector.");
         }
 
-        return field;
+        var isUuidColumn = resource.SchemaFields
+            .FirstOrDefault(candidate => candidate.Name.Equals(field, StringComparison.OrdinalIgnoreCase))?.Type
+            is MetadataV2FieldType.Uuid;
+        var spellings = isUuidColumn
+            ? ids
+            : ids.SelectMany(static id => new[] { id, id.ToUpperInvariant(), $"{{{id}}}", $"{{{id.ToUpperInvariant()}}}" });
+        return $"{field} IN ({string.Join(", ", spellings.Select(static id => $"'{id}'"))})";
     }
 
-    /// <summary>
-    /// A where predicate selecting <paramref name="ids"/>, combined with the caller's where. Every
-    /// ID is a parsed UUID and the field a plain identifier, so the text needs no escaping; the
-    /// combined clause still goes through the normal binder and masked-field checks.
-    /// </summary>
-    public static string CombineWhere(string? where, string field, ImmutableArray<string> ids)
-    {
-        var predicate = $"{field} IN ({string.Join(", ", ids.Select(id => $"'{id}'"))})";
-        return string.IsNullOrWhiteSpace(where) || where.Trim() == "1=1" ? predicate : $"({where}) AND {predicate}";
-    }
-
-    /// <summary>The stored global ID of a feature, normalised, when it is present.</summary>
+    // The stored global ID of a feature, normalised, when it is present.
     public static string? Read(IReadOnlyDictionary<string, object?> attributes, string? field)
     {
         if (field is null)
@@ -122,5 +122,17 @@ internal static partial class GrpcGlobalIds
         }
 
         return null;
+    }
+
+    private static void EnsureDistinct(ImmutableArray<string> ids, string fieldName)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var id in ids)
+        {
+            if (!seen.Add(id))
+            {
+                throw new ArgumentException($"{fieldName} repeats global ID {id}.");
+            }
+        }
     }
 }

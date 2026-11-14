@@ -117,8 +117,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
         var queryContext = await CreateQueryContextAsync(
             request, layer, context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
-        var globalIdField = VisibleGlobalIdField(layer);
-        var (query, attributeHiddenFields) = WithGlobalIdField(queryContext.Query, globalIdField, layer.HiddenFields);
+        var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
         var readOperation = request.ReturnCountOnly
             ? FeatureProviderReadOperation.Count
@@ -132,7 +131,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         var response = new Proto.QueryFeaturesResponse
         {
             ObjectIdFieldName = pkField,
-            GlobalIdFieldName = globalIdField ?? string.Empty,
+            GlobalIdFieldName = queryContext.GlobalIdField ?? string.Empty,
             GeometryType = GrpcConversionHelpers.ToProtoGeometryType(layer.GeometryType),
             SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(queryContext.ResponseSpatialReference)
         };
@@ -177,13 +176,15 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         foreach (var feature in result.Items)
         {
-            response.Features.Add(GrpcConversionHelpers.ToProtoFeature(
+            response.Features.Add(WithGlobalId(
+                GrpcConversionHelpers.ToProtoFeature(
+                    feature,
+                    queryContext.ReturnGeometry,
+                    queryContext.GeometryLimits,
+                    query.Distinct ? null : pkField,
+                    queryContext.AttributeHiddenFields),
                 feature,
-                queryContext.ReturnGeometry,
-                queryContext.GeometryLimits,
-                query.Distinct ? null : pkField,
-                attributeHiddenFields,
-                globalIdField));
+                queryContext.GlobalIdField));
         }
 
         response.ExceededTransferLimit = result.HasMoreResults;
@@ -203,8 +204,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
         var queryContext = await CreateQueryContextAsync(
             request, layer, context.GetHttpContext().RequestServices, context.CancellationToken, streaming: true).ConfigureAwait(false);
-        var globalIdField = VisibleGlobalIdField(layer);
-        var (query, attributeHiddenFields) = WithGlobalIdField(queryContext.Query, globalIdField, layer.HiddenFields);
+        var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
         var requestServices = context.GetHttpContext().RequestServices;
         var resolvedReader = await ResolveReaderAsync(
@@ -231,13 +231,15 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         var hasCurrent = await enumerator.MoveNextAsync().ConfigureAwait(false);
         while (hasCurrent)
         {
-            batch.Add(GrpcConversionHelpers.ToProtoFeature(
+            batch.Add(WithGlobalId(
+                GrpcConversionHelpers.ToProtoFeature(
+                    enumerator.Current,
+                    queryContext.ReturnGeometry,
+                    queryContext.GeometryLimits,
+                    query.Distinct ? null : pkField,
+                    queryContext.AttributeHiddenFields),
                 enumerator.Current,
-                queryContext.ReturnGeometry,
-                queryContext.GeometryLimits,
-                query.Distinct ? null : pkField,
-                attributeHiddenFields,
-                globalIdField));
+                queryContext.GlobalIdField));
 
             if (batch.Count < _streamBatchSize)
             {
@@ -251,7 +253,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                 var lastFullPage = CreatePage(
                     batch,
                     layer,
-                    queryContext.ResponseSpatialReference,
+                    queryContext,
                     pkField,
                     isFirstPage,
                     isLastPage: true);
@@ -262,7 +264,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             var page = CreatePage(
                 batch,
                 layer,
-                queryContext.ResponseSpatialReference,
+                queryContext,
                 pkField,
                 isFirstPage,
                 isLastPage: false);
@@ -274,7 +276,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         var lastPage = CreatePage(
             batch,
             layer,
-            queryContext.ResponseSpatialReference,
+            queryContext,
             pkField,
             isFirstPage,
             isLastPage: true);
@@ -307,8 +309,13 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, editBatch);
         EnsureEditLimits(editBatch, _editLimits);
         GrpcTypedValues.EnsureStorable(layer.Resource, editBatch);
-        editBatch = await ResolveGlobalIdTargetsAsync(
-            request, editBatch, layer, context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
+        var requestServices = context.GetHttpContext().RequestServices;
+        var globalIds = new GlobalIdEdit(
+            request,
+            layer,
+            requestServices,
+            await VisibleGlobalIdFieldAsync(layer, requestServices, context.CancellationToken).ConfigureAwait(false));
+        editBatch = WithClientGlobalIds(globalIds, editBatch);
         editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
             .ConfigureAwait(false);
 
@@ -347,7 +354,6 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         if (keyedEdit?.Response is not null)
         {
-            StampResultGlobalIds(request, keyedEdit.Response);
             return keyedEdit.Response;
         }
 
@@ -367,6 +373,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
         // The same read supplies stored geometry for a partial update. Omitted attributes
         // are merged from the locked row by the writer, not from this snapshot.
+        editBatch = await ResolveGlobalIdTargetsAsync(globalIds, editBatch, context.CancellationToken).ConfigureAwait(false);
         editBatch = await EnsureEditTargetsVisibleAsync(
             layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
 
@@ -419,8 +426,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                     {
                         Scope = keyedEdit.Scope,
                         ExpiresAt = _editReceipts.ResponseExpiresAt,
-                        Payload = static staged => GrpcApplyEditsReceipts.EncodeReceipt(
-                            GrpcConversionHelpers.ToProtoApplyEditsResponse(staged)),
+                        Payload = staged => GrpcApplyEditsReceipts.EncodeReceipt(
+                            StampResultGlobalIds(globalIds, GrpcConversionHelpers.ToProtoApplyEditsResponse(staged))),
                     },
                     context.CancellationToken).ConfigureAwait(false);
                 result = keyedApplication.Value.Result;
@@ -442,7 +449,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         }
 
         var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
-        StampResultGlobalIds(request, response);
+        StampResultGlobalIds(globalIds, response);
 
         // A receipt committed under this key replaces this attempt's result, and no change
         // events are published for an attempt that did not commit.
@@ -450,7 +457,6 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             && await RecordKeyedOutcomeAsync(keyedEdit, keyedApplication!.Value, response, context.CancellationToken)
                 .ConfigureAwait(false) is { } committed)
         {
-            StampResultGlobalIds(request, committed);
             return committed;
         }
 
@@ -933,7 +939,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     private static Proto.FeaturePage CreatePage(
         List<Proto.Feature> features,
         GrpcLayerContext layer,
-        SpatialReference responseSpatialReference,
+        QueryContext queryContext,
         string pkField,
         bool isFirstPage,
         bool isLastPage)
@@ -946,9 +952,9 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         if (isFirstPage)
         {
             page.ObjectIdFieldName = pkField;
-            page.GlobalIdFieldName = VisibleGlobalIdField(layer) ?? string.Empty;
+            page.GlobalIdFieldName = queryContext.GlobalIdField ?? string.Empty;
             page.GeometryType = GrpcConversionHelpers.ToProtoGeometryType(layer.GeometryType);
-            page.SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(responseSpatialReference);
+            page.SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(queryContext.ResponseSpatialReference);
 
             foreach (var field in layer.AttributeFields)
             {
@@ -969,8 +975,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     {
         EnsureAggregationNotRequested(request);
 
-        var where = EffectiveWhere(request, layer);
-        var whereValidation = _queryValidator.ValidateWhereClause(where);
+        var whereValidation = _queryValidator.ValidateWhereClause(request.Where);
         if (!whereValidation.IsValid)
         {
             throw new RpcException(new Status(
@@ -978,8 +983,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                 whereValidation.ErrorMessage ?? "Invalid where clause."));
         }
 
-        var whereFilter = await BindWhereClauseAsync(
-            where, layer.Resource, requestServices, cancellationToken).ConfigureAwait(false);
+        var globalIdField = await VisibleGlobalIdFieldAsync(layer, requestServices, cancellationToken).ConfigureAwait(false);
+        var whereFilter = SqlFragmentHelpers.CombineSqlFilters(
+            await BindWhereClauseAsync(request.Where, layer.Resource, requestServices, cancellationToken).ConfigureAwait(false),
+            await GlobalIdFilterAsync(request, new QueryGlobalIds(layer, requestServices, globalIdField), cancellationToken)
+                .ConfigureAwait(false));
 
         // 0.2.0-alpha.1 retired the int32 result_offset / result_record_count fields in favour of
         // the int64 result_offset_long / result_record_count_long; narrow here so the existing
@@ -1073,11 +1081,14 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                 wkt: string.IsNullOrWhiteSpace(request.OutSr?.Wkt) ? null : request.OutSr!.Wkt)
             : layer.SpatialReference;
 
+        var (projected, attributeHiddenFields) = WithGlobalIdField(query, globalIdField, layer.HiddenFields);
         return new QueryContext(
-            query,
+            projected,
             responseSpatialReference,
             GrpcConversionHelpers.CreateEffectiveGeometryLimits(_geometryLimits, request),
-            request.ReturnGeometry);
+            request.ReturnGeometry,
+            globalIdField,
+            attributeHiddenFields);
     }
 
     // A where clause that names a masked field is refused.
@@ -1357,7 +1368,9 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         FeatureQuery Query,
         SpatialReference ResponseSpatialReference,
         GeometryLimits GeometryLimits,
-        bool ReturnGeometry);
+        bool ReturnGeometry,
+        string? GlobalIdField,
+        IReadOnlySet<string> AttributeHiddenFields);
 
     private readonly record struct GrpcLayerContext(
         MetadataV2Service Service,

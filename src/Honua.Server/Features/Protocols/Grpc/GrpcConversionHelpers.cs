@@ -116,8 +116,10 @@ internal static class GrpcConversionHelpers
             ? ImmutableArray<Feature>.Empty
             : request.Updates.Select(feature => ToDomainFeature(feature, requireId: !request.UseGlobalIds)).ToImmutableArray();
 
-        var deletes = request.Deletes.Count == 0
-            ? ImmutableArray<long>.Empty
+        // Global-ID deletes count as deletes for authorization, capabilities and limits now;
+        // the placeholders are replaced by resolved object IDs before any read or write.
+        var deletes = request.UseGlobalIds
+            ? ImmutableArray.CreateRange(Enumerable.Repeat(0L, request.DeleteGlobalIds.Count))
             : request.Deletes.ToImmutableArray();
 
         return FeatureEditBatch.Create(
@@ -197,14 +199,9 @@ internal static class GrpcConversionHelpers
         bool includeGeometry = true,
         GeometryLimits? geometryLimits = null,
         string? objectIdFieldName = null,
-        IReadOnlySet<string>? hiddenFields = null,
-        string? globalIdFieldName = null)
+        IReadOnlySet<string>? hiddenFields = null)
     {
-        var proto = new Proto.Feature
-        {
-            Id = feature.Id,
-            GlobalId = GrpcGlobalIds.Read(feature.Attributes, globalIdFieldName) ?? string.Empty
-        };
+        var proto = new Proto.Feature { Id = feature.Id };
 
         foreach (var (key, value) in feature.Attributes)
         {
@@ -359,12 +356,14 @@ internal static class GrpcConversionHelpers
                 // for a declared exact-decimal field type, which metadata does not have yet.
                 av.DoubleValue = (double)dec;
                 break;
+            // Invariant ISO text on string_value: clients before geospatial-grpc 1.2 cannot
+            // read the date/time cases, and the declared field type already says DATE or TIME.
             case DateOnly date:
-                return GrpcTypedValues.FromDate(date);
+                av.StringValue = GrpcTypedValues.FormatDate(date);
+                break;
             case TimeOnly time:
-                return GrpcTypedValues.FromTime(time);
-            case TimeSpan span when span >= TimeSpan.Zero && span < TimeSpan.FromDays(1):
-                return GrpcTypedValues.FromTime(TimeOnly.FromTimeSpan(span));
+                av.StringValue = GrpcTypedValues.FormatTime(time);
+                break;
             case Guid guid:
                 av.StringValue = guid.ToString("D");
                 break;
