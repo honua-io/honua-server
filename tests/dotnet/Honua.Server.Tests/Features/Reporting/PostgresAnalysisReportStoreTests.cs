@@ -27,7 +27,7 @@ public sealed class PostgresAnalysisReportStoreTests(DatabaseFixtureAdapter data
     {
         await database.CreateSchemaUnderLockAsync(_schema);
         await using var stream = typeof(PostgresAnalysisReportStore).Assembly.GetManifestResourceStream(
-            "Honua.Server.Migrations.164_CreateAnalysisReports.sql")
+            "Honua.Server.Migrations.177_CreateAnalysisReports.sql")
             ?? throw new InvalidOperationException("Analysis report migration is missing.");
         using var reader = new StreamReader(stream);
         await database.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync())
