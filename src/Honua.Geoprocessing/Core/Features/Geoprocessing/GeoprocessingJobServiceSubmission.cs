@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
@@ -51,8 +50,7 @@ internal sealed partial class GeoprocessingJobService
     private static (GpResourceProfile Profile, double CostWeight) ResolveAdmissionResources(
         AnalysisPlan plan,
         Dictionary<string, string> specParams,
-        bool isCustomCode,
-        IProcessCatalog processCatalog)
+        GpResourceProfile catalogResources)
     {
         specParams.Remove(ExecutionAdmissionEvaluator.PartitionKeyParameterKey);
         specParams.Remove(ExecutionAdmissionEvaluator.CostWeightParameterKey);
@@ -60,11 +58,7 @@ internal sealed partial class GeoprocessingJobService
         // the plan's steps, overridden by any explicit gp.resource.* request values. Resolved
         // BEFORE the admission cost weight below so the partition throttle can charge by
         // the plan's actual catalog-derived resource class, not merely its node count.
-        var resourceProfile = ResolveResourceProfile(
-            plan,
-            specParams,
-            isCustomCode,
-            processCatalog);
+        var resourceProfile = catalogResources.OverrideWith(GpResourceProfile.FromRequestParameters(specParams));
         // A static costWeight=stepCount treats a 1-step raster/native op the same as a
         // 1-step managed op over ten features — neither reflects real resource cost. Charging the
         // catalog-derived vCPU class (Managed=1, Native=2, Raster=4; see GpResourceProfile) makes

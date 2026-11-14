@@ -959,8 +959,8 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         var partitionKey = string.IsNullOrWhiteSpace(resolvedSecurityContext.TenantId)
             ? null
             : resolvedSecurityContext.TenantId;
-        var (resourceProfile, costWeight) = ResolveAdmissionResources(
-            plan, specParams, isCustomCode, processCatalog);
+        var catalogResources = isCustomCode ? GpResourceProfile.Empty : ResolveCatalogResources(plan, processCatalog);
+        var (resourceProfile, costWeight) = ResolveAdmissionResources(plan, specParams, catalogResources);
         var priority = ResolvePriority(specParams);
 
         // Admission reads the durable active set and the record is created afterwards; the window
@@ -1747,33 +1747,26 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         return ManagedReprojectFastPath.RequiresNativeWorker(fromSrid, toSrid);
     }
 
-    private static GpResourceProfile ResolveResourceProfile(
-        AnalysisPlan plan,
-        IReadOnlyDictionary<string, string> specParams,
-        bool isCustomCode,
-        IProcessCatalog processCatalog)
+    private static GpResourceProfile ResolveCatalogResources(AnalysisPlan plan, IProcessCatalog processCatalog)
     {
         var derived = GpResourceProfile.Empty;
-        if (!isCustomCode)
+        foreach (var step in plan.Steps)
         {
-            foreach (var step in plan.Steps)
+            if (string.IsNullOrWhiteSpace(step.ProcessId))
             {
-                if (string.IsNullOrWhiteSpace(step.ProcessId))
-                {
-                    continue;
-                }
-
-                var definition = processCatalog.GetProcess(step.ProcessId);
-                if (definition == null)
-                {
-                    continue;
-                }
-
-                derived = derived.MergeMax(GpResourceProfile.ForProcess(definition));
+                continue;
             }
+
+            var definition = processCatalog.GetProcess(step.ProcessId);
+            if (definition == null)
+            {
+                continue;
+            }
+
+            derived = derived.MergeMax(GpResourceProfile.ForProcess(definition));
         }
 
-        return derived.OverrideWith(GpResourceProfile.FromRequestParameters(specParams));
+        return derived;
     }
 
     private static ExecutionJobSpec BuildSpec(

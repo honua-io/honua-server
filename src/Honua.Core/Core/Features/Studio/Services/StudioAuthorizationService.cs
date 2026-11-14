@@ -155,9 +155,8 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             // another issuer nor the same subject in another tenant ever owns the same draft.
             // Issuer-less principals (API keys, framework sessions) keep their immutable id.
             var issuer = principal.FindFirst("iss")?.Value;
-            // Disabled tenancy historically left the tenant unset. Preserve the
-            // owner key when middleware supplies the deployment default, while
-            // frozen execution bindings keep their recorded tenant component.
+            // Deployment-default requests use tenantless owner keys when tenancy is disabled;
+            // frozen execution bindings retain their recorded tenant component.
             var ownerTenant = _tenantIsolationOptions?.CurrentValue.Enabled == false
                 && _tenantContext?.Source == TenantContextSource.Default
                     ? null

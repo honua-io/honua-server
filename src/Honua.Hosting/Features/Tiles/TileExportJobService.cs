@@ -68,8 +68,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
     }
 
     private async Task<ExecutionJobRecord?> FindKeyedReplayAsync(
-        string resolvedKey,
-        (string JobId, string PrincipalId, string? TenantId, string RequestFingerprint) identity,
+        (string ResolvedKey, string JobId, string PrincipalId, string? TenantId, string RequestFingerprint) identity,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
@@ -85,7 +84,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
 
         if (identity.TenantId is not null && TenantReadScope.For(_tenantContext).IncludesLegacy)
         {
-            var legacyTenantId = JobOwnershipSecurity.CreateJobId("te", resolvedKey, identity.PrincipalId, null);
+            var legacyTenantId = JobOwnershipSecurity.CreateJobId("te", identity.ResolvedKey, identity.PrincipalId, null);
             var legacyTenantJob = await jobStore.GetAsync(legacyTenantId, cancellationToken).ConfigureAwait(false);
             if (legacyTenantJob is not null)
             {
@@ -99,7 +98,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         // key-only id: replay it to its own submitter and refuse the key to anyone else, so a
         // retry that crosses that change does not export twice.
         var priorFormat = await jobStore
-            .GetAsync(JobOwnershipSecurity.CreatePriorFormatJobId("te", resolvedKey), cancellationToken)
+            .GetAsync(JobOwnershipSecurity.CreatePriorFormatJobId("te", identity.ResolvedKey), cancellationToken)
             .ConfigureAwait(false);
         if (priorFormat is not null)
         {
@@ -158,8 +157,8 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         // rate bucket its own original submission created. A new submission still evaluates admission
         // below. The unkeyed path derives a fresh GUID id, so no replay is possible.
         if (resolvedKey is not null
-            && await FindKeyedReplayAsync(resolvedKey,
-                (jobId, principalId, submitter.TenantId, requestFingerprint), principal, cancellationToken)
+            && await FindKeyedReplayAsync(
+                (resolvedKey, jobId, principalId, submitter.TenantId, requestFingerprint), principal, cancellationToken)
                 .ConfigureAwait(false) is { } replay)
         {
             return replay;
