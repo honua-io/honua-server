@@ -273,7 +273,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetService<ISchemaContext>(),
-                serviceProvider.GetRequiredService<IConfiguration>()));
+                serviceProvider.GetRequiredService<IConfiguration>(),
+                serviceProvider.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()));
         services.AddScoped<Honua.Core.Features.SensorThings.Abstractions.ISensorThingsEntityStore>(
             serviceProvider => (Honua.Core.Features.SensorThings.Abstractions.ISensorThingsEntityStore)
                 serviceProvider.GetRequiredService<Honua.Core.Features.SensorThings.Abstractions.IObservationStore>());

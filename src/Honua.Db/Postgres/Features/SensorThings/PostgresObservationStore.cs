@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -27,6 +28,7 @@ internal sealed partial class PostgresObservationStore : IObservationStore, ISen
     private readonly ISchemaContext? _schemaContext;
     private readonly string? _configuredSchema;
     private readonly IConfiguration? _configuration;
+    private readonly ITenantContext? _tenantContext;
     private string _thingTable => SchemaSearchPath.QualifyTable("sta_thing", _schemaContext?.CurrentSchema ?? _configuredSchema);
     private string _sensorTable => SchemaSearchPath.QualifyTable("sta_sensor", _schemaContext?.CurrentSchema ?? _configuredSchema);
     private string _observedPropertyTable => SchemaSearchPath.QualifyTable("sta_observed_property", _schemaContext?.CurrentSchema ?? _configuredSchema);
@@ -39,7 +41,8 @@ internal sealed partial class PostgresObservationStore : IObservationStore, ISen
         PostgresCoreSchemaMigrationManifest migrations,
         string? schemaName = null,
         ISchemaContext? schemaContext = null,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        ITenantContext? tenantContext = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
@@ -49,6 +52,7 @@ internal sealed partial class PostgresObservationStore : IObservationStore, ISen
         _configuredSchema = schemaName;
         _schemaContext = schemaContext;
         _configuration = configuration;
+        _tenantContext = tenantContext;
     }
 
     private async Task VerifySchemaFloorAsync(CancellationToken cancellationToken)
