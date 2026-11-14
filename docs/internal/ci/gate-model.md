@@ -184,12 +184,13 @@ Stage 3 details:
   escalates an unknown range into a full run.
 - Optional affected CI admits at most 40 jobs using a conservative side-job
   bound plus selected shards, both before dispatch and again before execution
-  fanout. Full routing, unknown selection/history and an active PR Gate defer
-  the work to the twice-daily full run. Deferred execution cancels its workflow
-  before publishing change outputs, so it cannot record a successful CI base.
-- Admitted affected runs use two concurrent server shards. PR Gate's requested
-  and in-progress events cancel affected trunk dispatches to release the pool;
-  scheduled and manual full runs are never targeted. Full runs retain width 16.
+  fanout. Full routing and unknown selection/history defer the work to the
+  twice-daily full run; an active PR Gate does not. Deferred execution cancels
+  its workflow before publishing change outputs, so it cannot record a
+  successful CI base.
+- Admitted affected runs use two concurrent server shards and run beside PR
+  Gate; only a covering full run or their own admission recheck cancels them.
+  Full runs retain width 16.
 - Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)
@@ -1131,11 +1132,13 @@ router full-coverage escalation, API failure or a larger bound
 leaves coverage to the unchanged twice-daily full runs. A deferred dispatcher does
 not launch CI. A previously queued execution rechecks admission and cancels itself
 before publishing change outputs; neither cancellation nor a failed cancellation request can advance the successful CI base.
-Admitted affected runs use two concurrent server shards, so one holds at most
-one heavy runner while PR Gate runs. An active PR Gate does not defer or cancel
-an affected run: with up to ten open PRs a PR Gate is almost always active, and
-from 05:52 to 17:02 UTC on 14 Nov that rule admitted 0 of 32 dispatches, leaving
-trunk with only the twice-daily full runs. Before it, completed affected runs
+Admitted affected runs use two concurrent server shards. Even matrix indices
+use the `honua-heavy` pool, so a run usually holds one heavy runner and at most
+two; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today.
+An active PR Gate does not defer or cancel an affected run. With up to ten open
+PRs a PR Gate is almost always active: from 05:52 to 17:02 UTC on 14 Nov the
+former PR-activity rule admitted 0 of 32 dispatches, leaving trunk with only the
+twice-daily full runs. Before that rule, completed affected runs
 took 4-62 minutes and PR Gate hosted jobs waited a median 4 s (p90 292 s) while
 one ran, against 3 s (p90 60 s) with no trunk CI, at the wider pre-cap width.
 

@@ -69,7 +69,6 @@ jobs:
         id: admission
         if: steps.base.outputs.superseded == 'false'
         env:
-          GH_TOKEN: ${{ github.token }}
           COMPLETED_BASE: ${{ steps.base.outputs.completed_base }}
           HEAD_SHA: ${{ steps.base.outputs.head }}
         run: python3 scripts/ci/affected_admission.py "${COMPLETED_BASE}" "${HEAD_SHA}"

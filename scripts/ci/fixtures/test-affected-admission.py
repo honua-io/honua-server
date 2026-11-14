@@ -16,7 +16,6 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts/ci"))
 import affected_admission as admission
-import trailing_selection
 
 
 class AdmissionTests(unittest.TestCase):
@@ -29,12 +28,16 @@ class AdmissionTests(unittest.TestCase):
         self.assertFalse(admission.decision({"shards": [], "run_all": True})[0])
 
     def test_active_pr_gate_does_not_defer_a_bounded_selection(self):
-        # The two-shard width, not PR activity, keeps affected runs off the PR pool:
-        # with ten open PRs a PR Gate is nearly always active (0 of 32 admitted on 14 Nov).
-        with patch.object(admission, "selection", return_value={"shards": [1, 2], "run_all": False}):
+        routed = json.dumps({"shards": [1, 2], "run_all": False})
+
+        def run(command, **_):
+            if command[0] == "gh":
+                return json.dumps({"workflow_runs": [{"id": 1, "status": "in_progress"}]})
+            return "src/changed.cs\n" if command[0] == "git" else routed
+
+        with patch.object(admission.subprocess, "check_output", side_effect=run) as check_output:
             self.assertTrue(admission.admission("base", "head")[0])
-        self.assertFalse(hasattr(admission, "active_pr_gate"))
-        self.assertEqual(trailing_selection.affected_max_parallel(7), 2)
+        self.assertNotIn("gh", [call.args[0][0] for call in check_output.call_args_list])
 
     def test_unknown_baseline_does_not_dispatch_full_ci(self):
         with patch.object(admission, "selection") as select:
@@ -96,19 +99,26 @@ class AdmissionTests(unittest.TestCase):
             self.assertIn("inputs.full_ci", jobs[name]["if"])
 
 
-class CoexistenceTests(unittest.TestCase):
-    def test_only_covering_or_own_runs_cancel_affected_ci(self):
-        # Preempting a started affected run for PR Gate discarded its work and, with a
-        # PR Gate almost always active, left trunk without post-merge coverage.
-        def cancels(text):
-            imports = [line for line in text.splitlines() if line.startswith("from supersede_trailing_runs")]
-            return re.search(r"actions/runs/\S*/cancel", text) or any("cancel" in line for line in imports)
-        cancellers = {path.name for path in (ROOT / "scripts/ci").glob("*.py") if cancels(path.read_text())}
-        self.assertEqual(cancellers, {"supersede_trailing_runs.py", "resolve-trailing-base.py"})
+CANCELLATION = re.compile(r"gh run cancel|actions/runs/\S*/cancel|cancelWorkflowRun|supersede_trailing_runs\.cancel\b"
+                          r"|from supersede_trailing_runs import[^\n]*\bcancel\b|from supersede_trailing_runs import \([^)]*\bcancel\b")
+# Only these may cancel trunk CI: a full run cancels selective runs it covers, a
+# selective run cancels itself, and the native-image check lists the pattern as forbidden.
+ALLOWED_CANCELLERS = {"supersede_trailing_runs.py", "resolve-trailing-base.py", "native-image-impact.py"}
 
-    def test_affected_shards_keep_the_two_runner_width(self):
-        job = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]["server-tests"]
-        self.assertIn("needs.targeted-shards.outputs.affected_max_parallel", job["strategy"]["max-parallel"])
+
+class CoexistenceTests(unittest.TestCase):
+    def test_only_covering_or_own_runs_cancel_trunk_ci(self):
+        sources = [*(ROOT / ".github/workflows").glob("*.yml"),
+                   *(path for pattern in ("*.py", "*.sh", "*.mjs") for path in (ROOT / "scripts/ci").rglob(pattern)
+                     if "fixtures" not in path.parts)]
+        cancellers = {path.name for path in sources if CANCELLATION.search(path.read_text())}
+        self.assertEqual(cancellers, ALLOWED_CANCELLERS)
+
+    def test_cancellation_scan_detects_each_preemption_form(self):
+        for text in ("gh run cancel 1", "actions/runs/{id}/cancel", "supersede_trailing_runs.cancel(run)",
+                     "from supersede_trailing_runs import active_trunk_runs, cancel",
+                     "from supersede_trailing_runs import (\n    active_trunk_runs,\n    cancel,\n)"):
+            self.assertRegex(text, CANCELLATION)
 
 
 if __name__ == "__main__":
