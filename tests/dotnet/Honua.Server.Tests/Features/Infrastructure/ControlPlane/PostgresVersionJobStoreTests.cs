@@ -142,6 +142,36 @@ public sealed class PostgresVersionJobStoreTests(DatabaseFixtureAdapter database
     }
 
     [IntegrationTest]
+    public async Task SaveAsync_WhenExpiredRowIsSweptAfterInsert_PersistsTheAdvance()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateVersionJobStore();
+        var pending = Job();
+        await store.SaveAsync(pending);
+        await harness.ExecuteAsync(
+            $"UPDATE {harness.Table("version_jobs")} SET expires_at = now() - interval '1 second'");
+
+        // Force the expiry sweep into the gap after an insert conflicts and before a later update.
+        // An atomic upsert renews the row before this statement trigger can sweep it.
+        await harness.ExecuteAsync($"""
+            CREATE FUNCTION {harness.Table("sweep_version_jobs_after_insert")}() RETURNS trigger
+            LANGUAGE plpgsql AS $body$
+            BEGIN
+                DELETE FROM {harness.Table("version_jobs")} WHERE expires_at <= now();
+                RETURN NULL;
+            END;
+            $body$;
+            CREATE TRIGGER sweep_version_jobs_after_insert AFTER INSERT ON {harness.Table("version_jobs")}
+            FOR EACH STATEMENT EXECUTE FUNCTION {harness.Table("sweep_version_jobs_after_insert")}();
+            """);
+
+        var succeeded = pending with { Status = VersionJobStatus.Succeeded };
+        await store.SaveAsync(succeeded);
+
+        (await harness.CreateVersionJobStore().GetAsync(pending.JobId)).Should().Be(succeeded);
+    }
+
+    [IntegrationTest]
     public async Task GetAsync_AfterRetention_ReturnsNullAndTheSweepDeletesTheJob()
     {
         await using var harness = await CreateHarnessAsync();
