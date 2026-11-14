@@ -35,7 +35,9 @@ SOURCES = {
 def run(**overrides: str) -> str:
     sources = dict(SOURCES)
     sources.update(overrides)
-    return MODULE.validate(**sources)
+    mode = MODULE.validate(**sources)
+    MODULE.validate_concurrency(sources["producer"], sources["consumer"])
+    return mode
 
 
 class NormalizationContractTests(unittest.TestCase):

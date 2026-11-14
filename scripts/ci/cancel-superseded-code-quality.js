@@ -1,6 +1,7 @@
 'use strict';
 
 // GitHub-managed Code Quality has no repository YAML concurrency setting.
+const CONFLICT_STATUS = 409;
 const QUALITY_PATH = 'dynamic/github-code-quality/codeql';
 const ACTIVE = new Set(['queued', 'in_progress', 'waiting', 'pending', 'requested']);
 
@@ -37,13 +38,17 @@ async function cancelSuperseded({github, context, core}) {
     // Events can arrive out of order; protect the live head, not the event SHA.
     head = await readHead();
     if (!superseded(run, branch, head)) continue;
-    try {
-      await github.rest.actions.cancelWorkflowRun({...context.repo, run_id: run.id});
-      core.info(`Cancelled superseded Code Quality run ${run.id} for PR #${number}`);
-    } catch (error) {
-      if (error.status !== 409) throw error; // A completed run needs no cancellation.
-      core.info(`Code Quality run ${run.id} already finished`);
-    }
+    await cancelRun({github, context, core}, run, number);
+  }
+}
+
+async function cancelRun({github, context, core}, run, number) {
+  try {
+    await github.rest.actions.cancelWorkflowRun({...context.repo, run_id: run.id});
+    core.info(`Cancelled superseded Code Quality run ${run.id} for PR #${number}`);
+  } catch (error) {
+    if (error.status !== CONFLICT_STATUS) throw error; // A completed run needs no cancellation.
+    core.info(`Code Quality run ${run.id} already finished`);
   }
 }
 
