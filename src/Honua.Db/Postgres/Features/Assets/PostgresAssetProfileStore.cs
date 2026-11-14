@@ -45,7 +45,7 @@ internal sealed class PostgresAssetProfileStore : IAssetProfileStore
             """,
             connection);
         command.Parameters.AddWithValue("service_id", NpgsqlDbType.Text, query.ServiceId);
-        command.Parameters.AddWithValue("after", NpgsqlDbType.Uuid, (object?)query.After ?? DBNull.Value);
+        command.Parameters.AddWithValue("after", NpgsqlDbType.Uuid, query.After.HasValue ? query.After.Value : DBNull.Value);
         command.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, query.Limit + 1);
 
         var items = new List<AssetProfile>();
