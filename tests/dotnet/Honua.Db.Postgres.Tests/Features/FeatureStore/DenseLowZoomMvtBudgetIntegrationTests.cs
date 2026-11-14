@@ -122,16 +122,7 @@ public sealed class DenseLowZoomMvtBudgetIntegrationTests : IAsyncLifetime
     [InlineData(1000)]
     public async Task GetMvtTile_AttributeHeavy_RetainsEveryFeatureIdentity(int configuredLimit)
     {
-        await _fixture.ExecuteAsync($"""
-            INSERT INTO {_schema}.features (layer_id, objectid, geometry, attributes)
-            SELECT 1, 2000 + g,
-                ST_SetSRID(ST_MakePoint(-120 + g * 0.001, 35), 4326),
-                jsonb_build_object('payload', repeat('x', 1024) || g::text)
-            FROM generate_series(1, 5000) g;
-            INSERT INTO {_schema}.dense_features (objectid, geom, payload)
-            SELECT objectid, geometry, attributes->>'payload'
-            FROM {_schema}.features WHERE objectid > 2000;
-            """);
+        await InsertAttributeHeavyFeaturesAsync();
         var query = new FeatureQuery { SpatialReferenceSrid = 4326 };
         var limits = new TileLimits { MaxTileSize = 512_000, MaxFeaturesPerTile = configuredLimit };
         var builder = CreateQueryBuilder();
@@ -163,6 +154,20 @@ public sealed class DenseLowZoomMvtBudgetIntegrationTests : IAsyncLifetime
                 .Select(feature => Convert.ToInt64(feature.Attributes["objectid"], System.Globalization.CultureInfo.InvariantCulture))
                 .Should().BeEquivalentTo(expectedIds);
         }
+    }
+
+    private async Task InsertAttributeHeavyFeaturesAsync()
+    {
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO {_schema}.features (layer_id, objectid, geometry, attributes)
+            SELECT 1, 2000 + g,
+                ST_SetSRID(ST_MakePoint(-120 + g * 0.001, 35), 4326),
+                jsonb_build_object('payload', repeat('x', 1024) || g::text)
+            FROM generate_series(1, 5000) g;
+            INSERT INTO {_schema}.dense_features (objectid, geom, payload)
+            SELECT objectid, geometry, attributes->>'payload'
+            FROM {_schema}.features WHERE objectid > 2000;
+            """);
     }
 
     [IntegrationTest]
