@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Collaboration.Operations;
+using Honua.Core.Features.Realtime;
 using Honua.Server.Features.Collaboration.Sessions;
 
 namespace Honua.Server.Features.Collaboration.Operations;
@@ -14,7 +15,7 @@ internal sealed class SavedMapOperationAppendCoordinator : IDisposable
     private readonly ISavedMapOperationLogRepository _repository;
     private readonly InMemoryCollaborationSessionService _sessions;
     private readonly SavedMapCollaborationTopology _topology;
-    private readonly ICollaborationSessionBackplane _backplane;
+    private readonly IRealtimeFanoutProvider? _provider;
     private readonly SemaphoreSlim[] _stripes;
     private bool _disposed;
 
@@ -22,12 +23,12 @@ internal sealed class SavedMapOperationAppendCoordinator : IDisposable
         ISavedMapOperationLogRepository repository,
         InMemoryCollaborationSessionService sessions,
         SavedMapCollaborationTopology topology,
-        ICollaborationSessionBackplane? backplane = null)
+        IRealtimeFanoutProvider? provider = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _topology = topology ?? throw new ArgumentNullException(nameof(topology));
-        _backplane = backplane ?? NullCollaborationSessionBackplane.Instance;
+        _provider = provider;
         _stripes = new SemaphoreSlim[StripeCount];
         for (var i = 0; i < StripeCount; i++)
         {
@@ -38,8 +39,7 @@ internal sealed class SavedMapOperationAppendCoordinator : IDisposable
 
     public bool CanAcceptEdits => !_topology.IsMultiReplica ||
         _repository.SupportsReplicaSharedReplay &&
-        _backplane.SupportsCrossReplicaDelivery &&
-        _backplane.SupportsOrderedOperationDelivery;
+        _provider?.Capabilities is { CrossNode: true, OrderedPerFamily: true, Resumable: true };
 
     public async Task<SavedMapOperationAppendResult> AppendAndPublishAsync(
         string canonicalMapId,
@@ -57,13 +57,11 @@ internal sealed class SavedMapOperationAppendCoordinator : IDisposable
         {
             var result = await _repository.AppendAsync(request, cancellationToken).ConfigureAwait(false);
 
-            // Bridge the committed op into the live session fan-out (#2999, REQ-002/REQ-004):
-            // clients submit edits over the REST append (typed conflict semantics stay there) and
-            // the WebSocket stream echoes the committed, server-ordered operation to every
-            // participant of the map — the op-log server cursor is the authoritative order, and
-            // publishing inside this gate is what makes the broadcast follow it.
+            // Shared PostgreSQL logs publish through the transaction trigger and ordered relay.
+            // Local repositories have no trigger and keep synchronous local delivery.
             if (result.Status == SavedMapOperationAppendStatus.Accepted &&
                 !result.IsDuplicate &&
+                (_provider is null || !_repository.SupportsReplicaSharedReplay) &&
                 result.Operation is not null)
             {
                 _sessions.PublishOperation(canonicalMapId, CollaborationOperationWire.FromEnvelope(result.Operation));

@@ -33,6 +33,8 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
 
     public NpgsqlDataSource DataSource => _jobs.DataSource;
 
+    public string Schema => _jobs.Schema;
+
     public string ConnectionString => _fixture.ConnectionString;
 
     public static async Task<RealtimeLogHarness> CreateAsync(DatabaseFixtureAdapter fixture)
