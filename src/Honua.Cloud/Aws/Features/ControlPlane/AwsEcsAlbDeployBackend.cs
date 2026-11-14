@@ -480,12 +480,21 @@ internal sealed partial class AwsSdkEcsClient : IAwsEcsClient, IDisposable
     }
 }
 
+internal sealed record AwsEcsAlbDeployClients(
+    IAwsAlbClient Alb,
+    IAwsEcsClient Ecs,
+    IRollbackDataPlaneProbe? DataPlaneProbe = null);
+
 internal sealed partial class AwsEcsAlbDeployBackend(
-    IAwsAlbClient albClient,
-    IAwsEcsClient ecsClient,
+    AwsEcsAlbDeployClients clients,
     ILogger<AwsEcsAlbDeployBackend> logger,
-    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend, ICheckpointedDeployBackend
+    IAwsDeploymentAlarmAdmission? alarmAdmission = null) : IDeployBackend, ICheckpointedDeployBackend
 {
+    private IAwsDeploymentAlarmAdmission? AlarmAdmission { get; } = alarmAdmission;
+    private IAwsAlbClient AlbClient => clients.Alb;
+    private IAwsEcsClient EcsClient => clients.Ecs;
+    private IRollbackDataPlaneProbe? DataPlaneProbe => clients.DataPlaneProbe;
+
     internal const string AdapterBackendName = "honua-aws-ecs-alb";
 
     public string BackendName => AdapterBackendName;
@@ -503,7 +512,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             SupportsRevisionPinning = true
         });
 
-    public Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default)
+    public async Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(spec);
         cancellationToken.ThrowIfCancellationRequested();
@@ -565,14 +574,20 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         AppendImageConvergencePlan(spec, blockingReasons, warnings);
 
-        return System.Threading.Tasks.Task.FromResult(new DeployPlan
+        if (AlarmAdmission is not null &&
+            await AlarmAdmission.GetBlockingReasonAsync(spec.TargetId, cancellationToken).ConfigureAwait(false) is { } alarmReason)
+        {
+            blockingReasons.Add(alarmReason);
+        }
+
+        return new DeployPlan
         {
             IsReadyToSubmit = blockingReasons.Count == 0 && !spec.RequiresApproval,
             RequiresApproval = spec.RequiresApproval,
             RequiresOutOfBandMigrations = spec.RequiresOutOfBandMigrations,
             BlockingReasons = blockingReasons,
             Warnings = warnings
-        });
+        };
     }
 
     public async Task<DeploySubmissionResult> StartAsync(
@@ -585,6 +600,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         var target = ResolveTarget(spec);
         EnsureValidTarget(target);
+        await EnsureAlarmAdmissionAsync(spec, cancellationToken).ConfigureAwait(false);
         if (RequiresCheckpoint(operation))
         {
             if (spec.CanaryRamp is { IsValid: true, CurrentStepIndex: > 0 } &&
@@ -627,7 +643,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                 appliedTaskDefinition = prepared.TaskDefinitionArn!;
             }
 
-            var canaryServiceState = await ecsClient.DescribeServiceAsync(
+            var canaryServiceState = await EcsClient.DescribeServiceAsync(
                     target.Cluster!,
                     target.CanaryService!,
                     target.Region,
@@ -639,7 +655,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             // mid-deploy failure (most importantly the ECS update below) can restore
             // the rule to the share it carried on entry rather than leaving traffic
             // pinned to a target group backed by a half-migrated task set.
-            originalRuleState = await albClient.GetListenerRuleWeightsAsync(
+            originalRuleState = await AlbClient.GetListenerRuleWeightsAsync(
                     target.ListenerRuleArn!,
                     target.Region,
                     cancellationToken)
@@ -653,7 +669,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             // call fails the ECS service has not yet been mutated.
             var canaryShare = canaryWeight ?? 100;
             var stableShare = 100 - canaryShare;
-            await albClient.UpdateListenerRuleWeightsAsync(
+            await AlbClient.UpdateListenerRuleWeightsAsync(
                     target.ListenerRuleArn!,
                     BuildWeights(target.CanaryTargetGroupArn!, canaryShare, target.StableTargetGroupArn!, stableShare),
                     target.Region,
@@ -661,7 +677,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                 .ConfigureAwait(false);
             albWeightsShifted = true;
 
-            await ecsClient.UpdateServiceTaskDefinitionAsync(
+            await EcsClient.UpdateServiceTaskDefinitionAsync(
                     target.Cluster!,
                     target.CanaryService!,
                     appliedTaskDefinition,
@@ -722,7 +738,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             {
                 try
                 {
-                    await albClient.UpdateListenerRuleWeightsAsync(
+                    await AlbClient.UpdateListenerRuleWeightsAsync(
                             target.ListenerRuleArn!,
                             originalRuleState.TargetGroupWeights,
                             target.Region,
@@ -761,12 +777,12 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                 desiredCanaryWeight = ramp.CurrentStepWeight;
             }
 
-            var ruleState = await albClient.GetListenerRuleWeightsAsync(
+            var ruleState = await AlbClient.GetListenerRuleWeightsAsync(
                     target.ListenerRuleArn!,
                     target.Region,
                     cancellationToken)
                 .ConfigureAwait(false);
-            var serviceState = await ecsClient.DescribeServiceAsync(
+            var serviceState = await EcsClient.DescribeServiceAsync(
                     target.Cluster!,
                     target.CanaryService!,
                     target.Region,
@@ -864,7 +880,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && convergence.IsConverged &&
                 operation.Deploy?.TrafficExposedAt is null)
             {
-                var health = await albClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+                var health = await AlbClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
                 if (serviceState.DesiredCount <= 0 || health.HealthyCount < serviceState.DesiredCount)
                 {
                     return new DeployObservation
@@ -897,7 +913,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && operation.Deploy?.TrafficExposedAt is not null &&
                 convergence.IsConverged && !albWeights.MatchesExpectedShare(0))
             {
-                var health = await albClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+                var health = await AlbClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
                 if (serviceState.DesiredCount <= 0 || health.HealthyCount < serviceState.DesiredCount)
                 {
                     return new DeployObservation
@@ -972,6 +988,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         var target = ResolveTarget(spec);
         EnsureValidTarget(target);
+        await EnsureAlarmAdmissionAsync(spec, cancellationToken).ConfigureAwait(false);
 
         using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendPromote, operation, target);
 
@@ -992,7 +1009,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         try
         {
-            await ecsClient.UpdateServiceTaskDefinitionAsync(
+            await EcsClient.UpdateServiceTaskDefinitionAsync(
                     target.Cluster!,
                     target.CanaryService!,
                     ReleaseImageDigest.IsImmutable(spec.DesiredRevision) ? operation.ProviderOperationId! : spec.CurrentRevision!,
@@ -1000,7 +1017,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            await albClient.UpdateListenerRuleWeightsAsync(
+            await AlbClient.UpdateListenerRuleWeightsAsync(
                     target.ListenerRuleArn!,
                     BuildWeights(target.CanaryTargetGroupArn!, 100, target.StableTargetGroupArn!, 0),
                     target.Region,
@@ -1056,7 +1073,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             }
             else
             {
-                await albClient.UpdateListenerRuleWeightsAsync(
+                await AlbClient.UpdateListenerRuleWeightsAsync(
                         target.ListenerRuleArn!,
                         BuildWeights(target.CanaryTargetGroupArn!, 0, target.StableTargetGroupArn!, 100),
                         target.Region,
@@ -1094,7 +1111,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         var identityAuthoritative = false;
         if (!string.IsNullOrWhiteSpace(stableServiceName))
         {
-            var stable = await ecsClient.DescribeServiceAsync(
+            var stable = await EcsClient.DescribeServiceAsync(
                     target.Cluster!,
                     stableServiceName,
                     target.Region,
@@ -1104,13 +1121,13 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             identityAuthoritative = !string.IsNullOrWhiteSpace(stableTaskDefinition);
         }
 
-        var health = await albClient.DescribeTargetHealthAsync(
+        var health = await AlbClient.DescribeTargetHealthAsync(
                 target.StableTargetGroupArn!,
                 target.Region,
                 cancellationToken)
             .ConfigureAwait(false);
         var functionalQuery = await RollbackDataPlaneCompletion.ProbeFunctionalQueryAsync(
-                dataPlaneProbe,
+                DataPlaneProbe,
                 spec.Parameters,
                 cancellationToken)
             .ConfigureAwait(false);

@@ -39,8 +39,7 @@ public sealed class AwsEcsAlbDeployBackendLiveTests
     {
         var operation = BuildOperation();
         var backend = new AwsEcsAlbDeployBackend(
-            new AwsSdkAlbClient(),
-            new AwsSdkEcsClient(),
+            new AwsEcsAlbDeployClients(new AwsSdkAlbClient(), new AwsSdkEcsClient()),
             NullLogger<AwsEcsAlbDeployBackend>.Instance);
 
         var observation = await backend.ObserveAsync(operation);
@@ -66,8 +65,7 @@ public sealed class AwsEcsAlbDeployBackendLiveTests
     {
         var operation = BuildOperation();
         var backend = new AwsEcsAlbDeployBackend(
-            new AwsSdkAlbClient(),
-            new AwsSdkEcsClient(),
+            new AwsEcsAlbDeployClients(new AwsSdkAlbClient(), new AwsSdkEcsClient()),
             NullLogger<AwsEcsAlbDeployBackend>.Instance);
 
         var plan = await backend.PlanAsync(operation.Deploy!);

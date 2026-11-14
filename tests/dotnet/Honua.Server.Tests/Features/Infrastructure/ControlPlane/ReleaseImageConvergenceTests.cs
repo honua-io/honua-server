@@ -503,7 +503,7 @@ public sealed class ReleaseImageConvergenceTests
         };
 
     private static AwsEcsAlbDeployBackend Backend(DigestAlbClient alb, DigestEcsClient ecs)
-        => new(alb, ecs, NullLogger<AwsEcsAlbDeployBackend>.Instance);
+        => new(new AwsEcsAlbDeployClients(alb, ecs), NullLogger<AwsEcsAlbDeployBackend>.Instance);
 
     private static Dictionary<string, string> EcsParameters()
         => new(StringComparer.Ordinal)

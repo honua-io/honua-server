@@ -17,6 +17,9 @@ internal static class BatchAndDeployBackendsRegistration
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
         services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
+        services.AddOptions<AwsDeploymentAlarmOptions>().BindConfiguration(AwsDeploymentAlarmOptions.SectionName);
+        services.AddSingleton<IAwsDeploymentAlarmClient, AwsSdkDeploymentAlarmClient>();
+        services.AddSingleton<IAwsDeploymentAlarmAdmission, AwsDeploymentAlarmAdmission>();
         services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
         services.AddSingleton<IEcsWorkloadControl, AwsSdkEcsWorkloadControl>();
         services.AddSingleton<ILambdaAliasRecycle, AwsSdkLambdaAliasRecycle>();
@@ -63,6 +66,9 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<KubernetesArgoRolloutsDeployBackend>();
 #if !HONUA_EXCLUDE_AWS
         services.AddSingleton<AwsEcsGitOpsDeployBackend>();
+        services.AddSingleton(sp => new AwsEcsAlbDeployClients(
+            sp.GetRequiredService<IAwsAlbClient>(), sp.GetRequiredService<IAwsEcsClient>(),
+            sp.GetRequiredService<IRollbackDataPlaneProbe>()));
         services.AddSingleton<AwsEcsAlbDeployBackend>();
 #endif
 #if !HONUA_EXCLUDE_AZURE
