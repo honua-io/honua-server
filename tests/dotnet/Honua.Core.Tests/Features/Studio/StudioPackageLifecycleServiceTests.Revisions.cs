@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -61,7 +62,9 @@ public sealed partial class StudioPackageLifecycleServiceTests
             var revision = await store.GetDraftRevisionAsync(draft.DraftId, draft.Generation);
             Assert.NotNull(revision);
             Assert.Equal("original", revision.Envelope.Body!.Value.GetProperty("where").GetString());
-            Assert.Equal(draft.Envelope.Bindings, revision.Envelope.Bindings);
+            Assert.Equal(
+                JsonSerializer.Serialize(draft.Envelope, StudioJsonContext.Default.StudioPackageEnvelope),
+                JsonSerializer.Serialize(revision.Envelope, StudioJsonContext.Default.StudioPackageEnvelope));
             Assert.Equal(draft.UpdatedBy, revision.UpdatedBy);
             Assert.Equal(draft.UpdatedAt, revision.UpdatedAt);
             await Assert.ThrowsAsync<InvalidOperationException>(() => store.UpdateDraftAsync(draft));
