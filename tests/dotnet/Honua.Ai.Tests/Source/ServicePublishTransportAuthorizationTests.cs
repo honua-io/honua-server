@@ -22,6 +22,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -30,10 +31,6 @@ using NSubstitute.ClearExtensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Real HTTP transport parity between the two hand-authored MCP publish tools
-/// and the REST <c>service.publish</c> submit endpoint.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.Mcp, TestProtocols.Admin)]
@@ -50,6 +47,7 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
     private readonly IGeoprocessingJobService _jobService;
     private readonly MutableApprovalEvaluator _approvalEvaluator = new();
     private readonly WebAppFixture _fixture;
+    private readonly RedisFixture _redis = new();
     private string _adminReadKey = null!;
     private string _adminWriteKey = null!;
 
@@ -118,7 +116,7 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
         resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns("Host=localhost;Database=test");
 
-        _fixture = new WebAppFixture()
+        _fixture = new WebAppFixture().WithProductionJobSubstrate()
             .ReplaceService<ILayerPublishingService>(_publishing)
             .ReplaceService<IMetadataV2GraphProvider>(_graphProvider)
             .ReplaceService<IGeoprocessingJobService>(_jobService)
@@ -141,6 +139,13 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        await _redis.InitializeAsync();
+        _fixture.ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
+            builder.UseSetting("Public:BaseUrl", "http://localhost");
+            builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+        });
         await _fixture.InitializeAsync();
         var keyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         _adminReadKey = (await keyStore.CreateAsync(
@@ -157,14 +162,18 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
             CancellationToken.None)).Key;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        await _fixture.DisposeAsync();
+        await _redis.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
     [Endpoint("POST /mcp tools/call honua_publish_service")]
     [Endpoint("POST /mcp tools/call honua_publish_result")]
     [Endpoint("POST /api/v1/operations/service.publish/submit")]
-    public async Task PublishAuthority_RealTransportTwentyFourCaseMatrix_MatchesRest()
+    public async Task PublishAuthority_RealTransportTwentyFourCaseMatrix_RequiresHumanApprovalForMcp()
     {
         var cases = (
             from tool in Enum.GetValues<PublishTool>()
@@ -182,10 +191,10 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
                 : AdmissionOutcome.Denied;
 
             using var restClient = CreateClient(testCase.Profile);
-            var restPolicyRef = await AssertRestTwinAsync(restClient, expected, testCase);
+            await AssertRestTwinAsync(restClient, expected, testCase);
 
             using var mcpClient = CreateClient(testCase.Profile);
-            await AssertMcpAsync(mcpClient, expected, restPolicyRef, testCase);
+            await AssertMcpAsync(mcpClient, testCase);
         }
     }
 
@@ -233,13 +242,13 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
         }
 
         using var approvalDocument = JsonDocument.Parse(body);
-        return approvalDocument.RootElement.GetProperty("policyRef").GetString();
+        var policyRef = approvalDocument.RootElement.GetProperty("policyRef").GetString();
+        policyRef.Should().Be("operator.publish");
+        return policyRef;
     }
 
     private async Task AssertMcpAsync(
         HttpClient client,
-        AdmissionOutcome expected,
-        string? restPolicyRef,
         MatrixCase testCase)
     {
         ClearSpies();
@@ -250,34 +259,31 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
 
         using var document = JsonDocument.Parse(body);
         var result = document.RootElement.GetProperty("result");
-        if (expected == AdmissionOutcome.Allowed)
+        if (testCase.Profile == PrincipalProfile.AdminWrite)
         {
-            result.GetProperty("isError").GetBoolean().Should().BeFalse(Describe(testCase, "MCP"));
-            result.GetProperty("structuredContent").GetProperty("metadataRevision").GetInt64()
-                .Should().Be(42);
-            await AssertSingleActuationAsync();
+            result.GetProperty("isError").GetBoolean().Should().BeFalse($"{Describe(testCase, "MCP")}: {body}");
+            var proposal = result.GetProperty("structuredContent");
+            proposal.GetProperty("status").GetString().Should().Be("RequiresApproval");
+            proposal.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace();
+            await AssertZeroActuationAsync();
             if (testCase.Tool == PublishTool.PublishResult)
             {
                 await _jobService.Received(1).GetJobResultsAsync(
-                    "publish-matrix-job",
-                    Arg.Any<ClaimsPrincipal>(),
-                    Arg.Any<CancellationToken>());
+                    "publish-matrix-job", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());
             }
+
+            var handle = await HumanApprovedOperation.ApproveAndReadHandleAsync(
+                _fixture, proposal.GetProperty("proposalId").GetString()!);
+            handle.GetProperty("status").GetString().Should().Be("Completed");
+            handle.GetProperty("metadataRevision").GetInt64().Should().Be(42);
+            await AssertSingleActuationAsync();
             return;
         }
 
         result.GetProperty("isError").GetBoolean().Should().BeTrue(Describe(testCase, "MCP"));
-        var expectedCode = expected == AdmissionOutcome.RequiresApproval
-            ? "failed_precondition"
-            : testCase.Profile == PrincipalProfile.Anonymous ? "unauthenticated" : "permission_denied";
+        var expectedCode = testCase.Profile == PrincipalProfile.Anonymous ? "unauthenticated" : "permission_denied";
         result.GetProperty("structuredContent").GetProperty("code").GetString()
             .Should().Be(expectedCode, Describe(testCase, "MCP"));
-        if (expected == AdmissionOutcome.RequiresApproval)
-        {
-            restPolicyRef.Should().Be("operator.publish");
-            result.GetProperty("structuredContent").GetProperty("policyRef").GetString()
-                .Should().Be(restPolicyRef, "MCP must expose the policy selected by the REST-equivalent gate");
-        }
         await AssertZeroActuationAsync();
         await _jobService.DidNotReceive().GetJobResultsAsync(
             Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());

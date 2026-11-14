@@ -153,6 +153,8 @@ public sealed class GeoprocessingJobTerminalServiceTests
     [Fact]
     public async Task DispatchOrphanedCancellation_ReturnsBeforeSlowCleanupCompletes()
     {
+        var cleanupPrincipal = new ClaimsPrincipal(_principal);
+        _jobs.CaptureOrphanCleanupPrincipal("job-1", _principal).Returns(cleanupPrincipal);
         var running = CreateJob(ExecutionJobStatus.Running);
         var cancelled = CreateJob(ExecutionJobStatus.Cancelled);
         var cleanupStarted = new TaskCompletionSource(
@@ -189,11 +191,14 @@ public sealed class GeoprocessingJobTerminalServiceTests
 
         releaseCleanup.TrySetResult();
         await cleanupCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await _jobs.Received(1).CancelAbandonedJobAsync(
+            "job-1", cleanupPrincipal, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task DispatchOrphanedCancellation_UnsuccessfulTypedOutcome_IsLogged()
     {
+        _jobs.CaptureOrphanCleanupPrincipal("job-1", _principal).Returns(new ClaimsPrincipal(_principal));
         _jobs.GetJobForTerminalAsync("job-1", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(CreateJob(ExecutionJobStatus.Running));
         _jobs.CancelAbandonedJobAsync("job-1", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())

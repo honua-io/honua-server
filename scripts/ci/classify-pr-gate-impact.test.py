@@ -140,6 +140,7 @@ for governed in sorted(MODULE.LEAN_GATE_GOVERNED_DOCS):
 # changes the classifier blob that observation receipts bind.
 REFERENCE_ONLY_DOCS = frozenset(
     {
+        "docs/internal/ci/affected-shards-promotion.md",
         "docs/internal/admin-api/studio-package-lifecycle.md",
         "docs/internal/contributor/adr/0041-core-abstractions-extraction.md",
         "docs/internal/contributor/entitlement-sweep-known-gaps.md",
@@ -174,7 +175,7 @@ for hostile in (
 # status check fires before the path check, which is the fail-closed order.
 for status in ("removed", "renamed", "copied", "changed", "unchanged", ""):
     classified = MODULE.classify(
-        payload([{"filename": "docs/internal/operator/audit-coverage-matrix.md", "status": status}])
+        payload([{"filename": "docs/internal/operations/audit-coverage-matrix.md", "status": status}])
     )
     assert classified["mode"] == "full", status
     assert classified["reason"] == "rename-delete-or-unknown-status", status

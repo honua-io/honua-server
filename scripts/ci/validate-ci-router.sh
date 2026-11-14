@@ -45,8 +45,10 @@ router_fixtures_init "$@"
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-router-fixtures.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-router-fixtures.py
+  run_fixture hygiene-cancellation "${PYTHON_BIN}" scripts/ci/fixtures/test-repo-hygiene-cancellation.py
 fi
 
+run_fixture heavy-shutdown-retry node --test scripts/ci/heavy-shutdown-retry.test.js
 run_fixture review-revalidation node --test .github/scripts/revalidate-exact-head-review.test.cjs
 
 echo "Validating review-first PR Gate transition..."
@@ -60,6 +62,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-ogc-rc-workflows.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-ogc-rc-workflows.py
   run_fixture scripts/ci/fixtures/validate-testcontainer-images.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   run_fixture scripts/ci/fixtures/validate-heavy-runners.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
+  run_fixture scripts/ci/fixtures/test-affected-admission.py "${PYTHON_BIN}" scripts/ci/fixtures/test-affected-admission.py
   run_fixture scripts/ci/fixtures/validate-trunk-affected.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
   run_fixture scripts/ci/fixtures/validate-affected-ci-lanes.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-ci-lanes.py
   run_fixture scripts/ci/fixtures/validate-project-overlap.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-project-overlap.py
@@ -68,6 +71,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/source-inventory-pilot/test_run.py "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
   run_fixture scripts/ci/fixtures/validate-mcp-server-auth.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
   run_fixture scripts/ci/validate-pr-gate-impact.sh env HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
+  run_fixture scripts/ci/check-evidence-workflow.test.py "${PYTHON_BIN}" scripts/ci/check-evidence-workflow.test.py
   run_fixture scripts/ci/audit-impact-routing-evidence.test.py "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   run_fixture scripts/ci/collect-impact-routing-runs.test.py "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
   run_fixture scripts/ci/audit-affected-shards.test.py "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
@@ -1696,7 +1700,9 @@ run_fixture scripts/ci/test-featureserver-capacity-partition.py "${PYTHON_BIN}" 
 run_fixture scripts/ci/test-mcp-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-mcp-capacity-partition.py
 run_fixture scripts/ci/test-console-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-console-capacity-partition.py
 run_fixture scripts/ci/test-odata-core-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-odata-core-capacity-partition.py
+run_fixture scripts/ci/test-replica-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-replica-capacity-partition.py
 run_fixture scripts/ci/test-streaming-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-streaming-capacity-partition.py
+run_fixture scripts/ci/test-live-output-capacity-partitions.py "${PYTHON_BIN}" scripts/ci/test-live-output-capacity-partitions.py
 run_fixture scripts/ci/check-server-test-shard-coverage.test.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
@@ -1792,7 +1798,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Analytics Studio Export and Reporting" \
+    "Server Features Analytics Studio Export and Reporting 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1816,7 +1822,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Import.ImportCancellationMonitorTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import" \
+    "File and Raster Import 1" \
   --assert-owner \
     "Honua.Server.Tests.Import.ImportCoordinatorRecoveryTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1828,7 +1834,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Import.RasterImportEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import" \
+    "File and Raster Import 3" \
   --assert-owner \
     "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
