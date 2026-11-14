@@ -159,7 +159,7 @@ public sealed class MetadataReleaseReconcilerTests
     }
 
     [Fact]
-    public async Task PostActivationRegression_RestoresPriorRevision_PreservesData_AndVerifiesRecovery()
+    public async Task PostActivationRegression_RestoresPriorDocumentAsNewRevision_PreservesData_AndVerifiesRecovery()
     {
         var harness = new ReleaseHarness(faultInjection: true);
         var id = await harness.SubmitAsync();
@@ -172,10 +172,10 @@ public sealed class MetadataReleaseReconcilerTests
         var final = await harness.DriveToTerminalAsync(id);
 
         final.Status.Should().Be(WorkflowOperationStatus.RolledBack);
-        final.CurrentPhase.Should().Contain("Reactivated prior revision 1").And.Contain("Recovered revision 1 verified");
+        final.CurrentPhase.Should().Contain("Restored prior revision 1 as new revision 3").And.Contain("Recovered revision 3 verified");
         final.MetadataRelease!.EvidenceRefs.Select(e => e.Kind).Should().Equal("smoke-candidate", "smoke", "smoke-recovered");
-        harness.Graph.Current.Revision.Should().Be(1);
-        harness.Graph.CurrentHistory.Should().Equal(1L, 2L, 1L);
+        harness.Graph.Current.Revision.Should().Be(3);
+        harness.Graph.CurrentHistory.Should().Equal(1L, 2L, 3L);
         ReleaseHarness.HasField(harness.Graph.Current, "parcels", NewField).Should().BeFalse();
         harness.Physical.Snapshot(ReleaseHarness.ParcelsLayer).Should().BeEquivalentTo(physicalBeforeRollback,
             "rollback restores metadata only; physical rows, including ETL-populated values, are untouched");
@@ -332,14 +332,14 @@ public sealed class MetadataReleaseReconcilerTests
         var requested = await harness.DriveUntilAsync(id, op => op.Status == WorkflowOperationStatus.RollbackRequested);
 
         await harness.StepAsync(id);
-        harness.Graph.Current.Revision.Should().Be(1);
+        harness.Graph.Current.Revision.Should().Be(3);
         await harness.Workflow.SetAsync(requested);
 
         var final = await harness.DriveToTerminalAsync(id);
 
         final.Status.Should().Be(WorkflowOperationStatus.RolledBack);
         final.CurrentPhase.Should().Contain("nothing to revert");
-        harness.Graph.CurrentHistory.Should().Equal(1L, 2L, 1L);
+        harness.Graph.CurrentHistory.Should().Equal(1L, 2L, 3L);
     }
 
     [Theory]
