@@ -10,7 +10,7 @@ public sealed class TestMetadataEnvironmentSnapshotReader(IEnumerable<MetadataV2
 {
     private readonly Dictionary<string, MetadataV2GraphSnapshot> _snapshots = graphs.ToDictionary(
         static graph => graph.Environment,
-        static graph => new MetadataV2GraphSnapshot(
+        graph => new MetadataV2GraphSnapshot(
             graph,
             $"etag-{graph.Environment}-{graph.Revision}",
             generatedAt),
