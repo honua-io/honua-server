@@ -39,6 +39,7 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
             builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            builder.UseSetting("MultiTenancy:Enabled", "true");
             builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
         });
 
