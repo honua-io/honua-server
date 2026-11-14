@@ -28,8 +28,11 @@ internal sealed partial class CacheServiceResponseCache
         {
             reservation.Writes.Pending--;
             reservation.Writes.HasPayload = true;
-            if (_reservations.TryGetValue(reservation.BudgetKey, out var current))
+            reservation.Writes.CompletedBytes = Math.Max(reservation.Writes.CompletedBytes, reservation.RequestedBytes);
+            if (_reservations.TryGetValue(reservation.BudgetKey, out var current) &&
+                ReferenceEquals(current.Writes, reservation.Writes))
             {
+                ReleaseExcessBytes(current);
                 _expirationOrder.Remove(current);
                 var expiresAt = DateTimeOffset.UtcNow.Add(expiration);
                 current.ExpiresAt = expiresAt > current.ExpiresAt ? expiresAt : current.ExpiresAt;
@@ -43,14 +46,28 @@ internal sealed partial class CacheServiceResponseCache
         lock (_budgetLock)
         {
             reservation.Writes.Pending--;
-            if (reservation.Writes.Pending == 0 && !reservation.Writes.HasPayload)
+            if (_reservations.TryGetValue(reservation.BudgetKey, out var current) &&
+                ReferenceEquals(current.Writes, reservation.Writes))
             {
-                if (_reservations.TryGetValue(reservation.BudgetKey, out var current) &&
-                    ReferenceEquals(current.Writes, reservation.Writes))
+                if (reservation.Writes.Pending == 0 && !reservation.Writes.HasPayload)
                 {
                     RemoveReservation(current);
                 }
+                else
+                {
+                    ReleaseExcessBytes(current);
+                }
             }
+        }
+    }
+
+    private void ReleaseExcessBytes(ResponseReservation reservation)
+    {
+        if (reservation.Writes.Pending == 0 && reservation.Writes.CompletedBytes > 0)
+        {
+            // Overlapping backend writes can finish in either order, so retain their largest successful payload.
+            _reservedBytes -= reservation.Bytes - reservation.Writes.CompletedBytes;
+            reservation.Bytes = reservation.Writes.CompletedBytes;
         }
     }
 
@@ -115,6 +132,7 @@ internal sealed partial class CacheServiceResponseCache
             {
                 StorageKey = storageKey,
                 ScopePrefix = scope,
+                RequestedBytes = bytes,
                 Writes = current?.Writes ?? new ResponseWrites()
             };
             return AddReservation(reservation);
@@ -126,6 +144,11 @@ internal sealed partial class CacheServiceResponseCache
 
     private ResponseReservation AddReservation(ResponseReservation reservation)
     {
+        if (reservation.Writes.Pending == 0)
+        {
+            reservation.Writes.CompletedBytes = 0;
+        }
+
         reservation.Writes.Pending++;
         _reservations[reservation.BudgetKey] = reservation;
         _expirationOrder.Add(reservation);
@@ -180,7 +203,8 @@ internal sealed partial class CacheServiceResponseCache
     private sealed class ResponseReservation(string budgetKey, long bytes, DateTimeOffset expiresAt)
     {
         public string BudgetKey { get; } = budgetKey;
-        public long Bytes { get; } = bytes;
+        public long Bytes { get; set; } = bytes;
+        public required long RequestedBytes { get; init; }
         public DateTimeOffset ExpiresAt { get; set; } = expiresAt;
         public required string StorageKey { get; init; }
         public required string ScopePrefix { get; init; }
@@ -190,6 +214,7 @@ internal sealed partial class CacheServiceResponseCache
     private sealed class ResponseWrites
     {
         public int Pending { get; set; }
+        public long CompletedBytes { get; set; }
         public bool HasPayload { get; set; }
         public bool Reclaiming { get; set; }
     }
