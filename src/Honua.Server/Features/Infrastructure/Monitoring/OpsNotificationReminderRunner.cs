@@ -41,7 +41,7 @@ internal sealed class OpsNotificationReminderRunner(
     }
 
     private async Task DispatchAsync(OpsNotificationSchedule schedule,
-        IReadOnlyDictionary<string, OpsFinding> findings, CancellationToken cancellationToken)
+        Dictionary<string, OpsFinding> findings, CancellationToken cancellationToken)
     {
         var terminal = false;
         OperationProposal? proposal = null;
@@ -67,7 +67,7 @@ internal sealed class OpsNotificationReminderRunner(
             Title = terminal ? "Approval expired without execution" :
                 schedule.Source == "proposal" ? "Human approval required" : "Operational finding remains open",
             Body = $"{schedule.Source} {schedule.SubjectId}. Review in the authenticated operations console at /operate/copilot.",
-            DedupeIdentifier = $"{schedule.Source}:{schedule.SubjectId}:{schedule.EpisodeId:N}:{schedule.NoticeNumber}",
+            DedupeIdentifier = $"{schedule.Source}:{schedule.SubjectId}:{schedule.EpisodeId:N}:{schedule.Severity}:{schedule.NoticeNumber}",
             ProposalId = proposal?.ProposalId,
             OperationInstanceId = proposal?.Audit?.OperationInstanceId,
             CorrelationId = proposal?.Audit?.CorrelationId,
@@ -75,6 +75,10 @@ internal sealed class OpsNotificationReminderRunner(
         };
         if (!await notifications.TryNotifyAsync(notification, cancellationToken).ConfigureAwait(false))
         {
+            // Keep the pending ordinal, but let later due rows progress when this row is filtered
+            // or delivery is disabled. A later enable/retry still uses the same outbox identity.
+            await schedules.TryDeferAsync(schedule, timeProvider.GetUtcNow().AddMinutes(1), cancellationToken)
+                .ConfigureAwait(false);
             return;
         }
         var now = timeProvider.GetUtcNow();
@@ -84,7 +88,9 @@ internal sealed class OpsNotificationReminderRunner(
         }
         else
         {
-            var next = OpsNotificationCadence.NextNotice(schedule.Severity, schedule.FirstSeenAt, now);
+            var next = schedule.Source == "proposal"
+                ? now.AddDays(1)
+                : OpsNotificationCadence.NextNotice(schedule.Severity, schedule.FirstSeenAt, now);
             await schedules.TryAdvanceAsync(schedule, next, cancellationToken).ConfigureAwait(false);
         }
     }

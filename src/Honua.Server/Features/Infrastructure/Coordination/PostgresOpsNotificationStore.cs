@@ -144,6 +144,23 @@ internal sealed class PostgresOpsNotificationStore(JobStoreDatabase database)
             return schedules;
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 
+    public Task<bool> TryDeferAsync(OpsNotificationSchedule schedule, DateTimeOffset retryAt,
+        CancellationToken cancellationToken = default)
+        => database.ExecuteAsync(async (connection, _, token) =>
+        {
+            await using var command = new NpgsqlCommand($"""
+                UPDATE {_schedules} SET next_notice_at = @retry, revision = revision + 1
+                WHERE source = @source AND subject_id = @subject AND episode_id = @episode
+                    AND revision = @revision AND closed_at IS NULL
+                """, connection);
+            command.Parameters.AddWithValue("source", schedule.Source);
+            command.Parameters.AddWithValue("subject", schedule.SubjectId);
+            command.Parameters.AddWithValue("episode", schedule.EpisodeId);
+            command.Parameters.AddWithValue("revision", schedule.Revision);
+            command.Parameters.AddWithValue("retry", retryAt);
+            return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+        }, StatementRepeat.NotAfterSend, cancellationToken);
+
     public Task<bool> TryAdvanceAsync(OpsNotificationSchedule schedule, DateTimeOffset nextNoticeAt,
         CancellationToken cancellationToken = default)
         => database.ExecuteAsync(async (connection, _, token) =>

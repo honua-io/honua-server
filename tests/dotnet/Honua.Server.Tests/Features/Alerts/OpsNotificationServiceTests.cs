@@ -219,7 +219,7 @@ public sealed class OpsNotificationServiceTests
         var sut = Create(outbox, out _, out _, enabled: true, channels: ["webhook"]);
         outbox.CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
             Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("outbox unavailable"));
+            .Returns(Task.FromException<ImmutableArray<bool>>(new InvalidOperationException("outbox unavailable")));
         var act = async () => await sut.TryNotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
