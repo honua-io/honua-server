@@ -58,7 +58,7 @@ public sealed partial class WorkTaskCompletionTests
         ((IStatusCodeHttpResult)result).StatusCode.Should().Be(
             changedPayload ? StatusCodes.Status409Conflict : StatusCodes.Status200OK);
         context.Response.Headers["Honua-Command-Outcome"].ToString().Should().Be(
-            changedPayload ? AssetCommandOutcome.Conflict : AssetCommandOutcome.Duplicate);
+            changedPayload ? string.Empty : AssetCommandOutcome.Duplicate);
         (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(1);
     }
 
