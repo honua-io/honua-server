@@ -14,13 +14,15 @@ namespace Honua.Server.Tests.Realtime;
 public sealed class ObservationEventLogTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
-    public async Task Insert_StatementGroupsDatastreamsAndSplitsAtOneThousand()
+    public async Task Insert_StatementGroupsDatastreamsAndBoundsEveryBatch()
     {
         await using var harness = await CreateHarnessAsync();
         await InsertAsync(harness, 2001, "tenant-a", null);
 
-        (await harness.ScalarAsync<string>($"SELECT string_agg(scope_key || ':' || jsonb_array_length(payload->'observations'), ',' ORDER BY seq) FROM {harness.Table("realtime_events")}"))
-            .Should().Be("1:1000,2:1000,2:1");
+        (await harness.ScalarAsync<string>($"SELECT string_agg(scope_key || ':' || total, ',' ORDER BY scope_key) FROM (SELECT scope_key, sum(jsonb_array_length(payload->'observations')) AS total FROM {harness.Table("realtime_events")} GROUP BY scope_key) AS totals"))
+            .Should().Be("1:1000,2:1001");
+        (await harness.ScalarAsync<bool>($"SELECT bool_and(jsonb_array_length(payload->'observations') <= 1000 AND octet_length(payload::text) <= 65536 AND payload->>'datastreamId' = scope_key) FROM {harness.Table("realtime_events")}"))
+            .Should().BeTrue();
         (await harness.ScalarAsync<bool>($"SELECT bool_and(payload->'scope' = jsonb_build_object('tenantId','tenant-a','schema',null)) FROM {harness.Table("realtime_events")}"))
             .Should().BeTrue();
     }
