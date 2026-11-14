@@ -4,12 +4,15 @@
 using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -184,6 +187,48 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
         (await deep.Content.ReadAsStringAsync()).Should().Be("Not Ready");
         liveness.StatusCode.Should().Be(HttpStatusCode.OK);
         (await liveness.Content.ReadAsStringAsync()).Should().Be("Healthy");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Integration")]
+    [Operation(Operations.ReadinessCheck)]
+    [Endpoint("GET /healthz/deep")]
+    public async Task DeepHealthEndpoint_OutputCacheEnabled_CatalogFailureRemainsBoundedAndSanitized(bool stalls)
+    {
+        var checker = Substitute.For<IDatabaseHealthChecker>();
+        checker.IsDatabaseHealthyAsync(Arg.Any<CancellationToken>()).Returns(true);
+        var catalog = Substitute.For<IMetadataV2GraphProvider>();
+        var pending = new TaskCompletionSource<MetadataV2GraphSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        catalog.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(call => stalls
+            ? new ValueTask<MetadataV2GraphSnapshot>(pending.Task)
+            : throw new InvalidOperationException("secret catalog failure"));
+        using var host = Configure(checker, catalog).WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            var license = new TestLicenseEntitlementService(HonuaEdition.Pro);
+            services.AddSingleton<ILicenseEntitlementService>(license);
+            services.AddSingleton<ILicenseStatusProvider>(license);
+        }));
+        using var client = host.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(15);
+        try
+        {
+            using var response = await client.GetAsync("/healthz/deep");
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await response.Content.ReadAsStringAsync()).Should().Be("Not Ready");
+            response.Headers.CacheControl!.NoStore.Should().BeTrue();
+            await checker.Received(1).IsDatabaseHealthyAsync(Arg.Any<CancellationToken>());
+            if (stalls)
+            {
+                pending.Task.IsCompleted.Should().BeFalse();
+            }
+        }
+        finally
+        {
+            pending.TrySetResult(new MetadataV2GraphSnapshot(new MetadataV2Graph(), "empty", DateTimeOffset.UtcNow));
+        }
     }
 
     private WebApplicationFactory<Program> Configure(IDatabaseHealthChecker checker, IMetadataV2GraphProvider catalog)
