@@ -52,7 +52,8 @@ internal static class LayerPublishingEndpoints
             .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound)
             .Produces<ApiResponse<object>>(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .AddEndpointFilter(AgentApprovalFilter.Publish);
 
         group.MapGet("/jobs/{jobId}", HandleGetLayerPublishJob)
             .WithDisplayName("Get Layer Publish Job")
@@ -62,15 +63,18 @@ internal static class LayerPublishingEndpoints
 
         group.MapPut("/{storageLayerId:int}/enabled", HandleSetLayerEnabled)
             .WithDisplayName("Set Layer Enabled")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .AddEndpointFilter(AgentApprovalFilter.LayerState);
 
         group.MapPut("/enabled", HandleSetServiceLayersEnabled)
             .WithDisplayName("Set Service Layers Enabled")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .AddEndpointFilter(AgentApprovalFilter.LayerState);
 
         group.MapPost("/extents/refresh", HandleRefreshLayerExtents)
             .WithDisplayName("Refresh Layer Extents")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(AgentApprovalFilter.LayerState)
             .Produces<ApiResponse<LayerExtentRefreshResult>>(StatusCodes.Status200OK)
             .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -80,6 +84,7 @@ internal static class LayerPublishingEndpoints
         group.MapPost("/{storageLayerId:int}/features/refresh", HandleRefreshLayerFeatures)
             .WithDisplayName("Refresh Layer Feature Snapshot")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(AgentApprovalFilter.LayerState)
             .Produces<ApiResponse<MaterializedFeatureRefreshResult>>(StatusCodes.Status200OK)
             .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status403Forbidden)

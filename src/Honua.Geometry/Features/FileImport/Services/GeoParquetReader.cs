@@ -256,7 +256,7 @@ internal static class GeoParquetReader
 
         var totalRowCount = reader.Metadata?.NumRows ?? 0;
         stream.Position = 0;
-        return new GeoParquetFileMetadata(geoMeta.Srid, isWkbEncoding, warnings.ToArray(), totalRowCount, GetUnsupportedReason(geoMeta), geoMeta.CoordinateEpoch);
+        return new GeoParquetFileMetadata(geoMeta.Srid, isWkbEncoding, warnings.ToArray(), totalRowCount, GetUnsupportedReason(geoMeta), geoMeta.CoordinateEpoch, geoMeta.Crs84Implied);
     }
 
     // The streaming importer batches these same feature instances; semantic facts never enter
@@ -296,7 +296,8 @@ internal static class GeoParquetReader
         string[] Warnings,
         long TotalRowCount,
         string? UnsupportedReason,
-        double? CoordinateEpoch = null);
+        double? CoordinateEpoch = null,
+        bool Crs84Implied = false);
 
     /// <summary>
     /// Opens a Parquet reader, normalizing library-level I/O and format errors

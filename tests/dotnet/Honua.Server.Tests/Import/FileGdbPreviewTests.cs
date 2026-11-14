@@ -61,6 +61,10 @@ public sealed class FileGdbPreviewTests : IAsyncLifetime
         responseContent.Should().Contain("FileGdb");
         responseContent.Should().Contain("totalFeatureCount");
         responseContent.Should().Contain("availableLayers");
+        using var json = System.Text.Json.JsonDocument.Parse(responseContent);
+        var crs = json.RootElement.GetProperty("coordinateSystem");
+        crs.GetProperty("sourceCrsDeclared").GetBoolean().Should().BeTrue();
+        crs.GetProperty("detectedSrid").GetInt32().Should().BePositive();
     }
 
     [IntegrationTest]

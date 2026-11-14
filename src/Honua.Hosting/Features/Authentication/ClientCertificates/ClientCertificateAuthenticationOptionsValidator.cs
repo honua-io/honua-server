@@ -19,6 +19,11 @@ internal sealed class ClientCertificateAuthenticationOptionsValidator
             failures.Add($"{ClientCertificateAuthenticationOptions.SectionName}:EnvironmentId is required when client-certificate authentication is enabled.");
         }
 
+        if (options.TrustProfilesRevision < 1)
+        {
+            failures.Add($"{ClientCertificateAuthenticationOptions.SectionName}:TrustProfilesRevision must be positive.");
+        }
+
         ValidateForwardedCertificate(options, failures);
         ValidateProfiles(options, failures);
 

@@ -37,7 +37,7 @@ concurrency:
 env:
   # Keep Testcontainers cleanup enabled with its identical upstream index.
   TESTCONTAINERS_RYUK_CONTAINER_IMAGE: 'mirror.gcr.io/testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0'
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   # Reuse the persistent MSBuild server across this job's restore, gate build,
   # and no-build test invocations. Managed producer properties disable Roslyn sharing.
   DOTNET_CLI_USE_MSBUILD_SERVER: true
@@ -791,7 +791,7 @@ jobs:
     # The shard's OWN outer budget from .github/ci-shards.json, exactly as
     # ci.yml::server-tests applies it. Substituting a flat cap here would make
     # this lane time out on shards the trailing matrix runs comfortably, which
-    # is precisely the false red measured in docs/ci/affected-shards-promotion.md.
+    # is precisely the false red measured in docs/internal/ci/affected-shards-promotion.md.
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: true

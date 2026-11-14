@@ -1936,7 +1936,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             throw new ArgumentException($"Invalid PostGIS encoded projection alias '{fieldName}'.");
         }
 
-        return $"\"{sanitized.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+        return SqlIdentifier.QuoteIdentifier(sanitized);
     }
 
     private static string ValidateAndQuoteIdentifier(string identifier)
@@ -1947,7 +1947,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             throw new InvalidOperationException($"Invalid PostGIS identifier '{identifier}'.");
         }
 
-        return $"\"{sanitized}\"";
+        return SqlIdentifier.QuoteIdentifier(sanitized);
     }
 
     private static bool IsSafeIdentifier(string identifier)

@@ -102,7 +102,7 @@ public sealed class RenderGoldenTests
     {
         var assemblyLocation = typeof(RenderGoldenTests).GetTypeInfo().Assembly.Location;
         var binDir = Path.GetDirectoryName(assemblyLocation)!;
-        // bin/Debug/net10.0 -> repo-relative Features/Reporting/Goldens
+        // bin/Debug/<tfm> -> repo-relative Features/Reporting/Goldens
         // All later Path.Combine args below are fixed relative literals ("..", "Features", etc.),
         // never rooted, so the earlier absolute segment is never dropped.
         var projectDir = Path.GetFullPath(Path.Join(binDir, "..", "..", ".."));

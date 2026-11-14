@@ -18,11 +18,13 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Geoprocessing;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Tests.Admin;
+using Honua.Server.Tests.Features.Admin;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -61,7 +63,10 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     public async Task CommittedPostgisSink_ResultPackagePublishesAndQueriesAuthoredRows()
     {
         await database.DataSource.ClearJobSubstrateAsync();
-        var fixture = BuildWorkflowFixture();
+        using var identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
+        // Use the issued managed key as the proposer, including after the host restart.
+        var fixture = HumanApprovalHttpClient.Configure(BuildWorkflowFixture(), identityProvider)
+            .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
         await fixture.InitializeAsync();
         await McpPublicationFixtureSetup.InstallPromotionStoresAsync(fixture);
         var table = $"gp_result_{Guid.NewGuid():N}";
@@ -255,6 +260,7 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
 
             using var client = fixture.CreateAdminClient();
             client.Timeout = TimeSpan.FromSeconds(90);
+            await McpPublicationFixtureSetup.UseManagedPublicationKeyAsync(fixture.Services, client);
             using (var resourceResponse = await client.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0",
@@ -300,12 +306,12 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
             toolResult.TryGetProperty("isError", out var isError);
             (isError.ValueKind == JsonValueKind.True).Should().BeFalse(publishBody);
             var result = toolResult.GetProperty("structuredContent");
-            result.GetProperty("status").GetString().Should().Be("Completed", publishBody);
-            var serviceUri = result.GetProperty("serviceUri").GetString();
-            serviceUri.Should().Be($"honua://published-services/{service}");
-            var publishedServiceId = result.GetProperty("serviceId").GetString();
+            using var human = await HumanApprovalHttpClient.AuthenticateAsync(fixture, identityProvider);
+            var completed = await McpPublicationFixtureSetup.ApprovePublicationAsync(human, client, result);
+            var publishedServiceId = completed.Result!.Details["serviceName"];
+            await AssertPublishedServiceResourceAsync(client, service);
             publishedServiceId.Should().Be(service);
-            var serviceLayerIndex = result.GetProperty("serviceLayerIndex").GetString();
+            var serviceLayerIndex = completed.Result.Details["serviceLayerIndex"];
             serviceLayerIndex.Should().NotBeNullOrWhiteSpace();
 
             using var query = await client.GetAsync($"/rest/services/{publishedServiceId}/FeatureServer/{serviceLayerIndex}" +
@@ -1082,5 +1088,20 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
         root.GetProperty("type").GetString().Should().Be("MeasureResult");
         root.GetProperty("processId").GetString().Should().Be(expectedProcessId);
         return root;
+    }
+
+    private static async Task AssertPublishedServiceResourceAsync(HttpClient client, string service)
+    {
+        using var serviceResourceResponse = await client.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = 3,
+            method = "resources/read",
+            @params = new { uri = $"honua://published-services/{service}" }
+        });
+        serviceResourceResponse.EnsureSuccessStatusCode();
+        using var serviceResource = JsonDocument.Parse(await serviceResourceResponse.Content.ReadAsStringAsync());
+        var serviceUri = serviceResource.RootElement.GetProperty("result").GetProperty("contents")[0].GetProperty("uri").GetString();
+        serviceUri.Should().Be($"honua://published-services/{service}");
     }
 }

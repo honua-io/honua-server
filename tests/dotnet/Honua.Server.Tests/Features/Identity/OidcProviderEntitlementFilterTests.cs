@@ -215,9 +215,9 @@ public sealed class OidcProviderEntitlementFilterTests
         }
 
         public Task<OidcProviderConfiguration?> UpdateProviderAsync(
-            OidcProviderConfiguration provider,
+            Guid providerId, Func<OidcProviderConfiguration, OidcProviderConfiguration> update,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<OidcProviderConfiguration?>(provider);
+            => Task.FromResult(_providers.FirstOrDefault(provider => provider.ProviderId == providerId) is { } current ? update(current) : null);
 
         public Task<bool> DeleteProviderAsync(Guid providerId, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
