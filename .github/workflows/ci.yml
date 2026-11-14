@@ -52,7 +52,7 @@ concurrency:
 env:
   # Preserve the upstream reaper index while avoiding Docker Hub authentication.
   TESTCONTAINERS_RYUK_CONTAINER_IMAGE: 'mirror.gcr.io/testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0'
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   # Keep one persistent MSBuild server alive across restore/build/test calls in
   # each job. Roslyn shared compilation remains enabled by default.
   DOTNET_CLI_USE_MSBUILD_SERVER: true
@@ -1618,8 +1618,8 @@ jobs:
             'Server Features Admin Alert Endpoints'| \
             'Server Features Streaming Snapshot and Conformance'| \
             'Server Features Data Enrichment and Capabilities'| \
-            'Server Features Miscellaneous'| \
-            'Server Features Studio Packaging') images+=(redis) ;;
+            'Server Features Miscellaneous '[0-9]*| \
+            'Server Features Studio Packaging '[0-9]*) images+=(redis) ;;
           esac
           if [[ "${SERVER_SHARD}" == 'Operator Eval Harness' ]]; then
             images+=(postgis17)

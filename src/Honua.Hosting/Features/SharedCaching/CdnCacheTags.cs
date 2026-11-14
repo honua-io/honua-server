@@ -53,13 +53,15 @@ internal static class CdnCacheTags
         return [.. tags];
     }
 
-    // The same reach as the paths an edit invalidated before tags (CdnPaths.ForEditedLayer): the layer's own tiles, every OGC API
-    // response, and every GeoServices response of each name the layer's service is published as.
+    // The same reach as the paths an edit invalidates without tags (CdnPaths.ForEditedLayer): the layer's own tiles, every OGC API
+    // and STAC response (STAC collection extents are computed from the features), and every GeoServices response of each name
+    // the layer's service is published as. Every edit path reaches STAC, whichever protocol carried the edit.
     internal static string[] InvalidationsForEditedLayer(int layerId, IEnumerable<string> serviceNames)
         =>
         [
             InvalidationPrefix + TilesScope(layerId.ToString(CultureInfo.InvariantCulture)),
             InvalidationPrefix + OgcScope,
+            InvalidationPrefix + StacScope,
             .. serviceNames
                 .Where(serviceName => !string.IsNullOrWhiteSpace(serviceName))
                 .Select(Name)
@@ -67,7 +69,13 @@ internal static class CdnCacheTags
                 .Select(service => InvalidationPrefix + ServicesScope(service)),
         ];
 
+    internal static string[] InvalidationsForEditedStorageLayer(int layerId) => InvalidationsForEditedLayer(layerId, []);
+
+    internal static string[] InvalidationsForOgcSurface => [InvalidationPrefix + OgcScope];
+
     internal static bool IsTagInvalidation(string item) => item.StartsWith(InvalidationPrefix, StringComparison.Ordinal);
+
+    private const string StacScope = Prefix + "scope:stac";
 
     private const string OgcScope = Prefix + "scope:ogc";
 
@@ -88,6 +96,7 @@ internal static class CdnCacheTags
 
         return segments switch
         {
+            [var first, ..] when first.Equals("stac", StringComparison.OrdinalIgnoreCase) => StacScope,
             [var first, ..] when first.Equals("ogc", StringComparison.OrdinalIgnoreCase) => OgcScope,
             [var first, var layer, ..] when first.Equals("tiles", StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(layer, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)

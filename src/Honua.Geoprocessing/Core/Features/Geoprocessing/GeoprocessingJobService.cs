@@ -1300,7 +1300,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
 
         EnsureJobOwnership(job, principal);
 
-        if (!IsTerminal(job.Status))
+        if (!job.Status.IsTerminal())
         {
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' has not reached a terminal state (current: {job.Status}).");
@@ -1314,7 +1314,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
             throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
         }
 
-        if (!IsTerminal(refreshed.Status))
+        if (!refreshed.Status.IsTerminal())
         {
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' has not reached a terminal state (current: {refreshed.Status}).");
@@ -1388,7 +1388,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
             return;
         }
 
-        if (IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
                 _progressStore, job, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -1437,7 +1437,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' was not found on re-read and could not be cancelled.");
         }
 
-        if (!IsTerminal(latest.Status))
+        if (!latest.Status.IsTerminal())
         {
             var backendResult = await _dispatcher.TryCancelViaBackendAsync(latest, jobStore, cancellationToken).ConfigureAwait(false);
             switch (backendResult.Outcome)
@@ -1471,7 +1471,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        if (IsTerminal(latest.Status))
+        if (latest.Status.IsTerminal())
         {
             if (latest.Status == ExecutionJobStatus.Cancelled)
             {
@@ -2295,9 +2295,4 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{existing.OperationId}' submission previously failed before queueing. Retry with a new idempotency key.");
         }
     }
-
-    internal static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 }

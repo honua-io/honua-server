@@ -13,6 +13,7 @@
 
 using System.Data.Common;
 using System.Globalization;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Npgsql;
@@ -237,7 +238,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     private string ResolveManagedStoreTableName() => _configuredFeatureSchema is null
         ? ManagedFeaturesTableName
-        : $"{QuoteIdentifier(_configuredFeatureSchema)}.{QuoteIdentifier(ManagedFeaturesTableName)}";
+        : $"{SqlIdentifier.QuoteIdentifier(_configuredFeatureSchema)}.{SqlIdentifier.QuoteIdentifier(ManagedFeaturesTableName)}";
 
     private async Task<ManagedStoreIdentitySnapshot> CaptureManagedStoreIdentityAsync(CancellationToken cancellationToken)
     {

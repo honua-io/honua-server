@@ -343,7 +343,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
             return;
         }
 
-        if (IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             throw new TileExportPreconditionFailedException(
                 $"Tile-export job '{jobId}' is in terminal state '{job.Status}' and cannot be cancelled.");
@@ -361,7 +361,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                 return;
             }
 
-            if (IsTerminal(job.Status))
+            if (job.Status.IsTerminal())
             {
                 throw new TileExportPreconditionFailedException(
                     $"Tile-export job '{jobId}' reached terminal state '{job.Status}' before cancellation could be applied.");
@@ -620,9 +620,6 @@ internal sealed partial class TileExportJobService : ITileExportJobService
 
     private IExecutionJobStore RequireJobStore()
         => _jobStore ?? throw new TileExportStoreUnavailableException();
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 
     private static partial class Log
     {
