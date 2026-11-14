@@ -8,10 +8,20 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 
 internal sealed class OpsHeartbeatCoordinator(IExecutionJobStore jobStore, IOpsHeartbeatPublisher publisher)
 {
-    public Task PublishAsync(string stackName, CancellationToken cancellationToken)
+    private readonly string _owner = Guid.NewGuid().ToString("N");
+
+    public async Task PublishAsync(string stackName, CancellationToken cancellationToken)
     {
-        _ = jobStore;
-        _ = publisher;
-        return Task.CompletedTask;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        if (!await jobStore.TryAcquireLeaseAsync($"ops-heartbeat:{stackName}", _owner,
+            TimeSpan.FromSeconds(60), deadline.Token).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        deadline.Token.ThrowIfCancellationRequested();
+        // Retain the lease through its window even when publication fails.
+        await publisher.PublishAsync(stackName, deadline.Token).ConfigureAwait(false);
     }
 }

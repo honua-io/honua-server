@@ -53,6 +53,25 @@ public sealed class OpsHeartbeatTests : IAsyncLifetime
         publisher.Count.Should().Be(2);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task PublishAsync_PublicationFails_RestartCannotPublishAgainWithinWindow()
+    {
+        var stack = $"heartbeat-{Guid.NewGuid():N}";
+        var publisher = new RecordingPublisher { Fail = true };
+        var publish = () => new OpsHeartbeatCoordinator(CreateStore(), publisher)
+            .PublishAsync(stack, CancellationToken.None);
+
+        await publish.Should().ThrowAsync<InvalidOperationException>();
+        publisher.Fail = false;
+        await new OpsHeartbeatCoordinator(CreateStore(), publisher).PublishAsync(stack, CancellationToken.None);
+
+        publisher.Count.Should().Be(1);
+        await ExpireLeaseAsync(stack);
+        await new OpsHeartbeatCoordinator(CreateStore(), publisher).PublishAsync(stack, CancellationToken.None);
+        publisher.Count.Should().Be(2);
+    }
+
     private PostgresExecutionJobStore CreateStore() => new(
         new JobStoreDatabase(_postgres.DataSource),
         Options.Create(new JobStoreOptions()),
@@ -69,11 +88,17 @@ public sealed class OpsHeartbeatTests : IAsyncLifetime
     private sealed class RecordingPublisher : IOpsHeartbeatPublisher
     {
         private int _count;
+        internal bool Fail { get; set; }
         public int Count => Volatile.Read(ref _count);
 
         public Task PublishAsync(string stackName, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _count);
+            if (Fail)
+            {
+                throw new InvalidOperationException("CloudWatch unavailable");
+            }
+
             return Task.CompletedTask;
         }
     }
