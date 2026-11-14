@@ -1978,7 +1978,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Platform and Connections" \
   --assert-owner \
-    "Honua.Server.Tests.Features.Admin.TileCacheJobServiceTests" \
+    "Honua.Server.Tests.Features.Admin.TileCacheJobExecutorPublishTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Integrations and Automation 4" \
   --assert-owner \

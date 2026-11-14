@@ -31,6 +31,7 @@ PARENT_IMAGES = {
     "STAC Protocol": [],
     "Scene I3S Resources": [],
     "Server Features Admin Authorization": ["ryuk", "redis"],
+    "Server Features Admin Layer Management": [],
     "Server Features Admin Release Control": [],
     "Server Features Collaboration Mobile and Identity": [],
 }
