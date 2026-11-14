@@ -60,8 +60,13 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
     public McpPublishedServicePostgresDurabilityTests()
     {
         _fixture = new WebAppFixture().WithProductionJobSubstrate().WithTestLicense(HonuaEdition.Pro)
-            // Human approval capabilities are audience-bound to the configured public origin.
-            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", "http://localhost"));
+            .ConfigureWebHost(builder =>
+            {
+                // Human approval capabilities are audience-bound to the configured public origin.
+                builder.UseSetting("Public:BaseUrl", "http://localhost");
+                // The development bypass would replace the scoped proposer key, which approval revalidates.
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+            });
         _fixture.ConfigureServices(services =>
         {
             services.RemoveAll<IMetadataV2GraphProvider>();
