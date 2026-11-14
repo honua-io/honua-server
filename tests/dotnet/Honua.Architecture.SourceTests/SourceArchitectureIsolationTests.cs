@@ -43,10 +43,28 @@ public sealed class SourceArchitectureIsolationTests
             }
             foreach (var reference in document.Descendants("ProjectReference"))
             {
+                if (IsAnalyzerReferenceUpdate(reference))
+                {
+                    continue;
+                }
+
                 var include = Assert.IsType<string>(reference.Attribute("Include")?.Value);
                 pending.Push(Path.GetFullPath(Path.Join(Path.GetDirectoryName(project), include.Replace('\\', '/'))));
             }
         }
+    }
+
+    private static bool IsAnalyzerReferenceUpdate(XElement reference)
+    {
+        if (reference.Attribute("Update") is not { } update)
+        {
+            return false;
+        }
+
+        Assert.Equal("$(MSBuildThisFileDirectory)../../../src/Honua.Analyzers/Honua.Analyzers.csproj", update.Value);
+        Assert.Equal("true", reference.Attribute("ReferenceOutputAssembly")?.Value);
+        Assert.Null(reference.Attribute("Include"));
+        return true;
     }
 
     [ArchitectureTest]
