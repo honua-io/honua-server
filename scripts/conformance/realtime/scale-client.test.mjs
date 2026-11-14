@@ -36,6 +36,12 @@ async function twoTasks(mode = 'normal') {
         else {
           stream.write(frame);
           if (mode === 'duplicate' && cursor === 1) stream.write(frame);
+          if (mode === 'repeated-edit' && cursor === 1) {
+            stream.write(frame.replace('features:1', 'features:2').replace('"cursor":1', '"cursor":2'));
+          }
+          if (mode === 'authorization' && cursor === 1) {
+            stream.write('event: status\ndata: {"status":"error","reason":"access-revoked"}\n\n');
+          }
           if (mode === 'reorder' && cursor === 2) stream.write(frame.replaceAll('features:2', 'features:1').replace('"cursor":2', '"cursor":1'));
         }
       }
@@ -95,6 +101,8 @@ test('zero subscriber baseline still writes through both tasks', async () => {
 
 for (const [mode, error] of [
   ['duplicate', /Duplicate or out-of-order/],
+  ['repeated-edit', /Duplicate or out-of-order/],
+  ['authorization', /authorization or transport ended/],
   ['reorder', /Duplicate or out-of-order/],
   ['reset', /received reset/],
   ['loss', /Delivery settle timeout/],
