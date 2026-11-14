@@ -2,12 +2,14 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Core.Features.Import;
@@ -40,7 +42,8 @@ public static class ServiceCollectionExtensions
         // The pinned-DNS handler enforces the private/loopback address policy at connect
         // time (SSRF guard, incl. DNS rebinding and redirects), mirroring the sibling
         // migration clients; the import service scopes the allow-unsafe-local-URLs flag.
-        services.AddResilientHttpClient<OgcCoverageImportService>(
+        services.AddResilientHttpClient(
+            nameof(OgcCoverageImportService),
             "ogc-coverage-import",
             HttpResiliencePolicies.SlowServiceDefaults,
             configureClient: client =>
@@ -49,8 +52,10 @@ public static class ServiceCollectionExtensions
                 client.Timeout = TimeSpan.FromMinutes(10);
             },
             configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
-        services.TryAddScoped<OgcCoverageImportService>(serviceProvider =>
-            serviceProvider.GetRequiredService<OgcCoverageImportService>());
+        services.TryAddScoped(serviceProvider => new OgcCoverageImportService(
+            serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(OgcCoverageImportService)),
+            serviceProvider.GetRequiredService<IRasterImportService>(),
+            serviceProvider.GetRequiredService<ILogger<OgcCoverageImportService>>()));
 
         // Legacy WCS coverage import service (issue #1030 slice 3). The WCS
         // service wraps the slice-2 coverage import pipeline — no separate
