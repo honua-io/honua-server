@@ -51,21 +51,24 @@ public sealed class ReviewBaselineSuppressorTests
     public async Task MovedFinding_PreservesItsBaseline()
     {
         Assert.Empty(await AnalyzeAsync(new Scenario("CA2000", "\n\n    " + Source,
-            "src/C.cs") { Baseline = Baseline("CA2000") }));
+            "src/C.cs")
+        { Baseline = Baseline("CA2000") }));
     }
 
     [Fact]
     public async Task LinkedSourcePath_UsesTheCanonicalRepositoryPath()
     {
         Assert.Empty(await AnalyzeAsync(new Scenario("RS0030", Source,
-            "tests/../src/C.cs") { Baseline = Baseline("RS0030") }));
+            "tests/../src/C.cs")
+        { Baseline = Baseline("RS0030") }));
     }
 
     [Fact]
     public async Task MoreOccurrencesThanRecorded_FailTheBuild()
     {
         var diagnostics = await AnalyzeAsync(new Scenario("CA2000", Source,
-            "src/C.cs") { Baseline = Baseline("CA2000"), Count = 2 });
+            "src/C.cs")
+        { Baseline = Baseline("CA2000"), Count = 2 });
         Assert.Equal(2, diagnostics.Length);
         Assert.All(diagnostics, diagnostic => Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity));
     }
@@ -83,7 +86,8 @@ public sealed class ReviewBaselineSuppressorTests
     [Fact]
     public async Task AnotherDiagnosticId_CannotUseAnExistingBaseline()
     {
-        Assert.Single(await AnalyzeAsync(new Scenario("CA1851", Source, "src/C.cs") { Baseline = Baseline("CA2000") }));
+        Assert.Single(await AnalyzeAsync(new Scenario("CA1851", Source, "src/C.cs")
+        { Baseline = Baseline("CA2000") }));
     }
 
     [Fact]

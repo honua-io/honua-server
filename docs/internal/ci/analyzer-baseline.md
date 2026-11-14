@@ -50,3 +50,16 @@ The CodeQL Action currently rejects query customizations when only
 `code-quality` analysis is enabled. Keep its security checks enabled;
 changing the managed commenter's behavior requires a supported GitHub
 configuration rather than silently weakening security analysis.
+
+`dotnet format` does not load the diagnostic suppressor in the current SDK
+([upstream report](https://github.com/dotnet/sdk/issues/51364)). CI and pre-PR
+format verification exclude these eight IDs from the formatter only. The required
+analyzer build rows still enforce every ID as an error with the same exact
+per-finding baseline; all other format diagnostics remain enabled.
+
+The baseline also records eight exact CA2000 message variants from the pinned
+container SDK: its message spells "transferred" where the build-host analyzer
+spells "transfered". Each variant retains the same source/member identity and
+occurrence budget. When refreshing with one SDK, preserve and separately verify
+existing variants for the other supported SDK rather than broadening message
+matching or dropping image enforcement.

@@ -43,6 +43,14 @@ public sealed class SourceArchitectureIsolationTests
             }
             foreach (var reference in document.Descendants("ProjectReference"))
             {
+                if (reference.Attribute("Update") is { } update)
+                {
+                    Assert.Equal("$(MSBuildThisFileDirectory)../../../src/Honua.Analyzers/Honua.Analyzers.csproj", update.Value);
+                    Assert.Equal("true", reference.Attribute("ReferenceOutputAssembly")?.Value);
+                    Assert.Null(reference.Attribute("Include"));
+                    continue;
+                }
+
                 var include = Assert.IsType<string>(reference.Attribute("Include")?.Value);
                 pending.Push(Path.GetFullPath(Path.Join(Path.GetDirectoryName(project), include.Replace('\\', '/'))));
             }

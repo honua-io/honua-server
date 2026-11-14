@@ -947,7 +947,9 @@ jobs:
       - name: Restore complete format context
         run: scripts/ci/dotnet-restore-retry.sh Honua.sln
       - name: Format Check
-        run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
+        # The analyzer builds enforce these rules with the per-finding baseline;
+        # dotnet format does not load DiagnosticSuppressor (dotnet/sdk#51364).
+        run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic --exclude-diagnostics CA2000 IDE0063 RS0030 S1244 S2486 S108 CA1508 CA1851
 
   # Foundation test FAMILIES (#3567). This lane used to be a single serial job
   # whose per-family steps ran back to back: on the 2026-08-27 batch run

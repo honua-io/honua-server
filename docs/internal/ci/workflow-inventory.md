@@ -133,7 +133,10 @@ lock workflows are compiled from their authored Markdown sources.
 
 The analyzer jobs enforce the [review prevention rules](analyzer-baseline.md) as
 build errors. Existing findings use an explicit per-finding baseline; normal CI
-never regenerates it.
+never regenerates it. Format excludes only the eight build-enforced IDs because
+its current SDK does not load diagnostic suppressors; required analyzer builds
+retain their full enforcement. The baseline records both supported SDK spellings
+of eight existing CA2000 findings.
 
 ### Docs-only exit (`PR Gate`)
 
