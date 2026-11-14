@@ -65,10 +65,18 @@ public static class OperationScopeMapping
                 "admin.services.timeinfo.set" or "admin.services.layer-metadata.set" or
                 "admin.connections.update" or "admin.connections.extents.refresh" or
                 "admin.connections.features.refresh" => OperatorOperation.Update,
-            _ => default,
+            _ => ResolveDatasetInspection(request.OperationId),
         };
         return operation != default;
     }
+
+    // Read-only Publish inspection: formats, limits, file/URL previews and table validation.
+    private static OperatorOperation ResolveDatasetInspection(string operationId) => operationId switch
+    {
+        "admin.import.formats" or "admin.import.limits" or "admin.import.preview" or
+            "admin.import.preview-url" or "admin.connections.tables.validate" => OperatorOperation.Read,
+        _ => default,
+    };
 
     // For a scope-governed caller, a missing catalog mapping is refused, because a missing entry cannot grant OAuth authority.
     public static bool ExceedsScopeAuthority(OperationRequest request, OperationPolicyContext context)
