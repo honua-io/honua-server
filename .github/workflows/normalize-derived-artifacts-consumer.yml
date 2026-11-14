@@ -22,11 +22,11 @@ concurrency:
   cancel-in-progress: false
   queue: max
 
-# Enforce since the 2026-11-12 v3 shadow audit (#3219): 76 valid envelopes, all
-# byte-reproduced independently, with the release App token configured.
-# Rollback is the one-value change back to `observe`.
+# Founder 14 Nov: feature PRs must not commit repository-state projections.
+# Keep envelope validation and drift reporting, with publication owned by the
+# existing generated-files-on-trunk producer.
 env:
-  NORMALIZATION_MODE: enforce
+  NORMALIZATION_MODE: observe
 
 jobs:
   validate:
