@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
+using Honua.Core.Features.Security;
 
 namespace Honua.Infrastructure.Services;
 
@@ -91,8 +92,10 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             Path.GetFullPath(_options.StorageDirectory),
             static _ => new SemaphoreSlim(1, 1));
 
-        // Ensure storage directory exists
-        Directory.CreateDirectory(_options.StorageDirectory);
+        // Owner-only, and refused when another user owns it: a foreign owner could replace or
+        // remove stored files and their metadata. The container image ships it 0750 for the
+        // service user.
+        PrivateTempFile.CreateOrClaimDirectory(_options.StorageDirectory);
     }
 
     public async Task<string> StoreTemporaryFileAsync(
@@ -131,7 +134,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             EnsureStorageCapacity(data.Length);
 
             // Write file data
-            await File.WriteAllBytesAsync(filePath, data, cancellationToken).ConfigureAwait(false);
+            await WriteOwnerOnlyAsync(filePath, data, cancellationToken).ConfigureAwait(false);
 
             // Write metadata file
             var metadataObj = new TemporaryFileMetadata
@@ -143,7 +146,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
                 AuthorizedPrincipalKey = ResolvePrincipalKey(principal)
             };
             var metadata = System.Text.Json.JsonSerializer.Serialize(metadataObj, TemporaryFileMetadataJsonContext.Default.TemporaryFileMetadata);
-            await File.WriteAllTextAsync(metadataPath, metadata, cancellationToken).ConfigureAwait(false);
+            await WriteOwnerOnlyAsync(metadataPath, System.Text.Encoding.UTF8.GetBytes(metadata), cancellationToken).ConfigureAwait(false);
 
             // Generate public URL
             var baseUrl = _options.BaseUrl ?? "/temp";
@@ -498,6 +501,14 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             principalKey,
             metadata.AuthorizedPrincipalKey,
             StringComparison.Ordinal);
+    }
+
+    private static async Task WriteOwnerOnlyAsync(string path, byte[] data, CancellationToken cancellationToken)
+    {
+        // Exclusive, owner-only creation: the name is a fresh GUID, so an existing file or link
+        // at this path is never followed or overwritten.
+        await using var stream = PrivateTempFile.Create(path, FileOptions.Asynchronous, bufferSize: 4096);
+        await stream.WriteAsync(data, cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()

@@ -15,6 +15,7 @@ import urllib.request
 from test_compose_release_lifecycle import ROOT, free_port, run
 from compose_quickstart import ALL_SECRET_KEYS, initialize, read_secret
 from package_quickstart import package
+from compose_readiness_diagnostics import readiness_diagnostics
 
 RC1 = "ghcr.io/honua-io/honua-server@sha256:c8d7aef98761618145725530b6a4e4b25ea4a9ae121da168362f9be4cf5f7d37"
 
@@ -40,6 +41,14 @@ def wait_ready(port):
             pass
         time.sleep(2)
     raise AssertionError("manual deployment did not become ready")
+
+
+def wait_ready_with_diagnostics(port, phase, deployment):
+    try:
+        wait_ready(port)
+    except AssertionError as error:
+        detail = readiness_diagnostics(*deployment)
+        raise AssertionError(f"{phase}: {error}; {detail}") from error
 
 
 def transfer_database(compose, env, dump=None):
@@ -161,6 +170,8 @@ def test_manual_catalog_rc1_rollback_and_return(tmp_path):
               "-p", env["COMPOSE_PROJECT_NAME"]]
     current = common + ["-f", str(install / "compose.yaml")]
     legacy, legacy_env = legacy_configuration(common, install, env)
+    current_readiness = (current, env, install)
+    legacy_readiness = (legacy, legacy_env, install)
     def sql(statement):
         return run(current + ["exec", "-T", "postgres", "psql", "-U", "honua", "-d", "honua",
                               "-tA", "-v", "ON_ERROR_STOP=1", "-c", statement], env=env)
@@ -170,26 +181,26 @@ def test_manual_catalog_rc1_rollback_and_return(tmp_path):
         # stay running. Run it separately and require its actual exit status.
         run(current + ["run", "--rm", "--no-deps", "keyring-init"], env=env)
         run(legacy + ["up", "-d", "--no-deps", "honua"], env=legacy_env)
-        wait_ready(port)
+        wait_ready_with_diagnostics(port, "initial published rc.1 startup", legacy_readiness)
         assert_revision(legacy, legacy_env, prior_id)
         assert sql("SELECT max(substring(scriptname from '([0-9]+)_')::int) FROM public.schema_versions") == "140"
         sql("CREATE TABLE public.manual_rollback_marker(value text); INSERT INTO public.manual_rollback_marker VALUES ('retained')")
         run(legacy + ["stop", "honua"], env=legacy_env)
         backup = save_database_backup(current, env, install)
         run(current + ["up", "-d", "--no-deps", "honua"], env=env)
-        wait_ready(port)
+        wait_ready_with_diagnostics(port, "candidate upgrade", current_readiness)
         assert_revision(current, env, candidate)
         sql("UPDATE public.manual_rollback_marker SET value='changed-after-upgrade'")
         run(current + ["stop", "honua"], env=env)
         restore_database_backup(current, env, backup)
         run(legacy + ["up", "-d", "--no-deps", "honua"], env=legacy_env)
-        wait_ready(port)
+        wait_ready_with_diagnostics(port, "restored published rc.1 startup", legacy_readiness)
         assert_revision(legacy, legacy_env, prior_id)
         assert sql("SELECT value FROM public.manual_rollback_marker") == "retained"
         assert sql("SELECT max(substring(scriptname from '([0-9]+)_')::int) FROM public.schema_versions") == "140"
         run(legacy + ["stop", "honua"], env=legacy_env)
         run(current + ["up", "-d", "--no-deps", "honua"], env=env)
-        wait_ready(port)
+        wait_ready_with_diagnostics(port, "candidate return", current_readiness)
         assert_revision(current, env, candidate)
         assert sql("SELECT value FROM public.manual_rollback_marker") == "retained"
         assert_secret_isolation(current, env, install)

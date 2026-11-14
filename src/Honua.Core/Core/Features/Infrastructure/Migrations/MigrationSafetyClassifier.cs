@@ -232,7 +232,8 @@ public static class MigrationSafetyClassifier
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var normalized = ExtractExecutableSql(sql);
+        var scopedSql = ExtractExecutableSql(sql);
+        var normalized = scopedSql.Replace(ExecutionScopeBoundary, ' ').Replace(UntrustedDynamicScope, ' ');
         var matchedRules = new List<string>();
 
         if (DeclaredContractPhaseMarker.IsMatch(sql))
@@ -242,7 +243,13 @@ public static class MigrationSafetyClassifier
 
         foreach (var (ruleName, pattern) in PotentiallyBreakingPatterns)
         {
-            if (pattern.IsMatch(normalized))
+            var executable = ruleName == "truncate-table"
+                ? string.Join(" ", scopedSql.Split(ExecutionScopeBoundary)
+                    .Select(scope => scope.Contains(UntrustedDynamicScope)
+                        ? scope.Replace(UntrustedDynamicScope, ' ')
+                        : MigrationTriggerEvents.ExcludeDeclarations(scope)))
+                : normalized;
+            if (pattern.IsMatch(executable))
             {
                 matchedRules.Add(ruleName);
             }
@@ -272,6 +279,12 @@ public static class MigrationSafetyClassifier
     // or `/* */` outside a string starts a comment, and a `'`/`$tag$` outside a comment starts a
     // literal — so no construct can leak across another's boundary. Executable quoted content is
     // parsed in its own statement scope so concatenated literals join without crossing semicolons.
+    // NUL is not valid PostgreSQL source text. Keep execution scopes separate until trigger
+    // headers have been removed, so an incomplete dynamic identifier cannot consume SQL
+    // from its caller, another statement, or a different literal fragment. Other rules still see all SQL.
+    private const char ExecutionScopeBoundary = '\0';
+    private const char UntrustedDynamicScope = '\u0001';
+
     private static string ExtractExecutableSql(string sql)
     {
         var result = new StringBuilder(sql.Length);
@@ -280,150 +293,223 @@ public static class MigrationSafetyClassifier
     }
 
     private static void AppendExecutableSql(string sql, StringBuilder result, bool insideRoutineBody)
+        => new ExecutableSqlParser(sql, result, insideRoutineBody).Append();
+
+    private sealed class ExecutableSqlParser(string sql, StringBuilder result, bool insideRoutineBody)
     {
-        var i = 0;
-        var length = sql.Length;
-        var statementStart = result.Length;
-        var dynamicSql = new StringBuilder();
+        private int _index;
+        private int _statementStart = result.Length;
+        private readonly StringBuilder _dynamicSql = new();
+        private readonly List<string> _dynamicFragments = new();
 
-        while (i < length)
+        public void Append()
         {
-            var current = sql[i];
-
-            // Line comment: -- to end of line.
-            if (current == '-' && i + 1 < length && sql[i + 1] == '-')
+            while (_index < sql.Length)
             {
-                i += 2;
-                while (i < length && sql[i] != '\n')
+                if (sql[_index] == '"')
                 {
-                    i++;
+                    _index = AppendQuotedIdentifier(sql, result, _index);
+                    continue;
                 }
 
-                result.Append(' ');
-                continue;
-            }
-
-            // PostgreSQL block comments nest. Track the depth so an inner terminator cannot expose
-            // supposedly-commented DDL and create a false finding.
-            if (current == '/' && i + 1 < length && sql[i + 1] == '*')
-            {
-                i += 2;
-                var depth = 1;
-                while (i < length && depth > 0)
+                var commentEnd = MigrationSqlComments.FindEnd(sql, _index);
+                if (commentEnd > _index)
                 {
-                    if (i + 1 < length && sql[i] == '/' && sql[i + 1] == '*')
-                    {
-                        depth++;
-                        i += 2;
-                    }
-                    else if (i + 1 < length && sql[i] == '*' && sql[i + 1] == '/')
-                    {
-                        depth--;
-                        i += 2;
-                    }
-                    else
-                    {
-                        i++;
-                    }
-                }
-
-                result.Append(' ');
-                continue;
-            }
-
-            if (current == '\'')
-            {
-                var contents = ReadSingleQuotedContents(sql, ref i);
-                if (IsRoutineBodyPrefix(result, statementStart))
-                {
-                    AppendExecutableSql(contents, result, insideRoutineBody: true);
-                }
-                else if (insideRoutineBody
-                    && IsDynamicExecutePrefix(result, statementStart)
-                    && IsDynamicSqlTemplatePosition(result, statementStart))
-                {
-                    AppendExecutableSql(contents, dynamicSql, insideRoutineBody: false);
-                    dynamicSql.Append(' ');
-                }
-
-                result.Append(' ');
-                continue;
-            }
-
-            if (current == '$' && TryReadDollarTag(sql, i) is { } tag)
-            {
-                var closeIndex = sql.IndexOf(tag, i + tag.Length, StringComparison.Ordinal);
-                var contentsStart = i + tag.Length;
-                var contentsLength = (closeIndex < 0 ? length : closeIndex) - contentsStart;
-                var contents = sql.Substring(contentsStart, contentsLength);
-                i = closeIndex < 0 ? length : closeIndex + tag.Length;
-
-                if (IsRoutineBodyPrefix(result, statementStart))
-                {
-                    AppendExecutableSql(contents, result, insideRoutineBody: true);
-                }
-                else if (insideRoutineBody
-                    && IsDynamicExecutePrefix(result, statementStart)
-                    && IsDynamicSqlTemplatePosition(result, statementStart))
-                {
-                    AppendExecutableSql(contents, dynamicSql, insideRoutineBody: false);
-                    dynamicSql.Append(' ');
-                }
-
-                result.Append(' ');
-                continue;
-            }
-
-            result.Append(current);
-            i++;
-
-            if (current == ';')
-            {
-                if (dynamicSql.Length > 0)
-                {
+                    _index = commentEnd;
                     result.Append(' ');
-                    result.Append(dynamicSql);
-                    result.Append(';');
-                    dynamicSql.Clear();
+                    continue;
                 }
 
-                statementStart = result.Length;
+                if (TryAppendLiteral())
+                {
+                    continue;
+                }
+
+                var current = sql[_index++];
+                result.Append(current);
+                if (current == ';')
+                {
+                    CompleteStatement();
+                }
             }
+
+            FlushDynamicSql();
         }
 
-        if (dynamicSql.Length > 0)
+        private bool TryAppendLiteral()
         {
+            var escapeString = IsEscapeString();
+            if (sql[_index] == '\'' || escapeString)
+            {
+                if (escapeString)
+                {
+                    _index++;
+                }
+
+                var literal = escapeString
+                    ? MigrationStringLiterals.ReadEscaped(sql, _index)
+                    : MigrationStringLiterals.ReadStandard(sql, _index);
+                _index = literal.NextIndex;
+                AppendLiteral(literal.Contents);
+                return true;
+            }
+
+            if (sql[_index] != '$' || TryReadDollarTag(sql, _index) is not { } tag)
+            {
+                return false;
+            }
+
+            var contentsStart = _index + tag.Length;
+            var closeIndex = sql.IndexOf(tag, contentsStart, StringComparison.Ordinal);
+            var contentsLength = (closeIndex < 0 ? sql.Length : closeIndex) - contentsStart;
+            _index = closeIndex < 0 ? sql.Length : closeIndex + tag.Length;
+            AppendLiteral(sql.Substring(contentsStart, contentsLength));
+            return true;
+        }
+
+        private bool IsEscapeString()
+            => (sql[_index] is 'E' or 'e') && _index + 1 < sql.Length && sql[_index + 1] == '\''
+                && (_index == 0 || !(char.IsAsciiLetterOrDigit(sql[_index - 1])
+                    || sql[_index - 1] >= 128 || sql[_index - 1] is '_' or '$'));
+
+        private void AppendLiteral(string contents)
+        {
+            if (IsRoutineBodyPrefix(result, _statementStart))
+            {
+                var routineSql = new StringBuilder(contents.Length);
+                AppendExecutableSql(contents, routineSql, insideRoutineBody: true);
+                AppendExecutionScope(result, routineSql);
+            }
+            else if (insideRoutineBody
+                && IsDynamicExecutePrefix(result, _statementStart)
+                && IsDynamicSqlTemplatePosition(result, _statementStart))
+            {
+                AppendExecutionScope(_dynamicSql, ExtractDynamicSql(contents,
+                    result.ToString(_statementStart, result.Length - _statementStart), sql.AsSpan(_index)));
+                _dynamicFragments.Add(contents);
+            }
+
             result.Append(' ');
-            result.Append(dynamicSql);
+        }
+
+        private void CompleteStatement()
+        {
+            if (_dynamicSql.Length > 0)
+            {
+                FlushDynamicSql();
+                result.Append(';');
+            }
+
+            _statementStart = result.Length;
+        }
+
+        private void FlushDynamicSql()
+        {
+            if (_dynamicSql.Length == 0)
+            {
+                return;
+            }
+
+            AppendExecutionScope(result, _dynamicSql);
+            AppendDynamicFragments(result, _dynamicFragments);
+            _dynamicSql.Clear();
+            _dynamicFragments.Clear();
         }
     }
 
-    private static string ReadSingleQuotedContents(string sql, ref int index)
+    private static void AppendDynamicFragments(StringBuilder result, List<string> fragments)
     {
-        var contents = new StringBuilder();
-        index++;
+        if (fragments.Count < 2)
+        {
+            return;
+        }
 
+        // Keep adjacent literal fragments contiguous even when their independent lexical
+        // views differ. Computed expressions cannot establish a trusted trigger header.
+        AppendExecutionScope(result, ExtractUntrustedDynamicSql(string.Concat(fragments)));
+        result.Append(ExecutionScopeBoundary);
+        result.Append(UntrustedDynamicScope);
+        foreach (var fragment in fragments)
+        {
+            result.Append(MigrationSqlComments.NormalizeFragment(fragment));
+        }
+
+        result.Append(ExecutionScopeBoundary);
+    }
+
+    private static StringBuilder ExtractDynamicSql(string contents, string prefix, ReadOnlySpan<char> suffix)
+    {
+        // Only a complete directly executed literal has a known lexical context. Expressions
+        // can compute quotes or comment delimiters around a fragment, so parsing that fragment
+        // in isolation can discard executable SQL as a string, comment, or trigger identifier.
+        suffix = suffix.TrimStart();
+        var completeLiteral = DirectDynamicExecutePrefix.IsMatch(prefix)
+            && (suffix.IsEmpty || suffix[0] == ';');
+        if (!completeLiteral)
+        {
+            return ExtractUntrustedDynamicSql(contents);
+        }
+
+        var literalSql = new StringBuilder(contents.Length);
+        AppendExecutableSql(contents, literalSql, insideRoutineBody: false);
+        return literalSql;
+    }
+
+    private static StringBuilder ExtractUntrustedDynamicSql(string contents)
+    {
+        var fragmentSql = new StringBuilder(contents.Length);
+        fragmentSql.Append(UntrustedDynamicScope);
+        fragmentSql.Append(contents);
+        // Computed expressions have uncertain quoting. Retain raw, quote-independent,
+        // and parsed views so comment markers inside identifiers cannot hide later SQL.
+        // No view receives trigger-header exemptions.
+        fragmentSql.Append(ExecutionScopeBoundary);
+        fragmentSql.Append(UntrustedDynamicScope);
+        fragmentSql.Append(MigrationSqlComments.NormalizeFragment(contents));
+        fragmentSql.Append(ExecutionScopeBoundary);
+        fragmentSql.Append(UntrustedDynamicScope);
+        AppendExecutableSql(contents, fragmentSql, insideRoutineBody: false);
+        // A preceding delimiter may be identifier text supplied by another expression.
+        // Start each candidate independently so that delimiter cannot erase later DDL.
+        foreach (Match candidate in BreakingStatementStart.Matches(contents))
+        {
+            fragmentSql.Append(ExecutionScopeBoundary);
+            fragmentSql.Append(UntrustedDynamicScope);
+            fragmentSql.Append(MigrationSqlComments.NormalizeStatement(contents, candidate.Index));
+        }
+
+        return fragmentSql;
+    }
+
+    private static void AppendExecutionScope(StringBuilder result, StringBuilder scope)
+    {
+        result.Append(ExecutionScopeBoundary);
+        result.Append(scope);
+        result.Append(ExecutionScopeBoundary);
+    }
+
+    private static int AppendQuotedIdentifier(string sql, StringBuilder result, int index)
+    {
+        result.Append(sql[index++]);
         while (index < sql.Length)
         {
-            if (sql[index] != '\'')
+            var current = sql[index++];
+            result.Append(current);
+            if (current != '"')
             {
-                contents.Append(sql[index]);
-                index++;
                 continue;
             }
 
-            if (index + 1 < sql.Length && sql[index + 1] == '\'')
+            if (index < sql.Length && sql[index] == '"')
             {
-                contents.Append('\'');
-                index += 2;
+                result.Append(sql[index++]);
                 continue;
             }
 
-            index++;
             break;
         }
 
-        return contents.ToString();
+        return index;
     }
 
     private static bool IsRoutineBodyPrefix(StringBuilder result, int statementStart)
@@ -437,6 +523,14 @@ public static class MigrationSafetyClassifier
 
     private static readonly Regex RoutineBodyPrefix = new(
         @"(?:\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[^;]*\bAS\s*|\bDO(?:\s+LANGUAGE\s+[A-Za-z_][A-Za-z0-9_$]*)?\s*)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex BreakingStatementStart = new(
+        @"\b(?:ALTER|DROP|TRUNCATE)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex DirectDynamicExecutePrefix = new(
+        @"\bEXECUTE\s*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static readonly Regex DynamicExecutePrefix = new(

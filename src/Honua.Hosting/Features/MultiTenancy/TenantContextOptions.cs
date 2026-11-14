@@ -9,7 +9,7 @@ public sealed class TenantContextOptions
 
     public const string TenantHeaderName = "X-Honua-Tenant";
 
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; }
 
     public string[] TenantClaimTypes { get; set; } = ["tid", "tenant_id"];
 

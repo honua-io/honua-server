@@ -8,6 +8,8 @@ on:
       - 'docker/worker-customcode-*/harness/**'
       - 'scripts/ci/verify-gp-installed-authoring.py'
       - 'scripts/ci/gp_devkit_publication.py'
+      - 'scripts/ci/gp_installed_events.py'
+      - 'scripts/ci/test_gp_installed_events.py'
       - '.github/workflows/gp-installed-authoring.yml'
   workflow_dispatch:
 
@@ -30,10 +32,12 @@ jobs:
           dotnet-version: |
             10.0.x
             11.0.x
+      - name: Verify the event contract checker
+        run: python3 -m unittest discover -s scripts/ci -p test_gp_installed_events.py
       - name: Pack candidate devkit and consumer script
         run: |
           dotnet pack src/Honua.Geoprocessing/Cli -c Release -o artifacts/installed-gp -p:VersionSuffix=installed.${{ github.run_id }}.${{ github.run_attempt }}
-          cp scripts/ci/verify-gp-installed-authoring.py scripts/ci/gp_devkit_publication.py artifacts/installed-gp/
+          cp scripts/ci/verify-gp-installed-authoring.py scripts/ci/gp_devkit_publication.py scripts/ci/gp_installed_events.py artifacts/installed-gp/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: installed-gp-candidate
@@ -68,7 +72,13 @@ jobs:
           python -m pip install pytest==9.1.1
           version="$(python candidate/verify-gp-installed-authoring.py --package-version candidate)"
           dotnet tool install Honua.Geoprocessing.Cli --add-source candidate --tool-path installed --version "$version"
-          python candidate/verify-gp-installed-authoring.py --tool "installed/honua-gp-devkit${{ runner.os == 'Windows' && '.exe' || '' }}" --restored-locks restored-locks --host-debug-receipt host-debug.json --package-version-stamp "$version"
+          python candidate/verify-gp-installed-authoring.py --tool "installed/honua-gp-devkit${{ runner.os == 'Windows' && '.exe' || '' }}" --event-journals event-journals --restored-locks restored-locks --host-debug-receipt host-debug.json --package-version-stamp "$version"
+      - name: Preserve validated installed-authoring journals
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gp-installed-events-${{ matrix.os }}
+          path: event-journals
+          if-no-files-found: error
       - name: Preserve host-debug receipt
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

@@ -1,5 +1,95 @@
 # CI Gate Model
 
+The latest full-run capacity audit partitions eleven additional parents into 26
+children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
+Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
+OGC API Features, GeoServices GPServer and NAServer, STAC Protocol, Operator
+Eval Harness, and Migration. The first ten crossed 80% of their test budgets in
+the last three full runs.
+Whole-class selections are retained except the GP/NAS routing class, whose
+methods are partitioned with a residual fallback for future tests. Method-union,
+future-method and mutation checks enforce complete, disjoint selection and
+unchanged projects, source triggers and budgets. Historical TRX interval weights
+guide the cuts; they are not measured child elapsed runtimes. The 14 Nov rank
+refresh measured 23 of those 26 children (see "Measured ranks" below).
+
+OGC Classic WMTS exhausted its 20-minute test budget in full run `43612492209`
+(job 132511815046) while producing output three seconds before termination; its
+passing samples took 14.9 to 18.4 job minutes. Two children replace it, cut by the
+serial class spans of run `43580101834` (12.2 minutes): child 1 owns
+`OgcClassicWmtsTests` (7.7 minutes) and child 2 is the exact complement of the
+parent filter (`OgcClassicWmtsTemporalTests` 3.1 minutes, six small classes and any
+future Wmts class). Both inherit the parent's paths and the shared
+`WmtsTileMatrixFormatting.cs` override. Initial ranks 12.8 and 9.6 are 5.1 minutes of
+job overhead plus each child's spans (`estimatedRanks`). Budgets and source
+triggers are unchanged.
+
+Server Features Packages and Temporal measured 12.7 minutes (full runs
+`43612492209` and `43580101834`), above the 10-minute PR shard budget, so PR Gate
+would have deferred the executing owner of temporal, form and package sources to
+trunk. Two children replace it, cut by the serial class spans of run
+`43580101834` (9.0 of 12.8 job minutes): child 1 owns the two temporal history
+classes, `PackageReviewEndpointTests`, `FormCompatibilityEndpointTests` and
+`WorkflowPackagePublishDegradedTests` (4.8 minutes), and child 2 is the exact
+complement of the parent filter (4.2 minutes). Both inherit the parent's paths,
+so a temporal change runs both. Their initial ranks (8.6 and 8.0) are the 3.8-minute
+job overhead plus each child's spans, recorded as `estimatedRanks` in the contract
+until a full run measures them. Budgets and source triggers are unchanged.
+
+Server Features Admin Layer Management exhausted its 35-minute test budget in
+full run `43580101834` while producing output one second before termination.
+Two children replace it: child 1 owns `AdminLayerDisplaySpatialTests`,
+`AdminLayerAuthoringEndpointsTests` and `LayerStyleEndpointsTests` (10.4 of 20.1
+minutes in the 13 Nov passing TRX), and child 2 is the exact complement of the
+parent filter, including its `~Layer` method-name matches in other Admin classes
+and any future ones. Host teardown in this test process grows from 0.4 to 16
+seconds across 133 in-process hosts, so shard wall time rises with the square of
+hosts per process. The split is capacity relief; the teardown leak is tracked
+separately. Budgets, source triggers and the inherited dispatch rank are unchanged.
+
+
+Migration exhausted its 29-minute test budget in full run `43564575677` while
+producing output two seconds before termination. Three children separate migration
+evidence/toolbox endpoints, scanner/run endpoints, and the residual migration
+selection. Historical passing TRX class intervals weigh these groups at about
+6.2, 5.7, and 5.2 minutes; these are sizing evidence, not measured child runtimes.
+STAC qualification exhausted child 1 at 15.04 minutes and measured child 2 at
+12.70 minutes. Four children now isolate search, spatial/temporal and queryables,
+paging, and the residual selection. Original budgets, source triggers and
+future-class fallback remain enforced by the conservation contracts.
+Focused one-worker qualification passed all seven revised children: Migration
+1/2/3 took 7.35/5.35/5.51 minutes and STAC 1/2/3/4 took
+11.94/4.01/5.93/4.68 minutes. The largest Migration child finishes
+21.65 minutes before the exhausted parent deadline; this is capacity headroom,
+not a measured end-to-end workflow saving. STAC Protocol 1 is the single
+class `StacSearchTests` at 11.94 of 15 minutes (80%); it cannot be split further by
+class and is the next method-level partition candidate.
+
+FeatureServer Replica now uses three whole-class shards: `FeatureServer Replica
+Management` (conflict review, ownership and management), `FeatureServer Replica
+Sync` (the sync class), and the residual `FeatureServer Replica` catch-all.
+The original project, path triggers, exclusions, tier rules and 28-minute test /
+38-minute job budgets are retained. The coverage validator enforces the legacy
+parent inventory exactly once. This addresses repeated 28-minute capacity
+exhaustion with active output; complete child timings are still needed before
+claiming a speedup or replacing the conservative 18.3-minute parent dispatch rank.
+
+
+The live-output capacity partitions replace File and Raster Import with three
+numbered children (import orchestration, direct CRS/authorization contracts, and
+the residual import/raster selection), Sharing with two (REST tokens and the
+residual selection), and Analytics Studio Export and Reporting with three
+(spatial analytics, export, and the residual feature-store/reporting selection).
+Scheduled full run `43540829683` exhausted the respective 28-, 22-, and 22-minute
+test budgets while producing output within eight seconds of termination. These
+are incomplete baselines, not passing durations. Every child retains its parent's
+project, routing paths, tier filters and test/job time limits; targeted overrides
+select all siblings. Dispatch ranks remain inherited pending measured child runs.
+`test-live-output-capacity-partitions.py` conserves the original methods exactly
+once, keeps each class intact for future methods, and rejects lost, duplicated,
+foreign, budget-expanded or path-narrowed selections.
+
+
 OData Core is partitioned into `OData Core Endpoints` (the whole
 `ODataEndpointTests` class) and the residual `OData Core` catch-all. Both retain
 the original project, path triggers, tier filters and 29-minute test / 39-minute
@@ -26,7 +116,7 @@ The shard retry supervisor captures cancellation before spawning a test process.
 
 ## Governing Rules
 
-Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and accepts skipped heavy dependencies only on draft PR events after Format succeeds. Failure, cancellation and missing results still fail; ready PRs require all dependencies to succeed. A draft run names its aggregates `PR Gate (draft)` and `PR Gate / Affected shards (draft)`, so the required contexts stay expected until a ready run reports them; GitHub creates the ready run's aggregate checks only after their needs finish, and a draft success under the required name let a just-readied PR merge in that window. `ready_for_review` starts the complete verification. Observers classify a run with only the draft aggregate as `source-run-draft-admission`. PR Gate and native-image impact observers exclude intentional draft admission only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
+Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Optional verification cancels its previous run on conversion back to draft. PR Gate concurrency separates draft and ready events for each PR, so a delayed draft event cannot cancel the full ready gate; newer events in the same readiness state still cancel superseded runs. The stable `PR Gate` aggregate still runs with `always()` and accepts skipped heavy dependencies only on draft PR events after Format succeeds. Failure, cancellation and missing results still fail; ready PRs require all dependencies to succeed. A draft run names its aggregates `PR Gate (draft)` and `PR Gate / Affected shards (draft)`, so the required contexts stay expected until a ready run reports them; GitHub creates the ready run's aggregate checks only after their needs finish, and a draft success under the required name let a just-readied PR merge in that window. `ready_for_review` starts the complete verification. Observers classify a run with only the draft aggregate as `source-run-draft-admission`. PR Gate and native-image impact observers exclude intentional draft admission only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
 
 NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory.Build.props` lists them in `WarningsNotAsErrors` (projects append to that list), so a newly published advisory shows as a restore warning and `scripts/ci/dotnet-restore-retry.sh` treats any remaining restore failure as a retryable feed error. Advisories stay tracked by the NuGet vulnerability scan in `security-nightly.yml`, which annotates High/Critical findings and opens a tracking issue without failing the job (an unreadable report still fails); bumps are ordinary dependency work.
 
@@ -78,15 +168,18 @@ Full runs use off-hour minutes to reduce schedule-delivery contention. The
 half-hourly `trunk-signal-watchdog.yml` reports a missing scheduled start after
 14 hours, independently of affected CI activity. It also reports outstanding work without a usable
 result for 2 hours, runs queued over 45 minutes, and excessive cancellations;
-its issue closes only when all signals recover.
+its issue closes only when all signals recover. GitHub can report a workflow as queued
+while its children execute. For these runs the watchdog checks paginated, latest-attempt
+job evidence: runner assignment proves a scheduled start, while child jobs waiting
+over 45 minutes still alert. A queued job's `started_at` alone does not prove execution.
 
 Stage 3 details:
 
 - The execution base is the most recently completed `CI` run on trunk with
-  a success or failure conclusion and an ancestor head, selective or full.
+  a success conclusion and an ancestor head, selective or full.
   The newest 100 completed runs are ordered by completion update time.
-  Cancelled runs cannot advance the base. With no eligible ancestor, dispatch
-  a full matrix. A failed base bounds execution; it does not certify trunk.
+  Failed and cancelled runs cannot advance the base, including deferred runs whose
+  cancellation request fails. With no eligible ancestor, defer to scheduled full CI.
 - The dispatch summary separately lists the culprit range from the latest
   full green ancestor (searched among the newest 100 successful runs,
   excluding affected titles that cannot clear earlier failures). It passes
@@ -98,7 +191,7 @@ Stage 3 details:
   exit when checkout finds a newer trunk tip.
 - Shards the PR gate deferred by time budget run here: the router selects
   them again from the merged diff, so a deferred shard is verified within one
-  affected run of its merge.
+  admitted affected run of its merge, or the next scheduled full run when deferred.
 - `ci.yml` puts selective runs in their own concurrency group, so a burst of
   merges never replaces a pending scheduled full run.
 - A started full run cancels the selective runs it covers, and a selective
@@ -110,12 +203,17 @@ Stage 3 details:
 - Affected runs never certify a sha: `scripts/ci/select-certified-nightly-sha.py`
   ignores runs titled `CI affected ...`, so a selective run that finishes after
   a full run on the same sha cannot supersede that full run's certification.
-  The full-matrix fallback is titled `CI full matrix ...` and still certifies.
-- Every `selective_base` dispatch limits server shards to six concurrent jobs,
-  or twelve when more than 30 shards remain selected after newest-merge
-  narrowing, including router promotions and explicit full-coverage overrides. These
-  fallbacks still run every selected shard. Scheduled and non-selective full
-  runs retain their 24-job budget.
+  Explicit full-matrix runs still certify; optional affected admission never
+  escalates an unknown range into a full run.
+- Optional affected CI admits at most 40 jobs using a conservative side-job
+  bound plus selected shards, both before dispatch and again before execution
+  fanout. Full routing and unknown selection/history defer the work to the
+  twice-daily full run; an active PR Gate does not. Deferred execution cancels
+  its workflow before publishing change outputs, so it cannot record a
+  successful CI base.
+- Admitted affected runs use two concurrent server shards and run beside PR
+  Gate; only a covering full run or their own admission recheck cancels them.
+  Full runs retain width 16.
 - Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)
@@ -622,6 +720,20 @@ and successful jobs. Full CI also checks the merged foundation TRX outcomes;
 foundation security build and test failures count even when built separately.
 `CI Gate` depends on these enforced test summaries.
 
+Each shard job uploads its results as `<artifact>-attempt-<run_attempt>`, and
+both aggregates download every attempt into its own directory. A failed-jobs
+rerun re-runs only failed or cancelled shards; each shard's highest attempt is
+the one counted, so a rerun's receipt replaces the earlier attempt's and a
+shard the rerun did not repeat keeps its earlier passing receipt. A newer
+failing attempt still overrides an older passing one. Before this change the
+aggregates merged same-named artifacts, and GitHub's artifact ids do not follow
+upload order: on honua-server#7648 run 43603773296 attempt 2, attempt 1's empty
+`Packages and Temporal` artifact outranked attempt 2's receipt, leaving 5/6
+receipts. This adds no jobs or runners and changes no required check names or
+`needs`; the receipt count, TRX re-verification and job-result checks are
+unchanged. The quarantine publisher keeps one artifact per shard, the newest
+attempt.
+
 The retained `*.timing.json` includes `execution` with actual result counts,
 TRX SHA-256, source SHA/dirty flag, project, and runner/verifier hashes. The timing
 record retains the effective filter and original shard status. Its count status
@@ -713,7 +825,7 @@ Trailing `selective_base` dispatches use their verified base for the managed
 producer's affected project graph. An effective full-CI decision (including a
 router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
-run at most six at once, twelve above 30 selected shards (full runs run at most 16). Expensive AOT, Docker,
+run at most two at once after the 40-job admission cap (full runs run at most 16). Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
@@ -805,11 +917,24 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (11 Nov 2026): every `dispatch_rank` is the median passing job
-duration of trunk runs 42929935484, 42935981545, 42968585882 and 42986321489, the
-first full runs after the tiny-shard consolidation. The governance children measured
-5.2, 10.0 and 7.0 minutes. A shard with no passing job keeps the larger of its old rank
-and its failed duration.
+Measured ranks (14 Nov 2026): every `dispatch_rank` with a passing job is the
+median passing job duration of full trunk runs 43348507021, 43471044721,
+43540829683, 43564575677, 43580101834 and 43612492209. A run counts for a shard
+only when that shard's filter at the run's head equals the current filter, so
+re-split children are never ranked by their predecessor. 159 of 164 shards are
+measured (1 to 6 samples, median 3); `scripts/ci/fixtures/measured-dispatch-ranks.json`
+records the values and runs, and `test-full-run-capacity-partitions.py` fails when
+a rank drifts from it. Split-contract tests require each child to carry its
+measured rank, else its contract estimate, else its parent's rank. Unmeasured:
+Operator Eval Harness 2 and STAC Protocol 2 and 4 (cancelled in 43612492209) keep
+their parent's rank; the two Packages and Temporal children carry estimates. Ranks
+sum to 1,603 runner-minutes (was 1,818.5); 98 of 164 shards fit the 10-minute PR
+shard budget (was 84 of 163). Many unsplit shards measured slower than on 11 Nov
+(for example Core Endpoint Mutations 9.8 to 14.5): 20 shards, the replaced Packages
+and Temporal parent among them, leave the budget and 34, most of them split
+children, enter it. Of 794 shard source paths, 666 now have an owner that fits the
+budget (was 583): 140 gained one and 57 lost their last one, all owned by 15 shards
+now above 10 minutes, whose split is tracked in #7678.
 
 ### Standalone tooling in affected producer builds
 
@@ -827,8 +952,10 @@ outputs under disk pressure. The existing free-space thresholds and active-run
 protections remain; queued outputs may still be evicted as a fallback.
 
 [Stage 0 reuse assessment](stage-zero-reuse.md) records live queue/build timings,
-the five-run cache observation, and the protected issuer requirements for any
-future gate skip. Local receipts do not currently skip hosted tests. Compiled
+the five-run cache observation, completed affected-run job counts and queue
+timings, and the protected issuer requirements for any future gate skip. The
+completed samples have different selected work; green runs that skip managed
+tests do not establish a test speedup or resolve the comparable-run evidence gap. Local receipts do not currently skip hosted tests. Compiled
 output caching remains opt-in; no cross-phase promotion is authorized by the
 observational sample.
 
@@ -1030,21 +1157,37 @@ for the complete dispatchers, source/image binding and separate certification po
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
-so queued dispatches do not retain an obsolete range. Dispatch and execution use the same completed-run selector; execution never regresses behind the dispatched base. Selections above 30 shards
-fall back to the newest merge; the summary records the older range deferred to
-the twice-daily full run. A broad newest merge retains every selected shard.
-Affected shard concurrency is six, or twelve when more than 30 shards remain
-selected (`scripts/ci/trailing_selection.py` owns both numbers and the
-threshold), including full-coverage routing fallbacks; manual and scheduled
-full runs run 16 at once. On 12 Nov (03:30-04:00 UTC) a full run at 24 held
-28 of the org's 60 hosted runners while other pull request workflows held
-20-35, and PR Gate jobs waited a median 7.3 minutes (3 seconds before and after).
-Sixteen gives PR Gate eight more runners; the 1,272 shard-minutes of a full
-matrix then take about 79 minutes instead of 53. A
-134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
-at a two-second median; twelve halves that so a broad run finishes before the
-next full run. Required PR gates
-and shard definitions are unchanged.
+so queued dispatches do not retain an obsolete range. Dispatch and execution use
+the same completed-run selector; execution never regresses behind the dispatched
+base. `affected_admission.py` admits only a complete selection whose conservative
+job bound fits 40: 33 side jobs plus selected server shards. The side bound counts
+all foundation families, MCP transports and Postgres versions even when lane
+conditions would skip them. Router fixtures check the bound against the workflow,
+including matrix expansion; new dynamic or reusable jobs require an explicit bound.
+
+There is no newest-merge narrowing or arbitrary shard truncation. Missing history,
+router full-coverage escalation, API failure or a larger bound
+leaves coverage to the unchanged twice-daily full runs. A deferred dispatcher does
+not launch CI. A previously queued execution rechecks admission and cancels itself
+before publishing change outputs; neither cancellation nor a failed cancellation request can advance the successful CI base.
+Admitted affected runs use two concurrent server shards. Even matrix indices
+use the `honua-heavy` pool, so a run usually holds one heavy runner and at most
+two; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today.
+An active PR Gate does not defer or cancel an affected run. With up to ten open
+PRs a PR Gate is almost always active: from 05:52 to 17:02 UTC on 14 Nov 2026 the
+former PR-activity rule admitted 0 of 32 dispatches, leaving trunk with only the
+twice-daily full runs. Before that rule, completed affected runs
+took 4-62 minutes and PR Gate hosted jobs waited a median 4 s (p90 292 s) while
+one ran, against 3 s (p90 60 s) with no trunk CI, at the wider pre-cap width.
+
+Before this change, run 43544071705 expanded to roughly 170 jobs, queued for about
+120 minutes and occupied seven of eight heavy runners (founder incident report).
+The new bound defers that scope instead of queueing its matrix. Live after-change
+runner/minute measurements remain pending deployment; fixture counts are not live
+performance results. The 64-vCPU host audit found eight heavy 800% quotas and two
+fast 600% quotas, totaling 76 quota CPUs. Recommend six heavy plus two fast
+runners (60 quota CPUs, four CPUs of headroom). This change does not alter or apply
+runner infrastructure configuration. Required PR gates and full coverage remain.
 
 ### Covered trunk runs
 
@@ -1200,3 +1343,63 @@ All cases and assertions remain in the Security and Authorization 5 shard on
 selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
 definition.
+
+
+### Heavy runner shutdown recovery
+
+`heavy-shutdown-retry.yml` observes completed full trunk `CI` runs. It reads
+trusted trunk code and revalidates the source run before requesting one failed-job
+rerun. Only attempt 1 qualifies, and every failed non-summary job must have the
+`honua-heavy` label and the canonical runner shutdown message in its logs.
+Successful jobs remain completed; failed jobs and their dependents run once more.
+Manual cancellations, selective runs, mixed product failures, unreadable logs and
+second interruptions do not retry. Summary failures qualify only in known dependent-verdict steps; independent foundation/artifact failures remain failures. Required job names and dependency contracts
+are unchanged. Manual full trunk runs use the `CI full` title prefix and selective trunk runs retain `CI affected`, so a dispatch nonce cannot change the mode; merge-train
+dispatch identities retain their existing exact title.
+
+Normal PRs add zero jobs. Each failed first-attempt full trunk run starts one
+hosted observer; a qualifying interruption also requeues only failed jobs and
+dependents. The seven interrupted jobs in run 43540829683 all stopped at
+02:15:21Z on 14 November; that run was later cancelled and is ineligible for
+recovery. No after-change recovery timing is claimed before a live interruption.
+The companion IaC drain marker blocks fresh registration and listener restart
+before stopping all runner services on a spot notice. GitHub records interrupted
+jobs as failed until the observer requests the bounded rerun after completion.
+
+### Superseded repository hygiene
+
+The required `repo-hygiene / Repository hygiene` aggregate uses `!cancelled()`
+and excludes cancelled dependency results. GitHub can cancel it when concurrency
+supersedes a run; an already cancelled dependency skips the aggregate instead of
+starting a runner solely to report failure. The skipped job is neutral admission
+for superseded work, not a successful execution of either hygiene check. Active
+runs still require both evidence-path and shared-hygiene success; failure,
+skipping or missing results fail the shell check. The required name and both
+`needs` dependencies stay unchanged. Normal runs add zero jobs; superseded runs
+avoid the aggregate runner. Live after-change timing awaits a superseding event.
+See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
+
+The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
+
+### Compose readiness failure evidence
+
+The optional `Compose Release Lifecycle` job retains all four manual readiness
+checks and their 300-second timeout. A timeout names the initial published rc.1,
+candidate upgrade, restored rc.1, or candidate return stage and records service
+state plus at most eight redacted server error lines before existing cleanup.
+Diagnostic commands each have a 15-second limit; command failures omit output,
+and an unreadable generated-secret inventory suppresses all diagnostic capture.
+Only service/state/health/exit-code fields are retained; configuration, container
+environment and command stderr are never printed. Redaction tests run before
+image builds when the checked-out PR includes the diagnostic test module. Older
+PR heads omit that module and skip only its unit-test step; their lifecycle
+journeys and readiness assertions still run. Required checks and dependency
+contracts are unchanged.
+
+Run 43577434983 failed initial rc.1 readiness before candidate startup: its two
+manual tests reported one pass and one failure in 332 seconds (5.53 minutes).
+This change adds no runners or jobs: one lifecycle runner before and after.
+Live after-change readiness diagnostics and elapsed time await a new failure;
+no lifecycle rerun or runtime savings are claimed from unit validation.
+
+Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
