@@ -14,6 +14,12 @@ public sealed class LayerPublishRequest
     public string? PublicName { get; init; }
 
     [JsonIgnore]
+    public long? ExpectedMetadataRevision { get; init; }
+
+    [JsonIgnore]
+    public string? ExpectedMetadataEtag { get; init; }
+
+    [JsonIgnore]
     public Honua.Core.Features.Migration.Domain.GeoservicesImportTarget? ImportTarget { get; init; }
 
     public bool CreateEditableCopy { get; init; }
