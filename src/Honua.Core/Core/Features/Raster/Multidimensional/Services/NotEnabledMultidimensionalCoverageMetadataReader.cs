@@ -9,8 +9,10 @@ namespace Honua.Core.Features.Raster.Multidimensional.Services;
 
 public sealed class NotEnabledMultidimensionalCoverageMetadataReader
 {
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserve the injected reader instance API after removing its redundant interface.")]
     public IReadOnlyList<MultidimensionalCoverageFormat> SupportedFormats => Array.Empty<MultidimensionalCoverageFormat>();
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserve the injected reader instance API after removing its redundant interface.")]
     public Task<MultidimensionalCoverageMetadata> ReadMetadataAsync(
         ICloudRangeReader reader,
         MultidimensionalCoverageRegistration registration,
