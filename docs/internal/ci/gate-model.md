@@ -23,6 +23,11 @@ STAC qualification exhausted child 1 at 15.04 minutes and measured child 2 at
 12.70 minutes. Four children now isolate search, spatial/temporal and queryables,
 paging, and the residual selection. Original budgets, source triggers and
 future-class fallback remain enforced by the conservation contracts.
+Focused one-worker qualification passed all seven revised children: Migration
+1/2/3 took 7.35/5.35/5.51 minutes and STAC 1/2/3/4 took
+11.94/4.01/5.93/4.68 minutes. The largest Migration child finishes
+21.65 minutes before the exhausted parent deadline; this is capacity headroom,
+not a measured end-to-end workflow saving.
 
 The live-output capacity partitions replace File and Raster Import with three
 numbered children (import orchestration, direct CRS/authorization contracts, and
