@@ -61,7 +61,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
             jobId,
             _jobManager.ProgressStore,
             finalProgressTtl: ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
-        var run = new ImportRun(request with { JobId = jobId }, progress, Stopwatch.StartNew(), licenseCancellation, jobCancellation.Token);
+        var run = new ImportRun(jobId, request with { JobId = jobId }, progress, Stopwatch.StartNew(), licenseCancellation, jobCancellation.Token);
 
         return await ExecuteRunAsync(run).ConfigureAwait(false);
     }
@@ -94,14 +94,14 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
         {
             await run.Progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, ImportFailedMessage,
                 "Import failed with exception"), CancellationToken.None).ConfigureAwait(false);
-            Log.JobException(_logger, run.Request.JobId, ex);
+            Log.JobException(_logger, run.JobId, ex);
             return NotRetryable(ImportFailedMessage);
         }
     }
 
     private async Task<JobExecutionResult> RunAsync(ImportRun run)
     {
-        var jobId = run.Request.JobId;
+        var jobId = run.JobId;
         var stored = await _jobManager.ProgressStore.GetProgressAsync(jobId, run.Token).ConfigureAwait(false);
         run.Progress.Seed(stored);
         if (stored != null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status))
@@ -154,7 +154,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
 
     private async Task<JobExecutionResult> CompleteAsync(ImportRun run, GeoservicesImportResult result)
     {
-        var jobId = run.Request.JobId;
+        var jobId = run.JobId;
         if (run.LicenseCancellation.IsCancellationRequested)
         {
             var message = result.DataCommitted ? "license expired; imported rows were already committed" : LicenseExpiredMessage;
@@ -261,7 +261,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
     // ended-job projection; only an operator cancel, which wrote Cancelled first, is recorded here.
     private async Task RecordOperatorCancellationAsync(ImportRun run)
     {
-        var stored = await _jobManager.ProgressStore.GetProgressAsync(run.Request.JobId, CancellationToken.None).ConfigureAwait(false);
+        var stored = await _jobManager.ProgressStore.GetProgressAsync(run.JobId, CancellationToken.None).ConfigureAwait(false);
         if (stored?.Status != GeoservicesImportStatus.Cancelled)
         {
             return;
@@ -269,7 +269,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
 
         await run.Progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Cancelled, null, "Import cancelled"),
             CancellationToken.None).ConfigureAwait(false);
-        Log.JobCancelled(_logger, run.Request.JobId, run.Stopwatch.Elapsed.TotalSeconds);
+        Log.JobCancelled(_logger, run.JobId, run.Stopwatch.Elapsed.TotalSeconds);
     }
 
     private async Task<JobExecutionResult> FailMissingRequestAsync(string jobId)
@@ -302,6 +302,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
         => JobExecutionResult.Failed(message, warnings) with { IsRetryable = false };
 
     private sealed record ImportRun(
+        string JobId,
         GeoservicesImportRequest Request,
         ImportJobProgressController<GeoservicesImportProgress> Progress,
         Stopwatch Stopwatch,
@@ -312,7 +313,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
 
         public GeoservicesImportProgress Terminal(GeoservicesImportStatus status, string? errorMessage, string phase)
             => (Progress.CurrentProgress ?? GeoservicesImportProgress.CreateInitial(
-                Request.JobId, Request.ServiceUrl, Request.LayerId, Request.TableName)) with
+                JobId, Request.ServiceUrl, Request.LayerId, Request.TableName)) with
             {
                 Status = status,
                 StartedAt = StartedAt,
