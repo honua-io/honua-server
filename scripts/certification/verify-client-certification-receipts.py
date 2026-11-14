@@ -21,6 +21,9 @@ Two modes, both fail-closed:
     receipt, using the frozen mirror's ``receiptBinding``. It re-derives that binding
     from the same repository authorities the generator used, so a producer that
     lands without refreshing the mirror is caught rather than assumed.
+    With ``--check-readiness``, exit 0 when every cell is blocked only by
+    ``no-candidate``. The report still records skips and ``green: false``;
+    readiness never admits receipts or certifies a candidate.
 
 ``--mode release``
     Binds the receipts under ``--receipts`` to an exact candidate
@@ -29,7 +32,8 @@ Two modes, both fail-closed:
     matching observations all pass. ``--full-requirements`` supplies the governed
     denominator when that receipt includes observations outside the local mirror.
 
-Exit status is 0 only when every required cell is ``pass``. Anything else -- a
+Without ``--check-readiness``, exit status is 0 only when every required cell is
+``pass``. Anything else -- a
 missing envelope, a skip, a stale or mismatched digest, a source-built server, an
 unresolvable test ID -- exits 1 with the reason named.
 
@@ -648,6 +652,9 @@ def build_report(requirements: dict, verdicts: list[dict], mode: str, candidate:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify the bounded client-certification roster.")
     parser.add_argument("--mode", choices=("contract", "release"), default="contract")
+    parser.add_argument("--check-readiness", action="store_true",
+                        help="in contract mode, succeed when every cell has a producer and "
+                             "denominator join; this does not certify any candidate")
     parser.add_argument("--root", type=Path, default=None)
     parser.add_argument("--requirements", type=Path, default=None)
     parser.add_argument("--full-requirements", type=Path, default=None,
@@ -660,6 +667,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--producer-source-sha")
     parser.add_argument("--output", type=Path, default=None, help="write the verdict JSON here")
     args = parser.parse_args(argv)
+    if args.check_readiness and args.mode != "contract":
+        raise SystemExit("--check-readiness is only valid in contract mode")
 
     root = args.root or repository_root(Path(__file__).resolve().parent)
     requirements = load_json(args.requirements or (root / REQUIREMENTS_RELATIVE_PATH))
@@ -705,6 +714,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {code}: {count}")
     for owner, count in summary["byBlockerOwner"].items():
         print(f"  owner {owner}: {count}")
+    if args.check_readiness:
+        ready = bool(verdicts) and all(
+            verdict["result"] == "skip"
+            and [blocker["reason_code"] for blocker in verdict["blockers"]] == ["no-candidate"]
+            for verdict in verdicts)
+        print("READY: every required cell has a producer and denominator join; "
+              "no candidate is certified." if ready else
+              "NOT READY: required producer or denominator bindings are missing or stale.")
+        return 0 if ready else 1
     if summary["green"]:
         print("PASS: every required bounded-roster cell has a joined, candidate-bound pass.")
         return 0
