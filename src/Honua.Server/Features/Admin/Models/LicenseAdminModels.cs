@@ -31,10 +31,3 @@ public sealed class LicenseUploadResponse
 
     public required string Message { get; init; }
 }
-
-public sealed class LicenseSurgeModeRequest
-{
-    public required bool Enabled { get; init; }
-
-    public string? Reason { get; init; }
-}

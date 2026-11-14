@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Import.Domain;
 using Npgsql;
 
@@ -12,7 +13,7 @@ internal static class ImportTableOwnership
     internal const string Marker = "honua:import-owned:v1";
 
     internal static string MarkSql(string schema, string table)
-        => $"COMMENT ON TABLE {Quote(schema)}.{Quote(table)} IS '{Marker}';";
+        => $"COMMENT ON TABLE {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)} IS '{Marker}';";
 
     // Call within the same transaction as the subsequent DROP/rename. The lock
     // prevents another session replacing the checked relation before destruction.
@@ -25,9 +26,9 @@ internal static class ImportTableOwnership
         }
 
         await using var guard = new NpgsqlCommand(
-            $"LOCK TABLE {Quote(schema)}.{Quote(table)} IN EXCLUSIVE MODE; " +
+            $"LOCK TABLE {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)} IN EXCLUSIVE MODE; " +
             "SELECT obj_description(to_regclass(@relation), 'pg_class')", connection);
-        guard.Parameters.AddWithValue("relation", $"{Quote(schema)}.{Quote(table)}");
+        guard.Parameters.AddWithValue("relation", $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}");
         if (await guard.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not string marker || marker != Marker)
         {
             throw new ImportTableOwnershipException(schema, table);
@@ -49,9 +50,7 @@ internal static class ImportTableOwnership
         CancellationToken cancellationToken)
     {
         await using var exists = new NpgsqlCommand("SELECT to_regclass(@relation) IS NOT NULL", connection);
-        exists.Parameters.AddWithValue("relation", $"{Quote(schema)}.{Quote(table)}");
+        exists.Parameters.AddWithValue("relation", $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}");
         return await exists.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
     }
-
-    private static string Quote(string value) => "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 }

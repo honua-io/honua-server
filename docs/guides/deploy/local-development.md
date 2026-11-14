@@ -7,7 +7,7 @@ description: "You'll run Honua from source with .NET Aspire — one command that
 
 You'll run Honua from source with .NET Aspire — one command that starts PostGIS, Redis, and the server with a dashboard for logs, traces, and metrics.
 
-**Prerequisites:** .NET 10 SDK, Docker (Aspire starts the database and cache as containers), and a clone of [honua-server](https://github.com/honua-io/honua-server).
+**Prerequisites:** .NET 11 SDK, Docker (Aspire starts the database and cache as containers), and a clone of [honua-server](https://github.com/honua-io/honua-server).
 
 ## Steps
 
@@ -59,7 +59,7 @@ Expected output: `Ready`.
 
 ## Troubleshoot
 
-- **`dotnet run` fails resolving Aspire workloads, or reports "A compatible .NET SDK was not found"** — `global.json` requires a .NET 10 SDK of 10.0.400 or later (any later 10.0 feature band works; SDK 11 is not used). Update the SDK and restore: `dotnet restore Honua.sln`.
+- **`dotnet run` fails resolving Aspire workloads, or reports "A compatible .NET SDK was not found"** — `global.json` requires a .NET 11 SDK of 11.0.100 or later (any later 11.0 feature band works; a .NET 10 SDK cannot build the server). Update the SDK and restore: `dotnet restore Honua.sln`.
 - **Postgres container conflicts with a local Postgres on 5432** — stop the local service or let Aspire's dynamic port mapping stand; connect through the dashboard's listed endpoint, not `localhost:5432`.
 - **Admin endpoints return 401** — local dev runs without an admin password unless you set `HONUA_ADMIN_PASSWORD`; set it before `dotnet run` if you need admin APIs.
 - **Stale schema after switching branches** — migrations only roll forward; drop the `honua-postgres-data` volume (`docker volume rm honua-postgres-data`) to rebuild from scratch.

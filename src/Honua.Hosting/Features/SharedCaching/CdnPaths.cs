@@ -11,11 +11,15 @@ internal static class CdnPaths
 
     internal static readonly string[] EveryOgcSurface = ["/ogc/*"];
 
+    // STAC collection extents are computed from a layer's features, so every edit reaches them.
+    internal const string EveryStacSurface = "/stac/*";
+
     // Routes match without regard to case and the CDN keys with regard to it; the lower-case spelling and the one given cover what clients are handed.
     internal static string[] ForEditedLayer(int layerId, IEnumerable<string> serviceIds) =>
     [
         $"/tiles/{layerId}/*",
         .. EveryOgcSurface,
+        EveryStacSurface,
         .. serviceIds
             .SelectMany(serviceId => new[] { serviceId, serviceId.ToLowerInvariant() })
             .Distinct(StringComparer.Ordinal)

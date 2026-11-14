@@ -113,6 +113,8 @@ public sealed class UpdateConsoleContentItemRequest
 
     [JsonPropertyName("generation")]
     public long? Generation { get; init; }
+
+    internal long? AuthorizedGeneration { get; set; }
 }
 
 public sealed class PatchConsoleContentItemRequest

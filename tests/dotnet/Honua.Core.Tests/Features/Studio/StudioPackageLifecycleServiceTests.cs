@@ -1236,6 +1236,9 @@ public sealed class StudioPackageLifecycleServiceTests
             CancellationToken cancellationToken = default)
             => Task.FromException<StudioPackageDraft?>(new NotSupportedException());
 
+        public Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default)
+            => DeleteDraftAsync(draftId, cancellationToken);
+
         public async Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         {
             await MaybeBlockAsync(nameof(DeleteDraftAsync)).ConfigureAwait(false);

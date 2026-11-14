@@ -668,6 +668,7 @@ internal sealed class McpDataAccessSurface
         }
 
         McpToolsCallResult result;
+        var invocationStarted = false;
         try
         {
             httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
@@ -707,6 +708,7 @@ internal sealed class McpDataAccessSurface
                     "Signed model output may select only a catalog-owned proposal tool.");
             }
 
+            invocationStarted = true;
             result = await tool
                 .InvokeAsync(httpContext, parameters.Arguments, cancellationToken)
                 .ConfigureAwait(false);
@@ -750,6 +752,7 @@ internal sealed class McpDataAccessSurface
             httpContext.Items.Remove(ProposalEvidenceVerifier.InvokingToolItemKey);
         }
 
+        if (invocationStarted) result = McpInputGuidance.Enrich(tool, parameters.Arguments, result);
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
     }
 

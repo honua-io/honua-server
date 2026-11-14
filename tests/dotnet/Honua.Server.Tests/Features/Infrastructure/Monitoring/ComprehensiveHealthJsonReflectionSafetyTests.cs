@@ -129,8 +129,8 @@ public sealed class ComprehensiveHealthJsonReflectionSafetyTests
         // GetTypeInfo throws when the resolver has no metadata for the type, so this fails rather
         // than silently falling back the way the reflection-enabled default would.
         var json = JsonSerializer.Serialize(
-            sanitized,
-            AotOnlyOptions.GetTypeInfo(typeof(Dictionary<string, JsonElement>)));
+            sanitized!,
+            AotOnlyOptions.GetTypeInfo<Dictionary<string, JsonElement>>());
 
         json.Should().Contain("\"database\":\"honua_dev\"").And.Contain("\"latencyMs\":12");
     }
