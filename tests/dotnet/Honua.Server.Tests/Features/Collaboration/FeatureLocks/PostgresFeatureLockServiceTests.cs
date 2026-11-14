@@ -99,10 +99,9 @@ public sealed class PostgresFeatureLockServiceTests(DatabaseFixtureAdapter datab
         await database.ExecuteAsync($"UPDATE \"{_schema}\".feature_locks SET expires_at = clock_timestamp() - interval '1 second'");
         var active = _feature with { FeatureId = "003" };
         await store.ClaimAsync(active, _holder, TimeSpan.FromMinutes(1), _write);
-        IExpiredRowSweep sweep = store;
-        (await sweep.DeleteExpiredAsync(1, CancellationToken.None)).Should().Be(1);
-        (await sweep.DeleteExpiredAsync(10, CancellationToken.None)).Should().Be(1);
-        (await sweep.DeleteExpiredAsync(10, CancellationToken.None)).Should().Be(0);
+        (await store.DeleteExpiredAsync(1, CancellationToken.None)).Should().Be(1);
+        (await store.DeleteExpiredAsync(10, CancellationToken.None)).Should().Be(1);
+        (await store.DeleteExpiredAsync(10, CancellationToken.None)).Should().Be(0);
         (await store.GetActiveLeaseAsync(active)).Should().NotBeNull();
         (await store.HasAnyActiveLeasesAsync()).Should().BeTrue();
     }
