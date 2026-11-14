@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Data;
+using Honua.Core.Features.Infrastructure.Crs;
 using System.Diagnostics;
 using System.Text.Json;
 using NetTopologySuite.Features;
@@ -29,58 +30,103 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
-    /// <summary>
-    /// Insert a batch of features with optional transaction.
-    /// </summary>
+    private sealed record ImportBatchRequest
+    {
+        public required string SchemaName { get; init; }
+        public required string TableName { get; init; }
+        public required List<IFeature> Features { get; init; }
+        public int SourceSrid { get; init; }
+        public int TargetSrid { get; init; }
+        public required WKBWriter WkbWriter { get; init; }
+        public ImportLoadMode LoadMode { get; init; }
+        public required IReadOnlyList<string> KeyColumns { get; init; }
+        public required GeometryRepairTally RepairTally { get; init; }
+        public DirectImportGuard? DirectGuard { get; init; }
+        public DatumTransformationSelection? RequestedDatumSelection { get; init; }
+    }
+
+    private sealed record ImportBatchWriteRequest
+    {
+        public NpgsqlTransaction? Transaction { get; init; }
+        public required string SchemaName { get; init; }
+        public required string TableName { get; init; }
+        public required List<IFeature> Features { get; init; }
+        public required IReadOnlyList<Lazy<WkbGateResult>> GeometryResults { get; init; }
+        public int SourceSrid { get; init; }
+        public int TargetSrid { get; init; }
+        public ImportLoadMode LoadMode { get; init; }
+        public required IReadOnlyList<string> KeyColumns { get; init; }
+        public string? DatumPipeline { get; init; }
+    }
+
+    private string? ResolveBatchDatumPipeline(ImportBatchRequest batch)
+    {
+        if (batch.RequestedDatumSelection is not null && batch.Features.Any(feature =>
+                feature.Geometry is { SRID: > 0 } geometry && geometry.SRID != batch.SourceSrid))
+        {
+            throw new InvalidOperationException("An explicit datum transformation requires every geometry to use the request source CRS.");
+        }
+
+        return batch.RequestedDatumSelection?.ProjPipeline is { Length: > 0 } pipeline
+            ? ProjPipelineInverter.Orient(pipeline, batch.RequestedDatumSelection.TransformForward)
+            : ResolveImportDatumPipeline(batch.SourceSrid, batch.TargetSrid, TryImportEnvelope(batch.Features, batch.SourceSrid));
+    }
+
     private async Task<(int imported, int failed)> InsertBatchAsync(
         NpgsqlConnection connection,
-        string schemaName,
-        string tableName,
-        List<IFeature> features,
-        int sourceSrid,
-        int targetSrid,
-        WKBWriter wkbWriter,
-        ImportLoadMode loadMode,
-        IReadOnlyList<string> keyColumns,
-        GeometryRepairTally repairTally,
-        CancellationToken cancellationToken,
-        DirectImportGuard? directGuard = null)
+        ImportBatchRequest batch,
+        CancellationToken cancellationToken)
     {
+        var datumPipeline = ResolveBatchDatumPipeline(batch);
+
         var imported = 0;
         var failed = 0;
 
         using var activity = _activitySource.StartActivity("Import.InsertBatch");
-        activity?.SetTag("import.table", tableName);
-        activity?.SetTag("import.feature_count", features.Count);
-        activity?.SetTag("import.load_mode", loadMode.ToString());
+        activity?.SetTag("import.table", batch.TableName);
+        activity?.SetTag("import.feature_count", batch.Features.Count);
+        activity?.SetTag("import.load_mode", batch.LoadMode.ToString());
 
         // Direct writes always protect epoch/identity validation and rows in one batch transaction.
         // Existing staging commit boundaries remain unchanged; savepoints isolate row fallback.
-        var useTransaction = directGuard is not null || (_limits.UseTransactions && !_limits.ContinueOnError);
+        var useTransaction = batch.DirectGuard is not null || (_limits.UseTransactions && !_limits.ContinueOnError);
         await using var transaction = useTransaction
             ? await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken)
             : null;
 
-        var previousRepaired = repairTally.Repaired;
-        var previousSkipped = repairTally.SkippedInvalid;
+        var previousRepaired = batch.RepairTally.Repaired;
+        var previousSkipped = batch.RepairTally.SkippedInvalid;
         // Lazy caches failures as well as WKB: SQL fast-path rollback must not repeat repair,
         // cutter mutations or tally increments when retrying the same bounded batch row.
-        var geometryResults = features.Select(feature => new Lazy<WkbGateResult>(
-            () => CreateWkb(feature, wkbWriter, repairTally, targetSrid))).ToArray();
+        var geometryResults = batch.Features.Select(feature => new Lazy<WkbGateResult>(
+            () => CreateWkb(feature, batch.WkbWriter, batch.RepairTally, batch.TargetSrid))).ToArray();
+        var writeBatch = new ImportBatchWriteRequest
+        {
+            Transaction = transaction,
+            SchemaName = batch.SchemaName,
+            TableName = batch.TableName,
+            Features = batch.Features,
+            GeometryResults = geometryResults,
+            SourceSrid = batch.SourceSrid,
+            TargetSrid = batch.TargetSrid,
+            LoadMode = batch.LoadMode,
+            KeyColumns = batch.KeyColumns,
+            DatumPipeline = datumPipeline
+        };
         var useSavepoints = transaction is not null && _limits.ContinueOnError;
         try
         {
             string? previousType = null;
-            if (directGuard is not null)
+            if (batch.DirectGuard is not null)
             {
-                await ValidateDirectImportAsync(connection, transaction!, schemaName, tableName,
-                    targetSrid, directGuard, cancellationToken);
+                await ValidateDirectImportAsync(connection, transaction!, batch.SchemaName, batch.TableName,
+                    batch.TargetSrid, batch.DirectGuard, cancellationToken);
                 previousType = await ReadImportedGeometryTypeAsync(
-                    connection, transaction!, schemaName, tableName, cancellationToken);
+                    connection, transaction!, batch.SchemaName, batch.TableName, cancellationToken);
                 if (previousType is not null)
                 {
                     await ClearImportedGeometryTypeAsync(
-                        connection, transaction!, schemaName, tableName, cancellationToken);
+                        connection, transaction!, batch.SchemaName, batch.TableName, cancellationToken);
                 }
             }
             if (useSavepoints)
@@ -89,18 +135,7 @@ internal sealed partial class StreamingFileImportService
             }
             try
             {
-                imported = await InsertBatchFastAsync(
-                    connection,
-                    transaction,
-                    schemaName,
-                    tableName,
-                    features,
-                    geometryResults,
-                    sourceSrid,
-                    targetSrid,
-                    loadMode,
-                    keyColumns,
-                    cancellationToken);
+                imported = await InsertBatchFastAsync(connection, writeBatch, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -113,24 +148,13 @@ internal sealed partial class StreamingFileImportService
                     await transaction!.RollbackAsync("import_batch_fast", CancellationToken.None);
                     await transaction.ReleaseAsync("import_batch_fast", CancellationToken.None);
                 }
-                (imported, failed) = await InsertBatchIndividuallyAsync(
-                    connection,
-                    transaction,
-                    schemaName,
-                    tableName,
-                    features,
-                    geometryResults,
-                    sourceSrid,
-                    targetSrid,
-                    loadMode,
-                    keyColumns,
-                    cancellationToken);
+                (imported, failed) = await InsertBatchIndividuallyAsync(connection, writeBatch, cancellationToken);
             }
 
             if (previousType is not null)
             {
                 await RefreshImportedGeometryTypeAsync(
-                    connection, schemaName, tableName, cancellationToken, transaction, previousType);
+                    connection, batch.SchemaName, batch.TableName, cancellationToken, transaction, previousType);
             }
             if (transaction != null)
             {
@@ -143,8 +167,8 @@ internal sealed partial class StreamingFileImportService
             if (transaction != null)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
-                repairTally.Repaired = previousRepaired;
-                repairTally.SkippedInvalid = previousSkipped;
+                batch.RepairTally.Repaired = previousRepaired;
+                batch.RepairTally.SkippedInvalid = previousSkipped;
             }
             throw;
         }
@@ -155,28 +179,20 @@ internal sealed partial class StreamingFileImportService
         return (imported, failed);
     }
 
-    private async Task<int> InsertBatchFastAsync(
+    private static async Task<int> InsertBatchFastAsync(
         NpgsqlConnection connection,
-        NpgsqlTransaction? transaction,
-        string schemaName,
-        string tableName,
-        List<IFeature> features,
-        IReadOnlyList<Lazy<WkbGateResult>> geometryResults,
-        int sourceSrid,
-        int targetSrid,
-        ImportLoadMode loadMode,
-        IReadOnlyList<string> keyColumns,
+        ImportBatchWriteRequest batch,
         CancellationToken cancellationToken)
     {
-        var wkbs = new List<byte[]?>(features.Count);
-        var sourceSrids = new List<int>(features.Count);
-        var properties = new List<string>(features.Count);
+        var wkbs = new List<byte[]?>(batch.Features.Count);
+        var sourceSrids = new List<int>(batch.Features.Count);
+        var properties = new List<string>(batch.Features.Count);
 
-        for (var i = 0; i < features.Count; i++)
+        for (var i = 0; i < batch.Features.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var feature = features[i];
-            var gate = geometryResults[i].Value;
+            var feature = batch.Features[i];
+            var gate = batch.GeometryResults[i].Value;
 
             // A gate skip must exclude the whole row, not degrade it: a null WKB is a legal
             // null-geometry row, so passing the skipped feature through would silently import
@@ -191,7 +207,7 @@ internal sealed partial class StreamingFileImportService
             // Use per-feature SRID when available (e.g. multi-layer FileGDBs
             // where each layer may have its own CRS).
             var featureSrid = feature.Geometry?.SRID;
-            sourceSrids.Add(featureSrid is > 0 ? featureSrid.Value : sourceSrid);
+            sourceSrids.Add(featureSrid is > 0 ? featureSrid.Value : batch.SourceSrid);
             properties.Add(BuildPropertiesJson(feature));
         }
 
@@ -201,34 +217,28 @@ internal sealed partial class StreamingFileImportService
             return 0;
         }
 
-        // Honor the auditable Esri-default datum pipeline for the request-level
-        // (sourceSrid -> targetSrid) pair (#1501). The pipeline is applied only to rows
-        // whose source SRID matches the resolved pair; rows carrying a different per-feature
-        // SRID (e.g. mixed-CRS FileGDB layers) keep PROJ's default pipeline via a NULL.
-        var datumPipeline = ResolveImportDatumPipeline(sourceSrid, targetSrid, TryImportEnvelope(features, sourceSrid));
-
         // Keyed upsert routes the whole batch through a single unnest-driven
         // INSERT ... ON CONFLICT DO UPDATE (honua.bulk_upsert_import_features) so colliding
         // rows merge in place without dropping the target. It honors the same datum pipeline
         // CASE as the insert path via the optional datum_source_srid/datum_pipeline params.
-        if (loadMode == ImportLoadMode.Upsert)
+        if (batch.LoadMode == ImportLoadMode.Upsert)
         {
             return await UpsertBatchFastAsync(
                 connection,
-                transaction,
-                schemaName,
-                tableName,
+                batch.Transaction,
+                batch.SchemaName,
+                batch.TableName,
                 wkbs,
                 sourceSrids,
                 properties,
-                sourceSrid,
-                targetSrid,
-                datumPipeline,
-                keyColumns,
+                batch.SourceSrid,
+                batch.TargetSrid,
+                batch.DatumPipeline,
+                batch.KeyColumns,
                 cancellationToken);
         }
 
-        var sql = datumPipeline is null
+        var sql = batch.DatumPipeline is null
             ? """
                 SELECT honua.insert_import_feature(
                     @schema_name,
@@ -253,18 +263,18 @@ internal sealed partial class StreamingFileImportService
 
         await using var command = new NpgsqlCommand(sql, connection)
         {
-            Transaction = transaction
+            Transaction = batch.Transaction
         };
-        command.Parameters.Add("schema_name", NpgsqlDbType.Text).Value = schemaName;
-        command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;
-        command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
+        command.Parameters.Add("schema_name", NpgsqlDbType.Text).Value = batch.SchemaName;
+        command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = batch.TableName;
+        command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = batch.TargetSrid;
         command.Parameters.Add("wkbs", NpgsqlDbType.Array | NpgsqlDbType.Bytea).Value = wkbs;
         command.Parameters.Add("source_srids", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = sourceSrids;
         command.Parameters.Add("properties", NpgsqlDbType.Array | NpgsqlDbType.Jsonb).Value = properties;
-        if (datumPipeline is not null)
+        if (batch.DatumPipeline is not null)
         {
-            command.Parameters.Add("datum_source_srid", NpgsqlDbType.Integer).Value = sourceSrid;
-            command.Parameters.Add("datum_pipeline", NpgsqlDbType.Text).Value = datumPipeline;
+            command.Parameters.Add("datum_source_srid", NpgsqlDbType.Integer).Value = batch.SourceSrid;
+            command.Parameters.Add("datum_pipeline", NpgsqlDbType.Text).Value = batch.DatumPipeline;
         }
 
         var imported = 0;
@@ -319,65 +329,48 @@ internal sealed partial class StreamingFileImportService
 
     private async Task<(int imported, int failed)> InsertBatchIndividuallyAsync(
         NpgsqlConnection connection,
-        NpgsqlTransaction? transaction,
-        string schemaName,
-        string tableName,
-        List<IFeature> features,
-        IReadOnlyList<Lazy<WkbGateResult>> geometryResults,
-        int sourceSrid,
-        int targetSrid,
-        ImportLoadMode loadMode,
-        IReadOnlyList<string> keyColumns,
+        ImportBatchWriteRequest batch,
         CancellationToken cancellationToken)
     {
         var imported = 0;
         var failed = 0;
-        var isUpsert = loadMode == ImportLoadMode.Upsert;
-
-        // Honor the auditable Esri-default datum pipeline for the request-level
-        // (sourceSrid -> targetSrid) pair (#1501), applied per feature only when the
-        // feature's source SRID matches the resolved pair. The single-row keyed upsert
-        // path (this continue-on-error fallback) uses PROJ's default reprojection; the
-        // datum-pipelined upsert is covered by the batch fast path.
-        var datumPipeline = isUpsert
-            ? null
-            : ResolveImportDatumPipeline(sourceSrid, targetSrid, TryImportEnvelope(features, sourceSrid));
+        var isUpsert = batch.LoadMode == ImportLoadMode.Upsert;
 
         var commandText = isUpsert
             ? UpsertImportFeatureSql
-            : (datumPipeline is null ? InsertImportFeatureSql : InsertImportFeatureWithDatumSql);
+            : (batch.DatumPipeline is null ? InsertImportFeatureSql : InsertImportFeatureWithDatumSql);
 
         await using var command = new NpgsqlCommand(commandText, connection)
         {
-            Transaction = transaction
+            Transaction = batch.Transaction
         };
-        command.Parameters.Add("schema_name", NpgsqlDbType.Text).Value = schemaName;
-        command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;
+        command.Parameters.Add("schema_name", NpgsqlDbType.Text).Value = batch.SchemaName;
+        command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = batch.TableName;
         var wkbParameter = command.Parameters.Add("wkb", NpgsqlDbType.Bytea);
         var sourceSridParameter = command.Parameters.Add("source_srid", NpgsqlDbType.Integer);
-        sourceSridParameter.Value = sourceSrid;
-        command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
+        sourceSridParameter.Value = batch.SourceSrid;
+        command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = batch.TargetSrid;
         var propertiesParameter = command.Parameters.Add("properties", NpgsqlDbType.Jsonb);
         if (isUpsert)
         {
-            command.Parameters.Add("key_columns", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = keyColumns.ToArray();
+            command.Parameters.Add("key_columns", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = batch.KeyColumns.ToArray();
         }
-        var datumPipelineParameter = datumPipeline is null
+        var datumPipelineParameter = batch.DatumPipeline is null || isUpsert
             ? null
             : command.Parameters.Add("datum_pipeline", NpgsqlDbType.Text);
 
-        var useSavepoints = transaction is not null && _limits.ContinueOnError;
-        for (var row = 0; row < features.Count; row++)
+        var useSavepoints = batch.Transaction is not null && _limits.ContinueOnError;
+        for (var row = 0; row < batch.Features.Count; row++)
         {
-            var feature = features[row];
+            var feature = batch.Features[row];
             cancellationToken.ThrowIfCancellationRequested();
             if (useSavepoints)
             {
-                await transaction!.SaveAsync("import_row", cancellationToken);
+                await batch.Transaction!.SaveAsync("import_row", cancellationToken);
             }
             try
             {
-                var gate = geometryResults[row].Value;
+                var gate = batch.GeometryResults[row].Value;
 
                 // A gate skip excludes the whole row (see InsertBatchFastAsync): inserting the
                 // feature with a NULL wkb would import its properties as a null-geometry row.
@@ -385,27 +378,37 @@ internal sealed partial class StreamingFileImportService
                 {
                     if (useSavepoints)
                     {
-                        await transaction!.ReleaseAsync("import_row", cancellationToken);
+                        await batch.Transaction!.ReleaseAsync("import_row", cancellationToken);
                     }
                     continue;
                 }
 
                 wkbParameter.Value = gate.Wkb ?? (object)DBNull.Value;
                 var featureSrid = feature.Geometry?.SRID;
-                var effectiveSourceSrid = featureSrid is > 0 ? featureSrid.Value : sourceSrid;
+                var effectiveSourceSrid = featureSrid is > 0 ? featureSrid.Value : batch.SourceSrid;
                 sourceSridParameter.Value = effectiveSourceSrid;
                 if (datumPipelineParameter is not null)
                 {
-                    datumPipelineParameter.Value = effectiveSourceSrid == sourceSrid
-                        ? datumPipeline!
+                    datumPipelineParameter.Value = effectiveSourceSrid == batch.SourceSrid
+                        ? batch.DatumPipeline!
                         : (object)DBNull.Value;
                 }
                 propertiesParameter.Value = BuildPropertiesJson(feature);
-                await command.ExecuteNonQueryAsync(cancellationToken);
+                if (isUpsert && batch.DatumPipeline is not null)
+                {
+                    await UpsertBatchFastAsync(connection, batch.Transaction, batch.SchemaName, batch.TableName,
+                        new List<byte[]?> { gate.Wkb }, new List<int> { effectiveSourceSrid },
+                        new List<string> { BuildPropertiesJson(feature) }, batch.SourceSrid, batch.TargetSrid,
+                        batch.DatumPipeline, batch.KeyColumns, cancellationToken);
+                }
+                else
+                {
+                    await command.ExecuteNonQueryAsync(cancellationToken);
+                }
                 imported++;
                 if (useSavepoints)
                 {
-                    await transaction!.ReleaseAsync("import_row", cancellationToken);
+                    await batch.Transaction!.ReleaseAsync("import_row", cancellationToken);
                 }
             }
             catch (OperationCanceledException)
@@ -416,10 +419,10 @@ internal sealed partial class StreamingFileImportService
             {
                 if (useSavepoints)
                 {
-                    await transaction!.RollbackAsync("import_row", CancellationToken.None);
-                    await transaction.ReleaseAsync("import_row", CancellationToken.None);
+                    await batch.Transaction!.RollbackAsync("import_row", CancellationToken.None);
+                    await batch.Transaction.ReleaseAsync("import_row", CancellationToken.None);
                 }
-                ImportLog.FeatureInsertFailed(_logger, ex, tableName);
+                ImportLog.FeatureInsertFailed(_logger, ex, batch.TableName);
                 failed++;
                 if (!_limits.ContinueOnError)
                 {

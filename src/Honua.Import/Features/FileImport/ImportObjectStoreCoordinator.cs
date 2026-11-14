@@ -28,6 +28,12 @@ internal static class ImportObjectStoreCoordinator
 
         public int? SourceSrid { get; init; }
 
+        public int? DatumTransformationWkid { get; init; }
+
+        public string? DatumTransformationName { get; init; }
+
+        public double? CoordinateEpoch { get; init; }
+
         public int? TargetSrid { get; init; }
 
         public bool OverwriteExisting { get; init; }
@@ -259,6 +265,9 @@ internal static class ImportObjectStoreCoordinator
             TableName = command.TableName,
             TargetSchema = command.TargetSchema,
             SourceSrid = command.SourceSrid,
+            DatumTransformationWkid = command.DatumTransformationWkid,
+            DatumTransformationName = command.DatumTransformationName,
+            CoordinateEpoch = command.CoordinateEpoch,
             TargetSrid = command.TargetSrid,
             OverwriteExisting = command.OverwriteExisting,
             ObjectStoreUri = location.SourceUri,

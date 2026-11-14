@@ -21,7 +21,7 @@ so the selected (Esri-parity) pipeline is used.
 - `IDatumTransformationCatalog` (`Honua.Core.Features.Infrastructure.Crs`) resolves a
   `(fromSrid, toSrid)` reprojection to a `DatumTransformationSelection` carrying the
   Esri WKID, EPSG operation code, and explicit PROJ pipeline string.
-- `EsriDatumTransformationCatalog` is backed by the embedded table
+- `GeoServicesDatumTransformationCatalog` is backed by the embedded table
   `src/Honua.Core/Core/Features/Infrastructure/Crs/Resources/esri-default-datum-transformations.json`.
 - The GeoServices FeatureServer query handler:
   - **Honors** a client-supplied `datumTransformation` (bare WKID or
@@ -54,6 +54,56 @@ later (a fixture with documented provenance) without restructuring.
 Tolerances are conservative upper bounds for the *selection* test: they prove Honua
 applies the correct pipeline, not that PROJ and EPSG agree to sub-millimeter. Tighten
 them when an ArcGIS golden set is added.
+
+### Explicit realization and observation-epoch selection
+
+The four NAD83-family null defaults above remain unchanged when no operation is
+requested. A caller can instead select one of these curated non-identity
+operations in either direction:
+
+| Native direction | Selector | Observation epoch |
+|---|---|---|
+| WGS84 (4326) → NAD83 (4269) | ESRI 108190 | Not required |
+| WGS84 (4326) → NAD83(HARN) (4152) | ESRI 108282 | Not required |
+| WGS84 (4326) → NAD83(2011) (6318) | ESRI 108354 | Not required |
+| WGS84 (4326) → NAD83(NSRS2007) (4759) | `Honua:WGS84_ITRF00_To_NAD83_NSRS2007_Via_2011` | Not required |
+| ITRF2014 geographic 3D (7912) → NAD83(2011) geographic 3D (6319) | ESRI 108574 | Required |
+
+The NSRS2007 selector is a Honua composite of ESRI 108354 and the inverse of
+ESRI 108356 (the published identity NSRS2007 → 2011 operation). It has no authority
+WKID. Its mathematical pipeline equals 108354 because the second step is identity;
+this does not imply that NSRS2007 and 2011 coordinates coincide to centimetres.
+The published accuracy of the component operations is 0.1 m. The
+[Esri geographic transformation catalog](https://pro.arcgis.com/en/pro-app/3.3/help/mapping/properties/pdf/geographic_transformations.pdf)
+provides the operation identities and parameters. The static operations use
+WGS84(ITRF00), rather than a generic promise about every WGS84 realization.
+
+FeatureServer query accepts `datumTransformation=<WKID-or-Honua-name>` and
+`coordinateEpoch=<decimal-year>`. GeometryServer project uses `transformation`
+(with `datumTransformation` as an alias) and the same `coordinateEpoch` field.
+The epoch is the observation epoch, not the transformation parameter reference
+epoch. Missing epochs for timed operations and non-finite epochs return a client
+error. Epochs are bound before pipeline inversion, so both directions use the
+same observation time. Arbitrary caller-supplied PROJ pipelines are not accepted.
+
+File imports accept `datumTransformationWkid` or `datumTransformationName`
+(mutually exclusive), plus `coordinateEpoch`, for the declared source/target CRS
+pair. These fields survive durable job serialization. Explicit selections reject
+mixed source SRIDs instead of silently applying another operation. A GeoParquet
+file's stored coordinate epoch remains a separate metadata constraint; this
+request field does not authorize dropping or overriding it.
+
+Fixed CONUS coordinates at (-96, 41) are compared with independently evaluated
+PROJ 9.8.1 ESRI operations. Static inverse output is
+(-96.00000801053693, 41.00000720698309). Timed forward output at epoch 2020 is
+(-95.99998731925608, 40.999993417501). The tests allow `8e-8` degrees (less than
+one centimetre horizontally at this latitude), check both directions, and cover
+query, project and import execution. This is a computational parity tolerance,
+not a statement of geodetic accuracy. The NSRS2007 reference composes the two
+published operations. Timed execution uses PROJ's
+[time-dependent Helmert parameters](https://proj.org/en/stable/operations/transformations/helmert.html)
+and binds the observation ordinate using
+[the set operation](https://proj.org/en/stable/operations/conversions/set.html).
 
 ### Seeded vs deferred pairs
 
@@ -153,7 +203,7 @@ Details and guarantees:
   with no curated default for the pair therefore keep PROJ's default (2-argument) behavior
   byte-for-byte.
 - The pipeline is resolved for the request-level `(sourceSrid → targetSrid)` pair and is
-  applied per row **only** when the row's source SRID matches that pair. Rows carrying a
+  applied per row **only** when the row's source SRID matches that pair. For default selection, rows carrying a
   different per-feature SRID (e.g. mixed-CRS FileGDB layers) fall back to PROJ's default
   pipeline; per-feature pipeline selection for heterogeneous-CRS imports is a follow-up.
 - Reverse selections are oriented with `ProjPipelineInverter` before they are bound,

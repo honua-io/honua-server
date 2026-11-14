@@ -96,6 +96,80 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
         identityPoint.Y.Should().BeApproximately(lat, 1e-9);
     }
 
+    [IntegrationTheory]
+    [InlineData("108190", 4269)]
+    [InlineData("108282", 4152)]
+    [InlineData("108354", 6318)]
+    [InlineData("Honua:WGS84_ITRF00_To_NAD83_NSRS2007_Via_2011", 4759)]
+    public async Task TransformPoint_ExplicitRealizationOperation_ShiftsPointAndPreservesDefault(
+        string operation, int sourceSrid)
+    {
+        const double longitude = -96;
+        const double latitude = 41;
+        _catalog.TryGetDefault(sourceSrid, 4326, out var defaultSelection).Should().BeTrue();
+        var unchanged = await _service!.TransformPointAsync(
+            longitude, latitude, sourceSrid, 4326, defaultSelection);
+        unchanged.Should().NotBeNull();
+        unchanged!.Value.X.Should().BeApproximately(longitude, 1e-9);
+        unchanged.Value.Y.Should().BeApproximately(latitude, 1e-9);
+
+        var forward = ResolveOperation(operation, sourceSrid, 4326);
+        var shifted = await _service.TransformPointAsync(longitude, latitude, sourceSrid, 4326, forward);
+        shifted.Should().NotBeNull();
+        shifted!.Value.X.Should().BeApproximately(-96.00000801053693, 8e-8);
+        shifted.Value.Y.Should().BeApproximately(41.00000720698309, 8e-8);
+
+        var inverse = ResolveOperation(operation, 4326, sourceSrid);
+        var restored = await _service.TransformPointAsync(
+            shifted.Value.X, shifted.Value.Y, 4326, sourceSrid, inverse);
+        restored.Should().NotBeNull();
+        restored!.Value.X.Should().BeApproximately(longitude, 1e-8);
+        restored.Value.Y.Should().BeApproximately(latitude, 1e-8);
+    }
+
+    // Independent PROJ 9.8.1 ESRI:108574 output for longitude -96, latitude 41,
+    // ellipsoidal height zero. Angular tolerances bound horizontal error below 1 cm.
+    public sealed record TimedOperationReference
+    {
+        public double Epoch { get; init; }
+        public int SourceSrid { get; init; }
+        public int TargetSrid { get; init; }
+        public double Longitude { get; init; }
+        public double Latitude { get; init; }
+    }
+
+    public static TheoryData<TimedOperationReference> TimedOperations => new()
+    {
+        new() { Epoch = 2010, SourceSrid = 7912, TargetSrid = 6319, Longitude = -95.99998935274661, Latitude = 40.999993141037606 },
+        new() { Epoch = 2020, SourceSrid = 7912, TargetSrid = 6319, Longitude = -95.99998731925608, Latitude = 40.999993417501 },
+        new() { Epoch = 2010, SourceSrid = 6319, TargetSrid = 7912, Longitude = -96.00001064726, Latitude = 41.00000685896444 },
+        new() { Epoch = 2020, SourceSrid = 6319, TargetSrid = 7912, Longitude = -96.00001268075165, Latitude = 41.0000065825003 }
+    };
+
+    [IntegrationTheory]
+    [MemberData(nameof(TimedOperations))]
+    public async Task TransformPoint_TimedRealization_AgreesWithPublishedOperation(TimedOperationReference reference)
+    {
+        _catalog.TryGetByWkid(108574, reference.SourceSrid, reference.TargetSrid, out var selection).Should().BeTrue();
+        var boundSelection = selection!.WithCoordinateEpoch(reference.Epoch);
+
+        var result = await _service!.TransformPointAsync(-96, 41, reference.SourceSrid, reference.TargetSrid, boundSelection);
+
+        result.Should().NotBeNull();
+        result!.Value.X.Should().BeApproximately(reference.Longitude, 8e-8);
+        result.Value.Y.Should().BeApproximately(reference.Latitude, 8e-8);
+    }
+
+    private DatumTransformationSelection ResolveOperation(string operation, int fromSrid, int toSrid)
+    {
+        DatumTransformationSelection? selection;
+        var resolved = int.TryParse(operation, out var wkid)
+            ? _catalog.TryGetByWkid(wkid, fromSrid, toSrid, out selection)
+            : (selection = _catalog.FindByName(operation, fromSrid, toSrid)) is not null;
+        resolved.Should().BeTrue();
+        return selection!;
+    }
+
     [IntegrationTest]
     public async Task TransformPoint_NadconGridPipeline_WithoutGrid_FailsExplicitly()
     {

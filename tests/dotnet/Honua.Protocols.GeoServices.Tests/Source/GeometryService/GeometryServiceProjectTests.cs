@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
 [Protocol(TestProtocols.GeometryService)]
 [Collection("Database.GeoServicesRaster")]
-public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
+public sealed partial class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
 {
     private readonly WebAppFixture _fixture;
 

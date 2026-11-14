@@ -26,7 +26,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// imports with no curated default keep PROJ's default (2-argument) behavior.
 /// </summary>
 [Collection("Database")]
-public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
+public sealed partial class ImportDatumTransformationTests(PostgresFixture fixture)
 {
     // honua.insert_import_feature now ships both the legacy 6-argument overload and the
     // 7-argument datum-pipeline overload (migration 053). The fixture does not run

@@ -19,25 +19,15 @@
     "so PROJ resolves the grid operation at full accuracy. requiredGrids names the canonical",
     "PROJ 9.x grid filename (resolved via projinfo -o PROJ) so it stays in sync with that image.",
     "",
-    "Only pipelines verified against the PostGIS/PROJ runtime are seeded here. The seeded",
-    "WGS84-realization pairs (NAD83, NAD83(HARN), NAD83(NSRS2007), NAD83(2011)) are all",
-    "null transformations (EPSG considers the datums coincident at the meter level, which",
-    "matches the ArcGIS default of applying no geographic transformation), expressed as the",
-    "exact-identity, PROJ-version-stable +proj=noop. The Helmert parameters for these EPSG",
-    "operations (1188/1580/9774/15931) are all-zero geocentric translations, confirmed",
-    "against the runtime proj.db helmert_transformation table.",
-    "",
-    "IMPORTANT PostGIS constraint: ST_Transform's text overload is ST_Transform(geom,",
-    "from_proj_text, to_srid) -- the middle argument is the SOURCE CRS, not a coordinate",
-    "operation pipeline. PostGIS exposes no overload that injects a +proj=pipeline string,",
-    "so non-identity Helmert/grid pipelines cannot be forced through this chokepoint on the",
-    "current PostGIS/PROJ runtime; only proj strings that parse as a CRS (and +proj=noop,",
-    "which behaves as exact identity) apply. Multi-step Helmert pairs that need a specific",
-    "non-default operation (e.g. NAD83(HARN)_To_WGS_1984_2 / EPSG 1901, the rotation-bearing",
-    "WGS_1984_(ITRF00)_To_NAD_1983 family) therefore remain a documented follow-up gated on a",
-    "PostGIS pipeline-application mechanism; until then PROJ's default operation selection",
-    "(which already follows EPSG accuracy ranking, matching Esri's default for these pairs)",
-    "is used by the 2-argument path and a client WKID for them returns explicit 'unsupported'."
+    "The first operation for each CRS pair remains its implicit default. Later entries",
+    "without area bounds require an explicit WKID when that pair already has a default.",
+    "The four NAD83-family WGS84 defaults remain exact identity operations.",
+    "Realization-specific operations follow Esri geographic_transformations.pdf.",
+    "Time-dependent operations require an observation epoch, in decimal years; t_epoch",
+    "is the parameter reference epoch and does not supply the observation epoch.",
+    "Pipelines use longitude/latitude degrees, without authority axis-order swaps.",
+    "The Honua-namespaced NSRS2007 composite applies ESRI:108354 followed by inverse ESRI:108356 (identity).",
+    "It carries no authority WKID of its own; its pipeline simplifies to ESRI:108354."
   ],
   "transformations": [
     {
@@ -61,7 +51,7 @@
       "requiredGrids": []
     },
     {
-      "wkid": null,
+      "wkid": 15931,
       "name": "NAD_1983_NSRS2007_To_WGS_1984_1",
       "fromSrid": 4759,
       "toSrid": 4326,
@@ -92,7 +82,9 @@
       "areaNorth": 49.38,
       "epsgOperationCode": 1241,
       "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=us_noaa_conus.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg",
-      "requiredGrids": ["us_noaa_conus.tif"]
+      "requiredGrids": [
+        "us_noaa_conus.tif"
+      ]
     },
     {
       "wkid": 1243,
@@ -106,7 +98,9 @@
       "areaNorth": 74.71,
       "epsgOperationCode": 1243,
       "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=us_noaa_alaska.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg",
-      "requiredGrids": ["us_noaa_alaska.tif"]
+      "requiredGrids": [
+        "us_noaa_alaska.tif"
+      ]
     },
     {
       "wkid": null,
@@ -120,7 +114,9 @@
       "areaNorth": 83.17,
       "epsgOperationCode": 1313,
       "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=ca_nrc_ntv2_0.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg",
-      "requiredGrids": ["ca_nrc_ntv2_0.tif"]
+      "requiredGrids": [
+        "ca_nrc_ntv2_0.tif"
+      ]
     },
     {
       "wkid": 1454,
@@ -134,7 +130,9 @@
       "areaNorth": 22.24,
       "epsgOperationCode": 1454,
       "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=us_noaa_hawaii.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg",
-      "requiredGrids": ["us_noaa_hawaii.tif"]
+      "requiredGrids": [
+        "us_noaa_hawaii.tif"
+      ]
     },
     {
       "wkid": 1461,
@@ -148,7 +146,50 @@
       "areaNorth": 18.52,
       "epsgOperationCode": 1461,
       "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift +grids=us_noaa_prvi.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg",
-      "requiredGrids": ["us_noaa_prvi.tif"]
+      "requiredGrids": [
+        "us_noaa_prvi.tif"
+      ]
+    },
+    {
+      "wkid": 108190,
+      "name": "WGS_1984_(ITRF00)_To_NAD_1983",
+      "fromSrid": 4326,
+      "toSrid": 4269,
+      "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=push +v_3 +step +proj=cart +ellps=WGS84 +step +proj=helmert +x=0.9956 +y=-1.9013 +z=-0.5215 +rx=0.025915 +ry=0.009426 +rz=0.011599 +s=0.00062 +convention=coordinate_frame +step +inv +proj=cart +ellps=GRS80 +step +proj=pop +v_3 +step +proj=unitconvert +xy_in=rad +xy_out=deg",
+      "requiredGrids": []
+    },
+    {
+      "wkid": 108282,
+      "name": "WGS_1984_(ITRF00)_To_NAD_1983_HARN",
+      "fromSrid": 4326,
+      "toSrid": 4152,
+      "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=push +v_3 +step +proj=cart +ellps=WGS84 +step +proj=helmert +x=0.9956 +y=-1.9013 +z=-0.5215 +rx=0.025915 +ry=0.009426 +rz=0.011599 +s=0.00062 +convention=coordinate_frame +step +inv +proj=cart +ellps=GRS80 +step +proj=pop +v_3 +step +proj=unitconvert +xy_in=rad +xy_out=deg",
+      "requiredGrids": []
+    },
+    {
+      "wkid": 108354,
+      "name": "WGS_1984_(ITRF00)_To_NAD_1983_2011",
+      "fromSrid": 4326,
+      "toSrid": 6318,
+      "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=push +v_3 +step +proj=cart +ellps=WGS84 +step +proj=helmert +x=0.9956 +y=-1.9013 +z=-0.5215 +rx=0.025915 +ry=0.009426 +rz=0.011599 +s=0.00062 +convention=coordinate_frame +step +inv +proj=cart +ellps=GRS80 +step +proj=pop +v_3 +step +proj=unitconvert +xy_in=rad +xy_out=deg",
+      "requiredGrids": []
+    },
+    {
+      "wkid": 108574,
+      "name": "ITRF_2014_To_NAD_1983_2011_AT2010",
+      "fromSrid": 7912,
+      "toSrid": 6319,
+      "projPipeline": "+proj=pipeline +step +proj=set +v_4={coordinateEpoch} +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=cart +ellps=GRS80 +step +proj=helmert +x=1.0053 +y=-1.90921 +z=-0.54157 +rx=0.0267815 +ry=-0.00042078 +rz=0.01093254 +s=0.00036891 +dx=0.00079 +dy=-0.0006 +dz=-0.00144 +drx=0.00006669 +dry=-0.00075749 +drz=-0.00005129 +ds=-0.00007201 +t_epoch=2010 +convention=coordinate_frame +step +inv +proj=cart +ellps=GRS80 +step +proj=unitconvert +xy_in=rad +xy_out=deg +step +proj=set +v_4={coordinateEpoch}",
+      "requiresCoordinateEpoch": true,
+      "requiredGrids": []
+    },
+    {
+      "wkid": null,
+      "name": "Honua:WGS84_ITRF00_To_NAD83_NSRS2007_Via_2011",
+      "fromSrid": 4326,
+      "toSrid": 4759,
+      "projPipeline": "+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=push +v_3 +step +proj=cart +ellps=WGS84 +step +proj=helmert +x=0.9956 +y=-1.9013 +z=-0.5215 +rx=0.025915 +ry=0.009426 +rz=0.011599 +s=0.00062 +convention=coordinate_frame +step +inv +proj=cart +ellps=GRS80 +step +proj=pop +v_3 +step +proj=unitconvert +xy_in=rad +xy_out=deg",
+      "requiredGrids": []
     }
   ]
 }

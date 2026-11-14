@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
+public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const double CoordinateTolerance = 0.0001;
