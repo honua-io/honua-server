@@ -18,7 +18,7 @@ on:
       - "v*.*.*"
 
 env:
-  DOTNET_VERSION: "10.0.x"
+  DOTNET_VERSION: "11.0.x"
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
 
@@ -86,7 +86,7 @@ jobs:
           smoke_dir="$(mktemp -d)"
           trap 'rm -rf "${smoke_dir}"' EXIT
 
-          dotnet new console --framework net10.0 --output "${smoke_dir}"
+          dotnet new console --framework net11.0 --output "${smoke_dir}"
 
           pushd "${smoke_dir}" >/dev/null
 

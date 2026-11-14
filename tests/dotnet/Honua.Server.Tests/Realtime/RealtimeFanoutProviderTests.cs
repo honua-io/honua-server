@@ -23,9 +23,74 @@ namespace Honua.Server.Tests.Realtime;
 
 [Protocol(TestProtocols.TestQuality)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class RealtimeFanoutProviderTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
+public sealed partial class RealtimeFanoutProviderTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     private static readonly TimeSpan _deliveryTimeout = TimeSpan.FromSeconds(15);
+
+    [IntegrationTest]
+    public async Task McpStream_TwoTasksOverPostgres_OneOwnerUntilDisconnect()
+    {
+        await using var harness = await RealtimeLogHarness.CreateAsync(database);
+        var nodeA = new InProcessRealtimeFanoutProvider(harness.Log, harness.CreateDispatcher(),
+            new RealtimePresenceBatcher(harness.Log), harness.CreateLeaseStore());
+        var nodeB = new PostgresRealtimeFanoutProvider(harness.Log, harness.CreateDispatcher(),
+            new RealtimePresenceBatcher(harness.Log), harness.CreateLeaseStore());
+        await using var first = await nodeA.TryAcquireMcpStreamAsync("session-a", CancellationToken.None);
+        first.Should().NotBeNull();
+        first!.IsHeld.Should().BeTrue();
+        (await nodeB.TryAcquireMcpStreamAsync("session-a", CancellationToken.None)).Should().BeNull();
+        await using var otherSession = await nodeB.TryAcquireMcpStreamAsync("session-b", CancellationToken.None);
+        otherSession.Should().NotBeNull();
+
+        await first.DisposeAsync();
+        await using var successor = await nodeB.TryAcquireMcpStreamAsync("session-a", CancellationToken.None);
+        successor.Should().NotBeNull();
+        await first.DisposeAsync();
+        (await nodeA.TryAcquireMcpStreamAsync("session-a", CancellationToken.None)).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task PresenceSnapshot_PagesBeyondResumeLimit_StaysScopedAndStopsAtCapturedHead()
+    {
+        await using var harness = await RealtimeLogHarness.CreateAsync(database);
+        var dispatcher = harness.CreateDispatcher(new RealtimeOptions { ResumeMaxEvents = 2 });
+        var provider = new InProcessRealtimeFanoutProvider(harness.Log, dispatcher, new RealtimePresenceBatcher(harness.Log));
+        await AppendAsync(harness, RealtimeLogFamilies.CollabPresence, "other-map", 3);
+        await AppendAsync(harness, RealtimeLogFamilies.CollabPresence, "map-1", 600);
+        var window = await provider.GetWindowAsync(RealtimeFamily.CollabPresence, CancellationToken.None);
+        await AppendAsync(harness, RealtimeLogFamilies.CollabPresence, "map-1", 2);
+        var cursor = window.Oldest - 1;
+        var events = new List<RealtimeEvent>();
+        while (true)
+        {
+            var page = await provider.ReadPresencePageAsync("map-1", cursor, window.Head, CancellationToken.None);
+            page.Count.Should().BeLessThanOrEqualTo(256);
+            if (page.Count == 0)
+            {
+                break;
+            }
+
+            events.AddRange(page);
+            cursor = page[^1].Sequence;
+        }
+
+        events.Select(item => item.Sequence).Should().Equal(Enumerable.Range(4, 600).Select(value => (long)value));
+        events.Should().OnlyContain(item => item.ScopeKey == "map-1");
+    }
+
+    [IntegrationTest]
+    public async Task PresenceSnapshot_SweptRowsDoNotResetOrRestartPaging()
+    {
+        await using var harness = await RealtimeLogHarness.CreateAsync(database);
+        var provider = new InProcessRealtimeFanoutProvider(harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log));
+        await AppendAsync(harness, RealtimeLogFamilies.CollabPresence, "map-1", 300);
+        var first = await provider.ReadPresencePageAsync("map-1", 0, 300, CancellationToken.None);
+        await harness.ExecuteAsync($"DELETE FROM {harness.Table("realtime_events")} WHERE seq <= 280");
+
+        var next = await provider.ReadPresencePageAsync("map-1", first[^1].Sequence, 300, CancellationToken.None);
+
+        next.Select(item => item.Sequence).Should().Equal(Enumerable.Range(281, 20).Select(value => (long)value));
+    }
 
     [IntegrationTest]
     public async Task Subscribe_LiveOnly_ReceivesOnlyEventsAppendedAfterItWentLive()
@@ -259,357 +324,4 @@ public sealed class RealtimeFanoutProviderTests(DatabaseFixtureAdapter database)
         subscription.Position.Should().Be(4);
     }
 
-    [IntegrationTest]
-    public async Task PostgresProvider_EventAppendedOnTaskA_ReachesSubscriberOnTaskBThroughTheNotification()
-    {
-        await using var harness = await RealtimeLogHarness.CreateAsync(database);
-        // A safety poll far beyond the timeout: only the notification can deliver in time.
-        var options = new RealtimeOptions { SafetyPollInterval = TimeSpan.FromMinutes(5) };
-        await using var listenerB = harness.CreateListener(options);
-        var dispatcherB = harness.CreateDispatcher(options);
-        using var tailB = harness.CreateTail(dispatcherB, listenerB, options);
-        var taskA = CreateProvider(harness);
-        await tailB.StartAsync(CancellationToken.None);
-        try
-        {
-            await WaitForAsync(() => listenerB.IsConnected, "the listener connects");
-            var channel = Channel.CreateBounded<RealtimeDelivery>(64);
-            await using var subscription = (RealtimeSubscription)dispatcherB.Subscribe(
-                new RealtimeSubscriptionRequest(RealtimeFamily.CollabOps, ["map-1"], null, channel.Writer));
-            await WaitUntilLiveAsync(subscription);
-
-            var stopwatch = Stopwatch.StartNew();
-            var position = await taskA.AppendAsync(
-                new RealtimeEventDraft(RealtimeFamily.CollabOps, "map-1", "operation", RealtimeLogHarness.Payload(new { op = 1 })),
-                null,
-                CancellationToken.None);
-
-            var received = (await ReadEventsAsync(channel.Reader, 1)).Single();
-            received.Position.Should().Be(position);
-            stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5));
-            taskA.Capabilities.Should().Be(new RealtimeProviderCapabilities(CrossNode: true, OrderedPerFamily: true, Resumable: true));
-        }
-        finally
-        {
-            await tailB.StopAsync(CancellationToken.None);
-        }
-    }
-
-    [IntegrationTest]
-    public async Task Listener_KilledWithPgTerminateBackend_ReconnectsAndNothingIsLost()
-    {
-        await using var harness = await RealtimeLogHarness.CreateAsync(database);
-        var options = new RealtimeOptions
-        {
-            SafetyPollInterval = TimeSpan.FromMinutes(5),
-            DegradedPollInterval = TimeSpan.FromMilliseconds(200),
-            ListenerReconnectMinDelay = TimeSpan.FromMilliseconds(200),
-            ListenerReconnectMaxDelay = TimeSpan.FromMilliseconds(400)
-        };
-        await using var listener = harness.CreateListener(options);
-        var dispatcher = harness.CreateDispatcher(options);
-        using var tail = harness.CreateTail(dispatcher, listener, options);
-        await tail.StartAsync(CancellationToken.None);
-        try
-        {
-            await WaitForAsync(() => listener.IsConnected, "the listener connects");
-            var channel = Channel.CreateBounded<RealtimeDelivery>(256);
-            await using var subscription = (RealtimeSubscription)dispatcher.Subscribe(
-                new RealtimeSubscriptionRequest(RealtimeFamily.Observations, [], null, channel.Writer));
-            await WaitUntilLiveAsync(subscription);
-
-            await AppendAsync(harness, RealtimeLogFamilies.Observations, "ds-1", 5);
-            await harness.ExecuteAsync($"SELECT pg_terminate_backend({listener.ProcessId})");
-            await AppendAsync(harness, RealtimeLogFamilies.Observations, "ds-1", 5);
-            await WaitForAsync(() => listener.Reconnects >= 1 && listener.IsConnected, "the listener reconnects");
-            await AppendAsync(harness, RealtimeLogFamilies.Observations, "ds-1", 5);
-
-            var received = await ReadEventsAsync(channel.Reader, 15);
-            received.Select(delivered => delivered.Sequence).Should().Equal(Enumerable.Range(1, 15).Select(seq => (long)seq));
-        }
-        finally
-        {
-            await tail.StopAsync(CancellationToken.None);
-        }
-    }
-
-    [IntegrationTest]
-    public async Task LostNotification_IsCaughtBySafetyPoll()
-    {
-        await using var harness = await RealtimeLogHarness.CreateAsync(database);
-        var options = new RealtimeOptions { SafetyPollInterval = TimeSpan.FromMilliseconds(300) };
-        await using var listener = harness.CreateListener(options);
-        var dispatcher = harness.CreateDispatcher(options);
-        using var tail = harness.CreateTail(dispatcher, listener, options);
-        await tail.StartAsync(CancellationToken.None);
-        try
-        {
-            await WaitForAsync(() => listener.IsConnected, "the listener connects");
-            var channel = Channel.CreateBounded<RealtimeDelivery>(64);
-            await using var subscription = (RealtimeSubscription)dispatcher.Subscribe(
-                new RealtimeSubscriptionRequest(RealtimeFamily.Admin, [], null, channel.Writer));
-            await WaitUntilLiveAsync(subscription);
-
-            // Written without realtime_append, so no notification is sent.
-            await harness.ExecuteAsync(
-                $"""
-                WITH h AS (UPDATE {harness.Table("realtime_log_heads")} SET head = head + 1 WHERE family = 'admin' RETURNING head)
-                INSERT INTO {harness.Table("realtime_events")} (family, seq, scope_key, kind, payload, expires_at)
-                SELECT 'admin', h.head, 'proposals', 'silent', jsonb_build_object(), now() + interval '1 hour' FROM h
-                """);
-
-            (await ReadEventsAsync(channel.Reader, 1)).Single().Kind.Should().Be("silent");
-        }
-        finally
-        {
-            await tail.StopAsync(CancellationToken.None);
-        }
-    }
-
-    [IntegrationTest]
-    public async Task InProcessProvider_AppendWakesItsOwnDispatcher()
-    {
-        await using var harness = await RealtimeLogHarness.CreateAsync(database);
-        var options = new RealtimeOptions { LocalPollInterval = TimeSpan.FromMinutes(5) };
-        var dispatcher = harness.CreateDispatcher(options);
-        using var tail = harness.CreateTail(dispatcher, null, options);
-        var provider = new InProcessRealtimeFanoutProvider(harness.Log, dispatcher, new RealtimePresenceBatcher(harness.Log));
-        await tail.StartAsync(CancellationToken.None);
-        try
-        {
-            var channel = Channel.CreateBounded<RealtimeDelivery>(64);
-            await using var subscription = (RealtimeSubscription)provider.Subscribe(
-                new RealtimeSubscriptionRequest(RealtimeFamily.Catalog, [], null, channel.Writer));
-            await WaitUntilLiveAsync(subscription);
-
-            await provider.AppendAsync(
-                new RealtimeEventDraft(RealtimeFamily.Catalog, "default", "etag-changed", RealtimeLogHarness.Payload(new { etag = "b" })),
-                null,
-                CancellationToken.None);
-
-            (await ReadEventsAsync(channel.Reader, 1)).Single().Kind.Should().Be("etag-changed");
-            provider.Capabilities.CrossNode.Should().BeFalse();
-        }
-        finally
-        {
-            await tail.StopAsync(CancellationToken.None);
-        }
-    }
-
-    [IntegrationTest]
-    public async Task Enqueue_KeepsTheLatestPerCoalesceKeyAndAppendsOneBatchPerFamily()
-    {
-        await using var harness = await RealtimeLogHarness.CreateAsync(database);
-        var presence = new RealtimePresenceBatcher(harness.Log);
-        for (var x = 0; x < 3; x++)
-        {
-            presence.Enqueue(new RealtimeEventDraft(RealtimeFamily.CollabPresence, "map-1", "moved", RealtimeLogHarness.Payload(new { x }), CoalesceKey: "p-1"));
-        }
-
-        presence.Enqueue(new RealtimeEventDraft(RealtimeFamily.CollabPresence, "map-1", "joined", RealtimeLogHarness.Payload(new { x = 9 }), CoalesceKey: "p-2"));
-
-        (await presence.FlushAsync(CancellationToken.None)).Should().Be(2);
-        (await presence.FlushAsync(CancellationToken.None)).Should().Be(0);
-        (await harness.ScalarAsync<string>(
-                $"SELECT string_agg(payload->>'x', ',' ORDER BY seq) FROM {harness.Table("realtime_events")} WHERE family = 'collab-presence'"))
-            .Should().Be("2,9");
-    }
-
-    [UnitTheory]
-    [InlineData(null, null, false)]
-    [InlineData(null, "MultiNode", true)]
-    [InlineData("auto", "multinode", true)]
-    [InlineData("auto", "SingleNode", false)]
-    [InlineData("in-process", "MultiNode", false)]
-    [InlineData("postgres", null, true)]
-    public void ProviderChoice_FollowsRealtimeProviderAndDeploymentMode(string? provider, string? mode, bool postgres)
-    {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Realtime:Provider"] = provider, ["Deployment:Mode"] = mode })
-            .Build();
-
-        RealtimeServiceCollectionExtensions.UsesPostgresProvider(configuration).Should().Be(postgres);
-    }
-
-    [UnitTest]
-    public void ProviderChoice_UnknownProvider_IsRefused()
-    {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Realtime:Provider"] = "redis" })
-            .Build();
-
-        var choose = () => RealtimeServiceCollectionExtensions.UsesPostgresProvider(configuration);
-
-        choose.Should().Throw<InvalidOperationException>().WithMessage("*auto, in-process or postgres*");
-    }
-
-    [UnitTest]
-    public async Task Registration_MultiNode_ResolvesTheCrossNodeProviderAndTheTail()
-    {
-        await using var provider = BuildServices(new() { ["Deployment:Mode"] = "MultiNode" }, hostsDatabasePollingLoops: true);
-
-        provider.GetRequiredService<IRealtimeFanoutProvider>().Capabilities.CrossNode.Should().BeTrue();
-        provider.GetServices<IHostedService>().OfType<RealtimeTailBackgroundService>().Should().ContainSingle();
-    }
-
-    [Theory]
-    [InlineData("SingleNode")]
-    [InlineData("MultiNode")]
-    [Trait("Tier", "Fast")]
-    public async Task Registration_WithoutDataSource_HostedServicesStartWithoutDatabaseDependencies(string mode)
-    {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Deployment:Mode"] = mode }).Build();
-        var services = new ServiceCollection().AddLogging();
-        services.AddRealtimeFanout(configuration, hostsDatabasePollingLoops: true);
-        await using var provider = services.BuildServiceProvider();
-
-        var hosted = provider.GetServices<IHostedService>().ToArray();
-        hosted.OfType<RealtimeTailBackgroundService>().Should().ContainSingle();
-        foreach (var service in hosted)
-        {
-            await service.StartAsync(CancellationToken.None);
-            await service.StopAsync(CancellationToken.None);
-        }
-    }
-
-    [UnitTest]
-    public async Task Registration_WithoutDatabasePollingLoops_RegistersNoTail()
-    {
-        await using var provider = BuildServices(new() { ["Deployment:Mode"] = "MultiNode" }, hostsDatabasePollingLoops: false);
-
-        provider.GetRequiredService<IRealtimeFanoutProvider>().Capabilities.CrossNode.Should().BeTrue();
-        provider.GetServices<IHostedService>().OfType<RealtimeTailBackgroundService>().Should().BeEmpty();
-    }
-
-    [UnitTest]
-    public void Listener_ProxyHost_RunsPollOnly()
-    {
-        var listener = CreateListener(null, "Host=honua.proxy-abc.example.test;Database=honua;Username=u");
-
-        listener.PollOnlyReason.Should().Contain("proxy");
-        listener.IsConnected.Should().BeFalse();
-    }
-
-    [UnitTest]
-    public void Listener_WithoutItsOwnConnectionString_UsesTheResolvedSystemConnectionString()
-    {
-        var listener = CreateListener(null, "Host=db.example.test;Database=honua;Username=u;Password=resolved");
-
-        listener.PollOnlyReason.Should().BeNull();
-    }
-
-    [UnitTest]
-    public void Listener_UnparseableConnectionString_RunsPollOnlyInsteadOfFailingStartup()
-    {
-        var listener = CreateListener("arn:aws:secretsmanager:region:account:secret:name", "Host=db.example.test;Database=honua");
-
-        listener.PollOnlyReason.Should().Contain("could not be parsed");
-    }
-
-    [UnitTest]
-    public async Task Registration_ListenerUsesTheDataSourceConnectionStringNotTheRawSetting()
-    {
-        // The raw setting is a secret reference; only the data source holds the resolved string.
-        await using var provider = BuildServices(
-            new() { ["Deployment:Mode"] = "MultiNode", ["ConnectionStrings:DefaultConnection"] = "secret-reference:honua/db" },
-            hostsDatabasePollingLoops: true,
-            rawConnectionString: "secret-reference:honua/db");
-
-        provider.GetRequiredService<RealtimeListener>().PollOnlyReason.Should().BeNull();
-    }
-
-    [IntegrationTest]
-    public async Task Registration_ResolvedPasswordFromProductionDataSource_ListenerAuthenticates()
-    {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["Deployment:Mode"] = "MultiNode",
-            ["ConnectionStrings:DefaultConnection"] = "secret-reference:honua/db"
-        }).Build();
-        await using var dataSource = PostgresDataSourceFactory.Create(
-            database.ConnectionString, schemaHeadersEnabled: false, new ConnectionLimits());
-        new NpgsqlConnectionStringBuilder(dataSource.ConnectionString).Password.Should().NotBeNullOrEmpty();
-        var services = new ServiceCollection().AddLogging().AddSingleton(dataSource);
-        services.AddRealtimeFanout(configuration, hostsDatabasePollingLoops: true);
-        await using var provider = services.BuildServiceProvider();
-        var listener = provider.GetRequiredService<RealtimeListener>();
-        using var stopping = new CancellationTokenSource();
-        var running = listener.RunAsync(() => { }, stopping.Token);
-        try
-        {
-            await WaitForAsync(() => listener.IsConnected, "the production data source preserves resolved authentication for LISTEN");
-        }
-        finally
-        {
-            await stopping.CancelAsync();
-            await running;
-        }
-    }
-
-    private static RealtimeListener CreateListener(string? listenerConnectionString, string? systemConnectionString)
-        => RealtimeListener.Create(
-            string.IsNullOrWhiteSpace(listenerConnectionString) ? systemConnectionString : listenerConnectionString,
-            Microsoft.Extensions.Options.Options.Create(new RealtimeOptions()),
-            NullLogger<RealtimeListener>.Instance);
-
-    private static ServiceProvider BuildServices(
-        Dictionary<string, string?> settings,
-        bool hostsDatabasePollingLoops,
-        string rawConnectionString = "Host=localhost;Database=honua;Username=u")
-    {
-        settings["ConnectionStrings:DefaultConnection"] = rawConnectionString;
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
-        var services = new ServiceCollection()
-            .AddSingleton<IConfiguration>(configuration)
-            .AddLogging()
-            .AddSingleton(NpgsqlDataSource.Create("Host=localhost;Database=honua;Username=u"));
-        services.AddSingleton(provider => new JobStoreDatabase(provider.GetRequiredService<NpgsqlDataSource>()));
-        services.AddRealtimeFanout(configuration, hostsDatabasePollingLoops);
-        return services.BuildServiceProvider();
-    }
-
-    // Another task: its own dispatcher, which nobody here runs; its appends notify every task.
-    private static PostgresRealtimeFanoutProvider CreateProvider(RealtimeLogHarness harness)
-        => new(harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log));
-
-    private static async Task AppendAsync(RealtimeLogHarness harness, string family, string scope, int count)
-        => await harness.Log.AppendAsync(
-            family,
-            Enumerable.Range(0, count).Select(n => new RealtimeLogRow(scope, "test", RealtimeLogHarness.Payload(new { n }))).ToArray(),
-            null,
-            CancellationToken.None);
-
-    private static async Task WaitUntilLiveAsync(RealtimeSubscription subscription)
-        => await WaitForAsync(() => subscription.IsLive, "the subscription goes live");
-
-    private static async Task WaitForAsync(Func<bool> condition, string what)
-    {
-        var deadline = Stopwatch.StartNew();
-        while (!condition())
-        {
-            deadline.Elapsed.Should().BeLessThan(_deliveryTimeout, $"{what} in time");
-            await Task.Delay(20);
-        }
-    }
-
-    private static async Task<RealtimeDelivery> ReadOneAsync(ChannelReader<RealtimeDelivery> reader)
-    {
-        using var timeout = new CancellationTokenSource(_deliveryTimeout);
-        return await reader.ReadAsync(timeout.Token);
-    }
-
-    private static async Task<IReadOnlyList<RealtimeEvent>> ReadEventsAsync(ChannelReader<RealtimeDelivery> reader, int count)
-    {
-        using var timeout = new CancellationTokenSource(_deliveryTimeout);
-        var events = new List<RealtimeEvent>();
-        while (events.Count < count)
-        {
-            var delivery = await reader.ReadAsync(timeout.Token);
-            delivery.Should().BeOfType<RealtimeDelivery.Event>();
-            events.Add(((RealtimeDelivery.Event)delivery).Value);
-        }
-
-        return events;
-    }
 }

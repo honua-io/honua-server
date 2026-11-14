@@ -74,7 +74,8 @@ public sealed class SchemaRollbackBoundaryTests(LocalSubstratePostgresFixture po
         rejected.Error.Should().BeOfType<DatabaseSchemaCompatibilityException>()
             .Which.DeclarationRefusals.Should().BeEmpty("a journal with no declaration table keeps the original refusal (#6477)");
         rejected.ErrorMessage.Should().Contain(DatabaseSchemaCompatibilityException.ErrorCode)
-            .And.EndWith("Application rollback does not reverse database migrations.");
+            .And.EndWith("Application rollback does not reverse database migrations. " +
+                "See the Rollback boundaries table in Upgrade and roll back.");
         var plan = await runner.PlanMigrationsAsync(connectionString, older);
         plan.Successful.Should().BeFalse();
         plan.Error.Should().BeOfType<DatabaseSchemaCompatibilityException>();
@@ -208,7 +209,8 @@ public sealed class SchemaRollbackBoundaryTests(LocalSubstratePostgresFixture po
             if (refusal is null)
             {
                 exception.DeclarationRefusals.Should().BeEmpty();
-                exception.Message.Should().EndWith("Application rollback does not reverse database migrations.");
+                exception.Message.Should().EndWith("Application rollback does not reverse database migrations. " +
+                    "See the Rollback boundaries table in Upgrade and roll back.");
             }
             else
             {

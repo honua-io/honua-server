@@ -10,6 +10,7 @@ using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Caching;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Portal.Abstractions;
@@ -189,6 +190,7 @@ public static class SharingRestEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         endpoints.MapPost("/sharing/rest/search", HandleSearchAsync)
+            .WithMetadata(ReadOnlyRequestMetadata.Instance)
             .WithName("SharingRestSearchPost")
             .WithSummary("Search visible portal items with form parameters")
             .WithTags("GeoServices Sharing")

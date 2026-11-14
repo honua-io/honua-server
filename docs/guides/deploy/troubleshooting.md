@@ -21,7 +21,7 @@ A single-node deployment with no Redis configured reports `Ready` — feature-ch
 
 | Symptom | Diagnosis | Fix |
 |---|---|---|
-| Exits at once on x64 with no Honua log line, or `honua-cpu-preflight` reports missing CPU features | The CPU or the VM's CPU model lacks x86-64-v2, which .NET 11 releases (2027.1 and later) require | See [CPU baseline (x86-64-v2)](#cpu-baseline-x86-64-v2) |
+| Exits at once on x64 with no Honua log line, or `honua-cpu-preflight` reports missing CPU features | The CPU or the VM's CPU model lacks x86-64-v2, which .NET 11 releases (2026.1 and later) require | See [CPU baseline (x86-64-v2)](#cpu-baseline-x86-64-v2) |
 | Exits with "Master key must be at least 32 characters long" | `Security__ConnectionEncryption__MasterKey` too short | Set a value of 32+ characters |
 | Exits with "Master key not configured" | Connection encryption used without a master key | Set `Security__ConnectionEncryption__MasterKey` |
 | Refuses to start, log mentions dev auth | `HONUA_DEV_AUTH=true` in a Production environment | Remove `HONUA_DEV_AUTH`; the bypass only works in `ASPNETCORE_ENVIRONMENT=Test` |
@@ -32,9 +32,9 @@ A single-node deployment with no Redis configured reports `Ready` — feature-ch
 
 ## CPU baseline (x86-64-v2)
 
-Honua Server releases built on .NET 11 (2027.1 and later) need an **x86-64-v2** CPU on x64:
+Honua Server releases built on .NET 11 (2026.1 and later) need an **x86-64-v2** CPU on x64:
 CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3, SSSE3, SSE4.1 and SSE4.2. The runtime refuses to start
-without them, before Honua writes a log line. 2026.x releases (.NET 10) run on any x64 CPU.
+without them, before Honua writes a log line. Earlier evaluation builds on .NET 10 run on any x64 CPU.
 Arm64 hosts are not affected.
 
 Every server CPU since about 2009 qualifies. Virtual machines are the usual problem: a generic
@@ -42,13 +42,14 @@ CPU model (QEMU/KVM `qemu64` or `kvm64`, older Proxmox defaults) hides these fea
 guest even on modern hardware.
 
 Check before you install or upgrade, where the server will run. The script ships in the source
-release as `scripts/operations/check-cpu-baseline.sh`. It uses only `sh`, `sed`, `head` and
-`uname`, which every Honua image has, so it also runs inside the image:
+release as `scripts/operations/check-cpu-baseline.sh` and uses only `sh`, `sed`, `head` and
+`uname`. A container sees its host's CPU, so you can also run it in any small image that has a
+shell (`busybox`, or one from your own registry). The Honua images are chiseled and have no shell:
 
 ```bash
 sh scripts/operations/check-cpu-baseline.sh                       # on the host
-docker run --rm -i --entrypoint sh "$HONUA_IMAGE" -s < scripts/operations/check-cpu-baseline.sh
-kubectl run honua-cpu-check --rm -i --restart=Never --image="$HONUA_IMAGE" \
+docker run --rm -i busybox sh -s < scripts/operations/check-cpu-baseline.sh
+kubectl run honua-cpu-check --rm -i --restart=Never --image=busybox \
   --command -- sh -s < scripts/operations/check-cpu-baseline.sh   # on one cluster node
 ```
 
@@ -67,7 +68,8 @@ To fix a VM, present the host CPU or an x86-64-v2 model to the guest, then resta
 | QEMU | `-cpu host`, or `-cpu Nehalem` or newer (not `qemu64` / `kvm64`) |
 
 Host passthrough can limit live migration between hosts with different CPUs; a named model
-keeps migration working. On physical hardware without x86-64-v2, stay on 2026.x.
+keeps migration working. Physical hardware without x86-64-v2 cannot run 2026.1 or later; move
+the server to a newer host or an arm64 host.
 
 ## License failure mode
 
@@ -140,15 +142,12 @@ Connectivity check: `psql -h db.example.com -U honua -d honua -c "SELECT 1;"` an
 
 Rate limiting belongs at the edge (WAF, API gateway, ingress, or load balancer) for the default MVP posture. Honua also has an opt-in application limiter (`RateLimiting__Enabled=true`), but it is off by default and supplements rather than replaces edge enforcement. The `HonuaRateLimitViolationsHigh` example alert is currently **inert** because Honua does not yet emit `honua_rate_limit_violations_total`; if a deployment supplies that metric, investigate it at the component that emits it.
 
-When the application limiter is enabled and a Redis counter fails, Honua enforces
-its in-process fixed-window counters for both the shared subject limit and any
-endpoint-specific limit. Excess requests still receive `429` and `Retry-After`.
-After a Redis counter fails, remaining counters in that request use the local store without waiting for another Redis timeout.
-The process keeps at most 10,000 active subject/endpoint counters. At capacity, new counter keys receive `429` until an existing window expires; active counters retain their budgets.
-These fallback budgets are per server process, start independently of Redis's
-sliding-window counters, and are not synchronized between replicas. Redis metering
-resumes when counter operations succeed; keep edge enforcement for a fleet-wide
-ceiling across outages and recovery.
+The application limiter counts requests in a fixed window per server node, for both
+the shared subject limit and any endpoint-specific limit. Counters are not shared
+between replicas: a limit of N admits up to N requests per window on each node, so
+with T tasks behind a load balancer a client can reach N×T. Excess requests on a node
+receive `429` and `Retry-After`. Each process keeps at most 10,000 active
+subject/endpoint counters. Keep edge enforcement for a fleet-wide ceiling.
 
 When violations spike:
 

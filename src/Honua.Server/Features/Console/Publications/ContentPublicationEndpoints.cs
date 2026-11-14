@@ -8,6 +8,7 @@ using Honua.Core.Features.Publishing.Content.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,7 +32,8 @@ internal static class ContentPublicationEndpoints
         group.MapPost("/", HandlePublish)
             .WithDisplayName("Publish Content Artifact")
             .WithSummary("Publishes a new immutable artifact version and claims a server-owned route.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapGet("/", HandleList)
             .WithDisplayName("List Content Publications")
@@ -51,17 +53,20 @@ internal static class ContentPublicationEndpoints
         group.MapPost("/{publicationId}/republish", HandleRepublish)
             .WithDisplayName("Republish Content Artifact")
             .WithSummary("Creates a new immutable version and moves the active route pointer to it.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapPost("/{publicationId}/rollback", HandleRollback)
             .WithDisplayName("Roll Back Content Route")
             .WithSummary("Moves the active route pointer to an earlier immutable version and records the rollback pointer.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapPatch("/{publicationId}/policy", HandleUpdatePolicy)
             .WithDisplayName("Update Content Publication Policy")
             .WithSummary("Updates server-owned visibility/share/embed/public-link policy and records an audited event.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
     }
 
     private static async Task<IResult> HandlePublish(

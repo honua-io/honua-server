@@ -12,7 +12,7 @@ SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/che
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 CONFIG = json.loads((ROOT / ".github/ci-shards.json").read_text())
-EVIDENCE = json.loads((ROOT / "docs/internal/ci/wms-shard-capacity-20261018.json").read_text())
+EVIDENCE = json.loads((ROOT / "eng/ci/fixtures/shard-capacity/wms.json").read_text())
 ORIGINAL = EVIDENCE["originalShard"]
 NAMES = ("OGC Classic Maps Core", "OGC Classic Maps Supporting")
 CHILDREN = [next(s for s in CONFIG["shards"] if s["name"] == name) for name in NAMES]

@@ -6,7 +6,7 @@
 #
 # This file is driven by .github/workflows/capacity-soak-candidate.yml; every value it
 # needs comes from the environment so the workflow, not the file, decides what the run
-# certifies. See docs/ops/capacity-soak-receipt.md.
+# certifies. See docs/internal/operations/capacity-soak-runbook.md.
 
 name: honua-capacity-soak
 

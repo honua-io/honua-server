@@ -4,7 +4,7 @@
 # Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx
 # and to keep Trivy scans deterministic. Refresh cadence + remediation rationale:
 # docs/internal/security/code-scanning-2026-Q2-remediation.md.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
 ARG LAMBDA_RUNTIME_IMAGE=public.ecr.aws/lambda/provided:al2023@sha256:612c98f126c2a95e77a016d56fed50a83055e11d636132ee6ebdd461f01b9617
 # CI may point this at the GHCR mirror of the same digest (see deploy-platform-images.yml).
 ARG LAMBDA_ADAPTER_IMAGE=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4
@@ -14,7 +14,7 @@ FROM ${LAMBDA_ADAPTER_IMAGE} AS lambda-adapter
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
-COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
+COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
 # eng/ carries Honua.BuildProfiles.props (HonuaIncludeAws/Azure defaults).
 # Directory.Build.props imports it with an Exists() guard, so omitting it
 # makes restore and publish evaluate DIFFERENT project graphs: restore sees

@@ -5,7 +5,7 @@ const fsModule = require('node:fs');
 const pathModule = require('node:path');
 const test = require('node:test');
 
-const { resolvePrGateForObservation } = require('./trusted-pr-workflow-run');
+const { resolvePrGateForObservation, resolveTrustedPullRequestWorkflowRun } = require('./trusted-pr-workflow-run');
 const { HEAD, POLICY, fixtures, options, recordingCore } = require('./trusted-pr-workflow-run.fixtures');
 
 const HEAVY = 'PR Gate / Build and tests';
@@ -179,3 +179,36 @@ for (const [workflow, stepName] of [
     });
   }
 }
+
+function draftAggregateFixtures(name) {
+  const fixture = fixtures({});
+  const draftJob = { ...heavyAttempt(2, 'success', name), id: 456 };
+  const paginate = fixture.github.paginate;
+  fixture.github.paginate = async (requested, input) => (
+    input.filter === 'latest' ? [draftJob] : paginate(requested, input));
+  return fixture;
+}
+
+test('a run that reported only the draft aggregate is draft admission', async () => {
+  const { github } = draftAggregateFixtures('PR Gate (draft)');
+  const core = recordingCore();
+  const result = await resolvePrGateForObservation({
+    ...options(github, { runConclusion: 'success' }), core, label: 'impact',
+  });
+  assert.equal(result, null);
+  assert.equal(core.outputs.skip_code, 'source-run-draft-admission');
+  await assert.rejects(resolveTrustedPullRequestWorkflowRun(options(github, { runConclusion: 'success' })),
+    /only the draft aggregate/);
+});
+
+test('a draft aggregate never resolves as the canonical PR Gate job', async () => {
+  for (const name of ['PR Gate (draft) ', 'Other (draft)']) {
+    const { github } = draftAggregateFixtures(name);
+    const core = recordingCore();
+    const result = await resolvePrGateForObservation({
+      ...options(github, { runConclusion: 'success' }), core, label: 'impact',
+    });
+    assert.equal(result, null);
+    assert.equal(core.outputs.skip_code, 'source-run-job-absent');
+  }
+});

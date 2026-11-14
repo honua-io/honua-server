@@ -350,12 +350,39 @@ require(
     "disable only the serialized PR format invocation",
     text=PR_GATE_TEXT,
 )
-require(
-    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer\]",
-    "keep the required PR Gate context as a fail-closed aggregator over "
-    "build/tests, format, CI router validation, and the server-test producer",
-    text=PR_GATE_TEXT,
-)
+def require_required_gate_contract(text: str) -> None:
+    block = re.search(r"^  required:\n(?:(?!^  \S)[\s\S])*", text, re.MULTILINE)
+    if block is None:
+        raise AssertionError("lean gate must retain the required aggregator")
+    expected_name = "${{ github.event.pull_request.draft && 'PR Gate (draft)' || 'PR Gate' }}"
+    require(
+        r"^    name: " + re.escape(expected_name) + r"$",
+        "reserve the required PR Gate context for ready verification",
+        text=block[0],
+    )
+    require(
+        r"^    needs: \[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer\]$",
+        "keep the fail-closed aggregator dependencies over build/tests, format, "
+        "CI router validation, affected shards, and the server-test producer",
+        text=block[0],
+    )
+
+
+require_required_gate_contract(PR_GATE_TEXT)
+for old, new in (
+    ("name: ${{ github.event.pull_request.draft && 'PR Gate (draft)' || 'PR Gate' }}", "name: PR Gate"),
+    ("'PR Gate (draft)' || 'PR Gate'", "'PR Gate' || 'PR Gate (draft)'"),
+    ("needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]",
+     "needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards]"),
+):
+    if old not in PR_GATE_TEXT:
+        raise AssertionError("required aggregator mutation must change the workflow")
+    try:
+        require_required_gate_contract(PR_GATE_TEXT.replace(old, new))
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("required aggregator checker accepted an unsafe context or missing dependency")
 require(
     r"ci-router-validation:\n[\s\S]*?run: scripts/ci/pr-touches-ci-surface\.sh --github-output",
     "classify every PR Gate run for CI-surface changes before deciding "

@@ -131,6 +131,13 @@ internal sealed class RealtimeOptionsValidator : IValidateOptions<RealtimeOption
             failures.Add($"Realtime:Provider must be auto, in-process or postgres; it is '{options.Provider}'.");
         }
 
+        ValidateIntervals(options, failures);
+        ValidateCounts(options, failures);
+
+        return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+    }
+    private static void ValidateIntervals(RealtimeOptions options, List<string> failures)
+    {
         foreach (var (setting, interval) in new (string, TimeSpan)[]
                  {
                      (nameof(RealtimeOptions.SafetyPollInterval), options.SafetyPollInterval),
@@ -155,7 +162,10 @@ internal sealed class RealtimeOptionsValidator : IValidateOptions<RealtimeOption
         {
             failures.Add("Realtime:ListenerReconnectMaxDelay must not be less than ListenerReconnectMinDelay.");
         }
+    }
 
+    private static void ValidateCounts(RealtimeOptions options, List<string> failures)
+    {
         foreach (var (setting, count) in new (string, int)[]
                  {
                      (nameof(RealtimeOptions.ReadBatchSize), options.ReadBatchSize),
@@ -169,9 +179,8 @@ internal sealed class RealtimeOptionsValidator : IValidateOptions<RealtimeOption
                 failures.Add($"Realtime:{setting} must be at least 1.");
             }
         }
-
-        return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
+
 }
 
 internal static class RealtimeProviderNames

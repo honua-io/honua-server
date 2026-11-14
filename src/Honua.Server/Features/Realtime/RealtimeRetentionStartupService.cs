@@ -37,12 +37,7 @@ internal sealed partial class RealtimeRetentionStartupService(
         {
             try
             {
-                var changed = await log.ApplyRetentionAsync(retention, stoppingToken).ConfigureAwait(false);
-                if (changed > 0)
-                {
-                    LogRetentionWritten(logger, changed);
-                }
-
+                await WriteRetentionAsync(retention, stoppingToken).ConfigureAwait(false);
                 _written.TrySetResult();
                 return;
             }
@@ -59,16 +54,34 @@ internal sealed partial class RealtimeRetentionStartupService(
                 }
             }
 
-            try
-            {
-                await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
+            if (!await WaitForRetryAsync(delay, stoppingToken).ConfigureAwait(false))
             {
                 return;
             }
 
             delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, MaxRetryDelay.Ticks));
+        }
+    }
+
+    private async Task WriteRetentionAsync(IReadOnlyDictionary<string, TimeSpan> retention, CancellationToken cancellationToken)
+    {
+        var changed = await log!.ApplyRetentionAsync(retention, cancellationToken).ConfigureAwait(false);
+        if (changed > 0)
+        {
+            LogRetentionWritten(logger, changed);
+        }
+    }
+
+    private static async Task<bool> WaitForRetryAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
         }
     }
 

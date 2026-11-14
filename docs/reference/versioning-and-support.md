@@ -26,6 +26,29 @@ availability, [client compatibility](compatibility/clients.md) for operation sco
 and [OGC evidence](../cite-status.md) for the dated source-bound conformance snapshot.
 No LTS designation or new support duration is established by this page.
 
+## .NET runtime and platform
+
+| | 2026.1 |
+| --- | --- |
+| Runtime | .NET 11 and ASP.NET Core 11, bundled in the images |
+| Microsoft support for that runtime ends | 14 Nov 2028 (the same day as .NET 10 LTS) |
+| Container base | Ubuntu 26.04, chiseled (no shell or package manager) |
+| x64 CPU | x86-64-v2 or newer ([CPU baseline](../guides/deploy/troubleshooting.md#cpu-baseline-x86-64-v2)) |
+| Arm64 CPU | any arm64 |
+
+.NET 11 is a standard-term .NET release, but its support ends on the same day as .NET 10 LTS,
+so moving to it does not shorten the runtime support window. Honua moves to .NET 12 LTS in the
+first release after .NET 12 ships (November 2027), before .NET 11 support ends. The container
+images carry their own runtime: operators do not install .NET.
+
+Packages for plug-in and custom-code authors keep .NET 10 LTS working:
+
+| Package or template | Target frameworks |
+| --- | --- |
+| `Honua.Core` package, and the `Honua.Core.Abstractions` and `Honua.Plugins.Abstractions` libraries in the source release | `net10.0` and `net11.0` |
+| `Honua.CustomCode.Sdk` and the `gp-dotnet` process template | `net10.0` (builds with a .NET 10 or .NET 11 SDK) |
+| `Honua.Sdk.*` client packages | `net10.0` (usable from .NET 10 and .NET 11 apps) |
+
 ## Admin API (`/api/v1/admin/*`)
 
 The current implemented major API path is `v1`. Within `v1`, the compatibility policy requires additive, backward-compatible changes:

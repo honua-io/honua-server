@@ -137,10 +137,10 @@ internal static class GeoservicesCatalogEndpoints
                 operation.RequestBody = new OpenApiRequestBody
                 {
                     Required = true,
-                    Content = new Dictionary<string, OpenApiMediaType>
+                    Content = new Dictionary<string, IOpenApiMediaType>
                     {
-                        ["text/xml"] = new(),
-                        ["application/soap+xml"] = new()
+                        ["text/xml"] = new OpenApiMediaType(),
+                        ["application/soap+xml"] = new OpenApiMediaType()
                     }
                 };
                 return Task.CompletedTask;

@@ -270,7 +270,8 @@ class WorkflowCompletion(unittest.TestCase):
                                'ci-router-validation': ready_only, 'required': 'always()'}
         for job, condition in expected_conditions.items():
             self.assertEqual(gate['jobs'][job].get('if'), condition, job)
-        self.assertEqual(gate['jobs']['required']['name'], 'PR Gate')
+        self.assertEqual(gate['jobs']['required']['name'],
+                         "${{ github.event.pull_request.draft && 'PR Gate (draft)' || 'PR Gate' }}")
         self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards', 'server-test-producer'])
         # Evaluate actual Actions expressions for the expensive steps. True and
         # false/absent classification must respectively skip and preserve them.

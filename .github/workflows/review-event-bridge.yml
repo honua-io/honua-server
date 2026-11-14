@@ -16,14 +16,13 @@ permissions:
 
 jobs:
   notify:
-    if: github.event.pull_request.base.ref == 'trunk'
+    if: github.event.pull_request.base.ref == 'trunk' && !github.event.pull_request.draft
     name: Notify trusted review gate
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 15
     concurrency:
       group: review-event-bridge-pr-${{ github.event.pull_request.number }}
-      cancel-in-progress: false
-      queue: max
+      cancel-in-progress: true
     steps:
       - name: Shed superseded review event
         id: stale
@@ -46,6 +45,7 @@ jobs:
             });
             // Shed closed subjects before recording a bridge event. The successful
             // completion can wake the trusted resolver, which rechecks live state.
+            if (pull.draft) return shed(`PR #${prNumber} is a draft`);
             if (pull.state !== 'open') {
               return shed(`PR #${prNumber} is ${pull.state}; the trusted gate has nothing left to attest`);
             }

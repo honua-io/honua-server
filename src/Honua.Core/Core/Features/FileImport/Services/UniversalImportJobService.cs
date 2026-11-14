@@ -405,6 +405,9 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                         ErrorCode = licenseStoppedCommittedImport ? null : result.ErrorCode,
                         Warnings = result.Warnings,
                         DetectedSrid = result.DetectedSrid,
+                        SourceSrid = result.SourceSrid,
+                        StoredSrid = result.StoredSrid,
+                        Reprojected = result.Reprojected,
                         CurrentPhase = licenseStoppedCommittedImport
                             ? "Failed: license expired after data was committed"
                             : result.Success ? "Import completed" : "Import failed"

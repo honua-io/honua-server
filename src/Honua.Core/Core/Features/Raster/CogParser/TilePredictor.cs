@@ -2,6 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 
 namespace Honua.Core.Features.Raster.CogParser;
 
@@ -70,10 +73,54 @@ internal static class TilePredictor
 
     private static void UndoRow8(Span<byte> row, int samplesPerPixel)
     {
-        for (var i = samplesPerPixel; i < row.Length; i++)
+        var offset = samplesPerPixel;
+        if (Sse2.IsSupported && samplesPerPixel is 1 or 2 or 4 or 8)
+        {
+            offset = UndoVectorRow8(row, samplesPerPixel);
+        }
+
+        for (var i = offset; i < row.Length; i++)
         {
             row[i] = unchecked((byte)(row[i] + row[i - samplesPerPixel]));
         }
+    }
+
+    private static int UndoVectorRow8(Span<byte> row, int samplesPerPixel)
+    {
+        var offset = 0;
+        var carry = Vector128<byte>.Zero;
+        for (; offset <= row.Length - Vector128<byte>.Count; offset += Vector128<byte>.Count)
+        {
+            var values = MemoryMarshal.Read<Vector128<byte>>(row[offset..]);
+            // Inclusive scans run independently for each interleaved sample channel.
+            if (samplesPerPixel == 1)
+            {
+                values = Sse2.Add(values, Sse2.ShiftLeftLogical128BitLane(values, 1));
+            }
+
+            if (samplesPerPixel <= 2)
+            {
+                values = Sse2.Add(values, Sse2.ShiftLeftLogical128BitLane(values, 2));
+            }
+
+            if (samplesPerPixel <= 4)
+            {
+                values = Sse2.Add(values, Sse2.ShiftLeftLogical128BitLane(values, 4));
+            }
+
+            values = Sse2.Add(values, Sse2.ShiftLeftLogical128BitLane(values, 8));
+            values = Sse2.Add(values, carry);
+            MemoryMarshal.Write(row[offset..], in values);
+            carry = samplesPerPixel switch
+            {
+                1 => Vector128.Create(values.GetElement(15)),
+                2 => Vector128.Create(values.AsUInt16().GetElement(7)).AsByte(),
+                4 => Vector128.Create(values.AsUInt32().GetElement(3)).AsByte(),
+                _ => Vector128.Create(values.AsUInt64().GetElement(1)).AsByte()
+            };
+        }
+
+        return Math.Max(offset, samplesPerPixel);
     }
 
     private static void UndoRow16(Span<byte> row, int samplesPerPixel, bool isLittleEndian)

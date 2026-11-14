@@ -37,6 +37,7 @@ internal static partial class SceneGenerationEndpoints
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/", HandleGenerateScene)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithName("GenerateScene")
             .WithSummary("Generate a 3D Tiles tileset from a feature layer.")
             .Accepts<GenerateSceneRequest>("application/json")

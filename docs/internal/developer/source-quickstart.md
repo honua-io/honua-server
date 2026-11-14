@@ -87,8 +87,8 @@ SQL
 ```bash
 python3 -m venv --without-pip .quickstart-venv
 python3 -m pip --python .quickstart-venv/bin/python install \
-  "honua-sdk @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.13#subdirectory=packages/honua-sdk" \
-  "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-admin-v0.1.10#subdirectory=packages/honua-admin"
+  "honua-sdk @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.3.1#subdirectory=packages/honua-sdk" \
+  "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-admin-v0.3.1#subdirectory=packages/honua-admin"
 . .quickstart-venv/bin/activate
 ```
 
@@ -122,7 +122,7 @@ with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-pa
 PY
 ```
 
-8. Publish the discovered table as a layer and note the `layerId` in the response.
+8. Publish the discovered table, then discover its public layer index from the service metadata. The publish receipt identifies the stored dataset with `storageLayerId`; feature queries and map tiles use the public layer index.
 
 <!-- docs-validation:quickstart.publish mode=run -->
 ```bash
@@ -131,6 +131,7 @@ import os
 from pathlib import Path
 
 from honua_admin import HonuaAdminClient, PublishLayerRequest
+from honua_sdk import HonuaClient
 
 connection_id = Path(".quickstart-connection-id").read_text()
 with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-password") as admin:
@@ -145,12 +146,16 @@ with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-pa
         fields_list=["id", "name"],
         service_name="quickstart",
     ))
-    Path(".quickstart-layer-id").write_text(str(layer.layer_id))
     print(layer)
+
+with HonuaClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-password") as client:
+    metadata = client.feature_server("quickstart").metadata()
+    layer_index = next(item["id"] for item in metadata["layers"] if item["name"] == layer.layer_name)
+    Path(".quickstart-layer-id").write_text(str(layer_index))
 PY
 ```
 
-9. Save this as `map.html`, substitute the published layer ID, then serve it and open <http://localhost:3000/map.html>. The request hook supplies the Compose quickstart's development-only admin key; use a user-scoped credential instead for a deployed server.
+9. Save this as `map.html`, substitute the public layer index, then serve it and open <http://localhost:3000/map.html>. The request hook supplies the Compose quickstart's development-only admin key; use a user-scoped credential instead for a deployed server.
 
 <!-- docs-validation:quickstart.map mode=run -->
 ```bash

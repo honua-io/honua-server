@@ -34,6 +34,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         _ = group.MapPut("/{storageLayerId:int}/filter", HandleUpdateLayerFilter)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithName("UpdateAdminLayerFilter")
             .WithSummary("Update persisted layer permanent filter configuration")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));

@@ -211,13 +211,13 @@ def main() -> None:
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
     require(
         review_gate,
-        "group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.run_id }}",
-        "resolver concurrency must serialize events for the same PR",
+        "group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || github.run_id }}",
+        "resolver concurrency must group identified PR events and isolate unidentified completions",
     )
     require(
         review_bridge,
         "group: review-event-bridge-pr-${{ github.event.pull_request.number }}",
-        "review bridge concurrency must serialize events for the same PR",
+        "review bridge concurrency must group events for the same PR",
     )
     require(
         review_gate,
@@ -234,7 +234,7 @@ def main() -> None:
         "github.event.workflow_run.conclusion == 'success'",
         "only successful bridge runs may start trusted resolution",
     )
-    require(review_gate, "cancel-in-progress: false", "trusted dispatch must not be interrupted")
+    require(review_gate, "cancel-in-progress: true", "superseded review helpers must release runner capacity")
     require(
         review_gate,
         "group: review-gate-${{ needs.resolve.outputs.pr }}",
@@ -274,9 +274,9 @@ def main() -> None:
     if "core.setFailed(" in review_bridge:
         raise AssertionError("superseded bridge events must complete neutrally")
     for source in [review_gate, review_bridge]:
-        require(source, "queue: max", "review helpers must queue rather than cancel pending events")
-        if "cancel-in-progress: true" in source:
-            raise AssertionError("review helpers must not cancel in-progress events")
+        require(source, "cancel-in-progress: true", "superseded review helpers must release runner capacity")
+        if "queue: max" in source:
+            raise AssertionError("review helpers must not retain superseded pending events")
     require(
         review_gate,
         "ref: ${{ github.workflow_sha }}",

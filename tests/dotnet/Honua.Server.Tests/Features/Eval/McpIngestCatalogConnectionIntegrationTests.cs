@@ -14,6 +14,8 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.Server.Startup;
+using Honua.Server.Tests.Admin;
+using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -73,9 +75,10 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
             var migrations = await migrationRunner.RunMigrationsAsync(catalogConnection, typeof(Program).Assembly);
             migrations.Successful.Should().BeTrue(migrations.ErrorMessage);
 
-            await using var factory = CreateHost(catalogConnection);
+            using var identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
+            await using var factory = CreateHost(catalogConnection, identityProvider);
             using var admin = factory.CreateClient();
-            admin.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
+            await McpPublicationFixtureSetup.UseManagedPublicationKeyAsync(factory.Services, admin);
             using var scope = factory.Services.CreateScope();
             var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
             (await registry.GetActiveConnectionsAsync()).Should().BeEmpty("this catalog is an owned isolated database");
@@ -128,8 +131,10 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
                 layerName = "Honolulu",
                 serviceName,
             });
-            published.GetProperty("status").GetString().Should().Be("Completed", published.GetRawText());
-            published.GetProperty("storageLayerId").GetString().Should().NotBeNullOrWhiteSpace();
+            using var human = await HumanApprovalHttpClient.AuthenticateAsync(() => factory.CreateClient(), identityProvider);
+            var completed = await McpPublicationFixtureSetup.ApprovePublicationAsync(human, admin, published);
+            completed.Result!.Details["storageLayerId"].Should().NotBeNullOrWhiteSpace();
+            completed.Result.Details.Should().NotContainKey("layerId");
             published.TryGetProperty("layerId", out _).Should().BeFalse();
 
             using var serviceResponse = await admin.GetAsync($"/rest/services/{serviceName}/FeatureServer?f=json");
@@ -215,10 +220,12 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
         await command.ExecuteNonQueryAsync();
     }
 
-    private static WebApplicationFactory<Program> CreateHost(string catalogConnection)
+    private static WebApplicationFactory<Program> CreateHost(string catalogConnection, AdminAuthEndpointsTests.StubHttpClientFactory identityProvider)
         => ConfiguredWebApplicationFactory.Create(builder =>
         {
             builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
+            builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true");
+            HumanApprovalHttpClient.Configure(builder, identityProvider);
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("Licensing:Mode", "Disabled");

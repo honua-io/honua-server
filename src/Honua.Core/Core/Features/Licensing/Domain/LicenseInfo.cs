@@ -22,8 +22,6 @@ public sealed class LicenseInfo
     public DateTimeOffset? IssuedAt { get; init; }
 
     public IReadOnlyList<Entitlement> Entitlements { get; init; } = [];
-
-    public LicenseCapacityTerms? CapacityTerms { get; init; }
 }
 
 public sealed class Entitlement

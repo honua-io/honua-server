@@ -31,19 +31,7 @@ public sealed class RealtimeEventLogTests(DatabaseFixtureAdapter database) : ICl
         using var writing = new CancellationTokenSource();
         var gaps = new List<string>();
 
-        // A reader that sees a higher sequence before a lower one has seen commit order differ from
-        // sequence order; every snapshot must therefore be exactly 1..max.
-        var observer = Task.Run(async () =>
-        {
-            while (!writing.IsCancellationRequested)
-            {
-                var seen = await harness.ReadSequencesAsync(RealtimeLogFamilies.Admin);
-                if (seen.Count > 0 && seen[^1] != seen.Count)
-                {
-                    gaps.Add(string.Join(',', seen));
-                }
-            }
-        });
+        var observer = ObserveCommitOrderAsync(harness, gaps, writing.Token);
 
         var appended = await Task.WhenAll(Enumerable.Range(0, writers).Select(writer => Task.Run(async () =>
         {
@@ -70,6 +58,19 @@ public sealed class RealtimeEventLogTests(DatabaseFixtureAdapter database) : ICl
         (await harness.ReadSequencesAsync(RealtimeLogFamilies.Admin)).Should().Equal(Enumerable.Range(1, expected).Select(seq => (long)seq));
         (await harness.ScalarAsync<long>($"SELECT head FROM {harness.Table("realtime_log_heads")} WHERE family = 'admin'"))
             .Should().Be(expected);
+    }
+
+    // Every visible snapshot must be exactly 1..max, even while writers are committing.
+    private static async Task ObserveCommitOrderAsync(RealtimeLogHarness harness, List<string> gaps, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var seen = await harness.ReadSequencesAsync(RealtimeLogFamilies.Admin);
+            if (seen.Count > 0 && seen[^1] != seen.Count)
+            {
+                gaps.Add(string.Join(',', seen));
+            }
+        }
     }
 
     [IntegrationTest]
@@ -249,7 +250,7 @@ public sealed class RealtimeEventLogTests(DatabaseFixtureAdapter database) : ICl
     [IntegrationTest]
     public async Task RetentionWriter_TablesMissingAtStart_RetriesUntilWritten()
     {
-        await using var harness = await RealtimeLogHarness.CreateAsync(database, applyMigration: false);
+        await using var harness = await RealtimeLogHarness.CreateWithoutMigrationAsync(database);
         using var writer = new RealtimeRetentionStartupService(
             harness.Log,
             Options.Create(new RealtimeOptions()),

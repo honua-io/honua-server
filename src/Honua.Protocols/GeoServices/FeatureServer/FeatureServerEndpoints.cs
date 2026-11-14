@@ -3,6 +3,7 @@
 
 using System;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.Metadata.Caching;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Middleware;
@@ -88,6 +89,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesPost)
+            .WithMetadata(ReadOnlyRequestMetadata.Instance)
             .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query FeatureServer Features (POST)")
             .WithName("QueryFeaturesPost")
@@ -125,6 +127,7 @@ internal static partial class FeatureServerEndpoints
         // (honua-server#1825). The POST companion shares the read-only handler and is
         // anonymous by design (per-layer access is enforced by the handler).
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesPost)
+            .WithMetadata(ReadOnlyRequestMetadata.Instance)
             .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query FeatureServer Service (POST)")
             .WithName("QueryFeatureServicePost")

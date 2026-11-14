@@ -36,6 +36,7 @@ internal static class PostgresSharedStateRegistration
             .Bind(configuration.GetSection(ControlPlaneRetentionOptions.SectionName))
             .ValidateDataAnnotations();
         services.AddOptions<JobStoreOptions>();
+        services.AddPostgresConfigurationStores();
         services.TryAddSingleton(provider => new JobStoreDatabase(
             provider.GetRequiredService<NpgsqlDataSource>(),
             configuration[SystemSchemaKey]));
@@ -78,6 +79,13 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton<IMcpSessionStore>(provider =>
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
+        services.AddRetentionSweeps();
+        services.AddRealtimeEventLog(configuration);
+        return services;
+    }
+
+    private static void AddRetentionSweeps(this IServiceCollection services)
+    {
         services.AddRetentionSweep<PostgresOperationProposalStore>();
         services.AddRetentionSweep<PostgresWorkflowOperationStore>();
         services.AddRetentionSweep<PostgresOperationInstanceStore>();
@@ -88,8 +96,6 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();
         services.AddRetentionSweep<PostgresPackageDraftBacking>();
         services.AddRetentionSweep<PostgresMcpSessionStore>();
-        services.AddRealtimeEventLog(configuration);
-        return services;
     }
 
     // The lease store needs the system database; a host without one has no shared leases.

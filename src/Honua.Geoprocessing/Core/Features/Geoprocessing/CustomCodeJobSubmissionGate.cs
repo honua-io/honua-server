@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Claims;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -45,12 +44,12 @@ internal sealed class CustomCodeJobSubmissionGate
     }
 
     public async Task<(CustomCodeOwnerScope OwnerScope, string Token, ExecutionJobDefinition? Workload)> ValidateMintAndInjectAsync(
-        string jobId,
-        ClaimsPrincipal principal,
-        Dictionary<string, string> specParams,
+        CustomCodeSubmission submission,
         ExecutionJobDefinition? workload,
         CancellationToken cancellationToken)
     {
+        var principal = submission.Principal;
+        var specParams = submission.SpecParams;
         if (_coordinator is null || _customCodeOptions is null)
         {
             throw new GeoprocessingValidationException(
@@ -113,7 +112,7 @@ internal sealed class CustomCodeJobSubmissionGate
         try
         {
             var result = await _coordinator.ValidateMintAndInjectAsync(
-                jobId, principal, specParams, _customCodeOptions.CurrentValue, cancellationToken).ConfigureAwait(false);
+                submission, _customCodeOptions.CurrentValue, cancellationToken).ConfigureAwait(false);
             return (result.OwnerScope, result.Token, workload);
         }
         catch (CustomCodeSubmitRejectedException ex)

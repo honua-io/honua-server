@@ -53,9 +53,6 @@ internal sealed record ExecutionJobRow(
     public static readonly string ActiveStatusList =
         $"'{nameof(ExecutionJobStatus.Queued)}', '{nameof(ExecutionJobStatus.Provisioning)}', '{nameof(ExecutionJobStatus.Running)}'";
 
-    public static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
-
     public static ExecutionJobRow From(ExecutionJobRecord job)
         => new(
             JsonSerializer.Serialize(job, ControlPlaneJsonContext.Default.ExecutionJobRecord),

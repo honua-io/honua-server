@@ -152,7 +152,6 @@
 
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" />
-    <PackageReference Include="BouncyCastle.Cryptography" />
     <PackageReference Include="Geospatial.Grpc" />
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.AspNetCore" />
@@ -185,7 +184,6 @@
                       Condition="'$(HonuaUseSkiaNoDependencies)' != 'true'" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies"
                       Condition="'$(HonuaUseSkiaNoDependencies)' == 'true'" />
-    <PackageReference Include="Apache.Arrow" />
     <EmbeddedResource Include="Migrations\*.sql" />
     <EmbeddedResource Include="MigrationContracts\attachment-schema-preamble.v1.sql.template"
                       LogicalName="Honua.Server.MigrationContracts.attachment-schema-preamble.v1.sql.template" />
@@ -202,7 +200,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ParquetSharp" />
     <PackageReference Include="Scalar.AspNetCore" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <Content Update="openapi.json">
@@ -230,10 +227,6 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
     <Content Include="..\..\docs\developer\api-specs\admin-api.json" Link="admin-openapi.json" Condition="Exists('..\..\docs\developer\api-specs\admin-api.json')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
-    <Content Include="..\..\docs\api-specs\admin-api.json" Link="admin-openapi.json" Condition="!Exists('..\..\docs\developer\api-specs\admin-api.json') and Exists('..\..\docs\api-specs\admin-api.json')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

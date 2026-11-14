@@ -127,7 +127,7 @@ internal sealed partial class ProvisionerBuildJobService : IProvisionerBuildJobS
         }
 
         var job = await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job == null || IsTerminal(job.Status))
+        if (job == null || job.Status.IsTerminal())
         {
             return false;
         }
@@ -177,11 +177,6 @@ internal sealed partial class ProvisionerBuildJobService : IProvisionerBuildJobS
             _logger,
             cancellationToken).ConfigureAwait(false);
     }
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 
     private static partial class Log
     {

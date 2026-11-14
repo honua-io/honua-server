@@ -44,7 +44,7 @@ public sealed class TileOperationJobServiceGenerationTests
             Operation = "seed",
             LayerId = 1,
             TileMatrixSetId = "UnsupportedSet"
-        }, schemaName: null, tenantScope: "public");
+        }, schemaName: null);
 
         await sut.ProcessQueuedJobAsync(failedJobId);
         (await sut.GetAsync(failedJobId))!.Status.Should().Be(OperationStatus.Failed);
@@ -52,7 +52,6 @@ public sealed class TileOperationJobServiceGenerationTests
         var originalPersisted = await ReadPersistedRequestAsync(cache, failedJobId);
         var originalGeneration = originalPersisted.Request.GenerationId;
         originalGeneration.Should().Be(failedJobId, "the first submission stamps the job id as the generation id");
-        originalPersisted.TenantScope.Should().Be("public");
 
         var retryJobId = await sut.RetryAsync(failedJobId);
         retryJobId.Should().NotBeNullOrWhiteSpace();
@@ -64,7 +63,6 @@ public sealed class TileOperationJobServiceGenerationTests
             originalGeneration,
             "retry forwards the original generation id so the checkpoint resumes rather than restarting");
         retryGeneration.Should().NotBe(retryJobId, "the generation is intentionally decoupled from the new job id");
-        retryPersisted.TenantScope.Should().Be("public", "retry preserves the captured cache ownership scope");
     }
 
     private static async Task<PersistedTileOperationRequest> ReadPersistedRequestAsync(

@@ -5,33 +5,43 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 
-export const CLIENT_SOURCE = '372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4';
-export const SDK_VERSION = '1.32.1';
+import { CLIENT_SOURCE, SDK_VERSION, CLIENT_LOCK_SHA256 } from './client-pins.mjs';
+export { CLIENT_SOURCE, SDK_VERSION, CLIENT_LOCK_SHA256 } from './client-pins.mjs';
 
 export async function sourceSha256(moduleUrl) {
   return createHash('sha256').update(await readFile(new URL(moduleUrl))).digest('hex');
 }
 
-export async function openInstalledClient({ baseUrl, apiKey, name, timeoutMs = 20_000 }) {
+export function ownedClientEndpoint(baseUrl, apiKey) {
   const endpoint = new URL('/mcp', baseUrl);
   if (endpoint.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname)
     || endpoint.username || endpoint.password || !apiKey) throw new Error('invalid-owned-target');
+  return endpoint;
+}
+
+export async function requirePublishedPackage(packageName, modulePath, expectedVersion) {
   const require = createRequire(import.meta.url);
   // SDK package exports do not expose its root package.json.
-  let packageRoot = dirname(require.resolve('@modelcontextprotocol/sdk/client/index.js'));
-  let sdk;
+  let packageRoot = dirname(require.resolve(modulePath));
+  let manifest;
   for (let depth = 0; depth < 6; depth++, packageRoot = dirname(packageRoot)) {
     let candidate;
     try { candidate = JSON.parse(await readFile(resolve(packageRoot, 'package.json'), 'utf8')); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
-    if (candidate?.name === '@modelcontextprotocol/sdk') { sdk = candidate; break; }
+    if (candidate?.name === packageName) { manifest = candidate; break; }
   }
-  if (!sdk) throw new Error('missing-installed-sdk-root');
+  if (!manifest) throw new Error('missing-installed-client-root');
   const lockBytes = await readFile(resolve(packageRoot, '../../..', 'package-lock.json'));
   const lockSha256 = createHash('sha256').update(lockBytes).digest('hex');
-  const installed = JSON.parse(lockBytes).packages['node_modules/@modelcontextprotocol/sdk'];
-  if (sdk.version !== SDK_VERSION || installed?.version !== SDK_VERSION
-    || lockSha256 !== '5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f') throw new Error('unexpected-installed-sdk');
+  const installed = JSON.parse(lockBytes).packages[`node_modules/${packageName}`];
+  if (manifest.version !== expectedVersion || installed?.version !== expectedVersion
+    || lockSha256 !== CLIENT_LOCK_SHA256) throw new Error('unexpected-installed-client');
+  return { root: packageRoot, version: manifest.version, integrity: installed.integrity, lockSha256 };
+}
+
+export async function openInstalledClient({ baseUrl, apiKey, name, timeoutMs = 20_000 }) {
+  const endpoint = ownedClientEndpoint(baseUrl, apiKey);
+  const installed = await requirePublishedPackage('@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/client/index.js', SDK_VERSION);
   const budget = AbortSignal.timeout(timeoutMs);
   const fetchOwned = (url, options = {}) => fetch(url, { ...options, redirect: 'error',
     signal: AbortSignal.any([budget, ...(options.signal ? [options.signal] : [])]) });
@@ -41,7 +51,7 @@ export async function openInstalledClient({ baseUrl, apiKey, name, timeoutMs = 2
       requestInit: { headers: { 'X-API-Key': apiKey } }, fetch: fetchOwned,
     }));
     return { client, fetchOwned, endpoint, metadata: { clientSource: CLIENT_SOURCE,
-      sdkVersion: sdk.version, sdkIntegrity: installed.integrity, clientLockSha256: lockSha256,
+      sdkVersion: installed.version, sdkIntegrity: installed.integrity, clientLockSha256: installed.lockSha256,
       clientHelperSha256: await sourceSha256(import.meta.url) } };
   } catch (error) {
     await client.close();

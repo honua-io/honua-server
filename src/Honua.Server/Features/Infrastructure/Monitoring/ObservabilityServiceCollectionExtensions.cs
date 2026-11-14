@@ -87,6 +87,7 @@ internal static class ObservabilityServiceCollectionExtensions
             DatabasePressureSignal = sp.GetService<IOpsDatabasePressureSignal>(),
             AdmissionGate = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(),
             RollupStore = sp.GetService<IOpsHealthRollupStore>(),
+            ExternalEventStore = sp.GetService<IOpsExternalEventStore>(),
             CollectionLedger = sp.GetRequiredService<OpsFindingsCollectionLedger>(),
             TimeProvider = sp.GetService<TimeProvider>(),
             ManagedComposeObserver = sp.GetService<IManagedComposeObserver>(),
@@ -118,6 +119,12 @@ internal static class ObservabilityServiceCollectionExtensions
         if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
         {
             services.AddHostedService<OpsHealthRollupSampler>();
+#if !HONUA_EXCLUDE_AWS
+            if (services.AddAwsOpsEventQueue(configuration))
+            {
+                services.AddHostedService<OpsEventIngestionService>();
+            }
+#endif
         }
 
         // Aggregated operate-status surface (A12): composes the ops-health snapshot + findings into
@@ -161,7 +168,9 @@ internal static class ObservabilityServiceCollectionExtensions
             options.EnableForHttps = true;
 
             // PERFORMANCE FIX: Use adaptive compression providers for content-size based optimization
+            // Equal q-values pick the first provider: Brotli stays preferred, zstd before gzip.
             options.Providers.Add<AdaptiveBrotliCompressionProvider>();
+            options.Providers.Add<AdaptiveZstdCompressionProvider>();
             options.Providers.Add<AdaptiveGzipCompressionProvider>();
 
             // Add MIME types for geospatial data formats
@@ -181,6 +190,7 @@ internal static class ObservabilityServiceCollectionExtensions
 
         // Register adaptive compression providers
         services.TryAddTransient<AdaptiveBrotliCompressionProvider>();
+        services.TryAddTransient<AdaptiveZstdCompressionProvider>();
         services.TryAddTransient<AdaptiveGzipCompressionProvider>();
     }
 }

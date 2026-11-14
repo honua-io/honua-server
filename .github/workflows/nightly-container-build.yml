@@ -15,7 +15,7 @@ on:
         default: ''
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   REGISTRY_GHCR: ghcr.io
   IMAGE_NAME_GHCR: ${{ github.repository }}
   IMAGE_NAME_DOCKERHUB: honuaio/honua-server
