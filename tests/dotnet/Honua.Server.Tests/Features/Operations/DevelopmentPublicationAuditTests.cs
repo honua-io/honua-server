@@ -25,27 +25,10 @@ public sealed class DevelopmentPublicationAuditTests
     [Endpoint("POST /mcp tools/call honua_publish_service")]
     public async Task Publish_DevelopmentHost_PersistsActorAndTimeInAdminAudit()
     {
-        var publisher = Substitute.For<ILayerPublishingService>();
-        publisher.ValidateTableForPublishAsync(Arg.Any<string>(), Arg.Any<TablePublishValidationRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new TablePublishValidationResult { IsValid = true, Status = "valid", Schema = "public", Table = "parcels", ServiceName = "default" });
-        publisher.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new PublishedLayerSummary { StorageLayerId = 321, LayerName = "parcels", Schema = "public", Table = "parcels", GeometryType = "Polygon", Srid = 4326, ServiceName = "default" });
-        var resolver = Substitute.For<ISecureConnectionResolver>();
-        resolver.ResolveConnectionStringAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
-        resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
-
+        var publisher = CreatePublisher();
         await using var redis = new RedisFixture();
         await redis.InitializeAsync();
-        var fixture = new WebAppFixture().UseEnvironment(Environments.Development)
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("Licensing:Mode", "Disabled");
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
-                builder.UseSetting("Public:BaseUrl", "http://localhost");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-            })
-            .ReplaceService(publisher).ReplaceService(resolver);
+        var fixture = CreateFixture(publisher, redis.ConnectionString);
         await fixture.InitializeAsync();
         try
         {
@@ -87,6 +70,34 @@ public sealed class DevelopmentPublicationAuditTests
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static WebAppFixture CreateFixture(ILayerPublishingService publisher, string redisConnectionString)
+    {
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver.ResolveConnectionStringAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
+        resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
+
+        return new WebAppFixture().UseEnvironment(Environments.Development)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("Licensing:Mode", "Disabled");
+                builder.UseSetting("ConnectionStrings:redis", redisConnectionString);
+                builder.UseSetting("Public:BaseUrl", "http://localhost");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
+            .ReplaceService(publisher).ReplaceService(resolver);
+    }
+
+    private static ILayerPublishingService CreatePublisher()
+    {
+        var publisher = Substitute.For<ILayerPublishingService>();
+        publisher.ValidateTableForPublishAsync(Arg.Any<string>(), Arg.Any<TablePublishValidationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new TablePublishValidationResult { IsValid = true, Status = "valid", Schema = "public", Table = "parcels", ServiceName = "default" });
+        publisher.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishedLayerSummary { StorageLayerId = 321, LayerName = "parcels", Schema = "public", Table = "parcels", GeometryType = "Polygon", Srid = 4326, ServiceName = "default" });
+        return publisher;
     }
 
     private static async Task AssertAuditAsync(HttpClient admin, string operationId)
