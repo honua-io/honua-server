@@ -104,6 +104,7 @@ internal static class JsonContextRegistration
         Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
         Honua.Infrastructure.Licensing.LicenseFileJsonContext.Default,
         Honua.Server.Features.Admin.Models.IdentityAdminJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Configuration.SharedConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.CacheAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.GeocodingAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.FeatureOverviewJsonContext.Default,

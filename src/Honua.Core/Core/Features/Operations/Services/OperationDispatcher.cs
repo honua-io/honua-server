@@ -8,6 +8,7 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 
 namespace Honua.Core.Features.Operations.Services;
 
@@ -24,6 +25,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
     private readonly OperationEnvelopeFactory _envelopeFactory;
     private readonly IOperationApprovalReplayVerifier? _approvalReplayVerifier;
     private readonly TimeProvider _clock;
+    private readonly IAgentAuthorityStore? _agentAuthorityStore;
 
     public OperationDispatcher(
         IOperationCatalog catalog,
@@ -33,7 +35,8 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         IOperationApprovalBridge? approvalBridge = null,
         IOperationInstanceStore? instanceStore = null,
         IAuditLog? auditLog = null,
-        IOperationApprovalReplayVerifier? approvalReplayVerifier = null)
+        IOperationApprovalReplayVerifier? approvalReplayVerifier = null,
+        IAgentAuthorityStore? agentAuthorityStore = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(executors);
@@ -47,6 +50,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         _auditLog = auditLog ?? new VolatileOperationAuditLog();
         _envelopeFactory = new OperationEnvelopeFactory(_instanceStore, _auditLog, clock);
         _approvalReplayVerifier = approvalReplayVerifier;
+        _agentAuthorityStore = agentAuthorityStore;
         _executors = executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
     }
 
@@ -331,7 +335,9 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         PolicyDecision decision;
         try
         {
-            decision = string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)
+            decision = !await AgentAuthorityPolicy.AllowsAsync(_agentAuthorityStore, descriptor, invocationContext, cancellationToken).ConfigureAwait(false)
+                ? new PolicyDecision { Kind = PolicyDecisionKind.Deny, Reason = "Operation exceeds the agent authority ceiling." }
+                : string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)
                 ? await _policy
                     .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
                     .ConfigureAwait(false)
@@ -464,6 +470,16 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         {
             try
             {
+                if (!await AgentAuthorityPolicy.AllowsAsync(_agentAuthorityStore, descriptor, invocationContext, cancellationToken).ConfigureAwait(false))
+                {
+                    return await PersistAsync(envelope with
+                    {
+                        Status = OperationHandleStatus.Denied,
+                        PolicyDecision = PolicyDecisionKind.Deny,
+                        UpdatedAt = _clock.GetUtcNow(),
+                        Reason = "Agent authority was revoked before actuation.",
+                    }, cancellationToken).ConfigureAwait(false);
+                }
                 executed = await executor.SubmitAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)

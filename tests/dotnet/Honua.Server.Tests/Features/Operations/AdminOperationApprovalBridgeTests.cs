@@ -138,6 +138,7 @@ public sealed class AdminOperationApprovalBridgeTests
             Context() with
             {
                 ScopeGoverned = true,
+                Roles = ["agent"],
                 RecognizedScopes = ["honua.mcp.update"],
             },
             Decision());
@@ -175,6 +176,7 @@ public sealed class AdminOperationApprovalBridgeTests
             Context() with
             {
                 ScopeGoverned = true,
+                Roles = ["agent"],
                 RecognizedScopes = ["honua.mcp.update"],
             },
             Decision());
@@ -188,6 +190,8 @@ public sealed class AdminOperationApprovalBridgeTests
         captured.CorrelationId.Should().Be("corr-123");
         captured.ScopeGoverned.Should().BeTrue();
         captured.RecognizedScopes.Should().Equal("honua.mcp.update");
+        captured.RequestedBy.Should().Be(Context().PrincipalId);
+        captured.RequestedByAgent.Should().Be(Context().PrincipalId);
         captured.OperationInstanceId.Should().NotBe(result.ProposalId);
     }
 

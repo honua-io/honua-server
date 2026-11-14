@@ -1929,6 +1929,7 @@ app.MapFeatureOverviewEndpoints();
 // quota policies. Admin-authorized; the policies are consumed by the rate limiting
 // middleware registered above.
 app.MapRateLimitEndpoints();
+app.MapAgentAuthorityEndpoints();
 
 // Tenant lifecycle/provisioning administration (issue #2156): create/suspend/resume/delete plus
 // the per-tenant billing usage export. Admin-authorized.
