@@ -81,19 +81,21 @@ public sealed partial class LayerPublishingIntegrationTests
             $"ALTER TABLE public.{_tableName} ADD COLUMN valid_from timestamptz NOT NULL DEFAULT now(), "
             + "ADD COLUMN label text, ADD COLUMN opens_at time");
 
-    private Task<HttpResponseMessage> PublishWithTemporalColumnAsync(string temporalColumn, string[]? fields = null)
-        => _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers",
-            JsonContent.Create(new PublishLayerRequest
-            {
-                Schema = _schema,
-                Table = _tableName,
-                LayerName = _tableName,
-                GeometryColumn = "geom",
-                GeometryType = "Point",
-                Srid = 4326,
-                PrimaryKey = "id",
-                TemporalColumn = temporalColumn,
-                Fields = fields ?? [],
-                ServiceName = _serviceName
-            }, options: _jsonOptions));
+    private async Task<HttpResponseMessage> PublishWithTemporalColumnAsync(string temporalColumn, string[]? fields = null)
+    {
+        using var content = JsonContent.Create(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = _tableName,
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            TemporalColumn = temporalColumn,
+            Fields = fields ?? [],
+            ServiceName = _serviceName
+        }, options: _jsonOptions);
+        return await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers", content);
+    }
 }
