@@ -21,11 +21,13 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
     private long _reconnects;
     private int _processId;
 
-    private sealed record ListenerConnection(NpgsqlDataSource? DataSource, string? PollOnlyReason);
+    // The listener's own connection string, or why the task has none. The listener creates and
+    // owns the data source, so it is disposed with the listener.
+    private sealed record ListenerConnection(string? ConnectionString, string? PollOnlyReason);
 
     private RealtimeListener(ListenerConnection connection, IOptions<RealtimeOptions> options, ILogger<RealtimeListener> logger)
     {
-        _dataSource = connection.DataSource;
+        _dataSource = connection.ConnectionString is { } connectionString ? NpgsqlDataSource.Create(connectionString) : null;
         PollOnlyReason = connection.PollOnlyReason;
         _options = options;
         _logger = logger;
@@ -79,7 +81,7 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
             return new RealtimeListener(new(null, "the database host is a connection proxy"), options, logger);
         }
 
-        return new RealtimeListener(new(NpgsqlDataSource.Create(builder.ConnectionString), null), options, logger);
+        return new RealtimeListener(new(builder.ConnectionString, null), options, logger);
     }
 
     // Holds the listener open until cancelled, reconnecting with backoff from

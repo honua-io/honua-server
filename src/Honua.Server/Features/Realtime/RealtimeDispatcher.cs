@@ -52,6 +52,7 @@ internal sealed partial class RealtimeDispatcher(
     {
         while (_wake.Reader.TryRead(out _))
         {
+            // Each successful read discards one pending wake-up; the loop ends when none remain.
         }
     }
 
