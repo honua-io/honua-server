@@ -27,10 +27,10 @@ internal sealed class OpsNotificationReminderRunner(
         var now = timeProvider.GetUtcNow();
         foreach (var finding in actionable.Values)
         {
-            await schedules.ObserveAsync("finding", finding.Id, finding.Severity, now, cancellationToken)
+            await schedules.ObserveAsync(new("finding", finding.Id, finding.Severity), now, cancellationToken)
                 .ConfigureAwait(false);
         }
-        await schedules.CloseMissingAsync("finding", actionable.Keys.ToArray(), now, cancellationToken)
+        await schedules.CloseMissingFindingsAsync(actionable.Keys.ToArray(), now, cancellationToken)
             .ConfigureAwait(false);
         await schedules.ObserveAwaitingAsync(100, cancellationToken).ConfigureAwait(false);
         var due = await schedules.ListDueAsync(now, 100, cancellationToken).ConfigureAwait(false);
@@ -60,19 +60,7 @@ internal sealed class OpsNotificationReminderRunner(
             return;
         }
 
-        var notification = new OpsNotification
-        {
-            Source = "ops-reminders",
-            Severity = schedule.Severity == OpsFindingSeverity.Critical ? AlertSeverity.Critical : AlertSeverity.Warning,
-            Title = terminal ? "Approval expired without execution" :
-                schedule.Source == "proposal" ? "Human approval required" : "Operational finding remains open",
-            Body = $"{schedule.Source} {schedule.SubjectId}. Review in the authenticated operations console at /operate/copilot.",
-            DedupeIdentifier = $"{schedule.Source}:{schedule.SubjectId}:{schedule.EpisodeId:N}:{schedule.Severity}:{schedule.NoticeNumber}",
-            ProposalId = proposal?.ProposalId,
-            OperationInstanceId = proposal?.Audit?.OperationInstanceId,
-            CorrelationId = proposal?.Audit?.CorrelationId,
-            AuditId = proposal?.Audit?.AuditId,
-        };
+        var notification = BuildNotification(schedule, proposal);
         if (!await notifications.TryNotifyAsync(notification, cancellationToken).ConfigureAwait(false))
         {
             // Keep the pending ordinal, but let later due rows progress when this row is filtered
@@ -93,5 +81,23 @@ internal sealed class OpsNotificationReminderRunner(
                 : OpsNotificationCadence.NextNotice(schedule.Severity, schedule.FirstSeenAt, now);
             await schedules.TryAdvanceAsync(schedule, next, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private static OpsNotification BuildNotification(OpsNotificationSchedule schedule, OperationProposal? proposal)
+    {
+        var terminal = proposal?.Status == OperationProposalStatus.Expired;
+        return new OpsNotification
+        {
+            Source = "ops-reminders",
+            Severity = schedule.Severity == OpsFindingSeverity.Critical ? AlertSeverity.Critical : AlertSeverity.Warning,
+            Title = terminal ? "Approval expired without execution" :
+                schedule.Source == "proposal" ? "Human approval required" : "Operational finding remains open",
+            Body = $"{schedule.Source} {schedule.SubjectId}. Review in the authenticated operations console at /operate/copilot.",
+            DedupeIdentifier = $"{schedule.Source}:{schedule.SubjectId}:{schedule.EpisodeId:N}:{schedule.Severity}:{schedule.NoticeNumber}",
+            ProposalId = proposal?.ProposalId,
+            OperationInstanceId = proposal?.Audit?.OperationInstanceId,
+            CorrelationId = proposal?.Audit?.CorrelationId,
+            AuditId = proposal?.Audit?.AuditId,
+        };
     }
 }

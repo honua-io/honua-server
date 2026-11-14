@@ -111,6 +111,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         OpsNotificationReminderRunner Runner() => new(harness.CreateNotificationStore(), findings,
             harness.CreateProposalStore(), notifications, clock);
         await Runner().RunAsync(CancellationToken.None);
+        // Delivery may remain disabled longer than the refreshed terminal retention window.
+        await harness.ExecuteAsync($"UPDATE {harness.Table("operation_proposals")} SET expires_at = now() - interval '1 second'");
         (await harness.CreateProposalStore().DeleteExpiredAsync(100, CancellationToken.None)).Should().Be(0);
         clock.Now = clock.Now.AddMinutes(1);
         options.Ops.Enabled = true;
@@ -119,6 +121,7 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         await outbox.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
             Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Single().AlertEvent.ProposalId == proposal.ProposalId),
             Arg.Any<CancellationToken>());
+        (await harness.CreateProposalStore().DeleteExpiredAsync(100, CancellationToken.None)).Should().Be(1);
     }
 
     [IntegrationTest]
@@ -187,7 +190,7 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var store = harness.CreateNotificationStore();
         foreach (var finding in values)
         {
-            await store.ObserveAsync("finding", finding.Id, finding.Severity, clock.Now.AddMinutes(-1));
+            await store.ObserveAsync(new("finding", finding.Id, finding.Severity), clock.Now.AddMinutes(-1));
         }
         values.Add(Finding(clock.Now, OpsFindingSeverity.Critical));
         var findings = Substitute.For<IOpsFindingsService>();

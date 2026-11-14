@@ -9,9 +9,18 @@ using NpgsqlTypes;
 
 namespace Honua.ControlPlane;
 
-internal sealed record OpsNotificationSchedule(
-    string Source, string SubjectId, Guid EpisodeId, DateTimeOffset FirstSeenAt,
-    OpsFindingSeverity Severity, int NoticeNumber, long Revision);
+internal sealed record OpsNotificationSubject(string Source, string SubjectId, OpsFindingSeverity Severity);
+
+internal sealed record OpsNotificationSchedule
+{
+    public required string Source { get; init; }
+    public required string SubjectId { get; init; }
+    public required Guid EpisodeId { get; init; }
+    public required DateTimeOffset FirstSeenAt { get; init; }
+    public required OpsFindingSeverity Severity { get; init; }
+    public required int NoticeNumber { get; init; }
+    public required long Revision { get; init; }
+}
 
 internal sealed class PostgresOpsNotificationStore(
     JobStoreDatabase database, IOptions<ControlPlaneRetentionOptions> retention)
@@ -112,7 +121,7 @@ internal sealed class PostgresOpsNotificationStore(
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
         }, StatementRepeat.NotAfterSend, cancellationToken);
 
-    public Task ObserveAsync(string source, string subjectId, OpsFindingSeverity severity,
+    public Task ObserveAsync(OpsNotificationSubject subject,
         DateTimeOffset now, CancellationToken cancellationToken = default)
         => database.ExecuteAsync(async (connection, _, token) =>
         {
@@ -125,14 +134,15 @@ internal sealed class PostgresOpsNotificationStore(
                     first_seen_at = CASE WHEN schedule.closed_at IS NOT NULL THEN @now ELSE schedule.first_seen_at END,
                     notice_number = CASE WHEN schedule.closed_at IS NOT NULL THEN 0 ELSE schedule.notice_number END,
                     next_notice_at = CASE WHEN schedule.closed_at IS NOT NULL OR @severity > schedule.severity
-                        THEN @now ELSE schedule.next_notice_at END,
-                    severity = CASE WHEN schedule.closed_at IS NOT NULL THEN @severity ELSE greatest(schedule.severity, @severity) END,
+                        THEN @now WHEN @severity < schedule.severity THEN @now + interval '24 hours'
+                        ELSE schedule.next_notice_at END,
+                    severity = @severity,
                     last_seen_at = @now, closed_at = NULL, revision = schedule.revision + 1
                 """, connection);
-            command.Parameters.AddWithValue("source", source);
-            command.Parameters.AddWithValue("subject", subjectId);
+            command.Parameters.AddWithValue("source", subject.Source);
+            command.Parameters.AddWithValue("subject", subject.SubjectId);
             command.Parameters.AddWithValue("episode", Guid.NewGuid());
-            command.Parameters.AddWithValue("severity", (int)severity);
+            command.Parameters.AddWithValue("severity", (int)subject.Severity);
             command.Parameters.AddWithValue("now", now);
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
         }, StatementRepeat.SafeToRepeat, cancellationToken);
@@ -153,9 +163,12 @@ internal sealed class PostgresOpsNotificationStore(
             await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
             while (await reader.ReadAsync(token).ConfigureAwait(false))
             {
-                schedules.Add(new(reader.GetString(0), reader.GetString(1), reader.GetGuid(2),
-                    reader.GetFieldValue<DateTimeOffset>(3), (OpsFindingSeverity)reader.GetInt32(4),
-                    reader.GetInt32(5), reader.GetInt64(6)));
+                schedules.Add(new()
+                {
+                    Source = reader.GetString(0), SubjectId = reader.GetString(1), EpisodeId = reader.GetGuid(2),
+                    FirstSeenAt = reader.GetFieldValue<DateTimeOffset>(3), Severity = (OpsFindingSeverity)reader.GetInt32(4),
+                    NoticeNumber = reader.GetInt32(5), Revision = reader.GetInt64(6)
+                });
             }
             return schedules;
         }, StatementRepeat.SafeToRepeat, cancellationToken);
@@ -195,15 +208,14 @@ internal sealed class PostgresOpsNotificationStore(
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
         }, StatementRepeat.NotAfterSend, cancellationToken);
 
-    public Task CloseMissingAsync(string source, IReadOnlyList<string> activeSubjects, DateTimeOffset now,
+    public Task CloseMissingFindingsAsync(IReadOnlyList<string> activeSubjects, DateTimeOffset now,
         CancellationToken cancellationToken = default)
         => database.ExecuteAsync(async (connection, _, token) =>
         {
             await using var command = new NpgsqlCommand($"""
                 UPDATE {_schedules} SET closed_at = @now, revision = revision + 1
-                WHERE source = @source AND closed_at IS NULL AND NOT (subject_id = ANY(@active))
+                WHERE source = 'finding' AND closed_at IS NULL AND NOT (subject_id = ANY(@active))
                 """, connection);
-            command.Parameters.AddWithValue("source", source);
             command.Parameters.AddWithValue("now", now);
             command.Parameters.Add(new NpgsqlParameter("active", NpgsqlDbType.Array | NpgsqlDbType.Text)
             { Value = activeSubjects.ToArray() });

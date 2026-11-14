@@ -9,8 +9,13 @@ internal sealed partial class OpsNotificationReminderService(
     IServiceScopeFactory scopeFactory,
     IExecutionJobStore jobStore,
     TimeProvider timeProvider,
-    ILogger<OpsNotificationReminderService> logger) : BackgroundService
+    ILogger<OpsNotificationReminderService> logger) : BackgroundService, IScheduledTickHandler
 {
+    public ScheduledTickKind Kind => ScheduledTickKind.OpsNotifications;
+
+    public Task RunTickAsync(CancellationToken cancellationToken = default)
+        => EvaluateOnceAsync(cancellationToken);
+
     private const string LeaseId = "ops-notification-reminders";
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 

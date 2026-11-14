@@ -21,6 +21,7 @@ internal sealed partial class PostgresOperationProposalStore(
     private const string SelectColumns = "version, updated_at, record";
 
     private readonly string _proposals = storage.Database.Table("operation_proposals");
+    private readonly string _notificationSchedules = storage.Database.Table("ops_notification_schedules");
     private readonly OperationLeases _operationLeases = new(storage.Leases, "operation-proposal:");
 
     public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
@@ -192,6 +193,9 @@ internal sealed partial class PostgresOperationProposalStore(
                     WITH expired AS (
                         SELECT proposal_id FROM {_proposals}
                         WHERE NOT active AND expires_at <= now()
+                            AND NOT EXISTS (SELECT 1 FROM {_notificationSchedules} AS notice
+                                WHERE notice.source = 'proposal' AND notice.subject_id = {_proposals}.proposal_id
+                                    AND notice.closed_at IS NULL)
                         ORDER BY expires_at LIMIT @batch_size FOR UPDATE SKIP LOCKED)
                     DELETE FROM {_proposals} AS proposal USING expired
                     WHERE proposal.proposal_id = expired.proposal_id

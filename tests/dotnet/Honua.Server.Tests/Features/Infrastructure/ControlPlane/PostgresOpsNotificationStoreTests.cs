@@ -21,7 +21,7 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
     {
         await using var harness = await CreateHarnessAsync();
         var now = DateTimeOffset.UtcNow;
-        await harness.CreateNotificationStore().ObserveAsync("finding", "subject", OpsFindingSeverity.Critical, now);
+        await harness.CreateNotificationStore().ObserveAsync(new("finding", "subject", OpsFindingSeverity.Critical), now);
         var due = (await harness.CreateNotificationStore().ListDueAsync(now, 100)).Single();
         var outcomes = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
             harness.CreateNotificationStore().TryAdvanceAsync(due, now.AddMinutes(30))));
@@ -39,16 +39,32 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
         await using var harness = await CreateHarnessAsync();
         var store = harness.CreateNotificationStore();
         var now = DateTimeOffset.UtcNow;
-        await store.ObserveAsync("finding", "subject", OpsFindingSeverity.Warning, now);
+        await store.ObserveAsync(new("finding", "subject", OpsFindingSeverity.Warning), now);
         var first = (await store.ListDueAsync(now, 100)).Single();
         (await store.TryAdvanceAsync(first, now.AddHours(24))).Should().BeTrue();
-        await store.ObserveAsync("finding", "subject", OpsFindingSeverity.Warning, now.AddMinutes(1));
+        await store.ObserveAsync(new("finding", "subject", OpsFindingSeverity.Warning), now.AddMinutes(1));
         (await store.ListDueAsync(now.AddMinutes(1), 100)).Should().BeEmpty();
-        await store.CloseMissingAsync("finding", [], now.AddMinutes(2));
-        await store.ObserveAsync("finding", "subject", OpsFindingSeverity.Warning, now.AddMinutes(3));
+        await store.CloseMissingFindingsAsync([], now.AddMinutes(2));
+        await store.ObserveAsync(new("finding", "subject", OpsFindingSeverity.Warning), now.AddMinutes(3));
         var reopened = (await store.ListDueAsync(now.AddMinutes(3), 100)).Single();
         reopened.EpisodeId.Should().NotBe(first.EpisodeId);
         reopened.NoticeNumber.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    public async Task Observe_DowngradeUsesCurrentSeverityAndWarningCadence()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateNotificationStore();
+        var now = DateTimeOffset.UtcNow;
+        await store.ObserveAsync(new("finding", "subject", OpsFindingSeverity.Critical), now);
+        var first = (await store.ListDueAsync(now, 100)).Single();
+        await store.TryAdvanceAsync(first, now.AddMinutes(30));
+        await store.ObserveAsync(new("finding", "subject", OpsFindingSeverity.Warning), now.AddMinutes(1));
+        (await store.ListDueAsync(now.AddHours(23), 100)).Should().BeEmpty();
+        var due = (await store.ListDueAsync(now.AddDays(1).AddMinutes(1), 100)).Single();
+        due.Severity.Should().Be(OpsFindingSeverity.Warning);
+        due.EpisodeId.Should().Be(first.EpisodeId);
     }
 
     [IntegrationTest]
@@ -111,10 +127,10 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
         var now = DateTimeOffset.UtcNow;
         foreach (var subject in new[] { "a", "b", "c" })
         {
-            await store.ObserveAsync("finding", subject, OpsFindingSeverity.Warning, now);
+            await store.ObserveAsync(new("finding", subject, OpsFindingSeverity.Warning), now);
         }
         (await store.ListDueAsync(now, 2)).Should().HaveCount(2);
-        await store.CloseMissingAsync("finding", ["a"], now);
+        await store.CloseMissingFindingsAsync(["a"], now);
         var remaining = (await store.ListDueAsync(now, 100)).Single();
         remaining.SubjectId.Should().Be("a");
         (await store.TryAdvanceAsync(remaining, now.AddDays(1))).Should().BeTrue();
@@ -146,7 +162,7 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
         (await store.TryCloseAsync(other, now)).Should().BeFalse();
         (await harness.CreateNotificationStore().ObserveAwaitingAsync(100)).Should().Be(0);
         (await store.ListDueAsync(now.AddMinutes(1), 100)).Should().BeEmpty();
-        var reminder = (await store.ListDueAsync(now.AddDays(1), 100)).Single();
+        var reminder = (await store.ListDueAsync(now.AddDays(1).AddMinutes(1), 100)).Single();
         reminder.EpisodeId.Should().Be(observed.EpisodeId);
         reminder.NoticeNumber.Should().Be(1);
     }
