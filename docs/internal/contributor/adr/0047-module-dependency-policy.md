@@ -265,16 +265,15 @@ The matrix is enforced by
 `tests/dotnet/Honua.Architecture.SourceTests/ModuleDependencyPolicyTests.cs`,
 which:
 
-1. Enumerates every `.csproj` under `src/`, `tests/`, `samples/`, and
-   `benchmarks/`.
+1. Enumerates every `.csproj` under `src/`, `tests/` and `benchmarks/`.
 2. Classifies each csproj into one of the matrix roles by name pattern
    (`Honua.Core.Abstractions`, `Honua.Core`, `Honua.Geometry`,
    `Honua.Geocoding`, `Honua.Cloud.Aws`, `Honua.Cloud.Azure`, `Honua.Hosting`,
    `Honua.Db.Postgres*`, `Honua.Db.DuckDB`, `Honua.Db.MySql`, `Honua.Db.SqlServer`,
    `Honua.Db.Oracle`,
    `Honua.Protocols.*`, `Honua.Server`, `Honua.ServiceDefaults`,
-   `Honua.AppHost`, `Honua.Worker.*`). Unclassified csprojs (samples,
-   benchmarks, tests) fall through to a default policy that permits any
+   `Honua.AppHost`, `Honua.Worker.*`). Unclassified csprojs (benchmarks
+   and tests) fall through to a default policy that permits any
    reference — they are tooling, not part of the runtime topology.
 3. For every `<ProjectReference>` in a runtime csproj, looks up the
    `(consumer-role, provider-role)` cell in the matrix and asserts the cell

@@ -155,24 +155,36 @@ ADR is what makes that ticket a correctness item rather than an enhancement.
 
 Remote OpenAI-compatible and Anthropic endpoints require HTTPS. OpenAI-compatible local runtimes may use HTTP only on loopback (`localhost`, `127.0.0.1`, or `::1`). Private-network model hosts require TLS. The shared provider HTTP client does not follow redirects; configure the final API endpoint directly. Operators migrating a remote HTTP endpoint must configure HTTPS before enabling the proxy. Bedrock continues to use its regional runtime and IAM configuration.
 
-## Provider failure diagnostics
+## Private thinking continuations
 
 Anthropic thinking, signatures and encrypted `redacted_thinking` blocks remain private to the proxy.
 The adapter reconstructs the complete provider assistant turn and restores it for tool-result
 continuations without adding reasoning to Studio messages, SSE events, signed transcripts or SDK
 contracts. Entries are bound to the verified deployment, actor and workflow, provider credential,
-endpoint, model, system prompt, tools and visible message prefix. Only a completely consumed,
-successful tool-call stream can populate this state; malformed, cancelled and post-terminal streams cannot.
+endpoint, model, system prompt, tools and visible message prefix. Tool choice is not part of that
+binding. The binding includes the configured credential value or secret reference; a restored turn
+also carries a fingerprint of the credential resolved when it was captured, and a request whose
+resolved credential differs, including one read from the environment, fails before a provider call.
+The visible prefix is compared in canonical JSON, so reordered object properties and equivalent
+numeric spellings in browser-returned tool arguments restore the same turn. Only a completely consumed,
+successful tool-call stream can populate this state; malformed, cancelled and post-terminal streams
+cannot, and a content-block delta must match the type of an open block.
 
-Continuation state is process-local, available for 15 minutes, and bounded to 128 turns and
-4,194,304 UTF-16 characters in total, with a 262,144-character capture limit per provider response.
+Continuation state is process-local and held by the singleton Anthropic adapter, available for
+15 minutes, and bounded to 128 turns and 4,194,304 UTF-16 characters in total. The 262,144-character
+capture limit per provider response counts the JSON payload of each accepted `data:` frame,
+including escapes and the event envelope; it bounds private capture only and never limits the
+visible response.
 Capture overflow discards private continuation state without interrupting visible text or tool events;
 an oversized tool turn cannot be continued and requires a new conversation.
-Expired, evicted, restarted or differently routed continuations within the current tool-use turn
-fail preparation before a provider call; start a new conversation in that case. After a new user
+Expired, evicted, restarted, imported or differently routed continuations within the current
+tool-use turn fail preparation before a provider call, and the caller receives an `invalid_context`
+admission failure; start a new conversation in that case. After a new user
 message, historical assistant turns can use their visible form if the original prefix no longer
 matches. Multiple replicas require session affinity for these
 tool continuations. No reasoning is persisted or logged. This preserves the provider's
 [thinking continuation contract](https://platform.claude.com/docs/en/build-with-claude/thinking).
+
+## Provider failure diagnostics
 
 Studio proxy log events 6752, 6754 and 6755 retain provider identity, HTTP status where available, exception type and fixed execution phase only. Response bodies and exception payloads are omitted. Operators should use these fields to distinguish HTTP, transport and parsing failures; client error and cancellation behavior is unchanged.
