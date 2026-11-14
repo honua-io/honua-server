@@ -91,26 +91,26 @@ public sealed partial class RealtimeFanoutProviderTests
     }
 
     [UnitTest]
-    public void Listener_ProxyHost_RunsPollOnly()
+    public async Task Listener_ProxyHost_RunsPollOnly()
     {
-        var listener = CreateListener(null, "Host=honua.proxy-abc.example.test;Database=honua;Username=u");
+        await using var listener = CreateListener(null, "Host=honua.proxy-abc.example.test;Database=honua;Username=u");
 
         listener.PollOnlyReason.Should().Contain("proxy");
         listener.IsConnected.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Listener_WithoutItsOwnConnectionString_UsesTheResolvedSystemConnectionString()
+    public async Task Listener_WithoutItsOwnConnectionString_UsesTheResolvedSystemConnectionString()
     {
-        var listener = CreateListener(null, "Host=db.example.test;Database=honua;Username=u;Password=resolved");
+        await using var listener = CreateListener(null, "Host=db.example.test;Database=honua;Username=u;Password=resolved");
 
         listener.PollOnlyReason.Should().BeNull();
     }
 
     [UnitTest]
-    public void Listener_UnparseableConnectionString_RunsPollOnlyInsteadOfFailingStartup()
+    public async Task Listener_UnparseableConnectionString_RunsPollOnlyInsteadOfFailingStartup()
     {
-        var listener = CreateListener("arn:aws:secretsmanager:region:account:secret:name", "Host=db.example.test;Database=honua");
+        await using var listener = CreateListener("arn:aws:secretsmanager:region:account:secret:name", "Host=db.example.test;Database=honua");
 
         listener.PollOnlyReason.Should().Contain("could not be parsed");
     }
@@ -171,7 +171,7 @@ public sealed partial class RealtimeFanoutProviderTests
         var services = new ServiceCollection()
             .AddSingleton<IConfiguration>(configuration)
             .AddLogging()
-            .AddSingleton(NpgsqlDataSource.Create("Host=localhost;Database=honua;Username=u"));
+            .AddSingleton(_ => NpgsqlDataSource.Create("Host=localhost;Database=honua;Username=u"));
         services.AddSingleton(provider => new JobStoreDatabase(provider.GetRequiredService<NpgsqlDataSource>()));
         services.AddRealtimeFanout(configuration, hostsDatabasePollingLoops);
         return services.BuildServiceProvider();

@@ -90,8 +90,8 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
     {
         foreach (HttpClient client in _clients) client.Dispose();
         _human?.Dispose();
-        try { await _fixture.DisposeAsync(); }
-        finally { _identityProvider.Dispose(); }
+        using var identityProvider = _identityProvider;
+        await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]

@@ -17,6 +17,9 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Operation(Operations.Security)]
 public sealed class OidcTokenAudienceTests
 {
+    // An explicit empty source keeps these tests off the process-wide runtime source that any test host attaches.
+    private static readonly IOidcRuntimeProviderSource NoRuntimeProviders = new EmptyRuntimeProviderSource();
+
     [UnitTheory]
     [InlineData(true, "https://issuer.example", "configured-client", "access", null, true)]
     [InlineData(false, "https://issuer.example", "configured-client", "access", null, false)]
@@ -31,7 +34,7 @@ public sealed class OidcTokenAudienceTests
         bool enabled, string issuer, string? clientId, string? tokenUse, string? audience, bool expected)
     {
         var options = CreateOptions(enabled);
-        var parameters = OidcTokenValidationParametersFactory.Build(options).Parameters;
+        var parameters = OidcTokenValidationParametersFactory.Build(options, NoRuntimeProviders).Parameters;
         var claims = new List<Claim>();
         if (clientId is not null)
         {
@@ -57,7 +60,7 @@ public sealed class OidcTokenAudienceTests
     [InlineData("aud", "")]
     public void ClientIdFallback_RejectsDuplicateBindingClaimsAndPresentAudience(string claimType, string value)
     {
-        var parameters = OidcTokenValidationParametersFactory.Build(CreateOptions(true)).Parameters;
+        var parameters = OidcTokenValidationParametersFactory.Build(CreateOptions(true), NoRuntimeProviders).Parameters;
         var token = new JwtSecurityToken(issuer: "https://issuer.example", claims:
         [
             new Claim("client_id", "configured-client"),
@@ -78,7 +81,7 @@ public sealed class OidcTokenAudienceTests
     [InlineData("null")]
     public void ClientIdFallback_RejectsEmptyAudiencePayload(string audienceJson)
     {
-        var parameters = OidcTokenValidationParametersFactory.Build(CreateOptions(true)).Parameters;
+        var parameters = OidcTokenValidationParametersFactory.Build(CreateOptions(true), NoRuntimeProviders).Parameters;
         var payload = "{\"iss\":\"https://issuer.example\",\"client_id\":\"configured-client\",\"token_use\":\"access\",\"aud\":" + audienceJson + "}";
         var encoded = Base64UrlEncoder.Encode("{\"alg\":\"none\"}") + "." + Base64UrlEncoder.Encode(payload) + ".";
         SecurityToken[] tokens = [new JwtSecurityToken(encoded), new JsonWebToken(encoded)];
@@ -93,8 +96,8 @@ public sealed class OidcTokenAudienceTests
     public void ClientIdFallback_DoesNotRelaxBrokerIdTokenAudience()
     {
         var options = CreateOptions(true);
-        var parameters = OidcTokenValidationParametersFactory.Build(options).Parameters;
-        var provider = Assert.Single(OidcProviderCatalog.GetProviders(options));
+        var parameters = OidcTokenValidationParametersFactory.Build(options, NoRuntimeProviders).Parameters;
+        var provider = Assert.Single(OidcProviderCatalog.GetProviders(options, NoRuntimeProviders));
         var narrowed = OidcTokenValidationParametersFactory.NarrowToProvider(parameters, provider, options);
         var token = new JwtSecurityToken(issuer: "https://issuer.example",
             claims: [new Claim("client_id", "configured-client"), new Claim("token_use", "access")]);
@@ -114,5 +117,10 @@ public sealed class OidcTokenAudienceTests
         var options = new OidcAuthenticationOptions();
         configuration.Bind(options);
         return options;
+    }
+
+    private sealed class EmptyRuntimeProviderSource : IOidcRuntimeProviderSource
+    {
+        public IReadOnlyList<OidcRuntimeProvider> Current { get; } = [];
     }
 }

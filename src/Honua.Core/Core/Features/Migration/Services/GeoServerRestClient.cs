@@ -37,6 +37,12 @@ internal sealed partial class GeoServerRestClient
         "GeoServer service URL resolves to a disallowed network address.",
         "Unable to establish a secure connection to the GeoServer host.");
 
+    // Bound per-host connections so a slow GeoServer cannot accumulate sockets during import
+    // discovery; 32 matches the default worker limit on mid-range deployments.
+    private const int MaxConnectionsPerGeoServerHost = 32;
+
+    private static readonly MigrationPinnedDnsClient PinnedDnsClient = new(ServiceUrlPolicy, UnsafeLocalUrlsAllowed, MaxConnectionsPerGeoServerHost);
+
     internal static Task<IPAddress[]> ResolveAllowedAddressesAsync(
         string host,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
@@ -58,25 +64,12 @@ internal sealed partial class GeoServerRestClient
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _hostAddressResolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
+        _hostAddressResolver = hostAddressResolver ?? MigrationPinnedDns.SystemHostAddressResolver;
     }
 
     internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
         Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
-    {
-        var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
-
-        return new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            // Bound per-host connections so a slow GeoServer cannot accumulate sockets
-            // unboundedly during import discovery; 32 matches the default worker limit
-            // on mid-range deployments.
-            MaxConnectionsPerServer = 32,
-            ConnectCallback = (context, cancellationToken) =>
-                MigrationPinnedDns.ConnectAsync(context, resolver, UnsafeLocalUrlsAllowed.Value, ServiceUrlPolicy, cancellationToken)
-        };
-    }
+        => MigrationPinnedDns.CreateHandler(PinnedDnsClient, hostAddressResolver);
 
     public async Task<GeoServerServiceInfo> DiscoverServiceAsync(
         string geoServerRestUrl,
