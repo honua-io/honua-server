@@ -1652,6 +1652,33 @@ public sealed class OpsFindingsServiceTests
         return gateway;
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_CatalogRollback_RemainsVisibleWithStableAdminChangeEvidence()
+    {
+        var store = Substitute.For<Honua.Core.Features.Metadata.Abstractions.ICatalogActivationWatchStore>();
+        store.ReadRecentRollbacksAsync(default).ReturnsForAnyArgs(new[]
+        {
+            new Honua.Core.Features.Metadata.Abstractions.CatalogActivationWatch
+            {
+                Id = 5, Revision = 8, ExpectedEtag = "etag", ActivatedAt = DateTimeOffset.UtcNow,
+                RollbackRevision = 9, ChangeId = "catalog-watch-5", Reason = "Sustained serving regression.",
+            },
+        });
+        var service = new OpsFindingsService(
+            new StaticOptionsMonitor<OpsFindingsOptions>(new OpsFindingsOptions()),
+            new StaticOptionsMonitor<ControlPlaneOptions>(new ControlPlaneOptions()),
+            new FakeAlertDispatchHealth(), new FakeDeployPreflightProbe(BuildDeploySnapshot()),
+            extendedSignals: new OpsFindingsExtendedSignals { CatalogActivationWatches = store });
+        var first = (await service.EvaluateAsync()).Single(f => f.Rule == "catalog-activation-rolled-back");
+        var second = (await service.EvaluateAsync()).Single(f => f.Rule == "catalog-activation-rolled-back");
+        Assert.Equal(first.Id, second.Id);
+        Assert.Equal("catalog-watch-5", first.Subject.OperationId);
+        Assert.Contains("admin-change:catalog-watch-5", first.EvidenceRefs);
+        Assert.Contains("revision 9", first.Explanation);
+        Assert.Null(first.RecommendedAction);
+    }
+
     private static OpsFindingsService CreateService(
         OpsFindingsOptions? options = null,
         ControlPlaneOptions? controlPlaneOptions = null,

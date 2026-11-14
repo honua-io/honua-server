@@ -386,6 +386,9 @@ internal static class ServiceCollectionExtensions
                 configuration["Database:Schema"],
                 serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>()));
 
+        services.AddScoped<ICatalogActivationWatchStore>(serviceProvider =>
+            (ICatalogActivationWatchStore)serviceProvider.GetRequiredService<IMetadataV2GraphStore>());
+
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.
         // Cache-miss loads are shared across callers and outlive a cancelled initiator, so they

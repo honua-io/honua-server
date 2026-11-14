@@ -16,7 +16,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
-internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
+internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
 {
     internal const string ManagedComposeReleaseEvidence = "compose-executor:live-revision";
 
@@ -86,6 +86,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         _jobStore = jobStore;
         _databasePressureSignal = extendedSignals?.DatabasePressureSignal;
         _admissionGate = extendedSignals?.AdmissionGate;
+        _catalogActivationWatches = extendedSignals?.CatalogActivationWatches;
         _rollupStore = extendedSignals?.RollupStore;
         _collectionLedger = extendedSignals?.CollectionLedger ?? new OpsFindingsCollectionLedger();
         _clock = extendedSignals?.TimeProvider ?? TimeProvider.System;
@@ -124,6 +125,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         await EvaluateDeployManualInterventionAsync(now, findings, workflowCollection, cancellationToken).ConfigureAwait(false);
         var rollupDegraded = await EvaluateServingLatencySloAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
         await EvaluatePlatformReleaseRuntimeDivergenceAsync(now, findings, workflowCollection, managedTargets, cancellationToken).ConfigureAwait(false);
+        await EvaluateCatalogRollbacksAsync(findings, cancellationToken).ConfigureAwait(false);
         var workflowSource = workflowCollection?.Publish(_collectionLedger, SignalValidity)
             ?? EvidencePostureFactory.NotConfigured(
                 EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
