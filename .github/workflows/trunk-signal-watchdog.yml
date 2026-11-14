@@ -26,7 +26,12 @@ jobs:
       - name: Check that trunk CI is producing results
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          MAX_HOURS_WITHOUT_RESULT: "2"
+          # Trunk ci.yml is mostly the twice-daily full run (~3 h), so the previous result is always
+          # hours old while the next run works. Judge each running run's own age from its first job
+          # with a runner (a run pending behind ci.yml concurrency has not started), and bound the
+          # last result's age by more than one twice-daily cadence.
+          MAX_HOURS_RUN_WITHOUT_RESULT: "4"
+          MAX_HOURS_WITHOUT_RESULT: "16"
           MAX_MINUTES_QUEUED: "45"
           MAX_HOURS_WITHOUT_SCHEDULE: "14"
           # Cancellation churn is judged on recent runs only: trunk CI is sparse, so the last ten
@@ -37,6 +42,7 @@ jobs:
           script: |
             const repo = context.repo;
             const now = Date.now();
+            const maxRunAgeMs = Number(process.env.MAX_HOURS_RUN_WITHOUT_RESULT) * 3600 * 1000;
             const maxResultAgeMs = Number(process.env.MAX_HOURS_WITHOUT_RESULT) * 3600 * 1000;
             const maxQueuedMs = Number(process.env.MAX_MINUTES_QUEUED) * 60 * 1000;
             const { data } = await github.rest.actions.listWorkflowRuns({
@@ -66,6 +72,16 @@ jobs:
               const firstStart = Math.min(...assigned.map(job => Date.parse(job.started_at)).filter(Number.isFinite));
               return Number.isFinite(firstStart) && firstStart <= now && now - firstStart <= maxScheduleAgeMs;
             }
+            async function executionStart(run) {
+              // Only runner assignment proves execution. A partial re-run keeps earlier attempts' jobs
+              // in the latest list, so never count from before the current attempt's run_started_at.
+              const starts = (await jobsFor(run)).filter(job => job.runner_id > 0
+                && (job.run_attempt === undefined || job.run_attempt === run.run_attempt))
+                .map(job => Date.parse(job.started_at)).filter(Number.isFinite);
+              if (!starts.length) return null;
+              const attemptStart = Date.parse(run.run_started_at);
+              return Math.max(Math.min(...starts), Number.isFinite(attemptStart) ? attemptStart : -Infinity);
+            }
             async function queueProblem(run) {
               const jobs = await jobsFor(run);
               const waiting = jobs.filter(job => job.status === 'queued');
@@ -88,8 +104,14 @@ jobs:
             }
             if (!lastResult) {
               problems.push('No trunk CI run in the last 50 reached success or failure.');
-            } else if (runs.some(run => run.status !== 'completed') && now - Date.parse(lastResult.updated_at) > maxResultAgeMs) {
+            } else if (now - Date.parse(lastResult.updated_at) > maxResultAgeMs) {
               problems.push(`The last trunk CI result (${lastResult.conclusion}, ${lastResult.html_url}) finished at ${lastResult.updated_at}, more than ${process.env.MAX_HOURS_WITHOUT_RESULT} h ago.`);
+            }
+            for (const run of runs.filter(run => run.status !== 'completed')) {
+              const started = await executionStart(run);
+              if (started !== null && now - started > maxRunAgeMs) {
+                problems.push(`Trunk CI run ${run.html_url} started executing at ${new Date(started).toISOString()} and has not produced a result in ${process.env.MAX_HOURS_RUN_WITHOUT_RESULT} h.`);
+              }
             }
             for (const run of runs.filter(run => run.status === 'queued')) {
               const problem = await queueProblem(run);

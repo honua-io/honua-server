@@ -14,11 +14,9 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.ControlPlane.Restore;
 using Honua.Core.Features.Observability.Domain;
-using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Models;
-using Honua.Server.Startup;
 using Honua.TestKit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -64,7 +62,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests
         Skip.IfNot(_docker.Available, "Docker is not available for the local-substrate serving lane.");
 
         Skip.IfNot(_postgres.Available, "PostgreSQL is not available for the durable workflow store.");
-        var systemConnectionString = await CreateMigratedSystemDatabaseAsync();
+        var systemConnectionString = await _postgres.CreateMigratedServerDatabaseAsync();
 
         await using var env = await ServerHostBridgeEnvironment.StartAsync(_docker, systemConnectionString);
         using var verificationClient = new HttpClient { BaseAddress = new Uri(env.ProxyBaseUrl) };
@@ -150,7 +148,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests
         Skip.IfNot(_docker.Available, "Docker is not available for the local-substrate serving lane.");
 
         Skip.IfNot(_postgres.Available, "PostgreSQL is not available for the durable workflow store.");
-        var systemConnectionString = await CreateMigratedSystemDatabaseAsync();
+        var systemConnectionString = await _postgres.CreateMigratedServerDatabaseAsync();
 
         await using var env = await ServerHostBridgeEnvironment.StartAsync(
             _docker, systemConnectionString, compatibilityKnown: false);
@@ -183,19 +181,6 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests
             .Where(e => e.AuditEvent.ResourceType == "operation_proposal" && e.AuditEvent.ResourceId == proposalId)
             .Select(e => e.AuditEvent.Action)
             .Should().Contain("operation.apply_failed").And.NotContain("operation.applied");
-    }
-
-    // TestWebApplicationFactory sets HONUA_SKIP_MIGRATIONS, so the fixture owns schema preparation:
-    // apply the real server migrations, which create the durable workflow-operation tables.
-    private async Task<string> CreateMigratedSystemDatabaseAsync()
-    {
-        var connectionString = await _postgres.CreateFreshDatabaseAsync(enablePostGis: true);
-        var runner = new PostgresDatabaseMigrationRunner(
-            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
-            ServerCoreSchemaMigrations.Manifest);
-        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
-        result.Successful.Should().BeTrue($"the bridge host needs a migrated system database. Error: {result.ErrorMessage}");
-        return connectionString;
     }
 
     private static async Task<string> CreateAgentApiKeyAsync(HttpClient adminClient, string name)
@@ -771,7 +756,6 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests
                 // registers its own system database, so this host uses a freshly migrated one.
                 ["HONUA_REGISTER_TEST_INFRASTRUCTURE"] = "true",
                 ["ConnectionStrings:DefaultConnection"] = systemConnectionString,
-                ["Cache:KeyPrefix"] = $"honua:{targetId}:",
                 ["Licensing:DevGrantEdition"] = "Pro",
                 ["Guardrails:Overrides:Deploy"] = "RequiresApproval",
                 ["ControlPlane:SelfHosted:Enabled"] = "false",
