@@ -97,6 +97,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.CloudIntegration.Tests" />
+    <InternalsVisibleTo Include="Honua.Ai.Tests" />
   </ItemGroup>
 
   <ItemGroup>
