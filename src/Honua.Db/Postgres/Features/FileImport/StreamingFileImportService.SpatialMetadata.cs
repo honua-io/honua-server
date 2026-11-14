@@ -78,12 +78,7 @@ internal sealed partial class StreamingFileImportService
                 var facts = await ImportedDatasetSpatialMetadata.ReadAsync(
                     connection, transaction, _schemaConfiguration.MetadataSchema, options.Schema, options.Table, "geometry",
                     identity!.Value, cancellationToken);
-                storageSrid = ResolveAppendStorageSrid(facts, options);
-                var issues = await ValidateImportSridsAsync(options.SourceSrid, storageSrid, cancellationToken);
-                if (issues.Count > 0)
-                {
-                    throw new ImportSridValidationException(issues);
-                }
+                storageSrid = await ResolveAppendStorageSridAsync(facts, options, cancellationToken);
             }
             if (mode == ImportLoadMode.Upsert)
             {
@@ -111,6 +106,18 @@ internal sealed partial class StreamingFileImportService
             LiveIdentity = identity,
             StorageSrid = storageSrid
         };
+    }
+
+    private async Task<int> ResolveAppendStorageSridAsync(
+        ImportedDatasetSpatialMetadata.Facts? facts, ImportTargetOptions options, CancellationToken cancellationToken)
+    {
+        var storageSrid = ResolveAppendStorageSrid(facts, options);
+        var issues = await ValidateImportSridsAsync(options.SourceSrid, storageSrid, cancellationToken);
+        if (issues.Count > 0)
+        {
+            throw new ImportSridValidationException(issues);
+        }
+        return storageSrid;
     }
 
     private static int ResolveAppendStorageSrid(
