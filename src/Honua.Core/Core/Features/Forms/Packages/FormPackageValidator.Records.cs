@@ -65,6 +65,6 @@ public sealed partial class FormPackageValidator
                 CultureInfo.InvariantCulture, out number),
             _ => false
         };
-        return parsed && TryReadFiniteDouble(value, out var original) && (double)number == original ? number : null;
+        return parsed && TryReadFiniteDouble(value, out var original) && ((double)number).Equals(original) ? number : null;
     }
 }
