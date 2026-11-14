@@ -18,7 +18,8 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
     {
         var topics = ParseTopics(context.Request.Query["topics"].ToString());
         var cursor = context.Request.Headers["Last-Event-ID"].ToString();
-        if (topics is null || !TryParseCursor(cursor, out var after))
+        var (validCursor, after) = ParseCursor(cursor);
+        if (topics is null || !validCursor)
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
             return;
@@ -80,20 +81,18 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
         return topics.All(topic => AdminRealtimeContract.Topics.Contains(topic, StringComparer.Ordinal)) ? topics : null;
     }
 
-    internal static bool TryParseCursor(string value, out long? after)
+    internal static (bool Valid, long? After) ParseCursor(string value)
     {
-        after = null;
         if (string.IsNullOrEmpty(value))
         {
-            return true;
+            return (true, null);
         }
         if (!value.StartsWith("admin:", StringComparison.Ordinal) ||
             !long.TryParse(value.AsSpan(6), NumberStyles.None, CultureInfo.InvariantCulture, out var sequence))
         {
-            return false;
+            return (false, null);
         }
-        after = sequence;
-        return true;
+        return (true, sequence);
     }
 
     private static async Task StreamAsync(HttpContext context, ChannelReader<RealtimeDelivery> reader)
