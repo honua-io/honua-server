@@ -109,22 +109,26 @@ internal sealed partial class CacheServiceResponseCache
                 RemoveReservation(current);
             }
 
-            return AddReservation(storageKey, scope, budgetKey, bytes, now.Add(expiration), current);
+            var expiresAt = now.Add(expiration);
+            if (current is not null && current.ExpiresAt > expiresAt)
+            {
+                expiresAt = current.ExpiresAt;
+            }
+
+            var reservation = new ResponseReservation(budgetKey, Math.Max(bytes, current?.Bytes ?? 0), expiresAt)
+            {
+                StorageKey = storageKey,
+                ScopePrefix = scope,
+                Writes = current?.Writes ?? new ResponseWrites()
+            };
+            return AddReservation(reservation);
         }
     }
 
-    private ResponseReservation AddReservation(string storageKey, string scope, string budgetKey,
-        long bytes, DateTimeOffset expiresAt, ResponseReservation? previous)
+    private ResponseReservation AddReservation(ResponseReservation reservation)
     {
-        var reservation = new ResponseReservation(budgetKey, Math.Max(bytes, previous?.Bytes ?? 0),
-            previous is not null && previous.ExpiresAt > expiresAt ? previous.ExpiresAt : expiresAt)
-        {
-            StorageKey = storageKey,
-            ScopePrefix = scope,
-            Writes = previous?.Writes ?? new ResponseWrites()
-        };
         reservation.Writes.Pending++;
-        _reservations[budgetKey] = reservation;
+        _reservations[reservation.BudgetKey] = reservation;
         _expirationOrder.Add(reservation);
         _reservedBytes += reservation.Bytes;
         return reservation;
