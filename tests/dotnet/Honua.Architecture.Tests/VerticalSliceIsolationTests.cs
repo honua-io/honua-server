@@ -51,6 +51,8 @@ public sealed class VerticalSliceIsolationTests
         "PrintingTools",
         "HealthCheck",
         "Streaming",
+        "Realtime", // Cross-node realtime event log and fan-out provider (ADR-0085); satisfies the vertical-slice
+                    // rule through RealtimeServiceCollectionExtensions.cs until its SSE endpoints land.
         "Infrastructure", // Infrastructure is allowed to be referenced by others
         "StaticMap",
         "SpatialAnalytics",

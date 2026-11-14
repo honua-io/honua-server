@@ -308,6 +308,26 @@ internal ref struct ProtobufWriter
 
     // ── Sub-message support ───────────────────────────────────
 
+    public int BeginMessage(int fieldNumber)
+    {
+        WriteTag(fieldNumber, 2);
+        EnsureCapacity(5);
+        var lengthPosition = _position;
+        _position += 5;
+        return lengthPosition;
+    }
+
+    public void EndMessage(int lengthPosition)
+    {
+        var bodyPosition = lengthPosition + 5;
+        var length = _position - bodyPosition;
+        _position = lengthPosition;
+        WriteRawVarint((uint)length);
+        var prefixEnd = _position;
+        _buffer.AsSpan(bodyPosition, length).CopyTo(_buffer.AsSpan(prefixEnd));
+        _position += length;
+    }
+
     public void WriteMessage(int fieldNumber, ref ProtobufWriter sub)
     {
         if (sub.Position == 0)
