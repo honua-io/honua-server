@@ -28,6 +28,33 @@ public sealed class ObservationEventLogTests(DatabaseFixtureAdapter database) : 
     }
 
     [IntegrationTest]
+    public async Task Insert_DirectPartitionCapturesOnceAndRollsBackWithTheStatement()
+    {
+        await using var harness = await CreateHarnessAsync();
+        await harness.ExecuteAsync($"INSERT INTO {harness.Table("sta_observation_default")} (id,datastream_id,phenomenon_time,result_json) VALUES (1,1,now(),'42')");
+        (await harness.ReadSequencesAsync("observations")).Should().Equal(1);
+
+        await harness.ExecuteAsync($"BEGIN; INSERT INTO {harness.Table("sta_observation_default")} (id,datastream_id,phenomenon_time,result_json) VALUES (2,1,now(),'42'); ROLLBACK;");
+        (await harness.ReadSequencesAsync("observations")).Should().Equal(1);
+        (await harness.ScalarAsync<long>($"SELECT count(*) FROM {harness.Table("sta_observation")}")).Should().Be(1);
+    }
+
+    [IntegrationTest]
+    public async Task Insert_NewPartitionFailsClosedUntilCaptureIsInstalled()
+    {
+        await using var harness = await CreateHarnessAsync();
+        await harness.ExecuteAsync($"CREATE TABLE {harness.Table("sta_observation_future")} PARTITION OF {harness.Table("sta_observation")} FOR VALUES FROM ('2030-01-01') TO ('2031-01-01')");
+        var insert = () => harness.ExecuteAsync($"INSERT INTO {harness.Table("sta_observation_future")} (id,datastream_id,phenomenon_time,result_json) VALUES (1,1,'2030-06-01','42')");
+        (await insert.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("55000");
+        (await harness.ReadSequencesAsync("observations")).Should().BeEmpty();
+
+        await harness.ExecuteAsync($"SELECT {harness.Table("install_observation_realtime_triggers")}()");
+        await insert();
+        await harness.ExecuteAsync($"INSERT INTO {harness.Table("sta_observation")} (id,datastream_id,phenomenon_time,result_json) VALUES (2,1,'2030-07-01','42')");
+        (await harness.ReadSequencesAsync("observations")).Should().Equal(1, 2);
+    }
+
+    [IntegrationTest]
     public async Task Insert_RollbackRollsBackObservationsAndLogHead()
     {
         await using var harness = await CreateHarnessAsync();

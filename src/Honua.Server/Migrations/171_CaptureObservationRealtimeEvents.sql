@@ -71,17 +71,61 @@ BEGIN
 END;
 $function$;
 
+-- Statement triggers are not cloned onto partitions. Partition provisioning must call this
+-- installer after CREATE/ATTACH PARTITION, in the same transaction. No superuser DDL hook is needed.
+CREATE OR REPLACE FUNCTION $HonuaSchema$.install_observation_realtime_triggers()
+RETURNS void
+LANGUAGE plpgsql
+AS $function$
+DECLARE
+    relation regclass;
+BEGIN
+    FOR relation IN
+        SELECT relid FROM pg_catalog.pg_partition_tree('$HonuaSchema$.sta_observation'::regclass)
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_catalog.pg_trigger
+            WHERE tgrelid = relation AND tgname = 'trigger_capture_observation_realtime_events'
+        ) THEN
+            EXECUTE format('CREATE TRIGGER trigger_capture_observation_realtime_events AFTER INSERT ON %s '
+                'REFERENCING NEW TABLE AS inserted_observations FOR EACH STATEMENT '
+                'EXECUTE FUNCTION $HonuaSchema$.capture_observation_realtime_events()', relation);
+        END IF;
+    END LOOP;
+END;
+$function$;
+
+-- This row trigger is cloned automatically onto future partitions. Fail closed until their
+-- statement capture trigger is installed, rather than committing observations with a replay gap.
+CREATE OR REPLACE FUNCTION $HonuaSchema$.require_observation_realtime_capture()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_trigger
+        WHERE tgrelid = TG_RELID AND tgname = 'trigger_capture_observation_realtime_events'
+          AND tgenabled IN ('O', 'A')
+    ) THEN
+        RAISE EXCEPTION 'Observation partition requires install_observation_realtime_triggers() before inserts'
+            USING ERRCODE = '55000';
+    END IF;
+    RETURN NEW;
+END;
+$function$;
+
+SELECT $HonuaSchema$.install_observation_realtime_triggers();
+
 DO $install$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_catalog.pg_trigger
         WHERE tgrelid = '$HonuaSchema$.sta_observation'::regclass
-          AND tgname = 'trigger_capture_observation_realtime_events'
+          AND tgname = 'trigger_require_observation_realtime_capture'
     ) THEN
-        CREATE TRIGGER trigger_capture_observation_realtime_events
-        AFTER INSERT ON $HonuaSchema$.sta_observation
-        REFERENCING NEW TABLE AS inserted_observations
-        FOR EACH STATEMENT EXECUTE FUNCTION $HonuaSchema$.capture_observation_realtime_events();
+        CREATE TRIGGER trigger_require_observation_realtime_capture
+        BEFORE INSERT ON $HonuaSchema$.sta_observation
+        FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.require_observation_realtime_capture();
     END IF;
 END;
 $install$;
