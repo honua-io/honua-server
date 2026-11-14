@@ -44,6 +44,8 @@ public sealed class AotNativeLibraryRuntimeTests
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         File.ReadAllText(Path.Join(repositoryRoot, "src/Honua.Server/Honua.Server.csproj"))
+            .Should().Contain("<ProjectReference Include=\"..\\Honua.Hosting\\Honua.Hosting.csproj\" />");
+        File.ReadAllText(Path.Join(repositoryRoot, "src/Honua.Hosting/Honua.Hosting.csproj"))
             .Should().Contain("<PackageReference Include=\"ParquetSharp\" />",
                 "this guard exists because the server graph ships the glibc-only ParquetSharpNative");
 
