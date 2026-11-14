@@ -69,6 +69,8 @@ internal sealed class LayerPublishJobService(
             CurrentSchema = schemaContext?.CurrentSchema,
             ConnectionEndpointFingerprint = request.ConnectionEndpointFingerprint,
             CommittedSinkPublication = request.CommittedSinkPublication,
+            ExpectedMetadataRevision = request.ExpectedMetadataRevision,
+            ExpectedMetadataEtag = request.ExpectedMetadataEtag,
         };
         var queued = new LayerPublishJobProgress
         {

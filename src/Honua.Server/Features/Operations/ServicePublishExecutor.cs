@@ -85,6 +85,39 @@ internal sealed class ServicePublishExecutor
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
+        var pinned = await PinMetadataBaseAsync(request, context, cancellationToken).ConfigureAwait(false);
+        return await PrepareSourceAsync(pinned, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    // A proposal records the write base it was made against; approved replay must still find it.
+    private async Task<OperationRequest> PinMetadataBaseAsync(
+        OperationRequest request, OperationPolicyContext context, CancellationToken cancellationToken)
+    {
+        if (_publishingService is not ILayerPublicationBaseReader baseReader)
+        {
+            return request;
+        }
+
+        if (context.ApprovedProposalId is not null)
+        {
+            _ = ServicePublishMetadataPin.Require(request);
+            return request;
+        }
+
+        if (ServicePublishMetadataPin.HasAny(request))
+        {
+            throw new InvalidOperationException("The metadata pin is server-set; do not supply it.");
+        }
+
+        var publicationBase = await baseReader.ReadPublicationBaseAsync(cancellationToken).ConfigureAwait(false);
+        return request with { Parameters = ServicePublishMetadataPin.With(request.Parameters, publicationBase) };
+    }
+
+    private async Task<OperationRequest> PrepareSourceAsync(
+        OperationRequest request,
+        OperationPolicyContext context,
+        CancellationToken cancellationToken)
+    {
         var sourceJobId = GetOptional(request, VerifiedCommittedSinkPublication.SourceJobIdKey);
         var sourceArtifactId = GetOptional(request, VerifiedCommittedSinkPublication.SourceArtifactIdKey);
         var claimedFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey);
@@ -217,6 +250,12 @@ internal sealed class ServicePublishExecutor
             ConnectionEndpointFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey)
         };
         publishRequest.CommittedSinkPublication = request.VerifiedCommittedSinkPublication;
+        // Only an approved proposal enforces its pin; a direct publish keeps conflict retries.
+        if (context.ApprovedProposalId is not null && ServicePublishMetadataPin.TryRead(request) is { } pin)
+        {
+            publishRequest.ExpectedMetadataRevision = pin.Revision;
+            publishRequest.ExpectedMetadataEtag = pin.Etag;
+        }
 
         PublishedLayerSummary summary;
         if (_jobs is not null)
