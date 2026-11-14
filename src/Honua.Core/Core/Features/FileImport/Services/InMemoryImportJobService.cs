@@ -9,7 +9,6 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.Logging;
-using Honua.Core.Features.Security;
 
 namespace Honua.Core.Features.FileImport.Services;
 
@@ -116,68 +115,22 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         ImportJobLog.JobQueued(_logger, jobId, request.TableName, formatName, fileSize);
         RecordJobMetrics("queued", formatName, fileSize, null, null, null);
 
-        string? tempFilePath = null;
-        var backgroundRequest = request;
-
-        if (request.UsesLocalFile)
+        string? tempFilePath;
+        ImportRequest backgroundRequest;
+        try
         {
-            tempFilePath = request.LocalFilePath;
+            (tempFilePath, backgroundRequest) = await ImportStreamHelper.PrepareBackgroundSourceAsync(
+                request, jobId, cancellationToken);
         }
-        else if (request.UsesObjectStore)
+        catch
         {
-            backgroundRequest = request;
-        }
-        else if (!request.UsesCloudStorage)
-        {
-            // Copy stream to a temp file for background processing
-            // In production, you'd want to save to durable storage
-            if (request.FileStream!.CanSeek)
+            _jobs.TryRemove(jobId, out _);
+            if (_cancellationTokens.TryRemove(jobId, out var registeredCts))
             {
-                request.FileStream.Position = 0;
+                registeredCts.Dispose();
             }
 
-            // Server-generated name (job id plus a fresh GUID), created exclusively and
-            // owner-only so other local users cannot read the upload.
-            tempFilePath = PrivateTempFile.NewPath($"honua-import-{jobId}-", ".tmp");
-            try
-            {
-                await using (var tempStream = new FileStream(tempFilePath, PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
-                {
-                    Access = FileAccess.Write,
-                    Share = FileShare.None,
-                    BufferSize = 64 * 1024,
-                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-                })))
-                {
-                    await request.FileStream.CopyToAsync(tempStream, cancellationToken);
-                }
-
-                var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
-                {
-                    Mode = FileMode.Open,
-                    Access = FileAccess.Read,
-                    Share = FileShare.Read,
-                    BufferSize = 64 * 1024,
-                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-                });
-
-                backgroundRequest = request with
-                {
-                    FileStream = backgroundStream,
-                    CloudFileId = null
-                };
-            }
-            catch
-            {
-                TryDeleteTempFile(tempFilePath);
-                _jobs.TryRemove(jobId, out _);
-                if (_cancellationTokens.TryRemove(jobId, out var registeredCts))
-                {
-                    registeredCts.Dispose();
-                }
-
-                throw;
-            }
+            throw;
         }
 
         // Start background processing

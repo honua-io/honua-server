@@ -1816,13 +1816,10 @@ internal sealed record StagedImportFile
     public required string FileName { get; init; }
     public string? ContentType { get; init; }
 
-    /// <summary>
-    /// Path to the within-request staging scratch file (<c>honua-import-staging-*</c> under the temp path).
-    /// This is transient local scratch only (ADR-0060): it is read and deleted inside the
-    /// same HTTP request. Durable, cross-request handoff to a background worker goes through
-    /// the shared object store (<c>ICloudFileStorage</c> / <c>ImportRequest.CloudFileId</c>),
-    /// never this local path.
-    /// </summary>
+    // Within-request staging scratch file (honua-import-staging-* under the temp path). This is
+    // transient local scratch only (ADR-0060): it is read and deleted inside the same HTTP
+    // request. Durable, cross-request handoff to a background worker goes through the shared
+    // object store (ICloudFileStorage / ImportRequest.CloudFileId), never this local path.
     public required string LocalFilePath { get; init; }
     public long SizeBytes { get; init; }
 }

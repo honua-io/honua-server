@@ -14,7 +14,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Honua.Core.Features.Security;
 
 namespace Honua.Core.Features.FileImport.Services;
 
@@ -177,70 +176,25 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         UniversalImportJobLog.JobQueued(_logger, jobId, request.TableName, formatName, fileSize);
         RecordJobMetrics("queued", formatName, fileSize, null, null, null);
 
-        string? tempFilePath = null;
-        var backgroundRequest = request;
-
-        if (request.UsesLocalFile)
+        string? tempFilePath;
+        ImportRequest backgroundRequest;
+        try
         {
-            tempFilePath = request.LocalFilePath;
+            (tempFilePath, backgroundRequest) = await ImportStreamHelper.PrepareBackgroundSourceAsync(
+                request, jobId, cancellationToken);
         }
-        else if (request.UsesObjectStore)
+        catch
         {
-            backgroundRequest = request;
-        }
-        else if (!request.UsesCloudStorage)
-        {
-            // Copy stream to a temp file for background processing
-            if (request.FileStream!.CanSeek)
+            // The background job will never start: clean up the bookkeeping created above and
+            // best-effort mark the stored Queued progress as failed so it does not linger in
+            // GetActiveJobsAsync for the full TTL with no job behind it.
+            _jobs.TryRemove(jobId, out _);
+            if (_cancellationTokens.TryRemove(jobId, out var registeredCts))
             {
-                request.FileStream.Position = 0;
+                registeredCts.Dispose();
             }
-
-            // Server-generated name (job id plus a fresh GUID), created exclusively and
-            // owner-only so other local users cannot read the upload.
-            tempFilePath = PrivateTempFile.NewPath($"honua-import-{jobId}-", ".tmp");
-            try
-            {
-                await using (var tempStream = new FileStream(tempFilePath, PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
-                {
-                    Access = FileAccess.Write,
-                    Share = FileShare.None,
-                    BufferSize = 64 * 1024,
-                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-                })))
-                {
-                    await request.FileStream.CopyToAsync(tempStream, cancellationToken);
-                }
-
-                var backgroundStream = new FileStream(tempFilePath, new FileStreamOptions
-                {
-                    Mode = FileMode.Open,
-                    Access = FileAccess.Read,
-                    Share = FileShare.Read,
-                    BufferSize = 64 * 1024,
-                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-                });
-
-                backgroundRequest = request with
-                {
-                    FileStream = backgroundStream,
-                    CloudFileId = null
-                };
-            }
-            catch
-            {
-                // The background job will never start: clean up the bookkeeping created above and
-                // best-effort mark the stored Queued progress as failed so it does not linger in
-                // GetActiveJobsAsync for the full TTL with no job behind it.
-                TryDeleteTempFile(tempFilePath);
-                _jobs.TryRemove(jobId, out _);
-                if (_cancellationTokens.TryRemove(jobId, out var registeredCts))
-                {
-                    registeredCts.Dispose();
-                }
-                await TryMarkProgressFailedAsync(jobId);
-                throw;
-            }
+            await TryMarkProgressFailedAsync(jobId);
+            throw;
         }
 
         // Start background processing. The reservation moves to ProcessJobAsync, which
