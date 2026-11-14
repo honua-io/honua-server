@@ -24,7 +24,7 @@ internal sealed partial class StreamingFileImportService
     /// <summary>
     /// Stream features from source and insert into database in batches.
     /// </summary>
-    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked, IReadOnlyList<ImportTypedColumn> typedColumns)> ImportStreamingAsync(
+    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked, IReadOnlyList<ImportTypedColumn> typedColumns, int storedSrid)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
         SupportedFileFormat format,
@@ -67,7 +67,16 @@ internal sealed partial class StreamingFileImportService
                 cancellationToken);
 
             var target = await PrepareImportTargetAsync(
-                connection, request, targetSchema, allowedTableName, coordinateEpoch, cancellationToken);
+                connection, new ImportTargetOptions
+                {
+                    Request = request,
+                    Schema = targetSchema,
+                    Table = allowedTableName,
+                    SourceSrid = sourceSrid,
+                    CoordinateEpoch = coordinateEpoch
+                },
+                cancellationToken);
+            request = request with { TargetSrid = target.StorageSrid };
             var loadTableName = target.LoadTableName;
             var hadExistingTarget = target.HadExistingTarget;
             appendUsesStaging = target.AppendUsesStaging;
@@ -437,7 +446,7 @@ internal sealed partial class StreamingFileImportService
                     CurrentPhase = "Import completed"
                 });
 
-                return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked, typedColumns);
+                return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked, typedColumns, request.TargetSrid!.Value);
             }
             catch when (directBatchAttempted)
             {
