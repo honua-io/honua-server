@@ -197,6 +197,103 @@ public sealed class McpStreamingTests
     }
 
     [UnitTest]
+    public async Task GetStream_WhenOwnershipUnavailable_RejectsBeforeSubscribing()
+    {
+        var fanout = new RecordingFanoutProvider([]);
+        var (sessions, sessionId, services, context) = CreateStreamContext(fanout);
+        await using var scope = services;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await McpEndpointExtensions.HandleGetAsync(context, timeout.Token);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        fanout.Subscriptions.Should().Be(0);
+        sessions.TryGetReader(sessionId, out _).Should().BeTrue();
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetStream_WhenDisconnectedOrOwnershipLost_ReleasesLeaseAndPreservesSession(bool loseOwnership)
+    {
+        using var lease = new TestStreamLease();
+        var fanout = new RecordingFanoutProvider([]) { StreamLease = lease };
+        var (sessions, sessionId, services, context) = CreateStreamContext(fanout);
+        await using var scope = services;
+        using var cancellation = new CancellationTokenSource();
+        var streaming = McpEndpointExtensions.HandleGetAsync(context, cancellation.Token);
+        fanout.Subscriptions.Should().Be(1);
+        if (loseOwnership)
+        {
+            lease.Lose();
+        }
+        else
+        {
+            cancellation.Cancel();
+        }
+
+        await streaming.WaitAsync(TimeSpan.FromSeconds(5));
+
+        lease.Released.Should().BeTrue();
+        sessions.TryGetReader(sessionId, out _).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task GetStream_WhenOwnershipExpired_DoesNotDeliverQueuedFrame()
+    {
+        using var lease = new TestStreamLease { SuccessfulChecks = 1 };
+        var fanout = new RecordingFanoutProvider([]) { StreamLease = lease };
+        var (sessions, sessionId, services, context) = CreateStreamContext(fanout);
+        await using var scope = services;
+        sessions.TryEnqueue(sessionId, "must-not-deliver").Should().BeTrue();
+        using var output = new MemoryStream();
+        context.Response.Body = output;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await McpEndpointExtensions.HandleGetAsync(context, timeout.Token);
+
+        Encoding.UTF8.GetString(output.ToArray()).Should().NotContain("must-not-deliver");
+        lease.Released.Should().BeTrue();
+    }
+
+    private static (McpSessionManager Sessions, string SessionId, ServiceProvider Services, DefaultHttpContext Context)
+        CreateStreamContext(IRealtimeFanoutProvider fanout)
+    {
+        var sessions = new McpSessionManager();
+        var sessionId = sessions.CreateSession();
+        var services = new ServiceCollection().AddLogging().AddSingleton(sessions)
+            .AddSingleton(fanout)
+            .AddSingleton(Options.Create(new McpOptions { ServerInitiatedStreamEnabled = true }))
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Request.Headers.Accept = "text/event-stream";
+        context.Request.Headers[McpSessionManager.SessionHeaderName] = sessionId;
+        return (sessions, sessionId, services, context);
+    }
+
+    private sealed class TestStreamLease : IRealtimeStreamLease, IDisposable
+    {
+        private readonly CancellationTokenSource _lost = new();
+        public bool Held { get; set; } = true;
+        public int SuccessfulChecks { get; set; } = int.MaxValue;
+        public bool IsHeld => Held && SuccessfulChecks-- > 0;
+        public CancellationToken LostToken => _lost.Token;
+        public bool Released { get; private set; }
+        public void Lose()
+        {
+            Held = false;
+            _lost.Cancel();
+        }
+        public ValueTask DisposeAsync()
+        {
+            Released = true;
+            return ValueTask.CompletedTask;
+        }
+        public void Dispose() => _lost.Dispose();
+    }
+
+    [UnitTest]
     public async Task PumpSessionStream_WritesQueuedFramesAsSseMessageEvents()
     {
         var channel = Channel.CreateUnbounded<string>();
@@ -263,9 +360,23 @@ public sealed class McpStreamingTests
 
         public void Enqueue(RealtimeEventDraft draft) => throw new NotSupportedException();
 
-        public IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request) => throw new NotSupportedException();
+        public IRealtimeStreamLease? StreamLease { get; init; }
+        public int Subscriptions { get; private set; }
+
+        public IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request)
+        {
+            Subscriptions++;
+            return Substitute.For<IRealtimeSubscription>();
+        }
+
+        public ValueTask<IRealtimeStreamLease?> TryAcquireMcpStreamAsync(string sessionId, CancellationToken cancellationToken)
+            => ValueTask.FromResult(StreamLease);
+
+        public ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(
+            string scopeKey, long after, long through, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
 
         public ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
+            => ValueTask.FromResult(new RealtimeLogWindow(family, 0, 0));
     }
 }

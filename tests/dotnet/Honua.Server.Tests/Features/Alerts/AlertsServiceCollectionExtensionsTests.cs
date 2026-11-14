@@ -94,7 +94,7 @@ public sealed class AlertsServiceCollectionExtensionsTests
 
         sinks[AlertChannelType.WebSocket].Should().BeOfType<WebSocketAlertDeliverySink>();
         sinks[AlertChannelType.Digest].Should().BeOfType<UnsupportedAlertDeliverySink>();
-        provider.GetService<IAlertNotificationBroadcaster>().Should().NotBeNull()
+        provider.GetService<Honua.Alerts.RealtimeAlertNotificationBroadcaster>().Should().NotBeNull()
             .And.BeOfType<RealtimeAlertNotificationBroadcaster>();
     }
 }

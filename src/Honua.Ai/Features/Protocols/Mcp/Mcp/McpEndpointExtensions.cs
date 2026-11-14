@@ -416,6 +416,15 @@ internal static class McpEndpointExtensions
         }
 
         var provider = context.RequestServices.GetService<IRealtimeFanoutProvider>();
+        await using var streamLease = provider is null
+            ? null
+            : await provider.TryAcquireMcpStreamAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        if (provider is not null && (streamLease is null || !streamLease.IsHeld))
+        {
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            return;
+        }
+
         var head = provider is null
             ? 0
             : (await provider.GetWindowAsync(RealtimeFamily.Mcp, cancellationToken).ConfigureAwait(false)).Head;
@@ -432,7 +441,7 @@ internal static class McpEndpointExtensions
         // Close the stream when the client disconnects OR the session is terminated
         // (DELETE /mcp completes the channel, which ends the drain loop below).
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, sessions.GetLifetimeToken(sessionId));
+            cancellationToken, sessions.GetLifetimeToken(sessionId), streamLease?.LostToken ?? CancellationToken.None);
         try
         {
             if (subscription is null)
@@ -441,7 +450,7 @@ internal static class McpEndpointExtensions
             }
             else
             {
-                await McpRealtimeStream.PumpAsync(context.Response.Body, reader, subscription, linked.Token).ConfigureAwait(false);
+                await McpRealtimeStream.PumpAsync(context.Response.Body, reader, subscription, streamLease!, linked.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)

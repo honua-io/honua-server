@@ -14,7 +14,7 @@ namespace Honua.Alerts;
 internal sealed partial class RealtimeAlertNotificationBroadcaster(
     IRealtimeFanoutProvider provider,
     ILogger<RealtimeAlertNotificationBroadcaster> logger)
-    : IAlertNotificationBroadcaster, IStreamingSubscriptionManager, IDisposable, IAsyncDisposable
+    : IStreamingSubscriptionManager, IDisposable, IAsyncDisposable
 {
     private readonly IRealtimeFanoutProvider _provider = provider;
     private readonly ILogger<RealtimeAlertNotificationBroadcaster> _logger = logger;
@@ -31,7 +31,7 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
     }
 
     public async ValueTask<IAlertNotificationSubscription> SubscribeAsync(
-        Func<AlertEventEnvelope, CancellationToken, Task> handler,
+        Func<AlertEventEnvelope, RealtimePosition, CancellationToken, Task> handler,
         SubscriptionOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(handler);
@@ -46,7 +46,7 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
             _subscriptions.TryAdd(subscription.SubscriberId, subscription);
             try
             {
-                subscription.Start(window.Head);
+                subscription.Start(options?.After ?? window.Head);
             }
             catch
             {
@@ -104,14 +104,14 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
     {
         private const int DeliveryCapacity = 64;
         private readonly RealtimeAlertNotificationBroadcaster _owner;
-        private readonly Func<AlertEventEnvelope, CancellationToken, Task> _handler;
+        private readonly Func<AlertEventEnvelope, RealtimePosition, CancellationToken, Task> _handler;
         private readonly CancellationTokenSource _cancellation = new();
         private readonly Channel<RealtimeDelivery> _deliveries = Channel.CreateBounded<RealtimeDelivery>(DeliveryCapacity);
         private readonly TaskCompletionSource _sourceClosed = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _disposed;
 
         public Subscription(RealtimeAlertNotificationBroadcaster owner,
-            Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options)
+            Func<AlertEventEnvelope, RealtimePosition, CancellationToken, Task> handler, SubscriptionOptions? options)
         {
             _owner = owner;
             _handler = handler;
@@ -168,7 +168,7 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
                     {
                         var alert = notification.Value.Payload.Deserialize(StreamingOperationsJsonContext.Default.AlertEventEnvelope)
                             ?? throw new JsonException("An alert event envelope is required.");
-                        await _handler(alert, DisconnectToken).ConfigureAwait(false);
+                        await _handler(alert, notification.Value.Position, DisconnectToken).ConfigureAwait(false);
                     }
                 }
             }

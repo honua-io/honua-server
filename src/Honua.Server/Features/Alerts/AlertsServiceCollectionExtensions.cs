@@ -76,7 +76,6 @@ internal static class AlertsServiceCollectionExtensions
             serviceProvider.GetRequiredService<IOptions<AlertOptions>>(),
             serviceProvider.GetRequiredService<ILogger<LeaseLeaderElectionStrategy>>()));
         services.AddSingleton<RealtimeAlertNotificationBroadcaster>();
-        services.AddSingleton<IAlertNotificationBroadcaster>(sp => sp.GetRequiredService<RealtimeAlertNotificationBroadcaster>());
         services.AddSingleton<IStreamingSubscriptionManager>(sp => sp.GetRequiredService<RealtimeAlertNotificationBroadcaster>());
         services.AddAlertDeliveryChannels(configuration);
 

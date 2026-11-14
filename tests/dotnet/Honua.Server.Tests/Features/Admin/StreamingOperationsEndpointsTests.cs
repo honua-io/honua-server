@@ -64,9 +64,9 @@ public sealed class StreamingOperationsEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
     public async Task ListSubscribers_AfterSubscribe_ReturnsSubscriberInfo()
     {
-        var broadcaster = _fixture.GetService<IAlertNotificationBroadcaster>();
+        var broadcaster = _fixture.GetService<Honua.Alerts.RealtimeAlertNotificationBroadcaster>();
         using var sub = await broadcaster.SubscribeAsync(
-            (_, _) => Task.CompletedTask,
+            (_, _, _) => Task.CompletedTask,
             new SubscriptionOptions("test-client"));
 
         var response = await _client.GetAsync("/api/v1/admin/operations/streaming/subscribers");
@@ -91,9 +91,9 @@ public sealed class StreamingOperationsEndpointsTests : IAsyncLifetime
     [Endpoint("DELETE /api/v1/admin/operations/streaming/subscribers/{subscriberId}")]
     public async Task DisconnectSubscriber_ExistingId_ReturnsSuccess()
     {
-        var broadcaster = _fixture.GetService<IAlertNotificationBroadcaster>();
+        var broadcaster = _fixture.GetService<Honua.Alerts.RealtimeAlertNotificationBroadcaster>();
         using var sub = await broadcaster.SubscribeAsync(
-            (_, _) => Task.CompletedTask,
+            (_, _, _) => Task.CompletedTask,
             new SubscriptionOptions("disconnect-test"));
 
         // Get the subscriber ID

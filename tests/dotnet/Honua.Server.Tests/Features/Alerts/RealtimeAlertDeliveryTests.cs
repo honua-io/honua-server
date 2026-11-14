@@ -36,7 +36,7 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
             new PostgresRealtimeFanoutProvider(harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log)),
             NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
         var received = new TaskCompletionSource<AlertEventEnvelope>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var subscription = await receiver.SubscribeAsync((alert, _) =>
+        using var subscription = await receiver.SubscribeAsync((alert, _, _) =>
         {
             received.TrySetResult(alert);
             return Task.CompletedTask;
@@ -56,6 +56,36 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
     }
 
     [IntegrationTest]
+    public async Task Subscribe_WithCursor_ReplaysOnlyLaterAlertsAndReturnsResumePosition()
+    {
+        await using var harness = await RealtimeLogHarness.CreateAsync(database);
+        var provider = new PostgresRealtimeFanoutProvider(
+            harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log));
+        var first = AlertTestFixtures.CreateAlertEvent(dedupeKey: "already-seen");
+        var second = AlertTestFixtures.CreateAlertEvent(dedupeKey: "replay-this");
+        var cursor = await provider.AppendAsync(new RealtimeEventDraft(RealtimeFamily.Alerts,
+            first.ServiceId, "alert", JsonSerializer.SerializeToElement(first,
+                StreamingOperationsJsonContext.Default.AlertEventEnvelope)), null, CancellationToken.None);
+        var next = await provider.AppendAsync(new RealtimeEventDraft(RealtimeFamily.Alerts,
+            second.ServiceId, "alert", JsonSerializer.SerializeToElement(second,
+                StreamingOperationsJsonContext.Default.AlertEventEnvelope)), null, CancellationToken.None);
+        await using var receiver = new RealtimeAlertNotificationBroadcaster(
+            provider, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
+        var received = new TaskCompletionSource<(AlertEventEnvelope Alert, RealtimePosition Position)>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        using var subscription = await receiver.SubscribeAsync((alert, position, _) =>
+        {
+            received.TrySetResult((alert, position));
+            return Task.CompletedTask;
+        }, new SubscriptionOptions(After: cursor.Sequence));
+
+        var replayed = await received.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        replayed.Alert.Should().Be(second);
+        replayed.Position.Should().Be(next);
+    }
+
+    [IntegrationTest]
     public async Task Subscribe_RealtimeReset_DisconnectsInsteadOfSilentlyLosingAlerts()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);
@@ -63,7 +93,7 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
             harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log)));
         await using var receiver = new RealtimeAlertNotificationBroadcaster(
             consumer, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
-        using var subscription = await receiver.SubscribeAsync((_, _) => Task.CompletedTask);
+        using var subscription = await receiver.SubscribeAsync((_, _, _) => Task.CompletedTask);
         await consumer.WaitUntilLiveAsync();
         var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = subscription.DisconnectToken.Register(() => disconnected.TrySetResult());
@@ -84,7 +114,7 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
             consumer, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var subscription = await receiver.SubscribeAsync(async (_, cancellationToken) =>
+        using var subscription = await receiver.SubscribeAsync(async (_, _, cancellationToken) =>
         {
             started.TrySetResult();
             await release.Task.WaitAsync(cancellationToken);
@@ -119,7 +149,7 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
         using var services = new ServiceCollection()
             .AddLogging()
             .AddSingleton<IRealtimeFanoutProvider>(producer)
-            .AddSingleton<IAlertNotificationBroadcaster, RealtimeAlertNotificationBroadcaster>()
+            .AddSingleton<Honua.Alerts.RealtimeAlertNotificationBroadcaster, RealtimeAlertNotificationBroadcaster>()
             .BuildServiceProvider();
         var sink = ActivatorUtilities.CreateInstance<WebSocketAlertDeliverySink>(services);
         var alert = AlertTestFixtures.CreateAlertEvent(dedupeKey: "cross-task-alert");
@@ -157,6 +187,13 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
 
         public ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken)
             => inner.GetWindowAsync(family, cancellationToken);
+
+        public ValueTask<IRealtimeStreamLease?> TryAcquireMcpStreamAsync(string sessionId, CancellationToken cancellationToken)
+            => inner.TryAcquireMcpStreamAsync(sessionId, cancellationToken);
+
+        public ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(
+            string scopeKey, long after, long through, CancellationToken cancellationToken)
+            => inner.ReadPresencePageAsync(scopeKey, after, through, cancellationToken);
 
         public async Task WaitUntilLiveAsync()
         {
