@@ -8,10 +8,15 @@ const repository = 'honua-io/honua-server';
 
 function fixture(head = 'current') {
   const pr = {number: 42, state: 'open', draft: false, head: {sha: head}, base: {repo: {full_name: repository}}};
+  const jobs = [{name: 'Produce data-only normalization envelope', conclusion: 'success'}];
   const run = {name: 'Derived Artifact Normalization', path: '.github/workflows/normalize-derived-artifacts.yml',
-    event: 'pull_request', conclusion: 'success', repository: {full_name: repository}, head_sha: 'current', pull_requests: [{number: 42}]};
-  return {pr, run, context: {repo: {owner: 'honua-io', repo: 'honua-server'}, payload: {workflow_run: run}},
-    github: {rest: {pulls: {get: async () => ({data: pr})}, repos: {
+    event: 'pull_request', conclusion: 'success', repository: {full_name: repository}, id: 123, run_attempt: 2, head_sha: 'current', pull_requests: [{number: 42}]};
+  return {pr, run, jobs, context: {repo: {owner: 'honua-io', repo: 'honua-server'}, payload: {workflow_run: run}},
+    github: {rest: {actions: {listJobsForWorkflowRunAttempt: async options => {
+      assert.equal(options.run_id, 123);
+      assert.equal(options.attempt_number, 2);
+      return {data: {total_count: jobs.length, jobs}};
+    }}, pulls: {get: async () => ({data: pr})}, repos: {
       listPullRequestsAssociatedWithCommit: async () => ({data: [pr]}),
     }}}};
 }
@@ -59,4 +64,21 @@ test('metadata edits and drafts have isolated groups; head changes and base reta
   assert.equal(group({action: 'edited', changes: metadata}), 'ignored-1');
   assert.equal(group({action: 'edited', changes: metadata, runId: 2}), 'ignored-2');
   assert.equal(group({action: 'ready_for_review', draft: true}), 'ignored-1');
+});
+
+test('late same-SHA no-op completion cannot cancel useful envelope validation', async () => {
+  const state = fixture();
+  assert.equal(await admitNormalization(state), 42);
+  state.jobs[0].conclusion = 'skipped';
+  assert.equal(await admitNormalization(state), null);
+  state.jobs[0].conclusion = 'failure';
+  assert.equal(await admitNormalization(state), null);
+});
+
+test('unbounded or missing exact-attempt packager fails admission', async () => {
+  const state = fixture();
+  state.jobs.length = 0;
+  await assert.rejects(admitNormalization(state), /exactly one/);
+  state.github.rest.actions.listJobsForWorkflowRunAttempt = async () => ({data: {total_count: 101, jobs: []}});
+  await assert.rejects(admitNormalization(state), /bounded/);
 });

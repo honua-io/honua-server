@@ -1406,3 +1406,7 @@ coverage, trunk scans, required checks and other PRs remain protected. The helpe
 checks out no PR code and grants only Actions write, contents read and PR read.
 CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
 already cancel superseded PR runs through their existing per-PR concurrency groups.
+
+Normalization consumer admission reads the exact producer attempt before joining
+its per-PR cancellation group. Only a successful envelope-packaging job admits
+validation; late same-SHA metadata or draft skips cannot cancel useful work.

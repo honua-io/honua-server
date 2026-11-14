@@ -15,7 +15,19 @@ async function admitNormalization({github, context}) {
   const {data: pr} = await github.rest.pulls.get({
     ...context.repo, pull_number: associated[0].number,
   });
-  return currentReadyHead(pr, run.head_sha, repository) ? pr.number : null;
+  if (!currentReadyHead(pr, run.head_sha, repository)) return null;
+  if (!await producedEnvelope({github, context, run})) return null;
+  return pr.number;
+}
+
+async function producedEnvelope({github, context, run}) {
+  const {data} = await github.rest.actions.listJobsForWorkflowRunAttempt({
+    ...context.repo, run_id: run.id, attempt_number: run.run_attempt, per_page: 100,
+  });
+  if (data.total_count > data.jobs.length) throw new Error('Producer jobs exceeded bounded page.');
+  const packagers = data.jobs.filter(job => job.name === 'Produce data-only normalization envelope');
+  if (packagers.length !== 1) throw new Error('Expected exactly one envelope packager.');
+  return packagers[0].conclusion === 'success';
 }
 
 function canonicalProducer(run, repository) {
