@@ -7,7 +7,6 @@ using Honua.Alerts;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
@@ -17,7 +16,7 @@ public sealed class WebSocketAlertDeliverySinkTests
     public async Task DeliverAsync_AppendFailure_IsRetryable()
     {
         var provider = Substitute.For<IRealtimeFanoutProvider>();
-        provider.AppendAsync(default!, null, default).ThrowsForAnyArgs(new InvalidOperationException("unavailable"));
+        provider.AppendAsync(default!, null, default).ReturnsForAnyArgs(ValueTask.FromException<RealtimePosition>(new InvalidOperationException("unavailable")));
         await using var broadcaster = new RealtimeAlertNotificationBroadcaster(
             provider, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
         var sink = new WebSocketAlertDeliverySink(broadcaster);
@@ -35,7 +34,7 @@ public sealed class WebSocketAlertDeliverySinkTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         var provider = Substitute.For<IRealtimeFanoutProvider>();
-        provider.AppendAsync(default!, null, default).ThrowsForAnyArgs(new OperationCanceledException(cancellation.Token));
+        provider.AppendAsync(default!, null, default).ReturnsForAnyArgs(ValueTask.FromCanceled<RealtimePosition>(cancellation.Token));
         await using var broadcaster = new RealtimeAlertNotificationBroadcaster(
             provider, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
         var sink = new WebSocketAlertDeliverySink(broadcaster);

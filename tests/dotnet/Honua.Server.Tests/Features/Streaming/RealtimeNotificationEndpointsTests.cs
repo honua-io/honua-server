@@ -18,6 +18,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Validation;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Honua.Geoprocessing;
@@ -55,7 +56,9 @@ public sealed class RealtimeNotificationEndpointsTests
         var jobs = Substitute.For<IGeoprocessingJobService>();
         var context = CreateContext("?jobId=mine");
         context.Request.Headers["Last-Event-ID"] = "jobs:3";
-        jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(new ExecutionJobRecord { OperationId = "mine", Status = ExecutionJobStatus.Running });
+        jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(new ExecutionJobRecord { OperationId = "mine", Status = ExecutionJobStatus.Running,
+                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+                Spec = new ExecutionJobSpec { TargetKind = default, Backend = "test", Kind = default, WorkloadName = "test" } });
         RealtimeSubscriptionRequest? request = null;
         provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(value =>
         {
@@ -88,7 +91,9 @@ public sealed class RealtimeNotificationEndpointsTests
             .Returns(new RealtimeLogWindow(RealtimeFamily.Jobs, 0, 0));
         var calls = 0;
         jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(_ =>
-            ++calls == 1 ? Task.FromResult(new ExecutionJobRecord { OperationId = "mine", Status = ExecutionJobStatus.Running }) :
+            ++calls == 1 ? Task.FromResult(new ExecutionJobRecord { OperationId = "mine", Status = ExecutionJobStatus.Running,
+                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+                Spec = new ExecutionJobSpec { TargetKind = default, Backend = "test", Kind = default, WorkloadName = "test" } }) :
                 Task.FromException<ExecutionJobRecord>(new GeoprocessingAuthorizationException(false)));
         provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(value =>
         {
@@ -234,28 +239,40 @@ public sealed class RealtimeNotificationEndpointsTests
         Assert.Collection(delivered, sequence => Assert.Equal(8, sequence));
     }
 
-    [UnitTest]
-    public async Task Alerts_RetentionReset_SendsRecoveryFrameBeforeClosingWebSocket()
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Alerts_RetentionReset_SendsRecoveryFrameBeforeClosingWebSocket(bool acknowledgeClose)
     {
         var provider = Substitute.For<IRealtimeFanoutProvider>();
         provider.GetWindowAsync(RealtimeFamily.Alerts, Arg.Any<CancellationToken>())
             .Returns(new RealtimeLogWindow(RealtimeFamily.Alerts, 20, 42));
-        provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(request =>
-        {
-            request.Writer.TryWrite(new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, 42));
-            request.Writer.TryComplete();
-        })).Returns(Substitute.For<IRealtimeSubscription>());
+        var subscribed = new TaskCompletionSource<RealtimeSubscriptionRequest>(TaskCreationOptions.RunContinuationsAsynchronously);
+        provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(request => subscribed.SetResult(request)))
+            .Returns(Substitute.For<IRealtimeSubscription>());
         await using var broadcaster = new RealtimeAlertNotificationBroadcaster(
             provider, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         await using var app = builder.Build();
         app.UseWebSockets();
-        app.MapGet("/alerts", (HttpContext context) => StreamingOperationsEndpoints.HandleAlertStream(broadcaster, context));
+        var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        app.MapGet("/alerts", (Delegate)(async (HttpContext context) =>
+        {
+            var result = await StreamingOperationsEndpoints.HandleAlertStream(broadcaster, context);
+            finished.TrySetResult();
+            return result;
+        }));
         await app.StartAsync();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var socket = await app.GetTestServer().CreateWebSocketClient()
             .ConnectAsync(new Uri("ws://localhost/alerts?cursor=alerts:1"), timeout.Token);
+        var request = await subscribed.Task.WaitAsync(timeout.Token);
+        // Delivery is delayed until the endpoint is connected and accepting frames.
+        await socket.SendAsync(new ArraySegment<byte>(new byte[] { 1 }), WebSocketMessageType.Binary, true, timeout.Token);
+        request.Writer.TryWrite(new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, 42));
+        request.Writer.TryComplete();
         var buffer = new byte[1024];
 
         var frame = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), timeout.Token);
@@ -268,7 +285,13 @@ public sealed class RealtimeNotificationEndpointsTests
         Assert.Equal("reset", payload.RootElement.GetProperty("type").GetString());
         Assert.Equal("retention", payload.RootElement.GetProperty("reason").GetString());
         Assert.Equal(42, payload.RootElement.GetProperty("head").GetInt64());
-        await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closed", timeout.Token);
+        var close = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), timeout.Token);
+        Assert.Equal(WebSocketMessageType.Close, close.MessageType);
+        if (acknowledgeClose)
+        {
+            await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closed", timeout.Token);
+        }
+        await finished.Task.WaitAsync(timeout.Token);
     }
 
     private static MetadataV2GraphSnapshot LayerSnapshot(string etag, bool changed)
@@ -285,7 +308,7 @@ public sealed class RealtimeNotificationEndpointsTests
 
     private static RealtimeEvent CatalogEvent(long sequence, string environment) => new(
         RealtimeFamily.Catalog, sequence, environment, "catalog.changed",
-        JsonDocument.Parse("{\"etag\":\"after\",\"previousEtag\":\"before\"}").RootElement.Clone(), DateTimeOffset.UtcNow);
+        JsonElement.Parse("{\"etag\":\"after\",\"previousEtag\":\"before\"}"), DateTimeOffset.UtcNow);
 
     private static DefaultHttpContext CreateContext(string query)
     {
@@ -299,7 +322,7 @@ public sealed class RealtimeNotificationEndpointsTests
     }
 
     private static RealtimeEvent Event(long sequence, string jobId) => new(
-        RealtimeFamily.Jobs, sequence, jobId, "job.status", JsonDocument.Parse(
-            "{\"status\":\"Running\",\"updatedAt\":\"2026-11-14T00:00:00Z\",\"requesterId\":\"secret\",\"result\":\"private-result\"}").RootElement.Clone(),
+        RealtimeFamily.Jobs, sequence, jobId, "job.status", JsonElement.Parse(
+            "{\"status\":\"Running\",\"updatedAt\":\"2026-11-14T00:00:00Z\",\"requesterId\":\"secret\",\"result\":\"private-result\"}"),
         DateTimeOffset.UtcNow);
 }
