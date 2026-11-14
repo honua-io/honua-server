@@ -133,6 +133,20 @@ public sealed class PostgresWorkflowDefinitionStoreTests
     }
 
     [IntegrationTest]
+    public async Task SetTriggerCursorAsync_SupplementaryCharacters_PreservesUtf16OrdinalOrder()
+    {
+        await using var host = CreateHost();
+        await host.InitializeAsync();
+        var store = host.GetService<IWorkflowDefinitionStore>();
+        var id = Guid.NewGuid().ToString("N");
+        var markers = new[] { "\U00010000", "\uE000", "a" };
+        await Task.WhenAll(markers.Select(marker => store.SetTriggerCursorAsync(id, "opaque", marker)));
+
+        (await store.GetTriggerCursorAsync(id, "opaque"))
+            .Should().Be(markers.Max(StringComparer.Ordinal));
+    }
+
+    [IntegrationTest]
     public async Task GetScheduleCursorAsync_AfterWritingHostStops_PreservesPendingOccurrence()
     {
         var id = Guid.NewGuid().ToString("N");
