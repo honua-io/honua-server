@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.ControlPlane;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Reporting.Domain;
@@ -69,7 +70,7 @@ internal sealed class PostgresAnalysisReportStore(
             command.Parameters.AddWithValue("ttl", _ttl);
             command.Parameters.AddWithValue("capacity", _capacity);
             await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
-            await transaction.CommitAsync(token).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
         }, StatementRepeat.NotAfterSend, cancellationToken);
     }
 
