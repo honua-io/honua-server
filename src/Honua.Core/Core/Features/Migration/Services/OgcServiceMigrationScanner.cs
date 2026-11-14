@@ -35,6 +35,9 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         "OGC service URL resolves to a disallowed network address.",
         "Unable to establish a connection to the OGC service host.");
 
+    private const int MaxConnectionsPerOgcHost = 16;
+
+    private static readonly MigrationPinnedDnsClient PinnedDnsClient = new(ServiceUrlPolicy, UnsafeLocalUrlsAllowed, MaxConnectionsPerOgcHost);
 
     public OgcServiceMigrationScanner(
         HttpClient httpClient,
@@ -45,22 +48,12 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _hostAddressResolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
+        _hostAddressResolver = hostAddressResolver ?? MigrationPinnedDns.SystemHostAddressResolver;
     }
 
     public static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
         Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
-    {
-        var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
-
-        return new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            MaxConnectionsPerServer = 16,
-            ConnectCallback = (context, cancellationToken) =>
-                MigrationPinnedDns.ConnectAsync(context, resolver, UnsafeLocalUrlsAllowed.Value, ServiceUrlPolicy, cancellationToken)
-        };
-    }
+        => MigrationPinnedDns.CreateHandler(PinnedDnsClient, hostAddressResolver);
 
     // Shared handlers reject loopback and private addresses unless the caller sets this flag for the current async flow.
     public static IDisposable CreateUnsafeLocalUrlScope(bool allowUnsafeLocalUrls)
