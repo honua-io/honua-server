@@ -7,6 +7,7 @@ using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Realtime;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Server.Features.Collaboration.Operations;
+using Honua.Server.Features.Realtime;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -20,17 +21,21 @@ namespace Honua.Server.Tests.Features.Collaboration.Sessions;
 
 public sealed class CollaborationRealtimeRelayTests
 {
-    [UnitTest]
-    public async Task Transport_WhenDatabaseRemovedAfterRegistration_DoesNotResolveFanout()
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Transport_WithoutDatabase_DoesNotResolveDatabaseBackedFanout(bool initiallyConfigured)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddSingleton(Substitute.For<ISavedMapCollaborationAuthorizer>());
         using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=honua;Username=honua");
-        services.AddSingleton(dataSource);
-        services.AddSingleton<IRealtimeFanoutProvider>(_ =>
-            throw new InvalidOperationException("Database-backed fanout must not be resolved without a database."));
+        if (initiallyConfigured)
+        {
+            services.AddSingleton(dataSource);
+        }
+        services.AddRealtimeFanout(new ConfigurationBuilder().Build(), hostsDatabasePollingLoops: true);
         services.AddCollaborationSessionTransport();
         services.RemoveAll<NpgsqlDataSource>();
         await using var container = services.BuildServiceProvider();

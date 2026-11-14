@@ -5,6 +5,7 @@ using System.Linq;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Server.Features.Collaboration.FeatureLocks;
 using Honua.Server.Features.Collaboration.Operations;
+using Honua.Server.Features.Realtime;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Core.Features.Realtime;
 using Npgsql;
@@ -22,7 +23,10 @@ internal static class CollaborationSessionServices
         // owner semantics under the end-user flag). Unresolvable map ids stay fail-closed.
         services.TryAddSingleton<ISavedMapCollaborationAuthorizer, StudioSavedMapCollaborationAuthorizer>();
 
-        var usesDatabase = services.Any(static d => d.ServiceType == typeof(NpgsqlDataSource));
+        // The built-in fanout requires the database even on hosts configured without one.
+        // Preserve standalone fake providers used by database-free collaboration tests.
+        var usesDatabase = services.Any(static d =>
+            d.ServiceType == typeof(NpgsqlDataSource) || d.ServiceType == typeof(PostgresRealtimeEventLog));
         IRealtimeFanoutProvider? ResolveFanout(IServiceProvider sp) =>
             usesDatabase && sp.GetService<NpgsqlDataSource>() is null
                 ? null
