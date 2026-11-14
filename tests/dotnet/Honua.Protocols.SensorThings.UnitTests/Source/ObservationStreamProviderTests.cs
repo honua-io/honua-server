@@ -1,0 +1,92 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using System.Text.Json;
+using Honua.Core.Features.Realtime;
+using Honua.Protocols.SensorThings.Streaming;
+using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+
+namespace Honua.Server.Tests.Features.Protocols.SensorThings;
+
+public sealed class ObservationStreamProviderTests
+{
+    [UnitTest]
+    public async Task Subscribe_PreservesFamilyCursorDatastreamAndExactScope()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        var subscription = Substitute.For<IRealtimeSubscription>();
+        RealtimeSubscriptionRequest? request = null;
+        provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(value => request = value)).Returns(subscription);
+        await using var manager = new ObservationStreamSessionManager(
+            NullLogger<ObservationStreamSessionManager>.Instance, provider);
+        await using var session = manager.TryCreateSession(new ObservationStreamRequest(
+            "SSE", 7, new("tenant-a", null), "alice", 42), out _);
+
+        Assert.NotNull(session);
+        Assert.NotNull(request);
+        Assert.Equal(RealtimeFamily.Observations, request.Family);
+        Assert.Equal(42, request.After);
+        Assert.Equal(["7"], request.ScopeKeys);
+        Assert.NotNull(request.Filter);
+        Assert.True(request.Filter(Event("tenant-a", null)));
+        Assert.False(request.Filter(Event("tenant-b", null)));
+        Assert.False(request.Filter(Event("tenant-a", "public")));
+        Assert.False(request.Filter(Event(null, null)));
+    }
+
+    [UnitTest]
+    public async Task Dispose_ReleasesSubscriptionAndAdmissionSlotExactlyOnce()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        var subscription = Substitute.For<IRealtimeSubscription>();
+        provider.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(subscription);
+        await using var manager = new ObservationStreamSessionManager(
+            NullLogger<ObservationStreamSessionManager>.Instance, provider);
+        var session = manager.TryCreateSession(new ObservationStreamRequest(
+            "SSE", null, new("tenant-a", null), "alice", null), out _)!;
+        await session.DisposeAsync();
+        await session.DisposeAsync();
+        Assert.Equal(0, manager.SessionCount);
+        await subscription.Received(1).DisposeAsync();
+    }
+
+    [UnitTest]
+    public async Task Dispose_WhenOneSubscriptionFails_StillReleasesEverySession()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        var failing = Substitute.For<IRealtimeSubscription>();
+        var healthy = Substitute.For<IRealtimeSubscription>();
+        failing.DisposeAsync().Returns(ValueTask.FromException(new InvalidOperationException("dispose failed")));
+        provider.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(failing, healthy);
+        var manager = new ObservationStreamSessionManager(
+            NullLogger<ObservationStreamSessionManager>.Instance, provider);
+        manager.TryCreateSession(new("SSE", null, new("tenant-a", null), "alice", null), out _);
+        manager.TryCreateSession(new("SSE", null, new("tenant-b", null), "bob", null), out _);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => manager.DisposeAsync().AsTask());
+
+        Assert.Equal(0, manager.SessionCount);
+        await healthy.Received(1).DisposeAsync();
+    }
+
+    [UnitTest]
+    public void BatchJson_UsesPublicNamesAndOmitsInternalScope()
+    {
+        var batch = new ObservationStreamBatch("observations:42", 7,
+            JsonSerializer.SerializeToElement(new[] { new { id = 1, result = 2 } }));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(batch,
+            ObservationStreamJsonContext.Default.ObservationStreamBatch));
+        Assert.Equal("observations:42", json.RootElement.GetProperty("cursor").GetString());
+        Assert.Equal(7, json.RootElement.GetProperty("datastreamId").GetInt64());
+        Assert.Equal(1, json.RootElement.GetProperty("observations").GetArrayLength());
+        Assert.False(json.RootElement.TryGetProperty("scope", out _));
+    }
+
+    private static RealtimeEvent Event(string? tenant, string? schema)
+    {
+        var payload = JsonSerializer.SerializeToElement(new { scope = new { tenantId = tenant, schema } });
+        return new(RealtimeFamily.Observations, 43, "7", "observation.created", payload, DateTimeOffset.UtcNow);
+    }
+}

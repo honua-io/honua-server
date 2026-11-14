@@ -88,7 +88,7 @@ public sealed partial class SensorThingsStreamEndpointsTests
             while (true)
             {
                 var frame = await ReadSocketFrameAsync(socket, ct);
-                if (frame.RootElement.TryGetProperty("result", out _)) { return frame; }
+                if (frame.RootElement.TryGetProperty("observations", out _)) { return frame; }
                 frame.RootElement.TryGetProperty("code", out _).Should().BeFalse("authorization cannot end before the marked observation");
                 frame.RootElement.GetRawText().Should().NotContain("tenant-b");
                 frame.Dispose();
@@ -110,8 +110,8 @@ public sealed partial class SensorThingsStreamEndpointsTests
             connected.RootElement.GetProperty("status").GetString().Should().Be("connected");
             var expectedId = await PublishAsync(73.25);
             using var observation = await ReadObservationAsync(socket);
-            observation.RootElement.GetProperty("result").GetDouble().Should().Be(73.25);
-            observation.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(expectedId);
+            observation.RootElement.GetProperty("observations")[0].GetProperty("result").GetDouble().Should().Be(73.25);
+            observation.RootElement.GetProperty("observations")[0].GetProperty("id").GetInt64().Should().Be(expectedId);
             await InvalidateAsync();
             SetBound();
             var buffer = new byte[4096];
@@ -122,7 +122,7 @@ public sealed partial class SensorThingsStreamEndpointsTests
                 if (terminal.MessageType == WebSocketMessageType.Text)
                 {
                     using var frame = JsonDocument.Parse(buffer.AsMemory(0, terminal.Count));
-                    frame.RootElement.TryGetProperty("result", out _).Should().BeFalse();
+                    frame.RootElement.TryGetProperty("observations", out _).Should().BeFalse();
                 }
             } while (terminal.MessageType != WebSocketMessageType.Close);
             terminal.CloseStatus.Should().Be(WebSocketCloseStatus.PolicyViolation);
@@ -139,14 +139,14 @@ public sealed partial class SensorThingsStreamEndpointsTests
             using var reader = new StreamReader(stream);
             (await ReadUntilAsync(reader, "event: status", ct)).Should().Contain("connected");
             var expectedId = await PublishAsync(73.25);
-            var pushed = await ReadUntilAsync(reader, "event: observation", ct);
+            var pushed = await ReadUntilAsync(reader, "event: observations", ct);
             using var observation = JsonDocument.Parse(pushed[(pushed.IndexOf("data: ", StringComparison.Ordinal) + 6)..]);
-            observation.RootElement.GetProperty("result").GetDouble().Should().Be(73.25);
-            observation.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(expectedId);
+            observation.RootElement.GetProperty("observations")[0].GetProperty("result").GetDouble().Should().Be(73.25);
+            observation.RootElement.GetProperty("observations")[0].GetProperty("id").GetInt64().Should().Be(expectedId);
             await InvalidateAsync();
             SetBound();
             var remaining = await reader.ReadToEndAsync(bound.Token);
-            remaining.Should().Contain("\"code\":\"authorization-ended\"").And.NotContain("event: observation");
+            remaining.Should().Contain("\"code\":\"authorization-ended\"").And.NotContain("event: observations");
         }
 
         using var rejected = new HttpRequestMessage(HttpMethod.Get, Path(credential.Token));
@@ -163,7 +163,7 @@ public sealed partial class SensorThingsStreamEndpointsTests
         handshake.RootElement.GetProperty("status").GetString().Should().Be("connected");
         var replacementId = await PublishAsync(91.75);
         using var replacementObservation = await ReadObservationAsync(resumed);
-        replacementObservation.RootElement.GetProperty("result").GetDouble().Should().Be(91.75);
-        replacementObservation.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(replacementId);
+        replacementObservation.RootElement.GetProperty("observations")[0].GetProperty("result").GetDouble().Should().Be(91.75);
+        replacementObservation.RootElement.GetProperty("observations")[0].GetProperty("id").GetInt64().Should().Be(replacementId);
     }
 }

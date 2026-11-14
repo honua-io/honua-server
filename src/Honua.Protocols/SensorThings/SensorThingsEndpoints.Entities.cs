@@ -459,7 +459,6 @@ internal static partial class SensorThingsEndpoints
             {
                 if (bulk.ValueKind != JsonValueKind.Array) throw new SensorThingsValidationException("Bulk value must be an array.");
                 var ids = await store.CreateEntityBatchAsync("Observations", bulk.EnumerateArray().Select(e => e.Clone()).ToArray(), context.RequestAborted).ConfigureAwait(false);
-                await PublishCreatedObservationsAsync(context, ids).ConfigureAwait(false);
                 var result = new JsonObject { ["@iot.count"] = ids.Count, ["value"] = new JsonArray(ids.Select(id => (JsonNode?)JsonValue.Create(id)).ToArray()) };
                 return JsonResponse(result, 201);
             }
@@ -478,7 +477,6 @@ internal static partial class SensorThingsEndpoints
                 body = JsonSerializer.SerializeToElement(nested, SensorThingsJsonContext.Default.JsonObject);
             }
             var id = await store.CreateEntityAsync(resource.Set, body, context.RequestAborted).ConfigureAwait(false);
-            if (resource.Set == "Observations") await PublishCreatedObservationsAsync(context, [id]).ConfigureAwait(false);
             var entity = await store.GetEntityAsync(resource.Set, id, context.RequestAborted).ConfigureAwait(false);
             var plan = StaQueryPlan.Create(new DefaultHttpContext().Request, StaEntitySchema.For(resource.Set), context.RequestServices.GetRequiredService<StaFilterTranslator>()).Plan!;
             var shaped = await ShapeEntityAsync(context, store, context.RequestServices.GetRequiredService<StaFilterTranslator>(), resource.Set, entity!.Value, plan, 0, new ExpansionBudget()).ConfigureAwait(false);
@@ -490,17 +488,6 @@ internal static partial class SensorThingsEndpoints
         catch (JsonException) { return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON."); }
         catch (SensorThingsConflictException ex) { return StandardErrorHelpers.CreateConflict(context, ex.Message); }
         catch (SensorThingsValidationException ex) { return StandardErrorHelpers.CreateBadRequest(context, ex.Message); }
-    }
-
-    private static async Task PublishCreatedObservationsAsync(HttpContext context, IReadOnlyList<long> ids)
-    {
-        var observations = new List<SensorThingsObservation>();
-        var observationStore = context.RequestServices.GetRequiredService<IObservationStore>();
-        foreach (var id in ids)
-        {
-            if (await observationStore.GetObservationAsync(id, context.RequestAborted).ConfigureAwait(false) is { } observation) observations.Add(observation);
-        }
-        context.RequestServices.GetRequiredService<IObservationChangeEventPublisher>().PublishObservations(observations);
     }
 
     private static IResult JsonResponse(JsonNode value, int status = 200) => Results.Json(JsonSerializer.SerializeToElement(value, SensorThingsJsonContext.Default.JsonNode), SensorThingsJsonContext.Default.JsonElement, statusCode: status);

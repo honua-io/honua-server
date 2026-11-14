@@ -6,6 +6,8 @@ using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
+using Honua.Core.Features.Realtime;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -20,7 +22,7 @@ namespace Honua.Protocols.SensorThings.Streaming;
 
 internal static class ObservationStreamEndpoints
 {
-    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(25);
+    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(15);
 
     // A client that has stopped reading must not pin the handler, so a gap-frame write that overruns its budget aborts the transport.
     private static readonly TimeSpan GapWriteBudget = TimeSpan.FromSeconds(2);
@@ -37,8 +39,8 @@ internal static class ObservationStreamEndpoints
                 "Opens a real-time stream of newly-ingested Observations. SSE: send " +
                 "Accept: text/event-stream. WebSocket: send an Upgrade request. " +
                 "Optional query param: datastreamId (tail a single Datastream). " +
-                "Delivery is ephemeral: there is no resume cursor, and a slow consumer is " +
-                "disconnected with a gap status instead of a silent drop.")
+                "Delivery uses committed batches with observations-family resume cursors. " +
+                "Send Last-Event-ID or cursor to resume within retained history.")
             .WithTags("SensorThings")
             .RequireAuthorization()
             .Produces(200, contentType: "text/event-stream")
@@ -68,16 +70,33 @@ internal static class ObservationStreamEndpoints
                 "Observation subscriptions require a resolved tenant scope.");
         }
 
-        if (context.Request.Query.ContainsKey("cursor") || context.Request.Headers.ContainsKey("Last-Event-ID"))
+        var hasQueryCursor = context.Request.Query.ContainsKey("cursor");
+        var hasHeaderCursor = context.Request.Headers.ContainsKey("Last-Event-ID");
+        var queryCursor = context.Request.Query["cursor"].ToString();
+        var headerCursor = context.Request.Headers["Last-Event-ID"].ToString();
+        var rawCursor = hasQueryCursor ? queryCursor : headerCursor;
+        long? after = null;
+        if ((hasQueryCursor && hasHeaderCursor && queryCursor != headerCursor)
+            || ((hasQueryCursor || hasHeaderCursor) && (!rawCursor.StartsWith("observations:", StringComparison.Ordinal)
+                || !long.TryParse(rawCursor.AsSpan("observations:".Length), NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var sequence) || sequence < 0)))
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Observation subscriptions are live-only and cannot replay a supplied cursor.");
+            return StandardErrorHelpers.CreateBadRequest(context, "A nonnegative observations-family cursor is required.");
+        }
+
+        if (!string.IsNullOrEmpty(rawCursor))
+        {
+            after = long.Parse(rawCursor.AsSpan("observations:".Length), CultureInfo.InvariantCulture);
         }
 
         long? datastreamId = null;
-        if (context.Request.Query.TryGetValue("datastreamId", out var raw) &&
-            long.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        if (context.Request.Query.TryGetValue("datastreamId", out var raw))
         {
+            if (!long.TryParse(raw.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) || parsed <= 0)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "datastreamId must be a positive integer.");
+            }
+
             datastreamId = parsed;
         }
 
@@ -95,18 +114,18 @@ internal static class ObservationStreamEndpoints
         // Admit before the WebSocket upgrade or SSE headers so a refused caller receives a
         // problem document, not an opened stream. Admission is keyed by the canonical actor
         // within the resolved tenant, so one credential cannot exhaust the node (#4198).
-        var session = sessionManager.TryCreateSession(
+        var session = sessionManager.TryCreateSession(new ObservationStreamRequest(
             isWebSocket ? "WebSocket" : "SSE",
             datastreamId,
             scope,
-            CanonicalSecurityActor.Resolve(context.User)?.ActorId,
+            CanonicalSecurityActor.Resolve(context.User)?.ActorId, after),
             out var rejectedBy);
         if (session is null)
         {
             return CreateAdmissionRejected(context, rejectedBy, sessionManager.Options);
         }
 
-        using var sessionLease = session;
+        await using var sessionLease = session;
         if (isWebSocket)
         {
             await HandleWebSocketAsync(context, session, datastreamId).ConfigureAwait(false);
@@ -143,7 +162,8 @@ internal static class ObservationStreamEndpoints
         long? datastreamId)
     {
         context.Response.ContentType = "text/event-stream";
-        context.Response.Headers.CacheControl = "no-cache";
+        context.Response.Headers.CacheControl = "no-store, no-transform";
+        context.Response.Headers["X-Accel-Buffering"] = "no";
 
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.RequestAborted, session.DisconnectToken);
@@ -185,15 +205,12 @@ internal static class ObservationStreamEndpoints
 
                 while (session.Reader.TryRead(out var frame))
                 {
-                    if (frame.IsHeartbeat)
-                    {
-                        await WriteSseAsync(context.Response, "heartbeat", "{}", ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        var json = JsonSerializer.Serialize(frame, ObservationStreamJsonContext.Default.ObservationStreamFrame);
-                        await WriteSseAsync(context.Response, "observation", json, ct).ConfigureAwait(false);
-                    }
+                    var message = FormatDelivery(frame);
+                    await context.Response.WriteAsync(
+                        string.Concat(message.Cursor is null ? "" : "id: " + message.Cursor + "\n",
+                            "event: ", message.Event, "\ndata: ", message.Json, "\n\n"), ct).ConfigureAwait(false);
+                    await context.Response.Body.FlushAsync(ct).ConfigureAwait(false);
+                    if (frame is RealtimeDelivery.Reset) return;
                 }
 
                 await context.Response.Body.FlushAsync(ct).ConfigureAwait(false);
@@ -203,6 +220,10 @@ internal static class ObservationStreamEndpoints
         {
             // The session token or the request ended. A slow-consumer cancel still
             // needs a gap frame, and that write must not use the cancelled token.
+        }
+        catch (ChannelClosedException)
+        {
+            // Provider closes the subscription when delivery cannot continue.
         }
         catch (IOException)
         {
@@ -263,15 +284,9 @@ internal static class ObservationStreamEndpoints
 
                 while (session.Reader.TryRead(out var frame))
                 {
-                    if (frame.IsHeartbeat)
-                    {
-                        await SendSocketAsync(socket, "{\"heartbeat\":true}", ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        var json = JsonSerializer.Serialize(frame, ObservationStreamJsonContext.Default.ObservationStreamFrame);
-                        await SendSocketAsync(socket, json, ct).ConfigureAwait(false);
-                    }
+                    var message = FormatDelivery(frame);
+                    await SendSocketAsync(socket, message.Json, ct).ConfigureAwait(false);
+                    if (frame is RealtimeDelivery.Reset) return;
                 }
             }
         }
@@ -279,6 +294,10 @@ internal static class ObservationStreamEndpoints
         {
             // The session token or the request ended. A slow-consumer cancel still
             // needs a gap frame, and that write must not use the cancelled token.
+        }
+        catch (ChannelClosedException)
+        {
+            // Provider closes the subscription when delivery cannot continue.
         }
         catch (WebSocketException)
         {
@@ -362,6 +381,22 @@ internal static class ObservationStreamEndpoints
         }
 
         context.Abort();
+    }
+
+    private static (string Event, string Json, string? Cursor) FormatDelivery(RealtimeDelivery delivery)
+    {
+        return delivery switch
+        {
+            RealtimeDelivery.Event item => ("observations", JsonSerializer.Serialize(
+                new ObservationStreamBatch(item.Value.Position.ToString(),
+                    item.Value.Payload.GetProperty("datastreamId").GetInt64(),
+                    item.Value.Payload.GetProperty("observations")),
+                ObservationStreamJsonContext.Default.ObservationStreamBatch), item.Value.Position.ToString()),
+            RealtimeDelivery.Reset reset => ("reset", JsonSerializer.Serialize(
+                new ObservationStreamReset(reset.Reason, new RealtimePosition(RealtimeFamily.Observations, reset.Head).ToString()),
+                ObservationStreamJsonContext.Default.ObservationStreamReset), null),
+            _ => ("heartbeat", "{\"heartbeat\":true}", null)
+        };
     }
 
     private static Task WriteSseAsync(HttpResponse response, string eventName, string json, CancellationToken ct) =>

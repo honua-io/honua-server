@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Realtime;
+using NSubstitute;
 using Honua.Protocols.SensorThings.Streaming;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,8 +19,15 @@ public sealed class ObservationStreamAdmissionTests
     private static readonly ObservationStreamScope TenantB = new("tenant-b", "schema_b");
     private static readonly ObservationStreamScope TenantC = new("tenant-c", "schema_c");
 
+    private static IRealtimeFanoutProvider CreateProvider()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(_ => Substitute.For<IRealtimeSubscription>());
+        return provider;
+    }
+
     private static ObservationStreamSessionManager CreateManager(int perPrincipal, int perTenant, int node) =>
-        new(NullLogger<ObservationStreamSessionManager>.Instance, redis: null, new ObservationStreamOptions
+        new(NullLogger<ObservationStreamSessionManager>.Instance, CreateProvider(), new ObservationStreamOptions
         {
             MaxSessionsPerPrincipal = perPrincipal,
             MaxSessionsPerTenant = perTenant,
@@ -30,24 +39,24 @@ public sealed class ObservationStreamAdmissionTests
         ObservationStreamScope scope,
         string? principal,
         out ObservationStreamAdmissionLimit rejectedBy) =>
-        manager.TryCreateSession("SSE", null, scope, principal, out rejectedBy);
+        manager.TryCreateSession(new("SSE", null, scope, principal, null), out rejectedBy);
 
     [UnitTest]
-    public void TryCreateSession_EachCapRefusesExactlyAtItsLimit_AndNamesTheCapHit()
+    public async Task TryCreateSession_EachCapRefusesExactlyAtItsLimit_AndNamesTheCapHit()
     {
-        using var manager = CreateManager(perPrincipal: 2, perTenant: 3, node: 4);
+        await using var manager = CreateManager(perPrincipal: 2, perTenant: 3, node: 4);
         {
             // Principal cap: the third session for one credential is refused while its tenant
             // (2 of 3) and the node (2 of 4) still have room.
-            using var alice1 = Admit(manager, TenantA, "alice", out _);
-            using var alice2 = Admit(manager, TenantA, "alice", out _);
+            await using var alice1 = Admit(manager, TenantA, "alice", out _);
+            await using var alice2 = Admit(manager, TenantA, "alice", out _);
             Assert.NotNull(alice1);
             Assert.NotNull(alice2);
             Assert.Null(Admit(manager, TenantA, "alice", out var aliceLimit));
             Assert.Equal(ObservationStreamAdmissionLimit.Principal, aliceLimit);
 
             // A different principal in the same tenant is still admitted: alice cannot lock bob out.
-            using var bob = Admit(manager, TenantA, "bob", out var bobLimit);
+            await using var bob = Admit(manager, TenantA, "bob", out var bobLimit);
             Assert.NotNull(bob);
             Assert.Equal(ObservationStreamAdmissionLimit.None, bobLimit);
 
@@ -56,7 +65,7 @@ public sealed class ObservationStreamAdmissionTests
             Assert.Equal(ObservationStreamAdmissionLimit.Tenant, carolLimit);
 
             // Another tenant is unaffected by tenant-a's saturation; this takes the last node slot.
-            using var aliceElsewhere = Admit(manager, TenantB, "alice", out var otherTenantLimit);
+            await using var aliceElsewhere = Admit(manager, TenantB, "alice", out var otherTenantLimit);
             Assert.NotNull(aliceElsewhere);
             Assert.Equal(ObservationStreamAdmissionLimit.None, otherTenantLimit);
             Assert.Equal(4, manager.SessionCount);
@@ -72,20 +81,20 @@ public sealed class ObservationStreamAdmissionTests
     }
 
     [UnitTest]
-    public void RemoveSession_ReleasesPrincipalTenantAndNodeSlots()
+    public async Task RemoveSession_ReleasesPrincipalTenantAndNodeSlots()
     {
-        using var manager = CreateManager(perPrincipal: 1, perTenant: 1, node: 2);
+        await using var manager = CreateManager(perPrincipal: 1, perTenant: 1, node: 2);
         var first = Admit(manager, TenantA, "alice", out _)!;
         var other = Admit(manager, TenantB, "bob", out _)!;
         Assert.Null(Admit(manager, TenantA, "alice", out var saturated));
         Assert.Equal(ObservationStreamAdmissionLimit.Principal, saturated);
 
-        first.Dispose();
-        first.Dispose(); // a double dispose must not release a slot twice
+        await first.DisposeAsync();
+        await first.DisposeAsync(); // a double dispose must not release a slot twice
 
         // All three counters were released by exactly one: alice (1/1), tenant-a (1/1) and the
         // node (2/2) are full again after one re-admission, not over-admitted.
-        using var readmitted = Admit(manager, TenantA, "alice", out var readmittedLimit);
+        await using var readmitted = Admit(manager, TenantA, "alice", out var readmittedLimit);
         Assert.NotNull(readmitted);
         Assert.Equal(ObservationStreamAdmissionLimit.None, readmittedLimit);
         Assert.Equal(2, manager.SessionCount);
@@ -93,15 +102,15 @@ public sealed class ObservationStreamAdmissionTests
         Assert.Equal(ObservationStreamAdmissionLimit.Tenant, tenantFull);
         Assert.Null(Admit(manager, TenantC, "dave", out var nodeFull));
         Assert.Equal(ObservationStreamAdmissionLimit.Node, nodeFull);
-        other.Dispose();
+        await other.DisposeAsync();
     }
 
     [UnitTest]
-    public void TryCreateSession_SamePrincipalIdInDifferentTenants_IsCountedPerTenant()
+    public async Task TryCreateSession_SamePrincipalIdInDifferentTenants_IsCountedPerTenant()
     {
-        using var manager = CreateManager(perPrincipal: 1, perTenant: 2, node: 8);
-        using var inA = Admit(manager, TenantA, "shared-subject", out _);
-        using var inB = Admit(manager, TenantB, "shared-subject", out var limit);
+        await using var manager = CreateManager(perPrincipal: 1, perTenant: 2, node: 8);
+        await using var inA = Admit(manager, TenantA, "shared-subject", out _);
+        await using var inB = Admit(manager, TenantB, "shared-subject", out var limit);
 
         Assert.NotNull(inA);
         Assert.NotNull(inB);
@@ -109,25 +118,25 @@ public sealed class ObservationStreamAdmissionTests
     }
 
     [UnitTest]
-    public void TryCreateSession_UnidentifiedCallersInATenant_ShareOnePrincipalPartition()
+    public async Task TryCreateSession_UnidentifiedCallersInATenant_ShareOnePrincipalPartition()
     {
-        using var manager = CreateManager(perPrincipal: 2, perTenant: 4, node: 8);
-        using var first = Admit(manager, TenantA, null, out _);
-        using var second = Admit(manager, TenantA, " ", out _);
+        await using var manager = CreateManager(perPrincipal: 2, perTenant: 4, node: 8);
+        await using var first = Admit(manager, TenantA, null, out _);
+        await using var second = Admit(manager, TenantA, " ", out _);
 
         // Callers without a canonical actor cannot mint fresh partitions to evade the cap.
         Assert.Null(Admit(manager, TenantA, string.Empty, out var limit));
         Assert.Equal(ObservationStreamAdmissionLimit.Principal, limit);
-        using var identified = Admit(manager, TenantA, "alice", out var identifiedLimit);
+        await using var identified = Admit(manager, TenantA, "alice", out var identifiedLimit);
         Assert.Equal(ObservationStreamAdmissionLimit.None, identifiedLimit);
     }
 
     [UnitTest]
-    public void TryCreateSession_UntenantedCallersShareOneTenantPartition()
+    public async Task TryCreateSession_UntenantedCallersShareOneTenantPartition()
     {
-        using var manager = CreateManager(perPrincipal: 1, perTenant: 2, node: 8);
-        using var first = Admit(manager, new ObservationStreamScope(null, "schema_a"), "admin-1", out _);
-        using var second = Admit(manager, new ObservationStreamScope(string.Empty, "schema_b"), "admin-2", out _);
+        await using var manager = CreateManager(perPrincipal: 1, perTenant: 2, node: 8);
+        await using var first = Admit(manager, new ObservationStreamScope(null, "schema_a"), "admin-1", out _);
+        await using var second = Admit(manager, new ObservationStreamScope(string.Empty, "schema_b"), "admin-2", out _);
 
         Assert.Null(Admit(manager, new ObservationStreamScope(null, null), "admin-3", out var limit));
         Assert.Equal(ObservationStreamAdmissionLimit.Tenant, limit);
@@ -138,7 +147,7 @@ public sealed class ObservationStreamAdmissionTests
     {
         const int node = 50;
         const int attempts = 1_000;
-        using var manager = CreateManager(perPrincipal: 1, perTenant: 1, node: node);
+        await using var manager = CreateManager(perPrincipal: 1, perTenant: 1, node: node);
         using var start = new ManualResetEventSlim();
         var admitted = new System.Collections.Concurrent.ConcurrentBag<ObservationStreamSession>();
         var refusals = new int[4];
@@ -167,7 +176,7 @@ public sealed class ObservationStreamAdmissionTests
 
         foreach (var session in admitted)
         {
-            session.Dispose();
+            await session.DisposeAsync();
         }
 
         Assert.Equal(0, manager.SessionCount);

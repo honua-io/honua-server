@@ -3,132 +3,127 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
+using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
-using Honua.Core.Features.SensorThings.Domain;
+using Honua.Core.Features.Realtime;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 
 namespace Honua.Protocols.SensorThings.Streaming;
 
-internal sealed class ObservationStreamSessionManager : IDisposable
-{
-    // This meter name must be on the service-defaults allow-list or the drop counter is excluded from export.
-    internal const string MeterName = "Honua.SensorThings";
+internal sealed record ObservationStreamRequest(
+    string Transport, long? DatastreamId, ObservationStreamScope Scope, string? PrincipalId, long? After);
 
+internal sealed class ObservationStreamSessionManager : IAsyncDisposable
+{
+    internal const string MeterName = "Honua.SensorThings";
     private const string UntenantedPartition = "untenanted";
     private const string UnidentifiedPrincipal = "unidentified";
-
-    private static readonly RedisChannel BroadcastChannel =
-        // Isolate the scoped protocol from older nodes that broadcast every frame to
-        // every tenant. They must never receive scoped messages during rolling upgrades.
-        new("sta:observation:stream:v2:broadcast", RedisChannel.PatternMode.Literal);
-
     private readonly ConcurrentDictionary<Guid, SessionEntry> _sessions = new();
     private readonly ILogger<ObservationStreamSessionManager> _logger;
-    private readonly IConnectionMultiplexer? _redis;
-    private readonly ISubscriber? _subscriber;
-    private readonly Meter _meter;
+    private readonly IRealtimeFanoutProvider _provider;
+    private readonly Meter _meter = new(MeterName);
     private readonly Counter<long> _observationStreamDrops;
     private readonly Counter<long> _sessionRejections;
-    private readonly string _instanceId = Guid.NewGuid().ToString("N");
     private readonly ObservationStreamOptions _options;
     private readonly Lock _admissionLock = new();
     private readonly Dictionary<string, int> _tenantSessionCounts = new(StringComparer.Ordinal);
     private readonly Dictionary<(string Tenant, string Principal), int> _principalSessionCounts = new();
     private int _activeSessionCount;
     private long _slowConsumerDrops;
-    private readonly bool _clusterEnabled;
 
     public ObservationStreamSessionManager(
         ILogger<ObservationStreamSessionManager> logger,
-        IConnectionMultiplexer? redis = null,
+        IRealtimeFanoutProvider provider,
         ObservationStreamOptions? options = null)
     {
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _redis = redis;
+        _logger = logger;
+        _provider = provider;
         _options = options ?? new ObservationStreamOptions();
-        _meter = new Meter(MeterName);
         _observationStreamDrops = _meter.CreateCounter<long>(
             "honua_sensorthings_observation_stream_drops_total",
-            description: "Observation-stream frames that overflowed a session buffer and disconnected that session.");
+            description: "Observation batches overflowing a stream buffer.");
         _sessionRejections = _meter.CreateCounter<long>(
             "honua_sensorthings_observation_stream_rejections_total",
-            description: "Observation-stream sessions refused because a principal, tenant, or node admission cap was reached.");
-
-        if (_redis is null)
-        {
-            return;
-        }
-
-        try
-        {
-            _subscriber = _redis.GetSubscriber();
-            _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
-            _clusterEnabled = true;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Best-effort: degrade to single-node fan-out when Redis is unavailable.
-            ObservationStreamLog.ClusterUnavailable(_logger, ex);
-        }
+            description: "Observation subscriptions refused by admission limits.");
     }
 
     public long SlowConsumerDrops => Interlocked.Read(ref _slowConsumerDrops);
-
     internal Meter Meter => _meter;
-
     internal ObservationStreamOptions Options => _options;
-
     public int SessionCount => Volatile.Read(ref _activeSessionCount);
 
     public ObservationStreamSession? TryCreateSession(
-        string transport, long? datastreamId, ObservationStreamScope scope, string? principalId = null)
-        => TryCreateSession(transport, datastreamId, scope, principalId, out _);
-
-    public ObservationStreamSession? TryCreateSession(
-        string transport,
-        long? datastreamId,
-        ObservationStreamScope scope,
-        string? principalId,
-        out ObservationStreamAdmissionLimit rejectedBy)
+        ObservationStreamRequest request, out ObservationStreamAdmissionLimit rejectedBy)
     {
-        ArgumentNullException.ThrowIfNull(scope);
-        var tenant = string.IsNullOrWhiteSpace(scope.TenantId) ? UntenantedPartition : "tenant:" + scope.TenantId;
-        var principal = (tenant, string.IsNullOrWhiteSpace(principalId) ? UnidentifiedPrincipal : principalId);
+        ArgumentNullException.ThrowIfNull(request.Scope);
+        var tenant = string.IsNullOrWhiteSpace(request.Scope.TenantId)
+            ? UntenantedPartition : "tenant:" + request.Scope.TenantId;
+        var principal = (tenant, string.IsNullOrWhiteSpace(request.PrincipalId)
+            ? UnidentifiedPrincipal : request.PrincipalId);
         rejectedBy = TryReserveSlot(tenant, principal);
         if (rejectedBy != ObservationStreamAdmissionLimit.None)
         {
             _sessionRejections.Add(1,
                 new KeyValuePair<string, object?>("limit", rejectedBy.ToString()),
-                new KeyValuePair<string, object?>("transport", transport));
-            ObservationStreamLog.SessionRejected(_logger, transport, rejectedBy);
+                new KeyValuePair<string, object?>("transport", request.Transport));
+            ObservationStreamLog.SessionRejected(_logger, request.Transport, rejectedBy);
             return null;
         }
 
         var id = Guid.NewGuid();
-        var channel = Channel.CreateBounded<ObservationStreamFrame>(new BoundedChannelOptions(_options.MaxBufferPerConnection)
+        var channel = Channel.CreateBounded<RealtimeDelivery>(new BoundedChannelOptions(_options.MaxBufferPerConnection)
         {
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
             SingleWriter = false
         });
         var cts = new CancellationTokenSource();
-        // Capture before the session is visible. Overflow on another thread can remove
-        // it and dispose this source before the return, and Token then throws.
-        var disconnectToken = cts.Token;
+        var token = cts.Token;
         var state = new ObservationStreamSessionState();
-        var entry = new SessionEntry(channel, cts, datastreamId, transport, scope, principal, state);
-        if (!_sessions.TryAdd(id, entry))
+        var writer = new DeliveryWriter(channel.Writer, () =>
+        {
+            if (state.TrySet(ObservationStreamDisconnectReason.SlowConsumer))
+            {
+                Interlocked.Increment(ref _slowConsumerDrops);
+                _observationStreamDrops.Add(1,
+                    new KeyValuePair<string, object?>("datastream.id", request.DatastreamId));
+                ObservationStreamLog.SlowConsumerDisconnected(_logger, id);
+                cts.Cancel();
+            }
+        });
+        try
+        {
+            var subscription = _provider.Subscribe(new RealtimeSubscriptionRequest(
+                RealtimeFamily.Observations,
+                request.DatastreamId is { } datastream ? [datastream.ToString(CultureInfo.InvariantCulture)] : [],
+                request.After, writer, value => MatchesScope(value, request.Scope)));
+            _sessions[id] = new(subscription, channel.Writer, cts, principal, state);
+        }
+        catch
         {
             ReleaseSlot(principal);
             cts.Dispose();
-            rejectedBy = ObservationStreamAdmissionLimit.Node;
-            return null;
+            throw;
         }
 
-        ObservationStreamLog.SessionCreated(_logger, id, transport, datastreamId);
-        return new ObservationStreamSession(id, channel.Reader, this, state, disconnectToken);
+        ObservationStreamLog.SessionCreated(_logger, id, request.Transport, request.DatastreamId);
+        return new ObservationStreamSession(id, channel.Reader, this, state, token);
+    }
+
+    private static bool MatchesScope(RealtimeEvent value, ObservationStreamScope scope)
+    {
+        return value.Kind == "observation.created"
+            && value.Payload.ValueKind == JsonValueKind.Object
+            && value.Payload.TryGetProperty("scope", out var stored)
+            && stored.ValueKind == JsonValueKind.Object
+            && Matches(stored, "tenantId", scope.TenantId)
+            && Matches(stored, "schema", scope.Schema);
+
+        static bool Matches(JsonElement stored, string name, string? expected) =>
+            stored.TryGetProperty(name, out var field)
+            && (field.ValueKind == JsonValueKind.Null ? expected is null
+                : field.ValueKind == JsonValueKind.String && field.GetString() == expected);
     }
 
     private ObservationStreamAdmissionLimit TryReserveSlot(string tenant, (string Tenant, string Principal) principal)
@@ -187,218 +182,65 @@ internal sealed class ObservationStreamSessionManager : IDisposable
         }
     }
 
-    public void RemoveSession(Guid sessionId)
-        => RemoveSession(sessionId, ObservationStreamDisconnectReason.ClientClosed);
-
-    private void RemoveSession(Guid sessionId, ObservationStreamDisconnectReason reason)
+    internal async ValueTask RemoveSessionAsync(Guid id)
     {
-        if (!_sessions.TryRemove(sessionId, out var entry))
+        if (!_sessions.TryRemove(id, out var entry))
         {
             return;
         }
 
-        entry.State.TrySet(reason);
-        if (reason == ObservationStreamDisconnectReason.SlowConsumer)
-        {
-            ObservationStreamLog.SlowConsumerDisconnected(_logger, sessionId);
-        }
-
+        entry.State.TrySet(ObservationStreamDisconnectReason.ClientClosed);
         ReleaseSlot(entry.Principal);
-        entry.Cts.Cancel();
-        entry.Cts.Dispose();
-    }
-
-    public void PublishObservations(IReadOnlyList<SensorThingsObservation> observations, ObservationStreamScope scope)
-    {
-        if (observations is null || observations.Count == 0)
-        {
-            return;
-        }
-
-        // Not a candidate for .Select(...): each mapped frame is immediately fanned out via
-        // the side-effecting BroadcastLocally/TryPublishCluster calls below rather than
-        // collected, so this is a side-effecting loop, not a projection.
-        foreach (var frame in (observations).Select(observation => ObservationStreamFrame.FromObservation(observation)))
-        {
-            BroadcastLocally(frame, scope);
-
-            if (_clusterEnabled && _subscriber is not null)
-            {
-                TryPublishCluster(frame, scope);
-            }
-        }
-    }
-
-    private void TryPublishCluster(ObservationStreamFrame frame, ObservationStreamScope scope)
-    {
         try
         {
-            var payload = JsonSerializer.Serialize(
-                new ClusterBroadcastDto(_instanceId, frame, scope),
-                ObservationStreamJsonContext.Default.ClusterBroadcastDto);
-            _subscriber!.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
+            await entry.Cts.CancelAsync().ConfigureAwait(false);
+            await entry.Subscription.DisposeAsync().ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        finally
         {
-            // Intentional catch-all: cluster fan-out is best-effort (single-node delivery
-            // already happened via BroadcastLocally); log and continue rather than fail ingest.
-            ObservationStreamLog.ClusterPublishFailed(_logger, ex);
-        }
-    }
-
-    private void HandleClusterBroadcast(RedisChannel channel, RedisValue value)
-    {
-        if (value.IsNullOrEmpty)
-        {
-            return;
-        }
-
-        try
-        {
-            var message = JsonSerializer.Deserialize(
-                value.ToString(), ObservationStreamJsonContext.Default.ClusterBroadcastDto);
-            if (message?.Scope is null || message.Frame is null ||
-                string.Equals(message.OriginInstanceId, _instanceId, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            BroadcastLocally(message.Frame, message.Scope);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional catch-all: a malformed/incompatible cluster broadcast message must
-            // not tear down the Redis subscriber callback; log and drop this message only.
-            ObservationStreamLog.ClusterPublishFailed(_logger, ex);
-        }
-    }
-
-    private void BroadcastLocally(ObservationStreamFrame frame, ObservationStreamScope scope)
-    {
-        List<Guid>? overflow = null;
-        foreach (var (id, entry) in _sessions)
-        {
-            if (entry.Cts.IsCancellationRequested || entry.Scope != scope)
-            {
-                continue;
-            }
-
-            if (entry.DatastreamId is { } datastreamId && datastreamId != frame.DatastreamId)
-            {
-                continue;
-            }
-
-            // Wait-mode bounded channel with non-blocking TryWrite: a full buffer
-            // reports false. Count the lost frame, then disconnect that session so
-            // the transport can emit a gap instead of leaving it looking healthy.
-            if (!entry.Channel.Writer.TryWrite(frame))
-            {
-                NoteOverflow(id, frame.DatastreamId, ref overflow);
-            }
-        }
-
-        DisconnectOverflow(overflow);
-    }
-
-    public void BroadcastHeartbeat()
-    {
-        List<Guid>? overflow = null;
-        foreach (var (id, entry) in _sessions)
-        {
-            if (entry.Cts.IsCancellationRequested)
-            {
-                continue;
-            }
-
-            if (!entry.Channel.Writer.TryWrite(ObservationStreamFrame.Heartbeat()))
-            {
-                NoteOverflow(id, entry.DatastreamId, ref overflow);
-            }
-        }
-
-        DisconnectOverflow(overflow);
-    }
-
-    private void NoteOverflow(Guid sessionId, long? datastreamId, ref List<Guid>? overflow)
-    {
-        Interlocked.Increment(ref _slowConsumerDrops);
-        _observationStreamDrops.Add(1, new KeyValuePair<string, object?>("datastream.id", datastreamId));
-        overflow ??= new List<Guid>();
-        overflow.Add(sessionId);
-    }
-
-    private void DisconnectOverflow(List<Guid>? overflow)
-    {
-        if (overflow is null)
-        {
-            return;
-        }
-
-        foreach (var sessionId in overflow)
-        {
-            RemoveSession(sessionId, ObservationStreamDisconnectReason.SlowConsumer);
-        }
-    }
-
-    public void Dispose()
-    {
-        if (_subscriber is not null)
-        {
-            try
-            {
-                _subscriber.Unsubscribe(BroadcastChannel, HandleClusterBroadcast);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // Best-effort shutdown: Dispose() must not throw, so log and continue.
-                ObservationStreamLog.ClusterUnsubscribeFailed(_logger, ex);
-            }
-        }
-
-        foreach (var (_, entry) in _sessions)
-        {
-            entry.Cts.Cancel();
+            entry.Writer.TryComplete();
             entry.Cts.Dispose();
         }
-
-        _sessions.Clear();
-        lock (_admissionLock)
-        {
-            _principalSessionCounts.Clear();
-            _tenantSessionCounts.Clear();
-            Volatile.Write(ref _activeSessionCount, 0);
-        }
-
-        _meter.Dispose();
     }
 
-    private sealed class SessionEntry
+    public async ValueTask DisposeAsync()
     {
-        public SessionEntry(
-            Channel<ObservationStreamFrame> channel,
-            CancellationTokenSource cts,
-            long? datastreamId,
-            string transport,
-            ObservationStreamScope scope,
-            (string Tenant, string Principal) principal,
-            ObservationStreamSessionState state)
+        try
         {
-            Channel = channel;
-            Cts = cts;
-            DatastreamId = datastreamId;
-            Transport = transport;
-            Scope = scope;
-            Principal = principal;
-            State = state;
+            // Start every cleanup even if one provider subscription fails to dispose.
+            await Task.WhenAll(_sessions.Keys.Select(id => RemoveSessionAsync(id).AsTask()))
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _meter.Dispose();
+        }
+    }
+
+    private sealed record SessionEntry(
+        IRealtimeSubscription Subscription,
+        ChannelWriter<RealtimeDelivery> Writer,
+        CancellationTokenSource Cts,
+        (string Tenant, string Principal) Principal,
+        ObservationStreamSessionState State);
+
+    private sealed class DeliveryWriter(ChannelWriter<RealtimeDelivery> inner, Action overflow)
+        : ChannelWriter<RealtimeDelivery>
+    {
+        public override bool TryWrite(RealtimeDelivery item)
+        {
+            if (inner.TryWrite(item))
+            {
+                return true;
+            }
+
+            overflow();
+            return false;
         }
 
-        public Channel<ObservationStreamFrame> Channel { get; }
-        public CancellationTokenSource Cts { get; }
-        public long? DatastreamId { get; }
-        public string Transport { get; }
-        public ObservationStreamScope Scope { get; }
-        public (string Tenant, string Principal) Principal { get; }
-        public ObservationStreamSessionState State { get; }
+        public override bool TryComplete(Exception? error = null) => inner.TryComplete(error);
+        public override ValueTask<bool> WaitToWriteAsync(CancellationToken cancellationToken = default)
+            => inner.WaitToWriteAsync(cancellationToken);
     }
 }
 
@@ -434,7 +276,7 @@ internal enum ObservationStreamAdmissionLimit
     Node
 }
 
-internal sealed class ObservationStreamSession : IDisposable
+internal sealed class ObservationStreamSession : IAsyncDisposable
 {
     private readonly ObservationStreamSessionManager _manager;
 
@@ -442,7 +284,7 @@ internal sealed class ObservationStreamSession : IDisposable
 
     public ObservationStreamSession(
         Guid sessionId,
-        ChannelReader<ObservationStreamFrame> reader,
+        ChannelReader<RealtimeDelivery> reader,
         ObservationStreamSessionManager manager,
         ObservationStreamSessionState state,
         CancellationToken disconnectToken)
@@ -456,11 +298,11 @@ internal sealed class ObservationStreamSession : IDisposable
 
     public Guid SessionId { get; }
 
-    public ChannelReader<ObservationStreamFrame> Reader { get; }
+    public ChannelReader<RealtimeDelivery> Reader { get; }
 
     public CancellationToken DisconnectToken { get; }
 
     public ObservationStreamDisconnectReason DisconnectReason => _state.Reason;
 
-    public void Dispose() => _manager.RemoveSession(SessionId);
+    public ValueTask DisposeAsync() => _manager.RemoveSessionAsync(SessionId);
 }
