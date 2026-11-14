@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Server.Tests.Infrastructure;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Npgsql;
@@ -13,6 +14,15 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
+    [Fact]
+    public async Task AgentMigration_UsesExistingAuditSchemaAndDeclaresCompatibilityReview()
+    {
+        var sql = await ReadMigrationAsync("168_AddAgentAuditActor.sql");
+        sql.Should().Contain("ALTER TABLE honua.audit_log").And.NotContain("$HonuaSchema$");
+        MigrationSafetyClassifier.Classify("168_AddAgentAuditActor.sql", sql).Classification
+            .Should().Be(MigrationSafetyClassification.ContractAnnotated);
+    }
+
     [IntegrationTest]
     public async Task AgentMigration_Replayed_PreservesLegacyActorsAndAppendOnlyRules()
     {
@@ -75,13 +85,17 @@ public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter databas
 
     private async Task ApplyAsync(string suffix, string schema)
     {
+        var sql = (await ReadMigrationAsync(suffix))
+            .Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
+        await database.ExecuteDdlUnderLockAsync(sql, schema);
+    }
+
+    private static async Task<string> ReadMigrationAsync(string suffix)
+    {
         var assembly = typeof(Program).Assembly;
         var resource = assembly.GetManifestResourceNames().Single(name => name.EndsWith(suffix, StringComparison.Ordinal));
         await using var stream = assembly.GetManifestResourceStream(resource)!;
         using var reader = new StreamReader(stream);
-        var sql = (await reader.ReadToEndAsync())
-            .Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal)
-            .Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
-        await database.ExecuteDdlUnderLockAsync(sql, schema);
+        return await reader.ReadToEndAsync();
     }
 }
