@@ -41,6 +41,7 @@ internal static partial class SceneBimIngestEndpoints
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/citygml", HandleIngestCityGml)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithName("IngestCityGmlScene")
             .WithSummary("Ingest a CityGML document into a servable Building Scene Layer tileset (Enterprise).")
             .Accepts<IFormFile>("multipart/form-data")

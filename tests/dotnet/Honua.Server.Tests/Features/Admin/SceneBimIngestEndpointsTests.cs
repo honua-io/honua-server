@@ -6,6 +6,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Scene.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Tests.Features.Infrastructure.Scene;
 using Honua.TestKit;
@@ -13,6 +15,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -80,6 +83,26 @@ public class SceneBimIngestEndpointsTests : IAsyncLifetime
             content.Add(new StringContent(value, Encoding.UTF8), key);
         }
         return content;
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/scenes/ingest/citygml")]
+    public async Task Ingest_AgentAdministrator_RequiresHumanAndLeavesSceneAbsent()
+    {
+        var sceneId = $"agent-denied-{Guid.NewGuid():N}";
+        var key = await _fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "scene-ingest-agent", ["admin", "agent"], null, "test", CancellationToken.None);
+        using var agent = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", key.Key));
+        using var upload = BuildUpload(CityGmlSceneFixtures.SingleBuildingGeographic(),
+            ("sceneId", sceneId), ("requiresAuth", "false"));
+
+        using var response = await agent.PostAsync(IngestUrl, upload);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("ask one to make this change in Console", await response.Content.ReadAsStringAsync());
+        var registry = _fixture.Services.GetRequiredService<ISceneDatasetRegistry>();
+        Assert.Null(await registry.FindAsync(sceneId));
+        Assert.False(Directory.Exists(Path.Join(_outputRoot, sceneId)));
     }
 
     [IntegrationTest]

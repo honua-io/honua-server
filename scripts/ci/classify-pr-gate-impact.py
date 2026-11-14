@@ -33,7 +33,7 @@ LEAN_GATE_GOVERNED_DOCS = frozenset(
     {
         # AuditCoverageMatrixDriftTests joins the documented auth-route rows
         # against DefaultAuditActionResolver in both directions.
-        "docs/internal/operator/audit-coverage-matrix.md",
+        "docs/internal/operations/audit-coverage-matrix.md",
         # ModuleDependencyPolicyTests.MatrixAndAdr_ShouldCrossReference_EachOther
         # requires the ADR to exist and to contain "ModuleDependencyPolicyTests"
         # and "Dependency direction matrix".

@@ -1,6 +1,6 @@
 name: Trunk signal watchdog
 
-# Fails loudly when trunk CI stops producing results. The CI doctor only reacts to runs that fail;
+# Fails loudly when trunk CI stops producing results. Failure responders only react to runs that fail;
 # a trunk whose runs are all cancelled or stuck in the queue produces no failure event at all.
 on:
   schedule:
