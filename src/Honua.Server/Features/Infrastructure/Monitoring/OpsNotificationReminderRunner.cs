@@ -70,6 +70,8 @@ internal sealed class OpsNotificationReminderRunner(
         }
         else if (!findings.ContainsKey(schedule.SubjectId))
         {
+            await schedules.TryDeferAsync(schedule, timeProvider.GetUtcNow().AddMinutes(1), cancellationToken)
+                .ConfigureAwait(false);
             return;
         }
 

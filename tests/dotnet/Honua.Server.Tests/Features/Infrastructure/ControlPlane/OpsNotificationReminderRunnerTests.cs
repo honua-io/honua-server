@@ -306,7 +306,7 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         OpsNotificationReminderRunner Runner(IOpsFindingsEvidenceSource source) => new(store, source,
             harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>());
         await Runner(findings).RunAsync(CancellationToken.None);
-        (await store.ListDueAsync(clock.Now, 100)).Should().ContainSingle()
+        (await store.ListDueAsync(clock.Now.AddMinutes(1), 100)).Should().ContainSingle()
             .Which.EpisodeId.Should().Be(original.EpisodeId);
         var recovered = CreateFindings();
         recovered.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(new[] { Finding(clock.Now, OpsFindingSeverity.Critical) });
@@ -316,6 +316,47 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         recovered.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
         await Runner(recovered).RunAsync(CancellationToken.None);
         (await store.ListDueAsync(clock.Now.AddMinutes(1), 100)).Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    public async Task IncompleteCollection_SaturatedAbsentEpisodesAllowLaterActionableReminder()
+    {
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));
+        var clock = new ReminderClock(DateTimeOffset.UtcNow);
+        var store = harness.CreateNotificationStore();
+        for (var index = 0; index < 100; index++)
+        {
+            await store.ObserveAsync(new("finding", $"absent-{index:D3}", OpsFindingSeverity.Critical), clock.Now);
+        }
+        var original = await store.ListDueAsync(clock.Now, 100);
+        clock.Now = clock.Now.AddSeconds(1);
+        var finding = Finding(clock.Now, OpsFindingSeverity.Critical);
+        var findings = CreateFindings();
+        findings.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(new OpsFindingsEvaluation
+        {
+            EvaluatedAt = clock.Now, Findings = [finding],
+            Posture = EvidencePostureFactory.Build(clock.Now, [EvidencePostureFactory.Unavailable(
+                EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
+                EvidencePostureVocabulary.BackendKinds.DurableStore, "workflow-store",
+                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable)])
+        });
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var notifications = CreateNotifications(outbox, new AlertOptions
+        {
+            Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
+        });
+        OpsNotificationReminderRunner Runner() => new(store, findings, harness.CreateProposalStore(),
+            notifications, clock, Substitute.For<IAlertDispatchHealth>());
+        await Runner().RunAsync(CancellationToken.None);
+        await outbox.DidNotReceive().CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>());
+        // A restarted runner can reach the later active finding while the missing episodes remain open.
+        await Runner().RunAsync(CancellationToken.None);
+        await outbox.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
+                entries[0].AlertEvent.DedupeKey.Contains("finding:finding-1:")), Arg.Any<CancellationToken>());
+        var preserved = await store.ListDueAsync(clock.Now.AddMinutes(1), 100);
+        preserved.Should().BeEquivalentTo(original, options => options.Excluding(row => row.Revision));
     }
 
     private static IOpsFindingsEvidenceSource CreateFindings()
