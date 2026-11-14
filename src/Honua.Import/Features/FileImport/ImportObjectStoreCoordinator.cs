@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.ObjectStore;
+using Honua.Core.Features.Security;
 
 namespace Honua.Import.FileImport;
 
@@ -191,19 +192,11 @@ internal static class ImportObjectStoreCoordinator
             };
         }
 
-        var tempPath = Path.Join(Path.GetTempPath(), $"honua-import-object-{Guid.NewGuid():N}{Path.GetExtension(fileName)}");
+        var tempPath = PrivateTempFile.NewPath("honua-import-object-", Path.GetExtension(fileName));
         try
         {
-            await using (var file = new FileStream(tempPath, new FileStreamOptions
-            {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-                Options = FileOptions.Asynchronous,
-            }))
-            {
-                await stream.CopyToAsync(file, cancellationToken).ConfigureAwait(false);
-            }
+            await using var file = PrivateTempFile.Create(tempPath, FileOptions.Asynchronous, bufferSize: 4096);
+            await stream.CopyToAsync(file, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
