@@ -45,8 +45,10 @@ router_fixtures_init "$@"
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-router-fixtures.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-router-fixtures.py
+  run_fixture hygiene-cancellation "${PYTHON_BIN}" scripts/ci/fixtures/test-repo-hygiene-cancellation.py
 fi
 
+run_fixture heavy-shutdown-retry node --test scripts/ci/heavy-shutdown-retry.test.js
 run_fixture review-revalidation node --test .github/scripts/revalidate-exact-head-review.test.cjs
 
 echo "Validating review-first PR Gate transition..."
@@ -60,6 +62,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-ogc-rc-workflows.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-ogc-rc-workflows.py
   run_fixture scripts/ci/fixtures/validate-testcontainer-images.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   run_fixture scripts/ci/fixtures/validate-heavy-runners.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
+  run_fixture scripts/ci/fixtures/test-affected-admission.py "${PYTHON_BIN}" scripts/ci/fixtures/test-affected-admission.py
   run_fixture scripts/ci/fixtures/validate-trunk-affected.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
   run_fixture scripts/ci/fixtures/validate-affected-ci-lanes.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-ci-lanes.py
   run_fixture scripts/ci/fixtures/validate-project-overlap.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-project-overlap.py
