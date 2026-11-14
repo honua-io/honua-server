@@ -11,6 +11,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -40,8 +41,18 @@ internal static class TwoHostFeatureHarness
         {
             configuration[key] = value;
         }
+        // Program chooses the realtime provider from builder.Configuration while it registers
+        // services, before app-configuration overrides are applied, so the settings also go in as
+        // host settings, the way HONUA_REGISTER_TEST_INFRASTRUCTURE reaches registration.
         return new WebAppFixture().UseKestrel()
             .WithTestLicense(HonuaEdition.Pro)
+            .ConfigureWebHost(builder =>
+            {
+                foreach (var (key, value) in configuration)
+                {
+                    builder.UseSetting(key, value);
+                }
+            })
             .OverrideConfiguration(configuration);
     }
 
