@@ -43,6 +43,10 @@ internal sealed class SharedCacheConfigurationDocumentationContributor(IOptionsM
                         "Emergency:Layers",
                         "Layers, named serviceId/layerId, forced to the emergency lifetime",
                         (string.Empty, string.Join(',', current.Emergency.Layers))),
+                    Property(
+                        "CacheTagHeader",
+                        "Response header the CDN reads cache tags from; when set, edits invalidate by tag instead of by path",
+                        (string.Empty, current.CacheTagHeader ?? string.Empty)),
                 ],
             },
         ];
@@ -53,6 +57,7 @@ internal sealed class SharedCacheConfigurationDocumentationContributor(IOptionsM
         new() { Name = "SharedCache__Tile__SharedMaxAgeSeconds", ConfigPath = "SharedCache.Tile", Description = "Seconds the CDN keeps a public tile", Default = "300", Required = false, Example = "600" },
         new() { Name = "SharedCache__Layers__{serviceId}/{layerId}__SharedMaxAgeSeconds", ConfigPath = "SharedCache.Layers", Description = "Seconds the CDN keeps responses for one layer", Default = "", Required = false, Example = "15" },
         new() { Name = "SharedCache__Emergency__AllPublicLayers", ConfigPath = "SharedCache.Emergency", Description = "Force the emergency lifetime on every public layer", Default = "false", Required = false, Example = "true" },
+        new() { Name = "SharedCache__CacheTagHeader", ConfigPath = "SharedCache.CacheTagHeader", Description = "Response header the CDN's cache-tag configuration reads; empty sends no tags", Default = "", Required = false, Example = "x-amz-meta-cache-tag" },
         new() { Name = "SharedCache__CloudFront__DistributionId", ConfigPath = "SharedCache.CloudFront", Description = "CloudFront distribution to invalidate when content changes", Default = "", Required = false, Example = "E2EXAMPLE123" },
     ];
 

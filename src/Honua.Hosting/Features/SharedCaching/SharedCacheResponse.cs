@@ -77,6 +77,20 @@ internal static class SharedCacheResponse
         var options = context.RequestServices.GetService<IOptionsMonitor<SharedCacheOptions>>()?.CurrentValue ?? ProductDefaults;
         context.Response.Headers.CacheControl = FormatCacheControl(context, cacheClass, options);
         AddMissingVary(context.Response, VaryFor(cacheClass));
+        if (options.CacheTagsEnabled && CdnCacheTags.ForResponse(Subject(context), context.Request.Path, context.Request.RouteValues["serviceId"]?.ToString())
+                is { Length: > 0 } tags)
+        {
+            context.Response.Headers[options.CacheTagHeader!] = string.Join(',', tags);
+        }
+    }
+
+    // A response that leaves as not shared must not name what it is about to a cache that will not store it.
+    internal static void RemoveCacheTags(HttpContext context)
+    {
+        if (context.RequestServices?.GetService<IOptionsMonitor<SharedCacheOptions>>()?.CurrentValue is { CacheTagsEnabled: true } options)
+        {
+            context.Response.Headers.Remove(options.CacheTagHeader!);
+        }
     }
 
     // The lifetime the CDN is given for this response, whether or not this request turns out to qualify for sharing.

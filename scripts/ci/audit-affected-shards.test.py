@@ -44,7 +44,7 @@ def red(shard="STAC"):
 
 class AuditTests(unittest.TestCase):
     def test_checked_in_reconciliation_counts_match_all_verdicts(self):
-        path = Path(__file__).resolve().parents[2] / "docs/ci/affected-shards-reconciliation-20261007.json"
+        path = Path(__file__).resolve().parents[2] / "eng/ci/fixtures/shard-promotion/reconciliation.json"
         reconciliation = json.loads(path.read_text())
         self.assertEqual(reconciliation["counts"],
                          dict(Counter(row["verdict"] for row in reconciliation["rows"])))

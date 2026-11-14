@@ -10,6 +10,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Metadata.Caching;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
@@ -163,6 +164,7 @@ internal static class ImageServerEndpoints
             .Produces(404);
 
         group.MapPost("/query", QueryCatalogPost)
+            .WithMetadata(ReadOnlyRequestMetadata.Instance)
             .WithDisplayName("Query Image Catalog (POST)")
             .WithName("QueryImageCatalogPost")
             .WithSummary("Query the raster catalog with where/objectIds filters via POST")
@@ -810,6 +812,7 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
         serviceGroup.MapPost("/query", QueryCatalogPostByService)
+            .WithMetadata(ReadOnlyRequestMetadata.Instance)
             .WithDisplayName("Query Image Catalog by Service (POST)")
             .WithName("QueryImageCatalogPostByService")
             .WithSummary("Query the raster catalog")

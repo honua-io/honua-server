@@ -201,13 +201,7 @@ internal static partial class RateLimitEndpoints
     {
         try
         {
-            var existing = await store.GetPolicyAsync(id, context.RequestAborted);
-            if (existing == null)
-            {
-                return TypedResults.NotFound(ApiResponse<object>.Failure("Rate limit policy not found"));
-            }
-
-            var updated = new RateLimitPolicy
+            var result = await store.UpdatePolicyAsync(id, existing => new RateLimitPolicy
             {
                 PolicyId = existing.PolicyId,
                 Name = request.Name ?? existing.Name,
@@ -220,9 +214,12 @@ internal static partial class RateLimitEndpoints
                 Enabled = request.Enabled ?? existing.Enabled,
                 CreatedAt = existing.CreatedAt,
                 UpdatedAt = DateTimeOffset.UtcNow,
-            };
+            }, context.RequestAborted);
+            if (result is null)
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure("Rate limit policy not found"));
+            }
 
-            var result = await store.UpdatePolicyAsync(updated, context.RequestAborted);
             return TypedResults.Ok(ApiResponse<RateLimitPolicyResponse>.CreateSuccess(ToResponse(result!)));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)

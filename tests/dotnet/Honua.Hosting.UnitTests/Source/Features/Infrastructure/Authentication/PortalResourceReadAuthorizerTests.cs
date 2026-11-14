@@ -8,6 +8,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Validation;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
@@ -38,6 +40,25 @@ public sealed class PortalResourceReadAuthorizerTests
         (await AccessPolicyHelpers.EvaluateResourceAccessAsync(harness.Context, harness.Resource,
             harness.Service, AuthorizationOperation.Query)).IsAllowed.Should().BeFalse();
         authorizer.Evaluate(harness.Context.User, harness.Resource, harness.Service).IsAllowed.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task LegacyMembership_SingleTenantUpgradePreservesAudienceOnlyForDisabledTenancy()
+    {
+        using var harness = await Harness.CreateAsync();
+        var tenant = new RequestTenantContext();
+        using var services = new ServiceCollection().AddSingleton<ITenantContext>(tenant).BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services, User = Principal("member") };
+        var accessor = new TestHttpContextAccessor { HttpContext = context };
+        var authorizer = new PortalResourceReadAuthorizer(harness.Groups, harness.Sharing, accessor, services);
+        authorizer.HasServiceAudience(context.User, harness.Service).Should().BeTrue();
+
+        await new TenantContextMiddleware(_ => Task.CompletedTask, Options.Create(new TenantContextOptions()),
+            NullLogger<TenantContextMiddleware>.Instance).InvokeAsync(context);
+        authorizer.HasServiceAudience(context.User, harness.Service).Should().BeTrue();
+
+        tenant.Set("public", TenantContextSource.Claim);
+        authorizer.HasServiceAudience(context.User, harness.Service).Should().BeFalse();
     }
 
     [UnitTest]

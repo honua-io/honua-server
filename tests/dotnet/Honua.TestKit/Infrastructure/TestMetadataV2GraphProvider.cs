@@ -88,6 +88,8 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
         return new(snapshot);
     }
 
+    public void ClearPendingActivation() => Volatile.Write(ref _activateAfterNextRead, null);
+
     /// <summary>
     /// Replaces the current graph immediately after the next current-snapshot read returns.
     /// Tests use this to reproduce metadata activation races deterministically.

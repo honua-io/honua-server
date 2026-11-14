@@ -24,7 +24,7 @@ internal sealed partial class StreamingFileImportService
     /// <summary>
     /// Stream features from source and insert into database in batches.
     /// </summary>
-    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked, IReadOnlyList<ImportTypedColumn> typedColumns)> ImportStreamingAsync(
+    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked, IReadOnlyList<ImportTypedColumn> typedColumns, int storedSrid)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
         SupportedFileFormat format,
@@ -66,7 +66,16 @@ internal sealed partial class StreamingFileImportService
                 cancellationToken);
 
             var target = await PrepareImportTargetAsync(
-                connection, request, targetSchema, allowedTableName, coordinateEpoch, cancellationToken);
+                connection, new ImportTargetOptions
+                {
+                    Request = request,
+                    Schema = targetSchema,
+                    Table = allowedTableName,
+                    SourceSrid = sourceSrid,
+                    CoordinateEpoch = coordinateEpoch
+                },
+                cancellationToken);
+            request = request with { TargetSrid = target.StorageSrid };
             var loadTableName = target.LoadTableName;
             var hadExistingTarget = target.HadExistingTarget;
             appendUsesStaging = target.AppendUsesStaging;
@@ -141,6 +150,11 @@ internal sealed partial class StreamingFileImportService
                     // reader's geometry factory carried (#6114). CSV is the exception: an EWKT/EWKB
                     // value already carries its own SRID, and stamping the 4326 default here stored
                     // projected coordinates as degrees (#6171). An explicit SourceSrid still wins.
+                    if (format is SupportedFileFormat.Csv or SupportedFileFormat.Wkt &&
+                        !request.SourceSrid.HasValue && HasConflictingSourceSrid(feature, sourceSrid))
+                    {
+                        throw new InvalidDataException(MixedSourceCrsMessage);
+                    }
                     if (feature.Geometry != null &&
                         ShouldApplyDetectedSourceSrid(format, request.SourceSrid, feature.Geometry.SRID))
                     {
@@ -160,7 +174,7 @@ internal sealed partial class StreamingFileImportService
                             loadTableName,
                             batch,
                             sourceSrid,
-                            request.TargetSrid,
+                            request.TargetSrid!.Value,
                             wkbWriter,
                             loadMode,
                             request.KeyColumns,
@@ -212,7 +226,7 @@ internal sealed partial class StreamingFileImportService
                         loadTableName,
                         batch,
                         sourceSrid,
-                        request.TargetSrid,
+                        request.TargetSrid!.Value,
                         wkbWriter,
                         loadMode,
                         request.KeyColumns,
@@ -272,7 +286,7 @@ internal sealed partial class StreamingFileImportService
                             allowedTableName,
                             totalImported,
                             request.CommitParticipant,
-                            request.TargetSrid,
+                            request.TargetSrid!.Value,
                             coordinateEpoch,
                             target.LiveIdentity,
                             CancellationToken.None);
@@ -294,7 +308,7 @@ internal sealed partial class StreamingFileImportService
                             loadTableName,
                             totalImported,
                             request.CommitParticipant,
-                            request.TargetSrid,
+                            request.TargetSrid!.Value,
                             coordinateEpoch,
                             target.LiveIdentity,
                             !hadExistingTarget,
@@ -429,7 +443,7 @@ internal sealed partial class StreamingFileImportService
                     CurrentPhase = "Import completed"
                 });
 
-                return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked, typedColumns);
+                return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked, typedColumns, request.TargetSrid!.Value);
             }
             catch when (directBatchAttempted)
             {

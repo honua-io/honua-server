@@ -5,7 +5,7 @@ inputs:
   dotnet-version:
     description: '.NET SDK version'
     required: false
-    default: '10.0.x'
+    default: '11.0.x'
   artifact-sdk-version:
     description: 'Exact SDK selected by the managed-artifact producer; isolates consumer SDK resolution'
     required: false

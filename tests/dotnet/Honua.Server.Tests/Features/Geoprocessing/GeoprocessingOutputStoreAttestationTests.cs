@@ -7,6 +7,8 @@ using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Health;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.FileStorage;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.HealthCheck;
@@ -15,8 +17,12 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -186,7 +192,7 @@ public sealed class GeoprocessingOutputStoreAttestationTests : IDisposable
 }
 
 [CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class GeoprocessingOutputStoreReadinessCollectionDefinition
+public sealed class GeoprocessingOutputStoreReadinessCollectionDefinition : ICollectionFixture<DatabaseFixtureAdapter>
 {
     // Host startup reads staging configuration from process environment variables, exactly
     // like the container topology; no other host may be built while they are set.
@@ -203,6 +209,12 @@ public sealed class GeoprocessingOutputStoreReadinessCollectionDefinition
 public sealed class GeoprocessingOutputStoreReadinessEndpointTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("honua-gp-readiness-").FullName;
+    private readonly DatabaseFixtureAdapter _database;
+
+    public GeoprocessingOutputStoreReadinessEndpointTests(DatabaseFixtureAdapter database)
+    {
+        _database = database;
+    }
 
     [IntegrationTest]
     [Operation(Operations.ReadinessCheck)]
@@ -233,7 +245,22 @@ public sealed class GeoprocessingOutputStoreReadinessEndpointTests : IDisposable
         // Its base policy stored the anonymous 200 readiness answer for the default 60 s, so
         // store loss stayed invisible to probes until the entry expired.
         configuration["Licensing:DevGrantEdition"] = "Pro";
-        using var factory = TestWebApplicationFactory.CreateForEnvironment(environmentName);
+        using var baseFactory = TestWebApplicationFactory.CreateForEnvironment(environmentName);
+        using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            // Shared configuration is refreshed before readiness in Development. Keep that
+            // middleware active and give this host its own pool over the collection's database.
+            services.RemoveAll<Npgsql.NpgsqlDataSource>();
+            services.AddSingleton(_ => Npgsql.NpgsqlDataSource.Create(_database.ConnectionString));
+            // Metadata itself remains test-owned so the probe isolates output-store health.
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(new MetadataV2Graph
+            {
+                Environment = environmentName,
+                Revision = 1,
+                GeneratedAt = DateTimeOffset.UtcNow
+            }));
+        }));
         using var client = CreateClientWithEnvironment(factory, configuration);
 
         var ready = await client.GetAsync("/healthz/ready");
@@ -273,7 +300,7 @@ public sealed class GeoprocessingOutputStoreReadinessEndpointTests : IDisposable
     }
 
     private static HttpClient CreateClientWithEnvironment(
-        TestWebApplicationFactory factory, IReadOnlyDictionary<string, string?> configuration)
+        WebApplicationFactory<Program> factory, IReadOnlyDictionary<string, string?> configuration)
     {
         var variables = configuration.ToDictionary(
             entry => entry.Key.Replace(":", "__", StringComparison.Ordinal), entry => entry.Value);

@@ -7,7 +7,6 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
-using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Startup;
@@ -24,38 +23,6 @@ namespace Honua.Server.Tests.Startup;
 public sealed class ImportExportTileOperationsRegistrationTests
 {
     [UnitTest]
-    public void AddTileOperations_WithRedisAndEvictionDisabled_RegistersLiveKeyIndex()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["TileOptions:Eviction:Enabled"] = "false",
-            })
-            .Build();
-
-        services.AddHonuaImportExportAndTileOperations(configuration);
-
-        var descriptor = services.Last(service => service.ServiceType == typeof(ITileCacheKeyIndex));
-        descriptor.ImplementationFactory.Should().NotBeNull();
-        descriptor.ImplementationInstance.Should().NotBe(NullTileCacheKeyIndex.Instance);
-    }
-
-    [UnitTest]
-    public void AddTileOperations_WithoutRedis_RegistersDisabledKeyIndex()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-
-        services.AddHonuaImportExportAndTileOperations(new ConfigurationBuilder().Build());
-
-        var descriptor = services.Last(service => service.ServiceType == typeof(ITileCacheKeyIndex));
-        descriptor.ImplementationInstance.Should().BeSameAs(NullTileCacheKeyIndex.Instance);
-    }
-
-    [UnitTest]
     public void AddTileOperations_WithoutSystemDatabase_ComposesNoSharedLeaseStore()
     {
         var services = new ServiceCollection();
@@ -67,34 +34,16 @@ public sealed class ImportExportTileOperationsRegistrationTests
         provider.GetService<ILeaseStore>().Should().BeNull();
     }
 
-    [UnitTest]
-    public void AddTileOperations_RedisEntitledWithScopedMetadataGraphProvider_ContainerValidates()
+    [UnitTheory]
+    [InlineData("durable")]
+    [InlineData("local")]
+    public void AddTileOperations_WithScopedMetadataGraphProvider_ContainerValidates(string substrate)
     {
-        var services = BuildProductionShapedServices(redisConfigured: true);
+        var services = BuildProductionShapedServices(substrate);
 
-        // Guard against the assertion below going vacuous: if the Redis gate ever stops registering
-        // ITileCacheJobService, this test would "pass" while covering nothing.
         services.Should().Contain(
             descriptor => descriptor.ServiceType == typeof(ITileCacheJobService),
-            "the Redis-configured shape is the one that registers the singleton under test");
-
-        ValidateContainer(services);
-    }
-
-    /// <summary>
-    /// The complementary half of the configuration matrix: without Redis the tile-cache job service
-    /// is never registered, and the module must still validate cleanly. Keeping both permutations
-    /// here documents that the Redis gate — not the metadata provider lifetime — is what decides
-    /// whether the offending descriptor exists.
-    /// </summary>
-    [UnitTest]
-    public void AddTileOperations_WithoutRedisAndScopedMetadataGraphProvider_ContainerValidates()
-    {
-        var services = BuildProductionShapedServices(redisConfigured: false);
-
-        services.Should().NotContain(
-            descriptor => descriptor.ServiceType == typeof(ITileCacheJobService),
-            "the batch submission service is gated on the Redis-backed execution-job substrate");
+            "tile operations always run as execution jobs, so the job service is always composed");
 
         ValidateContainer(services);
     }
@@ -105,7 +54,7 @@ public sealed class ImportExportTileOperationsRegistrationTests
     /// (<c>src/Honua.Db/Postgres/ServiceCollectionExtensions.cs</c>), unlike the singleton the
     /// file-backed <c>AddFileMetadataV2Graph</c> dev/test path registers.
     /// </summary>
-    private static ServiceCollection BuildProductionShapedServices(bool redisConfigured)
+    private static ServiceCollection BuildProductionShapedServices(string substrate)
     {
         var configuration = new ConfigurationBuilder().Build();
         var services = new ServiceCollection();
@@ -125,11 +74,8 @@ public sealed class ImportExportTileOperationsRegistrationTests
         services.AddScoped(_ => Substitute.For<ITenantContext>());
         services.AddSingleton(Substitute.For<IHostApplicationLifetime>());
 
-        if (redisConfigured)
+        if (substrate == "durable")
         {
-            services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
-
-            // Durable execution-job substrate, contributed alongside Redis by AddGeoprocessing.
             services.AddSingleton(Substitute.For<IExecutionJobStore>());
             services.AddSingleton(Substitute.For<IJobQueue>());
         }

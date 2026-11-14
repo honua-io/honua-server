@@ -80,7 +80,7 @@ public sealed class CdnInvalidationTransitionListenerTests
 
     private CdnInvalidationTransitionListener Listener()
         => new(
-            new CdnInvalidationService(_invalidator, TimeProvider.System, NullLogger<CdnInvalidationService>.Instance),
+            new CdnInvalidationService(_invalidator, NullLogger<CdnInvalidationService>.Instance),
             new ServiceCollection().AddSingleton(_store).BuildServiceProvider());
 
     private static WorkflowOperationTransition Transition(WorkflowOperationStatus status, WorkflowOperationTransitionKind kind)

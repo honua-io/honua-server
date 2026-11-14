@@ -16,16 +16,16 @@ Honua Server and Honua Collect are licensed under the Fair Core License, Version
 The first release uses the supported `Licensing__Mode=Disabled` setting, including in
 Production. No license file, signing key or license minting is required. All catalog
 entitlements are active, including GeoServices editing, Redis caching, geocoding and
-OIDC. License sources are not loaded or validated; capacity registration, metering,
-expiry notifications and license-driven operation cancellation are off. Uploads are
-rejected while this mode is active, and surge requests leave metering disabled.
+OIDC. License sources are not loaded or validated; expiry notifications and
+license-driven operation cancellation are off. Uploads are rejected while this mode
+is active.
 
 ```bash
 Licensing__Mode=Disabled
 ```
 
 Set the same mode on standalone GDAL workers; their job coordination still requires
-Redis, while licensing and capacity metering remain off. Restart each host after
+Redis, while licensing remains off. Restart each host after
 changing the mode. This explicit choice belongs in the
 deployment configuration: the server default remains `Licensing__Mode=Enabled`
 with Community when no edition or license source is configured. Honua's 2026.1
@@ -33,9 +33,8 @@ deployment surfaces select Disabled through their own configuration.
 
 The admin license endpoints (`GET /api/v1/admin/license` and `/status`) report
 `mode: disabled`, `edition: Unlicensed-2026.1`, `validationState: Disabled`, no expiry
-and no expiry warning. `/api/v1/admin/license/capacity` reports
-`meteringEnabled: false`, no registrations and no enforcement. The Console license
-status view displays the returned edition and validation state.
+and no expiry warning. The Console license status view displays the returned edition
+and validation state.
 
 Disabling licensing grants entitlements only. Authentication, authorization and
 tenant isolation still apply; features still require their runtime configuration
@@ -59,8 +58,8 @@ whole class. `Guardrails__Overrides__StudioDraftMutation=RequiresApproval` puts
 composition behind approval too. `DirectExecute` on that class removes the approval
 step from Studio publication and rollback; agent publication proposals keep theirs.
 
-Licensing bands, metering and marketplace integration are scheduled for hardening
-and re-enablement in 2026.2. The edition and signed-license behavior below applies
+Honua does not meter usage or capacity. A signed license that carries capacity terms
+is accepted and those terms are ignored. The edition and signed-license behavior below applies
 when `Licensing__Mode=Enabled`; it is not a license requirement for the 2026.1
 Disabled deployment posture.
 

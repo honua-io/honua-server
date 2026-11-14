@@ -64,13 +64,14 @@ def messages(outcome) -> list[str]:
     return [message for _, message in outcome["annotations"]]
 
 
-def write_passing_receipt(root: Path) -> tuple[Path, dict]:
+def write_passing_receipt(root: Path, shard: str = "Reporting") -> tuple[Path, dict]:
+    root.mkdir(parents=True, exist_ok=True)
     path = root / "control.trx"
     path.write_text('<TestRun><Results><UnitTestResult testName="control" outcome="Passed" />'
                     '</Results><ResultSummary><Counters total="1" executed="1" passed="1" '
                     'failed="0" /></ResultSummary></TestRun>')
-    measured = verdict.observe_execution(path, "Reporting", "control.csproj")
-    receipt = {**timing("Reporting"), "log_name": "control", "execution": measured}
+    measured = verdict.observe_execution(path, shard, "control.csproj")
+    receipt = {**timing(shard), "log_name": "control", "execution": measured}
     (root / "control.timing.json").write_text(json.dumps(receipt))
     return path, receipt
 
@@ -173,6 +174,56 @@ class AffectedShardVerdictTests(unittest.TestCase):
             outcome = decide(mode="enforce", timings=verdict._load_timings(root))
             self.assertIn("| Passed | Failed | Skipped | Executed |", outcome["summary"])
             self.assertIn("| 1 | 0 | 0 | 1 |", outcome["summary"])
+
+    def test_failed_jobs_rerun_counts_each_shard_newest_attempt(self) -> None:
+        # A failed-jobs rerun: attempt 1 was cancelled before any receipt, attempt 2
+        # re-ran it, and a shard attempt 2 did not repeat keeps its attempt-1 receipt.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pr-gate-affected-shard-packages-attempt-1").mkdir()
+            write_passing_receipt(root / "pr-gate-affected-shard-packages-attempt-2", "Packages")
+            write_passing_receipt(root / "pr-gate-affected-shard-studio-attempt-1", "Studio")
+            outcome = decide(mode="enforce", select_count="2", selected_shards=["Packages", "Studio"],
+                             timings=verdict._load_timings(root))
+            self.assertEqual(outcome["receipt"]["verdict"], "green", outcome["summary"])
+            self.assertEqual(outcome["exit_code"], 0)
+
+    def test_newer_failed_attempt_overrides_an_older_passing_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_passing_receipt(root / "pr-gate-affected-shard-reporting-attempt-1")
+            newer = root / "pr-gate-affected-shard-reporting-attempt-2"
+            _, receipt = write_passing_receipt(newer)
+            (newer / "control.timing.json").write_text(json.dumps({**receipt, "status": "failed"}))
+            outcome = decide(mode="enforce", timings=verdict._load_timings(root))
+            self.assertEqual(outcome["receipt"]["verdict"], "red")
+            self.assertEqual(outcome["exit_code"], 1)
+
+    def test_older_receipt_cannot_pass_when_the_newest_attempt_failed_without_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_passing_receipt(root / "pr-gate-affected-shard-reporting-attempt-1")
+            outcome = decide(mode="enforce", shards_result="failure", timings=verdict._load_timings(root))
+            self.assertEqual(outcome["exit_code"], 1)
+            self.assertFalse(outcome["receipt"]["test_pass"])
+
+    def test_shard_artifacts_are_named_per_attempt_and_not_merged(self) -> None:
+        import yaml
+
+        for filename, job_id, prefix in (
+            ("pr-gate.yml", "affected-shard", "pr-gate-affected-shard-"),
+            ("ci.yml", "server-tests", "server-test-results-"),
+        ):
+            with self.subTest(workflow=filename):
+                workflow = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text())
+                upload = next(step for step in workflow["jobs"][job_id]["steps"]
+                              if step.get("with", {}).get("name", "").startswith(prefix))
+                self.assertTrue(upload["with"]["name"].endswith("-attempt-${{ github.run_attempt }}"))
+                downloads = [step for job in workflow["jobs"].values() for step in job.get("steps", [])
+                             if step.get("with", {}).get("pattern") == f"{prefix}*"]
+                self.assertTrue(downloads)
+                for download in downloads:
+                    self.assertFalse(download["with"].get("merge-multiple", False))
 
     def test_every_shard_job_preserves_test_failure(self) -> None:
         import yaml
@@ -409,7 +460,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
         self.assertEqual(result["receipt"]["verdict"], "incomplete_receipts")
 
     def test_historical_report_disposition_remains_unpromoted(self) -> None:
-        record = json.loads((ROOT / "docs/ci/affected-shards-disposition-20261027.json").read_text())
+        record = json.loads((ROOT / "eng/ci/fixtures/shard-promotion/mode.json").read_text())
         self.assertEqual(record["approved_mode"], "report")
         self.assertFalse(record["promotion_ready"])
         self.assertFalse(record["configuration"]["protection_was_edited"])

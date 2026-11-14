@@ -24,4 +24,4 @@ The facts above come from the server's capability registry and capability matrix
 
 ## Documented in
 
-- [Data enrichment API](../../operator/data-enrichment.md)
+- [Data enrichment API](../../guides/operate/data-enrichment.md)

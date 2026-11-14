@@ -11,7 +11,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Middleware;
 
-// A tenant header is accepted only from a configured multi-tenant admin role; everyone else uses a claim, then the anonymous default.
+// Multi-tenant mode accepts header overrides only from configured admin roles.
 internal sealed class TenantContextMiddleware(
     RequestDelegate next,
     IOptions<TenantContextOptions> options,
@@ -47,20 +47,6 @@ internal sealed class TenantContextMiddleware(
             return;
         }
 
-        if (!_options.Enabled)
-        {
-            // Single-tenant mode deliberately has no effective tenant, but bearer
-            // audit and durable-job attribution must still use the validator-owned,
-            // issuer-qualified actor rather than falling back to a bare subject.
-            if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
-            {
-                CanonicalSecurityActor.StampRequestBinding(principal!, effectiveTenant: null);
-            }
-
-            await _next(context).ConfigureAwait(false);
-            return;
-        }
-
         // Resolve the per-request context object via DI so handlers see the same instance.
         var tenantContext = context.RequestServices.GetService<ITenantContext>() as RequestTenantContext;
         if (tenantContext is null)
@@ -88,6 +74,22 @@ internal sealed class TenantContextMiddleware(
 
             tenantContext.Set(frozenTenant, TenantContextSource.Claim);
             CanonicalSecurityActor.StampRequestBinding(principal, frozenTenant);
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
+        // Single-tenant deployments use the configured deployment tenant for every
+        // request. Provider directory claims and tenant headers do not select a tenant.
+        // Frozen replay/job bindings above remain authoritative in either mode.
+        if (!_options.Enabled)
+        {
+            var tenant = string.IsNullOrWhiteSpace(_options.DefaultTenantId) ? null : _options.DefaultTenantId;
+            tenantContext.SetSingleTenantDefault(tenant);
+            if (isAuthenticated)
+            {
+                CanonicalSecurityActor.StampRequestBinding(principal!, tenant);
+            }
+
             await _next(context).ConfigureAwait(false);
             return;
         }

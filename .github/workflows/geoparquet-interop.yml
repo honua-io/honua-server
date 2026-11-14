@@ -4,51 +4,42 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
+    # Parquet-named sources and tests, the format dispatch/detection/import
+    # entry points, the Python readers and the package graph. Shared build, host and protocol inputs run it
+    # in the twice-daily full CI (ci.yml `GeoParquet interop evidence`).
     paths:
       - '.github/workflows/geoparquet-interop.yml'
       - 'scripts/ci/check-geoparquet-interop.py'
       - 'tests/python/unit/test_geoparquet_report_output.py'
-      - '.github/actions/setup-dotnet-ci/**'
-      - 'Directory.Build.*'
-      - 'Directory.Packages.props'
-      - 'global.json'
-      - 'NuGet.config'
-      - 'src/Honua.Server/Honua.Server.csproj'
-      - 'src/Honua.Core/Core/Features/Metadata/**'
-      - 'src/Honua.Core/Abstractions/Features/Metadata/**'
-      - 'src/Honua.Core/Core/Features/Infrastructure/Crs/**'
-      - 'src/Honua.Protocols/OData/**'
-      - 'src/Honua.Protocols/GeoServices/FeatureServer/**'
-      - 'src/Honua.Import/Features/FileImport/**'
-      - 'src/Honua.Db/Postgres/Features/FileImport/**'
-      - 'src/Honua.Geometry/Features/FileImport/**'
       - 'tests/python/feature_server/test_geoparquet_interop.py'
       - 'tests/python/requirements.txt'
       - 'tests/python/pytest.ini'
       - 'tests/python/conftest.py'
       - 'tests/python/shared/**'
       - 'tests/seed/**'
-      - 'tests/dotnet/Honua.TestKit/**'
-      - 'tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj'
-      - 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
-      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj'
-      - 'tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataParquetFormatTests.cs'
-      - 'tests/dotnet/Honua.Server.Tests/Import/GeoParquetImportTests.cs'
-      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoParquetSdkInteropConformanceTests.cs'
-      - 'src/Honua.Hosting/Features/Services/GeoParquet*.cs'
-      - 'src/Honua.Core/Core/Configuration/GeoParquetLimits.cs'
-      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoParquetQueryFormatterTests.cs'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'NuGet.config'
+      - '**/*Parquet*'
+      - '**/*geoparquet*'
+      - 'tests/dotnet/Honua.Server.Tests/TestData/GeoParquet/**'
       - 'tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/Services/QueryFormatterTests.cs'
-      - 'tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj'
-      - 'tests/dotnet/Honua.Server.Tests/GeoParquetBudgetEndpointTests.cs'
+      # Format dispatch, PAR1 detection, streaming import and limits wiring.
+      - 'src/Honua.Protocols/GeoServices/FeatureServer/Services/QueryFormatters.cs'
+      - 'src/Honua.Core/Core/Features/FileImport/Services/FileFormatDetectionService.cs'
+      - 'src/Honua.Db/Postgres/Features/FileImport/StreamingFileImportService*'
+      - 'src/Honua.Core/Core/Configuration/LimitsOptions.cs'
   workflow_dispatch:
+  # The twice-daily full CI run calls this workflow, so shared inputs that
+  # the narrow PR paths no longer admit still execute it on trunk.
+  workflow_call:
 
 permissions:
   contents: read
   packages: read
 
 concurrency:
-  group: geoparquet-interop-${{ github.event.pull_request.number || github.ref }}
+  group: geoparquet-interop-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:

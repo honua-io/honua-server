@@ -139,7 +139,7 @@ internal static class McpPromptCatalog
             Template:
                 "You are scaffolding a {topic} dashboard for {audience}.\n"
                 + "Start from these layers if provided: {layers}.\n"
-                + "Select tools/list view \"configure\". You are an admin and finish the dashboard in this session.\n\n"
+                + "Select tools/list view \"setup\". You are an admin and finish the dashboard in this session.\n\n"
                 + "Drive the workflow with the honua MCP tools on that view:\n"
                 + "1. Call honua_list_layers to discover candidate layers and honua_query_features to validate their contents. "
                 + "Copy each returned studioSourceId into a composition layer.sourceId; choose a separate layer.id.\n"
@@ -191,7 +191,8 @@ internal static class McpPromptCatalog
                 + "(serviceName, allowAnonymous, allowAnonymousWrite). Secret create and rotate are not MCP tools.\n"
                 + "2. Verify access with honua_list_layers, honua_describe_layer and honua_query_features.\n"
                 + "3. Call honua_get_style and honua_apply_style_preset, then honua_render_map to preview the published data. This image does not verify a Studio composition.\n"
-                + "4. Call honua_studio_create_draft, edit it with honua_studio_update_draft, and compose it with "
+                + "4. Switch tools/list to view \"setup\" for Studio authoring. Call honua_studio_create_draft, "
+                + "edit it with honua_studio_update_draft, and compose it with "
                 + "honua_studio_add_layer, honua_studio_set_layer_style, honua_studio_set_layer_visibility, "
                 + "honua_studio_set_view, honua_studio_add_widget, honua_studio_add_control, and "
                 + "honua_studio_bind_interaction. Read it back with honua_studio_get_draft, and check it with "

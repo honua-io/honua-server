@@ -21,9 +21,13 @@ HEAVY_JOBS = {
 HOSTED_JOBS = {
     "pr-template-check", "pr-readiness", "supersede-trailing-runs", "changes", "targeted-shards",
     "producer-runner", "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
-    "merge-queue-gate", "ci-gate", "doctor-notify",
+    "merge-queue-gate", "ci-gate",
 }
-REUSABLE_JOBS = {"store-image-proofs": "./.github/workflows/store-image-size.yml"}
+REUSABLE_JOBS = {
+    "store-image-proofs": "./.github/workflows/store-image-size.yml",
+    "geoparquet-interop": "./.github/workflows/geoparquet-interop.yml",
+    "geoarrow-interop": "./.github/workflows/geoarrow-interop-fixture.yml",
+}
 PINNED_JOBS = {
     "worker-gdal-tests", "python-integration-tests", "js-integration-tests",
     "esri-leaflet-browser-tests", "maplibre-compat",

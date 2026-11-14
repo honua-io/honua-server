@@ -30,6 +30,35 @@
   ],
   "instruments": [
     {
+      "instrument": "honua_shared_cache_output_requests_total",
+      "kind": "Counter",
+      "unit": null,
+      "series": [
+        "honua_shared_cache_output_requests_total"
+      ],
+      "source": "src/Honua.Hosting/Features/SharedCaching/SharedCacheMetrics.cs"
+    },
+    {
+      "instrument": "honua_shared_cache_purge_requests_total",
+      "kind": "Counter",
+      "unit": null,
+      "series": [
+        "honua_shared_cache_purge_requests_total"
+      ],
+      "source": "src/Honua.Hosting/Features/SharedCaching/SharedCacheMetrics.cs"
+    },
+    {
+      "instrument": "honua_shared_cache_purge_duration_seconds",
+      "kind": "Histogram",
+      "unit": "s",
+      "series": [
+        "honua_shared_cache_purge_duration_seconds_bucket",
+        "honua_shared_cache_purge_duration_seconds_count",
+        "honua_shared_cache_purge_duration_seconds_sum"
+      ],
+      "source": "src/Honua.Hosting/Features/SharedCaching/SharedCacheMetrics.cs"
+    },
+    {
       "instrument": "honua.ogc.capabilities.omitted_layers",
       "kind": "Counter",
       "unit": null,
@@ -319,20 +348,6 @@
       "source": "src/Honua.ServiceDefaults/LambdaTelemetry.cs"
     },
     {
-      "instrument": "honua.license.capacity.registration_refusals",
-      "kind": "Counter",
-      "unit": "{registration}",
-      "series": ["honua_license_capacity_registration_refusals_total"],
-      "source": "src/Honua.Hosting/Features/Licensing/LicenseCapacityMeter.cs"
-    },
-    {
-      "instrument": "honua.license.capacity.surge_mode_changes",
-      "kind": "Counter",
-      "unit": "{change}",
-      "series": ["honua_license_capacity_surge_mode_changes_total"],
-      "source": "src/Honua.Hosting/Features/Licensing/LicenseCapacityMeter.cs"
-    },
-    {
       "instrument": "honua.mcp.boundary.rejection",
       "kind": "Counter",
       "unit": "{rejection}",
@@ -603,27 +618,6 @@
       "kind": "Counter",
       "unit": null,
       "series": ["honua_tile_archives_total"],
-      "source": "src/Honua.Server/Features/Admin/TileOperations/TileOperationMetrics.cs"
-    },
-    {
-      "instrument": "honua.tile.cache.bytes_released",
-      "kind": "Counter",
-      "unit": null,
-      "series": ["honua_tile_cache_bytes_released_total"],
-      "source": "src/Honua.Server/Features/Admin/TileOperations/TileOperationMetrics.cs"
-    },
-    {
-      "instrument": "honua.tile.cache.deleted",
-      "kind": "Counter",
-      "unit": null,
-      "series": ["honua_tile_cache_deleted_total"],
-      "source": "src/Honua.Server/Features/Admin/TileOperations/TileOperationMetrics.cs"
-    },
-    {
-      "instrument": "honua.tile.cache.expired",
-      "kind": "Counter",
-      "unit": null,
-      "series": ["honua_tile_cache_expired_total"],
       "source": "src/Honua.Server/Features/Admin/TileOperations/TileOperationMetrics.cs"
     },
     {

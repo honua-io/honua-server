@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Admin.TileOperations;
@@ -20,7 +22,7 @@ internal static class TileOperationMetrics
     public static readonly UpDownCounter<long> QueueDepth = HonuaTelemetry.Meter.CreateUpDownCounter<long>(
         "honua.tile.jobs.queue_depth",
         unit: null,
-        "Number of tile jobs waiting in queue.");
+        "Number of tile jobs submitted and not yet ended, summed across nodes.");
 
     public static readonly Counter<long> JobCount = HonuaTelemetry.Meter.CreateCounter<long>(
         "honua.tile.jobs.total",
@@ -57,20 +59,19 @@ internal static class TileOperationMetrics
         unit: null,
         "Number of tiles that failed to generate during tile-cache jobs.");
 
-    public static readonly Counter<long> TilesDeleted = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.tile.cache.deleted",
-        unit: null,
-        "Number of generated cache tiles deleted from the cloud tile store by bounded delete jobs.");
+    public static void RecordJobQueued(ExecutionJobRecord job)
+    {
+        if (job.Spec.Kind == ExecutionJobKind.TileCache)
+        {
+            QueueDepth.Add(1,
+                new TagList { { "operation", job.Spec.Parameters.GetValueOrDefault(TileCacheJobParameterKeys.Operation) ?? "unknown" } });
+        }
+    }
 
-    public static readonly Counter<long> TilesExpired = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.tile.cache.expired",
-        unit: null,
-        "Number of generated cache tiles marked stale by bounded expire jobs.");
-
-    public static readonly Counter<long> CacheBytesReleased = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.tile.cache.bytes_released",
-        unit: null,
-        "Bytes released from the generated tile cache by bounded expire/delete jobs.");
+    public static void RecordJobEnded(ExecutionJobRecord job)
+        => QueueDepth.Add(
+            -1,
+            new TagList { { "operation", job.Spec.Parameters.GetValueOrDefault(TileCacheJobParameterKeys.Operation) ?? "unknown" } });
 
     // Generated tile-cache serve-path hit/miss counters (honua.tile.cache.hits / .misses) are
     // owned by GeoServicesCloudTileCache, the single place every generated-cache read passes

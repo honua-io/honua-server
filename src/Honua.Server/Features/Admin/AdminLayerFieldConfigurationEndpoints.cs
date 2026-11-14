@@ -38,6 +38,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         _ = group.MapPut("/{storageLayerId:int}/fields", HandleUpdateLayerFields)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithName("UpdateAdminLayerFields")
             .WithSummary("Update persisted layer field aliases, coded-value domains, and visibility")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));

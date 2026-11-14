@@ -108,6 +108,39 @@ public sealed class CustomBuildProfileTests
     }
 
     [ArchitectureTest]
+    public void PostgisStoreProfile_ExcludesEventBrokerClientsUnlessRequested()
+    {
+        var hosting = ArchitectureTestHelpers.CombinePath("src", "Honua.Hosting", "Honua.Hosting.csproj");
+        string[] brokerPackages = ["Confluent.Kafka", "NATS.Net"];
+        string[] brokerClients = ["ConfluentKafkaEventProducer.cs", "NatsJetStreamEventProducer.cs"];
+
+        GetItemNames(hosting, "PackageReference", "Identity", "-p:HonuaStoreProfile=postgis")
+            .Should().NotContain(brokerPackages);
+        GetItemNames(hosting, "Compile", "Filename", "-p:HonuaStoreProfile=postgis")
+            .Select(name => name + ".cs").Should().NotContain(brokerClients);
+        GetMsBuildProperty("DefineConstants", "-p:HonuaStoreProfile=postgis")
+            .Should().Contain("HONUA_EXCLUDE_EVENT_BROKERS");
+
+        foreach (var arguments in new[]
+                 {
+                     new[] { "-p:HonuaStoreProfile=full" },
+                     new[] { "-p:HonuaStoreProfile=postgis", "-p:HonuaIncludeEventBrokers=true" }
+                 })
+        {
+            GetItemNames(hosting, "PackageReference", "Identity", arguments).Should().Contain(brokerPackages);
+            GetItemNames(hosting, "Compile", "Filename", arguments)
+                .Select(name => name + ".cs").Should().Contain(brokerClients);
+            GetMsBuildProperty("DefineConstants", arguments).Should().NotContain("HONUA_EXCLUDE_EVENT_BROKERS");
+        }
+
+        var registration = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+            ArchitectureTestHelpers.ResolveRepositoryRoot(),
+            "src", "Honua.Server", "Startup", "FeatureEventsAndStreamingRegistration.cs"));
+        registration.Should().Contain("throw EventBrokerNotIncluded(KafkaFeatureChangeEventSinkOptions.SectionName);");
+        registration.Should().Contain("throw EventBrokerNotIncluded(NatsFeatureChangeEventSinkOptions.SectionName);");
+    }
+
+    [ArchitectureTest]
     public void PostgisStoreProfile_AllModuleProfiles_DisablesOptionalStoreFlags()
     {
         foreach (var moduleProfile in new[] { "full", "no-cloud", "slim" })
@@ -244,16 +277,40 @@ public sealed class CustomBuildProfileTests
             .ToList();
     }
 
-    private static string RunMsBuild(string queryArgument, params string[] msbuildArguments)
+    private static List<string> GetItemNames(
+        string projectPath, string itemType, string metadata, params string[] msbuildArguments)
     {
-        var result = ExecuteMsBuild(queryArgument, msbuildArguments);
+        using var document = JsonDocument.Parse(RunMsBuildOn(projectPath, $"-getItem:{itemType}", msbuildArguments));
+        return document.RootElement
+            .GetProperty("Items")
+            .GetProperty(itemType)
+            .EnumerateArray()
+            .Select(element => element.GetProperty(metadata).GetString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .ToList();
+    }
+
+    private static string RunMsBuild(string queryArgument, params string[] msbuildArguments)
+        => RunMsBuildOn(ServerProjectPath, queryArgument, msbuildArguments);
+
+    private static string RunMsBuildOn(string projectPath, string queryArgument, params string[] msbuildArguments)
+    {
+        var result = ExecuteMsBuildOn(projectPath, queryArgument, msbuildArguments);
         result.ExitCode.Should().Be(0,
             "dotnet msbuild must evaluate custom build profiles successfully. stderr: {0}", result.Error);
         return result.Output;
     }
 
+    private static readonly string ServerProjectPath =
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Honua.Server.csproj");
+
     private static (int ExitCode, string Output, string Error) ExecuteMsBuild(
         string queryArgument, params string[] msbuildArguments)
+        => ExecuteMsBuildOn(ServerProjectPath, queryArgument, msbuildArguments);
+
+    private static (int ExitCode, string Output, string Error) ExecuteMsBuildOn(
+        string projectPath, string queryArgument, params string[] msbuildArguments)
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var startInfo = new ProcessStartInfo
@@ -265,7 +322,7 @@ public sealed class CustomBuildProfileTests
         };
 
         startInfo.ArgumentList.Add("msbuild");
-        startInfo.ArgumentList.Add(ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Honua.Server.csproj"));
+        startInfo.ArgumentList.Add(projectPath);
         startInfo.ArgumentList.Add("-nologo");
         startInfo.ArgumentList.Add("-v:q");
         startInfo.ArgumentList.Add(queryArgument);

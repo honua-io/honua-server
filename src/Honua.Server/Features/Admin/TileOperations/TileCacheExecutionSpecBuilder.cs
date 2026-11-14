@@ -14,13 +14,6 @@ internal static class TileCacheExecutionSpecBuilder
         TileOperationStartRequest request,
         string? schemaName,
         TileCacheBatchOptions options)
-        => Build(request, schemaName, tenantScope: null, options);
-
-    public static ExecutionJobSpec Build(
-        TileOperationStartRequest request,
-        string? schemaName,
-        string? tenantScope,
-        TileCacheBatchOptions options)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(options);
@@ -76,11 +69,6 @@ internal static class TileCacheExecutionSpecBuilder
             parameters[TileCacheJobParameterKeys.Style] = request.Style;
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Format))
-        {
-            parameters[TileCacheJobParameterKeys.Format] = request.Format;
-        }
-
         if (!string.IsNullOrWhiteSpace(request.TileCompression))
         {
             parameters[TileCacheJobParameterKeys.Compression] = request.TileCompression;
@@ -94,11 +82,6 @@ internal static class TileCacheExecutionSpecBuilder
         if (!string.IsNullOrWhiteSpace(schemaName))
         {
             parameters[TileCacheJobParameterKeys.SchemaName] = schemaName;
-        }
-
-        if (!string.IsNullOrWhiteSpace(tenantScope))
-        {
-            parameters[TileCacheJobParameterKeys.TenantScope] = tenantScope;
         }
 
         // Backend-specific coordinates (AWS Batch job-definition/queue ARNs,
@@ -129,20 +112,11 @@ internal static class TileCacheExecutionSpecBuilder
         out TileOperationStartRequest request,
         out string? schemaName,
         out string error)
-        => TryParse(parameters, out request, out schemaName, out _, out error);
-
-    public static bool TryParse(
-        IReadOnlyDictionary<string, string> parameters,
-        out TileOperationStartRequest request,
-        out string? schemaName,
-        out string? tenantScope,
-        out string error)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
         request = null!;
         schemaName = null;
-        tenantScope = null;
         error = string.Empty;
 
         if (!parameters.TryGetValue(TileCacheJobParameterKeys.Operation, out var operation)
@@ -231,7 +205,6 @@ internal static class TileCacheExecutionSpecBuilder
         parameters.TryGetValue(TileCacheJobParameterKeys.ServiceId, out var serviceId);
         parameters.TryGetValue(TileCacheJobParameterKeys.TileMatrixSetId, out var tileMatrixSetId);
         parameters.TryGetValue(TileCacheJobParameterKeys.Style, out var style);
-        parameters.TryGetValue(TileCacheJobParameterKeys.Format, out var format);
         parameters.TryGetValue(TileCacheJobParameterKeys.GenerationId, out var generationId);
         parameters.TryGetValue(TileCacheJobParameterKeys.Compression, out var tileCompression);
         if (!string.IsNullOrWhiteSpace(tileCompression) && !TileArchiveCompression.IsSupported(tileCompression))
@@ -246,12 +219,6 @@ internal static class TileCacheExecutionSpecBuilder
             schemaName = schema;
         }
 
-        if (parameters.TryGetValue(TileCacheJobParameterKeys.TenantScope, out var scope)
-            && !string.IsNullOrWhiteSpace(scope))
-        {
-            tenantScope = scope;
-        }
-
         var parsedRequest = new TileOperationStartRequest
         {
             Operation = operation,
@@ -263,7 +230,6 @@ internal static class TileCacheExecutionSpecBuilder
             Bbox = bbox,
             MaxTiles = maxTiles,
             Style = string.IsNullOrWhiteSpace(style) ? null : style,
-            Format = string.IsNullOrWhiteSpace(format) ? null : format,
             GenerationId = string.IsNullOrWhiteSpace(generationId) ? null : generationId,
             TileCompression = TileArchiveCompression.Normalize(tileCompression),
         };
@@ -296,9 +262,6 @@ internal static class TileCacheExecutionSpecBuilder
             Style = string.IsNullOrWhiteSpace(request.Style)
                 ? "default"
                 : request.Style.Trim(),
-            Format = string.IsNullOrWhiteSpace(request.Format)
-                ? null
-                : request.Format.Trim().ToLowerInvariant(),
             TileCompression = TileArchiveCompression.Normalize(request.TileCompression),
         };
     }
@@ -306,17 +269,17 @@ internal static class TileCacheExecutionSpecBuilder
     private static string NormalizeOperation(string? operation)
     {
         var normalized = operation?.Trim().ToLowerInvariant();
-        if (normalized is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish" or "expire" or "delete"))
+        if (normalized is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish"))
         {
             throw new ArgumentException(
-                "Operation must be one of: seed, warm, invalidate, purge, archive, publish, expire, delete.",
+                "Operation must be one of: seed, warm, invalidate, purge, archive, publish.",
                 nameof(operation));
         }
 
         return normalized;
     }
 
-    // Resolved layer sets for one grid and style share a coarse partition and exclusive lease so a service delete cannot race a layer seed.
+    // Resolved layer sets for one grid and style share a coarse partition and exclusive lease so overlapping jobs on one window never run at once.
     public static string BuildPartitionKey(
         TileOperationStartRequest request,
         IReadOnlyList<int>? resolvedLayerIds = null)

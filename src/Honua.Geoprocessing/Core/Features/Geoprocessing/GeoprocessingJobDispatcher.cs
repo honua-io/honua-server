@@ -496,7 +496,7 @@ internal sealed class GeoprocessingJobDispatcher
             return new(RemoteCancelOutcome.NotRemote);
         }
 
-        if (GeoprocessingJobService.IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
                 _progressStore, job, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -561,8 +561,7 @@ internal sealed class GeoprocessingJobDispatcher
 
         var stampedJob = stampResult.Job!;
         var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
-        var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, stampedJob, observation, cancellationToken).ConfigureAwait(false);
+        var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (stampedJob, observation), cancellationToken).ConfigureAwait(false);
 
         switch (applyResult.Outcome)
         {

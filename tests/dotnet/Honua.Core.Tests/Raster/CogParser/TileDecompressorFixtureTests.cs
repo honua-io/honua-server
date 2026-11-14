@@ -1,9 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.IO.Compression;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.IO;
 using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Xunit;
@@ -175,13 +177,13 @@ public class TileDecompressorFixtureTests
         }
 
         using var buffer = new MemoryStream();
-        using (var compressionStream = new ZstdSharp.CompressionStream(buffer))
+        using (var compressionStream = ZstdCodec.CreateCompressionStream(buffer, CompressionLevel.Optimal))
         {
             compressionStream.Write(raw, 0, raw.Length);
         }
 
         var framed = buffer.ToArray();
-        ZstdSharp.Decompressor.GetDecompressedSize(framed).Should().NotBe((ulong)raw.Length,
+        ZstdCodec.GetDecompressedBound(framed).Should().NotBe((ulong)raw.Length,
             "this test is only meaningful while the frame omits its content size");
 
         var (decoded, _) = TileDecompressor.Decompress(framed, "ZSTD");
@@ -196,8 +198,7 @@ public class TileDecompressorFixtureTests
         // The declared size is attacker-controlled file content; it must be bounds-checked
         // against the ceiling rather than trusted as an allocation size.
         var raw = new byte[64 * 1024];
-        using var compressor = new ZstdSharp.Compressor();
-        var framed = compressor.Wrap(raw).ToArray();
+        var framed = ZstdCodec.Compress(raw, CompressionLevel.Optimal);
 
         var act = () => TileDecompressor.Decompress(framed, "ZSTD", maxDecompressedBytes: 1024);
 

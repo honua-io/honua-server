@@ -18,7 +18,7 @@ internal static partial class ExecutionJobSubmissionHelper
     // and the background sweep repair it after a cancelled request or process loss.
     public static bool NeedsLocalDispatchRepair(ExecutionJobRecord job)
         => job.Status == ExecutionJobStatus.Queued
-            && job.Spec.Kind == ExecutionJobKind.Geoprocessing
+            && job.Spec.Kind is ExecutionJobKind.Geoprocessing or ExecutionJobKind.Export or ExecutionJobKind.TileCache
             && job.AttemptCount == 0
             && job.ClaimedBy == null
             && !job.CancellationRequestedAt.HasValue
@@ -136,7 +136,7 @@ internal static partial class ExecutionJobSubmissionHelper
             Version = provisioning.Version + 1,
             Status = submission.Status,
             UpdatedAt = now,
-            CompletedAt = ExecutionJobReconciler.IsTerminal(submission.Status) ? now : provisioning.CompletedAt,
+            CompletedAt = submission.Status.IsTerminal() ? now : provisioning.CompletedAt,
             ProviderOperationId = submission.ProviderOperationId ?? provisioning.ProviderOperationId,
             CurrentPhase = submission.Message ?? provisioning.CurrentPhase,
             ErrorMessage = submission.Status == ExecutionJobStatus.Failed
@@ -186,7 +186,7 @@ internal static partial class ExecutionJobSubmissionHelper
         ILogger? logger = null,
         CancellationToken cancellationToken = default)
     {
-        if (!ExecutionJobReconciler.IsTerminal(job.Status))
+        if (!job.Status.IsTerminal())
         {
             return Task.CompletedTask;
         }
@@ -268,7 +268,7 @@ internal static partial class ExecutionJobSubmissionHelper
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             current = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (current == null || ExecutionJobReconciler.IsTerminal(current.Status))
+            if (current == null || current.Status.IsTerminal())
             {
                 return current;
             }

@@ -29,7 +29,6 @@ public class LicenseUploadResponseTests
             .Returns(new LicenseUploadResult(true, message));
         provider.GetCurrentStatus().Returns(new LicenseStatus(
             HonuaEdition.Enterprise, true, DateTimeOffset.UtcNow.AddDays(30), "Test operator"));
-        var capacity = Substitute.For<ILicenseCapacityMeter>();
         using var body = new MemoryStream([1, 2, 3]);
         var context = new DefaultHttpContext();
         context.Request.Body = body;
@@ -39,7 +38,7 @@ public class LicenseUploadResponseTests
         Assert.NotNull(handler);
         var task = Assert.IsType<Task<Results<Ok<ApiResponse<LicenseStatusResponse>>,
             BadRequest<ApiResponse<object>>, ProblemHttpResult>>>(handler.Invoke(null,
-            [provider, capacity, Options.Create(new LicenseOptions()),
+            [provider, Options.Create(new LicenseOptions()),
                 NullLogger<LicenseEndpoints.LicenseEndpointsLog>.Instance, context]), exactMatch: false);
         var result = await task;
         var response = Assert.IsType<Ok<ApiResponse<LicenseStatusResponse>>>(result.Result);

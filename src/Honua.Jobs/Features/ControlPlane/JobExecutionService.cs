@@ -343,7 +343,7 @@ internal sealed partial class JobExecutionService(
         using var timeoutCts = new CancellationTokenSource(timeoutPolicy.MaxDuration);
         var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
         using var jobCts = cancellationTokens.CreateLinkedTokenSource(
-            operationId, workerId, stoppingToken, timeoutCts.Token, licenseCancellation);
+            operationId, (workerId, job.AttemptCount), stoppingToken, timeoutCts.Token, licenseCancellation);
 
         // Re-read before promoting to Running to catch cancellations that arrived
         // after the claim but before the worker registered its CTS.
@@ -362,7 +362,7 @@ internal sealed partial class JobExecutionService(
 
             // Only remove the queue entry for terminal jobs. Requeued or reclaimed
             // jobs have a queue entry that belongs to the new attempt.
-            if (IsTerminal(job.Status))
+            if (job.Status.IsTerminal())
             {
                 await jobQueue.RemoveAsync(operationId, stoppingToken).ConfigureAwait(false);
             }
@@ -1357,11 +1357,6 @@ internal sealed partial class JobExecutionService(
         => job.Status is not (ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running)
            || job.ClaimedBy != workerId;
 
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
-
     internal static string GenerateWorkerId()
         => GenerateWorkerId(Environment.MachineName, Guid.NewGuid());
 
@@ -1625,7 +1620,9 @@ internal sealed partial class JobExecutionContext(
                 {
                     refs = [.. job.ArtifactReferences];
                 }
-                if (!appended && !committedEffect)
+                var cleanup = job.CleanupArtifactReferences;
+                var ownsCleanup = cleanup.Contains(artifactReference, StringComparer.Ordinal);
+                if (!appended && !committedEffect && ownsCleanup)
                 {
                     // Identical publication already durable — retried publish is a no-op.
                     return true;
@@ -1634,6 +1631,7 @@ internal sealed partial class JobExecutionContext(
                 var updated = job with
                 {
                     ArtifactReferences = refs,
+                    CleanupArtifactReferences = committedEffect || ownsCleanup ? cleanup : [.. cleanup, artifactReference],
                     CommittedEffectReferences = committedEffect ? [.. effects, artifactReference] : effects,
                     UpdatedAt = DateTimeOffset.UtcNow,
                     LastHeartbeatAt = DateTimeOffset.UtcNow

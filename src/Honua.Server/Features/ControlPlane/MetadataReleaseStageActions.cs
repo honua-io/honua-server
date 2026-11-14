@@ -149,7 +149,7 @@ internal sealed class MetadataReleaseDataJobDispatcher(
                 ?? throw new InvalidOperationException(
                     $"Data-populate job '{jobOperationId}' was not found in the execution-job store after enqueue.");
 
-            if (IsTerminal(current.Status))
+            if (current.Status.IsTerminal())
             {
                 return current.Status switch
                 {
@@ -168,8 +168,6 @@ internal sealed class MetadataReleaseDataJobDispatcher(
         }
     }
 
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 }
 
 internal sealed class MetadataReleaseActivator(IServiceScopeFactory scopeFactory) : IMetadataReleaseActivator

@@ -18,17 +18,6 @@ public sealed class TileOptions
     public int TileBuffer { get; set; } = 256;
 
     public int MetatileFactor { get; set; } = 1;
-
-    public TileCacheEvictionOptions Eviction { get; set; } = new();
-}
-
-public sealed class TileCacheEvictionOptions
-{
-    public bool Enabled { get; set; }
-
-    public long? MaxEntries { get; set; }
-
-    public long? MaxBytes { get; set; }
 }
 
 public sealed class TilesetCacheLifecycle

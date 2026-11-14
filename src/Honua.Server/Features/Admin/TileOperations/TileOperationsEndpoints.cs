@@ -4,10 +4,8 @@
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Progress;
+using Honua.Infrastructure.Security;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Tiles;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -21,7 +19,7 @@ internal static class TileOperationsEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Tile Operations")
-            .WithDescription("Tile cache seed/warm/invalidate/purge/archive/publish/expire/delete job control")
+            .WithDescription("Tile cache seed/warm/invalidate/purge/archive/publish job control")
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/jobs", HandleStartJob)
@@ -48,146 +46,12 @@ internal static class TileOperationsEndpoints
             .WithName("RetryTileOperationJob")
             .WithSummary("Retry tile operation job")
             .WithDescription("Queues a retry of a failed or cancelled tile operation job");
-
-        _ = group.MapPost("/evict", HandleEvict)
-            .WithName("EvictTileCache")
-            .WithSummary("Run a tile-cache eviction sweep")
-            .WithDescription("Triggers a synchronous size-quota / LRU eviction sweep over the live Redis tile-key index, dropping least-recently-used tiles that exceed the configured TileOptions:Eviction quota (#1917)");
-
-        _ = group.MapGet("/cache/inventory", HandleCacheInventory)
-            .WithName("GetTileCacheInventory")
-            .WithSummary("Inventory the generated tile cache")
-            .WithDescription("Returns the tracked entry count, total bytes, and per-zoom coverage of the generated tile cache, optionally scoped to a serviceId and/or gridset (#2661)");
-    }
-
-    private static async Task<IResult> HandleCacheInventory(
-        HttpContext context,
-        [FromServices] ITileCacheKeyIndex keyIndex,
-        [FromServices] IMetadataV2GraphProvider graphProvider,
-        [FromQuery] string? serviceId = null,
-        [FromQuery] string? gridset = null,
-        CancellationToken cancellationToken = default)
-    {
-        // Resolve the optional service filter to its publications so service-local layer indices
-        // cannot make inventory include another service's cache entries.
-        HashSet<int>? layerFilter = null;
-        HashSet<string>? publicationScopeFilter = null;
-        if (!string.IsNullOrWhiteSpace(serviceId))
-        {
-            var target = await TileCacheTargetResolver.ResolveAsync(
-                new TileOperationStartRequest { Operation = "inventory", ServiceId = serviceId },
-                graphProvider,
-                cancellationToken).ConfigureAwait(false);
-            layerFilter = [.. target.LayerIds];
-            publicationScopeFilter = target.PublicationIds
-                .Select(TileCachePublicationScope.Create)
-                .ToHashSet(StringComparer.Ordinal);
-        }
-
-        var gridsetFilter = string.IsNullOrWhiteSpace(gridset) ? null : GeneratedTileCacheKey.Sanitize(gridset);
-        var tenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
-
-        var perZoom = new SortedDictionary<int, (int Count, long Bytes)>();
-        var totalCount = 0;
-        var totalBytes = 0L;
-        if (keyIndex.IsEnabled)
-        {
-            await foreach (var page in keyIndex.ReadPagesAsync(1_000, cancellationToken).ConfigureAwait(false))
-            {
-                if (!page.IsAvailable)
-                {
-                    return Results.Problem(
-                        title: "Tile cache index unavailable",
-                        detail: "The tile cache inventory cannot be read while its backing index is unavailable.",
-                        statusCode: StatusCodes.Status503ServiceUnavailable);
-                }
-
-                foreach (var entry in page.Entries)
-                {
-                    if (!string.Equals(entry.TenantScope, tenantScope, StringComparison.Ordinal)
-                        || !GeneratedTileCacheKey.TryParse(entry.Key, out var parsed))
-                    {
-                        continue;
-                    }
-
-                    if (layerFilter is not null && !layerFilter.Contains(parsed.LayerId))
-                    {
-                        continue;
-                    }
-
-                    if (publicationScopeFilter is not null
-                        && (parsed.PublicationScope is null
-                            || !publicationScopeFilter.Contains(parsed.PublicationScope)))
-                    {
-                        continue;
-                    }
-
-                    if (gridsetFilter is not null &&
-                        !string.Equals(parsed.Gridset, gridsetFilter, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    totalCount++;
-                    totalBytes += entry.SizeBytes;
-                    var existing = perZoom.TryGetValue(parsed.Z, out var value) ? value : (0, 0L);
-                    perZoom[parsed.Z] = (existing.Item1 + 1, existing.Item2 + entry.SizeBytes);
-                }
-            }
-        }
-
-        var response = new TileCacheInventoryResponse
-        {
-            Enabled = keyIndex.IsEnabled,
-            ServiceId = serviceId,
-            Gridset = gridset,
-            EntryCount = totalCount,
-            TotalBytes = totalBytes,
-            PerZoom = [.. perZoom.Select(kvp => new TileCacheZoomCoverage
-            {
-                Zoom = kvp.Key,
-                Count = kvp.Value.Count,
-                Bytes = kvp.Value.Bytes
-            })]
-        };
-
-        return Results.Json(response, TileOperationsJsonContext.Default.TileCacheInventoryResponse);
-    }
-
-    private static async Task<IResult> HandleEvict(
-        HttpContext context,
-        [FromServices] TileCacheEvictionService evictionService,
-        CancellationToken cancellationToken)
-    {
-        var result = await evictionService.SweepAsync(cancellationToken).ConfigureAwait(false);
-        if (result.Enabled && !result.IndexAvailable)
-        {
-            return Results.Problem(
-                title: "Tile cache index unavailable",
-                detail: "The tile-cache eviction sweep could not read its backing index; no tiles were evicted.",
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
-
-        var response = new TileCacheEvictionResponse
-        {
-            Enabled = result.Enabled,
-            Scanned = result.Scanned,
-            Evicted = result.Evicted,
-            Message = result.Enabled
-                ? $"Evicted {result.Evicted} of {result.Scanned} tracked tile(s)."
-                : "Tile-cache eviction is disabled (set TileOptions:Eviction:Enabled with a Redis backend to enable)."
-        };
-
-        return Results.Json(
-            response,
-            TileOperationsJsonContext.Default.TileCacheEvictionResponse,
-            statusCode: StatusCodes.Status200OK);
     }
 
     private static async Task<Results<JsonHttpResult<TileOperationStartResponse>, JsonHttpResult<ProblemDetailsResponse>>> HandleStartJob(
         TileOperationStartRequest request,
         HttpContext context,
-        [FromServices] ITileOperationJobService jobService,
+        [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
         var validationError = ValidateStartRequest(context, request);
@@ -203,15 +67,12 @@ internal static class TileOperationsEndpoints
         try
         {
             var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
-            var tenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
 
-            // Config-driven dispatch: when a batch backend is configured (issue #1697)
-            // submit through the execution-job → batch path; otherwise fall back to the
-            // in-process channel worker, preserving the default single-pod behavior.
-            var batchService = context.RequestServices.GetService<ITileCacheJobService>();
-            var jobId = batchService is { IsEnabled: true }
-                ? await batchService.SubmitAsync(request, schemaName, tenantScope, cancellationToken).ConfigureAwait(false)
-                : await jobService.StartAsync(request, schemaName, tenantScope, cancellationToken).ConfigureAwait(false);
+            var submission = new TileOperationSubmission(
+                request,
+                JobOwnershipSecurity.ResolveOwner(context.User),
+                schemaName);
+            var jobId = await jobService.SubmitAsync(submission, cancellationToken).ConfigureAwait(false);
             var response = new TileOperationStartResponse
             {
                 JobId = jobId,
@@ -233,12 +94,23 @@ internal static class TileOperationsEndpoints
                 statusCode: StatusCodes.Status400BadRequest,
                 contentType: ProblemDetailsHelpers.ContentType);
         }
+        catch (InvalidOperationException ex) when (string.Equals(
+            ex.Message,
+            TileCacheJobService.JobStoreUnavailableMessage,
+            StringComparison.Ordinal))
+        {
+            return TypedResults.Json(
+                ProblemDetailsHelpers.CreateAdminProblemDetails(context, StatusCodes.Status503ServiceUnavailable, ex.Message),
+                ProblemJsonContext.Default.ProblemDetailsResponse,
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                contentType: ProblemDetailsHelpers.ContentType);
+        }
     }
 
     private static async Task<IResult> HandleGetJobStatus(
         string jobId,
         HttpContext context,
-        [FromServices] ITileOperationJobService jobService,
+        [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(jobId))
@@ -256,11 +128,11 @@ internal static class TileOperationsEndpoints
     }
 
     private static async Task<IResult> HandleListJobs(
-        [FromServices] ITileOperationJobService jobService,
+        [FromServices] ITileCacheJobService jobService,
         bool activeOnly = true,
         CancellationToken cancellationToken = default)
     {
-        var jobs = await jobService.ListAsync(activeOnly, cancellationToken).ConfigureAwait(false);
+        var jobs = await jobService.ListAsync(activeOnly ? TileOperationListScope.Active : TileOperationListScope.All, cancellationToken).ConfigureAwait(false);
         var response = new TileOperationListResponse
         {
             Jobs = jobs.ToArray(),
@@ -273,7 +145,7 @@ internal static class TileOperationsEndpoints
     private static async Task<IResult> HandleCancelJob(
         string jobId,
         HttpContext context,
-        [FromServices] ITileOperationJobService jobService,
+        [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
         var progress = await jobService.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -282,17 +154,7 @@ internal static class TileOperationsEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Tile job '{jobId}' not found.");
         }
 
-        // Batch-dispatched jobs are owned by the execution-job substrate, not the
-        // in-process channel; route cancellation through the batch service first when
-        // enabled, then fall back to the in-process token-signal path.
-        var batchService = context.RequestServices.GetService<ITileCacheJobService>();
-        var cancelled = batchService is { IsEnabled: true }
-            && await batchService.CancelAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (!cancelled)
-        {
-            cancelled = await jobService.CancelAsync(jobId, cancellationToken).ConfigureAwait(false);
-        }
-
+        var cancelled = await jobService.CancelAsync(jobId, cancellationToken).ConfigureAwait(false);
         if (!cancelled)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Tile job cannot be cancelled in its current state.");
@@ -309,10 +171,10 @@ internal static class TileOperationsEndpoints
     private static async Task<IResult> HandleRetryJob(
         string jobId,
         HttpContext context,
-        [FromServices] ITileOperationJobService jobService,
+        [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
-        var retryJobId = await jobService.RetryAsync(jobId, cancellationToken).ConfigureAwait(false);
+        var retryJobId = await jobService.RetryAsync(jobId, JobOwnershipSecurity.ResolveOwner(context.User), cancellationToken).ConfigureAwait(false);
         if (retryJobId == null)
         {
             return StandardErrorHelpers.CreateBadRequest(
@@ -418,41 +280,8 @@ internal static class TileOperationsEndpoints
                 "Publish operations require 'layerId'.");
         }
 
-        if (operation is "expire" or "delete" && !request.LayerId.HasValue && string.IsNullOrWhiteSpace(request.ServiceId))
-        {
-            return ProblemDetailsHelpers.CreateAdminProblemDetails(
-                context,
-                StatusCodes.Status400BadRequest,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Expire/delete operations require either 'layerId' or 'serviceId'.");
-        }
-
         return null;
     }
-}
-
-internal sealed record TileCacheInventoryResponse
-{
-    public required bool Enabled { get; init; }
-
-    public string? ServiceId { get; init; }
-
-    public string? Gridset { get; init; }
-
-    public required int EntryCount { get; init; }
-
-    public required long TotalBytes { get; init; }
-
-    public required IReadOnlyList<TileCacheZoomCoverage> PerZoom { get; init; }
-}
-
-internal sealed record TileCacheZoomCoverage
-{
-    public required int Zoom { get; init; }
-
-    public required int Count { get; init; }
-
-    public required long Bytes { get; init; }
 }
 
 internal sealed record TileOperationStartResponse
@@ -482,28 +311,14 @@ internal sealed record TileOperationListResponse
     public required int TotalCount { get; init; }
 }
 
-internal sealed record TileCacheEvictionResponse
-{
-    public required bool Enabled { get; init; }
-
-    public required int Scanned { get; init; }
-
-    public required int Evicted { get; init; }
-
-    public required string Message { get; init; }
-}
-
 [System.Text.Json.Serialization.JsonSourceGenerationOptions(System.Text.Json.JsonSerializerDefaults.General)]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationStartRequest))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(PersistedTileOperationRequest))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress[]))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationStartResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationCancelResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationRetryResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationListResponse))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(TileCacheEvictionResponse))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(TileCacheInventoryResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(Honua.Core.Features.Tiles.PMTiles.PMTilesArtifactDescriptor))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(Honua.Core.Features.Tiles.PMTiles.PMTilesUrlStrategy))]
 internal sealed partial class TileOperationsJsonContext : System.Text.Json.Serialization.JsonSerializerContext

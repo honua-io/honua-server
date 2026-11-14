@@ -18,7 +18,7 @@ Ingest CityGML building models into a servable Building Scene Layer 3D Tiles til
 | Edition | Enterprise |
 | Surface maturity | 1 experimental |
 | Registry entries | 1 |
-| Proving tests | 6 |
+| Proving tests | 7 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

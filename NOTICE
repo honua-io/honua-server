@@ -8,9 +8,8 @@ it available.
 
 License key functionality. For the purposes of the Limitations clause of the
 license, the "license key functionality" of this Software includes the signed
-license envelope and its validation, edition and entitlement gating, and
-capacity registration, metering and enforcement (the Licensing feature and the
-code paths it protects).
+license envelope and its validation, and edition and entitlement gating (the
+Licensing feature and the code paths it protects).
 
 Prior releases. Versions published before this notice were made available
 under the Elastic License 2.0 and remain under that license.

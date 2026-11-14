@@ -10,7 +10,7 @@ namespace Honua.ControlPlane;
 
 // Execution jobs in PostgreSQL (ADR-0081). Every statement is its own transaction and every
 // expiry and stamp uses the database clock.
-internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJobStoreClock, IReconcilableJobSource, IAdmissionSubmissionCounter
+internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJobStoreClock, IReconcilableJobSource, IAdmissionSubmissionCounter, IBoundedExecutionJobStore
 {
     // A compare-and-set write turns a timestamp the writer changed into the database time and
     // keeps one the writer left as it read it. A job written back to Queued after a local worker
@@ -281,7 +281,7 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
             : TimeSpan.Zero;
 
     private static NpgsqlParameter IsTerminalParameter(ExecutionJobRecord job)
-        => new("is_terminal", NpgsqlDbType.Boolean) { Value = ExecutionJobRow.IsTerminal(job.Status) };
+        => new("is_terminal", NpgsqlDbType.Boolean) { Value = job.Status.IsTerminal() };
 
     private NpgsqlParameter RetentionParameter(TimeSpan? ttl)
         => new("retention", NpgsqlDbType.Interval) { Value = ttl ?? _options.JobRetention };

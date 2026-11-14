@@ -84,6 +84,23 @@ public sealed class WellKnownCrsRegistry : ICrsRegistry
     public async ValueTask<bool> IsSridSupportedAsync(int srid, CancellationToken cancellationToken = default)
         => (await ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false)).HasValue;
 
+    public ValueTask<CoordinateSystemSearchResult> SearchAsync(string query, int limit, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var search = CoordinateSystemSearchQuery.Parse(query, limit);
+        var exactCode = search.ExactCode;
+        query = search.Text;
+        var items = new[] { _epsg4326Definition, _epsg3857Definition }
+            .Select(CoordinateSystemEntry.FromDefinition)
+            .OfType<CoordinateSystemEntry>()
+            .Where(entry => entry.Code == exactCode || entry.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(entry => entry.Code == exactCode)
+            .ThenBy(entry => entry.Name, StringComparer.Ordinal)
+            .ThenBy(entry => entry.Code)
+            .ToArray();
+        return ValueTask.FromResult(new CoordinateSystemSearchResult { Items = items.Take(limit).ToArray(), HasMore = items.Length > limit });
+    }
+
     private static string Normalize(string crsIdentifier)
     {
         var trimmed = crsIdentifier.Trim();

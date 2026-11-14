@@ -52,12 +52,18 @@ internal sealed partial class TileOperationExecutionCore
         _checkpointStore = checkpointStore;
     }
 
+    internal Func<TileOperationProgress, CancellationToken, Task>? ProgressWriter { private get; init; }
+
+    private Task WriteProgressAsync(TileOperationProgress progress, CancellationToken cancellationToken)
+        => ProgressWriter != null
+            ? ProgressWriter(progress, cancellationToken)
+            : _progressStore.SetProgressAsync(progress.JobId, progress, ProgressRetention, cancellationToken);
+
     public async Task<TileOperationProgress> ExecuteAsync(
         TileOperationProgress started,
         TileOperationStartRequest request,
         IServiceProvider serviceProvider,
-        CancellationToken cancellationToken,
-        string? tenantScope = null)
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(started);
         ArgumentNullException.ThrowIfNull(request);
@@ -76,8 +82,6 @@ internal sealed partial class TileOperationExecutionCore
             "purge" => await ExecuteInvalidationAsync(started, request, graphProvider, cancellationToken).ConfigureAwait(false),
             "archive" => await ExecuteArchiveAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
             "publish" => await ExecutePublishAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
-            "expire" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: false, graphProvider, serviceProvider, tenantScope, cancellationToken).ConfigureAwait(false),
-            "delete" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: true, graphProvider, serviceProvider, tenantScope, cancellationToken).ConfigureAwait(false),
             _ => started with
             {
                 Status = OperationStatus.Failed,
@@ -199,7 +203,7 @@ internal sealed partial class TileOperationExecutionCore
             SuccessfulTiles = successful,
             CurrentPhase = phase
         };
-        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
 
         if (checkpoint is not null)
         {
@@ -260,7 +264,7 @@ internal sealed partial class TileOperationExecutionCore
                         Warnings = warningList.ToArray(),
                         CurrentPhase = $"{phase} ({processed}/{total})"
                     };
-                    await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                    await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -434,7 +438,7 @@ internal sealed partial class TileOperationExecutionCore
         await using var archiveStream = build.ArchiveStream!;
 
         var current = build.Progress with { CurrentPhase = "Uploading archive" };
-        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
 
         var cloudStorage = serviceProvider.GetService<ICloudFileStorage>();
         if (cloudStorage == null)
@@ -604,7 +608,7 @@ internal sealed partial class TileOperationExecutionCore
             request.TileMatrixSetId);
 
         var current = build.Progress with { CurrentPhase = "Uploading durable PMTiles artifact" };
-        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
         TileOperationLog.PublishUploadStart(_logger, current.JobId, objectKey);
 
         var keyAlreadyExisted = await cloudStorage.ExistsAsync(objectKey, cancellationToken).ConfigureAwait(false);
@@ -766,7 +770,7 @@ internal sealed partial class TileOperationExecutionCore
             TileCompression = TileArchiveCompression.ToWireValue(tileCompression),
             CurrentPhase = $"Generating tiles for {operationName}"
         };
-        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
 
         var writer = new PMTilesWriter(tileCompression: tileCompression);
         foreach (var coordinate in tileCoordinates)
@@ -812,7 +816,7 @@ internal sealed partial class TileOperationExecutionCore
                     Warnings = warningList.ToArray(),
                     CurrentPhase = $"Generating tiles ({processed}/{total})"
                 };
-                await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -843,7 +847,7 @@ internal sealed partial class TileOperationExecutionCore
         }
 
         current = current with { CurrentPhase = "Writing PMTiles archive" };
-        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        await WriteProgressAsync(current, cancellationToken).ConfigureAwait(false);
 
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var resource = ResolveArchiveResource(snapshot, request, layerId);

@@ -513,10 +513,18 @@ internal static class SharingCommunityEndpoints
     }
 
     private static IResult? RequireDurableMutation(HttpContext context)
-        => context.RequestServices.GetService<IPortalAudienceSnapshotProvider>() is null
+    {
+        if (AgentPrincipal.IsAgent(context.User))
+        {
+            return StandardErrorHelpers.CreateForbidden(
+                context, "Agent changes to group membership and item sharing require human approval; ask a person to make this change in the Console.");
+        }
+
+        return context.RequestServices.GetService<IPortalAudienceSnapshotProvider>() is null
             ? StandardErrorHelpers.CreateNotImplemented(
                 context, "Portal group and item sharing mutations require a durable sharing store.")
             : null;
+    }
 
     private static bool CanSeeGroup(PortalGroupRecord record, ClaimsPrincipal principal)
     {

@@ -158,15 +158,10 @@ internal static class AwsBatchStateMapper
         => !string.IsNullOrEmpty(statusReason)
             && statusReason.Contains(CancelReason, StringComparison.Ordinal);
 
-    public static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
-
     public static bool IsInFlight(string? awsStatus)
     {
         var mapped = MapStatus(awsStatus);
-        return !IsTerminal(mapped);
+        return !mapped.IsTerminal();
     }
 
     public static bool CanCancelWithoutTerminate(string? awsStatus)
@@ -790,7 +785,7 @@ internal sealed partial class AwsBatchComputeBackend(
             }
 
             var currentMapped = AwsBatchStateMapper.MapStatusWithReason(state.Status, state.StatusReason);
-            if (AwsBatchStateMapper.IsTerminal(currentMapped))
+            if (currentMapped.IsTerminal())
             {
                 return new BatchComputeObservation
                 {
@@ -826,7 +821,7 @@ internal sealed partial class AwsBatchComputeBackend(
             }
 
             var postMapped = AwsBatchStateMapper.MapStatusWithReason(postCancelState.Status, postCancelState.StatusReason);
-            var message = AwsBatchStateMapper.IsTerminal(postMapped)
+            var message = postMapped.IsTerminal()
                 ? $"AWS Batch job '{providerId}' reached {postCancelState.Status ?? "UNKNOWN"} after cancellation from state {state.Status ?? "UNKNOWN"}."
                 : $"AWS Batch job '{providerId}' cancellation requested from state {state.Status ?? "UNKNOWN"}; provider still at {postCancelState.Status ?? "UNKNOWN"}.";
 

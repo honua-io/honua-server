@@ -1,4 +1,23 @@
 <Project>
+  <!-- SDK 11 adds Hot Reload browser-tools JS modules to every Microsoft.NET.Sdk.Web project in
+       Debug. A web library that references another web library (Hosting -> ServiceDefaults) then
+       receives two assets for the same _framework/...HotReload.lib.module.js path and fails in
+       StaticWebAssets.JSModules.targets with "scoped css bundles do not have matching endpoints".
+       Libraries never serve a browser, so only executables keep the browser tools. Evaluated here
+       because OutputType is final and the SDK reads this property after Directory.Build.targets. -->
+  <PropertyGroup Condition="'$(OutputType)' == 'Library' and '$(UsingMicrosoftNETSdkWeb)' == 'true'">
+    <EnableHotReloadInRuntimeConfigDevFile>false</EnableHotReloadInRuntimeConfigDevFile>
+  </PropertyGroup>
+
+  <!-- Explicit maintenance command only: capture requested diagnostics as SARIF.
+       Normal builds retain warnings-as-errors and the checked-in baseline. -->
+  <PropertyGroup Condition="'$(HonuaCaptureAnalyzerBaseline)' == 'true'">
+    <ErrorLog>$(MSBuildThisFileDirectory)artifacts/analyzer-baseline/$(MSBuildProjectName).$(TargetFramework).sarif,version=2.1</ErrorLog>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CA2000;IDE0063;RS0030;S1244;S2486;S108;CA1508;CA1851</WarningsNotAsErrors>
+  </PropertyGroup>
+  <Target Name="HonuaPrepareAnalyzerBaselineCapture" BeforeTargets="CoreCompile" Condition="'$(HonuaCaptureAnalyzerBaseline)' == 'true'">
+    <MakeDir Directories="$(MSBuildThisFileDirectory)artifacts/analyzer-baseline" />
+  </Target>
   <!-- Evaluate ownership after SDK/NuGet imports, rather than guessing from paths.
        Multi-targeted projects stay in the source pass conservatively. -->
   <Target Name="HonuaGetAnalyzerOwnership" Returns="@(_HonuaAnalyzerOwnership)">
@@ -51,16 +70,16 @@
   </Target>
 
   <!--
-    HonuaNobleRuntimePublish is set by the Ubuntu noble serving Dockerfiles.
-    That base ships libsasl2.so.2, and the GSSAPI librdkafka.so needs
-    libsasl2.so.3, so a linux-x64 noble publish keeps centos8-librdkafka.so.
+    HonuaUbuntuRuntimePublish is set by the Ubuntu (26.04, resolute) serving Dockerfiles.
+    That base has no libsasl2.so.3, which the GSSAPI librdkafka.so needs,
+    so a linux-x64 Ubuntu publish keeps centos8-librdkafka.so.
     linux-arm64 has no CentOS 8 build, and its librdkafka.so does not need sasl.
     alpine-librdkafka.so is musl. Other publishes keep every build: a host with
     libsasl2.so.3 needs the GSSAPI library, and a musl RID needs the Alpine one.
   -->
   <Target Name="RemoveUnloadedLibrdkafkaBuilds"
           AfterTargets="ComputeFilesToPublish"
-          Condition="'$(HonuaNobleRuntimePublish)' == 'true'">
+          Condition="'$(HonuaUbuntuRuntimePublish)' == 'true'">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
         Condition="'%(Extension)' == '.so' and '%(Filename)' == 'alpine-librdkafka'" />
@@ -68,5 +87,17 @@
         Condition="'$(RuntimeIdentifier)' == 'linux-x64' and '%(Extension)' == '.so' and '%(Filename)' == 'librdkafka'" />
     </ItemGroup>
   </Target>
+
+  <!--
+    .NET 11 moved these Microsoft.Extensions packages into the shared framework,
+    so restore reports NU1510 (as an error under TreatWarningsAsErrors) for a direct
+    reference. Drop the reference only on net11.0+ so a net10.0 build keeps it.
+  -->
+  <ItemGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net11.0'))">
+    <PackageReference Remove="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Remove="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Remove="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Remove="Microsoft.Extensions.Options" />
+  </ItemGroup>
 
 </Project>
