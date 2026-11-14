@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Console.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
@@ -37,7 +38,8 @@ internal static class ConsoleShareEndpoints
         group.MapPut("/access", HandleUpdateAccess)
             .WithDisplayName("Update Console Share Access Tier")
             .WithSummary("Changes the item's Share access tier. Public-link/public-indexed changes are dependency-closure validated and return 409 with the blocking dependencies unless allowDependencyConflicts is set.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapGet("/dependencies", HandleGetDependencies)
             .WithDisplayName("Preview Console Share Dependency Closure")
@@ -52,7 +54,8 @@ internal static class ConsoleShareEndpoints
         group.MapPost("/link", HandleMintPublicLink)
             .WithDisplayName("Mint Console Public-Link Token")
             .WithSummary("Mints a public-link token (returns the opaque value once). Requires the item's access tier to already be public-link or public-indexed.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapDelete("/link/{tokenId}", HandleExpirePublicLink)
             .WithDisplayName("Revoke Console Public-Link Token")
@@ -62,12 +65,14 @@ internal static class ConsoleShareEndpoints
         group.MapPut("/embed", HandleSetEmbed)
             .WithDisplayName("Configure Console Embed")
             .WithSummary("Enables or disables embedding with an audience scope. Enabling is dependency-closure validated.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapPost("/embed", HandleMintEmbedToken)
             .WithDisplayName("Mint Console Embed Token")
             .WithSummary("Mints an embed token (returns the opaque value once) with a TTL and audience. Requires embedding to be enabled.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
     }
 
     private static async Task<Results<Ok<ApiResponse<ConsoleShareProjection>>, NotFound<ApiResponse<object>>, ProblemHttpResult>> HandleGetShare(

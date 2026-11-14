@@ -25,14 +25,6 @@
     {
       "path": "docs/gis",
       "why": "Capability data and client-certification evidence. The JSON under docs/gis/data is the generated spine other gates read; the markdown beside it is evidence, not prose documentation."
-    },
-    {
-      "path": "docs/ci",
-      "why": "CI mechanics for contributors."
-    },
-    {
-      "path": "docs/contributor",
-      "why": "Contributor-facing smoke procedures."
     }
   ],
   "excludedFiles": [

@@ -15,6 +15,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
@@ -72,10 +73,10 @@ internal sealed class PostgresFeatureLayerCopyService(
         var connection = connectionOwner.RequireNpgsqlConnection();
         await using var schemaCommand = new NpgsqlCommand("SELECT current_schema()", connection);
         var schema = (string)(await schemaCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
-        var qualified = Quote(schema) + "." + Quote(table);
-        var columnDefinitions = fields.Select(f => Quote(f.Name) + " " + SqlType(f) + (f.Nullable ? "" : " NOT NULL"));
-        var ddl = $"CREATE TABLE {qualified} ({string.Join(",", columnDefinitions)}, {Quote(geometryField)} geometry, "
-            + $"PRIMARY KEY ({Quote(primary)}), CHECK (ST_SRID({Quote(geometryField)}) = {srid.ToString(CultureInfo.InvariantCulture)}))";
+        var qualified = SqlIdentifier.QuoteIdentifier(schema) + "." + SqlIdentifier.QuoteIdentifier(table);
+        var columnDefinitions = fields.Select(f => SqlIdentifier.QuoteIdentifier(f.Name) + " " + SqlType(f) + (f.Nullable ? "" : " NOT NULL"));
+        var ddl = $"CREATE TABLE {qualified} ({string.Join(",", columnDefinitions)}, {SqlIdentifier.QuoteIdentifier(geometryField)} geometry, "
+            + $"PRIMARY KEY ({SqlIdentifier.QuoteIdentifier(primary)}), CHECK (ST_SRID({SqlIdentifier.QuoteIdentifier(geometryField)}) = {srid.ToString(CultureInfo.InvariantCulture)}))";
         long count = 0;
         long bytes = 0;
         await using (var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false))
@@ -84,10 +85,10 @@ internal sealed class PostgresFeatureLayerCopyService(
             {
                 await create.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
-            var columns = string.Join(",", fields.Select(f => Quote(f.Name)));
-            var projected = string.Join(",", fields.Select(f => "r." + Quote(f.Name)));
+            var columns = string.Join(",", fields.Select(f => SqlIdentifier.QuoteIdentifier(f.Name)));
+            var projected = string.Join(",", fields.Select(f => "r." + SqlIdentifier.QuoteIdentifier(f.Name)));
             await using var insert = new NpgsqlCommand(
-                $"INSERT INTO {qualified} ({columns},{Quote(geometryField)}) SELECT {projected}, ST_GeomFromWKB(@geometry,@srid) "
+                $"INSERT INTO {qualified} ({columns},{SqlIdentifier.QuoteIdentifier(geometryField)}) SELECT {projected}, ST_GeomFromWKB(@geometry,@srid) "
                 + $"FROM jsonb_populate_record(NULL::{qualified}, @attributes) r", connection, transaction);
             insert.Parameters.Add("geometry", NpgsqlDbType.Bytea);
             insert.Parameters.AddWithValue("srid", srid);
@@ -204,13 +205,11 @@ internal sealed class PostgresFeatureLayerCopyService(
         await remove.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         if (await ImportTableOwnership.AssertOwnedAsync(connection, schema, table, cancellationToken).ConfigureAwait(false))
         {
-            await using var drop = new NpgsqlCommand($"DROP TABLE {Quote(schema)}.{Quote(table)}", connection, transaction);
+            await using var drop = new NpgsqlCommand($"DROP TABLE {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}", connection, transaction);
             await drop.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
-
-    private static string Quote(string value) => "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 
     private static string SqlType(MetadataV2Field field) => field.Type switch
     {

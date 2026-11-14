@@ -17,6 +17,7 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging;
 using Honua.Db.Postgres.Features.FileImport;
@@ -861,7 +862,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         else if (string.IsNullOrWhiteSpace(geometryColumn))
         {
             await using var countCommand = new NpgsqlCommand(
-                $"SELECT COUNT(*) FROM {QuoteIdentifier(schema)}.{QuoteIdentifier(table)}", connection, transaction);
+                $"SELECT COUNT(*) FROM {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}", connection, transaction);
             nonSpatialRowCount = (long)(await countCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
             checks.Add(nonSpatialRowCount == 0 && !request.AllowEmptyTable
                 ? Error("feature-count", "Source table is empty.")

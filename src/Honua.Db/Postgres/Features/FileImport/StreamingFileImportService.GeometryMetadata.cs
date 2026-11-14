@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Queries.Filters;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FileImport;
@@ -20,7 +21,7 @@ internal sealed partial class StreamingFileImportService
             return false;
         }
 
-        var qualified = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
+        var qualified = $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}";
         await using var command = new NpgsqlCommand(
             $"ALTER TABLE {qualified} DROP CONSTRAINT IF EXISTS {ImportedGeometryTypeConstraint}",
             connection, transaction);
@@ -70,7 +71,7 @@ internal sealed partial class StreamingFileImportService
             return;
         }
 
-        var qualified = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
+        var qualified = $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}";
         // DROP CONSTRAINT holds the table lock until commit, so concurrent writes
         // cannot change the inferred set between this scan and constraint validation.
         // Both passes can read the whole import. Match typed-column promotion's

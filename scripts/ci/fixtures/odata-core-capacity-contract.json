@@ -1,0 +1,41 @@
+{
+  "originalShard": {
+    "name": "OData Core",
+    "shard_name": "OData Core",
+    "dispatch_rank": 19.9,
+    "artifact_suffix": "odata-core",
+    "log_name": "server-tests-odata-core",
+    "timeout_minutes": 39,
+    "test_timeout_minutes": 29,
+    "max_cpu_count": "",
+    "upload_operator_eval_report": false,
+    "upload_odata_evidence": false,
+    "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
+    "_comment": "OData CATCH-ALL (#1899): converted from a class-name-keyed selector to a namespace-prefix selector so new OData test classes are auto-covered instead of silently falling outside every OData shard (the original #1899 finding \u2014 e.g. ODataBboxShorthandTests, ODataInOperatorTests, ODataParquetFormatTests, ODataServerPagingEndpointTests, ODataChangesetEditionGateTests, ODataQueryParameterAdapterOrderByTests all matched no OData filter). Selects everything in the Honua.Server.Tests.Features.Protocols.OData namespace EXCEPT the classes/sub-namespaces carved into the OData Query and Spatial, OData Mutations and Batch, and OData Client Certification sibling shards. The trailing FullyQualifiedName!~ exclusions mirror those siblings' selectors exactly, so the four OData shards partition the OData suite with no gaps; any newly added OData test class falls here by default.",
+    "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData&FullyQualifiedName!~ODataAdvancedFeaturesTests&FullyQualifiedName!~ODataFilterFunctionTests&FullyQualifiedName!~ODataFilterMatrixTests&FullyQualifiedName!~ODataPaginationTests&FullyQualifiedName!~ODataSkipTokenTests&FullyQualifiedName!~ODataSpatialMatrixTests&FullyQualifiedName!~ODataSpatialReferenceTests&FullyQualifiedName!~ODataTemporalFilteringTests&FullyQualifiedName!~ODataCrudEndpointTests&FullyQualifiedName!~ODataCrudExceptionMappingTests&FullyQualifiedName!~ODataDeltaTests&FullyQualifiedName!~ODataETagConcurrencyTests&FullyQualifiedName!~ODataGeometryCrudTests&FullyQualifiedName!~ODataMultipartBatchTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.OData.Services&FullyQualifiedName!~ODataClientCertificationTests&FullyQualifiedName!~ODataClientIntegrationTests&FullyQualifiedName!~ODataErrorHandlingTests&FullyQualifiedName!~ODataV4ConformanceEndpointTests&FullyQualifiedName!~ODataLimitsEnforcementTests&FullyQualifiedName!~ODataExpansionBudgetRegressionTests",
+    "paths": [
+      "src/Honua.Core/Core/Features/Validation/",
+      "src/Honua.Hosting/Features/Services/",
+      "src/Honua.Protocols/OData/",
+      "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAdvancedOperationsTests.cs",
+      "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAuthorizationTests.cs",
+      "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataEndpointTests.cs",
+      "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataErrorHandlingTests.cs",
+      "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataLimitsEnforcementTests.cs",
+      "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataParquetFormatTests.cs",
+      "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataQueryHandlerTests.cs",
+      "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs"
+    ]
+  },
+  "parentPartition": {
+    "name": "OData Core Before Endpoint Split",
+    "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData&FullyQualifiedName!~ODataAdvancedFeaturesTests&FullyQualifiedName!~ODataFilterFunctionTests&FullyQualifiedName!~ODataFilterMatrixTests&FullyQualifiedName!~ODataPaginationTests&FullyQualifiedName!~ODataSkipTokenTests&FullyQualifiedName!~ODataSpatialMatrixTests&FullyQualifiedName!~ODataSpatialReferenceTests&FullyQualifiedName!~ODataTemporalFilteringTests&FullyQualifiedName!~ODataCrudEndpointTests&FullyQualifiedName!~ODataCrudExceptionMappingTests&FullyQualifiedName!~ODataDeltaTests&FullyQualifiedName!~ODataETagConcurrencyTests&FullyQualifiedName!~ODataGeometryCrudTests&FullyQualifiedName!~ODataMultipartBatchTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.OData.Services&FullyQualifiedName!~ODataClientCertificationTests&FullyQualifiedName!~ODataClientIntegrationTests&FullyQualifiedName!~ODataErrorHandlingTests&FullyQualifiedName!~ODataV4ConformanceEndpointTests&FullyQualifiedName!~ODataLimitsEnforcementTests&FullyQualifiedName!~ODataExpansionBudgetRegressionTests",
+    "children": [
+      "OData Core Endpoints",
+      "OData Core"
+    ]
+  },
+  "isolatedClasses": [
+    "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests"
+  ]
+}

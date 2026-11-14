@@ -56,6 +56,7 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Authentication__ClientCertificates__EnvironmentId` | — | Environment id matched by `RequiredForEnvironment` and trust profiles. |
 | `Authentication__ClientCertificates__ProtectedAdminPathPrefixes__N` | — | Admin path prefixes protected by client-certificate auth. |
 | `Authentication__ClientCertificates__ProtectedGrpcServices__N` | — | gRPC service names protected by client-certificate auth. |
+| `Authentication__ClientCertificates__TrustProfilesRevision` | `1` | Positive, monotonically increasing revision for the complete configured trust-profile set. Increment when changing or removing configured profiles or mappings. PostgreSQL ignores equal or older revisions during overlapping deployments. |
 | `Authentication__ClientCertificates__TrustProfiles__N__*` | — | Trust-profile definitions (issuer subjects, SAN types, principal mappings, roles). |
 | `Authentication__ClientCertificates__ForwardedCertificate__Enabled` | `false` | Accept proxy-forwarded client certificates. |
 | `Authentication__ClientCertificates__ForwardedCertificate__TrustedProxyNetworks__N` | — | CIDR ranges allowed to forward certificates. |
@@ -74,6 +75,8 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Compliance__DataResidency__Enforced` | `false` | Flips the data-residency policy view and dry-run verdict (does not block egress by itself). |
 | `Compliance__Encryption__FipsModeAttested` | `false` | Operator attestation of FIPS 140-2 host mode. |
 | `Compliance__DependencyOverrides__*` | unset | Attestations for sidecar-provided capabilities (audit log, SSO, RBAC, transport encryption, data residency). |
+
+Configured trust reconciliation preserves restrictions already stored by an administrator. Issuer subjects, issuer thumbprints and custom anchors retain only common values; incompatible chain restrictions fail closed rather than falling back to broader chain trust. Mapping validity uses the later start and earlier end. A disable on either side wins for profiles and mappings; an enabled revocation on either side remains active. If a configured revocation changes its target, both active targets are retained with stable distinct IDs. Expanding trust or removing an active revocation requires an explicit administrator change to the stored profile after reconciliation.
 
 `Oidc__AdminAuthCallbackUri` optionally pins the backend-assisted admin OIDC broker
 callback to an exact HTTPS `/admin/auth/callback` URI on a separate Console origin.
@@ -262,7 +265,7 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 | `FeatureChangeEvents__Webhook__Url` / `FeatureChangeEvents__Webhook__Secret` | — | Webhook target URL and HMAC signing secret. |
 | `FeatureChangeEvents__Webhook__MaxAttempts` | `5` | Delivery attempts per event (exponential backoff). |
 
-Application-level rate limiting is opt-in (`RateLimiting__Enabled=true`, off by default) and supplements edge enforcement; enforce rate limits at your edge proxy, load balancer, or WAF.
+Application-level rate limiting is opt-in (`RateLimiting__Enabled=true`, off by default) and supplements edge enforcement; enforce rate limits at your edge proxy, load balancer, or WAF. Its counters are per node: a limit of N admits up to N requests per window on each replica.
 
 ## Admission and pooling
 
