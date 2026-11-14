@@ -98,9 +98,17 @@ internal static class TwoHostFeatureHarness
             request.Headers.Add("Last-Event-ID", lastEventId);
         }
         var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
-        return response;
+        try
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
+            return response;
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
     }
 }
 
@@ -129,6 +137,7 @@ internal sealed class MarkedFeatureStream(string marker)
             if (line.Length == 0)
             {
                 eventName.Should().NotBe("reset", "the run stays within the retained feature window");
+                eventName.Should().NotBe("auth-error", "authorization must remain valid throughout delivery");
                 var name = eventName ?? "message";
                 _events[name] = _events.GetValueOrDefault(name) + 1;
                 if (eventName == "feature-change" && data is not null)

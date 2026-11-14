@@ -201,18 +201,30 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
         var interval = TimeSpan.FromSeconds(1.0 / _profile.EditsPerSecond);
         var clock = Stopwatch.StartNew();
         var pending = new List<Task>(startedAt.Length);
-        for (var ordinal = 0; ordinal < startedAt.Length; ordinal++)
+        using var writing = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        try
         {
-            var due = interval * ordinal - clock.Elapsed;
-            if (due > TimeSpan.Zero)
+            for (var ordinal = 0; ordinal < startedAt.Length; ordinal++)
             {
-                await Task.Delay(due, cancellationToken);
+                var scheduledAt = interval * ordinal;
+                var due = scheduledAt - clock.Elapsed;
+                if (due > TimeSpan.Zero)
+                {
+                    await Task.Delay(due, writing.Token);
+                }
+                (clock.Elapsed - scheduledAt).Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(1),
+                    "the load client must sustain the configured issuance rate without delayed catch-up bursts");
+                Volatile.Write(ref startedAt[ordinal], Stopwatch.GetTimestamp());
+                pending.Add(TwoHostFeatureHarness.AddAsync(
+                    ordinal % 2 == 0 ? writerA : writerB, $"{_marker}-{ordinal}", writing.Token));
             }
-            startedAt[ordinal] = Stopwatch.GetTimestamp();
-            pending.Add(TwoHostFeatureHarness.AddAsync(
-                ordinal % 2 == 0 ? writerA : writerB, $"{_marker}-{ordinal}", cancellationToken));
+            await Task.WhenAll(pending);
         }
-        await Task.WhenAll(pending);
+        finally
+        {
+            await writing.CancelAsync();
+            await Task.WhenAll(pending).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
     }
 
     private static HttpClient SubscriberClient(WebAppFixture task)
@@ -234,20 +246,28 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
             var lastGeneration = long.MinValue;
             var receivedOrdinals = new bool[expected];
             var stream = new MarkedFeatureStream(context.Marker);
-            await foreach (var frame in stream.ReadAsync(reader, cancellationToken))
+            using var observation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            try
             {
-                frame.Generation.Should().BeGreaterThan(lastGeneration, "delivery is once and in commit order");
-                lastGeneration = frame.Generation;
-                var ordinal = int.Parse(frame.Name.AsSpan(context.Marker.Length + 1), CultureInfo.InvariantCulture);
-                ordinal.Should().BeInRange(0, expected - 1);
-                receivedOrdinals[ordinal].Should().BeFalse("each marked edit is delivered exactly once");
-                receivedOrdinals[ordinal] = true;
-                context.StartedAt[ordinal].Should().BeGreaterThan(0, "an edit is issued before it is delivered");
-                context.Latencies.Record(Stopwatch.GetElapsedTime(Volatile.Read(ref context.StartedAt[ordinal]), frame.ReceivedAt));
-                if (++Received == expected)
+                await foreach (var frame in stream.ReadAsync(reader, observation.Token))
                 {
-                    return;
+                    frame.Generation.Should().BeGreaterThan(lastGeneration, "delivery is once and in commit order");
+                    lastGeneration = frame.Generation;
+                    var ordinal = int.Parse(frame.Name.AsSpan(context.Marker.Length + 1), CultureInfo.InvariantCulture);
+                    ordinal.Should().BeInRange(0, expected - 1);
+                    receivedOrdinals[ordinal].Should().BeFalse("each marked edit is delivered exactly once");
+                    receivedOrdinals[ordinal] = true;
+                    context.StartedAt[ordinal].Should().BeGreaterThan(0, "an edit is issued before it is delivered");
+                    context.Latencies.Record(Stopwatch.GetElapsedTime(Volatile.Read(ref context.StartedAt[ordinal]), frame.ReceivedAt));
+                    if (++Received == expected)
+                    {
+                        observation.CancelAfter(TimeSpan.FromSeconds(1));
+                    }
                 }
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && Received == expected)
+            {
+                return;
             }
             throw new EndOfStreamException($"The feature stream ended after {Received} of {expected} edits; {stream.Describe()}");
         }
