@@ -1002,6 +1002,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
             new Dictionary<string, string?>
             {
+                ["MultiTenancy:Enabled"] = "true",
                 ["MultiTenancy:MultiTenantAdminRoles:0"] = "admin",
                 ["MultiTenancy:MultiTenantAdminRoles:1"] = "scoped-api-key",
                 ["AiExecutionAdmission:DeploymentId"] = "test-deployment",
