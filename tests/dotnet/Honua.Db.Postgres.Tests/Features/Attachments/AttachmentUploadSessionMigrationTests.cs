@@ -18,23 +18,7 @@ public sealed class AttachmentUploadSessionMigrationTests(PostgresFixture fixtur
         try
         {
             await ApplyMigrationAsync(schema);
-            await ExecuteAsync(schema, """
-                INSERT INTO "{schema}".attachment_upload_sessions
-                    (session_id, owner_id, service_id, layer_id, feature_id, operation,
-                     idempotency_key, request_sha256, filename, content_type, expected_size,
-                     content_sha256, max_chunk_bytes, expires_at)
-                VALUES ('62b531d9-5116-4d00-a49b-d49d5fcc01f1', 'owner', 'service', 0, 42,
-                    'chunked', 'retry', decode(repeat('01', 32), 'hex'), 'photo.png', 'image/png',
-                    3, decode(repeat('02', 32), 'hex'), 1048576, now() + interval '1 hour');
-                INSERT INTO "{schema}".attachment_upload_chunks
-                    (session_id, offset_bytes, content, content_sha256)
-                VALUES ('62b531d9-5116-4d00-a49b-d49d5fcc01f1', 0, decode('616263', 'hex'),
-                    decode(repeat('03', 32), 'hex'));
-                UPDATE "{schema}".attachment_upload_sessions
-                SET next_offset_bytes = 3, state = 'committed',
-                    committed_attachment = '{"attachmentId":"42","name":"photo.png"}'::jsonb
-                WHERE idempotency_key = 'retry';
-                """);
+            await SeedCommittedSessionAsync(schema);
             await ApplyMigrationAsync(schema);
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = new NpgsqlCommand($"""
@@ -121,6 +105,25 @@ public sealed class AttachmentUploadSessionMigrationTests(PostgresFixture fixtur
             await fixture.DropSchemaAsync(schema);
         }
     }
+
+    private Task SeedCommittedSessionAsync(string schema) =>
+        ExecuteAsync(schema, """
+            INSERT INTO "{schema}".attachment_upload_sessions
+                (session_id, owner_id, service_id, layer_id, feature_id, operation,
+                 idempotency_key, request_sha256, filename, content_type, expected_size,
+                 content_sha256, max_chunk_bytes, expires_at)
+            VALUES ('62b531d9-5116-4d00-a49b-d49d5fcc01f1', 'owner', 'service', 0, 42,
+                'chunked', 'retry', decode(repeat('01', 32), 'hex'), 'photo.png', 'image/png',
+                3, decode(repeat('02', 32), 'hex'), 1048576, now() + interval '1 hour');
+            INSERT INTO "{schema}".attachment_upload_chunks
+                (session_id, offset_bytes, content, content_sha256)
+            VALUES ('62b531d9-5116-4d00-a49b-d49d5fcc01f1', 0, decode('616263', 'hex'),
+                decode(repeat('03', 32), 'hex'));
+            UPDATE "{schema}".attachment_upload_sessions
+            SET next_offset_bytes = 3, state = 'committed',
+                committed_attachment = '{"attachmentId":"42","name":"photo.png"}'::jsonb
+            WHERE idempotency_key = 'retry';
+            """);
 
     private async Task ApplyMigrationAsync(string schema)
     {
