@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Security;
+using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Middleware;
@@ -30,7 +31,7 @@ internal static class AuditContextResolver
                 CanonicalSecurityActor.CanonicalActorClaim);
             if (!string.IsNullOrWhiteSpace(canonicalActor))
             {
-                actorType = string.Equals(
+                actorType = AgentPrincipal.IsAgent(principal) ? AuditActorType.Agent : string.Equals(
                     identity.AuthenticationType,
                     Honua.Infrastructure.Authentication.AuthenticationExtensions.ApiKeyScheme,
                     StringComparison.OrdinalIgnoreCase)
@@ -45,7 +46,7 @@ internal static class AuditContextResolver
             var apiKeyId = principal.FindFirst("api_key_id")?.Value;
             if (!string.IsNullOrWhiteSpace(apiKeyId))
             {
-                actorType = AuditActorType.ApiKey;
+                actorType = AgentPrincipal.IsAgent(principal) ? AuditActorType.Agent : AuditActorType.ApiKey;
                 return apiKeyId;
             }
 
@@ -68,7 +69,7 @@ internal static class AuditContextResolver
             }
             if (!string.IsNullOrWhiteSpace(userId))
             {
-                actorType = AuditActorType.UserId;
+                actorType = AgentPrincipal.IsAgent(principal) ? AuditActorType.Agent : AuditActorType.UserId;
                 return userId;
             }
         }

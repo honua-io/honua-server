@@ -120,6 +120,7 @@ public sealed class AuditEventTests
             AuditActorType.UserId,
             AuditActorType.ApiKey,
             AuditActorType.System,
+            AuditActorType.Agent,
         });
     }
 }

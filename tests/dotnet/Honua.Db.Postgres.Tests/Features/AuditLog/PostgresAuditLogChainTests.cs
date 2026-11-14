@@ -24,7 +24,7 @@ namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 /// schema with the append-only rules installed.
 /// </summary>
 [Collection("Database")]
-public sealed class PostgresAuditLogChainTests(PostgresFixture fixture)
+public sealed partial class PostgresAuditLogChainTests(PostgresFixture fixture)
 {
     [Fact]
     public void VerifierResolution_AfterInvalidReload_KeepsStartupKey()

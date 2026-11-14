@@ -7,6 +7,7 @@ using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 
@@ -80,6 +81,8 @@ internal sealed partial class AdminOperationApprovalBridge(
                 IdempotencyKey = mapped.IdempotencyKey ?? context.IdempotencyKey,
                 ScopeGoverned = context.ScopeGoverned,
                 RecognizedScopes = context.RecognizedScopes,
+                RequestedBy = context.PrincipalId,
+                RequestedByAgent = AgentApprovalRule.IsAgent(context.Roles) ? context.PrincipalId : null,
             };
             var guardrails = services.GetService<IGuardrailLadder>();
             if (guardrails is null || guardrails.Resolve(gatewayRequest.Kind).Tier == GuardrailTier.Blocked)

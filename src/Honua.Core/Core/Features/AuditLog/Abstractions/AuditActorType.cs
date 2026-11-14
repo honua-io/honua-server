@@ -12,4 +12,6 @@ public enum AuditActorType
     ApiKey = 2,
 
     System = 3,
+
+    Agent = 4,
 }
