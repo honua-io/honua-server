@@ -17,27 +17,37 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpsExternalEventTests
 {
-    [UnitTheory]
-    [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"containers\":[{\"exitCode\":137,\"reason\":\"OutOfMemoryError\"}]}", "ecs-task-oom")]
-    [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"stoppedReason\":\"CannotPullContainerError: denied\"}", "image-pull-failed")]
-    [InlineData("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"stoppedReason\":\"Task failed to start\",\"containers\":[{\"reason\":\"CannotPullContainerError: denied\"}]}", "image-pull-failed")]
-    [InlineData("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_FAILED\"}", "ecs-deployment-failed")]
-    [InlineData("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_COMPLETED\"}", "ecs-deployment-completed")]
-    [InlineData("aws.backup", "Backup Job State Change", "{\"state\":\"FAILED\"}", "backup-job-failed")]
-    [InlineData("aws.backup", "Copy Job State Change", "{\"state\":\"FAILED\"}", "backup-copy-failed")]
-    [InlineData("aws.rds", "RDS DB Instance Event", "{\"EventCategories\":[\"maintenance\"]}", "rds-maintenance")]
-    [InlineData("aws.batch", "Batch Job State Change", "{\"status\":\"FAILED\"}", "gp-job-failed")]
-    [InlineData("aws.acm", "ACM Certificate Approaching Expiration", "{}", "certificate-expiring")]
-    [InlineData("aws.health", "AWS Health Event", "{}", "aws-health-event")]
-    [InlineData("aws.ce", "Anomaly Detected", "{}", "cost-anomaly")]
-    [InlineData("aws.cloudwatch", "CloudWatch Alarm State Change", "{\"state\":{\"value\":\"ALARM\"}}", "cloudwatch-alarm")]
-    [Operation(Operations.TestInfrastructure)]
-    public void Mapping_HasStableIdentityAndPlainLanguageTemplate(string source, string type, string detail, string rule)
+    public sealed record MappingCase(string Source, string Type, string Detail)
     {
-        var body = Envelope(source, type, detail);
+        public required string Rule { get; init; }
+    }
+
+    public static TheoryData<MappingCase> MappingCases => new()
+    {
+        new("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"containers\":[{\"exitCode\":137,\"reason\":\"OutOfMemoryError\"}]}") { Rule = "ecs-task-oom" },
+        new("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"stoppedReason\":\"CannotPullContainerError: denied\"}") { Rule = "image-pull-failed" },
+        new("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"stoppedReason\":\"Task failed to start\",\"containers\":[{\"reason\":\"CannotPullContainerError: denied\"}]}") { Rule = "image-pull-failed" },
+        new("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_FAILED\"}") { Rule = "ecs-deployment-failed" },
+        new("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_COMPLETED\"}") { Rule = "ecs-deployment-completed" },
+        new("aws.backup", "Backup Job State Change", "{\"state\":\"FAILED\"}") { Rule = "backup-job-failed" },
+        new("aws.backup", "Copy Job State Change", "{\"state\":\"FAILED\"}") { Rule = "backup-copy-failed" },
+        new("aws.rds", "RDS DB Instance Event", "{\"EventCategories\":[\"maintenance\"]}") { Rule = "rds-maintenance" },
+        new("aws.batch", "Batch Job State Change", "{\"status\":\"FAILED\"}") { Rule = "gp-job-failed" },
+        new("aws.acm", "ACM Certificate Approaching Expiration", "{}") { Rule = "certificate-expiring" },
+        new("aws.health", "AWS Health Event", "{}") { Rule = "aws-health-event" },
+        new("aws.ce", "Anomaly Detected", "{}") { Rule = "cost-anomaly" },
+        new("aws.cloudwatch", "CloudWatch Alarm State Change", "{\"state\":{\"value\":\"ALARM\"}}") { Rule = "cloudwatch-alarm" },
+    };
+
+    [UnitTheory]
+    [MemberData(nameof(MappingCases))]
+    [Operation(Operations.TestInfrastructure)]
+    public void Mapping_HasStableIdentityAndPlainLanguageTemplate(MappingCase scenario)
+    {
+        var body = Envelope(scenario.Source, scenario.Type, scenario.Detail);
         var finding = OpsExternalEventMapper.Map(body);
         finding.Should().NotBeNull();
-        finding!.Rule.Should().Be(rule);
+        finding!.Rule.Should().Be(scenario.Rule);
         finding.Title.Should().NotBeNullOrWhiteSpace();
         finding.Explanation.Should().NotBeNullOrWhiteSpace();
         finding.Id.Should().Be(OpsExternalEventMapper.Map(body)!.Id);

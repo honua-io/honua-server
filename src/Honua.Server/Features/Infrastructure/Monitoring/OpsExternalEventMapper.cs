@@ -156,12 +156,9 @@ internal static class OpsExternalEventMapper
 
     private static Template? DeploymentTemplate(JsonElement detail) => Text(detail, "eventName") switch
     {
-        "SERVICE_DEPLOYMENT_FAILED" => new("ecs-deployment-failed", OpsFindingSeverity.Critical,
-            "A server deployment failed", "Inspect the ECS deployment and circuit-breaker rollback. Verify which task definition is serving before attempting another deployment."),
-        "SERVICE_DEPLOYMENT_COMPLETED" => new("ecs-deployment-completed", OpsFindingSeverity.Info,
-            "A server deployment completed", "ECS reports the deployment completed. Confirm the expected release is serving and that post-deployment checks pass."),
-        "SERVICE_DEPLOYMENT_ROLLBACK_COMPLETED" => new("ecs-deployment-rollback-completed", OpsFindingSeverity.Info,
-            "A server deployment rollback completed", "ECS reports the rollback completed. Confirm the restored task definition is healthy before retrying the update."),
+        "SERVICE_DEPLOYMENT_FAILED" => new("ecs-deployment-failed", "A server deployment failed", "Inspect the ECS deployment and circuit-breaker rollback. Verify which task definition is serving before attempting another deployment.") { Severity = OpsFindingSeverity.Critical },
+        "SERVICE_DEPLOYMENT_COMPLETED" => new("ecs-deployment-completed", "A server deployment completed", "ECS reports the deployment completed. Confirm the expected release is serving and that post-deployment checks pass.") { Severity = OpsFindingSeverity.Info },
+        "SERVICE_DEPLOYMENT_ROLLBACK_COMPLETED" => new("ecs-deployment-rollback-completed", "A server deployment rollback completed", "ECS reports the rollback completed. Confirm the restored task definition is healthy before retrying the update.") { Severity = OpsFindingSeverity.Info },
         _ => null,
     };
 
@@ -176,11 +173,11 @@ internal static class OpsExternalEventMapper
 
         if (categories.Contains("low storage", StringComparer.OrdinalIgnoreCase))
         {
-            return new("rds-storage", OpsFindingSeverity.Critical, "The database is low on storage", "Review free storage and the storage autoscaling limit. Capacity changes require operator approval.");
+            return new("rds-storage", "The database is low on storage", "Review free storage and the storage autoscaling limit. Capacity changes require operator approval.") { Severity = OpsFindingSeverity.Critical };
         }
 
         return categories.Any(c => c is "maintenance" or "notification" or "configuration change")
-            ? new("rds-maintenance", OpsFindingSeverity.Info, "The database reported maintenance or a configuration event", "Review the RDS event and maintenance window for scheduled work or required operator action.")
+            ? new("rds-maintenance", "The database reported maintenance or a configuration event", "Review the RDS event and maintenance window for scheduled work or required operator action.") { Severity = OpsFindingSeverity.Info }
             : null;
     }
 
@@ -190,7 +187,7 @@ internal static class OpsExternalEventMapper
         return state switch
         {
             "ALARM" => Warning("cloudwatch-alarm", "An infrastructure alarm is active", "Review the CloudWatch alarm's metric, threshold and affected resource. The alarm does not authorize an automatic configuration change."),
-            "OK" => new("cloudwatch-alarm-recovered", OpsFindingSeverity.Info, "An infrastructure alarm recovered", "CloudWatch reports the alarm returned to OK. Review the preceding event if failures continue."),
+            "OK" => new("cloudwatch-alarm-recovered", "An infrastructure alarm recovered", "CloudWatch reports the alarm returned to OK. Review the preceding event if failures continue.") { Severity = OpsFindingSeverity.Info },
             "INSUFFICIENT_DATA" => Warning("cloudwatch-alarm-no-data", "An infrastructure alarm has insufficient data", "CloudWatch cannot evaluate this alarm. Check metric publication and alarm configuration."),
             _ => null,
         };
@@ -216,7 +213,10 @@ internal static class OpsExternalEventMapper
     private static string Text(JsonElement element, string name) => element.ValueKind == JsonValueKind.Object &&
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
 
-    private static Template Warning(string rule, string title, string explanation) => new(rule, OpsFindingSeverity.Warning, title, explanation);
+    private static Template Warning(string rule, string title, string explanation) => new(rule, title, explanation);
 
-    private sealed record Template(string Rule, OpsFindingSeverity Severity, string Title, string Explanation);
+    private sealed record Template(string Rule, string Title, string Explanation)
+    {
+        public OpsFindingSeverity Severity { get; init; } = OpsFindingSeverity.Warning;
+    }
 }
