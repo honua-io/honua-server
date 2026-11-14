@@ -6,6 +6,8 @@ import os
 import subprocess
 import sys
 
+GIT_SHA_LENGTH = 40
+
 
 def ancestor(base, head):
     return subprocess.run(["git", "merge-base", "--is-ancestor", base, head],
@@ -19,7 +21,7 @@ def completed_base(head, lower_bound=""):
     runs = sorted(payload["workflow_runs"], key=lambda run: run["updated_at"], reverse=True)
     for run in runs:
         candidate = run["head_sha"]
-        if (run["conclusion"] == "success" and len(candidate) == 40
+        if (run["conclusion"] == "success" and len(candidate) == GIT_SHA_LENGTH
                 and all(character in "0123456789abcdef" for character in candidate)
                 and ancestor(candidate, head)
                 and (not lower_bound or ancestor(lower_bound, candidate))):
