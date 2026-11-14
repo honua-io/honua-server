@@ -560,58 +560,10 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         Attachment attachment,
         CancellationToken cancellationToken)
     {
-        var limits = _attachmentLimits ?? throw new InvalidOperationException("Attachment limits are not configured.");
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        var tables = await ResolveTablesAsync(connection, transaction, false, cancellationToken).ConfigureAwait(false);
-
-        // hashtextextended keeps the lock in the bigint form. Feature ids do not fit the
-        // two-int overload, and the prefix does not share the feature-edit lock key.
-        await using (var lease = new NpgsqlCommand(
-            "SELECT pg_advisory_xact_lock(hashtextextended('attachment:' || $1::text || ':' || $2::text, 0))",
-            connection,
-            transaction))
-        {
-            lease.Parameters.AddWithValue(layerId);
-            lease.Parameters.AddWithValue(featureId);
-            await lease.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        long count;
-        long totalSize;
-        await using (var countCommand = new NpgsqlCommand($"""
-            SELECT COUNT(*)::bigint, COALESCE(SUM(size), 0)::bigint
-            FROM {tables.Attachments}
-            WHERE layer_id = $1 AND feature_id = $2
-            """, connection, transaction))
-        {
-            countCommand.Parameters.AddWithValue(layerId);
-            countCommand.Parameters.AddWithValue(featureId);
-            await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                throw new InvalidOperationException("Failed to count attachments");
-            }
-
-            count = reader.GetInt64(0);
-            totalSize = reader.GetInt64(1);
-        }
-
-        if (count >= limits.MaxAttachmentsPerFeature)
-        {
-            throw new ValidationException(
-                $"Feature already has the maximum number of attachments ({limits.MaxAttachmentsPerFeature})");
-        }
-
-        if (attachment.Size > limits.MaxTotalAttachmentSize ||
-            totalSize > limits.MaxTotalAttachmentSize - attachment.Size)
-        {
-            throw new ValidationException(
-                $"Total attachment size would exceed maximum allowed ({limits.MaxTotalAttachmentSize:N0} bytes)");
-        }
-
-        var created = await InsertAttachmentAsync(connection, transaction, layerId, featureId, attachment, cancellationToken)
-            .ConfigureAwait(false);
+        await EnforceUploadQuotaAsync(new AttachmentPublicationTransaction(connection, transaction, cancellationToken), attachment, null).ConfigureAwait(false);
+        var created = await InsertAttachmentAsync(connection, transaction, layerId, featureId, attachment, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return created;
     }
@@ -649,7 +601,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         return ReadAttachment(reader);
     }
 
-    private static Attachment ReadAttachment(NpgsqlDataReader reader)
+    internal static Attachment ReadAttachment(NpgsqlDataReader reader)
     {
         var id = reader.GetInt64(0); // id
         var featureId = reader.GetInt64(1); // feature_id

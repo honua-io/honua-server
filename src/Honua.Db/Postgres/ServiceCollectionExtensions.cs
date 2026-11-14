@@ -355,8 +355,26 @@ internal static class ServiceCollectionExtensions
                     ?? new AttachmentLimits(),
                 migrationContract: coreSchemaMigrations.Attachments,
                 canonicalSchemaName: schemaConfiguration.MetadataSchema));
+        services.AddScoped<PostgresAttachmentMaintenance>(serviceProvider =>
+            new PostgresAttachmentMaintenance(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
+        if (!Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneEventHandlerHost.IsEventHandler(configuration))
+        {
+            services.AddHostedService<PostgresAttachmentMaintenanceService>();
+        }
         services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
         services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IAttachmentUploadSessionStore>(serviceProvider =>
+            new PostgresAttachmentUploadSessionStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
+        services.AddScoped<IAttachmentMutationStore>(serviceProvider =>
+            new PostgresAttachmentMutationStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
 
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
 
