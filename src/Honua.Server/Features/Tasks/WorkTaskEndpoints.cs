@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Tasks;
 
-internal static class WorkTaskEndpoints
+internal static partial class WorkTaskEndpoints
 {
 
     public static IEndpointRouteBuilder MapWorkTaskEndpoints(this IEndpointRouteBuilder endpoints)
@@ -89,6 +89,7 @@ internal static class WorkTaskEndpoints
             .Produces<WorkTaskHistoryResult>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        MapAttachmentEndpoints(tasks);
         return endpoints;
     }
 

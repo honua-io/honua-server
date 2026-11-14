@@ -871,14 +871,16 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage with AssetProfileEndpointsTests, WorkTaskEndpointsTests and WorkTaskCompletionTests integration tests (CAS, receipts, history, atomic completion).",
+          "proofMechanism": "EndpointRegistry coverage with AssetProfileEndpointsTests, WorkTaskEndpointsTests and WorkTaskCompletionTests integration tests (CAS, receipts, history, atomic completion, authorized evidence uploads and downloads).",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.Assets.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Assets/AssetProfileEndpointsTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Assets/WorkTaskEndpointsTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Assets/WorkTaskCompletionTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Assets/WorkTaskCompletionTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Assets/WorkTaskCompletionTests.Uploads.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Assets/WorkTaskCrewAccessTests.Attachments.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",

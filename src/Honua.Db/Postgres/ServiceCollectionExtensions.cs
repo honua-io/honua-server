@@ -365,7 +365,15 @@ internal static class ServiceCollectionExtensions
         // Task-first asset management: profiles, tasks and completion (ADR-0084)
         services.AddScoped<Honua.Core.Features.Assets.IAssetProfileStore, Features.Assets.PostgresAssetProfileStore>();
         services.AddScoped<Honua.Core.Features.Assets.IWorkTaskStore, Features.Assets.PostgresWorkTaskStore>();
-        services.AddScoped<Honua.Core.Features.Assets.IWorkTaskCompletionStore, Features.Assets.PostgresWorkTaskCompletionStore>();
+        services.AddScoped<Honua.Core.Features.Assets.IWorkTaskCompletionStore>(provider =>
+            new Features.Assets.PostgresWorkTaskCompletionStore(
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                provider.GetRequiredService<Features.FeatureStore.PostgresFeatureStoreRefactored>(),
+                configuration["Database:Schema"]));
+
+        services.AddScoped<Honua.Core.Features.Assets.IWorkTaskAttachmentStore>(provider =>
+            new Features.Assets.PostgresWorkTaskAttachmentStore(
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));
 
         // Register back-office field review store (#1159)
         services.AddScoped<Honua.Core.Features.FieldWorkflows.Review.IFieldReviewStore,

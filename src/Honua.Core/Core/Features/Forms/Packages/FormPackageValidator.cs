@@ -13,7 +13,7 @@ namespace Honua.Core.Features.Forms.Packages;
 /// <summary>
 /// Validates form packages and submissions against target layer schema and server policy.
 /// </summary>
-public sealed class FormPackageValidator
+public sealed partial class FormPackageValidator
 {
     private static readonly HashSet<string> _supportedVisibilityOperators = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -101,7 +101,7 @@ public sealed class FormPackageValidator
         ValidateSubmissionPolicy(package, request, target.Resource, issues);
         ValidateSubmittedValues(package, request, target.Resource, issues);
         ValidateSubmittedGeometry(package, request, target.Resource, issues);
-        ValidateSubmittedAttachments(package, request, target.Resource, issues);
+        ValidateSubmittedAttachments(package, (request, target.Resource, true), issues);
 
         return CreateResult(issues);
     }
@@ -489,19 +489,19 @@ public sealed class FormPackageValidator
             AddError(issues, "attachmentsDisallowedBySubmitPolicy", "submitPolicy.allowAttachments must be true when attachment policy or fields are enabled.", path: "submitPolicy.allowAttachments");
         }
 
-        var maxCount = package.AttachmentPolicy.MaxAttachmentsPerSubmission ?? _attachmentLimits.MaxAttachmentsPerFeature;
+        var maxCount = Math.Min(package.AttachmentPolicy.MaxAttachmentsPerSubmission ?? _attachmentLimits.MaxAttachmentsPerFeature, _attachmentLimits.MaxAttachmentsPerFeature);
         if (maxCount <= 0 || maxCount > _attachmentLimits.MaxAttachmentsPerFeature)
         {
             AddError(issues, "attachmentCountLimitInvalid", $"Attachment max count must be between 1 and {_attachmentLimits.MaxAttachmentsPerFeature}.", path: "attachmentPolicy.maxAttachmentsPerSubmission");
         }
 
-        var maxSize = package.AttachmentPolicy.MaxAttachmentBytes ?? _attachmentLimits.MaxAttachmentSize;
+        var maxSize = Math.Min(package.AttachmentPolicy.MaxAttachmentBytes ?? _attachmentLimits.MaxAttachmentSize, _attachmentLimits.MaxAttachmentSize);
         if (maxSize <= 0 || maxSize > _attachmentLimits.MaxAttachmentSize)
         {
             AddError(issues, "attachmentSizeLimitInvalid", $"Attachment max size must be between 1 and {_attachmentLimits.MaxAttachmentSize} bytes.", path: "attachmentPolicy.maxAttachmentBytes");
         }
 
-        var maxTotal = package.AttachmentPolicy.MaxTotalBytes ?? _attachmentLimits.MaxTotalAttachmentSize;
+        var maxTotal = Math.Min(package.AttachmentPolicy.MaxTotalBytes ?? _attachmentLimits.MaxTotalAttachmentSize, _attachmentLimits.MaxTotalAttachmentSize);
         if (maxTotal <= 0 || maxTotal > _attachmentLimits.MaxTotalAttachmentSize)
         {
             AddError(issues, "attachmentTotalLimitInvalid", $"Attachment total size must be between 1 and {_attachmentLimits.MaxTotalAttachmentSize} bytes.", path: "attachmentPolicy.maxTotalBytes");
@@ -822,10 +822,10 @@ public sealed class FormPackageValidator
 
     private void ValidateSubmittedAttachments(
         FormPackageDocument package,
-        FormSubmissionRequest request,
-        MetadataV2Resource resource,
+        (FormSubmissionRequest Request, MetadataV2Resource Resource, bool RequireAllFields) submission,
         List<FormValidationIssue> issues)
     {
+        var (request, resource, requireAllFields) = submission;
         if (OperationEquals(request.Operation, FormSubmissionOperations.Delete))
         {
             if (request.Attachments.Length > 0)
@@ -845,8 +845,8 @@ public sealed class FormPackageValidator
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var fieldPolicies = BuildAttachmentFieldPolicies(package.AttachmentPolicy);
         var requiredAttachmentFields = attachmentFields
-            .Where(field => field.Required ||
-                (fieldPolicies.TryGetValue(field.FieldId!, out var fieldPolicy) && fieldPolicy.Required))
+            .Where(field => requireAllFields && (field.Required ||
+                (fieldPolicies.TryGetValue(field.FieldId!, out var fieldPolicy) && fieldPolicy.Required)))
             .Select(static field => field.FieldId!)
             .ToArray();
 
@@ -871,7 +871,7 @@ public sealed class FormPackageValidator
             AddError(issues, "attachmentsNotSupported", $"Target layer '{resource.Metadata.Name}' does not support attachments.", path: "attachments");
         }
 
-        var maxCount = package.AttachmentPolicy.MaxAttachmentsPerSubmission ?? _attachmentLimits.MaxAttachmentsPerFeature;
+        var maxCount = Math.Min(package.AttachmentPolicy.MaxAttachmentsPerSubmission ?? _attachmentLimits.MaxAttachmentsPerFeature, _attachmentLimits.MaxAttachmentsPerFeature);
         if (request.Attachments.Length > maxCount)
         {
             AddError(issues, "attachmentCountExceeded", $"Submission includes {request.Attachments.Length} attachments; maximum is {maxCount}.", path: "attachments");
@@ -914,7 +914,7 @@ public sealed class FormPackageValidator
             if (attachment.SizeBytes is long size)
             {
                 totalSize += size;
-                var maxSize = package.AttachmentPolicy.MaxAttachmentBytes ?? _attachmentLimits.MaxAttachmentSize;
+                var maxSize = Math.Min(package.AttachmentPolicy.MaxAttachmentBytes ?? _attachmentLimits.MaxAttachmentSize, _attachmentLimits.MaxAttachmentSize);
                 if (size <= 0 || size > maxSize)
                 {
                     AddError(issues, "attachmentSizeInvalid", $"Attachment size must be between 1 and {maxSize} bytes.", attachment.FieldId);
@@ -934,7 +934,7 @@ public sealed class FormPackageValidator
             AddError(issues, "requiredAttachmentMissing", $"Required attachment field '{fieldId}' is missing.", fieldId);
         }
 
-        var maxTotal = package.AttachmentPolicy.MaxTotalBytes ?? _attachmentLimits.MaxTotalAttachmentSize;
+        var maxTotal = Math.Min(package.AttachmentPolicy.MaxTotalBytes ?? _attachmentLimits.MaxTotalAttachmentSize, _attachmentLimits.MaxTotalAttachmentSize);
         if (totalSize > maxTotal)
         {
             AddError(issues, "attachmentTotalSizeExceeded", $"Submission attachment total exceeds {maxTotal} bytes.", path: "attachments");

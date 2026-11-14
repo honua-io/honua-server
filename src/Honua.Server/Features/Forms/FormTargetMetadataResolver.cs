@@ -43,6 +43,12 @@ internal sealed class FormTargetMetadataResolver(IMetadataV2GraphProvider metada
             ? null
             : snapshot.ResolveStorageLayerId(publication);
 
-        return new FormTargetMetadataResolution(service, publication, resource, storageLayerId);
+        var binding = publication is null ? null : snapshot.ResolveStorageBinding(publication);
+        return new FormTargetMetadataResolution(service, publication, resource, storageLayerId)
+        {
+            Snapshot = snapshot,
+            StorageBinding = binding,
+            Connection = binding is null ? null : snapshot.ResolveConnection(binding),
+        };
     }
 }

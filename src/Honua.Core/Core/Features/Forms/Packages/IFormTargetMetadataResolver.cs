@@ -16,4 +16,9 @@ public readonly record struct FormTargetMetadataResolution(
     MetadataV2Service? Service,
     MetadataV2Publication? Publication,
     MetadataV2Resource? Resource,
-    int? StorageLayerId);
+    int? StorageLayerId)
+{
+    public MetadataV2GraphSnapshot? Snapshot { get; init; }
+    public MetadataV2StorageBinding? StorageBinding { get; init; }
+    public MetadataV2Connection? Connection { get; init; }
+}

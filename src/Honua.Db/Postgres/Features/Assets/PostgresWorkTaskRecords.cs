@@ -24,13 +24,13 @@ internal sealed class PostgresWorkTaskRecords
               INSERT INTO {_inspections} (inspection_id, task_id, profile_id, asset_id, form_id, form_version, condition,
                   answers, notes, attachments, inspector, observed_at, recorded_at)
               VALUES (@record_id, @task_id, @profile_id, @asset_id, @form_id, @form_version, @condition,
-                  @answers::jsonb, @notes, '[]', @actor, @observed_at, now())
+                  @answers::jsonb, @notes, @attachments::jsonb, @actor, @observed_at, now())
               """
             : $"""
               INSERT INTO {_serviceRecords} (service_record_id, task_id, profile_id, asset_id, location, service_type,
                   form_id, form_version, answers, notes, attachments, actor, observed_at, recorded_at)
               SELECT @record_id, task_id, profile_id, asset_id, geometry, task_type, @form_id, @form_version,
-                  @answers::jsonb, @notes, '[]', @actor, @observed_at, now()
+                  @answers::jsonb, @notes, @attachments::jsonb, @actor, @observed_at, now()
               FROM {_rows.TasksTable} WHERE task_id = @task_id
               """;
         await using var command = new NpgsqlCommand(sql, transaction.Connection, transaction);
@@ -43,6 +43,7 @@ internal sealed class PostgresWorkTaskRecords
         parameters.AddWithValue("form_version", NpgsqlDbType.Integer, record.Task.Form.Version);
         parameters.AddWithValue("condition", NpgsqlDbType.Smallint, (object?)(short?)record.Request.Condition ?? DBNull.Value);
         parameters.AddWithValue("answers", NpgsqlDbType.Text, record.Request.Answers?.GetRawText() ?? "{}");
+        parameters.AddWithValue("attachments", NpgsqlDbType.Text, JsonSerializer.Serialize(record.Request.Attachments, AssetsJsonContext.Default.GuidArray));
         parameters.AddWithValue("notes", NpgsqlDbType.Text, (object?)record.Request.Notes ?? DBNull.Value);
         parameters.AddWithValue("actor", NpgsqlDbType.Text, record.Actor);
         parameters.AddWithValue("observed_at", NpgsqlDbType.TimestampTz, record.Request.ObservedAt!.Value.UtcDateTime);
@@ -52,11 +53,11 @@ internal sealed class PostgresWorkTaskRecords
     // Each field group advances only for a newer observation in that group, so late uploads never regress the summary.
     // The upsert serializes concurrent completions on the (profile, asset) key. Closing a resident request is recorded
     // but is not maintenance, so it leaves the serviced date alone.
-    public async Task AdvanceSummaryAsync(NpgsqlTransaction transaction, WorkTaskCompletionRecord record, CancellationToken cancellationToken)
+    public async Task<bool> AdvanceSummaryAsync(NpgsqlTransaction transaction, WorkTaskCompletionRecord record, CancellationToken cancellationToken)
     {
         if (record.Task.ProfileId is null || record.Task.Type == WorkTaskType.Request)
         {
-            return;
+            return false;
         }
 
         var inspection = record.Task.Type == WorkTaskType.Inspection;
@@ -75,6 +76,7 @@ internal sealed class PostgresWorkTaskRecords
                 {observed} = GREATEST(s.{observed}, EXCLUDED.{observed}),
                 revision = s.revision + CASE WHEN {newer} THEN 1 ELSE 0 END,
                 updated_at = now()
+            WHERE {newer}
             """,
             transaction.Connection,
             transaction);
@@ -82,7 +84,7 @@ internal sealed class PostgresWorkTaskRecords
         command.Parameters.AddWithValue("asset_id", NpgsqlDbType.Text, record.Task.AssetId!);
         command.Parameters.AddWithValue("condition", NpgsqlDbType.Smallint, inspection ? (object?)(short?)record.Request.Condition ?? DBNull.Value : DBNull.Value);
         command.Parameters.AddWithValue("observed_at", NpgsqlDbType.TimestampTz, record.Request.ObservedAt!.Value.UtcDateTime);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
     }
 
     public async Task<WorkTask> CompleteTaskAsync(NpgsqlTransaction transaction, WorkTaskCompletionRecord record, CancellationToken cancellationToken)

@@ -15,16 +15,29 @@ namespace Honua.Server.Tests.Features.Assets;
 // Shared setup for the asset and task tests: database reset and counts, fixture assets, a published form and a profile.
 internal static class AssetTestData
 {
-    // TRUNCATE bypasses the append-only row triggers, which is what a test reset needs.
+    // Test-only reset: disable retention guards inside the same transaction as cleanup.
     public static async Task ResetAsync(WebAppFixture fixture)
     {
         await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
+        await using var transaction = await connection.BeginTransactionAsync();
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
-            TRUNCATE honua.asset_inspections, honua.asset_service_records, honua.work_task_history,
-                honua.asset_command_receipts, honua.asset_summaries, honua.work_tasks, honua.asset_profiles
+            ALTER TABLE honua.asset_inspections DISABLE TRIGGER trg_asset_inspections_no_truncate;
+            ALTER TABLE honua.asset_service_records DISABLE TRIGGER trg_asset_service_records_no_truncate;
+            ALTER TABLE honua.work_task_history DISABLE TRIGGER trg_work_task_history_no_truncate;
+            ALTER TABLE honua.asset_command_receipts DISABLE TRIGGER trg_asset_command_receipts_no_truncate;
+            ALTER TABLE honua.work_task_attachments DISABLE TRIGGER trg_work_task_attachments_no_truncate;
+            TRUNCATE honua.work_task_attachments, honua.asset_inspections, honua.asset_service_records, honua.work_task_history,
+                honua.asset_command_receipts, honua.asset_summaries, honua.work_tasks, honua.asset_profiles;
+            ALTER TABLE honua.work_task_attachments ENABLE TRIGGER trg_work_task_attachments_no_truncate;
+            ALTER TABLE honua.asset_inspections ENABLE TRIGGER trg_asset_inspections_no_truncate;
+            ALTER TABLE honua.asset_service_records ENABLE TRIGGER trg_asset_service_records_no_truncate;
+            ALTER TABLE honua.work_task_history ENABLE TRIGGER trg_work_task_history_no_truncate;
+            ALTER TABLE honua.asset_command_receipts ENABLE TRIGGER trg_asset_command_receipts_no_truncate;
             """;
         await command.ExecuteNonQueryAsync();
+        await transaction.CommitAsync();
     }
 
     public static async Task ExecuteAsync(WebAppFixture fixture, string sql)
@@ -63,7 +76,7 @@ internal static class AssetTestData
         return assets;
     }
 
-    public static async Task<WorkTaskFormReference> PublishFormAsync(WebAppFixture fixture)
+    public static async Task<WorkTaskFormReference> PublishFormAsync(WebAppFixture fixture, FormFieldDefinition[]? fields = null)
     {
         using var scope = fixture.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IFormPackageStore>();
@@ -72,7 +85,9 @@ internal static class AssetTestData
             {
                 Title = "Asset work " + Guid.NewGuid().ToString("N"),
                 Target = new FormTargetDefinition { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId },
-                Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = ["name"] }],
+                Fields = fields ?? [],
+                Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = fields?.Select(static field => field.FieldId).OfType<string>().ToArray() ?? [] }],
+                AttachmentPolicy = new FormAttachmentPolicy { Enabled = fields?.Any(static field => field.Type is "attachment" or "media") == true },
             },
             "test-admin");
         var published = await store.PublishAsync(draft.FormId, draft.Version, new FormPackageValidationResult { IsValid = true }, "test-admin")

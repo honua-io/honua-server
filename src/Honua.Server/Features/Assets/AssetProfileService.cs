@@ -6,7 +6,7 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Assets;
 
-internal sealed class AssetProfileService(IAssetProfileStore store, AssetProfileValidator validator, TimeProvider clock)
+internal sealed class AssetProfileService(IAssetProfileStore store, AssetProfileValidator validator, TimeProvider clock, AssetCompletionCapabilities capabilities)
 {
     private const int DefaultLimit = 50;
     private const int MaxLimit = 200;
@@ -33,8 +33,13 @@ internal sealed class AssetProfileService(IAssetProfileStore store, AssetProfile
 
         var limit = int.TryParse(context.Request.Query["limit"], out var requested) ? Math.Clamp(requested, 1, MaxLimit) : DefaultLimit;
         var result = await store.ListAsync(new AssetProfileQuery(grant.ServiceId, after, limit), context.RequestAborted).ConfigureAwait(false);
+        var items = new List<AssetProfile>(result.Items.Count);
+        foreach (var profile in result.Items)
+        {
+            items.Add(await capabilities.DescribeAsync(profile, context.RequestAborted).ConfigureAwait(false));
+        }
         AssetCommandHttp.ApplyNoStore(context.Response);
-        return Results.Json(result, AssetsJsonContext.Default.AssetProfileListResult);
+        return Results.Json(result with { Items = items }, AssetsJsonContext.Default.AssetProfileListResult);
     }
 
     public async Task<IResult> GetAsync(HttpContext context, Guid profileId)
@@ -45,6 +50,7 @@ internal sealed class AssetProfileService(IAssetProfileStore store, AssetProfile
             return NotFound(context);
         }
 
+        profile = await capabilities.DescribeAsync(profile, context.RequestAborted).ConfigureAwait(false);
         AssetCommandHttp.ApplyNoStore(context.Response);
         return Results.Json(profile, AssetsJsonContext.Default.AssetProfile);
     }

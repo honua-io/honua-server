@@ -10,6 +10,7 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Attachments;
@@ -132,6 +133,7 @@ internal static class WebAppFixturePostgresWiringMixin
         services.RemoveAll<NpgsqlDataSource>();
         services.RemoveAll<IFeatureReader>();
         services.RemoveAll<IFeatureWriter>();
+        services.RemoveAll<IOutboxCapabilityProvider>();
         services.RemoveAll<ITileProvider>();
         services.RemoveAll<IRelationshipStore>();
         services.RemoveAll<IStreamingFeatureStore>();

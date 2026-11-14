@@ -19,12 +19,7 @@ namespace Honua.Server.Features.Tasks;
 
 // Resolves where a new task is: a geometry snapshot copied from the asset feature, or the caller's explicit location.
 // Asset reads go through the layer access check and the feature reader, which applies row-level security itself.
-internal sealed class WorkTaskLocator(
-    IAssetProfileStore profiles,
-    IFormTargetMetadataResolver layerResolver,
-    IFeatureReader featureReader,
-    IFilterExpressionService filters,
-    ILayerAccessAuthorizer layerAccess)
+internal sealed class WorkTaskLocator(WorkTaskAssetResolver assets)
 {
     private const int Wgs84 = 4326;
     private const int MaxAssetIdLength = 200;
@@ -43,80 +38,16 @@ internal sealed class WorkTaskLocator(
             return WorkTaskLocation.Fail("assetId", "profileId and assetId must be given together.");
         }
 
-        var profile = await profiles.GetAsync(profileId, cancellationToken).ConfigureAwait(false);
-        if (profile is null || !string.Equals(profile.ServiceId, request.ServiceId, StringComparison.Ordinal))
-        {
-            return WorkTaskLocation.Fail("profileId", "The asset profile was not found on this service.");
-        }
-
-        if (profile.State != AssetProfileState.Active)
-        {
-            return WorkTaskLocation.Fail("profileId", "Tasks can only target assets of an active profile.");
-        }
-
-        var target = await layerResolver.ResolveAsync(
-            new FormTargetDefinition { ServiceId = profile.ServiceId, LayerId = profile.LayerId },
-            cancellationToken).ConfigureAwait(false);
-        if (target is not { Publication: { } publication, Resource: { } resource, StorageLayerId: int })
-        {
-            return WorkTaskLocation.Fail("profileId", "The profiled layer is no longer published.");
-        }
-
-        var access = await layerAccess.AuthorizePublicationAsync(user, publication, resource, target.Service, AuthorizationOperation.Query, cancellationToken)
+        var asset = await assets.ResolveAsync(new WorkTaskAssetReference(profileId, request.ServiceId!, request.AssetId), user, cancellationToken)
             .ConfigureAwait(false);
-        return access.IsAllowed
-            ? await CopyAssetGeometryAsync(target, profile, request.AssetId, cancellationToken).ConfigureAwait(false)
-            : WorkTaskLocation.Fail("assetId", "No asset with this ID exists on the layer.");
-    }
-
-    private async Task<WorkTaskLocation> CopyAssetGeometryAsync(
-        FormTargetMetadataResolution target,
-        AssetProfile profile,
-        string assetId,
-        CancellationToken cancellationToken)
-    {
-        var resource = target.Resource!;
-        if (AssetIdLiteral(resource, profile.Fields.AssetId!, assetId) is not { } literal)
+        if (asset.Error is { } error)
         {
-            return WorkTaskLocation.Fail("assetId", "No asset with this ID exists on the layer.");
+            return new WorkTaskLocation(null, 0, null, error);
         }
 
-        var match = new BinaryExpression(new PropertyReference(profile.Fields.AssetId!), BinaryOperator.Equal, literal);
-        var translation = filters.Translate(match, resource);
-        if (!translation.IsSuccess || translation.SqlFilter is null)
-        {
-            return WorkTaskLocation.Fail("assetId", "The asset ID cannot be matched on this layer.");
-        }
-
-        // Two rows are read so a non-unique asset ID is refused rather than resolved arbitrarily.
-        var result = await featureReader.QueryAsync(
-            target.StorageLayerId!.Value,
-            new FeatureQuery { SqlFilter = translation.SqlFilter, Limit = 2 },
-            cancellationToken).ConfigureAwait(false);
-        var features = result.Items.Take(2).ToList();
-        return features switch
-        {
-            [] => WorkTaskLocation.Fail("assetId", "No asset with this ID exists on the layer."),
-            [{ Geometry: { Length: > 0 } wkb }] => WorkTaskLocation.FromAsset(wkb, resource.ReadSrid() ?? Wgs84, CanonicalId(literal)),
-            [_] => WorkTaskLocation.Fail("assetId", "The asset has no geometry."),
-            _ => WorkTaskLocation.Fail("assetId", "The asset ID is not unique on the layer; fix the data or the profile's ID field."),
-        };
-    }
-
-    // Tasks and summaries key on this spelling, so "007" and "7" name one numeric asset.
-    private static string CanonicalId(Literal literal) => Convert.ToString(literal.Value, CultureInfo.InvariantCulture)!;
-
-    // Numeric and UUID identity fields compare in their canonical form; an ID that does not parse cannot match one.
-    private static Literal? AssetIdLiteral(MetadataV2Resource resource, string fieldName, string assetId)
-    {
-        var field = resource.SchemaFields.FirstOrDefault(f => string.Equals(f.Name, fieldName, StringComparison.Ordinal));
-        return field?.Type switch
-        {
-            MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger
-                => long.TryParse(assetId, NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? new Literal(number, LiteralType.Number) : null,
-            MetadataV2FieldType.Uuid => Guid.TryParse(assetId, out var uuid) ? new Literal(uuid.ToString("D"), LiteralType.Text) : null,
-            _ => new Literal(assetId, LiteralType.Text),
-        };
+        return asset.Feature is { Geometry: { Length: > 0 } wkb }
+            ? WorkTaskLocation.FromAsset(wkb, asset.Target!.Value.Resource!.ReadSrid() ?? Wgs84, asset.CanonicalId!)
+            : WorkTaskLocation.Fail("assetId", "The asset has no geometry.");
     }
 
     private static WorkTaskLocation ParseExplicit(JsonElement? location)

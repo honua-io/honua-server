@@ -72,7 +72,7 @@ internal sealed class PostgresWorkTaskStore : IWorkTaskStore
         ArgumentNullException.ThrowIfNull(command);
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await _commit.Receipts.FindAsync(connection, null, command, cancellationToken).ConfigureAwait(false);
+        return await _commit.Receipts.FindAsync((connection, null), command, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<AssetCommandResult> CreateAsync(WorkTaskDraft draft, AssetCommand command, CancellationToken cancellationToken = default)

@@ -77,7 +77,7 @@ internal sealed class PostgresAssetProfileStore : IAssetProfileStore
         ArgumentNullException.ThrowIfNull(command);
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await _receipts.FindAsync(connection, null, command, cancellationToken).ConfigureAwait(false);
+        return await _receipts.FindAsync((connection, null), command, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<AssetCommandResult> CreateAsync(AssetProfile profile, AssetCommand command, CancellationToken cancellationToken = default)
