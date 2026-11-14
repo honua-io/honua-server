@@ -34,6 +34,7 @@ public sealed class SensorThingsStreamAdmissionEndpointTests : IAsyncLifetime
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
             new Dictionary<string, string?>
             {
+                ["MultiTenancy:Enabled"] = "true",
                 ["MultiTenancy:MultiTenantAdminRoles:0"] = "admin",
                 ["SensorThings:Streaming:MaxSessionsPerPrincipal"] = "2",
                 ["SensorThings:Streaming:MaxSessionsPerTenant"] = "3",

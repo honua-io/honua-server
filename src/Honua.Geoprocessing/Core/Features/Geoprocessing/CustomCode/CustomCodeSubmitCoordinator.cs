@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Geoprocessing.CustomCode;
 
@@ -23,21 +24,18 @@ internal sealed class CustomCodeSubmitCoordinator(
 
     private const string PermissionClaimType = "permission";
 
-    private const string TenantClaimType = "tenant_id";
-
     public async Task<CustomCodeSubmitResult> ValidateMintAndInjectAsync(
-        string jobId,
-        ClaimsPrincipal principal,
-        Dictionary<string, string> specParams,
+        CustomCodeSubmission submission,
         CustomCodeOptions options,
         CancellationToken cancellationToken)
     {
+        var (jobId, principal, specParams, securityContext) = submission;
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(specParams);
         ArgumentNullException.ThrowIfNull(options);
 
-        var tenantId = principal.FindFirstValue(TenantClaimType);
+        var tenantId = (securityContext ?? JobSecurityContextCapture.Capture(principal, new RbacOptions())).TenantId;
 
         if (!CustomCodeSubmitValidator.TryValidate(
                 specParams,

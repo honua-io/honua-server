@@ -13,7 +13,7 @@ OpenSSL 3, and a Bash terminal. The configuration runs the same Production image
 clients and two-feature journey as the [Windows install](windows-packages.md).
 No source checkout, build or GitHub login is needed. This pre-cut profile
 selects `linux/amd64`; use an amd64 host for this rehearsal.
-On a virtual machine, check its CPU model first: releases from 2027.1 need x86-64-v2.
+On a virtual machine, check its CPU model first: releases from 2026.1 (.NET 11) need x86-64-v2.
 `grep -m1 -ow -e sse4_2 -e popcnt /proc/cpuinfo` must print both words; see
 [CPU baseline](../guides/deploy/troubleshooting.md#cpu-baseline-x86-64-v2) for the full check and the VM fix.
 

@@ -84,7 +84,6 @@ internal sealed class OidcClaimsTransformation(
             return principal;
         }
 
-        var customRoleClaimType = HasCustomRoleClaimType();
         var roleClaimSelectionEntitled = IsRoleClaimSelectionEntitled();
         var claimsMappingEntitled = IsCustomMappingEntitled();
 
@@ -261,29 +260,17 @@ internal sealed class OidcClaimsTransformation(
             OidcAuthenticationLog.ClaimsTransformed(logger, transformedClaims.Count);
         }
 
-        // Gating the role claim GATHERING above is not sufficient on its own. The JWT/OIDC handlers
-        // install ClaimsMapping.RoleClaimType as TokenValidationParameters.RoleClaimType, so the
-        // identity itself resolves IsInRole / [Authorize(Roles=...)] against THAT claim type,
-        // never consulting the ClaimTypes.Role claims this transformation just normalized into.
-        // Re-home the identity so role resolution reads the normalized claims. This settles two
-        // things at once:
-        //   * unentitled: raw `groups` values can no longer satisfy a role check by bypassing
-        //     the gate above (honua-server#2997 review); and
-        //   * entitled: the `admin` role synthesized from AdminRoles becomes visible at all —
-        //     it is written as ClaimTypes.Role, which an identity keyed on `groups` could never
-        //     resolve, so a custom-role-claim deployment previously got no admin.
-        // Doing it here rather than at handler construction keeps the gate LIVE: applying or
-        // expiring a license takes effect on the next request instead of at the next restart,
-        // matching the other #2997/#2998 gates.
+        // All mapped and synthesized roles use ClaimTypes.Role. Make role checks
+        // read those normalized claims, including when the handler uses the default
+        // "roles" claim type and only AdditionalRoleClaimTypes is configured.
+        // Gathering above retains the live entitlement checks.
         ClaimsPrincipal result = principal;
-        if (customRoleClaimType &&
-            !string.Equals(identity.RoleClaimType, ClaimTypes.Role, StringComparison.Ordinal))
+        if (!string.Equals(identity.RoleClaimType, ClaimTypes.Role, StringComparison.Ordinal))
         {
-            result = new ClaimsPrincipal(new ClaimsIdentity(
-                identity.Claims,
-                identity.AuthenticationType,
-                identity.NameClaimType,
-                ClaimTypes.Role));
+            var normalized = new ClaimsIdentity(
+                identity, null, identity.AuthenticationType, identity.NameClaimType, ClaimTypes.Role);
+            result = new ClaimsPrincipal(principal.Identities.Select(candidate =>
+                ReferenceEquals(candidate, identity) ? normalized : candidate));
         }
 
         return await ManagedMembershipRevalidation

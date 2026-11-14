@@ -13,8 +13,10 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming;
 
@@ -349,7 +351,10 @@ internal static partial class FeatureStreamEndpoints
 
     internal static string ResolveAdmissionPartition(HttpContext context)
     {
-        var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        // Single-tenant deployments resolve every request to the deployment tenant, so a
+        // tenant partition there would let one principal exhaust the whole node.
+        var tenancyEnabled = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value.Enabled == true;
+        var tenant = tenancyEnabled ? context.RequestServices.GetService<ITenantContext>()?.TenantId : null;
         if (!string.IsNullOrWhiteSpace(tenant))
         {
             return $"tenant:{tenant}";

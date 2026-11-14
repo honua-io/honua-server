@@ -49,7 +49,10 @@ public sealed class SharingManagedKeyAuthorityTests : IAsyncLifetime
             ["admin:read"],
             ["admin:read", "admin:approve"],
             ["ops:read"],
-            ["unrecognized:permission"]
+            ["unrecognized:permission"],
+            ["admin", "agent"],
+            ["admin:*", "Agent"],
+            ["admin:write", " agent "]
         ];
         await AssertRejectedAsync(grants);
     }
@@ -127,6 +130,9 @@ public sealed class SharingManagedKeyAuthorityTests : IAsyncLifetime
             ["admin:read", "admin:approve"],
             ["ops:read"],
             ["unrecognized:permission"],
+            ["admin", "agent"],
+            ["admin:*", "Agent"],
+            ["admin:write", " agent "],
             operation.ToArray(),
             [.. operation, "admin:*"]
         ];
