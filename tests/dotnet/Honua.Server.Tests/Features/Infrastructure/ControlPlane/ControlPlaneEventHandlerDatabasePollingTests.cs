@@ -4,7 +4,6 @@
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.Io.Export;
 using Honua.Migration;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Infrastructure.Monitoring;
@@ -37,7 +36,6 @@ public sealed class ControlPlaneEventHandlerDatabasePollingTests
         Hosts<MigrationBatchBackgroundService>(services).Should().BeFalse();
         Hosts<GeoservicesImportBackgroundService>(services).Should().BeFalse();
         Hosts<GeoServerImportBackgroundService>(services).Should().BeFalse();
-        Hosts<ExportBackgroundService>(services).Should().BeFalse();
         Hosts<OpsHealthRollupSampler>(services).Should().BeFalse();
         Hosts<WorkflowEventTriggerBackgroundService>(services).Should().BeFalse();
     }
@@ -53,7 +51,6 @@ public sealed class ControlPlaneEventHandlerDatabasePollingTests
         Hosts<MigrationBatchBackgroundService>(services).Should().BeTrue();
         Hosts<GeoservicesImportBackgroundService>(services).Should().BeTrue();
         Hosts<GeoServerImportBackgroundService>(services).Should().BeTrue();
-        Hosts<ExportBackgroundService>(services).Should().BeTrue();
         Hosts<OpsHealthRollupSampler>(services).Should().BeTrue();
         Hosts<WorkflowEventTriggerBackgroundService>(services).Should().BeTrue();
     }

@@ -7,20 +7,27 @@ using System.IO.Compression;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Formats;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Tiles.PMTiles;
+using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Progress;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -28,9 +35,9 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-public sealed class TileOperationJobServicePublishTests
+public sealed partial class TileCacheJobExecutorPublishTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("archive", true, 7)]
     [InlineData("publish", true, 7)]
     [InlineData("archive", true, null)]
@@ -141,7 +148,48 @@ public sealed class TileOperationJobServicePublishTests
         }
     }
 
-    [Fact]
+    [UnitTest]
+    public async Task Publish_PartialTileFailure_DoesNotUploadOrOverwriteDeterministicKey()
+    {
+        var stub = new StubCloudStorage();
+        var publishOptions = new PMTilesPublishOptions
+        {
+            UrlStrategy = PMTilesUrlStrategy.SignedUrl,
+            SignedUrlLifetime = TimeSpan.FromHours(1)
+        };
+
+        using var serviceProvider = BuildScope(
+            stub,
+            includeCloudStorage: true,
+            publishOptions: publishOptions,
+            configureTileProvider: FailSecondTile);
+        var sut = CreateSut(serviceProvider);
+
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "publish",
+            ServiceId = "world",
+            LayerId = 41,
+            MinZoom = 0,
+            MaxZoom = 1,
+            MaxTiles = 5
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Failed);
+        progress.ErrorMessage.Should().Contain("Publish aborted before upload");
+        progress.ErrorMessage.Should().Contain("tiles failed during generation");
+
+        progress.PublishedArtifact.Should().BeNull(
+            "a partial publish must never expose a descriptor; clients would otherwise see a mix of stale and new bytes via the deterministic key");
+        stub.LastUpload.Should().BeNull(
+            "the partial archive must not be uploaded — that would silently overwrite the prior good artifact at the deterministic key");
+    }
+
+    [UnitTest]
     public async Task Publish_WhenStorageMissing_FailsWithMessage()
     {
         var stub = new StubCloudStorage();
@@ -165,7 +213,7 @@ public sealed class TileOperationJobServicePublishTests
         progress.ErrorMessage.Should().Contain("Cloud storage is not configured");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Archive_MaxTiles_ReportsTruncationAndStampsActualCoverage()
     {
         var stub = new StubCloudStorage();
@@ -195,7 +243,7 @@ public sealed class TileOperationJobServicePublishTests
         header.MaxZoom.Should().Be(1, "the selected two tiles only reach zoom 1");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_MaxTiles_ReportsTruncationAndStampsActualCoverage()
     {
         var stub = new StubCloudStorage();
@@ -222,7 +270,7 @@ public sealed class TileOperationJobServicePublishTests
         PMTilesHeader.ReadFrom(stub.LastUploadBytes!).MaxZoom.Should().Be(1);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_SignedUrlStrategy_PopulatesDescriptorWithSignedUrl()
     {
         var stub = new StubCloudStorage();
@@ -272,7 +320,7 @@ public sealed class TileOperationJobServicePublishTests
         stub.LastUpload.ObjectKeyOverride.Should().Be(descriptor.ObjectKey);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_RangeProxyStrategy_BuildsRelativeProxyUrl()
     {
         var stub = new StubCloudStorage();
@@ -301,7 +349,7 @@ public sealed class TileOperationJobServicePublishTests
         descriptor.AccessUrlExpiresAt.Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_PublicUrlStrategy_BuildsPublicUrlFromConfig()
     {
         var stub = new StubCloudStorage();
@@ -332,7 +380,7 @@ public sealed class TileOperationJobServicePublishTests
         descriptor.AccessUrlExpiresAt.Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_PublicUrlStrategy_WithoutBaseUrl_FailsJob()
     {
         var stub = new StubCloudStorage();
@@ -362,7 +410,7 @@ public sealed class TileOperationJobServicePublishTests
         stub.LastUpload.Should().BeNull("misconfigured PublicUrl must fail before upload to avoid orphan artifacts");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_SignedUrlFailure_RollsBackUploadedArtifact()
     {
         var stub = new StubCloudStorage(presignedUrlOverride: _ => null); // simulate provider returning no presigned URL
@@ -397,7 +445,7 @@ public sealed class TileOperationJobServicePublishTests
         orphanLookup.Should().BeNull("the orphan artifact must no longer be present in storage");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_AccessUrlFailure_DoesNotLeakProviderExceptionMessage()
     {
         const string sensitive = "AWS:AccessDenied User: arn:aws:iam::123456789012:user/secret-name";
@@ -433,7 +481,7 @@ public sealed class TileOperationJobServicePublishTests
         stub.DeletedFileIds.Should().Contain(stub.LastUpload!.ObjectKeyOverride!);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_RollbackDelete_WhenProviderReturnsFalse_StillFailsJobWithoutLeakingException()
     {
         var stub = new StubCloudStorage(
@@ -469,7 +517,7 @@ public sealed class TileOperationJobServicePublishTests
         stub.DeletedFileIds.Should().Contain(stub.LastUpload!.ObjectKeyOverride!);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_AccessUrlFailure_OnRepublish_PreservesPriorArtifactAtSameKey()
     {
         var presignCalls = 0;
@@ -521,185 +569,50 @@ public sealed class TileOperationJobServicePublishTests
         stillExists.Should().NotBeNull("the artifact bytes at the deterministic key must remain so clients still see PMTiles content while the operator addresses the URL failure");
     }
 
-    [Fact]
-    public async Task Publish_PartialTileFailure_DoesNotUploadOrOverwriteDeterministicKey()
+    [UnitTest]
+    public async Task ScheduledSeed_ReadsTheLayerAsTheInProcessPathDid()
     {
-        // Background: BuildPMTilesArchiveAsync swallows per-tile exceptions and
-        // continues with whatever tiles succeeded. For the temporary `archive`
-        // path that is fine — the result writes to a random per-job key with a
-        // 24h TTL. For durable `publish`, the deterministic key may already
-        // host a previously good artifact, so a partial generation must not be
-        // promoted there. ExecutePublishAsync gates the upload on
-        // build.Failed == 0; this test confirms the gate by configuring the
-        // tile provider to throw on the second of two requested tiles.
+        var policies = await SeedPoliciesAsync();
+        var parcels = new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "parcels", Name = "parcels" } };
+        var filters = SeedFilters();
+        RowLevelSecurityFilterSource? rowFilters = null;
+        var predicatesPerTile = new ConcurrentQueue<int>();
+        using var serviceProvider = BuildScope(new StubCloudStorage(), includeCloudStorage: true,
+            configureTileProvider: provider => ObserveSeedPredicates(provider, predicatesPerTile,
+                async () => (await rowFilters!.ResolveExpressionsAsync(parcels)).Count));
+        rowFilters = new RowLevelSecurityFilterSource(
+            new HttpContextAccessor(),
+            policies,
+            serviceProvider.GetRequiredService<IMetadataV2GraphProvider>(),
+            filters,
+            Options.Create(new RbacOptions()),
+            NullLogger<RowLevelSecurityFilterSource>.Instance);
+        var request = new TileOperationStartRequest { Operation = "seed", LayerId = 7, MinZoom = 0, MaxZoom = 0, MaxTiles = 1 };
 
-        var stub = new StubCloudStorage();
-        var publishOptions = new PMTilesPublishOptions
+        // The in-process path read the layer outside any job scope.
+        var inProcess = CreateSut(serviceProvider);
+        await inProcess.ProcessQueuedJobAsync(await inProcess.StartAsync(request));
+        var inProcessReads = predicatesPerTile.ToArray();
+        predicatesPerTile.Clear();
+
+        var jobStore = new Honua.TestKit.Helpers.InMemoryExecutionJobStore();
+        var progressStore = new Honua.TestKit.Helpers.ComparingInMemoryProgressStore();
+        var service = CreateJobService(jobStore, progressStore, serviceProvider);
+        var jobId = await service.SubmitAsync(new TileOperationSubmission(request, TileCacheJobService.SchedulerIdentityName));
+        var claimed = (await jobStore.GetAsync(jobId))! with { Status = ExecutionJobStatus.Running, AttemptCount = 1 };
+        // The worker runs every claimed job inside a job scope built from the record.
+        using (JobSecurityScope.Begin(claimed.Audit.SubmitterSecurityContext))
         {
-            UrlStrategy = PMTilesUrlStrategy.SignedUrl,
-            SignedUrlLifetime = TimeSpan.FromHours(1)
-        };
+            await CreateExecutor(progressStore, serviceProvider)
+                .ExecuteAsync(claimed, PublishingContext(), CancellationToken.None);
+        }
 
-        using var serviceProvider = BuildScope(
-            stub,
-            includeCloudStorage: true,
-            publishOptions: publishOptions,
-            configureTileProvider: tileProvider =>
-            {
-                tileProvider.GetMvtTileAsync(
-                        Arg.Any<int>(),
-                        Arg.Any<int>(),
-                        Arg.Any<int>(),
-                        Arg.Any<int>(),
-                        Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery?>(),
-                        Arg.Any<Honua.Core.Features.Tiles.TileOptions>(),
-                        Arg.Any<TileLimits>(),
-                        Arg.Any<Honua.Core.Features.Tiles.GridGeometry?>(),
-                        Arg.Any<CancellationToken>())
-                    .Returns(
-                        Task.FromResult<byte[]?>(MvtTileBuilder.Canonical()),
-                        Task.FromException<byte[]?>(new InvalidOperationException("simulated tile fetch failure")));
-            });
-        var sut = CreateSut(serviceProvider);
-
-        var jobId = await sut.StartAsync(new TileOperationStartRequest
-        {
-            Operation = "publish",
-            ServiceId = "world",
-            LayerId = 41,
-            MinZoom = 0,
-            MaxZoom = 1,
-            MaxTiles = 5
-        });
-
-        await sut.ProcessQueuedJobAsync(jobId);
-
-        var progress = await sut.GetAsync(jobId);
-        progress.Should().NotBeNull();
-        progress!.Status.Should().Be(OperationStatus.Failed);
-        progress.ErrorMessage.Should().Contain("Publish aborted before upload");
-        progress.ErrorMessage.Should().Contain("tiles failed during generation");
-
-        progress.PublishedArtifact.Should().BeNull(
-            "a partial publish must never expose a descriptor; clients would otherwise see a mix of stale and new bytes via the deterministic key");
-        stub.LastUpload.Should().BeNull(
-            "the partial archive must not be uploaded — that would silently overwrite the prior good artifact at the deterministic key");
+        inProcessReads.Should().Equal(0);
+        predicatesPerTile.Should().Equal(inProcessReads, "a scheduled seed fills the shared cache with the same rows the in-process path did");
+        (await progressStore.GetProgressAsync<TileOperationProgress>(jobId))!.SuccessfulTiles.Should().Be(1);
     }
 
-    [Fact]
-    public async Task Publish_DeterministicKey_OverwritesPreviousArtifact()
-    {
-        var stub = new StubCloudStorage();
-        using var serviceProvider = BuildScope(stub, includeCloudStorage: true);
-        var sut = CreateSut(serviceProvider);
-
-        var firstJobId = await sut.StartAsync(new TileOperationStartRequest
-        {
-            Operation = "publish",
-            ServiceId = "world",
-            LayerId = 13,
-            MinZoom = 0,
-            MaxZoom = 0,
-            MaxTiles = 1
-        });
-        await sut.ProcessQueuedJobAsync(firstJobId);
-        var firstDescriptor = (await sut.GetAsync(firstJobId))!.PublishedArtifact!;
-
-        var secondJobId = await sut.StartAsync(new TileOperationStartRequest
-        {
-            Operation = "publish",
-            ServiceId = "world",
-            LayerId = 13,
-            MinZoom = 0,
-            MaxZoom = 0,
-            MaxTiles = 1
-        });
-        await sut.ProcessQueuedJobAsync(secondJobId);
-        var secondDescriptor = (await sut.GetAsync(secondJobId))!.PublishedArtifact!;
-
-        secondDescriptor.ArtifactId.Should().Be(firstDescriptor.ArtifactId);
-        secondDescriptor.ObjectKey.Should().Be(firstDescriptor.ObjectKey);
-    }
-
-    [Fact]
-    public async Task Publish_ProviderKeyPrefix_IsAppliedToObjectKey()
-    {
-        var stub = new StubCloudStorage(provider: CloudStorageProvider.AwsS3);
-        var cloudOptions = new CloudStorageOptions
-        {
-            Provider = CloudStorageProvider.AwsS3,
-            AwsS3 = new AwsS3Options
-            {
-                BucketName = "honua-bucket",
-                Region = "us-east-1",
-                KeyPrefix = "tenants/acme"
-            },
-            PMTilesPublish = new PMTilesPublishOptions
-            {
-                UrlStrategy = PMTilesUrlStrategy.SignedUrl,
-                KeyPrefix = "pmtiles"
-            }
-        };
-
-        using var serviceProvider = BuildScope(stub, includeCloudStorage: true, cloudOptions: cloudOptions);
-        var sut = CreateSut(serviceProvider);
-
-        var jobId = await sut.StartAsync(new TileOperationStartRequest
-        {
-            Operation = "publish",
-            LayerId = 100,
-            MinZoom = 0,
-            MaxZoom = 0,
-            MaxTiles = 1
-        });
-        await sut.ProcessQueuedJobAsync(jobId);
-
-        var descriptor = (await sut.GetAsync(jobId))!.PublishedArtifact!;
-        descriptor.ObjectKey.Should().Be("tenants/acme/pmtiles/_/100/WebMercatorQuad.pmtiles");
-        descriptor.Bucket.Should().Be("honua-bucket");
-        descriptor.StorageProvider.Should().Be(CloudStorageProvider.AwsS3);
-    }
-
-    [Fact]
-    public async Task Publish_AzureBlob_BucketIsContainerName()
-    {
-        var stub = new StubCloudStorage(provider: CloudStorageProvider.AzureBlob);
-        var cloudOptions = new CloudStorageOptions
-        {
-            Provider = CloudStorageProvider.AzureBlob,
-            AzureBlob = new AzureBlobOptions
-            {
-                ConnectionString = "fake",
-                ContainerName = "tiles-container",
-                BlobPrefix = "site/honua"
-            },
-            PMTilesPublish = new PMTilesPublishOptions
-            {
-                UrlStrategy = PMTilesUrlStrategy.SignedUrl,
-                KeyPrefix = "pmtiles"
-            }
-        };
-
-        using var serviceProvider = BuildScope(stub, includeCloudStorage: true, cloudOptions: cloudOptions);
-        var sut = CreateSut(serviceProvider);
-
-        var jobId = await sut.StartAsync(new TileOperationStartRequest
-        {
-            Operation = "publish",
-            LayerId = 5,
-            MinZoom = 0,
-            MaxZoom = 0,
-            MaxTiles = 1
-        });
-        await sut.ProcessQueuedJobAsync(jobId);
-
-        var descriptor = (await sut.GetAsync(jobId))!.PublishedArtifact!;
-        descriptor.Bucket.Should().Be("tiles-container");
-        descriptor.ObjectKey.Should().Be("site/honua/pmtiles/_/5/WebMercatorQuad.pmtiles");
-        descriptor.StorageProvider.Should().Be(CloudStorageProvider.AzureBlob);
-    }
-
-    [Fact]
+    [UnitTest]
     public async Task NormalizeRequest_RejectsUnknownOperation()
     {
         Func<Task> act = async () =>
@@ -712,25 +625,79 @@ public sealed class TileOperationJobServicePublishTests
             .WithMessage("*publish*");
     }
 
-    private static TileOperationJobService CreateSut(ServiceProvider serviceProvider)
+    private static async Task<InMemoryRlsPolicyStore> SeedPoliciesAsync()
     {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var cacheInvalidationService = new OutputCacheInvalidationService(
-            cacheStore: null,
-            responseCache: null,
-            metadataCache: null,
-            scopeFactory: serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-            refreshCoordinator: null,
-            logger: NullLogger<OutputCacheInvalidationService>.Instance);
+        var policies = new InMemoryRlsPolicyStore();
+        await policies.CreatePolicyAsync(new RlsPolicy
+        {
+            Service = "*",
+            Role = "*",
+            Layer = "parcels",
+            Attribute = "region",
+            ClaimType = "region"
+        });
+        return policies;
+    }
 
-        return new TileOperationJobService(
+    private static IFilterExpressionService SeedFilters()
+    {
+        var filters = Substitute.For<IFilterExpressionService>();
+        filters.Normalize(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+            .Returns(call => call.ArgAt<FilterExpression>(0));
+        filters.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+            .Returns(call => FilterTranslationResult.Success(call.ArgAt<FilterExpression>(0), new SqlFragment("FALSE", [])));
+        return filters;
+    }
+
+    private static void ObserveSeedPredicates(ITileProvider provider, ConcurrentQueue<int> predicatesPerTile,
+        Func<Task<int>> resolveCount)
+    {
+        provider.GetMvtTileAsync(
+                    Arg.Any<int>(),
+                    Arg.Any<int>(),
+                    Arg.Any<int>(),
+                    Arg.Any<int>(),
+                    Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery?>(),
+                    Arg.Any<TileOptions>(),
+                    Arg.Any<TileLimits>(),
+                    Arg.Any<GridGeometry?>(),
+                    Arg.Any<CancellationToken>())
+                .Returns(async _ =>
+                {
+                    predicatesPerTile.Enqueue(await resolveCount());
+                    return (byte[]?)MvtTileBuilder.Canonical();
+                });
+    }
+
+    private static TileCacheJobRunner CreateSut(ServiceProvider serviceProvider) => new(serviceProvider);
+
+    private static TileCacheJobExecutor CreateExecutor(IUniversalProgressStore progressStore, ServiceProvider serviceProvider)
+        => new(
             progressStore,
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
-            cacheInvalidationService,
             serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             Options.Create(new TileOptions()),
             Options.Create(new LimitsOptions()),
-            NullLogger<TileOperationJobService>.Instance);
+            BatchOptions(),
+            NullLogger<TileCacheJobExecutor>.Instance);
+
+    private static TileCacheJobService CreateJobService(
+        IExecutionJobStore jobStore,
+        IUniversalProgressStore progressStore,
+        ServiceProvider serviceProvider)
+        => new(
+            jobStore,
+            progressStore,
+            [],
+            BatchOptions(),
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<TileCacheJobService>.Instance,
+            Substitute.For<IJobQueue>());
+
+    private static IOptionsMonitor<TileCacheBatchOptions> BatchOptions()
+    {
+        var options = Substitute.For<IOptionsMonitor<TileCacheBatchOptions>>();
+        options.CurrentValue.Returns(new TileCacheBatchOptions());
+        return options;
     }
 
     /// <summary>
@@ -743,8 +710,46 @@ public sealed class TileOperationJobServicePublishTests
         => BuildScope(stub, includeCloudStorage: true, configureTileProvider: configureTileProvider);
 
     /// <summary>Harness accessor for <see cref="TileCacheSeedCoverageTests"/>.</summary>
-    internal static TileOperationJobService CreateSutForSeed(ServiceProvider serviceProvider)
+    internal static TileCacheJobRunner CreateSutForSeed(ServiceProvider serviceProvider)
         => CreateSut(serviceProvider);
+
+    // Runs a tile operation the way the job worker does: the request travels as TileCache job
+    // parameters on the local backend and TileCacheJobExecutor executes it.
+    private static IJobExecutionContext PublishingContext()
+    {
+        var context = Substitute.For<IJobExecutionContext>();
+        context.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        return context;
+    }
+
+    internal sealed class TileCacheJobRunner(ServiceProvider serviceProvider)
+    {
+        private readonly Honua.TestKit.Helpers.ComparingInMemoryProgressStore _progressStore = new();
+        private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
+
+        public Task<string> StartAsync(TileOperationStartRequest request)
+        {
+            var jobId = $"tile-{Guid.NewGuid():N}";
+            var now = DateTimeOffset.UtcNow;
+            _jobs[jobId] = new ExecutionJobRecord
+            {
+                OperationId = jobId,
+                Status = ExecutionJobStatus.Running,
+                AttemptCount = 1,
+                CreatedAt = now,
+                UpdatedAt = now,
+                Spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, new TileCacheBatchOptions()),
+            };
+            return Task.FromResult(jobId);
+        }
+
+        public Task ProcessQueuedJobAsync(string jobId)
+            => CreateExecutor(_progressStore, serviceProvider)
+                .ExecuteAsync(_jobs[jobId], PublishingContext(), CancellationToken.None);
+
+        public Task<TileOperationProgress?> GetAsync(string jobId)
+            => _progressStore.GetProgressAsync<TileOperationProgress>(jobId);
+    }
 
     /// <summary>
     /// Storage layers the unscoped publish and archive tests address by a bare layer id.
@@ -838,6 +843,13 @@ public sealed class TileOperationJobServicePublishTests
         };
 
         services.AddSingleton(Options.Create(resolvedOptions));
+        services.AddSingleton(sp => new OutputCacheInvalidationService(
+            cacheStore: null,
+            responseCache: null,
+            metadataCache: null,
+            scopeFactory: sp.GetRequiredService<IServiceScopeFactory>(),
+            refreshCoordinator: null,
+            logger: NullLogger<OutputCacheInvalidationService>.Instance));
 
         return services.BuildServiceProvider();
     }
@@ -1031,4 +1043,21 @@ public sealed class TileOperationJobServicePublishTests
             return Task.FromResult<IReadOnlyList<TProgress>>(operations);
         }
     }
+    private static void FailSecondTile(ITileProvider tileProvider)
+    {
+        tileProvider.GetMvtTileAsync(
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery?>(),
+                Arg.Any<Honua.Core.Features.Tiles.TileOptions>(),
+                Arg.Any<TileLimits>(),
+                Arg.Any<Honua.Core.Features.Tiles.GridGeometry?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult<byte[]?>(MvtTileBuilder.Canonical()),
+                Task.FromException<byte[]?>(new InvalidOperationException("simulated tile fetch failure")));
+    }
+
 }

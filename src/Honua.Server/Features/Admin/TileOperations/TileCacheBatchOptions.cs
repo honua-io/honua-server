@@ -9,8 +9,6 @@ internal sealed class TileCacheBatchOptions
 {
     public const string SectionName = "TileOperations:Batch";
 
-    public bool Enabled { get; set; }
-
     public string Backend { get; set; } = "local";
 
     public BatchComputeTargetKind TargetKind { get; set; } = BatchComputeTargetKind.KubernetesJob;
@@ -19,7 +17,7 @@ internal sealed class TileCacheBatchOptions
 
     public string? RuntimeProfile { get; set; }
 
-    // The in-process path caps at 5,000 tiles to protect the serving process; the batch ceiling is only a runaway guard.
+    // A runaway guard for remote backends. The local backend runs in a serving process and keeps TileCacheJobExecutor.LocalMaxTiles.
     public int MaxTiles { get; set; } = 1_000_000;
 
     public Dictionary<string, string> Parameters { get; set; } = new(StringComparer.Ordinal);

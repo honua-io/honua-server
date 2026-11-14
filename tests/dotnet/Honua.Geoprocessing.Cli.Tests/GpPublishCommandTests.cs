@@ -91,7 +91,7 @@ public sealed class GpPublishCommandTests : IDisposable
         try
         {
             Directory.SetCurrentDirectory(_fixtureRoot);
-            var (exit, output, error, handler) = await RunAsync(
+            var (exit, output, error, _) = await RunAsync(
                 ["my-flow", "--dry-run"],
                 responses => responses
                     .RespondCreated("/workflow-packages", PackageJson)

@@ -1,787 +1,141 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Text.Json;
-using System.Threading.Channels;
-using Honua.Core.Exceptions;
-using Honua.Core.Features.Authorization;
-using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Progress;
-using Honua.Io.Export.Writers;
-using Honua.ServiceDefaults;
-using Microsoft.Extensions.Caching.Distributed;
-using StackExchange.Redis;
+using Honua.Migration;
 
 namespace Honua.Io.Export;
 
 internal interface IExportJobService
 {
     Task<string> StartAsync(ExportJob job, CancellationToken cancellationToken = default);
-    IAsyncEnumerable<string> ReadQueuedJobIdsAsync(CancellationToken cancellationToken = default);
-    Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default);
 }
 
+// An accepted export is an Export execution job: the record and its queue position are rows in the
+// system database, so it runs once on whichever node claims it and survives the node that accepted it.
 internal sealed class ExportJobService(
     IUniversalProgressStore progressStore,
-    IDistributedCache? requestCache,
-    Channel<string> jobQueue,
-    IServiceScopeFactory scopeFactory,
     ILogger<ExportJobService> logger,
-    IConnectionMultiplexer? redis = null,
-    TimeSpan? recoveryPollInterval = null,
-    ILicenseOperationPolicy? licensePolicy = null) : IExportJobService, IJobCancellationNotifier
+    IExecutionJobStore? jobStore = null,
+    IJobQueue? jobQueue = null) : IExportJobService
 {
-    private const string ExportFailureMessage = "Export failed.";
-    private const string MissingRequestFailureMessage = "Export request metadata is no longer available.";
-    private const string DurableQueueUnavailableMessage = "Large exports require durable background job storage to be configured.";
-    private const string RecoveredForRetryPhase = "Recovered for retry";
-    private const int JobRetentionHours = 24;
-    private const string RequestCacheKeyPrefix = "export:request:";
-    private const string ClaimKeyPrefix = "export:job:claim:";
-    private static readonly TimeSpan _jobRetention = TimeSpan.FromHours(JobRetentionHours);
-    private static readonly TimeSpan ClaimTtl = TimeSpan.FromSeconds(30);
+    internal const string DurableQueueUnavailableMessage = "Large exports require durable background job storage to be configured.";
+    internal const string QueueFullMessage = "Export queue is full. Please retry later.";
 
-    private readonly IUniversalProgressStore _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
-    private readonly IDistributedCache? _requestCache = requestCache;
-    private readonly Channel<string> _jobQueue = jobQueue ?? throw new ArgumentNullException(nameof(jobQueue));
-    private readonly IServiceScopeFactory _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
-    private readonly ILogger<ExportJobService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly IConnectionMultiplexer? _redis = redis;
-    private readonly ConcurrentDictionary<string, CachedExportJob> _jobRequests = new(StringComparer.Ordinal);
-    private readonly TimeSpan _recoveryPollInterval = recoveryPollInterval ?? TimeSpan.FromSeconds(10);
+    // At most five exports may be queued or running across all nodes.
+    internal const int MaxOutstandingExports = 5;
+    internal const string RequestParameter = "honua.export.request";
+    internal static readonly TimeSpan Retention = TimeSpan.FromHours(24);
 
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeCancellations = new(StringComparer.Ordinal);
-
-    public bool Cancel(string jobId)
-    {
-        if (!_activeCancellations.TryGetValue(jobId, out var source))
-        {
-            return false;
-        }
-        try
-        {
-            source.Cancel();
-            return true;
-        }
-        catch (ObjectDisposedException)
-        {
-            return false;
-        }
-    }
+    // The job worker's local queue; the same backend id and target kind every serving-node job uses.
+    private const string LocalBackend = "local";
 
     public async Task<string> StartAsync(ExportJob job, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(job);
-
-        if (_requestCache == null)
+        if (jobStore is not IBoundedExecutionJobStore boundedStore || jobQueue is null)
         {
             throw new InvalidOperationException(DurableQueueUnavailableMessage);
         }
 
-        PruneExpiredJobRequests();
-
-        _jobRequests[job.JobId] = CreateCachedRequest(job);
-        await PersistJobRequestAsync(job.JobId, job, cancellationToken).ConfigureAwait(false);
-
-        var progress = ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures);
-        try
-        {
-            await _progressStore.SetProgressAsync(job.JobId, progress, _jobRetention, cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            _jobRequests.TryRemove(job.JobId, out _);
-
-            try
-            {
-                await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
-            }
-            // Intentionally generic: this is a rollback-of-a-rollback for the durable request
-            // cache; the original failure is about to be rethrown regardless, so any exception
-            // here must be logged and swallowed rather than replacing the original error.
-            catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
-            {
-                ExportJobServiceLog.ProgressRollbackFailed(_logger, job.JobId, cleanupEx);
-            }
-
-            throw;
-        }
-
-        if (!_jobQueue.Writer.TryWrite(job.JobId))
-        {
-            _jobRequests.TryRemove(job.JobId, out _);
-            await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
-            await _progressStore.DeleteProgressAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
-            throw new InvalidOperationException("Export queue is full. Please retry later.");
-        }
-
+        await CreateJobAsync(boundedStore, job, cancellationToken).ConfigureAwait(false);
+        await EnqueueAsync(jobQueue, job.JobId, cancellationToken).ConfigureAwait(false);
         return job.JobId;
     }
 
-    public async IAsyncEnumerable<string> ReadQueuedJobIdsAsync(
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    // The queued progress is written first, so a job never exists without the progress its status URL reads.
+    private async Task CreateJobAsync(IBoundedExecutionJobStore store, ExportJob job, CancellationToken cancellationToken)
     {
-        var recoveredJobIds = await RecoverQueuedJobIdsAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var jobId in recoveredJobIds)
-        {
-            yield return jobId;
-        }
+        var progress = ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures);
+        await progressStore.SetProgressAsync(job.JobId, progress, Retention, cancellationToken).ConfigureAwait(false);
 
-        var nextRecoveryAt = DateTimeOffset.UtcNow.Add(_recoveryPollInterval);
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            while (_jobQueue.Reader.TryRead(out var queuedJobId))
-            {
-                yield return queuedJobId;
-            }
-
-            var now = DateTimeOffset.UtcNow;
-            if (now >= nextRecoveryAt)
-            {
-                var recoveredIds = await RecoverQueuedJobIdsAsync(cancellationToken).ConfigureAwait(false);
-                foreach (var jobId in recoveredIds)
-                {
-                    yield return jobId;
-                }
-
-                nextRecoveryAt = now.Add(_recoveryPollInterval);
-                continue;
-            }
-
-            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            var waitForQueue = _jobQueue.Reader.WaitToReadAsync(waitCts.Token).AsTask();
-            var waitForRecovery = Task.Delay(nextRecoveryAt - now, waitCts.Token);
-            var completed = await Task.WhenAny(waitForQueue, waitForRecovery).ConfigureAwait(false);
-            if (completed == waitForQueue)
-            {
-                if (!await waitForQueue.ConfigureAwait(false))
-                {
-                    waitCts.Cancel();
-                    yield break;
-                }
-
-                waitCts.Cancel();
-                continue;
-            }
-
-            waitCts.Cancel();
-            try
-            {
-                await waitForQueue.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (waitCts.Token.IsCancellationRequested)
-            {
-                // Ignore expected cancellation for the alternate waiter.
-            }
-        }
-    }
-
-    public async Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
-    {
-        using var leaseCoordinator = await TryAcquireJobLeaseAsync(jobId).ConfigureAwait(false);
-        if (_redis != null && leaseCoordinator == null)
-        {
-            return;
-        }
-
-        using var renewalCts = leaseCoordinator is null ? null : new CancellationTokenSource();
-        using var processingCts = leaseCoordinator is null
-            ? null
-            : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, leaseCoordinator.LeaseLostToken);
-        var renewalTask = leaseCoordinator is null
-            ? Task.CompletedTask
-            : RenewLeaseAsync(leaseCoordinator, renewalCts!.Token);
-        var processingToken = processingCts?.Token ?? cancellationToken;
+        bool created;
         try
         {
-            var cachedJob = await TryGetActiveJobAsync(jobId, processingToken).ConfigureAwait(false);
-            if (cachedJob == null)
-            {
-                var missingRequestProgress = await _progressStore.GetProgressAsync<ExportProgress>(jobId, cancellationToken).ConfigureAwait(false);
-                await MarkMissingRequestAsync(jobId, missingRequestProgress, CancellationToken.None).ConfigureAwait(false);
-                return;
-            }
-
-            var job = cachedJob.Value.Job;
-            var existing = await _progressStore.GetProgressAsync<ExportProgress>(job.JobId, cancellationToken).ConfigureAwait(false);
-            if (existing?.Status == OperationStatus.Cancelled)
-            {
-                _jobRequests.TryRemove(job.JobId, out _);
-                await RemovePersistedJobRequestAsync(job.JobId, processingToken).ConfigureAwait(false);
-                return;
-            }
-
-            var progress = existing is ExportProgress queued
-                ? queued with { Status = OperationStatus.Processing, CurrentPhase = "Exporting features" }
-                : ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures) with
-                {
-                    Status = OperationStatus.Processing,
-                    CurrentPhase = "Exporting features"
-                };
-            if (existing is null)
-            {
-                await _progressStore.SetProgressAsync(job.JobId, progress, _jobRetention, processingToken).ConfigureAwait(false);
-            }
-            else
-            {
-                var admission = await _progressStore.TrySetProgressAsync(new OperationProgressWrite(job.JobId, progress, _jobRetention), existing.Status, processingToken).ConfigureAwait(false);
-                if (admission.Outcome != ProgressCompareAndSetOutcome.Updated)
-                {
-                    return;
-                }
-            }
-
-            // "honua-export" is a compile-time relative literal and job.JobId is always the
-            // server-generated Guid.NewGuid().ToString("N") minted in ExportEndpoints (never
-            // caller-supplied), so this combine cannot silently drop Path.GetTempPath().
-            var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", job.JobId);
-            var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
-            using var userCancellation = new CancellationTokenSource();
-            using var licensedProcessing = CancellationTokenSource.CreateLinkedTokenSource(processingToken, licenseCancellation, userCancellation.Token);
-            processingToken = licensedProcessing.Token;
-            Directory.CreateDirectory(scratchDir);
-            var shouldRequeue = false;
-
-            // PA-161: the export processing hot path (queue -> stream -> write -> upload) had no
-            // OTel span. "Honua" is HonuaTelemetry's ActivitySource name, already registered with
-            // the TracerProvider and already used by the sibling ExportEndpoints.cs in this project.
-            using var activity = HonuaTelemetry.ActivitySource.StartActivity("Export.ProcessQueuedJob");
-            activity?.SetTag("export.job_id", job.JobId);
-            activity?.SetTag("export.format", job.Format);
-            activity?.SetTag("export.service_name", job.ServiceName);
-            activity?.SetTag("export.storage_layer_id", job.StorageLayerId);
-            activity?.SetTag("export.total_features", job.TotalFeatures);
-
-            using var securityScope = JobSecurityScope.Begin(job.Submitter);
-            await using var scope = _scopeFactory.CreateAsyncScope();
-            var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();
-            string? uploadedFileId = null;
-            try
-            {
-                _activeCancellations[job.JobId] = userCancellation;
-                // A cancellation may have been persisted before this worker registered locally.
-                if ((await _progressStore.GetProgressAsync<ExportProgress>(job.JobId, processingToken).ConfigureAwait(false))?.Status == OperationStatus.Cancelled)
-                {
-                    userCancellation.Cancel();
-                }
-                processingToken.ThrowIfCancellationRequested();
-                if (job.Submitter is null)
-                {
-                    throw new InvalidOperationException("Export request has no captured submitter identity.");
-                }
-
-                var streamingStore = scope.ServiceProvider.GetRequiredService<IStreamingFeatureStore>();
-                var crsRegistry = scope.ServiceProvider.GetRequiredService<ICrsRegistry>();
-
-                var features = streamingStore.StreamFeaturesAsync(job.StorageLayerId, job.Query, processingToken);
-                var output = await WriteToFileAsync(job, features, scratchDir, crsRegistry, _logger, processingToken).ConfigureAwait(false);
-                var fileInfo = new FileInfo(output.Path);
-
-                await using var fileStream = File.OpenRead(output.Path);
-                var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
-                {
-                    Content = fileStream,
-                    FileName = Path.GetFileName(output.Path),
-                    ContentType = GetContentType(job.Format),
-                    Folder = "exports",
-                    TimeToLive = _jobRetention
-                }, processingToken).ConfigureAwait(false);
-
-                uploadedFileId = uploadResult.File?.FileId;
-                var downloadUrl = uploadResult.File is not null
-                    ? await cloudStorage.GetPresignedUrlAsync(
-                        uploadResult.File.FileId, _jobRetention, processingToken).ConfigureAwait(false)
-                    : null;
-
-                processingToken.ThrowIfCancellationRequested();
-                var completed = progress with
-                {
-                    Status = OperationStatus.Completed,
-                    ProcessedFeatures = output.WrittenCount,
-                    Warnings = output.Warnings,
-                    OutputSizeBytes = fileInfo.Length,
-                    DownloadUrl = downloadUrl,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Export completed"
-                };
-                var completion = await _progressStore.TrySetProgressAsync(new OperationProgressWrite(job.JobId, completed, _jobRetention), OperationStatus.Processing, processingToken).ConfigureAwait(false);
-                if (completion.Outcome != ProgressCompareAndSetOutcome.Updated)
-                {
-                    // Preserve the state accepted on another node and retract the losing artifact.
-                    if (completion.CurrentProgress?.Status == OperationStatus.Cancelled)
-                    {
-                        userCancellation.Cancel();
-                        processingToken.ThrowIfCancellationRequested();
-                    }
-                    if (uploadedFileId is not null)
-                    {
-                        await DeleteArtifactBestEffortAsync(cloudStorage, job.JobId, uploadedFileId).ConfigureAwait(false);
-                    }
-                    if (completion.CurrentProgress?.Status is OperationStatus.Completed or OperationStatus.Failed)
-                    {
-                        _jobRequests.TryRemove(job.JobId, out _);
-                        await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
-                    }
-                    // A recovery worker may have requeued the job before lease loss was observed.
-                    // Keep its request available so that retry can actually execute.
-                    return;
-                }
-                // Completion is terminal once its compare-and-set wins, even if a late
-                // cancellation signal arrives before request cleanup finishes.
-                _jobRequests.TryRemove(job.JobId, out _);
-                await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
-                activity?.SetTag("export.output_size_bytes", fileInfo.Length);
-                activity?.SetStatus(ActivityStatusCode.Ok);
-                ExportLog.AsyncExportCompleted(_logger, job.JobId, job.TotalFeatures, fileInfo.Length);
-            }
-            catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
-            {
-                var failed = progress with
-                {
-                    Status = OperationStatus.Failed,
-                    ErrorMessage = "license expired",
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Failed: license expired",
-                    DownloadUrl = null,
-                    OutputSizeBytes = 0
-                };
-                await _progressStore.SetProgressAsync(job.JobId, failed, _jobRetention, CancellationToken.None).ConfigureAwait(false);
-                _jobRequests.TryRemove(job.JobId, out _);
-                await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
-                if (uploadedFileId is not null)
-                {
-                    await DeleteArtifactBestEffortAsync(cloudStorage, job.JobId, uploadedFileId).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) when (userCancellation.IsCancellationRequested)
-            {
-                var cancelled = progress with
-                {
-                    Status = OperationStatus.Cancelled,
-                    DownloadUrl = null,
-                    OutputSizeBytes = 0,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Cancelled by user"
-                };
-                var cancellation = await _progressStore.TrySetProgressAsync(new OperationProgressWrite(job.JobId, cancelled, _jobRetention), OperationStatus.Processing, CancellationToken.None).ConfigureAwait(false);
-                if (cancellation.Outcome != ProgressCompareAndSetOutcome.Updated &&
-                    cancellation.CurrentProgress?.Status != OperationStatus.Cancelled)
-                {
-                    // Another terminal state or a recovery attempt won the race.
-                    return;
-                }
-                _jobRequests.TryRemove(job.JobId, out _);
-                await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
-                if (uploadedFileId is not null)
-                {
-                    await DeleteArtifactBestEffortAsync(cloudStorage, job.JobId, uploadedFileId).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) when (leaseCoordinator?.LeaseLostToken.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, "Lease lost; requeued for retry.");
-                var requeued = progress with
-                {
-                    Status = OperationStatus.Queued,
-                    ErrorMessage = null,
-                    CompletedAt = null,
-                    CurrentPhase = "Lease lost; awaiting retry"
-                };
-                await _progressStore.SetProgressAsync(job.JobId, requeued, _jobRetention, CancellationToken.None).ConfigureAwait(false);
-                _jobRequests[job.JobId] = CreateCachedRequest(job);
-                await PersistJobRequestAsync(job.JobId, job, CancellationToken.None).ConfigureAwait(false);
-                shouldRequeue = true;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                ExportLog.AsyncExportFailed(_logger, job.JobId, ex);
-
-                try
-                {
-                    var failed = progress with
-                    {
-                        Status = OperationStatus.Failed,
-                        ErrorMessage = ExportFailureMessage,
-                        CompletedAt = DateTimeOffset.UtcNow,
-                        CurrentPhase = "Export failed"
-                    };
-                    await _progressStore.SetProgressAsync(job.JobId, failed, _jobRetention, CancellationToken.None).ConfigureAwait(false);
-                }
-                // Intentionally generic: this is a best-effort attempt to persist the
-                // already-determined "Failed" status after the export itself failed; the
-                // progress store is an external dependency and any failure here must be
-                // logged, not allowed to mask or replace the original export failure.
-                catch (Exception progressEx) when (progressEx is not OutOfMemoryException)
-                {
-                    ExportJobServiceLog.FailedStatusPersistenceFailed(_logger, job.JobId, progressEx);
-                }
-
-                _jobRequests.TryRemove(job.JobId, out _);
-                await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
-            }
-            finally
-            {
-                _activeCancellations.TryRemove(job.JobId, out _);
-                try
-                {
-                    Directory.Delete(scratchDir, recursive: true);
-                }
-                catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
-                {
-                    // Cleanup failure must not fail the export job itself; log and continue.
-                    ExportJobServiceLog.ScratchDirCleanupFailed(_logger, job.JobId, scratchDir, cleanupEx);
-                }
-            }
-
-            if (shouldRequeue)
-            {
-                // Use TryWrite to avoid a deadlock: this is the channel's only reader, so
-                // WriteAsync (unbounded wait) would block forever if the bounded channel
-                // is already full. If TryWrite fails the job record remains in Queued
-                // status and the recovery poll in ReadQueuedJobIdsAsync will re-enqueue it.
-                _jobQueue.Writer.TryWrite(job.JobId);
-            }
+            created = await store.TryCreateWithinCapacityAsync(CreateRecord(job, progress), MaxOutstandingExports, cancellationToken).ConfigureAwait(false);
         }
-        finally
+        catch
         {
-            if (renewalCts != null)
-            {
-                renewalCts.Cancel();
-                await renewalTask.ConfigureAwait(false);
-                await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
-                // Disposal is now handled by the `using` declaration above.
-            }
+            await progressStore.DeleteProgressAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+
+        if (!created)
+        {
+            await progressStore.DeleteProgressAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
+            throw new InvalidOperationException(QueueFullMessage);
         }
     }
 
-    private sealed record ExportFileResult(string Path, int WrittenCount, IReadOnlyList<string> Warnings);
-
-    private static async Task<ExportFileResult> WriteToFileAsync(
-        ExportJob job,
-        IAsyncEnumerable<Feature> features,
-        string scratchDir,
-        ICrsRegistry crsRegistry,
-        ILogger logger,
-        CancellationToken cancellationToken)
+    // The record is durable, so the export is accepted: the next reconciliation sweep queues a local
+    // job whose enqueue was lost.
+    private async Task EnqueueAsync(IJobQueue queue, string jobId, CancellationToken cancellationToken)
     {
-        string? srsName = null;
-        string? srsWkt = null;
-        var crs = await crsRegistry.ResolveBySridAsync(job.OutputSrid, cancellationToken).ConfigureAwait(false);
-        if (crs.HasValue)
+        try
         {
-            srsName = $"EPSG:{job.OutputSrid}";
-            srsWkt = crs.Value.Wkt;
+            await queue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
-
-        // SanitizeExportFilename strips path separators, drive/colon characters, and
-        // traversal segments (FileUploadSecurity.SanitizeFileName), so baseName cannot be
-        // rooted and the Path.Combine calls below cannot silently drop scratchDir.
-        var baseName = ExportEndpoints.SanitizeExportFilename(job.ServiceName, job.LayerName);
-
-        switch (BuiltInExportFormats.Resolve(job.Format))
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            case BuiltInExportFormat.Csv:
-                {
-                    var csvPath = Path.Join(scratchDir, $"{baseName}.csv");
-                    await using var stream = File.Create(csvPath);
-                    var writtenCount = await CsvExportWriter.WriteAsync(stream, features, job.Fields, cancellationToken).ConfigureAwait(false);
-                    return new ExportFileResult(csvPath, writtenCount, []);
-                }
-            case BuiltInExportFormat.Shapefile:
-                {
-                    var zipPath = Path.Join(scratchDir, $"{baseName}.zip");
-                    await using var stream = File.Create(zipPath);
-                    var result = await ShapefileExportWriter.WriteAsync(
-                        stream, features, job.Fields, job.GeometryType, srsWkt, logger, cancellationToken).ConfigureAwait(false);
-                    return new ExportFileResult(zipPath, result.WrittenCount, result.Warnings);
-                }
-            case BuiltInExportFormat.GeoPackage:
-                {
-                    var gpkgPath = Path.Join(scratchDir, $"{baseName}.gpkg");
-                    var writtenCount = await GeoPackageExportWriter.WriteAsync(
-                        gpkgPath, features, job.Fields, job.GeometryType, job.OutputSrid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
-                    return new ExportFileResult(gpkgPath, writtenCount, []);
-                }
-            default:
-                throw new InvalidOperationException($"Unsupported export format: {job.Format}");
+            ExportJobServiceLog.EnqueueDeferredToDispatchRepair(logger, jobId, ex);
         }
     }
 
-    private async Task<CachedExportJob?> TryGetActiveJobAsync(string jobId, CancellationToken cancellationToken)
+    internal static ExportJob? ReadRequest(ExecutionJobRecord record)
     {
-        if (_jobRequests.TryGetValue(jobId, out var cachedJob))
-        {
-            if (cachedJob.ExpiresAtUtc > DateTimeOffset.UtcNow)
-            {
-                return cachedJob;
-            }
-
-            _jobRequests.TryRemove(jobId, out _);
-        }
-
-        if (_requestCache == null)
+        if (!record.Spec.Parameters.TryGetValue(RequestParameter, out var json) || string.IsNullOrWhiteSpace(json))
         {
             return null;
         }
 
-        var json = await _requestCache.GetStringAsync(GetRequestCacheKey(jobId), cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return null;
-        }
-
-        PersistedExportJobRequest? persistedRequest;
         try
         {
-            persistedRequest = JsonSerializer.Deserialize(json, ExportJsonContext.Default.PersistedExportJobRequest);
+            var job = JsonSerializer.Deserialize(json, ExportJsonContext.Default.ExportJob);
+            return job is not null && string.Equals(job.JobId, record.OperationId, StringComparison.Ordinal)
+                ? job
+                : null;
         }
         catch (JsonException)
         {
-            await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
             return null;
         }
-        if (persistedRequest?.Job == null)
-        {
-            await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
-            return null;
-        }
-
-        var restoredJob = CreateCachedRequest(persistedRequest.Job);
-        _jobRequests[jobId] = restoredJob;
-        return restoredJob;
     }
 
-    private void PruneExpiredJobRequests()
+    private static ExecutionJobRecord CreateRecord(ExportJob job, ExportProgress progress)
     {
         var now = DateTimeOffset.UtcNow;
-        foreach (var (jobId, request) in _jobRequests)
+        return new ExecutionJobRecord
         {
-            if (request.ExpiresAtUtc <= now)
+            OperationId = job.JobId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CurrentPhase = "Queued",
+            // The worker runs the export under the submitter's identity; it travels on the record,
+            // not in the request parameter.
+            Audit = new OperationAuditInfo
             {
-                _jobRequests.TryRemove(jobId, out _);
-            }
-        }
-    }
-
-    private async Task MarkMissingRequestAsync(
-        string jobId,
-        ExportProgress? progress,
-        CancellationToken cancellationToken)
-    {
-        if (progress is not null && progress.Status is OperationStatus.Queued or OperationStatus.Processing)
-        {
-            try
+                RequestedBy = job.Submitter?.PrincipalId,
+                SubmitterSecurityContext = job.Submitter
+            },
+            // A layer large enough to export asynchronously can outlast the one-hour default.
+            TimeoutPolicy = JobTimeoutPolicy.LongRunning,
+            Spec = new ExecutionJobSpec
             {
-                var failed = progress with
+                Kind = ExecutionJobKind.Export,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = LocalBackend,
+                WorkloadName = $"export:{job.Format}:{job.ServiceName}:{job.ServiceLayerIndex}",
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    Status = OperationStatus.Failed,
-                    ErrorMessage = MissingRequestFailureMessage,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Export failed"
-                };
-                await _progressStore.SetProgressAsync(jobId, failed, _jobRetention, cancellationToken).ConfigureAwait(false);
-            }
-            // Intentionally generic: this is a best-effort attempt to persist a "Failed"
-            // status for a job whose request metadata already went missing; the progress
-            // store is an external dependency and any failure here must be logged rather
-            // than thrown, since the caller is already cleaning up this job's state.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                ExportJobServiceLog.MissingRequestStatusPersistenceFailed(_logger, jobId, ex);
-            }
-        }
-
-        _jobRequests.TryRemove(jobId, out _);
-        await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task PersistJobRequestAsync(string jobId, ExportJob job, CancellationToken cancellationToken)
-    {
-        if (_requestCache == null)
-        {
-            return;
-        }
-
-        var json = JsonSerializer.Serialize(
-            new PersistedExportJobRequest { Job = job },
-            ExportJsonContext.Default.PersistedExportJobRequest);
-        await _requestCache.SetStringAsync(
-                GetRequestCacheKey(jobId),
-                json,
-                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = _jobRetention },
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private async Task RemovePersistedJobRequestAsync(string jobId, CancellationToken cancellationToken)
-    {
-        if (_requestCache == null)
-        {
-            return;
-        }
-
-        await _requestCache.RemoveAsync(GetRequestCacheKey(jobId), cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<IReadOnlyList<string>> RecoverQueuedJobIdsAsync(CancellationToken cancellationToken)
-    {
-        var activeOperationIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.Export, cancellationToken).ConfigureAwait(false);
-        var recovered = new List<string>(activeOperationIds.Count);
-
-        foreach (var jobId in activeOperationIds)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            ExportProgress? progress;
-            try
-            {
-                progress = await _progressStore.GetProgressAsync<ExportProgress>(jobId, cancellationToken).ConfigureAwait(false);
-            }
-            catch (InvalidPersistedExportProgressException exception)
-            {
-                ExportJobServiceLog.InvalidRecoveryProgress(_logger, jobId, exception);
-                await MarkMissingRequestAsync(jobId, progress: null, CancellationToken.None).ConfigureAwait(false);
-                await _progressStore.QuarantineProgressAsync(jobId, OperationType.Export, CancellationToken.None).ConfigureAwait(false);
-                continue;
-            }
-            if (progress == null || progress.Status is not (OperationStatus.Queued or OperationStatus.Processing))
-            {
-                continue;
-            }
-
-            var request = await TryGetActiveJobAsync(jobId, cancellationToken).ConfigureAwait(false);
-            if (request == null)
-            {
-                await MarkMissingRequestAsync(jobId, progress, CancellationToken.None).ConfigureAwait(false);
-                continue;
-            }
-
-            if (progress.Status == OperationStatus.Processing)
-            {
-                if (!await ShouldRecoverProcessingJobAsync(jobId).ConfigureAwait(false))
-                {
-                    continue;
-                }
-
-                progress = progress with
-                {
-                    Status = OperationStatus.Queued,
-                    CurrentPhase = RecoveredForRetryPhase
-                };
-                await _progressStore.SetProgressAsync(jobId, progress, _jobRetention, cancellationToken).ConfigureAwait(false);
-            }
-
-            recovered.Add(jobId);
-        }
-
-        return recovered;
-    }
-
-    private async Task DeleteArtifactBestEffortAsync(ICloudFileStorage storage, string jobId, string fileId)
-    {
-        try
-        {
-            await storage.DeleteAsync(fileId, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Cloud cleanup must not replace a cancellation or recovery winner's state.
-            ExportJobServiceLog.ArtifactCleanupFailed(_logger, jobId, fileId, ex);
-        }
-    }
-
-    private static string GetRequestCacheKey(string jobId) => $"{RequestCacheKeyPrefix}{jobId}";
-
-    private static string GetContentType(string format) => format.ToLowerInvariant() switch
-    {
-        "csv" => "text/csv",
-        "shapefile" => "application/zip",
-        "gpkg" => "application/geopackage+sqlite3",
-        _ => "application/octet-stream"
-    };
-
-    private static CachedExportJob CreateCachedRequest(ExportJob job)
-        => new(job, DateTimeOffset.UtcNow.Add(_jobRetention));
-
-    private async Task<bool> ShouldRecoverProcessingJobAsync(string jobId)
-    {
-        if (_redis == null)
-        {
-            return true;
-        }
-
-        try
-        {
-            var claimValue = await _redis.GetDatabase()
-                .StringGetAsync($"{ClaimKeyPrefix}{jobId}")
-                .ConfigureAwait(false);
-            return claimValue.IsNullOrEmpty;
-        }
-        // Intentionally generic: the Redis client surfaces a wide range of transport/timeout
-        // exception types for a claim-key lookup; when the claim state cannot be determined,
-        // fail closed (treat the job as still actively leased/not eligible for recovery)
-        // rather than risk double-processing.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            ExportJobServiceLog.RecoveryClaimInspectionFailed(_logger, jobId, ex);
-            return false;
-        }
-    }
-
-    private Task<RedisLeaseCoordinator?> TryAcquireJobLeaseAsync(string jobId)
-    {
-        if (_redis == null)
-        {
-            return Task.FromResult<RedisLeaseCoordinator?>(null);
-        }
-
-        return TryAcquireLeaseAsync(new RedisLeaseCoordinator(_redis, $"{ClaimKeyPrefix}{jobId}", ClaimTtl));
-    }
-
-    private async Task RenewLeaseAsync(RedisLeaseCoordinator leaseCoordinator, CancellationToken cancellationToken)
-    {
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(ClaimTtl.TotalMilliseconds / 3d), cancellationToken).ConfigureAwait(false);
-                if (!await leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
-                {
-                    ExportJobServiceLog.LeaseRenewalLost(_logger);
-                    break;
+                    [RequestParameter] = JsonSerializer.Serialize(job with { Submitter = null }, ExportJsonContext.Default.ExportJob),
+                    [ExecutionJobProgressReader.InitialProgressParameter] = OperationProgressSerializer.Serialize(progress)
                 }
             }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // Expected: the caller cancelled processing (job finished or the host is
-            // shutting down); lease renewal simply stops.
-        }
+        };
     }
-
-    private static async Task<RedisLeaseCoordinator?> TryAcquireLeaseAsync(RedisLeaseCoordinator leaseCoordinator)
-    {
-        if (await leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
-        {
-            return leaseCoordinator;
-        }
-
-        leaseCoordinator.Dispose();
-        return null;
-    }
-
-    internal sealed record PersistedExportJobRequest
-    {
-        public required ExportJob Job { get; init; }
-    }
-
-    private readonly record struct CachedExportJob(ExportJob Job, DateTimeOffset ExpiresAtUtc);
 }

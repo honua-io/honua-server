@@ -33,7 +33,6 @@ public sealed class TileCacheExecutionSpecBuilderTests
 
         var options = new TileCacheBatchOptions
         {
-            Enabled = true,
             Backend = "honua-aws-batch",
             TargetKind = BatchComputeTargetKind.AwsBatch,
             Artifact = "ecr/honua-tile-worker:1",
@@ -85,7 +84,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
             MaxTiles = 100_000
         };
 
-        var options = new TileCacheBatchOptions { Enabled = true, Backend = "local" };
+        var options = new TileCacheBatchOptions { Backend = "local" };
         var spec = TileCacheExecutionSpecBuilder.Build(request, "schema-x", options);
 
         var parsed = TileCacheExecutionSpecBuilder.TryParse(

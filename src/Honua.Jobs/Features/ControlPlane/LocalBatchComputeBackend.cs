@@ -51,9 +51,9 @@ internal sealed class LocalBatchComputeBackend(
         ExecutionJobRecord job,
         CancellationToken cancellationToken = default)
     {
-        // A single IJobCancellationNotifier parameter binds the last DI registration
-        // (export) and never signals the execution-job token (#6156).
-        cancellationNotifiers.CancelAny(job.OperationId);
+        // A single IJobCancellationNotifier parameter binds only the last DI registration
+        // and may never signal the execution-job token.
+        ExecutionJobCancellationTokens.CancelAttempt(cancellationNotifiers, job);
 
         if (job.Status == ExecutionJobStatus.Queued)
         {
@@ -82,7 +82,9 @@ internal sealed class LocalBatchComputeBackend(
             };
         }
 
-        var mappedStatus = MapStatus(progress.Status, job.Status);
+        var mappedStatus = job.Spec.Kind is ExecutionJobKind.Export or ExecutionJobKind.TileCache
+            ? job.Status
+            : MapStatus(progress.Status, job.Status);
         return new BatchComputeObservation
         {
             Status = mappedStatus,

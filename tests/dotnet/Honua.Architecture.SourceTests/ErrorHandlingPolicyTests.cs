@@ -69,6 +69,9 @@ public sealed class ErrorHandlingPolicyTests
         // Pure route-table partials and dispatcher files whose handlers live
         // in companion files that *do* carry error-handling scaffolding.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "AdminInfoEndpoints.cs"),
+        // Cancellation helpers delegate error shaping to TryReconcileDurableCancelAsync
+        // in the main partial; this file only bridges successful results.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "OperationsProgressEndpoints.CancellationResults.cs"),
         // Error shaping uses the alert-admin surface's ApiResponse failure envelope
         // (Results.Json + 400), which the marker scan does not recognize; failures
         // beyond request validation are handled by the global exception middleware.

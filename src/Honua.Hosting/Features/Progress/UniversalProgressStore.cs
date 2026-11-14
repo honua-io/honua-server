@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Exceptions;
@@ -46,9 +45,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
     private const int ConditionalWriteLockMaxAttempts = 40;
     private const string ConditionalWriteLockReleaseScript =
         "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
-    private readonly ConcurrentDictionary<string, IOperationProgress> _fallbackStore = new();
-    private readonly ConcurrentDictionary<string, DateTime> _fallbackExpiry = new();
-    private readonly ConcurrentDictionary<string, OperationType> _typeStore = new();
     private const int MaxFallbackEntries = 5000;
     private static readonly TimeSpan _fallbackCleanupInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _redisRetryInterval = TimeSpan.FromSeconds(30);
@@ -117,7 +113,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
         if (AllowsLocalFallback)
         {
-            return TrySetProgressInFallback(write.OperationId, write.Progress, expectedStatus, effectiveTtl);
+            return TrySetProgressInFallback(write, expectedStatus, effectiveTtl);
         }
 
         if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
@@ -157,76 +153,59 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         }
     }
 
-    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress expectedProgress, CancellationToken cancellationToken = default)
+    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(write.Progress);
-        ArgumentNullException.ThrowIfNull(expectedProgress);
         cancellationToken.ThrowIfCancellationRequested();
-        if (write.Progress.Type != expectedProgress.Type)
+        if (expectedProgress is not null && write.Progress.Type != expectedProgress.Type)
         {
             throw new ArgumentException("A progress update cannot change the operation type.", nameof(write));
         }
 
         var effectiveTtl = write.Ttl ?? TimeSpan.FromHours(24);
+        if (AllowsLocalFallback)
+        {
+            return TryReplaceProgressInFallback(write, expectedProgress, effectiveTtl);
+        }
+
         RedisValue persisted = RedisValue.Null;
         IOperationProgress? current;
         var key = (RedisKey)$"{_cacheInstanceName}{KeyPrefix}{write.OperationId}";
-        if (AllowsLocalFallback)
+        if (!CanUseRedisBackplane)
         {
-            current = await GetProgressAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
+            throw CreateDistributedStateUnavailableException("atomically replace progress");
         }
-        else
-        {
-            if (!CanUseRedisBackplane)
-            {
-                throw CreateDistributedStateUnavailableException("atomically replace progress");
-            }
-            persisted = await RedisClientFault.RetryCompletedReaderAsync(
-                () => _redis!.GetDatabase().HashGetAsync(key, "data"),
-                cancellationToken).ConfigureAwait(false);
-            current = persisted.HasValue ? DeserializeProgress(persisted.ToString(), write.OperationId) : null;
-        }
-        if (current is null)
+        persisted = await RedisClientFault.RetryCompletedReaderAsync(
+            () => _redis!.GetDatabase().HashGetAsync(key, "data"),
+            cancellationToken).ConfigureAwait(false);
+        current = persisted.HasValue ? DeserializeProgress(persisted.ToString(), write.OperationId) : null;
+        if (current is null && expectedProgress is not null)
         {
             return ProgressCompareAndSetResult.NotFound;
         }
 
-        if (!OperationProgressSerializer.SameSnapshot(current, expectedProgress))
+        if (current is not null && (expectedProgress is null || !OperationProgressSerializer.SameSnapshot(current, expectedProgress)))
         {
             return ProgressCompareAndSetResult.StatusMismatch(current);
         }
 
-        if (AllowsLocalFallback)
+        // RedisCache stores payload and expiration metadata in this hash. Compare and update
+        // inside one Redis transaction, including expiry, so lock loss/expiry and unguarded
+        // write.Progress writers cannot turn an old heartbeat snapshot into an accepted write.
+        var transaction = _redis!.GetDatabase().CreateTransaction();
+        transaction.AddCondition(expectedProgress is null
+            ? Condition.KeyNotExists(key)
+            : Condition.HashEqual(key, "data", persisted));
+        _ = transaction.HashSetAsync(key,
+        [
+            new HashEntry("data", OperationProgressSerializer.Serialize(write.Progress)),
+            new HashEntry("absexp", DateTimeOffset.UtcNow.Add(effectiveTtl).Ticks),
+            new HashEntry("sldexp", -1)
+        ]);
+        _ = transaction.KeyExpireAsync(key, effectiveTtl);
+        if (await transaction.ExecuteAsync().ConfigureAwait(false))
         {
-            if (_fallbackStore.TryUpdate($"{KeyPrefix}{write.OperationId}", write.Progress, current))
-            {
-                _fallbackExpiry[$"{KeyPrefix}{write.OperationId}"] = DateTime.UtcNow.Add(effectiveTtl);
-                return ProgressCompareAndSetResult.Updated;
-            }
-        }
-        else
-        {
-            if (!CanUseRedisBackplane)
-            {
-                throw CreateDistributedStateUnavailableException("atomically replace progress");
-            }
-
-            // RedisCache stores payload and expiration metadata in this hash. Compare and update
-            // inside one Redis transaction, including expiry, so lock loss/expiry and unguarded
-            // write.Progress writers cannot turn an old heartbeat snapshot into an accepted write.
-            var transaction = _redis!.GetDatabase().CreateTransaction();
-            transaction.AddCondition(Condition.HashEqual(key, "data", persisted));
-            _ = transaction.HashSetAsync(key,
-            [
-                new HashEntry("data", OperationProgressSerializer.Serialize(write.Progress)),
-                new HashEntry("absexp", DateTimeOffset.UtcNow.Add(effectiveTtl).Ticks),
-                new HashEntry("sldexp", -1)
-            ]);
-            _ = transaction.KeyExpireAsync(key, effectiveTtl);
-            if (await transaction.ExecuteAsync().ConfigureAwait(false))
-            {
-                return ProgressCompareAndSetResult.Updated;
-            }
+            return ProgressCompareAndSetResult.Updated;
         }
 
         current = await GetProgressAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
@@ -314,20 +293,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 throw CreateDistributedStateUnavailableException("get progress");
             }
 
-            CleanupFallbackIfNeeded(enforceMax: false);
-
-            if (_fallbackStore.TryGetValue(key, out var fallbackProgress))
-            {
-                if (_fallbackExpiry.TryGetValue(key, out var expiry) && expiry > DateTime.UtcNow)
-                {
-                    return fallbackProgress;
-                }
-
-                _fallbackStore.TryRemove(key, out _);
-                _fallbackExpiry.TryRemove(key, out _);
-                _typeStore.TryRemove(operationId, out _);
-            }
-            return null;
+            return GetFallbackEntry(key)?.Progress;
         }
 
         string? json;
@@ -338,7 +304,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 cancellationToken).ConfigureAwait(false);
             if (json == null)
             {
-                RemoveFallbackEntry(operationId, key);
+                RemoveFallbackEntry(key);
                 return null;
             }
         }
@@ -375,7 +341,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 throw CreateDistributedStateUnavailableException("quarantine progress", exception);
             }
         }
-        RemoveFallbackEntry(operationId, $"{KeyPrefix}{operationId}");
+        RemoveFallbackEntry($"{KeyPrefix}{operationId}");
     }
 
     public async Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
@@ -384,8 +350,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         var typeKey = $"{TypePrefix}{operationId}";
 
         _fallbackStore.TryRemove(key, out _);
-        _fallbackExpiry.TryRemove(key, out _);
-        _typeStore.TryRemove(operationId, out _);
 
         if (_isUsingFallback && _cache != null && ShouldRetryRedis(DateTime.UtcNow))
         {
@@ -456,46 +420,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
     private static bool IsTerminalStatus(OperationStatus status)
         => status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
 
-    private ProgressCompareAndSetResult TrySetProgressInFallback(
-        string operationId,
-        IOperationProgress progress,
-        OperationStatus expectedStatus,
-        TimeSpan effectiveTtl)
-    {
-        var key = $"{KeyPrefix}{operationId}";
-
-        while (true)
-        {
-            CleanupFallbackIfNeeded(enforceMax: false);
-
-            if (!_fallbackStore.TryGetValue(key, out var current))
-            {
-                return ProgressCompareAndSetResult.NotFound;
-            }
-
-            if (_fallbackExpiry.TryGetValue(key, out var expiry) && expiry <= DateTime.UtcNow)
-            {
-                RemoveFallbackEntry(operationId, key);
-                return ProgressCompareAndSetResult.NotFound;
-            }
-
-            if (current.Status != expectedStatus)
-            {
-                return ProgressCompareAndSetResult.StatusMismatch(current);
-            }
-
-            if (_fallbackStore.TryUpdate(key, progress, current))
-            {
-                _fallbackExpiry[key] = DateTime.UtcNow.Add(effectiveTtl);
-                _typeStore[operationId] = progress.Type;
-                CleanupFallbackIfNeeded(enforceMax: true);
-                return ProgressCompareAndSetResult.Updated;
-            }
-
-            // Lost the swap race to a concurrent writer; re-read and re-evaluate the condition.
-        }
-    }
-
     private async Task<string?> TryAcquireConditionalWriteLockAsync(string operationId, CancellationToken cancellationToken)
     {
         if (_redis is null || _isUsingFallback)
@@ -558,91 +482,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         {
             Log.ConditionalWriteLockReleaseFailed(_logger, operationId, ex);
         }
-    }
-
-    private void CleanupFallbackIfNeeded(bool enforceMax)
-    {
-        var nowTick = Environment.TickCount64;
-        var intervalMs = (long)_fallbackCleanupInterval.TotalMilliseconds;
-        var currentCount = _fallbackStore.Count;
-
-        if (!enforceMax || currentCount <= MaxFallbackEntries)
-        {
-            var last = Interlocked.Read(ref _lastCleanupTick);
-            if (nowTick - last < intervalMs)
-            {
-                return;
-            }
-
-            if (Interlocked.CompareExchange(ref _lastCleanupTick, nowTick, last) != last)
-            {
-                return;
-            }
-        }
-        else
-        {
-            Interlocked.Exchange(ref _lastCleanupTick, nowTick);
-        }
-
-        var now = DateTime.UtcNow;
-        var expiredKeys = _fallbackExpiry
-            .Where(kvp => kvp.Value <= now)
-            .Select(kvp => kvp.Key)
-            .ToList();
-
-        foreach (var key in expiredKeys)
-        {
-            _fallbackExpiry.TryRemove(key, out _);
-            _fallbackStore.TryRemove(key, out _);
-
-            // Extract operation ID from key and remove from type store
-            if (key.StartsWith(KeyPrefix))
-            {
-                var operationId = key[KeyPrefix.Length..];
-                _typeStore.TryRemove(operationId, out _);
-            }
-        }
-
-        var overflow = _fallbackStore.Count - MaxFallbackEntries;
-        if (overflow <= 0)
-        {
-            return;
-        }
-
-        var oldestKeys = _fallbackExpiry
-            .OrderBy(kvp => kvp.Value)
-            .Take(overflow)
-            .Select(kvp => kvp.Key)
-            .ToList();
-
-        foreach (var key in oldestKeys)
-        {
-            _fallbackExpiry.TryRemove(key, out _);
-            _fallbackStore.TryRemove(key, out _);
-
-            // Extract operation ID from key and remove from type store
-            if (key.StartsWith(KeyPrefix))
-            {
-                var operationId = key[KeyPrefix.Length..];
-                _typeStore.TryRemove(operationId, out _);
-            }
-        }
-    }
-
-    private void CacheFallback(string operationId, IOperationProgress progress, TimeSpan ttl)
-    {
-        var key = $"{KeyPrefix}{operationId}";
-        _fallbackStore[key] = progress;
-        _fallbackExpiry[key] = DateTime.UtcNow.Add(ttl);
-        _typeStore[operationId] = progress.Type;
-        CleanupFallbackIfNeeded(enforceMax: true);
-    }
-
-    private void RemoveFallbackEntry(string operationId, string key)
-    {
-        _fallbackStore.TryRemove(key, out _);
-        _fallbackExpiry.TryRemove(key, out _);
-        _typeStore.TryRemove(operationId, out _);
     }
 
     private bool ShouldRetryRedis(DateTime now)
@@ -726,18 +565,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         }
 
         throw CreateDistributedStateUnavailableException("list active operations");
-    }
-
-    private List<string> GetActiveOperationIdsFromFallback(OperationType? operationType)
-    {
-        CleanupFallbackIfNeeded(enforceMax: false);
-        var now = DateTime.UtcNow;
-        return _fallbackStore.Keys
-            .Where(k => k.StartsWith(KeyPrefix, StringComparison.Ordinal))
-            .Where(k => !_fallbackExpiry.TryGetValue(k, out var expiry) || expiry > now)
-            .Select(k => k[KeyPrefix.Length..])
-            .Where(id => operationType == null || (_typeStore.TryGetValue(id, out var type) && type == operationType))
-            .ToList();
     }
 
     private async Task<IReadOnlyList<string>> GetActiveOperationIdsFromRedisAsync(

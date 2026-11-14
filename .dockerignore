@@ -60,6 +60,13 @@ docs/
 scripts/*
 !scripts/docker/
 !scripts/docker/restore-dotnet-with-github-packages.sh
+!scripts/ci/
+scripts/ci/*
+!scripts/ci/analyzer-baseline/
+scripts/ci/analyzer-baseline/*
+!scripts/ci/analyzer-baseline/AnalyzerBaseline.tsv
+!scripts/ci/analyzer-baseline/BannedSymbols.txt
+!scripts/ci/analyzer-baseline/sonar.globalconfig
 !scripts/qualification/
 scripts/qualification/*
 !scripts/qualification/gp_native_observer.py
