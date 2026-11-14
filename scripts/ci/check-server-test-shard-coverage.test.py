@@ -840,4 +840,3 @@ def test_admin_auth_capacity_split_preserves_methods_paths_and_budgets() -> None
 
 
 test_admin_auth_capacity_split_preserves_methods_paths_and_budgets()
-

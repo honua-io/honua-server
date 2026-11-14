@@ -94,4 +94,3 @@ def test_admin_method_name_routes_keep_exactly_one_owner() -> None:
 
 
 test_admin_method_name_routes_keep_exactly_one_owner()
-
