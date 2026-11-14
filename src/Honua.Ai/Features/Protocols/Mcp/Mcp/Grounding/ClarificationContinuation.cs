@@ -194,7 +194,7 @@ internal sealed class ClarificationContinuation
             {
                 JsonValueKind.String => [property.Value.GetString()!],
                 JsonValueKind.True => ["true"],
-                JsonValueKind.False => ["false"],
+                JsonValueKind.False => Array.Empty<string>(),
                 JsonValueKind.Number => [property.Value.GetRawText()],
                 _ => throw new GeoprocessingValidationException(
                     $"Clarification answer '{property.Name}' must be a string, boolean or number."),

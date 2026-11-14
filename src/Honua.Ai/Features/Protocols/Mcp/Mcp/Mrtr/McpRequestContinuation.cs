@@ -83,17 +83,18 @@ internal sealed class McpRequestContinuation
     private readonly McpRequestStateBinding _binding;
     private readonly JsonElement? _inputResponses;
 
+    private sealed record ContinuationRequest(McpRequestStateBinding Binding, McpToolsCallParams Parameters);
+
     private McpRequestContinuation(
         McpRequestStateCodec codec,
-        McpRequestStateBinding binding,
-        McpToolsCallParams parameters,
+        ContinuationRequest request,
         McpRequestState? state)
     {
         Codec = codec;
-        _binding = binding;
-        Modes = McpElicitationModes.Read(parameters.Meta);
+        _binding = request.Binding;
+        Modes = McpElicitationModes.Read(request.Parameters.Meta);
         State = state;
-        _inputResponses = parameters.InputResponses;
+        _inputResponses = request.Parameters.InputResponses;
     }
 
     public McpElicitationModes Modes { get; }
@@ -124,17 +125,18 @@ internal sealed class McpRequestContinuation
         }
 
         var binding = new McpRequestStateBinding(principalKey, tool.Name, parameters.Arguments);
+        var request = new ContinuationRequest(binding, parameters);
         McpRequestState? state = null;
         if (continuing)
         {
-            state = ReadState(codec, binding, tool, parameters);
+            state = ReadState(codec, request, tool);
             if (state is null)
             {
                 return McpErrorMapper.InvalidRequestState();
             }
         }
 
-        httpContext.Items[HttpContextItemKey] = new McpRequestContinuation(codec, binding, parameters, state);
+        httpContext.Items[HttpContextItemKey] = new McpRequestContinuation(codec, request, state);
         return null;
     }
 
@@ -142,13 +144,13 @@ internal sealed class McpRequestContinuation
 
     private static McpRequestState? ReadState(
         McpRequestStateCodec codec,
-        McpRequestStateBinding binding,
-        IMcpTool tool,
-        McpToolsCallParams parameters)
+        ContinuationRequest request,
+        IMcpTool tool)
     {
+        var parameters = request.Parameters;
         if (parameters.InputResponses is { ValueKind: not (JsonValueKind.Object or JsonValueKind.Undefined) }
             || parameters.RequestState is not { ValueKind: JsonValueKind.String } encoded
-            || codec.Read(encoded.GetString(), binding) is not { } state)
+            || codec.Read(encoded.GetString(), request.Binding) is not { } state)
         {
             return null;
         }
