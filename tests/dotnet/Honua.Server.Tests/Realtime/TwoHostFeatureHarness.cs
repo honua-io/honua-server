@@ -47,8 +47,7 @@ internal static class TwoHostFeatureHarness
         // Program chooses the realtime provider from builder.Configuration while it registers
         // services, before app-configuration overrides are applied, so the settings also go in as
         // host settings, the way HONUA_REGISTER_TEST_INFRASTRUCTURE reaches registration.
-        var host = new WebAppFixture();
-        return host.UseKestrel()
+        return new WebAppFixture().UseKestrel()
             .WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
@@ -56,11 +55,6 @@ internal static class TwoHostFeatureHarness
                 {
                     builder.UseSetting(key, value);
                 }
-                // The realtime log and feature-change source read the system schema. In production
-                // the change trigger writes there; here migrations run in the fixture schema, so the
-                // system schema must be that schema or each task follows an unrelated table. The
-                // fixture chooses (or shares) its schema before it builds the host.
-                builder.UseSetting("Database:Schema", host.CurrentSchema);
             })
             .OverrideConfiguration(configuration);
     }
