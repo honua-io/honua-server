@@ -42,7 +42,25 @@ def verify_conservation(children):
 
 selected = verify_conservation(CHILDREN)
 parents = [parent for parent in CONFIG["shard_partitions"] if set(NAMES) & set(parent["children"])]
-assert parents == [CONTRACT["parentPartition"]], "The legacy parent contract changed."
+# Packing joins the legacy Tiles/Replica parent with GP/NAS. The packing
+# contract verifies that complete union; this fixture still freezes Replica's
+# original selection and checks its three children independently above.
+PACKING = json.loads((ROOT / "scripts/ci/fixtures/soap-mvt-packing.json").read_text())
+packed_name = "GeoServices SOAP and MVT"
+member_names = {member["name"] for member in PACKING["members"]}
+expected_parent = {
+    "name": "GPServer NAServer Tiles and Replica capacity partition",
+    "csproj": ORIGINAL["csproj"],
+    "filter": "|".join("(" + parent["filter"] + ")" for parent in PACKING["partitions"]),
+    "children": list(dict.fromkeys(
+        packed_name if child in member_names else child
+        for parent in PACKING["partitions"] for child in parent["children"])),
+    "granularity": "method",
+}
+assert len(parents) == 1
+assert {**parents[0], "children": set(parents[0]["children"])} == {
+    **expected_parent, "children": set(expected_parent["children"])
+}, "The combined parent contract changed."
 for field in ("artifact_suffix", "log_name", "shard_name"):
     assert len({shard[field] for shard in CONFIG["shards"]}) == len(CONFIG["shards"]), field
 
