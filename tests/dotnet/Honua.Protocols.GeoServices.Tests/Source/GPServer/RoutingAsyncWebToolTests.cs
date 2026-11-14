@@ -43,25 +43,41 @@ public sealed class RoutingAsyncWebToolTests
 
     public RoutingAsyncWebToolTests(RoutingHost routing) => _routing = routing;
 
+    // Started on first use. A case that owns its host stops the shared one first, because a
+    // running shared worker would claim that case's jobs from the common job substrate.
     public sealed class RoutingHost : IAsyncLifetime
     {
         private readonly ForwardingRoutingProvider _provider = new();
-
-        public RoutingHost() => Application = Fixture(_provider);
-
-        public WebAppFixture Application { get; }
+        private WebAppFixture? _application;
 
         public async Task<WebAppFixture> StartCaseAsync(IRoutingProvider provider)
         {
             _provider.Target = provider;
-            await Application.Postgres.DataSource.ClearJobSubstrateAsync();
-            NoRedisJobHost.AssertJobsRunWithoutRedis(Application);
-            return Application;
+            if (_application is null)
+            {
+                var application = Fixture(_provider);
+                _application = application;
+                await NoRedisJobHost.StartAsync(application);
+                return application;
+            }
+
+            await _application.Postgres.DataSource.ClearJobSubstrateAsync();
+            NoRedisJobHost.AssertJobsRunWithoutRedis(_application);
+            return _application;
         }
 
-        public Task InitializeAsync() => NoRedisJobHost.StartAsync(Application);
+        public async Task StopAsync()
+        {
+            if (_application is not null)
+            {
+                await _application.DisposeAsync();
+                _application = null;
+            }
+        }
 
-        public Task DisposeAsync() => Application.DisposeAsync();
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public Task DisposeAsync() => StopAsync();
     }
 
     private sealed class ForwardingRoutingProvider : IRoutingProvider
@@ -616,6 +632,7 @@ public sealed class RoutingAsyncWebToolTests
     public async Task SubmitJob_DevelopmentScopedProvider_ExecutesAndDisposesJobScope(string family)
     {
         var instances = new ConcurrentBag<(IRoutingProvider Provider, RoutingScopeProbe Scope)>();
+        await _routing.StopAsync();
         await using var fixture = Fixture(Provider()).UseEnvironment("Development")
             .ConfigureWebHost(builder =>
             {
