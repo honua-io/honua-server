@@ -51,6 +51,7 @@ PARENT_IMAGES = {
     "GeoServices ImageServer Raster Rendering": [],
     "OGC API Tiles Endpoints and CRS": [],
     "Elevation and Terrain Analysis": [],
+    "OGC Classic WMTS": [],
 }
 assert {contract["originalShard"]["name"] for contract in contracts} == set(PARENT_IMAGES), "Unlisted split parent."
 cases = {child: PARENT_IMAGES[contract["originalShard"]["name"]]

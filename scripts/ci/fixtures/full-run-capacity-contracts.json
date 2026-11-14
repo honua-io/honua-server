@@ -1337,5 +1337,38 @@
         "Elevation and Terrain Analysis 2": 8.0
       }
     }
+  },
+  {
+    "originalShard": {
+      "name": "OGC Classic WMTS",
+      "shard_name": "OGC Classic WMTS",
+      "dispatch_rank": 17.3,
+      "artifact_suffix": "ogc-classic-wmts",
+      "log_name": "server-tests-ogc-classic-wmts",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/OgcClassic/Wmts/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
+      ],
+      "_comment": "ADR-0037 finer-sharding: carved from OGC Classic Maps. Selects the Wmts namespace (OgcClassicWmtsTests is the heaviest class in the original Maps shard)."
+    },
+    "children": [
+      "OGC Classic WMTS 1",
+      "OGC Classic WMTS 2"
+    ],
+    "estimatedRanks": {
+      "basis": "Unmeasured children: 5.1 min per-job overhead (17.3 median job minutes less 12.2 minutes of serial class spans, TRX of run 43580101834) plus each child's class spans.",
+      "ranks": {
+        "OGC Classic WMTS 1": 12.8,
+        "OGC Classic WMTS 2": 9.6
+      }
+    }
   }
 ]

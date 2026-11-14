@@ -30,7 +30,7 @@ extract it into a dedicated local directory, and run `python3 quickstart.py` the
 Docker Compose, Python 3.11+, and OpenSSL 3 are required; use WSL on Windows.
 No compiler or host Docker CLI bind mounts are needed.
 
-The archive contains `compose.yaml`, `compose.executor.yaml`, `compose.console.yaml`, `quickstart.py`,
+The archive contains `compose.yaml`, `compose.executor.yaml`, `compose.console.yaml`, `console.nginx.conf`, `quickstart.py`,
 `images.json`, a README, and `AGENTS.md`, the operating rules for AI coding agents
 working in the install directory (also published as
 [Work with AI coding agents](../guides/connect/working-with-ai-agents.md)). `images.json` pins the serving and executor images as
@@ -85,20 +85,64 @@ group so the executor can read them; unsupported paths fail closed.
 
 ### Add Console and embedded Studio
 
-Run `python3 quickstart.py --profile console` in the extracted install directory.
-The package must contain a `console` image digest in `images.json` from the same
-release lock as the server. Release packaging supplies it with
-`package_quickstart.py --console-image <immutable-reference>`; initialization
-refuses Console activation when that pin is missing or mutable.
+Run `python3 quickstart.py --profile console` in the extracted install directory,
+then open `https://localhost:18083/console/`. Set `HONUA_CONSOLE_PORT` in `.env`
+before activation to choose another local port.
+
+Console is a static browser application. The package carries the released Console
+bundle in `console/`; release packaging adds it with
+`package_quickstart.py --console-bundle honua-console-<version>.zip --console-bundle-sha256 <sha256>`,
+using the `sha256` from the bundle's release receipt, and refuses a bundle that does
+not match it. Initialization refuses Console activation when the package has no
+bundle or no immutable `consoleWeb` image in `images.json`.
 
 The command adds the shipped `compose.console.yaml` overlay to the saved
 `COMPOSE_FILE`, preserving customer files, the executor, and its serving-image
-override. It enables the Console profile for subsequent quickstart runs. Console
-is available at `http://localhost:18083`; set `HONUA_CONSOLE_PORT` in `.env` before
-activation to choose another local port. Console reads the serving admin key from
-`secrets/honua_admin_password` through its entrypoint; the key remains outside
-Compose interpolation and rendered configuration. The overlay enables embedded
-Studio and the server's Studio end-user authorization.
+override, and enables the Console profile for subsequent quickstart runs. The
+overlay's `console` service is a small HTTPS web server (`console.nginx.conf`) that
+serves the bundle at `/console/` and forwards every other path to the serving API.
+Browser sign-in sessions, CSRF tokens and the identity-provider callback need one
+HTTPS origin, so Console is not offered over plain HTTP. The certificate is
+self-signed and created locally in `secrets/console_tls_certificate` (key in
+`secrets/console_tls_key`) for `localhost` and `127.0.0.1`; your browser asks you
+to trust it once, or you can add that certificate to your operating system's trust
+store. It is valid for 397 days; `python3 quickstart.py` issues a new one when fewer
+than 30 days remain and restarts the Console edge to serve it. Trust the new
+certificate the same way after a renewal. Visits to `127.0.0.1` are redirected to `localhost`, the host the sign-in
+callback uses. The serving API trusts forwarded scheme and host headers only from
+the Console edge's fixed address on its own `console-edge` network
+(`HONUA_CONSOLE_EDGE_SUBNET`, `HONUA_CONSOLE_EDGE_ADDRESS` and
+`HONUA_CONSOLE_EDGE_SERVER_ADDRESS` in `.env`, default `172.31.250.240/29`,
+`172.31.250.242` and `172.31.250.243`; if that range is in use, change all three
+to two distinct addresses inside the new subnet).
+
+Sign in with one of:
+
+- **Administrator password (default).** Console shows a password field. Use the
+  serving administrator password in `secrets/honua_admin_password`. The server
+  issues a short-lived HttpOnly session; the password and session are never stored
+  in the browser.
+- **Your identity provider.** Enable OIDC on the serving API (`Oidc__Enabled` and
+  the `Oidc__Generic__*` settings in [authentication](../guides/secure/authentication.md))
+  in a customer override file, and register
+  `https://localhost:18083/admin/auth/callback` (with your port) as the client's
+  redirect URI; the overlay sets `Oidc__AdminAuthCallbackUri` to it. The provider's
+  authority must use HTTPS. Then set these in `.env` and run `python3 quickstart.py`
+  again:
+
+  ```text
+  HONUA_CONSOLE_AUTH_MODE=oidc
+  HONUA_CONSOLE_OIDC_AUTHORITY=<the same https authority as Oidc__Generic__Authority>
+  HONUA_CONSOLE_OIDC_CLIENT_ID=<the same client id as Oidc__Generic__ClientId>
+  ```
+
+  Console then offers the server's identity providers instead of the password
+  field.
+
+`console.config.json` holds Console's public settings and is rewritten from `.env`
+on each run (a change restarts the Console edge); it never contains a credential. Set `HONUA_CONSOLE_V4=false` to show
+the earlier Console presentation. The overlay also enables the server's Studio
+end-user authorization; embedded Studio ships inside the bundle.
 
 ### Install operating skills
 
@@ -543,7 +587,7 @@ a backup.
 ## Use Studio in Console without the assistant
 
 For a customer installation, follow [Add Console and embedded Studio](#add-console-and-embedded-studio)
-and open Console at `http://localhost:18083` (or your configured port).
+and open Console at `https://localhost:18083/console/` (or your configured port).
 
 For a separate development environment, clone the repository from this install
 directory and start its development stack on the serving image you installed:
