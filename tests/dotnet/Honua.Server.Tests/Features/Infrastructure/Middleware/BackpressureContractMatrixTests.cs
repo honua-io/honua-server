@@ -452,8 +452,7 @@ public sealed class BackpressureContractMatrixTests
                         Enabled = true,
                         GlobalRequestsPerMinute = 1,
                     }),
-                    NullLogger<RateLimitingMiddleware>.Instance,
-                    redis: null);
+                    NullLogger<RateLimitingMiddleware>.Instance);
                 return limiter.InvokeAsync;
             });
         }

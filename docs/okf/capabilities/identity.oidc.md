@@ -18,7 +18,7 @@ Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0
 | Edition | Pro |
 | Surface maturity | 7 implemented |
 | Registry entries | 7 |
-| Proving tests | 27 |
+| Proving tests | 32 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

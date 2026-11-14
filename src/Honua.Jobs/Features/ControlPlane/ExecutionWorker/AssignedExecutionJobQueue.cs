@@ -202,7 +202,7 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
                 return ExecutionWorkerClaimOutcome.NotFound;
             }
 
-            if (ExecutionJobReconciler.IsTerminal(job.Status))
+            if (job.Status.IsTerminal())
             {
                 Log.AssignedJobAlreadyTerminal(_logger, _launch.OperationId, job.Status.ToString());
                 return ExecutionWorkerClaimOutcome.AlreadyTerminal;

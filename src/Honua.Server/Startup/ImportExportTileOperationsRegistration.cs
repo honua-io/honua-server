@@ -185,40 +185,6 @@ internal static class ImportExportTileOperationsRegistration
             services.AddHostedService(sp => sp.GetRequiredService<TileCacheExpiryHostedService>());
         }
 
-        // The live Redis tile-key index backs both optional quota eviction (#1917) and operator
-        // expire/delete lifecycle operations (#2661). Register it whenever Redis is present so
-        // lifecycle correctness does not depend on the independent eviction opt-in. The eviction
-        // service still checks TileOptions:Eviction:Enabled before sweeping.
-        var redisConfigured = services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer));
-        if (redisConfigured)
-        {
-            services.AddSingleton<Honua.Core.Features.Tiles.ITileCacheKeyIndex>(sp =>
-                new RedisTileCacheKeyIndex(
-                    sp.GetRequiredService<IConnectionMultiplexer>(),
-                    sp.GetRequiredService<ILogger<RedisTileCacheKeyIndex>>(),
-                    sp.GetService<ICloudFileStorage>()));
-        }
-        else
-        {
-            services.AddSingleton<Honua.Core.Features.Tiles.ITileCacheKeyIndex>(
-                Honua.Core.Features.Tiles.NullTileCacheKeyIndex.Instance);
-        }
-
-        services.Configure<TileCacheEvictionSweepOptions>(
-            configuration.GetSection(TileCacheEvictionSweepOptions.SectionName));
-        services.AddSingleton<TileCacheEvictionService>();
-
-        // Live LRU tile-cache eviction is a PERIODIC tick (bucket-b). The sweep re-evaluates the
-        // current key index against the quota (no-op when nothing exceeds it), so the scheduled-tick
-        // handler is registered in BOTH trigger modes; the in-process timer is hosted only under
-        // TriggerMode=Poll (default, on-prem), keeping that path byte-for-byte unchanged. The handler
-        // routes to TileCacheEvictionService.SweepAsync (the same body the timer calls).
-        services.AddSingleton<IScheduledTickHandler, TileCacheEvictionScheduledTickHandler>();
-        if (ControlPlaneTriggerModeResolver.ShouldHostInProcessTimers(configuration))
-        {
-            services.AddHostedService<TileCacheEvictionHostedService>();
-        }
-
         // Batch-dispatched tile-cache / PMTiles execution jobs (issue #1697).
         // The worker-side executor is registered unconditionally so any worker host
         // can claim ExecutionJobKind.TileCache jobs; it is only invoked when the

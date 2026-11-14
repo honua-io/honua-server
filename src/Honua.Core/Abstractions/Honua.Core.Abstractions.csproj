@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>$(HonuaTargetFramework)</TargetFramework>
+    <TargetFrameworks>$(HonuaPluginTargetFrameworks)</TargetFrameworks>
     <DisableMicrosoftExtensionsLoggingSourceGenerator>false</DisableMicrosoftExtensionsLoggingSourceGenerator>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -10,6 +10,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <RootNamespace>Honua.Core</RootNamespace>
+    <DefineConstants Condition="'$(HonuaStoreProfile)' == 'postgis'">$(DefineConstants);HONUA_POSTGIS_ONLY</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

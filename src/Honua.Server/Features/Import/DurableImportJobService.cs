@@ -159,7 +159,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
             return await _inProcess.CancelJobAsync(jobId, cancellationToken).ConfigureAwait(false);
         }
 
-        if (ExecutionJobCancellationHelper.IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             return false;
         }
@@ -187,7 +187,7 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
                 CancellationRequestedAt = now,
                 UpdatedAt = now,
                 Status = observation.Status,
-                CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? now : job.CompletedAt,
+                CompletedAt = observation.Status.IsTerminal() ? now : job.CompletedAt,
                 CurrentPhase = observation.Message ?? "Cancellation requested",
             };
             requested = await _jobStore!.TrySetAsync(cancelling, cancellationToken: cancellationToken).ConfigureAwait(false);

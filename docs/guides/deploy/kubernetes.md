@@ -1,16 +1,18 @@
 ---
 type: guide
 title: "Deploy on Kubernetes"
-description: "Install the honua-helm chart as one coordinated replica with a persistent volume, then move to the complete multi-node contract with Redis and cloud file storage."
+description: "Install the honua-helm chart as one coordinated replica with a persistent volume, then move to the complete multi-node contract with cloud file storage."
 ---
 # Deploy on Kubernetes
+
+> Kubernetes is not certified for 2026.1. These instructions do not establish release qualification.
 
 Kubernetes with Helm is Preview and not certified for 2026.1 rc.2; [ECS Fargate is the certified target](cloud-deployments.md#pick-a-pattern). It is available for evaluation, and outside
 the GA operational, SLA, and scale commitments. `x86_64` is the supported
 architecture. This guide starts with one coordinated Honua replica and a
 persistent volume. That is the safe Kubernetes baseline. Horizontal scaling is
-a separate, atomic topology change: `MultiNode`, Redis, and shared cloud file
-storage must be enabled together.
+a separate, atomic topology change: `MultiNode` and shared cloud file storage
+must be enabled together.
 
 The authoritative chart contract lives in
 [`honua-helm`](https://github.com/honua-io/honua-helm/blob/trunk/docs/values-contract.md).
@@ -30,6 +32,8 @@ moving branch.
   `always`) and `maxmemory-policy noeviction`, or use a managed service's own
   durability. See [Redis durability](#redis-durability) below.
 - A default StorageClass for the single-node persistent volume.
+- From 2026.1, x64 nodes need an x86-64-v2 CPU; check each node pool with
+  [the CPU baseline preflight](troubleshooting.md#cpu-baseline-x86-64-v2).
 - An OpenTelemetry collector reachable at the endpoint used below.
 - An ingress controller and a TLS secret named `honua-tls`.
 - A reviewed Honua container digest. Production examples deliberately do not
@@ -181,11 +185,9 @@ Multi-node operation is not just `replicaCount: 2`. It requires all of these
 at the same time:
 
 1. `config.env.Deployment__Mode: MultiNode`.
-2. A reachable `ConnectionStrings__redis` in the runtime Secret for shared
-   coordination and durable jobs.
-3. `FileStorage__Provider: AwsS3` or `AzureBlob`; `Local` storage is invalid in
+2. `FileStorage__Provider: AwsS3` or `AzureBlob`; `Local` storage is invalid in
    `MultiNode`, even if a particular PersistentVolume supports multiple mounts.
-4. Replica or HPA settings, plus a total database-pool budget that stays below
+3. Replica or HPA settings, plus a total database-pool budget that stays below
    the database server's connection limit.
 
 The S3 example uses workload identity. Configure the pod's cloud identity with
@@ -510,7 +512,7 @@ log.
 ## Troubleshoot
 
 - **Helm rejects multiple replicas** — keep one `SingleInstance` replica, or
-  apply the complete `MultiNode` values with Redis and cloud file storage.
+  apply the complete `MultiNode` values with cloud file storage.
 - **Pods never become ready** — inspect the preflight Job and pod logs. Common
   causes are unreachable PostGIS/Redis, missing Secret keys, or an invalid
   storage provider configuration.
