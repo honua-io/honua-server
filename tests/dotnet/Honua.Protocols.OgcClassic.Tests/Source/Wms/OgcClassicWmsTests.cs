@@ -245,7 +245,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             }).ToArray()
         }, schema: _fixture.CurrentSchema);
 
-        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
+        // Route the global honua.layers UPDATE through the schema-mutation advisory lock.
         await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
             "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
             command =>
