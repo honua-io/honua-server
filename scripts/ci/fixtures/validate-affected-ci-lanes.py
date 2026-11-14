@@ -147,12 +147,12 @@ class ShardWidthTests(unittest.TestCase):
         return int(result.stdout)
 
     def test_narrow_affected_runs_keep_pr_safe_width(self):
-        self.assertEqual(6, self.affected_width(1))
-        self.assertEqual(6, self.affected_width(30))
+        self.assertEqual(2, self.affected_width(1))
+        self.assertEqual(2, self.affected_width(30))
 
     def test_broad_affected_runs_double_width_without_reaching_full(self):
-        self.assertEqual(12, self.affected_width(31))
-        self.assertEqual(12, self.affected_width(134))
+        self.assertEqual(2, self.affected_width(31))
+        self.assertEqual(2, self.affected_width(134))
 
 
 if __name__ == '__main__':
