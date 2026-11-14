@@ -41,7 +41,7 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 /// </summary>
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.Query)]
-public sealed class GrpcMaskedFieldPredicateTests
+public sealed partial class GrpcMaskedFieldPredicateTests
 {
     private const string MaskedField = "secret";
 

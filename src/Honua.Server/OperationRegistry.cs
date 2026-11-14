@@ -117,6 +117,8 @@ public static class OperationRegistry
         new(Mcp, "prompts/get"),
 
         // gRPC FeatureService methods (geospatial.v1.FeatureService)
+        new(Grpc, "geospatial.v1.FeatureService/DescribeService"),
+        new(Grpc, "geospatial.v1.FeatureService/DescribeLayer"),
         new(Grpc, "geospatial.v1.FeatureService/QueryFeatures"),
         new(Grpc, "geospatial.v1.FeatureService/QueryFeaturesStream"),
         new(Grpc, "geospatial.v1.FeatureService/ApplyEdits"),
