@@ -40,7 +40,7 @@ internal static class McpMrtrTestKit
         return new ServiceCollection()
             .AddLogging()
             .AddSingleton(Options.Create(new McpOptions()))
-            .AddSingleton(new McpSessionManager())
+            .AddSingleton(_ => new McpSessionManager())
             .AddSingleton(new McpDataAccessSurface(tools, [], NullLogger<McpDataAccessSurface>.Instance))
             .AddSingleton(new McpMrtrRuntime(new McpRequestStateCodec(Secret), McpMrtrRuntime.ParseConsoleUrl(consoleUrl)))
             .AddSingleton(store ?? Substitute.For<IOperationProposalStore>())

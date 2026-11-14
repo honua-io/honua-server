@@ -28,7 +28,8 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Mrtr_UrlCapableAgentProposal_ReturnsConsoleApprovalAndStillOnlyFilesTheProposal()
     {
-        var (tool, http, bridge, executor, _) = MrtrSetup("""{"elicitation":{"url":{}}}""", proposal: null, approvalAction: null);
+        using var catalog = MrtrCatalog();
+        var (tool, http, bridge, executor, _) = MrtrSetup(catalog, """{"elicitation":{"url":{}}}""", proposal: null, approvalAction: null);
 
         var result = await tool.InvokeAsync(http, Args(MrtrArguments), default);
 
@@ -42,7 +43,8 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Mrtr_FormOnlyClient_KeepsRequiresApprovalResult()
     {
-        var (tool, http, bridge, _, _) = MrtrSetup("""{"elicitation":{"form":{}}}""", proposal: null, approvalAction: null);
+        using var catalog = MrtrCatalog();
+        var (tool, http, bridge, _, _) = MrtrSetup(catalog, """{"elicitation":{"form":{}}}""", proposal: null, approvalAction: null);
 
         var result = await tool.InvokeAsync(http, Args(MrtrArguments), default);
 
@@ -54,8 +56,9 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Mrtr_RetryAfterConsoleApproval_ReportsTheRowWithoutProposingOrExecuting()
     {
+        using var catalog = MrtrCatalog();
         var (tool, http, bridge, executor, store) = MrtrSetup(
-            """{"elicitation":{"url":{}}}""", OperationProposalStatus.Succeeded, approvalAction: "accept");
+            catalog, """{"elicitation":{"url":{}}}""", OperationProposalStatus.Succeeded, approvalAction: "accept");
 
         var result = await tool.InvokeAsync(http, Args(MrtrArguments), default);
 
@@ -65,14 +68,17 @@ public sealed partial class PublishedOperationToolTests
         executor.SubmitCount.Should().Be(0);
     }
 
+    private static OperationCatalog MrtrCatalog() =>
+        new([new AdminApiOperationDescriptorProvider()], TimeProvider.System);
+
     private static (PublishedOperationTool Tool, HttpContext Http, CapturingProposalBridge Bridge, RecordingExecutor Executor, IOperationProposalStore Store)
-        MrtrSetup(string capabilities, OperationProposalStatus? proposal, string? approvalAction)
+        MrtrSetup(OperationCatalog catalog, string capabilities, OperationProposalStatus? proposal, string? approvalAction)
     {
         var descriptor = AdminApiOperationCatalog.Descriptors.Single(d => d.OperationId == MrtrOperationId);
         var executor = new RecordingExecutor(MrtrOperationId);
         var bridge = new CapturingProposalBridge();
         var dispatcher = new OperationDispatcher(
-            new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System), [executor],
+            catalog, [executor],
             new AllowAllPolicyDecisionPoint(), TimeProvider.System, bridge);
         var tool = new PublishedOperationTool(descriptor, "cat-agent", NullLogger.Instance);
         var http = Context(dispatcher, authorization: ProposalAuthorization(), roles: ["admin", "agent"]);

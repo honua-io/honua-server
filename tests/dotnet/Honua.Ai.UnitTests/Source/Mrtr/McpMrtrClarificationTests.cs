@@ -35,7 +35,7 @@ public sealed class McpMrtrClarificationTests
     {
         var confirmed = answer == "true";
         Grounds(Asking(questionId));
-        using var services = Services(_grounding);
+        await using var services = Services(_grounding);
         // A negative answer must also withdraw a confirmation carried from an earlier round.
         var reference = JsonSerializer.Serialize(new
         {
@@ -75,7 +75,7 @@ public sealed class McpMrtrClarificationTests
     public async Task GroundCandidates_FormCapableRequest_ReturnsInputRequiredWithoutCaching()
     {
         Grounds(Asking("workflow_family"));
-        using var services = Services(_grounding);
+        await using var services = Services(_grounding);
 
         var result = (await SendAsync(services, new McpCall(Goal, FormCapable))).GetProperty("result");
 
@@ -93,7 +93,7 @@ public sealed class McpMrtrClarificationTests
     public async Task GroundCandidates_RequestWithoutElicitation_KeepsEnvelope()
     {
         Grounds(Asking("workflow_family"));
-        using var services = Services(_grounding);
+        await using var services = Services(_grounding);
 
         var result = (await SendAsync(services, new McpCall(Goal, "{}"))).GetProperty("result");
 
@@ -106,8 +106,8 @@ public sealed class McpMrtrClarificationTests
     public async Task GroundCandidates_RetryOnAnotherReplica_ResumesIntentWithAnswers()
     {
         Grounds(Asking("workflow_family"), Resolved());
-        using var replicaA = Services(_grounding);
-        using var replicaB = Services(_grounding);
+        await using var replicaA = Services(_grounding);
+        await using var replicaB = Services(_grounding);
         var state = (await SendAsync(replicaA, new McpCall(Goal, FormCapable)))
             .GetProperty("result").GetProperty("requestState").GetString();
 
@@ -130,7 +130,7 @@ public sealed class McpMrtrClarificationTests
     public async Task GroundCandidates_SecondRound_CarriesEarlierAnswers()
     {
         Grounds(Asking("workflow_family"), Asking("extent"), Resolved());
-        using var services = Services(_grounding);
+        await using var services = Services(_grounding);
         var first = (await SendAsync(services, new McpCall(Goal, FormCapable))).GetProperty("result");
         var second = (await SendAsync(services, new McpCall(Goal, FormCapable)
         {
@@ -162,7 +162,7 @@ public sealed class McpMrtrClarificationTests
     public async Task GroundCandidates_DeclinedOrEmptyRetry_ReturnsEnvelopeInsteadOfAskingAgain(string responses)
     {
         Grounds(Asking("workflow_family"));
-        using var services = Services(_grounding);
+        await using var services = Services(_grounding);
         var state = Mint(services, Binding(services, GroundCandidatesTool.ToolName, Goal),
             new(McpRequestStateKind.Clarification, """{"i":"intent-abc","a":{}}""", InMinutes(services, 5)));
 
@@ -188,7 +188,7 @@ public sealed class McpMrtrClarificationTests
     public async Task GroundCandidates_EmptyLaterRound_PreservesIntentAndEarlierAnswers(string responses)
     {
         Grounds(Asking("extent"));
-        using var services = Services(_grounding);
+        await using var services = Services(_grounding);
         var state = Mint(services, Binding(services, GroundCandidatesTool.ToolName, Goal),
             new(McpRequestStateKind.Clarification,
                 """{"i":"intent-abc","a":{"workflow_family":["Analyze"]}}""", InMinutes(services, 5)));
@@ -211,9 +211,9 @@ public sealed class McpMrtrClarificationTests
     }
 
     [UnitTest]
-    public void Refusal_AnonymousCaller_GetsNoContinuation()
+    public async Task Refusal_AnonymousCaller_GetsNoContinuation()
     {
-        using var services = Services(_grounding);
+        await using var services = Services(_grounding);
         var context = new DefaultHttpContext { RequestServices = services };
         context.Items[McpModernProtocol.RequestItemKey] = true;
 
@@ -229,7 +229,7 @@ public sealed class McpMrtrClarificationTests
     [InlineData("tool-without-mrtr")]
     public async Task Retry_InvalidState_IsRefusedBeforeTheToolRuns(string variant)
     {
-        using var services = Services(_grounding);
+        await using var services = Services(_grounding);
         var toolName = variant == "tool-without-mrtr" ? PlainTool.ToolName : GroundCandidatesTool.ToolName;
         var state = Mint(services, Binding(services, toolName, Goal),
             new(McpRequestStateKind.Clarification, """{"i":"intent-abc","a":{}}""", InMinutes(services, 5)));
@@ -258,7 +258,7 @@ public sealed class McpMrtrClarificationTests
     [InlineData("both")]
     public async Task Retry_ExplicitNullFields_IsRefusedBeforeTheToolRuns(string field)
     {
-        using var services = Services(_grounding);
+        await using var services = Services(_grounding);
         var context = ModernCall(services, new McpCall(Goal, FormCapable));
         var body = (await JsonNode.ParseAsync(context.Request.Body))!.AsObject();
         var parameters = body["params"]!.AsObject();
@@ -283,9 +283,9 @@ public sealed class McpMrtrClarificationTests
     }
 
     [UnitTest]
-    public void Refusal_LegacyRequestCarryingState_IsRefusedAndPlainLegacyCallIsUnchanged()
+    public async Task Refusal_LegacyRequestCarryingState_IsRefusedAndPlainLegacyCallIsUnchanged()
     {
-        using var services = Services(_grounding);
+        await using var services = Services(_grounding);
         var context = new DefaultHttpContext { RequestServices = services, User = User() };
         var carrying = new McpToolsCallParams { Name = PlainTool.ToolName, RequestState = Json("\"hr1.x\"") };
 

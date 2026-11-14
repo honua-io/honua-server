@@ -29,9 +29,9 @@ public sealed class McpMrtrApprovalTests
     private readonly IOperationProposalStore _store = Substitute.For<IOperationProposalStore>();
 
     [UnitTest]
-    public void TryRequest_UrlCapableRequestAwaitingApproval_PointsAtConsoleProposal()
+    public async Task TryRequest_UrlCapableRequestAwaitingApproval_PointsAtConsoleProposal()
     {
-        using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
+        await using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
         var context = Attach(services, UrlCapable, approvalAction: null);
 
         var result = ApprovalContinuation.TryRequest(context, Pending());
@@ -46,10 +46,10 @@ public sealed class McpMrtrApprovalTests
     [InlineData("""{"elicitation":{"form":{}}}""", "https://console.example", OperationHandleStatus.RequiresApproval)]
     [InlineData(UrlCapable, null, OperationHandleStatus.RequiresApproval)]
     [InlineData(UrlCapable, "https://console.example", OperationHandleStatus.Denied)]
-    public void TryRequest_WithoutUrlModeConsoleOrPendingProposal_KeepsTodaysResult(
+    public async Task TryRequest_WithoutUrlModeConsoleOrPendingProposal_KeepsTodaysResult(
         string capabilities, string? consoleUrl, OperationHandleStatus status)
     {
-        using var services = Services(Substitute.For<IGroundingService>(), _store, consoleUrl);
+        await using var services = Services(Substitute.For<IGroundingService>(), _store, consoleUrl);
         var context = Attach(services, capabilities, approvalAction: null);
 
         ApprovalContinuation.TryRequest(context, Pending() with { Status = status }).Should().BeNull();
@@ -66,7 +66,7 @@ public sealed class McpMrtrApprovalTests
         OperationProposalStatus stored, string action, string expected)
     {
         _store.GetAsync(ProposalId, Arg.Any<CancellationToken>()).Returns(Proposal(stored));
-        using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
+        await using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
         var context = Attach(services, UrlCapable, action);
 
         var result = await ApprovalContinuation.TryResumeAsync(context, new(OperationId, "reader"), CancellationToken.None);
@@ -99,7 +99,7 @@ public sealed class McpMrtrApprovalTests
             Reason = "canonical execution outcome",
         };
         operations.GetAsync("opinst-1", Arg.Any<CancellationToken>()).Returns(operation);
-        using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
+        await using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
         var context = Attach(services, UrlCapable, "accept");
         using var stores = new ServiceCollection().AddSingleton(_store).AddSingleton(operations).BuildServiceProvider();
         context.RequestServices = stores;
@@ -118,7 +118,7 @@ public sealed class McpMrtrApprovalTests
     public async Task TryResume_ForeignProposal_IsRefused(string actor, string operationId)
     {
         _store.GetAsync(ProposalId, Arg.Any<CancellationToken>()).Returns(Proposal(OperationProposalStatus.Succeeded));
-        using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
+        await using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
         var context = Attach(services, UrlCapable, "accept");
 
         var act = () => ApprovalContinuation.TryResumeAsync(context, new(operationId, actor), CancellationToken.None);
@@ -129,7 +129,7 @@ public sealed class McpMrtrApprovalTests
     [UnitTest]
     public async Task TryResume_FirstCall_ReturnsNull()
     {
-        using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
+        await using var services = Services(Substitute.For<IGroundingService>(), _store, "https://console.example");
         var context = Attach(services, UrlCapable, approvalAction: null);
 
         (await ApprovalContinuation.TryResumeAsync(context, new(OperationId, "reader"), CancellationToken.None))
