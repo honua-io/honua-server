@@ -142,8 +142,8 @@ public sealed class DatumGridProvisioningTests : IAsyncLifetime
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {
-            var context = Path.Combine(directory.FullName, "docker", "proj-grids");
-            if (File.Exists(Path.Combine(context, "Dockerfile")))
+            var context = Path.Join(directory.FullName, "docker", "proj-grids");
+            if (File.Exists(Path.Join(context, "Dockerfile")))
             {
                 return context;
             }
