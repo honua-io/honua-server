@@ -51,7 +51,7 @@ public sealed class OpsFindingsServiceTests
 
         var evaluation = await service.EvaluateWithEvidenceAsync();
 
-        var finding = Assert.Single(evaluation.Findings.Where(finding => finding.Rule == OpsSelfChecks.CertificateRule));
+        var finding = Assert.Single(evaluation.Findings, finding => finding.Rule == OpsSelfChecks.CertificateRule);
         Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
         Assert.Null(finding.RecommendedAction);
     }

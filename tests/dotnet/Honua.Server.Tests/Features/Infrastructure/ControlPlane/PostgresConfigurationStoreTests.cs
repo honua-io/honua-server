@@ -10,6 +10,9 @@ using Honua.Core.Features.Identity.Domain;
 using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Monitoring;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
@@ -305,6 +308,36 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         var policies = await CreateRateStore(harness).ListPoliciesAsync();
 
         policies.Should().ContainSingle().Which.PolicyId.Should().Be(readable.PolicyId);
+    }
+
+    [IntegrationTest]
+    public async Task ReadIdentityProvidersAsync_BackgroundOnlyReplica_RefreshesPersistedProviders()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var registry = new OidcRuntimeProviderRegistry();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(harness.DataSource);
+        services.AddSingleton(harness.CreateConfigurationDocuments());
+        services.AddSingleton(registry);
+        services.AddSingleton<IOidcRuntimeProviderSource>(registry);
+        services.AddSingleton<ConfigurationRuntimeRefresh>();
+        services.Configure<OidcAuthenticationOptions>(options => options.Enabled = true);
+        services.AddOpsSelfChecks(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        var source = provider.GetRequiredService<IOpsSelfCheckSource>();
+        var configured = Provider(true);
+        configured.Authority = "https://127.0.0.1";
+        var store = CreateOidcStore(harness);
+        await store.CreateProviderAsync(configured);
+
+        var findings = await source.ReadIdentityProvidersAsync(default);
+
+        Assert.Equal(configured.ProviderId, Assert.Single(findings).ProviderId);
+        Assert.False(findings[0].IsReachable);
+        await store.UpdateProviderAsync(configured.ProviderId, _ => Provider(false, configured.ProviderId));
+        Assert.Empty(await source.ReadIdentityProvidersAsync(default));
     }
 
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
