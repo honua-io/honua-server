@@ -70,18 +70,39 @@ internal sealed class SystemCollaborationSessionClock : ICollaborationSessionClo
 
 // Test hosts may remove the database after application registration. Resolve the relay only
 // after the final service collection is built, just like the realtime tail and retention hosts.
-internal sealed class CollaborationRealtimeRelayHost(IServiceProvider services) : IHostedService
+internal sealed class CollaborationRealtimeRelayHost(IServiceProvider services) : BackgroundService
 {
     private CollaborationRealtimeRelay? _relay;
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _relay = services.GetService<NpgsqlDataSource>() is null
-            ? null
-            : services.GetRequiredService<CollaborationRealtimeRelay>();
-        return _relay?.StartAsync(cancellationToken) ?? Task.CompletedTask;
+        if (services.GetService<NpgsqlDataSource>() is null)
+        {
+            return;
+        }
+
+        _relay = services.GetRequiredService<CollaborationRealtimeRelay>();
+        await _relay.StartAsync(stoppingToken).ConfigureAwait(false);
+        // Keep the relay task under Generic Host supervision so a fatal consumer failure
+        // still follows the configured BackgroundServiceExceptionBehavior.
+        if (_relay.ExecuteTask is { } execution)
+        {
+            await execution.ConfigureAwait(false);
+        }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) =>
-        _relay?.StopAsync(cancellationToken) ?? Task.CompletedTask;
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_relay is not null)
+            {
+                await _relay.StopAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
 }
