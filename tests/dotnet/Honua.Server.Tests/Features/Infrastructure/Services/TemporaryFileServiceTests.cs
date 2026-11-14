@@ -844,11 +844,11 @@ public sealed class TemporaryFileServiceTests : IDisposable
     }
 
     [UnitTest]
-    public async Task StoreTemporaryFileAsync_CreatesPrivateDirectoryAndOwnerOnlyFiles()
+    public async Task StoreTemporaryFileAsync_WithNewStorageDirectory_CreatesPrivateDirectoryAndOwnerOnlyFiles()
     {
         // A configured fixed path such as /tmp/honua-temp must not expose stored files.
         var storageDirectory = Path.Join(_storageDirectory, "private");
-        var service = CreateService(new TemporaryFileOptions
+        using var service = CreateService(new TemporaryFileOptions
         {
             StorageDirectory = storageDirectory,
             DefaultExpiration = TimeSpan.FromMinutes(5)
@@ -871,7 +871,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
     }
 
     [UnitTest]
-    public void Constructor_RemovesSharedWriteFromAPreCreatedStorageDirectory()
+    public void Constructor_WithOwnedSharedStorageDirectory_RemovesSharedWrite()
     {
         if (OperatingSystem.IsWindows())
         {
@@ -882,7 +882,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         Directory.CreateDirectory(storageDirectory);
         File.SetUnixFileMode(storageDirectory, PrivateTempFile.OwnerDirectory | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite);
 
-        CreateService(new TemporaryFileOptions { StorageDirectory = storageDirectory });
+        using var service = CreateService(new TemporaryFileOptions { StorageDirectory = storageDirectory });
 
         PrivateTempFile.IsWritableByOthers(storageDirectory).Should().BeFalse();
     }

@@ -10,7 +10,7 @@ namespace Honua.Core.Tests.Features.Security;
 public sealed class PrivateTempFileTests
 {
     [UnitTest]
-    public void NewPath_IsDirectlyUnderTempPathWithPrefixAndExtension()
+    public void NewPath_WithPrefixAndExtension_ReturnsUniquePathDirectlyUnderTempDirectory()
     {
         var first = PrivateTempFile.NewPath("honua-test-", ".tif");
         var second = PrivateTempFile.NewPath("honua-test-", ".tif");
@@ -22,7 +22,7 @@ public sealed class PrivateTempFileTests
     }
 
     [UnitTest]
-    public void NewPath_RejectsSeparatorsInPrefixOrExtension()
+    public void NewPath_WithInvalidPrefixOrExtension_ThrowsArgumentException()
     {
         FluentActions.Invoking(() => PrivateTempFile.NewPath("../honua-")).Should().Throw<ArgumentException>();
         FluentActions.Invoking(() => PrivateTempFile.NewPath("honua\\x-")).Should().Throw<ArgumentException>();
@@ -31,7 +31,7 @@ public sealed class PrivateTempFileTests
     }
 
     [UnitTest]
-    public void Create_IsOwnerOnlyAndRefusesAnExistingPath()
+    public void Create_WithNewThenExistingPath_CreatesOwnerOnlyFileThenRefusesReuse()
     {
         var path = PrivateTempFile.NewPath("honua-private-temp-test-", ".bin");
         try
@@ -57,7 +57,7 @@ public sealed class PrivateTempFileTests
     }
 
     [UnitTest]
-    public void ApplyPrivateCreateNew_SetsExclusiveModeAndOwnerOnlyPermissions()
+    public void ApplyPrivateCreateNew_WithWritableOptions_SetsExclusiveModeAndOwnerOnlyPermissions()
     {
         var options = PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write });
 
@@ -69,7 +69,7 @@ public sealed class PrivateTempFileTests
     }
 
     [UnitTest]
-    public void CreateDirectory_CreatesOwnerOnlyAndReportsSharedDirectories()
+    public void CreateDirectory_WithNewAndExistingDirectories_PreservesExistingModeAndReportsSharedWrite()
     {
         var root = PrivateTempFile.NewPath("honua-private-dir-test-");
         try
@@ -100,7 +100,7 @@ public sealed class PrivateTempFileTests
     }
 
     [UnitTest]
-    public void CreateOrClaimDirectory_RemovesSharedWriteFromAnOwnedDirectory()
+    public void CreateOrClaimDirectory_WithOwnedSharedDirectory_RemovesSharedWrite()
     {
         var root = PrivateTempFile.NewPath("honua-private-claim-test-");
         try
@@ -132,7 +132,7 @@ public sealed class PrivateTempFileTests
     }
 
     [UnitTest]
-    public void CreateOrClaimDirectory_RefusesADirectoryOwnedByAnotherUser()
+    public void CreateOrClaimDirectory_WithDirectoryOwnedByAnotherUser_ThrowsInvalidOperationException()
     {
         // The root directory is owned by root; only a non-root process can prove the refusal.
         if (OperatingSystem.IsWindows() || Environment.UserName == "root")
@@ -145,7 +145,7 @@ public sealed class PrivateTempFileTests
     }
 
     [UnitTest]
-    public void Create_DoesNotFollowADanglingSymlink()
+    public void Create_WithDanglingSymlink_ThrowsWithoutCreatingTarget()
     {
         if (OperatingSystem.IsWindows())
         {

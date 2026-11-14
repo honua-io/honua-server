@@ -12,7 +12,7 @@ namespace Honua.Server.Tests.Import;
 public sealed class PrivateImportStagingTests
 {
     [UnitTest]
-    public async Task CopyStreamToTempFileAsync_CreatesTheStagedFileOwnerOnly()
+    public async Task CopyStreamToTempFileAsync_WithNewPath_CreatesOwnerOnlyStagedFile()
     {
         var path = PrivateTempFile.NewPath("honua-import-staging-test-", ".geojson");
         try
@@ -34,7 +34,7 @@ public sealed class PrivateImportStagingTests
     }
 
     [UnitTest]
-    public async Task CopyStreamToTempFileAsync_DoesNotReuseAPreCreatedPath()
+    public async Task CopyStreamToTempFileAsync_WithExistingPath_ThrowsWithoutChangingContents()
     {
         var path = PrivateTempFile.NewPath("honua-import-staging-test-", ".geojson");
         await File.WriteAllBytesAsync(path, [9]);
