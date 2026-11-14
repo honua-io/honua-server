@@ -105,7 +105,7 @@ public sealed class AotNativeLibraryRuntimeTests
         var restoreStepCount = buildStage.Split(
             "sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj").Length - 1;
         var argumentListCount = buildStage.Split(
-            "set -- \"-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis}\" \"-p:HonuaNobleRuntimePublish=true\" \"-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}\" \"-p:HonuaUseSkiaNoDependencies=true\"").Length - 1;
+            "set -- \"-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis}\" \"-p:HonuaUbuntuRuntimePublish=true\" \"-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}\" \"-p:HonuaUseSkiaNoDependencies=true\"").Length - 1;
         restoreStepCount.Should().Be(2);
         argumentListCount.Should().Be(restoreStepCount,
             "the RID restore layer and the restore+publish retry unit must both select the NoDependencies asset; "

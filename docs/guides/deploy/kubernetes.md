@@ -30,7 +30,7 @@ moving branch.
   `always`) and `maxmemory-policy noeviction`, or use a managed service's own
   durability. See [Redis durability](#redis-durability) below.
 - A default StorageClass for the single-node persistent volume.
-- From 2027.1, x64 nodes need an x86-64-v2 CPU; check each node pool with
+- From 2026.1, x64 nodes need an x86-64-v2 CPU; check each node pool with
   [the CPU baseline preflight](troubleshooting.md#cpu-baseline-x86-64-v2).
 - An OpenTelemetry collector reachable at the endpoint used below.
 - An ingress controller and a TLS secret named `honua-tls`.

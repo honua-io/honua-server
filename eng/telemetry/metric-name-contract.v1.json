@@ -30,6 +30,35 @@
   ],
   "instruments": [
     {
+      "instrument": "honua_shared_cache_output_requests_total",
+      "kind": "Counter",
+      "unit": null,
+      "series": [
+        "honua_shared_cache_output_requests_total"
+      ],
+      "source": "src/Honua.Hosting/Features/SharedCaching/SharedCacheMetrics.cs"
+    },
+    {
+      "instrument": "honua_shared_cache_purge_requests_total",
+      "kind": "Counter",
+      "unit": null,
+      "series": [
+        "honua_shared_cache_purge_requests_total"
+      ],
+      "source": "src/Honua.Hosting/Features/SharedCaching/SharedCacheMetrics.cs"
+    },
+    {
+      "instrument": "honua_shared_cache_purge_duration_seconds",
+      "kind": "Histogram",
+      "unit": "s",
+      "series": [
+        "honua_shared_cache_purge_duration_seconds_bucket",
+        "honua_shared_cache_purge_duration_seconds_count",
+        "honua_shared_cache_purge_duration_seconds_sum"
+      ],
+      "source": "src/Honua.Hosting/Features/SharedCaching/SharedCacheMetrics.cs"
+    },
+    {
       "instrument": "honua.ogc.capabilities.omitted_layers",
       "kind": "Counter",
       "unit": null,
