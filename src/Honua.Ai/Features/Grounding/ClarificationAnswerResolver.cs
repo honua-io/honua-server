@@ -39,6 +39,7 @@ internal static class ClarificationAnswerResolver
     private const string DestructiveConfirmQuestionId = "destructive.confirm";
     private const string WorkflowFamilyBlockedQuestionId = "workflow_family.blocked";
     private const string ParameterQuestionPrefix = "param.";
+    private static readonly string[] AffirmativeAnswers = ["true", "yes", "confirm", "confirmed"];
 
     public static AppliedClarificationAnswers Parse(ClarificationResponse? response)
     {
@@ -103,9 +104,14 @@ internal static class ClarificationAnswerResolver
 
                 case DestructiveConfirmQuestionId:
                 case WorkflowFamilyBlockedQuestionId:
-                    // Confirmation-style answers: any non-empty value counts
-                    // as an acknowledgement. No further state to carry.
-                    appliedIds.Add(questionId);
+                    // Confirmation answers fail closed: only an affirmative value
+                    // acknowledges; "false", "no" or anything else leaves the
+                    // question unanswered so it is asked again.
+                    if (IsAffirmative(value))
+                    {
+                        appliedIds.Add(questionId);
+                    }
+
                     break;
 
                 default:
@@ -183,6 +189,9 @@ internal static class ClarificationAnswerResolver
         }
         return reordered;
     }
+
+    private static bool IsAffirmative(string value) =>
+        AffirmativeAnswers.Contains(value, StringComparer.OrdinalIgnoreCase);
 
     private static string? FirstNonBlank(IReadOnlyList<string>? values)
     {

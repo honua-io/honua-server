@@ -18,11 +18,12 @@ using Honua.Core.Features.Operations.Services;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Mrtr;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-internal sealed class PublishedOperationTool : IMcpTool
+internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
 {
     public const string NamePrefix = "honua_op_";
 
@@ -58,6 +59,9 @@ internal sealed class PublishedOperationTool : IMcpTool
     }
 
     public string Name { get; }
+
+    // In-client approval resumes only the proposal-only path; its decision is unchanged.
+    public bool Resumes(McpRequestStateKind kind) => kind == McpRequestStateKind.Approval && RequiresProposalSubmission;
 
     public string WorkflowFamily => _descriptor.Category switch
     {
@@ -183,6 +187,12 @@ internal sealed class PublishedOperationTool : IMcpTool
         // still apply. Only mutations are submitted as approval proposals.
         var supportedPreview = RequiresProposalSubmission && dryRun && _descriptor.Policy.SupportsDryRun;
         var proposalOnly = RequiresProposalSubmission && !supportedPreview;
+        var requester = new ApprovalRequester(_descriptor.OperationId, McpAuthorizationHelper.ResolveActorId(principal));
+        if (proposalOnly && await ApprovalContinuation.TryResumeAsync(httpContext, requester, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate && !proposalOnly && !supportedPreview)
         {
             // Fail closed until #3586 replaces this refusal with the unified runtime's
@@ -333,7 +343,8 @@ internal sealed class PublishedOperationTool : IMcpTool
             httpContext.RequestServices.GetService<IPublishedOperationCache>()?.Set(cacheKey, output);
         }
 
-        return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
+        return (proposalOnly ? ApprovalContinuation.TryRequest(httpContext, handle) : null)
+            ?? McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
     }
 
     private OperationPolicyContext BindProposalIdentity(HttpContext httpContext, OperationRequest request, OperationPolicyContext context)

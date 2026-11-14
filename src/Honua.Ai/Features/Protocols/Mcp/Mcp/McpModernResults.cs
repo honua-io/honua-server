@@ -3,11 +3,14 @@
 
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Mrtr;
 
 namespace Honua.Ai.Protocols.Mcp;
 
 internal static class McpModernResults
 {
+    internal const string InputRequiredResultType = "input_required";
+
     internal static JsonElement Discover() => JsonSerializer.SerializeToElement(
         new McpDiscoverResult(), McpJsonContext.Default.McpDiscoverResult);
 
@@ -37,6 +40,38 @@ internal static class McpModernResults
         using var document = JsonDocument.Parse(buffer.ToArray());
         return document.RootElement.Clone();
     }
+
+    // SEP-2322 incomplete result. Never cacheable, so no ttlMs or cacheScope.
+    internal static JsonElement InputRequired(McpInputRequired inputRequired)
+    {
+        ArgumentNullException.ThrowIfNull(inputRequired);
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("resultType", InputRequiredResultType);
+            writer.WriteStartObject("inputRequests");
+            foreach (var (key, request) in inputRequired.InputRequests)
+            {
+                writer.WritePropertyName(key);
+                request.WriteTo(writer);
+            }
+
+            writer.WriteEndObject();
+            writer.WriteString("requestState", inputRequired.RequestState);
+            writer.WriteStartObject("_meta");
+            writer.WritePropertyName("io.modelcontextprotocol/serverInfo");
+            JsonSerializer.Serialize(writer, new McpServerInfo(), McpJsonContext.Default.McpServerInfo);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
+
+        using var document = JsonDocument.Parse(buffer.ToArray());
+        return document.RootElement.Clone();
+    }
+
+    internal static bool IsInputRequired(JsonElement result) =>
+        McpModernProtocol.ReadString(result, "resultType") == InputRequiredResultType;
 
     private static void WriteMetadata(Utf8JsonWriter writer, JsonElement result)
     {

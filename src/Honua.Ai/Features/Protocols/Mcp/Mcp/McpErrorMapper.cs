@@ -25,6 +25,7 @@ internal static class McpErrorMapper
         public const string FailedPrecondition = "failed_precondition";
         public const string NotFound = "not_found";
         public const string InvalidArgument = "invalid_argument";
+        public const string InvalidRequestState = "invalid_request_state";
         public const string Unavailable = "unavailable";
         public const string AlreadyExists = "already_exists";
         public const string Internal = "internal";
@@ -274,6 +275,14 @@ internal static class McpErrorMapper
         Code = JsonRpcInvalidParams,
         Message = message,
         Data = new McpErrorData { Code = Codes.InvalidArgument }
+    };
+
+    // One refusal for every requestState failure, so a client learns nothing about which check failed.
+    public static McpJsonRpcError InvalidRequestState() => new()
+    {
+        Code = JsonRpcInvalidParams,
+        Message = "The requestState is invalid, expired or does not match this request. Start the call again without it.",
+        Data = new McpErrorData { Code = Codes.InvalidRequestState }
     };
 
     public static McpJsonRpcError ResourceNotFound(string message) => new()

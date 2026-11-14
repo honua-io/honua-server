@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Mrtr;
 using Honua.Ai.Protocols.Mcp.Prompts;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Studio;
@@ -667,6 +668,11 @@ internal sealed class McpDataAccessSurface
             }
         }
 
+        if (McpRequestContinuation.Refusal(httpContext, tool, parameters) is { } refusal)
+        {
+            return ErrorResponse(request.Id, refusal);
+        }
+
         McpToolsCallResult result;
         var invocationStarted = false;
         try
@@ -750,10 +756,13 @@ internal sealed class McpDataAccessSurface
         {
             httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
             httpContext.Items.Remove(ProposalEvidenceVerifier.InvokingToolItemKey);
+            McpRequestContinuation.Detach(httpContext);
         }
 
         if (invocationStarted) result = McpInputGuidance.Enrich(tool, parameters.Arguments, result);
-        return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
+        return result.InputRequired is { } inputRequired
+            ? new McpJsonRpcResponse { Id = request.Id, Result = McpModernResults.InputRequired(inputRequired) }
+            : SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
     }
 
     /// <summary>
