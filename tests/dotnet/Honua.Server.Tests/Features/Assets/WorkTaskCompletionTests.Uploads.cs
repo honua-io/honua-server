@@ -11,15 +11,17 @@ namespace Honua.Server.Tests.Features.Assets;
 
 public sealed partial class WorkTaskCompletionTests
 {
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("Field inspection notes.")]
+    [InlineData("Literal markup: <script>alert(1)</script>")]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/tasks/{taskId}/attachments")]
     [Endpoint("GET /api/v1/tasks/{taskId}/attachments/{attachmentId}")]
-    public async Task Upload_ValidFile_PersistsReadyMetadataAndDownloadsOriginalBytes()
+    public async Task Upload_ValidFile_PersistsReadyMetadataAndDownloadsOriginalBytes(string content)
     {
         await UseAttachmentCompletionFormAsync();
         var taskId = await StartedInspectionAsync(_assets[0].AssetId);
-        using var body = UploadBody("inspection.txt", "text/plain", "Field inspection notes.");
+        using var body = UploadBody("inspection.txt", "text/plain", content);
 
         var response = await _fixture.Client.PostAsync($"{TasksPath}/{taskId}/attachments", body);
 
@@ -29,14 +31,16 @@ public sealed partial class WorkTaskCompletionTests
             $"SELECT status FROM honua.work_task_attachments WHERE attachment_id = '{id}'")).Should().Be("ready");
         var download = await _fixture.Client.GetAsync($"{TasksPath}/{taskId}/attachments/{id}");
         download.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await download.Content.ReadAsStringAsync()).Should().Be("Field inspection notes.");
+        (await download.Content.ReadAsStringAsync()).Should().Be(content);
+        download.Content.Headers.ContentType!.MediaType.Should().Be("text/plain");
+        download.Content.Headers.ContentDisposition!.DispositionType.Should().Be("attachment");
         download.Headers.CacheControl!.NoStore.Should().BeTrue();
         download.Headers.GetValues("X-Content-Type-Options").Should().Contain("nosniff");
     }
 
     [IntegrationTheory]
     [InlineData("payload.exe", "application/octet-stream", "MZexecutable")]
-    [InlineData("inspection.txt", "text/plain", "<script>alert(1)</script>")]
+    [InlineData("inspection.html", "text/html", "<script>alert(1)</script>")]
     [InlineData("inspection.txt", "text/plain", "")]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/tasks/{taskId}/attachments")]
