@@ -30,14 +30,8 @@ public sealed partial class ExportJobTests
         var resumeOldCas = NewSignal();
         var successorRead = NewSignal();
         var resumeSuccessor = NewSignal();
-        var oldStore = PauseProgressRead(progress, job.JobId, (NewSignal(), CompletedSignal()));
-        oldStore.TryReplaceProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<IOperationProgress?>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                oldCasReached.TrySetResult();
-                await resumeOldCas.Task.WaitAsync(TimeSpan.FromSeconds(30));
-                return await progress.TryReplaceProgressAsync(call.ArgAt<OperationProgressWrite>(0), call.ArgAt<IOperationProgress?>(1));
-            });
+        var oldStore = PauseProgressRead(progress, job.JobId, (NewSignal(), CompletedSignal(), ProgressReadPause.AfterSnapshot));
+        PauseProgressReplacement(oldStore, progress, (oldCasReached, resumeOldCas));
         var oldContext = PublishingContext();
         oldContext.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
         nodes.Storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
@@ -47,7 +41,7 @@ public sealed partial class ExportJobTests
         try
         {
             await oldCasReached.Task.WaitAsync(TimeSpan.FromSeconds(30));
-            var successorStore = PauseProgressRead(progress, job.JobId, (successorRead, resumeSuccessor));
+            var successorStore = PauseProgressRead(progress, job.JobId, (successorRead, resumeSuccessor, ProgressReadPause.AfterSnapshot));
             successor = nodes.CreateExecutor(successorStore).ExecuteAsync(record, PublishingContext(), CancellationToken.None);
             await successorRead.Task.WaitAsync(TimeSpan.FromSeconds(30));
             resumeOldCas.TrySetResult();
@@ -61,16 +55,20 @@ public sealed partial class ExportJobTests
         {
             resumeOldCas.TrySetResult();
             resumeSuccessor.TrySetResult();
-            var cleanupError = await Record.ExceptionAsync(async () => await oldAttempt);
-            if (cleanupError is not null)
-            {
-                cleanupError.Should().BeAssignableTo<OperationCanceledException>();
-            }
-            if (successor is not null)
-            {
-                await successor;
-            }
+            await FinishAttemptsAsync(oldAttempt, successor);
         }
+    }
+
+    private static void PauseProgressReplacement(IUniversalProgressStore store,
+        ComparingInMemoryProgressStore progress, (TaskCompletionSource Reached, TaskCompletionSource Resume) signals)
+    {
+        store.TryReplaceProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<IOperationProgress?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                signals.Reached.TrySetResult();
+                await signals.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                return await progress.TryReplaceProgressAsync(call.ArgAt<OperationProgressWrite>(0), call.ArgAt<IOperationProgress?>(1));
+            });
     }
 
     private static TaskCompletionSource CompletedSignal()

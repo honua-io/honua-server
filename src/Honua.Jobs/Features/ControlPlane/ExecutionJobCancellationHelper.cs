@@ -313,10 +313,10 @@ internal static class ExecutionJobCancellationHelper
 
     public static async Task<BackendCancelApplyResult> TryApplyBackendCancelAsync(
         IExecutionJobStore jobStore,
-        ExecutionJobRecord job,
-        BatchComputeObservation observation,
+        (ExecutionJobRecord Job, BatchComputeObservation Observation) cancellation,
         CancellationToken cancellationToken = default)
     {
+        var (job, observation) = cancellation;
         ArgumentNullException.ThrowIfNull(jobStore);
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(observation);

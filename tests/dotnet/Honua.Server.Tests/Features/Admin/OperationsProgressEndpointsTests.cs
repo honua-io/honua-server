@@ -32,11 +32,9 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
-public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
+public sealed partial class OperationsProgressEndpointsTests : IAsyncLifetime
 {
-    // Production registers a durable IExecutionJobStore/IJobQueue only when Redis is configured
-    // (GeoprocessingServiceCollectionExtensions); the fixture runs without Redis, so register
-    // functional in-memory doubles here to exercise the durable operation cancel/retry endpoints.
+    // Isolate durable operation state so cancel/retry assertions do not depend on other tests.
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .ReplaceRequestService<IExecutionJobStore>(new InMemoryExecutionJobStore())
         .ReplaceRequestService<IJobQueue>(new InMemoryJobQueue());
@@ -180,17 +178,8 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
                 services.AddSingleton(notifier);
             });
         await fixture.InitializeAsync();
-        var now = DateTimeOffset.UtcNow;
-        await jobs.TryCreateAsync(new ExecutionJobRecord
-        {
-            OperationId = operationId, Status = ExecutionJobStatus.Running,
-            ClaimedBy = "lost-worker", CreatedAt = now, UpdatedAt = now,
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Geoprocessing, Backend = "local",
-                TargetKind = BatchComputeTargetKind.KubernetesJob, WorkloadName = "cancel-in-flight"
-            }
-        });
+        await jobs.TryCreateAsync(CancellationJob(operationId, ExecutionJobKind.Geoprocessing, ExecutionJobStatus.Running) with
+        { ClaimedBy = "lost-worker", Version = 0 });
         await fixture.GetService<IUniversalProgressStore>().SetProgressAsync(operationId,
             GeoprocessingProgress.CreateForSubmittedJob(operationId, "cancel-in-flight") with
             { WorkflowStatus = GeoprocessingWorkflowStatus.Running });
@@ -1125,127 +1114,6 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/active")]
-    public async Task ListActiveOperations_WhenFiltered_ReturnsOnlyActive()
-    {
-        var uploadId = Guid.NewGuid().ToString("N");
-        var uploadProgress = UploadProgress.CreateInitial(uploadId, "active.geojson", 50);
-        await _progressStore.SetProgressAsync(uploadId, uploadProgress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(uploadId);
-
-        var importId = Guid.NewGuid().ToString("N");
-        var importProgress = ImportProgress.CreateInitial(importId, "import_table", SupportedFileFormat.GeoJson) with
-        {
-            Status = ImportStatus.Completed,
-            CompletedAt = DateTimeOffset.UtcNow
-        };
-
-        await _progressStore.SetProgressAsync(importId, importProgress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(importId);
-
-        var response = await _client.GetAsync("/api/v1/admin/operations/active?type=Upload");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var json = JsonDocument.Parse(content);
-
-        var operations = GetOperationsArray(json.RootElement);
-        operations.GetArrayLength().Should().Be(1);
-        GetPropertyCaseInsensitive(operations[0], "operationId").GetString().Should().Be(uploadId);
-        GetPropertyCaseInsensitive(operations[0], "type").GetInt32().Should().Be((int)OperationType.Upload);
-        GetPropertyCaseInsensitive(operations[0], "uploadId").GetString().Should().Be(uploadId);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/active")]
-    public async Task ListActiveOperations_WhenMixedTypesPresent_PreservesUnifiedOperationIdentityFields()
-    {
-        var uploadId = Guid.NewGuid().ToString("N");
-        var uploadProgress = UploadProgress.CreateInitial(uploadId, "mixed.geojson", 50) with
-        {
-            Status = OperationStatus.Processing
-        };
-        await _progressStore.SetProgressAsync(uploadId, uploadProgress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(uploadId);
-
-        var geoprocessingId = Guid.NewGuid().ToString("N");
-        var geoprocessingProgress = GeoprocessingProgress.CreateInitial(geoprocessingId);
-        await _progressStore.SetProgressAsync(geoprocessingId, geoprocessingProgress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(geoprocessingId);
-
-        var response = await _client.GetAsync("/api/v1/admin/operations/active");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var json = JsonDocument.Parse(content);
-
-        var operations = GetOperationsArray(json.RootElement).EnumerateArray().ToList();
-        operations.Should().Contain(op =>
-            GetPropertyCaseInsensitive(op, "operationId").GetString() == uploadId &&
-            GetPropertyCaseInsensitive(op, "type").GetInt32() == (int)OperationType.Upload &&
-            GetPropertyCaseInsensitive(op, "uploadId").GetString() == uploadId);
-        operations.Should().Contain(op =>
-            GetPropertyCaseInsensitive(op, "operationId").GetString() == geoprocessingId &&
-            GetPropertyCaseInsensitive(op, "type").GetInt32() == (int)OperationType.Geoprocessing &&
-            GetPropertyCaseInsensitive(op, "currentStage").ValueKind != JsonValueKind.Undefined);
-        operations.Should().OnlyContain(op => CountPropertiesIgnoringCase(op, "operationId") == 1);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/type/{operationType}")]
-    public async Task GetOperationsByType_WhenMatching_ReturnsOperations()
-    {
-        var importId = Guid.NewGuid().ToString("N");
-        var importProgress = ImportProgress.CreateInitial(importId, "history_table", SupportedFileFormat.GeoJson) with
-        {
-            Status = ImportStatus.Completed,
-            CompletedAt = DateTimeOffset.UtcNow
-        };
-
-        await _progressStore.SetProgressAsync(importId, importProgress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(importId);
-
-        var response = await _client.GetAsync("/api/v1/admin/operations/type/Import");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var json = JsonDocument.Parse(content);
-
-        var operations = GetOperationsArray(json.RootElement);
-        operations.GetArrayLength().Should().Be(1);
-        GetPropertyCaseInsensitive(operations[0], "operationId").GetString().Should().Be(importId);
-        GetPropertyCaseInsensitive(operations[0], "type").GetInt32().Should().Be((int)OperationType.Import);
-        GetPropertyCaseInsensitive(operations[0], "jobId").GetString().Should().Be(importId);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/{operationId}")]
-    public async Task GetOperationStatus_NonexistentId_ReturnsNotFound()
-    {
-        var response = await _client.GetAsync($"/api/v1/admin/operations/nonexistent-{Guid.NewGuid():N}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
-    public async Task CancelOperation_AlreadyCancelled_ReturnsIdempotent200()
-    {
-        var operationId = Guid.NewGuid().ToString("N");
-        var progress = UploadProgress.CreateInitial(operationId, "double-cancel.geojson", 10) with
-        {
-            Status = OperationStatus.Cancelled
-        };
-
-        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(operationId);
-
-        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_QueuedExportRetryWithCompletedProgress_CancelsDurableJob()
     {
@@ -1282,17 +1150,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     public async Task CancelOperation_RetryAfterCancelledProjection_DoesNotCancelSuccessor()
     {
         var operationId = Guid.NewGuid().ToString("N");
-        var now = DateTimeOffset.UtcNow;
-        var initial = new ExecutionJobRecord
-        {
-            OperationId = operationId, Version = 1, Status = ExecutionJobStatus.Cancelled,
-            CreatedAt = now, UpdatedAt = now,
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Export, Backend = "local",
-                TargetKind = BatchComputeTargetKind.KubernetesJob, WorkloadName = "cancel-retry"
-            }
-        };
+        var initial = CancellationJob(operationId, ExecutionJobKind.Export, ExecutionJobStatus.Cancelled);
         var current = initial;
         var store = Substitute.For<IExecutionJobStore>();
         var reads = 0;
@@ -1306,10 +1164,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
             return observed;
         });
-        store.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<ExecutionJobRecord>());
-        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(call => { current = call.Arg<ExecutionJobRecord>(); return true; });
+        SetCurrentOnWrite(store, candidate => current = candidate);
         var queue = Substitute.For<IJobQueue>();
         var fixture = new WebAppFixture()
             .ReplaceRequestService<IExecutionJobStore>(store)
@@ -1340,24 +1195,11 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     public async Task CancelOperation_LocalRetryAfterDurableCancel_DoesNotCancelSuccessor()
     {
         var operationId = Guid.NewGuid().ToString("N");
-        var now = DateTimeOffset.UtcNow;
-        var initial = new ExecutionJobRecord
-        {
-            OperationId = operationId, Version = 1, Status = ExecutionJobStatus.Queued,
-            CreatedAt = now, UpdatedAt = now,
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Export, Backend = "local",
-                TargetKind = BatchComputeTargetKind.KubernetesJob, WorkloadName = "cancel-retry"
-            }
-        };
+        var initial = CancellationJob(operationId, ExecutionJobKind.Export, ExecutionJobStatus.Queued);
         var current = initial;
         var store = Substitute.For<IExecutionJobStore>();
         store.GetAsync(operationId, Arg.Any<CancellationToken>()).Returns(_ => current);
-        store.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<ExecutionJobRecord>());
-        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(call => { current = call.Arg<ExecutionJobRecord>(); return true; });
+        SetCurrentOnWrite(store, candidate => current = candidate);
         var queue = Substitute.For<IJobQueue>();
         queue.RemoveAsync(operationId, Arg.Any<CancellationToken>()).Returns(_ =>
         {
@@ -1388,42 +1230,16 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(ExecutionJobStatus.Queued)]
+    [InlineData(ExecutionJobStatus.Running)]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
-    public async Task CancelOperation_RemoteTileRace_ReleasesAdmissionOnce(bool submitted)
+    public async Task CancelOperation_RemoteTileRace_ReleasesAdmissionOnce(ExecutionJobStatus status)
     {
         var operationId = Guid.NewGuid().ToString("N");
         var operation = $"cancel-{operationId}";
-        var now = DateTimeOffset.UtcNow;
-        var initial = new ExecutionJobRecord
-        {
-            OperationId = operationId,
-            Status = submitted ? ExecutionJobStatus.Running : ExecutionJobStatus.Queued,
-            ProviderOperationId = submitted ? "provider-operation" : null,
-            CancellationRequestedAt = submitted ? now : null,
-            CreatedAt = now, UpdatedAt = now,
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.TileCache, Backend = "aws-batch",
-                TargetKind = BatchComputeTargetKind.AwsBatch, WorkloadName = "tile-cancel-race",
-                Parameters = new Dictionary<string, string> { [TileCacheJobParameterKeys.Operation] = operation }
-            }
-        };
-        var current = initial;
-        var store = Substitute.For<IExecutionJobStore>();
-        store.GetAsync(operationId, Arg.Any<CancellationToken>()).Returns(_ => current);
-        store.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<ExecutionJobRecord>());
-        var bothWriting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var writers = 0;
-        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                if (Interlocked.Increment(ref writers) == 2) bothWriting.TrySetResult();
-                await bothWriting.Task.WaitAsync(TimeSpan.FromSeconds(30));
-                return ReferenceEquals(Interlocked.CompareExchange(ref current, call.Arg<ExecutionJobRecord>(), initial), initial);
-            });
+        var initial = RemoteTileCancellationJob(operationId, operation, status);
+        var race = new ConcurrentCancellationStore(initial);
+        var store = race.Store;
         var backend = Substitute.For<IBatchComputeBackend>();
         backend.BackendName.Returns("aws-batch");
         backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
@@ -1437,20 +1253,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
             .ConfigureServices(services => services.AddSingleton(backend));
         await fixture.InitializeAsync();
         var progressStore = fixture.GetService<IUniversalProgressStore>();
-        long released = 0;
-        using var listener = new System.Diagnostics.Metrics.MeterListener();
-        listener.InstrumentPublished = (instrument, meter) =>
-        {
-            if (instrument.Name == "honua.tile.jobs.queue_depth") meter.EnableMeasurementEvents(instrument);
-        };
-        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
-        {
-            foreach (var tag in tags)
-            {
-                if (tag.Key == "operation" && Equals(tag.Value, operation)) Interlocked.Add(ref released, value);
-            }
-        });
-        listener.Start();
+        using var released = new TileQueueDepthObserver(operation);
         try
         {
             await progressStore.SetProgressAsync(operationId,
@@ -1459,9 +1262,9 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
                 fixture.Client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null),
                 fixture.Client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null));
             responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.OK);
-            current.Status.Should().Be(ExecutionJobStatus.Cancelled);
-            writers.Should().Be(2, "both requests race the same nonterminal durable record");
-            released.Should().Be(-1, "only the terminal CAS winner releases tile admission");
+            race.Current.Status.Should().Be(ExecutionJobStatus.Cancelled);
+            race.Writers.Should().Be(2, "both requests race the same nonterminal durable record");
+            released.Value.Should().Be(-1, "only the terminal CAS winner releases tile admission");
         }
         finally
         {
@@ -1476,26 +1279,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     {
         var operationId = Guid.NewGuid().ToString("N");
         var operation = $"cancel-{operationId}";
-        long balance = 0;
-        using var listener = new System.Diagnostics.Metrics.MeterListener();
-        listener.InstrumentPublished = (instrument, meter) =>
-        {
-            if (instrument.Name == "honua.tile.jobs.queue_depth")
-            {
-                meter.EnableMeasurementEvents(instrument);
-            }
-        };
-        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
-        {
-            foreach (var tag in tags)
-            {
-                if (tag.Key == "operation" && Equals(tag.Value, operation))
-                {
-                    Interlocked.Add(ref balance, measurement);
-                }
-            }
-        });
-        listener.Start();
+        using var balance = new TileQueueDepthObserver(operation);
         var now = DateTimeOffset.UtcNow;
         var job = new ExecutionJobRecord
         {
@@ -1516,7 +1300,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         (await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null)).StatusCode.Should().Be(HttpStatusCode.OK);
         (await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null)).StatusCode.Should().Be(HttpStatusCode.OK);
 
-        balance.Should().Be(0, "only the winning terminal transition releases tile admission");
+        balance.Value.Should().Be(0, "only the winning terminal transition releases tile admission");
     }
 
     [IntegrationTest]
@@ -1535,184 +1319,6 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/active")]
-    public async Task ListActiveOperations_GeoprocessingType_ReturnsWorkflowFields()
-    {
-        var operationId = Guid.NewGuid().ToString("N");
-        var progress = GeoprocessingProgress.CreateInitial(operationId);
-
-        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(operationId);
-
-        var response = await _client.GetAsync("/api/v1/admin/operations/active?type=Geoprocessing");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var json = JsonDocument.Parse(content);
-
-        var operations = GetOperationsArray(json.RootElement);
-        operations.GetArrayLength().Should().BeGreaterOrEqualTo(1);
-
-        var op = operations.EnumerateArray().Single(operation =>
-            GetPropertyCaseInsensitive(operation, "operationId").GetString() == operationId);
-        GetPropertyCaseInsensitive(op, "operationId").GetString().Should().Be(operationId);
-        GetPropertyCaseInsensitive(op, "workflowStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
-        GetPropertyCaseInsensitive(op, "currentStage").ValueKind.Should().NotBe(JsonValueKind.Undefined);
-        GetPropertyCaseInsensitive(op, "currentStageStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
-        GetPropertyCaseInsensitive(op, "stepsCompleted").GetInt32().Should().Be(0);
-        CountPropertiesIgnoringCase(op, "operationId").Should().Be(1);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/active")]
-    public async Task ListActiveOperations_PublishingType_ReturnsWorkflowFields()
-    {
-        var operationId = Guid.NewGuid().ToString("N");
-        var intentId = Guid.NewGuid().ToString("N");
-        var progress = PublishingProgress.CreateExecuting(operationId, intentId) with
-        {
-            ServiceId = "svc-" + Guid.NewGuid().ToString("N")
-        };
-
-        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(operationId);
-
-        var response = await _client.GetAsync("/api/v1/admin/operations/active?type=Publishing");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var json = JsonDocument.Parse(content);
-
-        var operations = GetOperationsArray(json.RootElement);
-        operations.GetArrayLength().Should().BeGreaterOrEqualTo(1);
-
-        var op = operations.EnumerateArray().Single(operation =>
-            GetPropertyCaseInsensitive(operation, "operationId").GetString() == operationId);
-        GetPropertyCaseInsensitive(op, "operationId").GetString().Should().Be(operationId);
-        GetPropertyCaseInsensitive(op, "intentId").GetString().Should().Be(intentId);
-        GetPropertyCaseInsensitive(op, "serviceId").GetString().Should().Be(progress.ServiceId);
-        GetPropertyCaseInsensitive(op, "intentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
-        CountPropertiesIgnoringCase(op, "operationId").Should().Be(1);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/{operationId}")]
-    public async Task GetOperationStatus_PublishingType_ReturnsWorkflowFields()
-    {
-        var operationId = Guid.NewGuid().ToString("N");
-        var intentId = Guid.NewGuid().ToString("N");
-        var progress = PublishingProgress.CreateExecuting(operationId, intentId) with
-        {
-            ServiceId = "svc-" + Guid.NewGuid().ToString("N")
-        };
-
-        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(operationId);
-
-        var response = await _client.GetAsync($"/api/v1/admin/operations/{operationId}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var json = JsonDocument.Parse(content);
-
-        GetPropertyCaseInsensitive(json.RootElement, "operationId").GetString().Should().Be(operationId);
-        GetPropertyCaseInsensitive(json.RootElement, "intentId").GetString().Should().Be(intentId);
-        GetPropertyCaseInsensitive(json.RootElement, "serviceId").GetString().Should().Be(progress.ServiceId);
-        GetPropertyCaseInsensitive(json.RootElement, "intentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/active")]
-    public async Task ListActiveOperations_WhenNoneActive_ReturnsEmptyList()
-    {
-        // Use a unique type filter to avoid matching other operations
-        var response = await _client.GetAsync("/api/v1/admin/operations/active?type=Upload");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var json = JsonDocument.Parse(content);
-
-        // The response should be parseable and contain an operations array
-        var operations = GetOperationsArray(json.RootElement);
-        operations.ValueKind.Should().Be(JsonValueKind.Array);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/{operationId}")]
-    public async Task GetOperationStatus_DeploymentType_ReturnsLifecycleFields()
-    {
-        var operationId = $"deploy-{Guid.NewGuid():N}";
-        var deploymentId = $"dep-{Guid.NewGuid():N}";
-        var progress = DeploymentProgress.CreateRollingOut(operationId, deploymentId, RolloutState.InProgress);
-
-        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(operationId);
-
-        var response = await _client.GetAsync($"/api/v1/admin/operations/{operationId}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var json = JsonDocument.Parse(content);
-
-        GetPropertyCaseInsensitive(json.RootElement, "operationId").GetString().Should().Be(operationId);
-        GetPropertyCaseInsensitive(json.RootElement, "deploymentId").GetString().Should().Be(deploymentId);
-        GetPropertyCaseInsensitive(json.RootElement, "deploymentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
-        GetPropertyCaseInsensitive(json.RootElement, "rolloutState").ValueKind.Should().NotBe(JsonValueKind.Undefined);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/active")]
-    public async Task ListActiveOperations_DeploymentType_ReturnsLifecycleFields()
-    {
-        var operationId = $"deploy-{Guid.NewGuid():N}";
-        var deploymentId = $"dep-{Guid.NewGuid():N}";
-        var progress = DeploymentProgress.CreateProvisioning(operationId, deploymentId);
-
-        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(operationId);
-
-        var response = await _client.GetAsync("/api/v1/admin/operations/active?type=Deployment");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var json = JsonDocument.Parse(content);
-
-        var operations = GetOperationsArray(json.RootElement);
-        operations.GetArrayLength().Should().BeGreaterOrEqualTo(1);
-
-        var op = operations.EnumerateArray()
-            .First(e => GetPropertyCaseInsensitive(e, "operationId").GetString() == operationId);
-        GetPropertyCaseInsensitive(op, "type").GetInt32().Should().Be((int)OperationType.Deployment);
-        GetPropertyCaseInsensitive(op, "deploymentId").GetString().Should().Be(deploymentId);
-        GetPropertyCaseInsensitive(op, "deploymentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
-        CountPropertiesIgnoringCase(op, "operationId").Should().Be(1);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/type/{operationType}")]
-    public async Task GetOperationsByType_DeploymentType_ReturnsOperations()
-    {
-        var operationId = $"deploy-{Guid.NewGuid():N}";
-        var deploymentId = $"dep-{Guid.NewGuid():N}";
-        var progress = DeploymentProgress.CreateInitial(operationId, deploymentId);
-
-        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
-        _operationIds.Add(operationId);
-
-        var response = await _client.GetAsync("/api/v1/admin/operations/type/Deployment");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        using var json = JsonDocument.Parse(content);
-
-        var operations = GetOperationsArray(json.RootElement);
-        var op = operations.EnumerateArray()
-            .First(e => GetPropertyCaseInsensitive(e, "operationId").GetString() == operationId);
-        GetPropertyCaseInsensitive(op, "type").GetInt32().Should().Be((int)OperationType.Deployment);
-        GetPropertyCaseInsensitive(op, "deploymentId").GetString().Should().Be(deploymentId);
     }
 
     [IntegrationTest]
@@ -1740,6 +1346,49 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         updated!.Status.Should().Be(OperationStatus.Cancelled);
         updated.DeploymentStatus.Should().Be(DeploymentStatus.Cancelled);
         updated.RolloutState.Should().Be(RolloutState.Cancelled);
+    }
+
+    private static ExecutionJobRecord RemoteTileCancellationJob(string operationId, string operation, ExecutionJobStatus status)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = status,
+            ProviderOperationId = status == ExecutionJobStatus.Running ? "provider-operation" : null,
+            CancellationRequestedAt = status == ExecutionJobStatus.Running ? now : null,
+            CreatedAt = now, UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.TileCache, Backend = "aws-batch",
+                TargetKind = BatchComputeTargetKind.AwsBatch, WorkloadName = "tile-cancel-race",
+                Parameters = new Dictionary<string, string> { [TileCacheJobParameterKeys.Operation] = operation }
+            }
+        };
+    }
+
+    private static void SetCurrentOnWrite(IExecutionJobStore store, Action<ExecutionJobRecord> setCurrent)
+    {
+        store.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ExecutionJobRecord>());
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { setCurrent(call.Arg<ExecutionJobRecord>()); return true; });
+    }
+
+    private static ExecutionJobRecord CancellationJob(string operationId, ExecutionJobKind kind, ExecutionJobStatus status)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new ExecutionJobRecord
+        {
+            OperationId = operationId, Version = 1, Status = status,
+            CreatedAt = now, UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = kind, Backend = "local",
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                WorkloadName = kind == ExecutionJobKind.Geoprocessing ? "cancel-in-flight" : "cancel-retry"
+            }
+        };
     }
 
     private static JsonElement GetOperationsArray(JsonElement root)

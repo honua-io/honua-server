@@ -35,11 +35,11 @@ public sealed class ImportExportTileOperationsRegistrationTests
     }
 
     [UnitTheory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void AddTileOperations_WithScopedMetadataGraphProvider_ContainerValidates(bool jobSubstrateConfigured)
+    [InlineData("durable")]
+    [InlineData("local")]
+    public void AddTileOperations_WithScopedMetadataGraphProvider_ContainerValidates(string substrate)
     {
-        var services = BuildProductionShapedServices(jobSubstrateConfigured);
+        var services = BuildProductionShapedServices(substrate);
 
         services.Should().Contain(
             descriptor => descriptor.ServiceType == typeof(ITileCacheJobService),
@@ -54,7 +54,7 @@ public sealed class ImportExportTileOperationsRegistrationTests
     /// (<c>src/Honua.Db/Postgres/ServiceCollectionExtensions.cs</c>), unlike the singleton the
     /// file-backed <c>AddFileMetadataV2Graph</c> dev/test path registers.
     /// </summary>
-    private static ServiceCollection BuildProductionShapedServices(bool jobSubstrateConfigured)
+    private static ServiceCollection BuildProductionShapedServices(string substrate)
     {
         var configuration = new ConfigurationBuilder().Build();
         var services = new ServiceCollection();
@@ -74,7 +74,7 @@ public sealed class ImportExportTileOperationsRegistrationTests
         services.AddScoped(_ => Substitute.For<ITenantContext>());
         services.AddSingleton(Substitute.For<IHostApplicationLifetime>());
 
-        if (jobSubstrateConfigured)
+        if (substrate == "durable")
         {
             services.AddSingleton(Substitute.For<IExecutionJobStore>());
             services.AddSingleton(Substitute.For<IJobQueue>());

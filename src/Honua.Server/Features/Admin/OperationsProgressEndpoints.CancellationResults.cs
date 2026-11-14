@@ -75,4 +75,31 @@ internal static partial class OperationsProgressEndpoints
                 progressStore, cancelledJob, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
         }
     }
+    private static async Task<IResult> CancelLocalExecutionAsync(
+        HttpContext context,
+        (ExecutionJobRecord Job, IOperationProgress Progress) cancellation,
+        CancellationToken cancellationToken)
+    {
+        var progressStore = context.RequestServices.GetRequiredService<IUniversalProgressStore>();
+        var result = await TryReconcileDurableCancelAsync(
+            context, cancellation.Job, progressStore, cancellationToken).ConfigureAwait(false);
+        if (result != null)
+        {
+            return result;
+        }
+
+        if (cancellation.Job.ClaimedBy != null)
+        {
+            var notifiers = context.RequestServices.GetServices<IJobCancellationNotifier>();
+            ExecutionJobCancellationTokens.CancelAttempt(notifiers, cancellation.Job);
+        }
+
+        return Results.Json(new CancelOperationResponse
+        {
+            OperationId = cancellation.Job.OperationId,
+            Message = "Operation cancellation requested",
+            Type = cancellation.Progress.Type
+        }, OperationsProgressJsonContext.Default.CancelOperationResponse);
+    }
+
 }

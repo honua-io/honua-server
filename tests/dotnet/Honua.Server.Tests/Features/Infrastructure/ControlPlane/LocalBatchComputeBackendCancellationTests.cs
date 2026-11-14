@@ -51,9 +51,9 @@ public sealed class LocalBatchComputeBackendCancellationTests
     }
 
     [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CancelAsync_StaleTileClaim_DoesNotCancelSuccessor(bool sameWorker)
+    [InlineData("previous")]
+    [InlineData("successor")]
+    public async Task CancelAsync_StaleTileClaim_DoesNotCancelSuccessor(string previousWorker)
     {
         var progressStore = Substitute.For<IUniversalProgressStore>();
         var tokens = new ExecutionJobCancellationTokens();
@@ -64,7 +64,7 @@ public sealed class LocalBatchComputeBackendCancellationTests
         {
             OperationId = "tile-retry",
             Status = ExecutionJobStatus.Running,
-            ClaimedBy = sameWorker ? "successor" : "previous",
+            ClaimedBy = previousWorker,
             AttemptCount = 1,
             ClaimedAt = now.AddMinutes(-1),
             CreatedAt = now.AddMinutes(-2),

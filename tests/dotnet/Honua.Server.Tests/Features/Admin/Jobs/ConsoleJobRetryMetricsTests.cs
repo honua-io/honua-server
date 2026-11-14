@@ -32,30 +32,11 @@ public sealed partial class ConsoleJobEndpointsTests
             }
         });
         _jobQueue.ThrowOnRequeue = outcome == "queue-failure";
-        long depth = 0;
-        using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, activeListener) =>
-        {
-            if (instrument.Name == "honua.tile.jobs.queue_depth")
-            {
-                activeListener.EnableMeasurementEvents(instrument);
-            }
-        };
-        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
-        {
-            foreach (var tag in tags)
-            {
-                if (tag.Key == "operation" && Equals(tag.Value, operation))
-                {
-                    Interlocked.Add(ref depth, measurement);
-                }
-            }
-        });
-        listener.Start();
+        using var depth = new TileQueueDepthObserver(operation);
 
         var retry = await _client.PostAsync("/api/v1/admin/jobs/job-failed/retry", null);
 
         retry.StatusCode.Should().Be(outcome == "accepted" ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable);
-        depth.Should().Be(expectedDepth);
+        depth.Value.Should().Be(expectedDepth);
     }
 }

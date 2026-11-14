@@ -357,11 +357,7 @@ internal sealed partial class ConsoleJobService(
     {
         var jobStore = RequireJobStore();
         var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
-        var applied = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-                jobStore,
-                stampedJob,
-                observation,
-                cancellationToken)
+        var applied = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (stampedJob, observation), cancellationToken)
             .ConfigureAwait(false);
 
         if (applied.Outcome == BackendCancelApplyOutcome.Applied && applied.Job != null)

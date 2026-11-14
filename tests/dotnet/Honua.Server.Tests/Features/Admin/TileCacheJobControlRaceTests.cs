@@ -86,11 +86,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         backend.BackendName.Returns(LocalBatchComputeBackend.BackendId);
         backend.TargetKind.Returns(job.Spec.TargetKind);
         using var controls = ControlServices(store, backend: backend);
-        var options = Substitute.For<IOptionsMonitor<TileCacheBatchOptions>>();
-        options.CurrentValue.Returns(new TileCacheBatchOptions());
-        var service = new TileCacheJobService(store, progress, [backend], options,
-            controls.GetRequiredService<IServiceScopeFactory>(), NullLogger<TileCacheJobService>.Instance,
-            controls.GetRequiredService<IJobQueue>());
+        var service = CreateControlTileService(store, progress, (controls, [backend]));
         var cancel = service.CancelAsync(job.OperationId);
         TileOperationProgress? successor = null;
         try
@@ -119,14 +115,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
             ProviderOperationId = "old-provider",
             CancellationRequestedAt = DateTimeOffset.UtcNow
         };
-        var successor = original with
-        {
-            Status = ExecutionJobStatus.Queued,
-            Version = original.Version + 1,
-            ProviderOperationId = null,
-            CancellationRequestedAt = null,
-            NextRetryAt = DateTimeOffset.UtcNow
-        };
+        var successor = RetriedJob(original);
         var current = original;
         var store = Substitute.For<IExecutionJobStore>();
         store.GetAsync(original.OperationId, Arg.Any<CancellationToken>()).Returns(_ => current);
@@ -183,46 +172,18 @@ public sealed partial class TileCacheJobExecutorPublishTests
                 Spec = initial.Spec with { Backend = backend.BackendName }
             };
         }
-        var current = initial;
-        var store = Substitute.For<IExecutionJobStore>();
-        store.GetAsync(initial.OperationId, Arg.Any<CancellationToken>()).Returns(_ => current);
-        var bothWriting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var writers = 0;
-        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                if (Interlocked.Increment(ref writers) == 2) bothWriting.TrySetResult();
-                await bothWriting.Task.WaitAsync(TimeSpan.FromSeconds(30));
-                return ReferenceEquals(Interlocked.CompareExchange(ref current, call.Arg<ExecutionJobRecord>(), initial), initial);
-            });
+        var race = new ConcurrentCancellationStore(initial);
+        var store = race.Store;
         var callback = Substitute.For<IJobTerminalCallback>();
         using var controls = ControlServices(store, callback, backend);
-        long released = 0;
-        using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, active) =>
-        {
-            if (ReferenceEquals(instrument, TileOperationMetrics.QueueDepth)) active.EnableMeasurementEvents(instrument);
-        };
-        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
-        {
-            foreach (var tag in tags)
-            {
-                if (tag.Key == "operation" && Equals(tag.Value, initial.OperationId)) Interlocked.Add(ref released, value);
-            }
-        });
-        listener.Start();
+        using var released = new TileQueueDepthObserver(initial.OperationId);
         if (path is "tile" or "tile-remote")
         {
-            var options = Substitute.For<IOptionsMonitor<TileCacheBatchOptions>>();
-            options.CurrentValue.Returns(new TileCacheBatchOptions());
-            var service = new TileCacheJobService(store, new ComparingInMemoryProgressStore(),
-                path == "tile-remote" ? [backend] : [new LocalBatchComputeBackend(new ComparingInMemoryProgressStore(), [])],
-                options,
-                controls.GetRequiredService<IServiceScopeFactory>(), NullLogger<TileCacheJobService>.Instance,
-                controls.GetRequiredService<IJobQueue>());
+            var service = CreateControlTileService(store, new ComparingInMemoryProgressStore(),
+                (controls, path == "tile-remote" ? [backend] : [new LocalBatchComputeBackend(new ComparingInMemoryProgressStore(), [])]));
             (await Task.WhenAll(service.CancelAsync(initial.OperationId), service.CancelAsync(initial.OperationId)))
                 .Should().OnlyContain(result => result);
-            released.Should().Be(-1);
+            released.Value.Should().Be(-1);
         }
         else
         {
@@ -231,8 +192,26 @@ public sealed partial class TileCacheJobExecutorPublishTests
                 console.CancelAsync(new DefaultHttpContext(), initial.OperationId, CancellationToken.None));
             await callback.Received(1).OnTerminalAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
         }
-        current.Status.Should().Be(ExecutionJobStatus.Cancelled);
-        writers.Should().Be(2, "both callers must race the same nonterminal record");
+        race.Current.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        race.Writers.Should().Be(2, "both callers must race the same nonterminal record");
+    }
+
+    private static TileCacheJobService CreateControlTileService(IExecutionJobStore store,
+        IUniversalProgressStore progress, (ServiceProvider Services, IBatchComputeBackend[] Backends) dependencies)
+        => new(store, progress, dependencies.Backends, BatchOptions(),
+            dependencies.Services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TileCacheJobService>.Instance,
+            dependencies.Services.GetRequiredService<IJobQueue>());
+
+    private static ExecutionJobRecord RetriedJob(ExecutionJobRecord original)
+    {
+        return original with
+        {
+            Status = ExecutionJobStatus.Queued,
+            Version = original.Version + 1,
+            ProviderOperationId = null,
+            CancellationRequestedAt = null,
+            NextRetryAt = DateTimeOffset.UtcNow
+        };
     }
 
     private static ExecutionJobRecord ControlJob(ExecutionJobStatus status)

@@ -22,49 +22,17 @@ public sealed partial class TileCacheJobExecutorPublishTests
     public async Task ExecuteAsync_RetiredAttemptCompletesAfterSuccessor_PreservesSuccessorResult()
     {
         var progress = new ComparingInMemoryProgressStore();
-        var paused = Substitute.For<IUniversalProgressStore>();
         var completing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        paused.GetProgressAsync<TileOperationProgress>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(call => progress.GetProgressAsync<TileOperationProgress>(call.Arg<string>()));
-        paused.GetProgressAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(call => progress.GetProgressAsync(call.Arg<string>()));
-        paused.SetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                var snapshot = call.Arg<IOperationProgress>();
-                await PauseCompletionAsync(snapshot);
-                await progress.SetProgressAsync(call.Arg<string>(), snapshot);
-            });
-        paused.TryReplaceProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<IOperationProgress?>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                var write = call.Arg<OperationProgressWrite>();
-                await PauseCompletionAsync(write.Progress);
-                return await progress.TryReplaceProgressAsync(write, call.Arg<IOperationProgress?>());
-            });
+        var paused = PauseTileCompletion(progress, (completing, resume));
         using var services = BuildScope(new StubCloudStorage(), includeCloudStorage: true);
-        var now = DateTimeOffset.UtcNow;
-        var job = new ExecutionJobRecord
-        {
-            OperationId = Guid.NewGuid().ToString("N"),
-            Status = ExecutionJobStatus.Running,
-            AttemptCount = 1,
-            CreatedAt = now,
-            UpdatedAt = now,
-            Spec = TileCacheExecutionSpecBuilder.Build(new TileOperationStartRequest
-            {
-                Operation = "archive", LayerId = 1, MinZoom = 0, MaxZoom = 0, MaxTiles = 1
-            }, null, new TileCacheBatchOptions())
-        };
-        var context = Substitute.For<IJobExecutionContext>();
-        context.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        var job = ArchiveAttempt();
+        var context = PublishingContext();
         var retired = CreateExecutor(paused, services).ExecuteAsync(job, context, CancellationToken.None);
         try
         {
             await completing.Task.WaitAsync(TimeSpan.FromSeconds(30));
-            var successorContext = Substitute.For<IJobExecutionContext>();
-            successorContext.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+            var successorContext = PublishingContext();
             var result = await CreateExecutor(progress, services).ExecuteAsync(
                 job with { AttemptCount = 2 }, successorContext, CancellationToken.None);
             result.Status.Should().Be(ExecutionJobStatus.Succeeded);
@@ -86,13 +54,58 @@ public sealed partial class TileCacheJobExecutorPublishTests
             }
         }
 
-        async Task PauseCompletionAsync(IOperationProgress snapshot)
-        {
-            if (snapshot.Status == OperationStatus.Completed)
+    }
+
+    private static IUniversalProgressStore PauseTileCompletion(IUniversalProgressStore progress,
+        (TaskCompletionSource Reached, TaskCompletionSource Resume) signals)
+    {
+        var paused = Substitute.For<IUniversalProgressStore>();
+        paused.GetProgressAsync<TileOperationProgress>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => progress.GetProgressAsync<TileOperationProgress>(call.Arg<string>()));
+        paused.GetProgressAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => progress.GetProgressAsync(call.Arg<string>()));
+        paused.SetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
             {
-                completing.TrySetResult();
-                await resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
-            }
+                var snapshot = call.Arg<IOperationProgress>();
+                await PauseCompletionAsync(snapshot, signals);
+                await progress.SetProgressAsync(call.Arg<string>(), snapshot);
+            });
+        paused.TryReplaceProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<IOperationProgress?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var write = call.Arg<OperationProgressWrite>();
+                await PauseCompletionAsync(write.Progress, signals);
+                return await progress.TryReplaceProgressAsync(write, call.Arg<IOperationProgress?>());
+            });
+        return paused;
+    }
+
+    private static async Task PauseCompletionAsync(IOperationProgress snapshot,
+        (TaskCompletionSource Reached, TaskCompletionSource Resume) signals)
+    {
+        if (snapshot.Status == OperationStatus.Completed)
+        {
+            signals.Reached.TrySetResult();
+            await signals.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
         }
+    }
+
+    private static ExecutionJobRecord ArchiveAttempt()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var job = new ExecutionJobRecord
+        {
+            OperationId = Guid.NewGuid().ToString("N"),
+            Status = ExecutionJobStatus.Running,
+            AttemptCount = 1,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Spec = TileCacheExecutionSpecBuilder.Build(new TileOperationStartRequest
+            {
+                Operation = "archive", LayerId = 1, MinZoom = 0, MaxZoom = 0, MaxTiles = 1
+            }, null, new TileCacheBatchOptions())
+        };
+        return job;
     }
 }

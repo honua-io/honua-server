@@ -102,7 +102,7 @@ public sealed class ExportJobServiceTests
         var features = Substitute.For<IStreamingFeatureStore>();
         var storage = Substitute.For<ICloudFileStorage>();
 
-        var result = await RunAsync(new ComparingInMemoryProgressStore(), features, storage, record);
+        var result = await RunAsync(new ComparingInMemoryProgressStore(), (features, storage), record);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         result.IsRetryable.Should().BeFalse();
@@ -207,7 +207,7 @@ public sealed class ExportJobServiceTests
             GeometryType = ExportGeometryType.Point
         };
 
-        var result = await ExecuteAsync(progressStore, store, storage, job);
+        var result = await ExecuteAsync(progressStore, (store, storage), job);
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
         artifact.Should().NotBeNull();
@@ -277,7 +277,7 @@ public sealed class ExportJobServiceTests
             TotalFeatures = 99
         };
 
-        var result = await ExecuteAsync(progressStore, store, storage, job);
+        var result = await ExecuteAsync(progressStore, (store, storage), job);
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
         var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
@@ -352,7 +352,7 @@ public sealed class ExportJobServiceTests
         store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(ExportJobTestData.CreateFeatures());
 
-        var execute = () => ExecuteAsync(progressStore, store, storage, job);
+        var execute = () => ExecuteAsync(progressStore, (store, storage), job);
 
         await execute.Should().ThrowAsync<OperationCanceledException>();
         await storage.Received(1).DeleteAsync("late-file", Arg.Any<CancellationToken>());
@@ -368,8 +368,7 @@ public sealed class ExportJobServiceTests
             .Returns(_ => throw new InvalidOperationException("Simulated provider failure."));
         var storage = Substitute.For<ICloudFileStorage>();
 
-        var result = await ExecuteAsync(
-            new ComparingInMemoryProgressStore(), store, storage, ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N")));
+        var result = await ExecuteAsync(new ComparingInMemoryProgressStore(), (store, storage), ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N")));
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         result.ErrorMessage.Should().Be(ExportJobExecutor.ExportFailureMessage);
@@ -384,7 +383,7 @@ public sealed class ExportJobServiceTests
         var store = Substitute.For<IStreamingFeatureStore>();
         var job = ExportJobTestData.CreateJob("anonymous") with { Submitter = null };
 
-        var result = await ExecuteAsync(new ComparingInMemoryProgressStore(), store, Substitute.For<ICloudFileStorage>(), job);
+        var result = await ExecuteAsync(new ComparingInMemoryProgressStore(), (store, Substitute.For<ICloudFileStorage>()), job);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         result.IsRetryable.Should().BeFalse();
@@ -414,7 +413,7 @@ public sealed class ExportJobServiceTests
         storage.GetPresignedUrlAsync("rebuilt", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns("https://example.test/rebuilt.csv");
 
-        var result = await RunAsync(progressStore, store, storage, record with { AttemptCount = 2 });
+        var result = await RunAsync(progressStore, (store, storage), record with { AttemptCount = 2 });
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
         await storage.Received(1).UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
@@ -449,7 +448,7 @@ public sealed class ExportJobServiceTests
             .Returns("https://example.test/retried.csv");
 
         // A Console retry resets the record to Queued without a cancellation request.
-        var result = await RunAsync(progressStore, store, storage, record with { Status = ExecutionJobStatus.Running, AttemptCount = 1 });
+        var result = await RunAsync(progressStore, (store, storage), record with { Status = ExecutionJobStatus.Running, AttemptCount = 1 });
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
         var progress = (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!;
@@ -540,10 +539,9 @@ public sealed class ExportJobServiceTests
     // Submits through the service so the executor reads the request the way a worker does.
     private static async Task<JobExecutionResult> ExecuteAsync(
         IUniversalProgressStore progressStore,
-        IStreamingFeatureStore store,
-        ICloudFileStorage storage,
+        (IStreamingFeatureStore Features, ICloudFileStorage Storage) dependencies,
         ExportJob job)
-        => await RunAsync(progressStore, store, storage, await SubmitAsync(progressStore, job));
+        => await RunAsync(progressStore, dependencies, await SubmitAsync(progressStore, job));
 
     private static async Task<ExecutionJobRecord> SubmitAsync(IUniversalProgressStore progressStore, ExportJob job)
     {
@@ -554,13 +552,12 @@ public sealed class ExportJobServiceTests
 
     private static async Task<JobExecutionResult> RunAsync(
         IUniversalProgressStore progressStore,
-        IStreamingFeatureStore store,
-        ICloudFileStorage storage,
+        (IStreamingFeatureStore Features, ICloudFileStorage Storage) dependencies,
         ExecutionJobRecord record)
     {
         using var services = new ServiceCollection()
-            .AddSingleton(store)
-            .AddSingleton(storage)
+            .AddSingleton(dependencies.Features)
+            .AddSingleton(dependencies.Storage)
             .AddSingleton<ICrsRegistry>(new ExportJobTestData.NullCrsRegistry())
             .BuildServiceProvider();
         var executor = new ExportJobExecutor(

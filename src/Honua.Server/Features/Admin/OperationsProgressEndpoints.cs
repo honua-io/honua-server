@@ -407,24 +407,8 @@ internal static partial class OperationsProgressEndpoints
             cancellationTarget = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
             if (cancellationTarget?.Spec.Backend == LocalBatchComputeBackend.BackendId)
             {
-                var reconcileResult = await TryReconcileDurableCancelAsync(
-                    httpContext, cancellationTarget, progressStore, cancellationToken).ConfigureAwait(false);
-                if (reconcileResult != null)
-                {
-                    return reconcileResult;
-                }
-
-                if (cancellationTarget.ClaimedBy != null)
-                {
-                    ExecutionJobCancellationTokens.CancelAttempt(cancellationNotifiers, cancellationTarget);
-                }
-
-                return Results.Json(new CancelOperationResponse
-                {
-                    OperationId = operationId,
-                    Message = "Operation cancellation requested",
-                    Type = progress.Type
-                }, OperationsProgressJsonContext.Default.CancelOperationResponse);
+                return await CancelLocalExecutionAsync(
+                    httpContext, (cancellationTarget, progress), cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -602,8 +586,7 @@ internal static partial class OperationsProgressEndpoints
 
                     var stampedJob = stampResult.Job!;
                     var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
-                    var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-                        jobStore, stampedJob, observation, cancellationToken).ConfigureAwait(false);
+                    var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (stampedJob, observation), cancellationToken).ConfigureAwait(false);
 
                     if (applyResult.TerminalTransition is { Spec.Kind: ExecutionJobKind.TileCache } backendTileJob)
                     {

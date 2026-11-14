@@ -94,9 +94,9 @@ public sealed class ExecutionJobCancellationHelperTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CancellationCasLosesToRetry_DoesNotModifySuccessor(bool remoteStamp)
+    [InlineData("local")]
+    [InlineData("remote")]
+    public async Task CancellationCasLosesToRetry_DoesNotModifySuccessor(string backend)
     {
         var original = CreateJobRecord("cancel-retry", ExecutionJobStatus.Running) with
         { AttemptCount = 1, ClaimedBy = "worker", ClaimedAt = DateTimeOffset.UtcNow };
@@ -113,7 +113,7 @@ public sealed class ExecutionJobCancellationHelperTests
             .Returns(false, true);
         store.GetAsync(original.OperationId, Arg.Any<CancellationToken>()).Returns(successor);
 
-        if (remoteStamp)
+        if (backend == "remote")
         {
             var result = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(store, original);
             result.Outcome.Should().Be(RemoteCancelStampOutcome.Unconfirmed);
@@ -150,8 +150,7 @@ public sealed class ExecutionJobCancellationHelperTests
             .Returns(false, true);
         store.GetAsync(retried.OperationId, Arg.Any<CancellationToken>()).Returns(retried);
 
-        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(store, cancelledAttempt,
-            new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled });
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(store, (cancelledAttempt, new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled }));
 
         result.Outcome.Should().Be(BackendCancelApplyOutcome.Unconfirmed);
         result.TerminalTransition.Should().BeNull();
@@ -191,8 +190,7 @@ public sealed class ExecutionJobCancellationHelperTests
         var transitions = ListenForTransitions(TransitionTestBackendNoOp);
         using var listener = transitions.Listener;
 
-        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, job, observation);
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (job, observation));
 
         result.Outcome.Should().Be(BackendCancelApplyOutcome.Applied);
         result.Job.Should().BeSameAs(job,
@@ -233,8 +231,7 @@ public sealed class ExecutionJobCancellationHelperTests
             Message = "Running"
         };
 
-        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, job, observation);
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (job, observation));
 
         result.Outcome.Should().Be(BackendCancelApplyOutcome.Applied);
         result.Job.Should().NotBeSameAs(job);
@@ -264,8 +261,7 @@ public sealed class ExecutionJobCancellationHelperTests
         var transitions = ListenForTransitions(TransitionTestBackendCancelled);
         using var listener = transitions.Listener;
 
-        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, job, observation);
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (job, observation));
 
         result.Outcome.Should().Be(BackendCancelApplyOutcome.Applied);
         result.Job!.Status.Should().Be(ExecutionJobStatus.Cancelled);
@@ -305,8 +301,7 @@ public sealed class ExecutionJobCancellationHelperTests
             Message = "Cancelled by user"
         };
 
-        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, job, observation);
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (job, observation));
 
         result.Outcome.Should().Be(BackendCancelApplyOutcome.TerminalConflict);
         result.TerminalStatus.Should().Be(ExecutionJobStatus.Failed);
@@ -325,8 +320,7 @@ public sealed class ExecutionJobCancellationHelperTests
             Message = "Cancelled"
         };
 
-        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, job, observation);
+        var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(jobStore, (job, observation));
 
         result.Outcome.Should().Be(BackendCancelApplyOutcome.Missing);
         result.Job.Should().BeNull();

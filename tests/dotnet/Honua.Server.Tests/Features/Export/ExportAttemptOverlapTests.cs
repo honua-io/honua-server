@@ -28,29 +28,14 @@ public sealed partial class ExportJobTests
         using var nodes = new ExportNodes(progress);
         var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
         await nodes.SubmitAsync(harness, job);
-        await progress.DeleteProgressAsync(job.JobId);
-        if (initialStatus.HasValue)
-        {
-            await progress.SetProgressAsync(job.JobId,
-                ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, 1, 1) with
-                { Status = initialStatus.Value, StartedAt = DateTimeOffset.UtcNow.AddMinutes(-1) });
-        }
+        await PrepareAdmissionProgressAsync(progress, job, initialStatus);
         var record = (await harness.JobStore.GetAsync(job.JobId))!;
         var read = NewSignal();
         var resumeAdmission = NewSignal();
         var upload = NewSignal();
         var resumeUpload = NewSignal();
-        var pausedStore = PauseProgressRead(progress, job.JobId, (read, resumeAdmission));
-        var uploads = 0;
-        nodes.Storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async _ =>
-        {
-            if (Interlocked.Increment(ref uploads) == 1)
-            {
-                upload.TrySetResult();
-                await resumeUpload.Task.WaitAsync(TimeSpan.FromSeconds(30));
-            }
-            return ExportJobTestData.Uploaded("export-file", "text/csv");
-        });
+        var pausedStore = PauseProgressRead(progress, job.JobId, (read, resumeAdmission, ProgressReadPause.AfterSnapshot));
+        PauseFirstUpload(nodes.Storage, (upload, resumeUpload));
         var staleContext = PublishingContext();
         var leaseLost = false;
         staleContext.ThrowIfExecutionLeaseLostAsync(Arg.Any<CancellationToken>()).Returns(_ =>
@@ -76,15 +61,7 @@ public sealed partial class ExportJobTests
         {
             resumeAdmission.TrySetResult();
             resumeUpload.TrySetResult();
-            var cleanupError = await Record.ExceptionAsync(async () => await staleAttempt);
-            if (cleanupError is not null)
-            {
-                cleanupError.Should().BeAssignableTo<OperationCanceledException>();
-            }
-            if (replacementAttempt is not null)
-            {
-                (await replacementAttempt).Status.Should().Be(ExecutionJobStatus.Succeeded);
-            }
+            await FinishAttemptsAsync(staleAttempt, replacementAttempt);
         }
     }
 
@@ -101,22 +78,13 @@ public sealed partial class ExportJobTests
         var resumeAdmission = NewSignal();
         var uploading = NewSignal();
         var resumeUpload = NewSignal();
-        var pausedStore = PauseProgressRead(progress, job.JobId, (reading, resumeAdmission), ProgressReadPause.BeforeSnapshot);
+        var pausedStore = PauseProgressRead(progress, job.JobId, (reading, resumeAdmission, ProgressReadPause.BeforeSnapshot));
         var staleContext = PublishingContext();
         var leaseLost = false;
         staleContext.ThrowIfExecutionLeaseLostAsync(Arg.Any<CancellationToken>()).Returns(_ =>
             leaseLost ? Task.FromException(new OperationCanceledException("Attempt replaced")) : Task.CompletedTask);
         staleContext.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
-        var uploads = 0;
-        nodes.Storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async _ =>
-        {
-            if (Interlocked.Increment(ref uploads) == 1)
-            {
-                uploading.TrySetResult();
-                await resumeUpload.Task.WaitAsync(TimeSpan.FromSeconds(30));
-            }
-            return ExportJobTestData.Uploaded("export-file", "text/csv");
-        });
+        PauseFirstUpload(nodes.Storage, (uploading, resumeUpload));
         var staleAttempt = nodes.CreateExecutor(pausedStore).ExecuteAsync(record, staleContext, CancellationToken.None);
         Task<JobExecutionResult>? replacementAttempt = null;
         try
@@ -136,15 +104,7 @@ public sealed partial class ExportJobTests
         {
             resumeAdmission.TrySetResult();
             resumeUpload.TrySetResult();
-            var cleanupError = await Record.ExceptionAsync(async () => await staleAttempt);
-            if (cleanupError is not null)
-            {
-                cleanupError.Should().BeAssignableTo<OperationCanceledException>();
-            }
-            if (replacementAttempt is not null)
-            {
-                (await replacementAttempt).Status.Should().Be(ExecutionJobStatus.Succeeded);
-            }
+            await FinishAttemptsAsync(staleAttempt, replacementAttempt);
         }
     }
 
@@ -160,25 +120,8 @@ public sealed partial class ExportJobTests
         var retireFirst = NewSignal();
         var uploadingReplacement = NewSignal();
         var finishReplacement = NewSignal();
-        var firstContext = Substitute.For<IJobExecutionContext>();
-        firstContext.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(async _ =>
-        {
-            publishing.TrySetResult();
-            await retireFirst.Task.WaitAsync(TimeSpan.FromSeconds(30));
-            return false;
-        });
-        var uploads = 0;
-        nodes.Storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async _ =>
-        {
-            if (Interlocked.Increment(ref uploads) == 1)
-            {
-                return ExportJobTestData.Uploaded("first-file", "text/csv");
-            }
-
-            uploadingReplacement.TrySetResult();
-            await finishReplacement.Task.WaitAsync(TimeSpan.FromSeconds(30));
-            return ExportJobTestData.Uploaded("replacement-file", "text/csv");
-        });
+        var firstContext = PausePublication((publishing, retireFirst));
+        PauseReplacementUpload(nodes.Storage, (uploadingReplacement, finishReplacement));
         var firstAttempt = nodes.CreateExecutor().ExecuteAsync(record, firstContext, CancellationToken.None);
         Task<JobExecutionResult>? replacementAttempt = null;
         try
@@ -198,28 +141,82 @@ public sealed partial class ExportJobTests
         {
             retireFirst.TrySetResult();
             finishReplacement.TrySetResult();
-            var cleanupError = await Record.ExceptionAsync(async () => await firstAttempt);
-            if (cleanupError is not null)
-            {
-                cleanupError.Should().BeAssignableTo<OperationCanceledException>();
-            }
-            if (replacementAttempt is not null)
-            {
-                await replacementAttempt;
-            }
+            await FinishAttemptsAsync(firstAttempt, replacementAttempt);
         }
+    }
+
+    private static async Task PrepareAdmissionProgressAsync(IUniversalProgressStore progress,
+        ExportJob job, OperationStatus? initialStatus)
+    {
+        await progress.DeleteProgressAsync(job.JobId);
+        if (initialStatus.HasValue)
+        {
+            await progress.SetProgressAsync(job.JobId,
+                ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, 1, 1) with
+                { Status = initialStatus.Value, StartedAt = DateTimeOffset.UtcNow.AddMinutes(-1) });
+        }
+    }
+
+    private static void PauseFirstUpload(ICloudFileStorage storage,
+        (TaskCompletionSource Reached, TaskCompletionSource Resume) signals)
+    {
+        var uploads = 0;
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            if (Interlocked.Increment(ref uploads) == 1)
+            {
+                signals.Reached.TrySetResult();
+                await signals.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            }
+            return ExportJobTestData.Uploaded("export-file", "text/csv");
+        });
+    }
+
+    private static IJobExecutionContext PausePublication(
+        (TaskCompletionSource Reached, TaskCompletionSource Resume) signals)
+    {
+        var context = Substitute.For<IJobExecutionContext>();
+        context.TryPublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            signals.Reached.TrySetResult();
+            await signals.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            return false;
+        });
+        return context;
+    }
+
+    private static void PauseReplacementUpload(ICloudFileStorage storage,
+        (TaskCompletionSource Reached, TaskCompletionSource Resume) signals)
+    {
+        var uploads = 0;
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            if (Interlocked.Increment(ref uploads) == 1)
+                return ExportJobTestData.Uploaded("first-file", "text/csv");
+            signals.Reached.TrySetResult();
+            await signals.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            return ExportJobTestData.Uploaded("replacement-file", "text/csv");
+        });
+    }
+
+    private static async Task FinishAttemptsAsync(Task<JobExecutionResult> retired, Task<JobExecutionResult>? successor)
+    {
+        var cleanupError = await Record.ExceptionAsync(async () => await retired);
+        if (cleanupError is not null)
+            cleanupError.Should().BeAssignableTo<OperationCanceledException>();
+        if (successor is not null)
+            (await successor).Status.Should().Be(ExecutionJobStatus.Succeeded);
     }
 
     private static IUniversalProgressStore PauseProgressRead(
         ComparingInMemoryProgressStore progress,
         string jobId,
-        (TaskCompletionSource Read, TaskCompletionSource Resume) signals,
-        ProgressReadPause pause = ProgressReadPause.AfterSnapshot)
+        (TaskCompletionSource Read, TaskCompletionSource Resume, ProgressReadPause Pause) signals)
     {
         var store = Substitute.For<IUniversalProgressStore>();
         store.GetProgressAsync<ExportProgress>(jobId, Arg.Any<CancellationToken>()).Returns(async _ =>
         {
-            if (pause == ProgressReadPause.BeforeSnapshot)
+            if (signals.Pause == ProgressReadPause.BeforeSnapshot)
             {
                 signals.Read.TrySetResult();
                 await signals.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
