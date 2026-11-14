@@ -55,6 +55,7 @@ jobs:
       RELEASE: ${{ inputs.release }}
     outputs:
       asset_name: ${{ steps.names.outputs.asset_name }}
+      platform_ref: ${{ steps.manifest.outputs.platform_ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Verify controls and requested identity
@@ -86,6 +87,7 @@ jobs:
       # a copy of the platform manifest alone; its digest is recorded here and the SBOM,
       # VEX and provenance travel as separate release assets instead.
       - name: Resolve the attestation-free platform manifest
+        id: manifest
         run: |
           set -euo pipefail
           docker buildx imagetools inspect --raw "$SCAN_IMAGE" > source-manifest.json
@@ -99,6 +101,7 @@ jobs:
             | python3 scripts/security/release_images.py assert-single-manifest
           echo "$platform_ref" > "${{ steps.names.outputs.asset_name }}.attestation-free-ref.txt"
           echo "PLATFORM_REF=$platform_ref" >> "$GITHUB_ENV"
+          echo "platform_ref=$platform_ref" >> "$GITHUB_OUTPUT"
       - name: Generate the release OpenVEX document
         run: |
           set -euo pipefail
@@ -166,7 +169,7 @@ jobs:
       contents: read
     env:
       RELEASE: ${{ inputs.release }}
-      IMAGE: ${{ inputs.image }}
+      IMAGE: ${{ needs.assets.outputs.platform_ref }}
       PLATFORM: ${{ inputs.platform }}
       REVISION: ${{ inputs.source_revision }}
     steps:
