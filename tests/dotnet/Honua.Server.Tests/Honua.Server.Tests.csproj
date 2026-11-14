@@ -25,6 +25,7 @@
     <PackageReference Include="Microsoft.OData.Client" />
     <PackageReference Include="Moq" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Newtonsoft.Json.Schema" />
     <PackageReference Include="ParquetSharp" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="System.Security.Cryptography.Xml" />

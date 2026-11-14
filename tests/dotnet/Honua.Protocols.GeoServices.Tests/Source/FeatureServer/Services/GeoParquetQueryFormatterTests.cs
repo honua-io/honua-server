@@ -1775,6 +1775,32 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             ]
         };
 
+    [UnitTest]
+    public void FormatAsGeoParquet_FileMetadata_IsWrittenBesideGeoMetadata()
+    {
+        var feature = Feature.Create(1, new WKBWriter().Write(new Point(1, 2)), ImmutableDictionary<string, object?>.Empty);
+        var (payload, _) = GeoParquetFeatureWriter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), CreateLayer(), "objectid", returnGeometry: true, 4326,
+            returnZ: false, returnM: false, new GeometryLimits(),
+            fileMetadata: new Dictionary<string, string> { ["honua:captureId"] = "capture-1" });
+
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        reader.Schema.Metadata["honua:captureId"].Should().Be("capture-1");
+        reader.Schema.Metadata.Should().ContainKey("geo");
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_FileMetadataNamedGeo_IsRejected()
+    {
+        var feature = Feature.Create(1, new WKBWriter().Write(new Point(1, 2)), ImmutableDictionary<string, object?>.Empty);
+        var act = () => GeoParquetFeatureWriter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), CreateLayer(), "objectid", returnGeometry: true, 4326,
+            returnZ: false, returnM: false, new GeometryLimits(),
+            fileMetadata: new Dictionary<string, string> { ["geo"] = "{}" });
+
+        act.Should().Throw<ArgumentException>();
+    }
+
     private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)
         => CreateResource(fields);
 

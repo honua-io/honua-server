@@ -48454,7 +48454,7 @@
         "properties": {
           "operation": {
             "type": "string",
-            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`."
+            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `paired-publish`."
           },
           "serviceId": {
             "type": "string",
@@ -48503,7 +48503,18 @@
           "tileCompression": {
             "type": "string",
             "nullable": true,
-            "description": "`none` or `gzip`: tile payload compression for `archive` and `publish` PMTiles output, case-insensitive. Defaults to `none`, which writes the same bytes as earlier releases. Rejected for other operations."
+            "description": "`none` or `gzip`: tile payload compression for `archive`, `publish` and `paired-publish` PMTiles output, case-insensitive. Defaults to `none`, which writes the same bytes as earlier releases. Rejected for other operations."
+          },
+          "publicationId": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+            "description": "Required for `paired-publish`: the publication whose versions and current pointer the run writes."
+          },
+          "identityField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Required for `paired-publish`: a visible text field that identifies each feature in both the PMTiles and the GeoParquet artifact."
           },
           "generationId": {
             "type": "string",
@@ -48644,6 +48655,9 @@
           "PublishedArtifact": {
             "$ref": "#/components/schemas/TileOpsPublishedArtifact"
           },
+          "PublishedPublication": {
+            "$ref": "#/components/schemas/TileOpsPublishedPublication"
+          },
           "StartedAt": {
             "type": "string",
             "format": "date-time"
@@ -48676,6 +48690,31 @@
           "Duration": {
             "type": "string",
             "description": "Elapsed time serialized as a .NET TimeSpan string (for example `00:01:23.4560000`)."
+          }
+        }
+      },
+      "TileOpsPublishedPublication": {
+        "type": "object",
+        "nullable": true,
+        "description": "The version a completed `paired-publish` activated. Property names are PascalCase.",
+        "properties": {
+          "PublicationId": {
+            "type": "string"
+          },
+          "Version": {
+            "type": "string"
+          },
+          "CaptureId": {
+            "type": "string",
+            "description": "Embedded in both artifacts' metadata as `honua:captureId`."
+          },
+          "DescriptorKey": {
+            "type": "string",
+            "description": "Storage key of the version's publication descriptor (publication-descriptor v1)."
+          },
+          "PointerKey": {
+            "type": "string",
+            "description": "Storage key of the publication's current-version pointer."
           }
         }
       },

@@ -19431,6 +19431,13 @@
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PublishArchive_Republish_PreservesLogicalArtifactIdAndObjectKey",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishOperation_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishWithoutLayerId_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PairedPublish_FailedRun_LeavesThePreviousVersionActive",
+        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PairedPublish_Layer_WritesBothArtifactsFromOneCaptureWithoutHiddenFields",
+        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PairedPublish_PublicationIdOfAnotherLayer_IsRefusedAndKeepsItsPointer",
+        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PairedPublish_Republish_SwitchesThePointerAndKeepsThePreviousVersion",
+        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.StartJob_InvalidPairedPublishRequest_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.StartJob_PairedPublishWithoutCredentials_IsRefused",
+        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.SwitchPointer_StaleOrMissingExpectation_IsRefused",
         "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WhenInvalidateRequest_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.StartJob_WithInvalidOperation_Returns400"
       ],
