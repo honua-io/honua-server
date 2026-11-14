@@ -18,6 +18,72 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// </summary>
 public sealed class LocalBatchComputeBackendCancellationTests
 {
+    [UnitTheory]
+    [InlineData(OperationStatus.Completed)]
+    [InlineData(OperationStatus.Cancelled)]
+    [InlineData(OperationStatus.Failed)]
+    public async Task ObserveAsync_ExportProgressCannotFinalizeDurableWorkerAttempt(OperationStatus status)
+    {
+        var progressStore = Substitute.For<IUniversalProgressStore>();
+        progressStore.GetProgressAsync("export-race", Arg.Any<CancellationToken>())
+            .Returns(Honua.Infrastructure.Progress.ExportProgress.CreateInitial("export-race", "csv", "svc", 0, 1)
+                with
+            { Status = status });
+        var backend = new LocalBatchComputeBackend(progressStore, []);
+        var job = new ExecutionJobRecord
+        {
+            OperationId = "export-race",
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Export,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "export"
+            }
+        };
+
+        var observation = await backend.ObserveAsync(job);
+
+        Assert.Equal(ExecutionJobStatus.Running, observation.Status);
+    }
+
+    [UnitTheory]
+    [InlineData("previous")]
+    [InlineData("successor")]
+    public async Task CancelAsync_StaleTileClaim_DoesNotCancelSuccessor(string previousWorker)
+    {
+        var progressStore = Substitute.For<IUniversalProgressStore>();
+        var tokens = new ExecutionJobCancellationTokens();
+        var backend = new LocalBatchComputeBackend(progressStore, [tokens]);
+        using var successor = tokens.CreateLinkedTokenSource("tile-retry", ("successor", 2));
+        var now = DateTimeOffset.UtcNow;
+        var oldClaim = new ExecutionJobRecord
+        {
+            OperationId = "tile-retry",
+            Status = ExecutionJobStatus.Running,
+            ClaimedBy = previousWorker,
+            AttemptCount = 1,
+            ClaimedAt = now.AddMinutes(-1),
+            CreatedAt = now.AddMinutes(-2),
+            UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.TileCache,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = LocalBatchComputeBackend.BackendId,
+                WorkloadName = "tile-cache"
+            }
+        };
+
+        await backend.CancelAsync(oldClaim);
+
+        Assert.False(successor.IsCancellationRequested);
+    }
+
     [UnitTest]
     public async Task CancelAsync_SignalsExecutionJobNotifierWhenExportRegistersLast()
     {
@@ -41,12 +107,14 @@ public sealed class LocalBatchComputeBackendCancellationTests
             .BuildServiceProvider();
 
         var backend = services.GetRequiredService<LocalBatchComputeBackend>();
-        using var cts = executionTokens.CreateLinkedTokenSource("job-x", "worker-1");
+        using var cts = executionTokens.CreateLinkedTokenSource("job-x", ("worker-1", 1));
         var now = DateTimeOffset.UtcNow;
         var job = new ExecutionJobRecord
         {
             OperationId = "job-x",
             Status = ExecutionJobStatus.Running,
+            ClaimedBy = "worker-1",
+            AttemptCount = 1,
             CreatedAt = now,
             UpdatedAt = now,
             Spec = new ExecutionJobSpec

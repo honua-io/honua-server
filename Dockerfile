@@ -48,6 +48,7 @@ COPY eng/Honua.BuildProfiles.props eng/
 COPY eng/Honua.ProtocolProfiles.props eng/
 COPY eng/protocol-profiles.v1.json eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
+COPY scripts/ci/analyzer-baseline/ scripts/ci/analyzer-baseline/
 
 ARG TARGETARCH
 ARG HONUA_STORE_PROFILE
