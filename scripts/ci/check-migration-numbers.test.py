@@ -24,10 +24,14 @@ class MigrationNumberTests(unittest.TestCase):
     def git(self, *args):
         return subprocess.check_output(["git", *args], cwd=self.root, text=True).strip()
 
-    def add(self, directory, name, content="SELECT 1;"):
+    def add(self, directory, name, content="SELECT 1;", claim=True):
         path = self.root / directory / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
+        if claim:
+            marker = self.root / "eng/schema/migration-numbers" / directory / (name.split("_")[0] + ".txt")
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(f"{directory}/{name}\n")
 
     def commit(self):
         self.git("add", "-A")
@@ -44,6 +48,32 @@ class MigrationNumberTests(unittest.TestCase):
         self.add(SERVER, "002_New.sql")
         self.commit()
         self.assertEqual(self.check().returncode, 0)
+
+    def test_missing_number_claim_fails(self):
+        self.add(SERVER, "002_New.sql", claim=False)
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("002.txt", result.stdout)
+
+    def test_number_claim_cannot_be_deleted(self):
+        (self.root / "eng/schema/migration-numbers" / SERVER / "001.txt").unlink()
+        self.commit()
+        self.assertIn("claims are immutable", self.check().stdout)
+
+    def test_concurrent_admitted_migrations_conflict_when_first_lands(self):
+        self.add(SERVER, "002_First.sql")
+        first = self.commit()
+        self.assertEqual(self.check().returncode, 0)
+        self.git("checkout", "-q", "--detach", self.base)
+        self.add(SERVER, "002_Second.sql")
+        self.commit()
+        self.assertEqual(self.check().returncode, 0)
+        result = subprocess.run(["git", "merge", "--no-commit", "--no-ff", first], cwd=self.root,
+                                capture_output=True, text=True,
+                                env={**__import__("os").environ, "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "fixture@example.test"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("002.txt", self.git("diff", "--name-only", "--diff-filter=U"))
 
     def test_existing_modification_is_left_to_immutability_guard(self):
         self.add(SERVER, "001_Initial.sql", "SELECT 2;")

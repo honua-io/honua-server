@@ -28,7 +28,19 @@ def check(base, head, trunk):
     additions = numbered(git_paths("diff", "--no-renames", "--diff-filter=A", "--name-only", "-z", ancestor, head, "--", *DIRECTORIES))
     existing = numbered(git_paths("ls-tree", "-r", "--name-only", "-z", trunk, "--", *DIRECTORIES))
     failures = []
+    claim_root = "eng/schema/migration-numbers"
+    claims = git_paths("diff", "--no-renames", "--diff-filter=MD", "--name-only", "-z", ancestor, head, "--", claim_root)
+    changed_claims = [path for path in claims if re.fullmatch(r"\d+\.txt", PurePosixPath(path).name)]
+    if changed_claims:
+        failures.append("Migration number claims are immutable: " + ", ".join(changed_claims))
     for (directory, number), paths in additions.items():
+        # A shared number claim makes concurrent successful PRs conflict in Git
+        # when one lands, even with non-strict branch protection.
+        claim = f"{claim_root}/{directory}/{number:03d}.txt"
+        expected = "\n".join(sorted(paths)) + "\n"
+        actual = subprocess.run(["git", "show", f"{head}:{claim}"], capture_output=True, text=True)
+        if actual.returncode or actual.stdout != expected:
+            failures.append(f"Add {claim} containing exactly the new migration path followed by a newline: {', '.join(paths)}")
         collisions = existing.get((directory, number), [])
         if collisions or len(paths) > 1:
             next_number = max(value for folder, value in existing.keys() | additions.keys() if folder == directory) + 1

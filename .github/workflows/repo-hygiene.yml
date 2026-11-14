@@ -45,8 +45,18 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           git fetch --no-tags origin refs/heads/trunk:refs/remotes/origin/trunk
-          python3 scripts/ci/check-migration-numbers.test.py
-          python3 scripts/ci/check-migration-numbers.py --base "$BASE_SHA" --head "$HEAD_SHA" --trunk origin/trunk
+          policy_dir="$(mktemp -d)"
+          trap 'rm -rf "$policy_dir"' EXIT
+          # Existing PR heads need not contain the newly introduced checker.
+          # The rollout PR is verified locally; enforcement begins on trunk.
+          if git cat-file -e origin/trunk:scripts/ci/check-migration-numbers.py; then
+            git show origin/trunk:scripts/ci/check-migration-numbers.py > "$policy_dir/check-migration-numbers.py"
+            git show origin/trunk:scripts/ci/check-migration-numbers.test.py > "$policy_dir/check-migration-numbers.test.py"
+            python3 "$policy_dir/check-migration-numbers.test.py"
+            python3 "$policy_dir/check-migration-numbers.py" --base "$BASE_SHA" --head "$HEAD_SHA" --trunk origin/trunk
+          else
+            echo 'Migration policy rollout: trusted trunk checker is not installed yet.'
+          fi
   shared-hygiene:
     uses: honua-io/.github/.github/workflows/repo-hygiene.yml@7e93a67a13dc498cc4e5032f00cd9e93171afb95 # light runner switch
   repo-hygiene:
@@ -56,7 +66,7 @@ jobs:
     needs: [evidence-paths, migration-numbers, shared-hygiene]
     runs-on: ubuntu-latest
     steps:
-      - name: Require both hygiene checks
+      - name: Require all hygiene checks
         env:
           EVIDENCE_RESULT: ${{ needs.evidence-paths.result }}
           MIGRATION_RESULT: ${{ needs.migration-numbers.result }}
