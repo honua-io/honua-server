@@ -355,8 +355,7 @@ internal static class ServiceCollectionExtensions
                     ?? new AttachmentLimits(),
                 migrationContract: coreSchemaMigrations.Attachments,
                 canonicalSchemaName: schemaConfiguration.MetadataSchema));
-        services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
-        services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        AddAttachmentUploadServices(services, configuration, schemaConfiguration);
 
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
 
@@ -1099,6 +1098,33 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IDatabaseCompatibilityChecker, PostgresDatabaseCompatibilityChecker>();
 
         return services;
+    }
+
+    private static void AddAttachmentUploadServices(
+        IServiceCollection services, IConfiguration configuration, PostgresSchemaConfiguration schemaConfiguration)
+    {
+        services.AddScoped<PostgresAttachmentMaintenance>(serviceProvider =>
+            new PostgresAttachmentMaintenance(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
+        if (!Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneEventHandlerHost.IsEventHandler(configuration))
+        {
+            services.AddHostedService<PostgresAttachmentMaintenanceService>();
+        }
+        services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IAttachmentNativeMetadataStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IAttachmentUploadSessionStore>(serviceProvider =>
+            new PostgresAttachmentUploadSessionStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
+        services.AddScoped<IAttachmentMutationStore>(serviceProvider =>
+            new PostgresAttachmentMutationStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
+
     }
 
     private static string ResolveConnectionString(IServiceProvider serviceProvider, IConfiguration configuration)

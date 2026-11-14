@@ -32,7 +32,7 @@ namespace Honua.Server.Tests;
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Database.CoreFeatureStore")]
-public class PostgresAttachmentStoreTests : IAsyncLifetime
+public partial class PostgresAttachmentStoreTests : IAsyncLifetime
 {
     private readonly DatabaseFixtureAdapter _fixture;
     private readonly ITestOutputHelper _output;

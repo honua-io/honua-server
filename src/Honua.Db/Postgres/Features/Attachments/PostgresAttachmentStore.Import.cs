@@ -255,7 +255,7 @@ internal sealed partial class PostgresAttachmentStore
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(CancellationToken.None).ConfigureAwait(false);
             var tables = await ResolveTablesAsync(connection, null, true, CancellationToken.None).ConfigureAwait(false);
             var pending = new List<(string Path, long FeatureId)>();
-            await using (var command = new NpgsqlCommand($"SELECT storage_path, feature_id FROM {tables.Cleanup} WHERE layer_id = $1", connection))
+            await using (var command = new NpgsqlCommand($"SELECT storage_path, feature_id FROM {tables.Cleanup} WHERE layer_id = $1 ORDER BY storage_path LIMIT 100", connection))
             {
                 command.Parameters.AddWithValue(layerId);
                 await using var reader = await command.ExecuteReaderAsync(CancellationToken.None).ConfigureAwait(false);
