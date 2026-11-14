@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.Migration.Abstractions;
 using Honua.Import;
 using Honua.Migration;
 using Microsoft.Extensions.Configuration;
@@ -55,4 +56,28 @@ public sealed partial class ImportJobExecutorTests
         TargetHonuaUrl = "https://honua.example.com",
         DryRun = true
     };
+    private static GeoservicesImportRequest PublishedGeoservicesRequest(string jobId, int layerId)
+        => GeoservicesRequest(jobId) with
+        {
+            LayerId = layerId,
+            AutoPublish = true,
+            ServiceName = "imported-service"
+        };
+
+    private static Task RecordCancellationAsync(GeoservicesImportJobManager manager, GeoservicesImportProgress progress)
+        => manager.ProgressStore.SetProgressAsync(progress.JobId, progress with
+        {
+            Status = GeoservicesImportStatus.Cancelled,
+            CompletedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Cancellation requested"
+        }, TimeSpan.FromMinutes(10));
+
+    private static Task RecordCancellationAsync(GeoServerImportJobManager manager, GeoServerImportProgress progress)
+        => manager.ProgressStore.SetProgressAsync(progress.JobId, progress with
+        {
+            Status = GeoServerImportStatus.Cancelled,
+            CompletedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Cancellation requested"
+        }, TimeSpan.FromMinutes(10));
+
 }

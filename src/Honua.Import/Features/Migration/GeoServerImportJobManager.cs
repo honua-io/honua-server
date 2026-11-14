@@ -45,7 +45,13 @@ internal sealed class GeoServerImportJobManager
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return _jobs.SubmitAsync(request.JobId, request, initialProgress, "geoserver-import", cancellationToken);
+        return _jobs.SubmitAsync(new ImportExecutionSubmission<GeoServerImportRequest, GeoServerImportProgress>
+        {
+            JobId = request.JobId,
+            Request = request,
+            InitialProgress = initialProgress,
+            WorkloadName = "geoserver-import"
+        }, cancellationToken);
     }
 
     internal Task RequestCancellationAsync(string jobId, CancellationToken cancellationToken)

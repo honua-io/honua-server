@@ -54,8 +54,7 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
         var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
         using var progress = new ImportJobProgressController<GeoServerImportProgress>(jobId,
-            _jobManager.ProgressStore, progressTtl: null,
-            finalProgressTtl: ImportExecutionJobQueue<GeoServerImportRequest, GeoServerImportProgress>.Retention);
+            _jobManager.ProgressStore, finalProgressTtl: ImportExecutionJobQueue<GeoServerImportRequest, GeoServerImportProgress>.Retention);
         var run = new ImportRun(jobId, request, progress, stopwatch, licenseCancellation, linked.Token);
 
         return await ExecuteRunAsync(run).ConfigureAwait(false);
@@ -151,7 +150,7 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
         {
             if (p.Status != GeoServerImportStatus.Queued)
             {
-                _ = run.Progress.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None);
+                _ = run.Progress.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed);
             }
         });
         return await importer.ImportConfigurationAsync(resolvedRequest, reporter, run.Token).ConfigureAwait(false);
@@ -244,7 +243,7 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
         var resolvedPassword = request.Password;
         if (!string.IsNullOrWhiteSpace(request.PasswordSecretReference))
         {
-            resolvedPassword = await ResolveRequiredSecretAsync(
+            resolvedPassword = await RequestSecretReferenceValidation.ResolveRequiredAsync(
                 serviceProvider,
                 request.PasswordSecretReference,
                 "GeoServer password",
@@ -254,7 +253,7 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
         var resolvedHonuaApiKey = request.HonuaApiKey;
         if (!string.IsNullOrWhiteSpace(request.HonuaApiKeySecretReference))
         {
-            resolvedHonuaApiKey = await ResolveRequiredSecretAsync(
+            resolvedHonuaApiKey = await RequestSecretReferenceValidation.ResolveRequiredAsync(
                 serviceProvider,
                 request.HonuaApiKeySecretReference,
                 "Honua API key",
@@ -267,17 +266,6 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
             HonuaApiKey = resolvedHonuaApiKey
         };
     }
-
-    private static Task<string> ResolveRequiredSecretAsync(
-        IServiceProvider serviceProvider,
-        string secretReference,
-        string secretDescription,
-        CancellationToken cancellationToken)
-        => RequestSecretReferenceValidation.ResolveRequiredAsync(
-            serviceProvider,
-            secretReference,
-            secretDescription,
-            cancellationToken);
 
     private static partial class Log
     {

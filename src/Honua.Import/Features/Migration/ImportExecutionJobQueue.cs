@@ -23,6 +23,16 @@ internal sealed record ImportExecutionJobKindSpec<TRequest, TProgress>(
     where TRequest : class
     where TProgress : class, IOperationProgress;
 
+internal sealed record ImportExecutionSubmission<TRequest, TProgress>
+    where TRequest : class
+    where TProgress : class
+{
+    public required string JobId { get; init; }
+    public required TRequest Request { get; init; }
+    public required TProgress InitialProgress { get; init; }
+    public required string WorkloadName { get; init; }
+}
+
 internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
     where TRequest : class
     where TProgress : class, IOperationProgress
@@ -61,12 +71,11 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
     public IDistributedProgressStore<TProgress> ProgressStore { get; }
 
     public async Task SubmitAsync(
-        string jobId,
-        TRequest request,
-        TProgress initialProgress,
-        string workloadName,
+        ImportExecutionSubmission<TRequest, TProgress> submission,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(submission);
+        var (jobId, request, initialProgress) = (submission.JobId, submission.Request, submission.InitialProgress);
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(initialProgress);
@@ -77,7 +86,7 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
 
         // The immutable request and initial status share the execution record's atomic insert.
         // A retry with the same id must never reset progress written by a running worker.
-        var created = await _jobStore.TryCreateAsync(CreateRecord(jobId, request, initialProgress, workloadName), cancellationToken: cancellationToken)
+        var created = await _jobStore.TryCreateAsync(CreateRecord(submission), cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (!created)
@@ -123,7 +132,7 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
             }
 
             var claimed = !string.IsNullOrEmpty(job.ClaimedBy);
-            var updated = Cancel(job, claimed);
+            var updated = RequestOrCompleteCancellation(job);
             if (await _jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
                 if (!claimed && _jobQueue is not null)
@@ -139,10 +148,10 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
         throw new InvalidOperationException("Import cancellation conflicted with concurrent updates. Retry the cancellation.");
     }
 
-    private static ExecutionJobRecord Cancel(ExecutionJobRecord job, bool claimed)
+    private static ExecutionJobRecord RequestOrCompleteCancellation(ExecutionJobRecord job)
     {
         var now = DateTimeOffset.UtcNow;
-        return claimed
+        return !string.IsNullOrEmpty(job.ClaimedBy)
             ? job with { CancellationRequestedAt = now, UpdatedAt = now, CurrentPhase = "Cancelling" }
             : job with
             {
@@ -168,12 +177,12 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
         }
     }
 
-    private ExecutionJobRecord CreateRecord(string jobId, TRequest request, TProgress initialProgress, string workloadName)
+    private ExecutionJobRecord CreateRecord(ImportExecutionSubmission<TRequest, TProgress> submission)
     {
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
         {
-            OperationId = jobId,
+            OperationId = submission.JobId,
             Status = ExecutionJobStatus.Queued,
             CreatedAt = now,
             UpdatedAt = now,
@@ -185,11 +194,11 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
                 Kind = _spec.Kind,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 Backend = LocalBackend,
-                WorkloadName = workloadName,
+                WorkloadName = submission.WorkloadName,
                 Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    [RequestParameter] = JsonSerializer.Serialize(request, _spec.RequestJsonTypeInfo),
-                    ["honua.import.initialProgress"] = JsonSerializer.Serialize(initialProgress, _spec.ProgressJsonTypeInfo)
+                    [RequestParameter] = JsonSerializer.Serialize(submission.Request, _spec.RequestJsonTypeInfo),
+                    ["honua.import.initialProgress"] = JsonSerializer.Serialize(submission.InitialProgress, _spec.ProgressJsonTypeInfo)
                 }
             }
         };

@@ -10,7 +10,6 @@ internal sealed class ImportJobProgressController<TProgress> : IDisposable
 {
     private readonly string _jobId;
     private readonly IDistributedProgressStore<TProgress> _progressStore;
-    private readonly TimeSpan? _progressTtl;
     private readonly TimeSpan? _finalProgressTtl;
     private readonly SemaphoreSlim _progressGate = new(1, 1);
     private int _finalized;
@@ -18,13 +17,11 @@ internal sealed class ImportJobProgressController<TProgress> : IDisposable
     public ImportJobProgressController(
         string jobId,
         IDistributedProgressStore<TProgress> progressStore,
-        TimeSpan? progressTtl = null,
         TimeSpan? finalProgressTtl = null)
     {
         _jobId = jobId;
         _progressStore = progressStore;
-        _progressTtl = progressTtl;
-        _finalProgressTtl = finalProgressTtl ?? progressTtl;
+        _finalProgressTtl = finalProgressTtl;
     }
 
     public TProgress? CurrentProgress { get; private set; }
@@ -52,7 +49,7 @@ internal sealed class ImportJobProgressController<TProgress> : IDisposable
             }
 
             CurrentProgress = progress;
-            await _progressStore.SetProgressAsync(_jobId, progress, _progressTtl, cancellationToken).ConfigureAwait(false);
+            await _progressStore.SetProgressAsync(_jobId, progress, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -78,17 +75,9 @@ internal sealed class ImportJobProgressController<TProgress> : IDisposable
     public async Task TryReportProgressAsync(
         TProgress progress,
         ILogger logger,
-        Action<ILogger, string, Exception> logProgressUpdateFailed,
-        CancellationToken jobCancellationToken)
+        Action<ILogger, string, Exception> logProgressUpdateFailed)
     {
-        try
-        {
-            if (jobCancellationToken.IsCancellationRequested || IsFinalized)
-            {
-                return;
-            }
-        }
-        catch (ObjectDisposedException)
+        if (IsFinalized)
         {
             return;
         }

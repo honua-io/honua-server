@@ -60,7 +60,6 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
         using var progress = new ImportJobProgressController<GeoservicesImportProgress>(
             jobId,
             _jobManager.ProgressStore,
-            progressTtl: null,
             finalProgressTtl: ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
         var run = new ImportRun(request with { JobId = jobId }, progress, Stopwatch.StartNew(), licenseCancellation, jobCancellation.Token);
 
@@ -147,7 +146,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
         {
             if (p.Status != GeoservicesImportStatus.Queued)
             {
-                _ = run.Progress.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None);
+                _ = run.Progress.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed);
             }
         });
         return await importService.ImportLayerAsync(request, reporter, run.Token).ConfigureAwait(false);

@@ -34,46 +34,26 @@ public sealed partial class ImportJobExecutorTests
         var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
 
         const string jobId = "geoservices-result";
-        var request = GeoservicesRequest(jobId) with
-        {
-            LayerId = 2,
-            TableName = "geoservices_result_test",
-            AutoPublish = true,
-            ServiceName = "imported-service"
-        };
+        var request = PublishedGeoservicesRequest(jobId, 2);
         var progress = GeoservicesImportProgress.CreateInitial(jobId, request.ServiceUrl, request.LayerId, request.TableName) with
         {
             ServiceName = request.ServiceName
         };
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);
-        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
 
-        using var cancellation = new CancellationTokenSource();
-        var record = (await jobs.GetAsync(jobId))!;
-        var execution = service.ExecuteAsync(record, Substitute.For<IJobExecutionContext>(), cancellation.Token);
-        try
-        {
-            await WaitForAsync(
-                async () => (await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false))?.Status == GeoservicesImportStatus.Completed,
-                TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+        await service.ExecuteAsync((await jobs.GetAsync(jobId))!, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
 
-            var completed = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
-            completed.Should().NotBeNull();
-            completed!.CurrentPhase.Should().Be("Import completed and layer published");
-            completed.ServiceName.Should().Be("imported-service");
-            completed.PublishedLayerId.Should().Be(42);
-            completed.LayerId.Should().Be(42);
-            completed.SourceKind.Should().Be("geoservices-rest");
-            completed.SourceUrl.Should().Be(request.ServiceUrl);
-            completed.SourceLayerName.Should().Be("Roads");
-            completed.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Unverified);
-        }
-        finally
-        {
-            cancellation.Cancel();
-            await ImportExecutionTestJobs.ObserveAsync(execution);
-        }
+        var completed = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
+        completed.Should().NotBeNull();
+        completed!.CurrentPhase.Should().Be("Import completed and layer published");
+        completed.ServiceName.Should().Be("imported-service");
+        completed.PublishedLayerId.Should().Be(42);
+        completed.LayerId.Should().Be(42);
+        completed.SourceKind.Should().Be("geoservices-rest");
+        completed.SourceUrl.Should().Be(request.ServiceUrl);
+        completed.SourceLayerName.Should().Be("Roads");
+        completed.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Unverified);
     }
 
     [UnitTest]
@@ -83,44 +63,24 @@ public sealed partial class ImportJobExecutorTests
         var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
 
         const string jobId = "geoservices-needs-review";
-        var request = GeoservicesRequest(jobId) with
-        {
-            LayerId = 3,
-            TableName = "geoservices_review_test",
-            AutoPublish = true,
-            ServiceName = "imported-service"
-        };
+        var request = PublishedGeoservicesRequest(jobId, 3);
         var progress = GeoservicesImportProgress.CreateInitial(jobId, request.ServiceUrl, request.LayerId, request.TableName);
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);
-        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
 
-        using var cancellation = new CancellationTokenSource();
-        var record = (await jobs.GetAsync(jobId))!;
-        var execution = service.ExecuteAsync(record, Substitute.For<IJobExecutionContext>(), cancellation.Token);
-        try
-        {
-            await WaitForAsync(
-                async () => (await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false))?.CompletedAt is not null,
-                TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+        await service.ExecuteAsync((await jobs.GetAsync(jobId))!, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
 
-            var stored = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
-            stored.Should().NotBeNull();
-            stored!.Status.Should().Be(GeoservicesImportStatus.NeedsReview);
-            stored.CurrentPhase.Should().Be("Import published but requires operator review (fidelity gate)");
-            stored.ErrorMessage.Should().Be(NeedsReviewGeoservicesImportService.ReviewReason);
-            stored.FailedFeatures.Should().Be(2);
-            stored.PublishedLayerId.Should().Be(77);
-            stored.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
-            var difference = stored.FidelityDifferences.Should().ContainSingle().Subject;
-            difference.Code.Should().Be(MigrationFidelityDifferenceCodes.RecordsLost);
-            difference.Actual.Should().Be("2 dropped source records");
-        }
-        finally
-        {
-            cancellation.Cancel();
-            await ImportExecutionTestJobs.ObserveAsync(execution);
-        }
+        var stored = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(GeoservicesImportStatus.NeedsReview);
+        stored.CurrentPhase.Should().Be("Import published but requires operator review (fidelity gate)");
+        stored.ErrorMessage.Should().Be(NeedsReviewGeoservicesImportService.ReviewReason);
+        stored.FailedFeatures.Should().Be(2);
+        stored.PublishedLayerId.Should().Be(77);
+        stored.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        var difference = stored.FidelityDifferences.Should().ContainSingle().Subject;
+        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.RecordsLost);
+        difference.Actual.Should().Be("2 dropped source records");
     }
 
     [UnitTest]
@@ -131,17 +91,10 @@ public sealed partial class ImportJobExecutorTests
         var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
 
         const string jobId = "geoservices-cancel-after-commit";
-        var request = GeoservicesRequest(jobId) with
-        {
-            LayerId = 4,
-            TableName = "geoservices_cancel_after_commit",
-            AutoPublish = true,
-            ServiceName = "imported-service"
-        };
+        var request = PublishedGeoservicesRequest(jobId, 4);
         var progress = GeoservicesImportProgress.CreateInitial(jobId, request.ServiceUrl, request.LayerId, request.TableName);
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);
-        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
 
         using var cancellation = new CancellationTokenSource();
         var record = (await jobs.GetAsync(jobId))!;
@@ -169,13 +122,7 @@ public sealed partial class ImportJobExecutorTests
                 },
                 TimeSpan.FromSeconds(10)).ConfigureAwait(false);
 
-            var completed = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
-            completed.Should().NotBeNull();
-            completed!.Status.Should().Be(GeoservicesImportStatus.NeedsReview);
-            completed.CurrentPhase.Should().Be("Import cancelled after data was committed");
-            completed.FeaturesProcessed.Should().Be(4);
-            completed.FailedFeatures.Should().Be(1);
-            completed.ErrorMessage.Should().Contain("already committed");
+            AssertCommittedCancellation((await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false))!);
         }
         finally
         {
@@ -191,17 +138,11 @@ public sealed partial class ImportJobExecutorTests
         var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
 
         const string jobId = "geoservices-fail";
-        var request = GeoservicesRequest(jobId) with
-        {
-            LayerId = 0,
-            TableName = "geoservices_fail_test",
-            AutoPublish = false
-        };
+        var request = GeoservicesRequest(jobId);
         var progress = GeoservicesImportProgress.CreateInitial(jobId, request.ServiceUrl, request.LayerId, request.TableName);
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);
         jobManager.ReadRequest((await jobs.GetAsync(jobId))!).Should().NotBeNull();
-        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
 
         using var cancellation = new CancellationTokenSource();
         var record = (await jobs.GetAsync(jobId))!;
@@ -233,16 +174,10 @@ public sealed partial class ImportJobExecutorTests
         var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
 
         const string jobId = "geoservices-cancel";
-        var request = GeoservicesRequest(jobId) with
-        {
-            LayerId = 0,
-            TableName = "geoservices_cancel_test",
-            AutoPublish = false
-        };
+        var request = GeoservicesRequest(jobId);
         var progress = GeoservicesImportProgress.CreateInitial(jobId, request.ServiceUrl, request.LayerId, request.TableName);
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);
-        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
 
         using var cancellation = new CancellationTokenSource();
         var record = (await jobs.GetAsync(jobId))!;
@@ -252,15 +187,7 @@ public sealed partial class ImportJobExecutorTests
             var importService = provider.GetRequiredService<ThrowingGeoservicesImportService>();
             await importService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
-            await jobManager.ProgressStore.SetProgressAsync(
-                jobId,
-                progress with
-                {
-                    Status = GeoservicesImportStatus.Cancelled,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Cancellation requested"
-                },
-                TimeSpan.FromMinutes(10)).ConfigureAwait(false);
+            await RecordCancellationAsync(jobManager, progress);
             cancellation.Cancel();
             await ImportExecutionTestJobs.ObserveAsync(execution);
 
@@ -287,16 +214,10 @@ public sealed partial class ImportJobExecutorTests
         var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider, policy);
 
         const string jobId = "geoservices-cancel";
-        var request = GeoservicesRequest(jobId) with
-        {
-            LayerId = 0,
-            TableName = "geoservices_cancel_test",
-            AutoPublish = false
-        };
+        var request = GeoservicesRequest(jobId);
         var progress = GeoservicesImportProgress.CreateInitial(jobId, request.ServiceUrl, request.LayerId, request.TableName);
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);
-        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
 
         using var cancellation = new CancellationTokenSource();
         var record = (await jobs.GetAsync(jobId))!;
@@ -323,4 +244,13 @@ public sealed partial class ImportJobExecutorTests
             await ImportExecutionTestJobs.ObserveAsync(execution);
         }
     }
+    private static void AssertCommittedCancellation(GeoservicesImportProgress completed)
+    {
+        completed.Status.Should().Be(GeoservicesImportStatus.NeedsReview);
+        completed.CurrentPhase.Should().Be("Import cancelled after data was committed");
+        completed.FeaturesProcessed.Should().Be(4);
+        completed.FailedFeatures.Should().Be(1);
+        completed.ErrorMessage.Should().Contain("already committed");
+    }
+
 }

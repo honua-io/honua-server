@@ -37,7 +37,6 @@ public sealed partial class ImportJobExecutorTests
         var progress = GeoServerImportProgress.CreateInitial(jobId, request.GeoServerRestUrl, request.TargetHonuaUrl);
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);
-        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
 
         using var cancellation = new CancellationTokenSource();
         var record = (await jobs.GetAsync(jobId))!;
@@ -73,7 +72,6 @@ public sealed partial class ImportJobExecutorTests
         var progress = GeoServerImportProgress.CreateInitial(jobId, request.GeoServerRestUrl, request.TargetHonuaUrl);
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);
-        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
 
         using var cancellation = new CancellationTokenSource();
         var record = (await jobs.GetAsync(jobId))!;
@@ -83,15 +81,7 @@ public sealed partial class ImportJobExecutorTests
             var importService = provider.GetRequiredService<ThrowingGeoServerImportService>();
             await importService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
-            await jobManager.ProgressStore.SetProgressAsync(
-                jobId,
-                progress with
-                {
-                    Status = GeoServerImportStatus.Cancelled,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Cancellation requested"
-                },
-                TimeSpan.FromMinutes(10)).ConfigureAwait(false);
+            await RecordCancellationAsync(jobManager, progress);
             cancellation.Cancel();
             await ImportExecutionTestJobs.ObserveAsync(execution);
 
@@ -113,7 +103,7 @@ public sealed partial class ImportJobExecutorTests
     {
         var importer = new ThrowingGeoServerImportService(ThrowingBehavior.ThrowAfterCancellation);
         using var provider = CreateGeoServerProvider(importer);
-        var (jobs, jobManager, service) = CreateGeoServerExecutor(provider);
+        var (jobs, manager, executor) = CreateGeoServerExecutor(provider);
         const string jobId = "geoserver-worker-interrupted";
         var request = GeoServerRequest(jobId);
         await manager.SubmitAsync(request,
@@ -147,7 +137,7 @@ public sealed partial class ImportJobExecutorTests
     {
         var importer = new ThrowingGeoservicesImportService(ThrowingBehavior.ThrowAfterCancellation);
         using var provider = CreateGeoservicesProvider(importer);
-        var (jobs, jobManager, service) = CreateGeoservicesExecutor(provider);
+        var (jobs, manager, executor) = CreateGeoservicesExecutor(provider);
         const string jobId = "geoservices-worker-interrupted";
         var request = GeoservicesRequest(jobId) with
         {
@@ -195,7 +185,6 @@ public sealed partial class ImportJobExecutorTests
         var progress = GeoServerImportProgress.CreateInitial(jobId, request.GeoServerRestUrl, request.TargetHonuaUrl);
 
         await jobManager.SubmitAsync(request, progress, CancellationToken.None);
-        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
 
         using var cancellation = new CancellationTokenSource();
         var record = (await jobs.GetAsync(jobId))!;
