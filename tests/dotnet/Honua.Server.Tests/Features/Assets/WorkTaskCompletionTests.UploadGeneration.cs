@@ -12,9 +12,9 @@ namespace Honua.Server.Tests.Features.Assets;
 public sealed partial class WorkTaskCompletionTests
 {
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Reserve_ConfigurationChangesAfterAuthorization_RejectsWithoutMetadata(bool concurrentWriter)
+    [InlineData(ConfigurationWriteTiming.Committed)]
+    [InlineData(ConfigurationWriteTiming.Concurrent)]
+    public async Task Reserve_ConfigurationChangesAfterAuthorization_RejectsWithoutMetadata(ConfigurationWriteTiming timing)
     {
         var taskId = await StartedInspectionAsync(_assets[0].AssetId);
         var generation = await AttachmentGenerationAsync();
@@ -23,7 +23,7 @@ public sealed partial class WorkTaskCompletionTests
         await using var update = new NpgsqlCommand(
             "UPDATE honua.configuration_generation SET generation = generation + 1 WHERE singleton", writer, transaction);
         await update.ExecuteNonQueryAsync();
-        if (!concurrentWriter)
+        if (timing == ConfigurationWriteTiming.Committed)
         {
             await transaction.CommitAsync();
         }
@@ -31,7 +31,7 @@ public sealed partial class WorkTaskCompletionTests
         var store = scope.ServiceProvider.GetRequiredService<IWorkTaskAttachmentStore>();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var reservation = ReserveAttachmentAsync(store, (taskId, generation), timeout.Token);
-        if (concurrentWriter)
+        if (timing == ConfigurationWriteTiming.Concurrent)
         {
             await WaitForDatabaseBlockAsync(writer.ProcessID, timeout.Token);
             await transaction.CommitAsync();

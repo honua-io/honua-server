@@ -72,13 +72,13 @@ internal static class AssetProfileEndpoints
 
     }
 
-    private static Task<IResult> HandleList(HttpContext context, [FromServices] AssetProfileService service)
+    private static Task<IResult> HandleList(HttpContext context, [FromServices] AssetProfileReadService service)
         => service.ListAsync(context);
 
     private static Task<IResult> HandleCreate(HttpContext context, [FromServices] AssetProfileService service)
         => service.CreateAsync(context);
 
-    private static Task<IResult> HandleGet(HttpContext context, [FromServices] AssetProfileService service, Guid profileId)
+    private static Task<IResult> HandleGet(HttpContext context, [FromServices] AssetProfileReadService service, Guid profileId)
         => service.GetAsync(context, profileId);
 
     private static Task<IResult> HandleUpdate(HttpContext context, [FromServices] AssetProfileService service, Guid profileId)

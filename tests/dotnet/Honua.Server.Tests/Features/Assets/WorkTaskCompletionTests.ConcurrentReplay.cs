@@ -18,11 +18,11 @@ namespace Honua.Server.Tests.Features.Assets;
 public sealed partial class WorkTaskCompletionTests
 {
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(ReplayPayload.Same)]
+    [InlineData(ReplayPayload.Changed)]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/tasks/{taskId}/completion")]
-    public async Task Complete_FirstCommitAfterReceiptLookup_ReplaysClaimedAttachment(bool changedPayload)
+    public async Task Complete_FirstCommitAfterReceiptLookup_ReplaysClaimedAttachment(ReplayPayload payload)
     {
         await UseAttachmentCompletionFormAsync();
         var taskId = await StartedInspectionAsync(_assets[0].AssetId);
@@ -47,7 +47,7 @@ public sealed partial class WorkTaskCompletionTests
             }
             return await realStore.FindReceiptAsync(call.Arg<AssetCommand>());
         });
-        var retry = changedPayload ? request with { Notes = "A different completion payload." } : request;
+        var retry = payload == ReplayPayload.Changed ? request with { Notes = "A different completion payload." } : request;
         var context = CompletionReplayContext(scope.ServiceProvider, (task.CreatedBy, retry));
         var service = new WorkTaskCompletionService(racingStore,
             scope.ServiceProvider.GetRequiredService<IConfigurationGenerationSource>(),
@@ -56,9 +56,9 @@ public sealed partial class WorkTaskCompletionTests
         var result = await service.CompleteAsync(context, taskId);
 
         ((IStatusCodeHttpResult)result).StatusCode.Should().Be(
-            changedPayload ? StatusCodes.Status409Conflict : StatusCodes.Status200OK);
+            payload == ReplayPayload.Changed ? StatusCodes.Status409Conflict : StatusCodes.Status200OK);
         context.Response.Headers["Honua-Command-Outcome"].ToString().Should().Be(
-            changedPayload ? string.Empty : AssetCommandOutcome.Duplicate);
+            payload == ReplayPayload.Changed ? string.Empty : AssetCommandOutcome.Duplicate);
         (await AssetTestData.CountAsync(_fixture, "asset_inspections")).Should().Be(1);
     }
 

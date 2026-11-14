@@ -14,11 +14,11 @@ namespace Honua.Server.Tests.Features.Assets;
 public sealed partial class WorkTaskCompletionTests
 {
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(ConfigurationWriteTiming.Committed)]
+    [InlineData(ConfigurationWriteTiming.Concurrent)]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/tasks/{taskId}/completion")]
-    public async Task Complete_ConfigurationChangesAfterAuthorization_RejectsWithoutWrites(bool concurrentWriter)
+    public async Task Complete_ConfigurationChangesAfterAuthorization_RejectsWithoutWrites(ConfigurationWriteTiming timing)
     {
         await MapInspectionFieldsAsync();
         var assetId = _assets[0].AssetId;
@@ -35,14 +35,14 @@ public sealed partial class WorkTaskCompletionTests
         await using var update = new NpgsqlCommand(
             "UPDATE honua.configuration_generation SET generation = generation + 1 WHERE singleton", writer, transaction);
         await update.ExecuteNonQueryAsync();
-        if (!concurrentWriter)
+        if (timing == ConfigurationWriteTiming.Committed)
         {
             await transaction.CommitAsync();
         }
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var pending = store.CompleteAsync(completion, timeout.Token);
-        if (concurrentWriter)
+        if (timing == ConfigurationWriteTiming.Concurrent)
         {
             // Observe the actual database wait before committing; timing alone cannot prove the race.
             await WaitForDatabaseBlockAsync(writer.ProcessID, timeout.Token);
@@ -93,8 +93,11 @@ public sealed partial class WorkTaskCompletionTests
 
     private static WorkTaskCompletionCommand GenerationCommand(Guid taskId, WorkTaskCompletionRequest request,
         (long Generation, long ProfileVersion) configuration)
-        => new(taskId, request, new WorkTaskActor("crew-b", true))
+        => new()
         {
+            TaskId = taskId,
+            Request = request,
+            Actor = new WorkTaskActor("crew-b", true),
             Command = new AssetCommand(request.CommandId!.Value, WebAppFixture.TestServiceId, WorkTaskAction.Complete, "crew-b", new string('a', 64)),
             ConfigurationGeneration = configuration.Generation,
             AssetWriteback = new WorkTaskAssetWriteback(configuration.ProfileVersion, WebAppFixture.TestLayerId, null),

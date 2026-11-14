@@ -11,16 +11,16 @@ namespace Honua.Server.Tests.Features.Assets;
 public sealed partial class WorkTaskCompletionTests
 {
     [IntegrationTheory]
-    [InlineData("pending", "crew-b", false)]
-    [InlineData("ready", "another-crew", false)]
-    [InlineData("ready", "crew-b", true)]
-    [InlineData("expired", "crew-b", true)]
+    [InlineData("pending", "crew-b", UploadExpiry.Future)]
+    [InlineData("ready", "another-crew", UploadExpiry.Future)]
+    [InlineData("ready", "crew-b", UploadExpiry.Past)]
+    [InlineData("expired", "crew-b", UploadExpiry.Past)]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/tasks/{taskId}/completion")]
-    public async Task Complete_UnownedOrUnreadyAttachment_LeavesEvidenceUnchanged(string state, string owner, bool expired)
+    public async Task Complete_UnownedOrUnreadyAttachment_LeavesEvidenceUnchanged(string state, string owner, UploadExpiry expiry)
     {
         var taskId = await StartedInspectionAsync(_assets[0].AssetId);
-        var attachmentId = await InsertAttachmentAsync(taskId, (state, owner, expired));
+        var attachmentId = await InsertAttachmentAsync(taskId, (state, owner, expiry == UploadExpiry.Past));
         var command = await AttachmentCommandAsync(taskId, attachmentId);
 
         using var scope = _fixture.Services.CreateScope();

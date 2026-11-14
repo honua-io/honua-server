@@ -15,6 +15,7 @@ internal static class AssetsServiceCollectionExtensions
         services.AddScoped<AssetProfileValidator>();
         services.AddScoped<AssetProfileActivationValidator>();
         services.AddScoped<AssetProfileService>();
+        services.AddScoped<AssetProfileReadService>();
         services.AddScoped<AssetCompletionCapabilities>();
         services.AddScoped<Tasks.WorkTaskAssetResolver>();
         services.AddScoped<Tasks.WorkTaskAssetReader>();

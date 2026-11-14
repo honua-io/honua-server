@@ -12,10 +12,10 @@ namespace Honua.Server.Tests.Features.Assets;
 public sealed partial class WorkTaskCompletionTests
 {
     [IntegrationTheory]
-    [InlineData("photo", 1024, false)]
-    [InlineData("receipt", 32, true)]
-    [InlineData("receipt", 31, false)]
-    public async Task Reserve_ExistingUpload_EnforcesFieldAndTotalLimits(string field, long totalLimit, bool accepted)
+    [InlineData("photo", 1024, ReservationOutcome.Rejected)]
+    [InlineData("receipt", 32, ReservationOutcome.Accepted)]
+    [InlineData("receipt", 31, ReservationOutcome.Rejected)]
+    public async Task Reserve_ExistingUpload_EnforcesFieldAndTotalLimits(string field, long totalLimit, ReservationOutcome outcome)
     {
         var taskId = await StartedInspectionAsync(_assets[0].AssetId);
         var generation = await AttachmentGenerationAsync();
@@ -34,21 +34,21 @@ public sealed partial class WorkTaskCompletionTests
             ConfigurationGeneration = generation, IsPlanner = false, MaxCount = 5, MaxFieldCount = 1, MaxTotalBytes = totalLimit,
         });
 
-        reserved.Should().Be(accepted);
-        (await store.GetAsync(id) is not null).Should().Be(accepted);
-        (await AssetTestData.CountAsync(_fixture, "work_task_attachments")).Should().Be(accepted ? 2 : 1);
+        reserved.Should().Be(outcome == ReservationOutcome.Accepted);
+        (await store.GetAsync(id) is not null).Should().Be(outcome == ReservationOutcome.Accepted);
+        (await AssetTestData.CountAsync(_fixture, "work_task_attachments")).Should().Be(outcome == ReservationOutcome.Accepted ? 2 : 1);
     }
 
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Reserve_TaskChangesWhileUploadWaits_RejectsWithoutMetadata(bool cancelled)
+    [InlineData(TaskChange.Reassigned)]
+    [InlineData(TaskChange.Cancelled)]
+    public async Task Reserve_TaskChangesWhileUploadWaits_RejectsWithoutMetadata(TaskChange change)
     {
         var taskId = await StartedInspectionAsync(_assets[0].AssetId);
         var generation = await AttachmentGenerationAsync();
         await using var writer = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
         await using var transaction = await writer.BeginTransactionAsync();
-        await using var update = new NpgsqlCommand(cancelled
+        await using var update = new NpgsqlCommand(change == TaskChange.Cancelled
             ? "UPDATE honua.work_tasks SET status = 'cancelled', cancel_reason = 'No longer required' WHERE task_id = @id"
             : "UPDATE honua.work_tasks SET assignee = 'another-crew' WHERE task_id = @id", writer, transaction);
         update.Parameters.AddWithValue("id", taskId);
