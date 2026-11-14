@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Configuration;
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class ConfigurationRuntimeMiddlewareTests
 {
-    [Fact]
+    [UnitTest]
     public async Task UseSharedConfiguration_MalformedDataSource_DefersConstructionUntilGuardedPreflight()
     {
         var services = new ServiceCollection();
@@ -31,7 +31,7 @@ public sealed class ConfigurationRuntimeMiddlewareTests
         configure.Should().NotThrow();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task UseRateLimiting_DatabaseBackedPolicy_DefersConstructionUntilRequests()
     {
         var services = new ServiceCollection();
@@ -46,7 +46,7 @@ public sealed class ConfigurationRuntimeMiddlewareTests
         build.Should().NotThrow();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("/healthz/live", StatusCodes.Status204NoContent, 0)]
     [InlineData("/api/v1/admin/metadata", StatusCodes.Status503ServiceUnavailable, 1)]
     public async Task UseSharedConfiguration_UnmigratedDatabase_DefersResolutionAndRefusesProtectedRequests(
