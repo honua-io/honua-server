@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Caching;
+using Honua.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Xunit;
