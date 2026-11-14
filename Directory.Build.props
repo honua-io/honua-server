@@ -49,12 +49,6 @@
 
   <PropertyGroup>
     <LangVersion>preview</LangVersion>
-    <!--
-      Runtime async (.NET 11): the runtime, not compiler-generated state machines, suspends
-      async methods. An incremental AOT publish does not notice a change to this flag alone:
-      clean obj/ after toggling it locally; CI build caches are keyed on this file.
-    -->
-    <Features>$(Features);runtime-async=on</Features>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

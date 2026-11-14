@@ -1,4 +1,11 @@
 <Project>
+  <!-- TargetFramework is set after Directory.Build.props is imported. Keep the .NET 10
+       plugin assets on compiler-generated state machines; only .NET 11 supports runtime async.
+       Clean bin/obj after changing this opt-in when validating incremental/AOT outputs. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net11.0'">
+    <Features>$(Features);runtime-async=on</Features>
+  </PropertyGroup>
+
   <!-- Evaluate ownership after SDK/NuGet imports, rather than guessing from paths.
        Multi-targeted projects stay in the source pass conservatively. -->
   <Target Name="HonuaGetAnalyzerOwnership" Returns="@(_HonuaAnalyzerOwnership)">
