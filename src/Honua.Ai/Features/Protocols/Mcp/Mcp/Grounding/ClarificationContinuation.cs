@@ -131,7 +131,16 @@ internal sealed class ClarificationContinuation
         var merged = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         foreach (var (questionId, values) in rounds.SelectMany(static round => round))
         {
-            merged[questionId] = values;
+            // An empty answer (a declined confirmation) withdraws any value carried from an earlier round,
+            // so the question is asked again instead of reaching validation as a blank answer.
+            if (values.Count == 0)
+            {
+                merged.Remove(questionId);
+            }
+            else
+            {
+                merged[questionId] = values;
+            }
         }
 
         return merged;

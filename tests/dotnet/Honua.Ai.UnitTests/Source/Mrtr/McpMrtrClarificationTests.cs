@@ -5,10 +5,6 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
-using Honua.Ai.Grounding;
-using Honua.Geoprocessing;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Mrtr;
@@ -31,45 +27,47 @@ public sealed class McpMrtrClarificationTests
     private readonly IGroundingService _grounding = Substitute.For<IGroundingService>();
 
     [UnitTheory]
-    [InlineData("destructive.confirm", "Analyze", false)]
-    [InlineData("destructive.confirm", "Analyze", true)]
-    [InlineData("workflow_family.blocked", "BuildApp", false)]
-    [InlineData("workflow_family.blocked", "BuildApp", true)]
-    public async Task GroundCandidates_BooleanConfirmation_OnlyTrueResolvesQuestion(
-        string questionId, string family, bool confirmed)
+    [InlineData("destructive.confirm", false)]
+    [InlineData("destructive.confirm", true)]
+    [InlineData("workflow_family.blocked", false)]
+    [InlineData("workflow_family.blocked", true)]
+    public async Task GroundCandidates_BooleanConfirmation_OnlyTrueResolvesQuestion(string questionId, bool confirmed)
     {
-        var authorization = Substitute.For<IGroundingAuthorizationFilter>();
-        authorization.FilterAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<IReadOnlyList<GroundingCandidate>>(),
-            Arg.Any<CancellationToken>()).Returns(call => Task.FromResult(call.ArgAt<IReadOnlyList<GroundingCandidate>>(1)));
-        var grounding = new GroundingService(new DeterministicGroundingEngine(), new BuiltInProcessCatalog(),
-            authorization, Options.Create(new GroundingOptions()), NullLogger<GroundingService>.Instance,
-            serviceScopeFactory: null, metadataGraphProvider: null);
-        using var services = Services(grounding);
-        var arguments = JsonSerializer.Serialize(new { goal = "delete features", workflowFamilyHint = family });
-        // A negative answer must also replace a confirmation carried from an earlier round.
+        Grounds(Asking(questionId));
+        using var services = Services(_grounding);
+        // A negative answer must also withdraw a confirmation carried from an earlier round.
         var reference = JsonSerializer.Serialize(new
         {
-            i = "intent-confirmation",
+            i = "intent-abc",
             a = new Dictionary<string, string[]>
             {
-                ["process.selection"] = ["data-management.delete-features"],
+                ["workflow_family"] = ["Analyze"],
                 [questionId] = ["true"],
             },
         });
-        var state = Mint(services, Binding(services, GroundCandidatesTool.ToolName, arguments),
+        var state = Mint(services, Binding(services, GroundCandidatesTool.ToolName, Goal),
             new(McpRequestStateKind.Clarification, reference, InMinutes(services, 5)));
         var responses = JsonSerializer.Serialize(new
         {
             clarify = new { action = "accept", content = new Dictionary<string, bool> { [questionId] = confirmed } },
         });
 
-        var result = (await SendAsync(services, new McpCall(arguments, FormCapable)
+        var result = (await SendAsync(services, new McpCall(Goal, FormCapable)
         {
             RequestState = state,
             InputResponses = responses,
         })).GetProperty("result");
 
-        result.GetRawText().Contains(questionId, StringComparison.Ordinal).Should().Be(!confirmed);
+        result.GetProperty("resultType").GetString().Should().Be("input_required", result.GetRawText());
+        await _grounding.Received(1).GroundAsync(
+            Arg.Is<GroundingRequest>(request => request.IntentId == "intent-abc"
+                && request.ClarificationResponse != null
+                && request.ClarificationResponse.Answers["workflow_family"].Single() == "Analyze"
+                && (confirmed
+                    ? request.ClarificationResponse.Answers[questionId].Single() == "true"
+                    : !request.ClarificationResponse.Answers.ContainsKey(questionId))),
+            Arg.Any<ClaimsPrincipal>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
