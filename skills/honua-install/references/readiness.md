@@ -1,7 +1,7 @@
 # Readiness without extra container packages
 
 The quickstart's image includes a compiled health probe. Do not assume a
-shell, `wget`, `curl`, or a package manager exists inside it.
+shell, HTTP download tool or package manager exists inside it.
 
 From the quickstart directory, check the serving container with:
 
