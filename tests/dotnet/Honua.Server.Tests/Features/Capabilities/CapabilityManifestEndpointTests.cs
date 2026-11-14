@@ -109,6 +109,8 @@ public sealed partial class CapabilityManifestEndpointTests
                         ["Limits:Analytics:MaxDensityCellSizeMeters"] = "34567.5",
                         ["Limits:Analytics:MaxDWithinDistanceMeters"] = "45678.5",
                         ["FeatureStreaming:MaxConcurrentSessions"] = "12",
+                        ["Realtime:ResumeMaxEvents"] = "73",
+                        ["FeatureChangeEvents:MaxRetainedEvents"] = "99",
                         ["Grpc:StreamBatchSize"] = "42",
                         ["Capabilities:ManifestFromRegistry"] = manifestFromRegistry ? "true" : "false",
                         ["Capabilities:Experimental:Enabled"] = experimentalGlobalEnabled ? "true" : "false",
@@ -628,6 +630,8 @@ public sealed partial class CapabilityManifestEndpointTests
             .Should().Be(123456);
         root.GetProperty("limits").GetProperty("streaming").GetProperty("maxConcurrentSessions").GetInt32()
             .Should().Be(12);
+        root.GetProperty("limits").GetProperty("streaming").GetProperty("cursorRetentionLimit").GetInt32()
+            .Should().Be(73);
         root.GetProperty("limits").GetProperty("streaming").GetProperty("grpcStreamBatchSize").GetInt32()
             .Should().Be(42);
 

@@ -255,7 +255,18 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     }
 
     internal FeatureStreamEnvelope Project(FeatureStreamEnvelope envelope)
-        => _subscriberSecurity?.Project(envelope) ?? envelope;
+    {
+        if (envelope.ServiceId.Length == 0)
+        {
+            var serviceId = _resolvedServiceId ?? _serviceId ?? _routabilityGuard?.ResolveLayerServiceId(envelope.LayerId);
+            if (serviceId is not null)
+            {
+                envelope = envelope with { ServiceId = serviceId, SourceId = serviceId };
+            }
+        }
+
+        return _subscriberSecurity?.Project(envelope) ?? envelope;
+    }
 
     private static bool MatchesTemporal(
         IReadOnlyDictionary<string, JsonElement> properties,

@@ -236,7 +236,7 @@ internal static partial class FeatureStreamEndpoints
                 ? ["layer", "bbox", "attribute", "temporal"]
                 : [],
             ReplaySupported = enabled,
-            CursorRetentionLimit = deps.EventOptions.Value.MaxRetainedEvents,
+            CursorRetentionLimit = deps.RealtimeOptions.Value.ResumeMaxEvents,
             HeartbeatIntervalSeconds = options.HeartbeatInterval.TotalSeconds,
             MaxConcurrentSessions = options.MaxConcurrentSessions,
             DeleteBeforeImages = enabled,

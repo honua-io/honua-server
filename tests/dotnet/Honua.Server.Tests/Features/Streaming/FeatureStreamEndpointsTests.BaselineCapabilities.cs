@@ -39,7 +39,9 @@ public sealed partial class FeatureStreamEndpointsTests
             using var response = await fixture.CreateAdminClient().GetAsync("/api/v1/streaming/features/capabilities");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var layers = document.RootElement.GetProperty("data").GetProperty("layers");
+            var data = document.RootElement.GetProperty("data");
+            data.GetProperty("cursorRetentionLimit").GetInt32().Should().Be(73);
+            var layers = data.GetProperty("layers");
             layers.GetArrayLength().Should().Be(1);
             layers[0].GetProperty("canSubscribe").GetBoolean().Should().BeTrue();
             var completion = layers[0].GetProperty("canCompleteBaseline");
@@ -177,6 +179,8 @@ public sealed partial class FeatureStreamEndpointsTests
             .ReplaceService(reader)
             .ConfigureWebHost(builder =>
             {
+                builder.UseSetting("Realtime:ResumeMaxEvents", "73");
+                builder.UseSetting("FeatureChangeEvents:MaxRetainedEvents", "99");
                 builder.UseSetting("FeatureStreaming:MaxSnapshotFeatures", maximumSnapshotFeatures.ToString(CultureInfo.InvariantCulture));
                 builder.UseSetting("FeatureStreaming:MaxSnapshotScanRows", Math.Max(20000, maximumSnapshotFeatures).ToString(CultureInfo.InvariantCulture));
             });

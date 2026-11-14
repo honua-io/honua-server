@@ -11,7 +11,7 @@ using Honua.ControlPlane;
 using Honua.Import.FileImport;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
-using Honua.Infrastructure.Events;
+using Honua.Server.Features.Realtime;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Capabilities.Models;
@@ -27,7 +27,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
     public CapabilityManifestOptionsSnapshot(
         IOptions<LimitsOptions> limitsOptions,
         IOptions<FeatureStreamOptions> streamOptions,
-        IOptions<FeatureChangeEventOptions> eventOptions,
+        IOptions<RealtimeOptions> realtimeOptions,
         IOptions<ClientCertificateAuthenticationOptions> clientCertificateOptions,
         IOptions<ControlPlaneOptions> controlPlaneOptions,
         IOptions<FileUploadOptions> fileUploadOptions,
@@ -52,7 +52,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
             .Any(static bucket => !string.IsNullOrWhiteSpace(bucket)) == true;
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
-        ArgumentNullException.ThrowIfNull(eventOptions);
+        ArgumentNullException.ThrowIfNull(realtimeOptions);
         ArgumentNullException.ThrowIfNull(clientCertificateOptions);
         ArgumentNullException.ThrowIfNull(controlPlaneOptions);
         ArgumentNullException.ThrowIfNull(fileUploadOptions);
@@ -69,7 +69,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
 
         Limits = limitsOptions.Value;
         Streaming = streamOptions.Value;
-        FeatureChangeEvents = eventOptions.Value;
+        Realtime = realtimeOptions.Value;
         ClientCertificate = clientCertificateOptions.Value;
         ControlPlane = controlPlaneOptions.Value;
         FileUpload = fileUploadOptions.Value;
@@ -100,7 +100,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
 
     public FeatureStreamOptions Streaming { get; }
 
-    public FeatureChangeEventOptions FeatureChangeEvents { get; }
+    public RealtimeOptions Realtime { get; }
 
     public ClientCertificateAuthenticationOptions ClientCertificate { get; }
 
