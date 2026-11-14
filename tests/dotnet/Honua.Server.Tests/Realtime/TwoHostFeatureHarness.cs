@@ -156,8 +156,9 @@ internal sealed class MarkedFeatureStream(string marker)
     {
         using var document = JsonDocument.Parse(data);
         var envelope = document.RootElement;
-        if (!envelope.TryGetProperty("serviceId", out var serviceId) || serviceId.GetString() != "test" ||
-            !envelope.TryGetProperty("attributes", out var attributes) ||
+        // The envelope carries the internal service id, not the route name; the per-run GUID
+        // marker on the committed image is what identifies this run's edits.
+        if (!envelope.TryGetProperty("attributes", out var attributes) ||
             attributes.ValueKind != JsonValueKind.Object ||
             !attributes.TryGetProperty("name", out var nameElement) ||
             nameElement.ValueKind != JsonValueKind.String ||
