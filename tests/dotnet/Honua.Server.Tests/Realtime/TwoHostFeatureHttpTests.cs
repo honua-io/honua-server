@@ -5,6 +5,7 @@ using System.Diagnostics;
 using FluentAssertions;
 using Honua.Core.Features.Realtime;
 using Honua.Server.Features.Realtime;
+using Honua.Server.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -143,6 +144,8 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         using var response = await TwoHostFeatureHarness.OpenStreamAsync(subscriber, null, timeout.Token);
         using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(timeout.Token));
         var reading = ReadChangesAsync(reader, Edits, timeout.Token);
+        using var sampling = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var relayTimes = SampleRelayAsync(TwoHostFeatureHarness.Relay(_taskB), sampling.Token);
         var committed = new Dictionary<long, long>();
         for (var i = 0; i < Edits; i++)
         {
@@ -155,13 +158,55 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         }
 
         var frames = await reading;
+        await sampling.CancelAsync();
+        var relayed = await relayTimes;
         AssertCompleteOrderedDelivery(frames, committed.Keys);
         // Measure from before the HTTP edit, so this includes request and commit time
         // rather than understating latency when SSE beats the edit response back.
         var latencies = frames.Select(frame => Stopwatch.GetElapsedTime(committed[frame.ObjectId], frame.ReceivedAt))
             .Order().ToArray();
-        latencies[(int)Math.Ceiling(Edits * 0.95) - 1].Should().BeLessThanOrEqualTo(latencyTarget);
+        // Split each delivery at the moment task B's relay passed the frame's generation, so a
+        // miss says whether the wait was in the provider (commit to relay) or the stream (relay to frame).
+        var toRelay = frames.Select(frame => Stopwatch.GetElapsedTime(committed[frame.ObjectId], RelayedAt(relayed, frame)))
+            .Order().ToArray();
+        var toFrame = frames.Select(frame => Stopwatch.GetElapsedTime(RelayedAt(relayed, frame), frame.ReceivedAt))
+            .Order().ToArray();
+        var p95 = (int)Math.Ceiling(Edits * 0.95) - 1;
+        latencies[p95].Should().BeLessThanOrEqualTo(latencyTarget,
+            $"p95 commit-to-relay was {toRelay[p95].TotalMilliseconds:F0} ms and relay-to-frame {toFrame[p95].TotalMilliseconds:F0} ms");
     }
+
+    // Records when task B's feature relay first reached each position, sampled every few
+    // milliseconds; the relay position is the generation it last handed to local sessions.
+    private static async Task<List<(long Position, long At)>> SampleRelayAsync(
+        FeatureStreamRealtimeRelay relay, CancellationToken cancellationToken)
+    {
+        var samples = new List<(long Position, long At)>();
+        var last = relay.Position;
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var position = relay.Position;
+                if (position != last)
+                {
+                    samples.Add((position, Stopwatch.GetTimestamp()));
+                    last = position;
+                }
+                await Task.Delay(2, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Sampling ends with delivery.
+        }
+        return samples;
+    }
+
+    private static long RelayedAt(List<(long Position, long At)> samples, FeatureFrame frame)
+        => samples.FirstOrDefault(sample => sample.Position >= frame.Generation) is { At: > 0 } sample
+            ? sample.At
+            : frame.ReceivedAt;
 
     [IntegrationTest(Timeout = 240000)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
@@ -212,22 +257,20 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
         using var response = await TwoHostFeatureHarness.OpenStreamAsync(subscriber, null, timeout.Token);
         using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(timeout.Token));
         var reading = ReadUntilStreamClosesAsync(reader, timeout.Token);
-        Task? stopping = null;
         for (var i = 0; i < Edits; i++)
         {
             if (i == beforeStop)
             {
-                // Edits keep committing on task A while task B shuts down underneath an open
-                // stream, so the break lands at whatever point delivery had reached.
+                // Task B shuts down underneath the open stream; the rest of the edits commit on
+                // task A only after it has gone, so they can reach the client only by resuming.
                 _taskBStopped = true;
-                stopping = _taskB.DisposeAsync();
+                await _taskB.DisposeAsync();
             }
             committed.Add(await AddAsync(writer, i, timeout.Token));
         }
-        await stopping!;
         var before = await reading;
         before.Should().NotBeEmpty("task B served the stream before it stopped");
-        before.Count.Should().BeLessThan(Edits, "task B stopped before the edits finished");
+        before.Count.Should().BeLessThanOrEqualTo(beforeStop, "task B stopped before the later edits committed");
 
         using var resumed = _taskA.CreateAdminClient();
         using var replay = await TwoHostFeatureHarness.OpenStreamAsync(resumed, before[^1].Id, timeout.Token);

@@ -46,9 +46,7 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
         var perTask = Math.Max(1, (_profile.Subscribers + 1) / 2);
         var overrides = new Dictionary<string, string?>
         {
-            ["FeatureStreaming:MaxConcurrentSessions"] = (perTask + 16).ToString(CultureInfo.InvariantCulture),
-            // One admin key writes every edit; keep the limiter on but sized above the offered rate.
-            ["RateLimiting:GlobalRequestsPerMinute"] = "100000"
+            ["FeatureStreaming:MaxConcurrentSessions"] = (perTask + 16).ToString(CultureInfo.InvariantCulture)
         };
         _taskA = TwoHostFeatureHarness.NewHost(overrides);
         await _taskA.InitializeAsync();

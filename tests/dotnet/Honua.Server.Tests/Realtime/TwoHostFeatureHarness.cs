@@ -35,7 +35,10 @@ internal static class TwoHostFeatureHarness
             // so the object store is configured but never reached (as in the multi-node startup tests).
             ["FileStorage:Provider"] = "AwsS3",
             ["FileStorage:AwsS3:BucketName"] = "honua-two-host-realtime",
-            ["FileStorage:AwsS3:Region"] = "us-west-2"
+            ["FileStorage:AwsS3:Region"] = "us-west-2",
+            // One admin key writes every edit across the whole run, and limiter state can outlive
+            // a host; keep the limiter on but sized above the offered rate.
+            ["RateLimiting:GlobalRequestsPerMinute"] = "100000"
         };
         foreach (var (key, value) in overrides ?? new Dictionary<string, string?>())
         {
@@ -59,9 +62,12 @@ internal static class TwoHostFeatureHarness
     public static void EnableEditing(WebAppFixture task)
         => task.EnableV2ServiceEditingCapabilities("test", ["Query", "Create", "Update", "Delete"]);
 
+    public static FeatureStreamRealtimeRelay Relay(WebAppFixture task)
+        => task.Services.GetServices<IHostedService>().OfType<FeatureStreamRealtimeRelay>().Single();
+
     public static async Task WaitForRelayAsync(WebAppFixture task, CancellationToken cancellationToken)
     {
-        var relay = task.Services.GetServices<IHostedService>().OfType<FeatureStreamRealtimeRelay>().Single();
+        var relay = Relay(task);
         while (relay.Position == 0)
         {
             await Task.Delay(20, cancellationToken);
@@ -76,7 +82,8 @@ internal static class TwoHostFeatureHarness
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         using var document = JsonDocument.Parse(body);
-        var result = document.RootElement.GetProperty("addResults")[0];
+        document.RootElement.TryGetProperty("addResults", out var results).Should().BeTrue(body);
+        var result = results[0];
         result.GetProperty("success").GetBoolean().Should().BeTrue(body);
         return result.GetProperty("objectId").GetInt64();
     }
