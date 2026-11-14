@@ -107,7 +107,7 @@ internal sealed class PairedPublicationCapture
             [.. fields.ParquetFields],
             encodingLimits: limits.GeoParquet,
             fileMetadata: fileMetadata);
-        return payload;
+        return payload.ToArray();
     }
 
     private static FeatureQuery PageQuery(PairedPublicationFields fields, int offset) => new()

@@ -1784,7 +1784,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             returnZ: false, returnM: false, new GeometryLimits(),
             fileMetadata: new Dictionary<string, string> { ["honua:captureId"] = "capture-1" });
 
-        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload.ToArray()));
         reader.Schema.Metadata["honua:captureId"].Should().Be("capture-1");
         reader.Schema.Metadata.Should().ContainKey("geo");
     }
