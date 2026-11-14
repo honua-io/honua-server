@@ -2933,7 +2933,7 @@ jobs:
 
       - name: Restore
         # Scoped to Honua.Core's transitive ProjectReferences; the package
-        # job only pack's Honua.Core. Full-sln restore was over-fetching
+        # job packs Core and its abstractions. Full-sln restore was over-fetching
         # for the entire repo every run.
         run: scripts/ci/dotnet-restore-retry.sh src/Honua.Core/Core/Honua.Core.csproj
 
@@ -2959,11 +2959,13 @@ jobs:
 
       - name: Test package integration
         run: |
-          mkdir -p package-test
-          cd package-test
-          dotnet new console
+          package_version="0.0.0-ci.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          for framework in net10.0 net11.0; do
+          consumer_dir="$(mktemp -d)"
+          dotnet new console --framework "${framework}" --output "${consumer_dir}" --no-restore
+          PACKAGE_SOURCE="$(realpath packages)"
+          pushd "${consumer_dir}" >/dev/null
 
-          PACKAGE_SOURCE="$(realpath ../packages)"
           cat > NuGet.config <<EOF
           <?xml version="1.0" encoding="utf-8"?>
           <configuration>
@@ -3003,11 +3005,21 @@ jobs:
           EOF
 
           # Add package under test
-          VERSION=$(basename "$(ls ../packages/Honua.Core*.nupkg | head -1)" | sed -E 's/^Honua\.Core\.([0-9A-Za-z.-]+)\.nupkg$/\1/')
-          dotnet add package Honua.Core --version "$VERSION"
+          dotnet add package Honua.Core --version "${package_version}"
+
+          cat > Program.cs <<'EOF'
+          using Honua.Core.Exceptions;
+          using Honua.Core.Features.Shared.Models;
+
+          _ = new ValidationException("Package consumer smoke");
+          _ = new SpatialReference { Wkid = 4326 };
+          EOF
 
           # Test build
           dotnet build --configuration Release
+          popd >/dev/null
+          rm -rf "${consumer_dir}"
+          done
 
       - name: Validate server compatibility
         run: |
