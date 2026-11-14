@@ -342,6 +342,32 @@ public sealed class McpStreamingTests
         return new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance, provider);
     }
 
+    [UnitTest]
+    public async Task RealtimeReset_CarriesResumableHeadId_SoReconnectDoesNotResetAgain()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(request =>
+        {
+            request.Writer.TryWrite(new RealtimeDelivery.Reset("retention", 42));
+        })).Returns(Substitute.For<IRealtimeSubscription>());
+        var lease = Substitute.For<IRealtimeStreamLease>();
+        lease.IsHeld.Returns(true);
+        var local = Channel.CreateUnbounded<string>();
+        using var output = new MemoryStream();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await using (var subscription = new RealtimeStreamSubscription(provider, "session-a", 7, lease))
+        {
+            await McpRealtimeStream.PumpAsync(output, local.Reader, subscription, timeout.Token);
+        }
+
+        var frames = Encoding.UTF8.GetString(output.ToArray());
+        frames.Should().Contain("id: mcp:42\nevent: reset\n");
+        var lastEventId = frames.Split('\n').Last(line => line.StartsWith("id: ", StringComparison.Ordinal))["id: ".Length..];
+        McpRealtimeStream.TryParsePosition(lastEventId, out var after).Should().BeTrue();
+        after.Should().Be(42, "a client reconnecting with the reset frame's id resumes at the head instead of being reset again");
+    }
+
     private sealed class RecordingFanoutProvider(List<RealtimeEventDraft> drafts, bool failAppend = false) : IRealtimeFanoutProvider
     {
         public RealtimeProviderCapabilities Capabilities { get; } = new(true, true, true);

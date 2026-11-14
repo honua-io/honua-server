@@ -106,6 +106,31 @@ public sealed class RealtimeNotificationEndpointsTests
     }
 
     [UnitTest]
+    public async Task Jobs_Reset_CarriesHeadIdSoEventSourceReconnectResumesAtHead()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var context = CreateContext("?jobId=mine");
+        provider.GetWindowAsync(RealtimeFamily.Jobs, Arg.Any<CancellationToken>())
+            .Returns(new RealtimeLogWindow(RealtimeFamily.Jobs, 0, 0));
+        jobs.GetJobAsync("mine", context.User, Arg.Any<CancellationToken>()).Returns(new ExecutionJobRecord
+        {
+            OperationId = "mine", Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec { TargetKind = default, Backend = "test", Kind = default, WorkloadName = "test" },
+        });
+        provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(value =>
+        {
+            value.Writer.TryWrite(new RealtimeDelivery.Reset("retention", 9));
+        })).Returns(Substitute.For<IRealtimeSubscription>());
+
+        await RealtimeNotificationEndpoints.HandleJobsAsync(context, provider, jobs);
+
+        var output = Encoding.UTF8.GetString(((MemoryStream)context.Response.Body).ToArray());
+        Assert.Contains("id: jobs:9\nevent: reset\n", output);
+    }
+
+    [UnitTest]
     public async Task Jobs_TooManyScopes_RejectsBeforeAuthorizationOrSubscription()
     {
         var provider = Substitute.For<IRealtimeFanoutProvider>();
@@ -180,7 +205,7 @@ public sealed class RealtimeNotificationEndpointsTests
         await RealtimeNotificationEndpoints.HandleLayersAsync(context, provider, graphs, history);
 
         var output = Encoding.UTF8.GetString(((MemoryStream)context.Response.Body).ToArray());
-        Assert.Contains("event: reset", output);
+        Assert.Contains("id: catalog:4\nevent: reset\n", output);
         Assert.Contains("\"reason\":\"retention\"", output);
         Assert.DoesNotContain("layer.changed", output);
     }
