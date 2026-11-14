@@ -93,6 +93,21 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
+    public void RelayGap_DisconnectsExistingSessionsAndAllowsNewSessions()
+    {
+        using var first = _manager.CreateSession("SSE", null);
+        using var second = _manager.CreateSession("WebSocket", null);
+
+        _manager.DisconnectForReplayGap();
+
+        Assert.True(first.DisconnectToken.IsCancellationRequested);
+        Assert.True(second.DisconnectToken.IsCancellationRequested);
+        Assert.Equal(0, _manager.SessionCount);
+        using var replacement = _manager.CreateSession("SSE", null);
+        Assert.False(replacement.DisconnectToken.IsCancellationRequested);
+    }
+
+    [UnitTest]
     public async Task CreateSession_EnforcesConcurrentCapUnderLoad()
     {
         using var manager = new FeatureStreamSessionManager(

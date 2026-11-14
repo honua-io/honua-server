@@ -106,6 +106,52 @@ public sealed class FeatureChangeLogTests(FeatureChangeDatabaseFixture database)
     }
 
     [IntegrationTest(Timeout = 120000)]
+    public async Task ReadAsync_CapturedPublicIdentity_IsUsedForUpdatesAndDeletes()
+    {
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734207);
+        var before = await layer.HeadAsync();
+        await layer.InsertCapturedChangeAsync(7, 42, 2, DateTimeOffset.UtcNow);
+        await layer.InsertCapturedChangeAsync(7, 42, 3, DateTimeOffset.UtcNow);
+
+        var changes = await CreateLog().ReadAsync(
+            new FeatureChangeLogQuery(before, null, null, [layer.LayerId], 10), CancellationToken.None);
+
+        changes.Select(change => change.Operation).Should().Equal("update", "delete");
+        changes.Should().AllSatisfy(change =>
+        {
+            change.ObjectId.Should().Be(42);
+            FeatureStreamPublisher.ToEnvelope(change).FeatureId.Should().Be("42");
+        });
+    }
+
+    [IntegrationTest(Timeout = 120000)]
+    public async Task ReadWindowAsync_TransactionTimestampsOutOfOrder_RetainsEveryGeneration()
+    {
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734208);
+        var now = new DateTimeOffset(2001, 1, 3, 0, 0, 0, TimeSpan.Zero);
+        var first = await layer.InsertCapturedChangeAsync(1, 1, 1, now.AddHours(-1));
+        await layer.InsertCapturedChangeAsync(2, 2, 1, now.AddHours(-2));
+
+        var window = await CreateLogAt(now).ReadWindowAsync(CancellationToken.None);
+
+        window.Oldest.Should().BeLessThanOrEqualTo(first);
+    }
+
+    [IntegrationTest(Timeout = 120000)]
+    public async Task ReadWindowAsync_GapAfterExpiredChange_ResumesImmediatelyAfterExcludedGeneration()
+    {
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734209);
+        var now = new DateTimeOffset(2001, 1, 3, 0, 0, 0, TimeSpan.Zero);
+        var expired = await layer.InsertCapturedChangeAsync(1, 1, 1, now.AddDays(-2));
+        await layer.InsertBranchChangeAsync();
+        await layer.InsertCapturedChangeAsync(2, 2, 1, now.AddHours(-1));
+
+        var window = await CreateLogAt(now).ReadWindowAsync(CancellationToken.None);
+
+        window.Oldest.Should().Be(expired + 1);
+    }
+
+    [IntegrationTest(Timeout = 120000)]
     public async Task Dispatcher_FeaturesFamily_DeliversLiveAndResumesAfterAGeneration()
     {
         await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734204);
@@ -158,6 +204,14 @@ public sealed class FeatureChangeLogTests(FeatureChangeDatabaseFixture database)
 
     private PostgresFeatureChangeLog CreateLog(RealtimeOptions? options = null)
         => new(new JobStoreDatabase(database.DataSource), Options.Create(options ?? new RealtimeOptions()), TimeProvider.System);
+
+    private PostgresFeatureChangeLog CreateLogAt(DateTimeOffset now)
+        => new(new JobStoreDatabase(database.DataSource), Options.Create(new RealtimeOptions()), new FixedTimeProvider(now));
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
 
     private static long ObjectIdOf(RealtimeEvent realtimeEvent)
         => realtimeEvent.Payload.GetProperty(nameof(FeatureChangeEvent.ObjectId)).GetInt64();

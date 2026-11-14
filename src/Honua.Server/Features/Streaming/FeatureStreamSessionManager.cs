@@ -332,6 +332,16 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return true;
     }
 
+    // A reset means the relay skipped an interval. Close current sessions before later cursors
+    // can reach them; reconnecting with their last delivered cursor invokes durable gap recovery.
+    internal void DisconnectForReplayGap()
+    {
+        foreach (var sessionId in _sessions.Keys)
+        {
+            RemoveSession(sessionId, FeatureStreamDisconnectReason.ServerShutdown);
+        }
+    }
+
     // Delivers to this task's sessions; every task receives each change from the change log.
     public int Broadcast(FeatureStreamMessage message) => BroadcastLocally(message);
 

@@ -63,6 +63,14 @@ internal sealed class FeatureChangeTestLayer(FeatureChangeDatabaseFixture databa
             VALUES (nextval('honua.sync_generation'), @layer, 1, 2, now(), gen_random_uuid())
             """);
 
+    public Task<long> InsertCapturedChangeAsync(long storageId, long publicId, int operation, DateTimeOffset timestamp)
+        => ScalarAsync<long>("""
+            INSERT INTO honua.feature_changes
+                (generation, layer_id, objectid, public_objectid, operation, changed_at)
+            VALUES (nextval('honua.sync_generation'), @layer, @storage, @public, @operation, @timestamp)
+            RETURNING generation
+            """, ("storage", storageId), ("public", publicId), ("operation", operation), ("timestamp", timestamp));
+
     public async Task<IReadOnlyList<long>> GenerationsAsync()
     {
         await using var connection = await database.DataSource.OpenConnectionAsync();

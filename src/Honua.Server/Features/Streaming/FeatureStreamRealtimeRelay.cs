@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Events;
+using Npgsql;
 
 namespace Honua.Server.Features.Streaming;
 
@@ -13,10 +14,16 @@ namespace Honua.Server.Features.Streaming;
 // session. If the provider closes the subscription, it resumes after the last change it relayed,
 // so nothing committed meanwhile is skipped.
 internal sealed partial class FeatureStreamRealtimeRelay(
-    IRealtimeFanoutProvider provider,
+    IRealtimeFanoutProvider? provider,
     FeatureStreamSessionManager sessionManager,
     ILogger<FeatureStreamRealtimeRelay> logger) : BackgroundService
 {
+    internal static FeatureStreamRealtimeRelay Create(IServiceProvider services)
+        => new(
+            services.GetService<NpgsqlDataSource>() is null ? null : services.GetRequiredService<IRealtimeFanoutProvider>(),
+            services.GetRequiredService<FeatureStreamSessionManager>(),
+            services.GetRequiredService<ILogger<FeatureStreamRealtimeRelay>>());
+
     private const int Capacity = 4_096;
     private static readonly TimeSpan _retryDelay = TimeSpan.FromSeconds(1);
 
@@ -28,6 +35,12 @@ internal sealed partial class FeatureStreamRealtimeRelay(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Hosts without a system database have no durable feature log to follow.
+        if (provider is null)
+        {
+            return;
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -50,7 +63,7 @@ internal sealed partial class FeatureStreamRealtimeRelay(
     {
         var channel = Channel.CreateBounded<RealtimeDelivery>(
             new BoundedChannelOptions(Capacity) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
-        await using var subscription = provider.Subscribe(
+        await using var subscription = provider!.Subscribe(
             new RealtimeSubscriptionRequest(RealtimeFamily.Features, [], _relayed, channel.Writer));
         Volatile.Write(ref _subscription, subscription);
         await foreach (var delivery in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
@@ -62,6 +75,7 @@ internal sealed partial class FeatureStreamRealtimeRelay(
                     break;
                 case RealtimeDelivery.Reset reset:
                     LogRelayReset(logger, reset.Reason, reset.Head);
+                    sessionManager.DisconnectForReplayGap();
                     _relayed = reset.Head;
                     break;
             }

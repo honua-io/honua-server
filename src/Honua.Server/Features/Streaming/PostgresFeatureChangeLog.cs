@@ -142,8 +142,7 @@ internal sealed class PostgresFeatureChangeLog(
                         (SELECT min(generation) FROM {_changes}),
                         (SELECT generation FROM {_changes} WHERE version_id IS NULL
                          ORDER BY generation DESC OFFSET @max_events LIMIT 1),
-                        (SELECT generation FROM {_changes} WHERE changed_at >= @since
-                         ORDER BY changed_at, generation LIMIT 1)
+                        (SELECT max(generation) FROM {_changes} WHERE version_id IS NULL AND changed_at < @since)
                     """,
                     connection);
                 command.Parameters.Add(new NpgsqlParameter("max_events", NpgsqlDbType.Integer) { Value = settings.ResumeMaxEvents });
@@ -157,8 +156,8 @@ internal sealed class PostgresFeatureChangeLog(
 
                 var first = reader.GetInt64(0);
                 var afterCountLimit = reader.IsDBNull(1) ? first : reader.GetInt64(1) + 1;
-                var firstWithinAge = reader.IsDBNull(2) ? head + 1 : reader.GetInt64(2);
-                return Math.Max(first, Math.Max(afterCountLimit, firstWithinAge));
+                var afterAgeLimit = reader.IsDBNull(2) ? first : reader.GetInt64(2) + 1;
+                return Math.Max(first, Math.Max(afterCountLimit, afterAgeLimit));
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken);
@@ -176,7 +175,7 @@ internal sealed class PostgresFeatureChangeLog(
     private string SelectChanges(FeatureChangeLogQuery query)
     {
         return $"""
-            SELECT changes.generation, changes.layer_id, changes.objectid, changes.operation, changes.changed_at,
+            SELECT changes.generation, changes.layer_id, COALESCE(changes.public_objectid, changes.objectid), changes.operation, changes.changed_at,
                    changes.event_id, changes.operation_instance_id, changes.correlation_id, changes.audit_id,
                    changes.proposal_id, COALESCE(changes.source_id, outbox.source_id),
                    outbox.service_id, outbox.protocol, outbox.request_id,

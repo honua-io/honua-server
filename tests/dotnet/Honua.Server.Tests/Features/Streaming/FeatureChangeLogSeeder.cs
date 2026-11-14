@@ -60,7 +60,8 @@ internal static class FeatureChangeLogSeeder
     public static WebAppFixture WithoutRealtimeRelay(this WebAppFixture fixture)
         => fixture.ConfigureServices(services =>
         {
-            foreach (var relay in services.Where(d => d.ImplementationType == typeof(FeatureStreamRealtimeRelay)).ToArray())
+            foreach (var relay in services.Where(d => d.ImplementationType == typeof(FeatureStreamRealtimeRelay) ||
+                         d.ImplementationFactory?.Method.DeclaringType == typeof(FeatureStreamRealtimeRelay)).ToArray())
             {
                 services.Remove(relay);
             }

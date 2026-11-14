@@ -146,7 +146,7 @@ internal static class FeatureEventsAndStreamingRegistration
         services.AddHostedService<FeatureStreamHeartbeatService>();
         if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
         {
-            services.AddHostedService<FeatureStreamRealtimeRelay>();
+            services.AddHostedService(FeatureStreamRealtimeRelay.Create);
         }
 
         // Controlled-conformance mutation workflow (#3038). Options are bound and validated

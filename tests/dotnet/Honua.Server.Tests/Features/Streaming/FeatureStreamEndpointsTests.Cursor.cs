@@ -168,6 +168,11 @@ public sealed partial class FeatureStreamEndpointsTests
             new Uri("ws://localhost/api/v1/streaming/features?cursor=features:1" + (filtered ? "&layers=0&bbox=-180,-90,180,90" : "")), timeout.Token);
         var status = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
         status.GetProperty("type").GetString().Should().Be("status");
+        if (filtered)
+        {
+            var subscribed = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
+            subscribed.GetProperty("status").GetString().Should().Be("subscribed");
+        }
         var reset = await ReceiveWebSocketJsonAsync(socket, timeout.Token);
         reset.GetProperty("type").GetString().Should().Be("reset");
         reset.GetProperty("reason").GetString().Should().Be("retention");
