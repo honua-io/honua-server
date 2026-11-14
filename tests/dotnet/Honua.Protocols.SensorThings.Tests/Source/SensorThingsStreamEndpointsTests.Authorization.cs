@@ -155,8 +155,8 @@ public sealed partial class SensorThingsStreamEndpointsTests
         using var denied = await _fixture.Client.SendAsync(rejected, HttpCompletionOption.ResponseHeadersRead, ct);
         denied.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
-        // STA has a live-only contract: replacement establishes a new subscription,
-        // then observes a newly committed value rather than claiming replay support.
+        // Replacing credentials without a cursor starts a live subscription;
+        // verify that it receives newly committed values under the replacement identity.
         var replacement = await IssueAsync(longLived: true);
         using var resumed = await ConnectAsync(replacement.Token);
         using var handshake = await ReadSocketFrameAsync(resumed, ct);

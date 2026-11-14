@@ -540,10 +540,16 @@ per-tenant cap, fails startup validation. `RetryAfterSeconds` (default 30) sets 
 hint returned with a refusal. A refused request never opens a stream: the problem
 response is returned before the SSE headers or the WebSocket upgrade.
 
-Upgrade every observation-stream node together. Scoped fan-out uses a new Redis
-channel, so old and updated nodes do not exchange observations during a rolling
-upgrade. Reconnect clients to updated nodes; streams remain best-effort, with no
-replay guarantee. Disable the old stream endpoints until their nodes are updated.
+Observation streams use the shared PostgreSQL event log. Each subscription
+filters committed batches by its exact tenant and schema scope. SSE exposes an
+`observations:<sequence>` event ID; WebSocket batches expose a `cursor`. Reconnect
+to any updated node with that cursor and the same scope to replay retained
+batches. A subscription without a cursor starts live. A `reset` frame means the
+client must refresh observations through OData before subscribing again.
+
+When upgrading from the Redis implementation, update every observation-stream
+node before enabling the new endpoints: Redis nodes cannot deliver or replay
+PostgreSQL event-log batches.
 
 ## Verify
 

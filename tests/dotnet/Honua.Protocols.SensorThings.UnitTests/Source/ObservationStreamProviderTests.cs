@@ -56,9 +56,8 @@ public sealed class ObservationStreamProviderTests
     public async Task Dispose_WhenOneSubscriptionFails_StillReleasesEverySession()
     {
         var provider = Substitute.For<IRealtimeFanoutProvider>();
-        var failing = Substitute.For<IRealtimeSubscription>();
+        var failing = new FailingSubscription();
         var healthy = Substitute.For<IRealtimeSubscription>();
-        failing.DisposeAsync().Returns(ValueTask.FromException(new InvalidOperationException("dispose failed")));
         provider.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(failing, healthy);
         var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider);
@@ -82,6 +81,15 @@ public sealed class ObservationStreamProviderTests
         Assert.Equal(7, json.RootElement.GetProperty("datastreamId").GetInt64());
         Assert.Equal(1, json.RootElement.GetProperty("observations").GetArrayLength());
         Assert.False(json.RootElement.TryGetProperty("scope", out _));
+    }
+
+    private sealed class FailingSubscription : IRealtimeSubscription
+    {
+        public RealtimeFamily Family => RealtimeFamily.Observations;
+
+        public long Position => 0;
+
+        public ValueTask DisposeAsync() => ValueTask.FromException(new InvalidOperationException("dispose failed"));
     }
 
     private static RealtimeEvent Event(string? tenant, string? schema)
