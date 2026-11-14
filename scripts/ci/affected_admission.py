@@ -7,22 +7,11 @@ from pathlib import Path
 import subprocess
 import sys
 
-from supersede_trailing_runs import ACTIVE_STATUSES, gh_api, repository_endpoint
-
 JOB_LIMIT = 40
 # Conservative bound: every side job, including all four foundation families,
 # both MCP transports and all three Postgres versions. The fixture checks this
 # against ci.yml so additions cannot silently expand admitted fanout.
 SIDE_JOB_BUDGET = 33
-
-
-def active_pr_gate():
-    for status in ACTIVE_STATUSES:
-        runs = gh_api(repository_endpoint(
-            f"actions/workflows/pr-gate.yml/runs?status={status}&per_page=100"))["workflow_runs"]
-        if runs:
-            return True
-    return False
 
 
 def selection(base, head):
@@ -34,12 +23,10 @@ def selection(base, head):
     return json.loads(descriptor)
 
 
-def decision(descriptor, pr_busy):
+def decision(descriptor):
     if not isinstance(descriptor["shards"], list) or type(descriptor["run_all"]) is not bool:
         raise ValueError("Unknown routing descriptor")
     count = len(descriptor["shards"]) + SIDE_JOB_BUDGET
-    if pr_busy:
-        return False, "PR Gate is active; reserve the heavy pool for PRs."
     if descriptor.get("run_all"):
         return False, "Routing requires full coverage."
     if count > JOB_LIMIT:
@@ -51,9 +38,9 @@ def admission(base, head):
     if not base:
         return False, "No completed trunk ancestor is available."
     try:
-        return decision(selection(base, head), active_pr_gate())
+        return decision(selection(base, head))
     except (subprocess.CalledProcessError, ValueError, KeyError, TypeError):
-        return False, "Selection or PR queue history is unavailable."
+        return False, "Selection is unavailable."
 
 
 def record(reason):
@@ -64,7 +51,7 @@ def record(reason):
 
 
 def require_descriptor(raw):
-    allowed, reason = decision(json.loads(raw), pr_busy=False)
+    allowed, reason = decision(json.loads(raw))
     if not allowed:
         record(reason)
         raise SystemExit(1)

@@ -898,8 +898,8 @@
         "updatedAt"
       ],
       "readOnly": false,
-      "destructive": false,
-      "idempotent": true
+      "destructive": true,
+      "idempotent": false
     },
     {
       "operationId": "admin.layer.set-enabled",
@@ -2239,8 +2239,8 @@
         "updatedAt"
       ],
       "readOnly": false,
-      "destructive": false,
-      "idempotent": true
+      "destructive": true,
+      "idempotent": false
     },
     {
       "operationId": "admin.services.layer-metadata.set",
