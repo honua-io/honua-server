@@ -56,8 +56,17 @@ public sealed class RoutingAsyncWebToolTests
             if (_application is null)
             {
                 var application = Fixture(_provider);
+                try
+                {
+                    await NoRedisJobHost.StartAsync(application);
+                }
+                catch
+                {
+                    await application.DisposeAsync();
+                    throw;
+                }
+
                 _application = application;
-                await NoRedisJobHost.StartAsync(application);
                 return application;
             }
 
@@ -68,10 +77,11 @@ public sealed class RoutingAsyncWebToolTests
 
         public async Task StopAsync()
         {
-            if (_application is not null)
+            var application = _application;
+            _application = null;
+            if (application is not null)
             {
-                await _application.DisposeAsync();
-                _application = null;
+                await application.DisposeAsync();
             }
         }
 
