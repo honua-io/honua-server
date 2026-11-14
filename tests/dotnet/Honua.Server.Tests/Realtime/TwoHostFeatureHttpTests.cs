@@ -83,6 +83,32 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
             edit: (_, ordinal, cancellationToken) => AddSqlAsync(ordinal, cancellationToken));
 
     [IntegrationTest(Timeout = 240000)]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task DirectSqlEdits_WithoutTaskBListener_ReachSseWithinDegradedPollTarget()
+    {
+        await _taskB.DisposeAsync();
+        _taskBStopped = true;
+        _taskB = NewHost().ShareSchemaWith(_taskA)
+            .OverrideConfiguration(new Dictionary<string, string?>
+            {
+                // A transaction proxy deliberately selects the production poll-only path;
+                // the ordinary database connection still targets the shared fixture database.
+                ["ConnectionStrings:RealtimeListener"] = "Host=disabled.proxy-local;Database=unused;Username=unused"
+            });
+        await _taskB.InitializeAsync();
+        _taskBStopped = false;
+        _taskB.EnableV2ServiceEditingCapabilities("test", ["Query", "Create", "Update", "Delete"]);
+        var listener = _taskB.GetService<RealtimeListener>();
+        listener.PollOnlyReason.Should().Be("the database host is a connection proxy");
+        listener.IsConnected.Should().BeFalse();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await WaitForRelayAsync(_taskB, timeout.Token);
+
+        await VerifyDeliveryAsync(TimeSpan.FromMilliseconds(1500),
+            edit: (_, ordinal, cancellationToken) => AddSqlAsync(ordinal, cancellationToken));
+    }
+
+    [IntegrationTest(Timeout = 240000)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task ListenerKilledDuringHttpEdits_TaskBSseLosesNothingAndListenerReconnects()
