@@ -34,10 +34,13 @@ public sealed class DevelopmentPublicationAuditTests
         resolver.ResolveConnectionStringAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
         resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
 
+        await using var redis = new RedisFixture();
+        await redis.InitializeAsync();
         var fixture = new WebAppFixture().UseEnvironment(Environments.Development)
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("Licensing:Mode", "Disabled");
+                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             })
@@ -45,7 +48,7 @@ public sealed class DevelopmentPublicationAuditTests
         await fixture.InitializeAsync();
         try
         {
-            using var admin = fixture.CreateAdminClient();
+            using var admin = await HumanApprovedOperation.CreateProposerClientAsync(fixture);
             using var publish = await admin.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0",
@@ -67,8 +70,15 @@ public sealed class DevelopmentPublicationAuditTests
             publish.StatusCode.Should().Be(HttpStatusCode.OK);
             using var receipt = JsonDocument.Parse(await publish.Content.ReadAsStringAsync());
             var result = receipt.RootElement.GetProperty("result").GetProperty("structuredContent");
-            result.GetProperty("status").GetString().Should().Be("Completed", result.GetRawText());
-            var operationId = result.GetProperty("operationInstanceId").GetString();
+            result.GetProperty("status").GetString().Should().Be("RequiresApproval", result.GetRawText());
+            await publisher.DidNotReceive().PublishLayerAsync(
+                Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+            var handle = await HumanApprovedOperation.ApproveAndReadHandleAsync(
+                fixture, result.GetProperty("proposalId").GetString()!);
+            handle.GetProperty("status").GetString().Should().Be("Completed");
+            await publisher.Received(1).PublishLayerAsync(
+                Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+            var operationId = handle.GetProperty("operationInstanceId").GetString();
             operationId.Should().NotBeNullOrWhiteSpace();
             using var response = await admin.GetAsync($"/api/v1/admin/observability/audit?resourceId={Uri.EscapeDataString(operationId!)}&action=operation.completed");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
