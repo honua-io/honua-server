@@ -21,7 +21,7 @@ namespace Honua.ControlPlane;
 /// rejected, never overwritten) →
 /// SloWatch (post-activation regression check on the live revision) → Complete.
 ///
-/// Rollback restores only what the operation owns — it reactivates the prior revision while the
+/// Rollback restores only what the operation owns — it copies the prior document into a new revision while the
 /// candidate is still current, and otherwise reverts the owned fields on top of later updates — never
 /// touches physical data, and verifies the recovered service before reporting RolledBack. Failures
 /// before activation discard the candidate and leave the live catalog untouched. Snapshot-required
@@ -520,7 +520,7 @@ internal sealed partial class MetadataReleaseReconciler(
 
     /// <summary>
     /// While the candidate is still current, the prior revision plus the owned change is exactly the
-    /// live state, so reactivating the prior revision restores precisely the operation-owned change.
+    /// live state, so saving its prior document as a new revision restores only the owned change.
     /// Returns null when that exact restore does not apply.
     /// </summary>
     private async Task<RecoveryOutcome?> RestorePriorRevisionAsync(
@@ -542,10 +542,16 @@ internal sealed partial class MetadataReleaseReconciler(
             return null;
         }
 
-        var result = await activator.ActivateAsync(priorRevision, live.Etag, cancellationToken).ConfigureAwait(false);
-        return result.Outcome == MetadataReleaseActivationOutcome.Conflict
-            ? null
-            : new RecoveryOutcome($"Reactivated prior revision {priorRevision} while candidate revision {candidateRevision} was still current.");
+        try
+        {
+            var restored = await activator.CommitRevertAsync(prior.Graph, live.Etag, cancellationToken).ConfigureAwait(false);
+            return new RecoveryOutcome($"Restored prior revision {priorRevision} as new revision {restored.Revision} while candidate revision {candidateRevision} was still current.");
+        }
+        catch (MetadataV2GraphConcurrencyException)
+        {
+            // Preserve the winning writer by reverting only owned changes against its new revision.
+            return null;
+        }
     }
 
     /// <summary>
@@ -672,7 +678,7 @@ internal sealed partial class MetadataReleaseReconciler(
             Class = rollbackClass,
             Steps =
             [
-                "Reactivate the prior revision while the candidate is still current; otherwise revert only this release's owned fields on top of later updates.",
+                "Restore the prior document as a new revision while the candidate is still current; otherwise revert only this release's owned fields on top of later updates.",
                 "Leave physical data and committed feature edits untouched.",
                 "Verify the recovered revision (schema, bindings, authorization, canonical query) before reporting RolledBack."
             ]

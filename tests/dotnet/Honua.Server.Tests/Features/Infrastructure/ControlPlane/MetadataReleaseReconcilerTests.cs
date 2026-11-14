@@ -209,6 +209,29 @@ public sealed class MetadataReleaseReconcilerTests
     }
 
     [Fact]
+    public async Task Rollback_WhenConcurrentWriterWinsRestore_PreservesItsEditInNewRevision()
+    {
+        var harness = new ReleaseHarness(faultInjection: true);
+        var id = await harness.SubmitAsync();
+        await harness.DriveUntilAsync(id, op => op.Status == WorkflowOperationStatus.RollbackRequested);
+        harness.Graph.BeforeSave = async () =>
+        {
+            harness.Graph.BeforeSave = null;
+            var current = harness.Graph.Current;
+            await harness.Graph.SaveAsync(
+                ReleaseHarness.WithField(current.Graph, "roads", "surface", MetadataV2FieldType.String), current.Etag);
+        };
+
+        var final = await harness.DriveToTerminalAsync(id);
+
+        final.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        final.CurrentPhase.Should().Contain("Reverted 1 owned field change(s) on top of revision 3 as revision 4");
+        harness.Graph.CurrentHistory.Should().Equal(1L, 2L, 3L, 4L);
+        ReleaseHarness.HasField(harness.Graph.Current, "roads", "surface").Should().BeTrue();
+        ReleaseHarness.HasField(harness.Graph.Current, "parcels", NewField).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Rollback_WhenFieldPredatesRelease_LeavesItInPlace()
     {
         var harness = new ReleaseHarness(graph => ReleaseHarness.WithField(graph, "parcels", NewField, MetadataV2FieldType.String));
@@ -694,6 +717,8 @@ public sealed class MetadataReleaseReconcilerTests
         /// </summary>
         public Func<Task>? BeforeActivate { get; set; }
 
+        public Func<Task>? BeforeSave { get; set; }
+
         public MetadataV2GraphSnapshot Current
         {
             get
@@ -741,14 +766,19 @@ public sealed class MetadataReleaseReconcilerTests
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
             => new(Retained(revision));
 
-        public Task<MetadataV2GraphSnapshot> SaveAsync(MetadataV2Graph graph, string? expectedEtag, CancellationToken cancellationToken = default)
+        public async Task<MetadataV2GraphSnapshot> SaveAsync(MetadataV2Graph graph, string? expectedEtag, CancellationToken cancellationToken = default)
         {
+            if (BeforeSave is { } concurrentWriter)
+            {
+                await concurrentWriter();
+            }
+
             lock (_gate)
             {
                 EnsureCurrent(expectedEtag);
                 var snapshot = Persist(graph);
                 MoveCurrent(snapshot.Revision);
-                return Task.FromResult(snapshot);
+                return snapshot;
             }
         }
 
