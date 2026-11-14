@@ -319,6 +319,11 @@ internal sealed partial class ConsoleJobService(
                 throw new ConsoleJobConflictException("Terminal jobs cannot be cancelled.");
             }
 
+            if (stamp.Outcome is not (RemoteCancelStampOutcome.Stamped or RemoteCancelStampOutcome.AlreadyStamped))
+            {
+                throw new ConsoleJobConflictException("Job cancellation could not be confirmed.");
+            }
+
             var stampedJob = stamp.Job ?? job;
             var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
             var applied = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
@@ -342,6 +347,8 @@ internal sealed partial class ConsoleJobService(
                 JobControlAction(logger, "cancel", job.OperationId, applied.Job.Status.ToString());
                 return ControlResponse(applied.Job, "cancel", "Job cancellation requested.");
             }
+
+            throw new ConsoleJobConflictException("Job cancellation could not be confirmed.");
         }
 
         var result = await ExecutionJobCancellationHelper.TryApplyAsync(

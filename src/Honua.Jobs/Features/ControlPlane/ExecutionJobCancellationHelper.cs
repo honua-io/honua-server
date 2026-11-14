@@ -182,6 +182,11 @@ internal static class ExecutionJobCancellationHelper
             {
                 return new(ExecutionJobCancellationState.Missing, null);
             }
+
+            if (!IsSameExecutionAttempt(initialJob, current))
+            {
+                return new(ExecutionJobCancellationState.Unconfirmed, current);
+            }
         }
 
         if (current.Status == ExecutionJobStatus.Cancelled)
@@ -241,6 +246,10 @@ internal static class ExecutionJobCancellationHelper
             if (fresh == null)
             {
                 return new(RemoteCancelStampOutcome.Missing, null);
+            }
+            if (!IsSameExecutionAttempt(job, fresh))
+            {
+                return new(RemoteCancelStampOutcome.Unconfirmed, fresh);
             }
             current = fresh;
         }
@@ -348,12 +357,8 @@ internal static class ExecutionJobCancellationHelper
         // A console retry can reset a cancelled record before this delayed backend
         // response is applied. Heartbeats may advance the version, but the request
         // and execution attempt must still be the ones sent to the backend.
-        if (fresh.AttemptCount != job.AttemptCount
-            || fresh.ClaimedBy != job.ClaimedBy
-            || fresh.ClaimedAt != job.ClaimedAt
-            || fresh.ProviderOperationId != job.ProviderOperationId
-            || fresh.CancellationRequestedAt != job.CancellationRequestedAt
-            || fresh.NextRetryAt != job.NextRetryAt)
+        if (!IsSameExecutionAttempt(job, fresh)
+            || fresh.CancellationRequestedAt != job.CancellationRequestedAt)
         {
             return new(BackendCancelApplyOutcome.Unconfirmed, fresh);
         }
@@ -377,4 +382,11 @@ internal static class ExecutionJobCancellationHelper
             TerminalTransition = !fresh.Status.IsTerminal() && retryMerged.Status.IsTerminal() ? retryMerged : null
         };
     }
+
+    private static bool IsSameExecutionAttempt(ExecutionJobRecord original, ExecutionJobRecord current)
+        => original.AttemptCount == current.AttemptCount
+            && original.ClaimedBy == current.ClaimedBy
+            && original.ClaimedAt == current.ClaimedAt
+            && original.ProviderOperationId == current.ProviderOperationId
+            && original.NextRetryAt == current.NextRetryAt;
 }
