@@ -21,6 +21,18 @@ Honua is configured entirely through environment variables (or the equivalent `a
 | --- | --- | --- |
 | `HONUA_SETTINGS_DOCUMENT` (`Settings__Document`) | — (none) | `aws:secretsmanager:<name-or-arn>` of a secret whose value is a JSON object of configuration keys (nested objects map to `Section:Key`, arrays to `Section:0..n`, flat `Section__Key` names accepted). Loaded once at startup above `appsettings*.json` and below environment variables and the command line. Values may themselves be `aws:secretsmanager:` references. An unreadable, non-JSON, non-object or larger-than-64 KB document refuses startup; only the key count and the reference are logged. Use it to stay under the 4 KB AWS Lambda environment limit; see [Keep settings out of the 4 KB Lambda environment](../../guides/deploy/cloud-deployments.md#keep-settings-out-of-the-4-kb-lambda-environment). |
 
+## Ops autonomy
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `Observability__OpsFindings__Autonomy__Profile` | `Unattended` | Automatically applies allow-listed deterministic tier-1 fixes when the durable policy store and action checks permit them. `ProposeOnly` requires human approval. Persisted rule policies override the profile. Tier 2 remains empty. |
+| `Observability__OpsFindings__Autonomy__KillSwitchEnabled` | `false` | Stops automatic remediation. The persisted kill switch also applies across instances. |
+| `Observability__OpsFindings__Autonomy__DefaultMaxAutoActionsPerWindow` | `1` | Maximum reservations per rule and per action within the window; PostgreSQL enforces the shared action budget across instances. |
+| `Observability__OpsFindings__Autonomy__DefaultWindowSeconds` | `3600` | Reservation budget window in seconds. |
+| `Observability__OpsFindings__Autonomy__DefaultMaxBlastRadius` | `10` | Maximum affected items allowed for an automatic fix. Larger changes require approval. |
+
+The unattended allow-list is currently empty because no shipped actuator has proven automatic compensation. Dead-letter redrive requires human approval; unattended remediation still needs release-gate proof. A finding must also recommend a catalogued tier-1 action; unknown actions and unsafe effects fail closed. See [the autonomy policy](../../internal/contributor/adr/0062-graduated-ops-autonomy-policy.md).
+
 ## Database and providers
 
 | Variable | Default | Purpose |

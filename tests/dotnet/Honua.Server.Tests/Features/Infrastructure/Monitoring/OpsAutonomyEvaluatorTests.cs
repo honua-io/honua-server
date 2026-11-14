@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
@@ -20,6 +21,53 @@ public sealed class OpsAutonomyEvaluatorTests
     private const string Rule = "alert-dispatch-backlog";
     private const string FindingId = "alert-dispatch-backlog-test";
     private const string RedriveAction = "alerts.redrive_dead_letters";
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    public async Task EvaluateRoute_UnattendedDefault_RespectsKillSwitchAndPersistedPolicy(
+        bool killed, bool persistedProposeOnly, bool expectedAutoApply)
+    {
+        var store = new InMemoryOpsAutonomyPolicyStore();
+        await store.SetSettingsAsync(new OpsAutonomySettings { KillSwitchEnabled = killed }, "test");
+        if (persistedProposeOnly)
+        {
+            await store.SetPolicyAsync(AutoApplyPolicy() with { Mode = OpsAutonomyMode.ProposeOnly }, "test");
+        }
+
+        var sut = new OpsAutonomyEvaluator(
+            new StaticOptionsMonitor<OpsAutonomyOptions>(new OpsAutonomyOptions()),
+            store, new OpsActionSafetyCatalog());
+        var decision = await sut.EvaluateRouteAsync(Request(), RequiresApproval(), RedriveAction);
+        decision.ShouldAutoApply.Should().Be(expectedAutoApply);
+    }
+
+    [Fact]
+    public void Resolve_ProposeOnlyProfileAndUnknownRule_NeverDefaultToAutoApply()
+    {
+        OpsAutonomyPolicyDefaults.Resolve(Rule,
+            new OpsAutonomyOptions { Profile = OpsAutonomyProfile.ProposeOnly }, null)
+            .Mode.Should().Be(OpsAutonomyMode.ProposeOnly);
+        OpsAutonomyPolicyDefaults.Resolve("future-rule", new OpsAutonomyOptions(), null)
+            .Mode.Should().Be(OpsAutonomyMode.ProposeOnly);
+    }
+
+    [Theory]
+    [InlineData("AutApply")]
+    [InlineData("999")]
+    public void Resolve_InvalidConfiguredMode_FailsClosed(string mode)
+    {
+        var options = new OpsAutonomyOptions
+        {
+            Rules = new Dictionary<string, OpsAutonomyRuleOptions>(StringComparer.Ordinal)
+            {
+                [Rule] = new() { Mode = mode },
+            },
+        };
+        OpsAutonomyPolicyDefaults.Resolve(Rule, options, null)
+            .Mode.Should().Be(OpsAutonomyMode.ProposeOnly);
+    }
 
     [Fact]
     public async Task EvaluateRoute_AutoApplyPolicyForAutoSafeAction_ReservesAndReturnsDirectExecute()
@@ -118,7 +166,10 @@ public sealed class OpsAutonomyEvaluatorTests
     [Fact]
     public async Task EvaluateRoute_ConfigChangesBeforePersistence_UsesLatestEffectivePolicy()
     {
-        var options = new StaticOptionsMonitor<OpsAutonomyOptions>(new OpsAutonomyOptions());
+        var options = new StaticOptionsMonitor<OpsAutonomyOptions>(new OpsAutonomyOptions
+        {
+            Profile = OpsAutonomyProfile.ProposeOnly,
+        });
         var store = new InMemoryOpsAutonomyPolicyStore();
         var sut = new OpsAutonomyEvaluator(
             options,

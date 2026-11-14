@@ -45,6 +45,20 @@ public sealed class InMemoryOpsAutonomyPolicyStoreTests
             "neither unknown convergence nor cancellation may improve the autonomy success record");
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task TryReserveAutoAction_DifferentRulesShareAction_EnforcesOneBudget()
+    {
+        var store = new InMemoryOpsAutonomyPolicyStore();
+        var reservations = await Task.WhenAll(Enumerable.Range(0, 8).Select(index =>
+            store.TryReserveAutoActionAsync(Reservation($"finding-{index}") with
+            {
+                Rule = $"rule-{index}", MaxAutoActionsPerWindow = 1,
+            })));
+        reservations.Count(result => result.Reserved).Should().Be(1);
+        reservations.Count(result => result.Reason == "rate-limit-exceeded").Should().Be(7);
+    }
+
     private static OpsAutonomyReservationRequest Reservation(string findingId)
         => new()
         {
