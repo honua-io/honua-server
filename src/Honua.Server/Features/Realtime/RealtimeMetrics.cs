@@ -25,8 +25,15 @@ internal static class RealtimeMetrics
     internal static readonly Gauge<double> DispatchLagSeconds = HonuaTelemetry.Meter.CreateGauge<double>(
         "honua.realtime.dispatch.lag.seconds", unit: null, description: "Age in seconds of the oldest undispatched event, tagged by family.");
 
+    // Second-scale buckets around the one-second alarm in docs/internal/operations/realtime.md; the
+    // exporter defaults start at 0 and 5, which would put every sub-second delivery in one bucket.
+    internal static readonly IReadOnlyList<double> DeliveryLatencyBucketBoundaries =
+        [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60];
+
     internal static readonly Histogram<double> DeliveryLatency = HonuaTelemetry.Meter.CreateHistogram<double>(
-        "honua.realtime.delivery.latency", unit: null, description: "Seconds from commit to a frame flushed to the transport, tagged by family and transport.");
+        "honua.realtime.delivery.latency", unit: null,
+        description: "Seconds from commit to a frame flushed to the transport, tagged by family and transport.",
+        tags: null, advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = DeliveryLatencyBucketBoundaries });
 
     internal static readonly Gauge<long> ListenerConnected = HonuaTelemetry.Meter.CreateGauge<long>(
         "honua.realtime.listener.connected", unit: null, description: "One while the dedicated listener is connected, otherwise zero.");

@@ -78,11 +78,12 @@ internal sealed class RealtimeStreamLifecycle(TimeProvider clock, IOptions<Realt
         }
 
         using var deadline = new CancellationTokenSource(options.Value.ShutdownDrain, clock);
-        var signals = sessions.Select((session, index) => SignalCloseAsync(
-            session, TimeSpan.FromTicks(options.Value.ShutdownDrain.Ticks * index / sessions.Length), deadline.Token));
+        using var stagger = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        var signals = Task.WhenAll(sessions.Select((session, index) => SignalCloseAsync(
+            session, TimeSpan.FromTicks(options.Value.ShutdownDrain.Ticks * index / sessions.Length), stagger.Token)));
         try
         {
-            await Task.WhenAll(signals).WaitAsync(deadline.Token).ConfigureAwait(false);
+            // Sessions that close on their own end the drain without waiting out the stagger.
             await _empty.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested)
@@ -91,7 +92,28 @@ internal sealed class RealtimeStreamLifecycle(TimeProvider clock, IOptions<Realt
         }
         finally
         {
-            AbortRemaining();
+            await stagger.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                await AwaitSignalsAsync(signals, stagger.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                AbortRemaining();
+            }
+        }
+    }
+
+    // A signal whose delay was cancelled is expected; a failed close callback still surfaces.
+    private static async Task AwaitSignalsAsync(Task signals, CancellationToken stagger)
+    {
+        try
+        {
+            await signals.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (stagger.IsCancellationRequested)
+        {
+            // Outstanding staggered signals were cancelled because the drain finished.
         }
     }
 

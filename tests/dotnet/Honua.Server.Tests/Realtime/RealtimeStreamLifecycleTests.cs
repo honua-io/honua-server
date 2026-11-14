@@ -191,6 +191,37 @@ public sealed class RealtimeStreamLifecycleTests
         return false;
     }
 
+    [UnitTest]
+    public async Task DrainAsync_SessionsCloseBeforeTheirStaggeredSignals_FinishesWithoutWaitingOutTheStagger()
+    {
+        var lifecycle = new RealtimeStreamLifecycle(TimeProvider.System, Options.Create(new RealtimeOptions
+        {
+            ShutdownDrain = TimeSpan.FromSeconds(20)
+        }));
+        var sessions = Enumerable.Range(0, 3)
+            .Select(_ => lifecycle.TryOpen(new(RealtimeFamily.Features, "sse", () => { }))!)
+            .ToArray();
+
+        lifecycle.BeginDrain();
+        foreach (var session in sessions)
+        {
+            session.Dispose();
+        }
+
+        await lifecycle.DrainAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(3));
+    }
+
+    [UnitTest]
+    public void DeliveryLatency_BucketBoundaries_ResolveSubSecondDeliveriesAndTheOneSecondAlarm()
+    {
+        var boundaries = RealtimeMetrics.DeliveryLatency.Advice?.HistogramBucketBoundaries;
+
+        boundaries.Should().NotBeNull();
+        boundaries!.Should().BeInAscendingOrder();
+        boundaries.Should().Contain(1);
+        boundaries.Count(boundary => boundary < 1).Should().BeGreaterThanOrEqualTo(5);
+    }
+
     private static RealtimeStreamLifecycle CreateLifecycle()
         => new(TimeProvider.System, Options.Create(new RealtimeOptions
         {
