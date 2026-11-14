@@ -90,8 +90,13 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
         using var clientA = SubscriberClient(_taskA);
         using var clientB = SubscriberClient(_taskB);
         var subscribers = new List<Subscriber>(_profile.Subscribers);
+        var checkpoints = new List<string>();
         for (var i = 0; i < _profile.Subscribers; i++)
         {
+            if (i > 0 && i % 500 == 0)
+            {
+                checkpoints.Add($"at {i}: {await DescribeDatabaseSessionsAsync()}");
+            }
             HttpResponseMessage response;
             try
             {
@@ -100,7 +105,8 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 throw new InvalidOperationException(
-                    $"Opening subscriber {i} of {_profile.Subscribers} failed; database sessions: {await DescribeDatabaseSessionsAsync()}",
+                    $"Opening subscriber {i} of {_profile.Subscribers} failed; database sessions: {await DescribeDatabaseSessionsAsync()}; " +
+                    $"earlier: {string.Join(" | ", checkpoints)}",
                     exception);
             }
             subscribers.Add(new Subscriber(response));
