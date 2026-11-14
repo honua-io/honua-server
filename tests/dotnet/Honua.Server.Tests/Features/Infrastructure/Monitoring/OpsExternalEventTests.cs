@@ -1,7 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Observability.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
@@ -36,6 +40,150 @@ public sealed class OpsExternalEventTests
         finding.Explanation.Should().NotBeNullOrWhiteSpace();
         finding.Id.Should().Be(OpsExternalEventMapper.Map(body)!.Id);
         finding.RecommendedAction.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("[]")]
+    [InlineData("not json")]
+    [Operation(Operations.TestInfrastructure)]
+    public void MalformedEnvelope_IsRejected(string body)
+    {
+        var parse = () => OpsExternalEventMapper.Parse(body);
+        parse.Should().Throw<JsonException>();
+    }
+
+    [Fact]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task DuplicateDelivery_PersistsOneEventAndAcknowledgesBothReceipts()
+    {
+        var store = new MemoryStore();
+        var queue = new FakeQueue();
+        await using var services = new ServiceCollection().AddSingleton<IOpsExternalEventStore>(store).BuildServiceProvider();
+        using var service = CreateService(queue, services);
+        var body = Envelope("aws.batch", "Batch Job State Change", "{\"status\":\"FAILED\"}");
+        await service.ProcessAsync(new OpsEventQueueMessage("first", body), CancellationToken.None);
+        await service.ProcessAsync(new OpsEventQueueMessage("second", body), CancellationToken.None);
+        store.Events.Should().HaveCount(1);
+        queue.Deleted.Should().Equal("first", "second");
+        OpsExternalEventMapper.MapRecent(store.Events.Values.ToArray(), DateTimeOffset.UtcNow).Should().ContainSingle();
+    }
+
+    [Fact]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task StoreFailure_DoesNotAcknowledgeMessage()
+    {
+        var queue = new FakeQueue();
+        await using var services = new ServiceCollection().AddSingleton<IOpsExternalEventStore>(new MemoryStore { Fail = true }).BuildServiceProvider();
+        using var service = CreateService(queue, services);
+        var process = () => service.ProcessAsync(new OpsEventQueueMessage("receipt", Envelope("aws.health", "AWS Health Event", "{}")), CancellationToken.None);
+        await process.Should().ThrowAsync<InvalidOperationException>();
+        queue.Deleted.Should().BeEmpty();
+    }
+
+    [Fact]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task PoisonMessage_RemainsForQueueRedrive()
+    {
+        var queue = new FakeQueue();
+        await using var services = new ServiceCollection().AddSingleton<IOpsExternalEventStore>(new MemoryStore()).BuildServiceProvider();
+        using var service = CreateService(queue, services);
+        var process = () => service.ProcessAsync(new OpsEventQueueMessage("poison", "not json"), CancellationToken.None);
+        await process.Should().ThrowAsync<JsonException>();
+        queue.Deleted.Should().BeEmpty();
+    }
+
+    [Fact]
+    [Operation(Operations.TestInfrastructure)]
+    public void ThreeDistinctCrashesInFifteenMinutes_CreateCrashLoopFinding()
+    {
+        var body = Envelope("aws.ecs", "ECS Task State Change", "{\"lastStatus\":\"STOPPED\",\"clusterArn\":\"cluster\",\"group\":\"service:server\",\"containers\":[{\"exitCode\":1}]}");
+        var events = Enumerable.Range(0, 3).Select(i => OpsExternalEventMapper.Parse(body.Replace("7a92fa24", $"7a92fa2{i}", StringComparison.Ordinal))).ToArray();
+        var findings = OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:05:00Z"));
+        findings.Should().ContainSingle(f => f.Rule == "ecs-task-crash-loop" && f.Severity == OpsFindingSeverity.Critical);
+        OpsExternalEventMapper.MapRecent(events, DateTimeOffset.Parse("2026-11-14T00:16:00Z"))
+            .Should().NotContain(f => f.Rule == "ecs-task-crash-loop");
+    }
+
+    [Fact]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task HandlerFailure_RetriesPersistedEventBeforeAcknowledgment()
+    {
+        var store = new MemoryStore();
+        var handler = new RetryingHandler(store);
+        var queue = new FakeQueue();
+        await using var services = new ServiceCollection().AddSingleton<IOpsExternalEventStore>(store)
+            .AddSingleton<IOpsExternalEventHandler>(handler).BuildServiceProvider();
+        using var service = CreateService(queue, services);
+        var body = Envelope("aws.ecs", "ECS Deployment State Change", "{\"eventName\":\"SERVICE_DEPLOYMENT_COMPLETED\"}");
+        var process = () => service.ProcessAsync(new OpsEventQueueMessage("first", body), CancellationToken.None);
+        await process.Should().ThrowAsync<InvalidOperationException>();
+        queue.Deleted.Should().BeEmpty();
+        await service.ProcessAsync(new OpsEventQueueMessage("retry", body), CancellationToken.None);
+        store.Events.Should().ContainSingle();
+        handler.Calls.Should().Be(2);
+        queue.Deleted.Should().Equal("retry");
+    }
+
+    [Fact]
+    [Operation(Operations.TestInfrastructure)]
+    public void AlarmRecovery_ReplacesEarlierActiveAlarmRegardlessOfDeliveryOrder()
+    {
+        var alarm = OpsExternalEventMapper.Parse(Envelope("aws.cloudwatch", "CloudWatch Alarm State Change", "{\"state\":{\"value\":\"ALARM\"}}"));
+        var recovered = OpsExternalEventMapper.Parse(alarm.Body.Replace("7a92fa24", "8a92fa24", StringComparison.Ordinal)
+            .Replace("00:00:00Z", "00:01:00Z", StringComparison.Ordinal).Replace("ALARM", "OK", StringComparison.Ordinal));
+        var findings = OpsExternalEventMapper.MapRecent([recovered, alarm], DateTimeOffset.Parse("2026-11-14T00:05:00Z"));
+        findings.Should().ContainSingle().Which.Rule.Should().Be("cloudwatch-alarm-recovered");
+    }
+
+    private sealed class RetryingHandler(MemoryStore store) : IOpsExternalEventHandler
+    {
+        internal int Calls { get; private set; }
+        public Task HandleAsync(OpsExternalEvent externalEvent, CancellationToken cancellationToken)
+        {
+            store.Events.Should().ContainKey(externalEvent.Id);
+            if (++Calls == 1)
+            {
+                throw new InvalidOperationException("Handler temporarily unavailable");
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private static OpsEventIngestionService CreateService(FakeQueue queue, ServiceProvider services) =>
+        new(queue, services.GetRequiredService<IServiceScopeFactory>(), NullLogger<OpsEventIngestionService>.Instance);
+
+    private sealed class MemoryStore : IOpsExternalEventStore
+    {
+        internal Dictionary<string, OpsExternalEvent> Events { get; } = new(StringComparer.Ordinal);
+        internal bool Fail { get; init; }
+
+        public Task AppendAsync(OpsExternalEvent externalEvent, CancellationToken cancellationToken = default)
+        {
+            if (Fail)
+            {
+                throw new InvalidOperationException("Database unavailable");
+            }
+
+            Events.TryAdd(externalEvent.Id, externalEvent);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<OpsExternalEvent>> ReadRecentAsync(DateTimeOffset since, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<OpsExternalEvent>>(Events.Values.Where(e => e.OccurredAt >= since).ToArray());
+    }
+
+    private sealed class FakeQueue : IOpsEventQueueClient
+    {
+        internal List<string> Deleted { get; } = [];
+        public Task<IReadOnlyList<OpsEventQueueMessage>> ReceiveAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<OpsEventQueueMessage>>([]);
+        public Task DeleteAsync(string receiptHandle, CancellationToken cancellationToken)
+        {
+            Deleted.Add(receiptHandle);
+            return Task.CompletedTask;
+        }
     }
 
     internal static string Envelope(string source, string type, string detail) =>
