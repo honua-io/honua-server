@@ -37,7 +37,7 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var outbox = Substitute.For<IAlertOutboxWriter>();
         var notifications = CreateNotifications(outbox, options);
         OpsNotificationReminderRunner Runner() => new(harness.CreateNotificationStore(), findings,
-            harness.CreateProposalStore(), notifications, clock);
+            harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>());
         await Runner().RunAsync(CancellationToken.None);
         clock.Now = clock.Now.AddMinutes(1);
         var pending = (await harness.CreateNotificationStore().ListDueAsync(clock.GetUtcNow(), 100)).Single();
@@ -77,7 +77,7 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
             Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
         });
         var runner = new OpsNotificationReminderRunner(harness.CreateNotificationStore(), findings,
-            harness.CreateProposalStore(), notifications, clock);
+            harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>());
         await runner.RunAsync(CancellationToken.None);
         await runner.RunAsync(CancellationToken.None);
         (await harness.CreateProposalStore().GetAsync(proposal.ProposalId))!.Status.Should().Be(OperationProposalStatus.Expired);
@@ -109,7 +109,7 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var options = new AlertOptions { Enabled = true, Ops = new AlertOpsOptions { Enabled = false, Channels = ["webhook"] } };
         var notifications = CreateNotifications(outbox, options);
         OpsNotificationReminderRunner Runner() => new(harness.CreateNotificationStore(), findings,
-            harness.CreateProposalStore(), notifications, clock);
+            harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>());
         await Runner().RunAsync(CancellationToken.None);
         // Delivery may remain disabled longer than the refreshed terminal retention window.
         await harness.ExecuteAsync($"UPDATE {harness.Table("operation_proposals")} SET expires_at = now() - interval '1 second'");
@@ -137,7 +137,7 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
             Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
         });
         await new OpsNotificationReminderRunner(harness.CreateNotificationStore(), findings,
-            harness.CreateProposalStore(), notifications, clock).RunAsync(CancellationToken.None);
+            harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>()).RunAsync(CancellationToken.None);
         (await harness.CreateNotificationStore().ListDueAsync(clock.GetUtcNow().AddDays(1), 100)).Should().BeEmpty();
         await outbox.DidNotReceive().CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
             Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>());
@@ -169,7 +169,7 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
                 return accepted;
             });
         OpsNotificationReminderRunner Runner() => new(harness.CreateNotificationStore(), findings,
-            harness.CreateProposalStore(), notifications, clock);
+            harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>());
         await Assert.ThrowsAsync<InvalidOperationException>(() => Runner().RunAsync(CancellationToken.None));
         crash = false;
         findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(new[] { Finding(clock.Now, OpsFindingSeverity.Critical) });
@@ -202,7 +202,7 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
             { Enabled = true, Channels = ["webhook"], MinSeverity = AlertSeverity.Critical }
         });
         OpsNotificationReminderRunner Runner() => new(harness.CreateNotificationStore(), findings,
-            harness.CreateProposalStore(), notifications, clock);
+            harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>());
         await Runner().RunAsync(CancellationToken.None);
         await Runner().RunAsync(CancellationToken.None);
         await outbox.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
@@ -232,9 +232,56 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
             Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
         });
         await new OpsNotificationReminderRunner(harness.CreateNotificationStore(), findings,
-            harness.CreateProposalStore(), notifications, clock).RunAsync(CancellationToken.None);
+            harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>()).RunAsync(CancellationToken.None);
         (await harness.CreateNotificationStore().ListDueAsync(clock.Now.AddHours(12), 100)).Should().BeEmpty();
         (await harness.CreateNotificationStore().ListDueAsync(clock.Now.AddDays(1), 100)).Should().ContainSingle();
+    }
+
+    [IntegrationTest]
+    public async Task ColdTick_RefreshesDurableAlertObservationBeforeEvaluatingFindings()
+    {
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));
+        var clock = new ReminderClock(DateTimeOffset.UtcNow);
+        var health = Substitute.For<IAlertDispatchHealth>();
+        var refreshed = false;
+        health.RefreshBacklogAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            refreshed = true;
+            return new AlertDispatchBacklog { PendingCount = 1, DeadLetteredCount = 0 };
+        });
+        var findings = Substitute.For<IOpsFindingsService>();
+        findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(_ => refreshed
+            ? new[] { Finding(clock.Now, OpsFindingSeverity.Critical) } : Array.Empty<OpsFinding>());
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var notifications = CreateNotifications(outbox, new AlertOptions
+        {
+            Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
+        });
+        await new OpsNotificationReminderRunner(harness.CreateNotificationStore(), findings,
+            harness.CreateProposalStore(), notifications, clock, health).RunAsync(CancellationToken.None);
+        await outbox.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Single().AlertEvent.Severity == AlertSeverity.Critical),
+            Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    public async Task UnavailableAlertObservation_PreservesExistingUnresolvedReminder()
+    {
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));
+        var clock = new ReminderClock(DateTimeOffset.UtcNow);
+        var store = harness.CreateNotificationStore();
+        await store.ObserveAsync(new("finding", "finding-1", OpsFindingSeverity.Critical), clock.Now);
+        var pending = (await store.ListDueAsync(clock.Now, 100)).Single();
+        var health = Substitute.For<IAlertDispatchHealth>();
+        health.RefreshBacklogAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+            Task.FromException<AlertDispatchBacklog>(new InvalidOperationException("Storage unavailable")));
+        var findings = Substitute.For<IOpsFindingsService>();
+        findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
+        var notifications = CreateNotifications(Substitute.For<IAlertOutboxWriter>(), new AlertOptions());
+        var runner = new OpsNotificationReminderRunner(store, findings, harness.CreateProposalStore(), notifications, clock, health);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runner.RunAsync(CancellationToken.None));
+        await findings.DidNotReceive().EvaluateAsync(Arg.Any<CancellationToken>());
+        (await store.ListDueAsync(clock.Now, 100)).Should().ContainSingle().Which.Should().BeEquivalentTo(pending);
     }
 
     private static OpsFinding Finding(DateTimeOffset now, OpsFindingSeverity severity) => new()

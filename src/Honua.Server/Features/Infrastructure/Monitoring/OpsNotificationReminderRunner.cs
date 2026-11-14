@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Alerts;
 using Honua.Alerts.Ops;
 using Honua.ControlPlane;
 using Honua.Core.Features.Alerts.Domain;
@@ -16,11 +17,13 @@ internal sealed class OpsNotificationReminderRunner(
     IOpsFindingsService findingsService,
     IOperationProposalStore proposals,
     OpsNotificationService notifications,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IAlertDispatchHealth alertHealth)
 {
     internal async Task RunAsync(CancellationToken cancellationToken)
     {
         await schedules.ExpireApprovalsAsync(100, cancellationToken).ConfigureAwait(false);
+        await alertHealth.RefreshBacklogAsync(cancellationToken).ConfigureAwait(false);
         var findings = await findingsService.EvaluateAsync(cancellationToken).ConfigureAwait(false);
         var actionable = findings.Where(finding => finding.Severity >= OpsFindingSeverity.Warning)
             .ToDictionary(finding => finding.Id, StringComparer.Ordinal);
