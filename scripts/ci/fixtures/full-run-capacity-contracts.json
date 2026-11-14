@@ -322,7 +322,9 @@
     },
     "children": [
       "STAC Protocol 1",
-      "STAC Protocol 2"
+      "STAC Protocol 2",
+      "STAC Protocol 3",
+      "STAC Protocol 4"
     ]
   },
   {
@@ -371,6 +373,77 @@
     "children": [
       "Operator Eval Harness 1",
       "Operator Eval Harness 2"
+    ]
+  },
+  {
+    "originalShard": {
+      "name": "Migration",
+      "_comment": "Carries the toolbox-translation proving tests (#2145) alongside the import/migration suites: CapabilityImpactGraph_ShouldBeComplete rejects any [Endpoint] proving test that no shard filter claims, so Honua.Server.Tests.Import.ToolboxTranslation must stay in this selector. The budget below is the #3054 policy re-base, which already accounts for that load.",
+      "shard_name": "Migration",
+      "dispatch_rank": 21.8,
+      "artifact_suffix": "migration",
+      "log_name": "server-tests-migration",
+      "timeout_minutes": 39,
+      "test_timeout_minutes": 29,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesMigration|FullyQualifiedName~Honua.Server.Tests.Import.ImportLeaderLease|FullyQualifiedName~Honua.Server.Tests.Import.GeoServicesRestSourceKind|FullyQualifiedName~Honua.Server.Tests.Import.Migration|FullyQualifiedName~Honua.Server.Tests.Import.OgcApiFeatures|FullyQualifiedName~Honua.Server.Tests.Import.OgcCoverage|FullyQualifiedName~Honua.Server.Tests.Import.OgcTileCache|FullyQualifiedName~Honua.Server.Tests.Import.OgcWcs|FullyQualifiedName~Honua.Server.Tests.Import.OgcWfs|FullyQualifiedName~Honua.Server.Tests.Import.RedisImportJobManager|FullyQualifiedName~Honua.Server.Tests.Import.ToolboxTranslation|FullyQualifiedName~Honua.Server.Tests.Import.UniversalProgressStore|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService)",
+      "paths": [
+        "src/Honua.Core/Core/Features/Geoprocessing/Abstractions/IProcessConditionalInputProbe.cs",
+        "src/Honua.Core/Core/Features/Migration/",
+        "src/Honua.Db/Postgres/Features/Migration/",
+        "src/Honua.Geoprocessing/Core/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs",
+        "src/Honua.Geoprocessing/Core/Features/Geoprocessing/ProcessConditionalInputProbe.cs",
+        "src/Honua.Import/Features/Migration/",
+        "tests/dotnet/Honua.Core.Tests/Features/Import/",
+        "tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoServicesMigrationEvidenceEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoServicesRestSourceKindMigrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoServicesRestSourceKindReaderFloorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoServerCuratedImportIntegrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoServerImportEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoServerLiveImportIntegrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoServerServiceUrlValidationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoservicesCredentialResolutionTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoservicesGeoportalImportIntegrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportFidelityIntegrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoservicesServiceUrlValidationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinationOutageRecoveryTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/MigrationAdminSdkLifecycleTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/MigrationPerformanceEvidenceEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/MigrationRunAdminEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/MigrationScannerEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/OgcApiFeaturesImportEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/OgcCoverageImportEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/OgcTileCacheExportEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/OgcWcsImportEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/OgcWfsImportEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/PostgresMigrationStyleApplicatorTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerAtomicityTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerIntegrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/RedisImportTestStubs.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/RedisJobQueueFallbackTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ToolboxTranslationEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/UniversalImportJobServiceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/UniversalProgressStoreIntegrationTests.cs",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",
+        "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs",
+        "tests/fixtures/toolbox-translation/"
+      ]
+    },
+    "children": [
+      "Migration 1",
+      "Migration 2",
+      "Migration 3"
     ]
   }
 ]

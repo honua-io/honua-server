@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
+EXPECTED_CAPACITY_CHILDREN = 9
 workflow = (ROOT / ".github/workflows/ci.yml").read_text()
 step = workflow.split("      - name: Prepare shard Testcontainers images\n", 1)[1]
 body = step.split("        run: |\n", 1)[1]
@@ -31,7 +32,7 @@ for contract in contracts:
     if parent in parents:
         for child in contract["children"]:
             cases[child] = ["ryuk", "redis"] + (["postgis17"] if parent == "Operator Eval Harness" else [])
-assert len(cases) == 9, cases
+assert len(cases) == EXPECTED_CAPACITY_CHILDREN, cases
 cases.update({"Scene": [], "Protocol Units": [], "Core and Cloud Contracts": ["ryuk", "postgis16", "postgis18"]})
 for name, expected in cases.items():
     result = subprocess.run(["bash", "-c", script], env={**os.environ, "SERVER_SHARD": name},
