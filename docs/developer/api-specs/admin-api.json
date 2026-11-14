@@ -11487,7 +11487,7 @@
           "Operations"
         ],
         "summary": "Get Cache Health",
-        "description": "Reports the health and effective configuration of the cache on the node that serves the request. Redis server info is included only when a Redis connection multiplexer is registered.",
+        "description": "Reports the health and effective configuration of the memory cache on the node that serves the request.",
         "operationId": "getOperationsCacheHealth",
         "responses": {
           "200": {
@@ -11515,7 +11515,7 @@
           "Operations"
         ],
         "summary": "Get Cache Statistics",
-        "description": "Returns aggregate cache hit/miss/eviction counters with per-cache-type breakdowns plus backend storage metrics (local key count, Redis DB size and memory usage).",
+        "description": "Returns cache hit/miss/eviction counters with per-cache-type breakdowns and the local cache key count for the node that serves the request.",
         "operationId": "getOperationsCacheStatistics",
         "responses": {
           "200": {
