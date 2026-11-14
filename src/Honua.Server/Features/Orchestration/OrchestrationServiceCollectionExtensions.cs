@@ -7,7 +7,6 @@ using Honua.Core.Features.Migration.Watermark;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using StackExchange.Redis;
 
 namespace Honua.Server.Features.Orchestration;
 
@@ -19,29 +18,26 @@ internal static class OrchestrationServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
 
-        // The orchestration engine requires durable stores. Without Redis-backed
-        // IWorkflowDefinitionStore/IWorkflowRunStore the engine cannot activate, so
-        // skip registering it. Admin cancel then resolves IWorkflowCancellationCoordinator
-        // to null and returns the documented 503 Service Unavailable instead of a 500
-        // from a DI activation failure.
-        if (!services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        // The workflow stores live in the system database. A host without one (the DuckDB or
+        // MySQL data source) registers no engine, so the background services stay off, admin
+        // cancel returns its documented 503 and schedule publishing returns the
+        // workflow-definition-store capability refusal.
+        if (!services.HasSystemDataSource())
         {
             return services;
         }
 
-        services.TryAddSingleton<IWorkflowDefinitionStore>(sp =>
-            new RedisWorkflowDefinitionStore(sp.GetRequiredService<IConnectionMultiplexer>()));
-
-        services.TryAddSingleton<IWorkflowRunStore>(sp =>
-            new RedisWorkflowRunStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+        services.TryAddSingleton<PostgresWorkflowDefinitionStore>();
+        services.TryAddSingleton<IWorkflowDefinitionStore>(sp => sp.GetRequiredService<PostgresWorkflowDefinitionStore>());
+        services.TryAddSingleton<PostgresWorkflowRunStore>();
+        services.TryAddSingleton<IWorkflowRunStore>(sp => sp.GetRequiredService<PostgresWorkflowRunStore>());
 
         services.TryAddSingleton<WorkflowOrchestrationEngine>();
         services.TryAddSingleton<IWorkflowCancellationCoordinator>(sp =>
             sp.GetRequiredService<WorkflowOrchestrationEngine>());
 
         // Durable per-pipeline+source high-water marks for incremental ("changed-since") extract.
-        services.TryAddSingleton<ISourceWatermarkStore>(sp =>
-            new RedisSourceWatermarkStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+        services.TryAddSingleton<ISourceWatermarkStore, PostgresSourceWatermarkStore>();
 
         // Event/CDC trigger probes. The change-feed probe adapts the scoped IChangeTracker; the
         // object-store probe is a poll-based file-system baseline whose StoreId->root bindings come
@@ -80,9 +76,6 @@ internal static class OrchestrationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        // Background services depend on the same Redis-backed stores the engine needs.
-        // Only start them when AddOrchestration actually registered the engine — otherwise
-        // hosted-service activation would fail at startup in Redis-less deployments.
         if (!services.Any(d => d.ServiceType == typeof(WorkflowOrchestrationEngine)))
         {
             return services;

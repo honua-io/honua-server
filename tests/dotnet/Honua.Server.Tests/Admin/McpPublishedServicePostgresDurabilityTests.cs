@@ -29,6 +29,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -58,7 +59,16 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
 
     public McpPublishedServicePostgresDurabilityTests()
     {
-        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        _fixture = new WebAppFixture().WithProductionJobSubstrate().WithTestLicense(HonuaEdition.Pro)
+            .ConfigureWebHost(builder =>
+            {
+                // Human approval capabilities are audience-bound to the configured public origin.
+                builder.UseSetting("Public:BaseUrl", "http://localhost");
+                // The development bypass would replace the scoped proposer key, which approval revalidates.
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                // Without the bypass, the post-restart admin client needs the configured admin key.
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            });
         _fixture.ConfigureServices(services =>
         {
             services.RemoveAll<IMetadataV2GraphProvider>();
@@ -75,8 +85,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
                 _environment,
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 static scope => scope.GetRequiredService<IMetadataV2GraphStore>()));
-            // Test skips production infrastructure registration; this callback
-            // runs after its real graph provider is installed by the fixture.
+            // Register publication after restoring the production graph provider.
             services.AddMcpCatalogPublicationSurface();
             services.Configure<LayerPublishingOptions>(options => options.AsyncPublishRowThreshold = 1);
         });
@@ -101,7 +110,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         }
 
         await McpPublicationFixtureSetup.InstallPromotionStoresAsync(_fixture);
-        _client = _fixture.CreateAdminClient();
+        _client = await HumanApprovedOperation.CreateProposerClientAsync(_fixture);
         await CreateOwnedPublishConnectionAsync();
 
         // A private metadata environment makes the persisted baseline and
@@ -225,15 +234,20 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         _fixture.Services.GetRequiredService<ILoggerFactory>().AddProvider(errors);
         (await CountSourceRowsAsync(_firstTable)).Should().Be(1);
         (await CountSourceRowsAsync(_secondTable)).Should().Be(2);
-        var first = await PublishAsync(_firstTable, "first layer");
+        var first = await PublishAsync(_firstTable, "first layer", "Succeeded");
         first.GetProperty("status").GetString().Should().Be("Completed", "{0}{1}{2}",
             first.GetRawText(), Environment.NewLine, errors.Diagnostics);
-        var exactUri = first.GetProperty("serviceUri").GetString();
+        var firstDetails = first.GetProperty("result").GetProperty("details");
+        var advertised = await ReadResourceAsync("honua://published-services");
+        var exactUri = advertised.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("serviceId").GetString() == firstDetails.GetProperty("serviceName").GetString())
+            .GetProperty("resourceUri").GetString();
         exactUri.Should().NotBeNullOrWhiteSpace();
-        var firstStorageId = int.Parse(first.GetProperty("storageLayerId").GetString()!, CultureInfo.InvariantCulture);
+        var firstStorageId = int.Parse(firstDetails.GetProperty("storageLayerId").GetString()!, CultureInfo.InvariantCulture);
         _publishedLayerIds.Add(firstStorageId);
 
-        var second = await PublishAsync(_secondTable, "second layer");
+        // A queued publication is approved into the job pipeline, not completed inline.
+        var second = await PublishAsync(_secondTable, "second layer", "Submitted");
         second.GetProperty("status").GetString().Should().Be("Queued");
         var jobId = second.GetProperty("jobId").GetString();
         jobId.Should().NotBeNullOrWhiteSpace();
@@ -335,7 +349,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
             .Should().BeTrue();
     }
 
-    private async Task<JsonElement> PublishAsync(string table, string layerName)
+    private async Task<JsonElement> PublishAsync(string table, string layerName, string expectedApprovalStatus)
     {
         using var response = await _client.PostAsJsonAsync("/mcp", new
         {
@@ -367,7 +381,22 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         var result = document.RootElement.GetProperty("result");
         result.TryGetProperty("isError", out var isError);
         (isError.ValueKind == JsonValueKind.True).Should().BeFalse(body);
-        return result.GetProperty("structuredContent").Clone();
+        return await ApproveAndReadAcceptedHandleAsync(result.GetProperty("structuredContent"), body, expectedApprovalStatus);
+    }
+
+    private async Task<JsonElement> ApproveAndReadAcceptedHandleAsync(
+        JsonElement proposal, string body, string expectedApprovalStatus)
+    {
+        proposal.GetProperty("status").GetString().Should().Be("RequiresApproval", body);
+        var proposalId = proposal.GetProperty("proposalId").GetString();
+        proposalId.Should().NotBeNullOrWhiteSpace();
+        var live = await HumanApprovedOperation.ApproveAndReadHandleAsync(_fixture, proposalId!, expectedApprovalStatus);
+        // The worker may finish before HTTP readback. Assert queued admission
+        // against the persisted handle, then verify live completion separately.
+        var accepted = await _fixture.Services.GetRequiredService<IOperationInstanceStore>()
+            .GetAsync(live.GetProperty("operationInstanceId").GetString()!);
+        accepted.Should().NotBeNull();
+        return JsonSerializer.SerializeToElement(accepted!, OperationsJsonContext.Default.OperationHandle);
     }
 
     private async Task<long> CountSourceRowsAsync(string table)

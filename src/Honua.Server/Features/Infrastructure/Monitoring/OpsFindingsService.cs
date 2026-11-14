@@ -55,6 +55,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
     private readonly IOpsDatabasePressureSignal? _databasePressureSignal;
     private readonly IRuntimeTunableAdmissionGate? _admissionGate;
     private readonly IOpsHealthRollupStore? _rollupStore;
+    private readonly IOpsExternalEventStore? _externalEventStore;
     private readonly OpsFindingsCollectionLedger _collectionLedger;
     private readonly TimeProvider _clock;
     private readonly IManagedComposeObserver? _managedComposeObserver;
@@ -88,6 +89,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         _admissionGate = extendedSignals?.AdmissionGate;
         _catalogActivationWatches = extendedSignals?.CatalogActivationWatches;
         _rollupStore = extendedSignals?.RollupStore;
+        _externalEventStore = extendedSignals?.ExternalEventStore;
         _collectionLedger = extendedSignals?.CollectionLedger ?? new OpsFindingsCollectionLedger();
         _clock = extendedSignals?.TimeProvider ?? TimeProvider.System;
     }
@@ -132,6 +134,13 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 EvidencePostureVocabulary.BackendKinds.DurableStore,
                 WorkflowOperationStoreBackendId);
 
+        var storeSources = new List<EvidenceSourceEnvelope> { workflowSource, catalogSource };
+        var externalSource = await EvaluateExternalEventsAsync(now, findings, cancellationToken).ConfigureAwait(false);
+        if (externalSource is not null)
+        {
+            storeSources.Add(externalSource);
+        }
+
         return new OpsFindingsEvaluation
         {
             EvaluatedAt = now,
@@ -141,7 +150,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 .ThenBy(f => f.Rule, StringComparer.Ordinal)
                 .ThenBy(f => f.Id, StringComparer.Ordinal)
                 .ToList(),
-            Posture = BuildEvidencePosture(now, options, rollupDegraded, alertSource, [workflowSource, catalogSource], managedTargets),
+            Posture = BuildEvidencePosture(now, options, rollupDegraded, alertSource, storeSources, managedTargets),
         };
     }
 
@@ -150,11 +159,11 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         OpsFindingsOptions options,
         bool rollupDegraded,
         EvidenceSourceEnvelope alertSource,
-        IReadOnlyList<EvidenceSourceEnvelope> durableSources,
+        IReadOnlyList<EvidenceSourceEnvelope> storeSources,
         IReadOnlyList<OpsManagedTargetHealthView> managedTargets)
     {
-        var sections = new List<EvidenceSourceEnvelope>
-        {
+        List<EvidenceSourceEnvelope> sections =
+        [
             alertSource,
             EvidencePostureFactory.Complete(
                 EvidencePostureVocabulary.SourceIds.FindingsControlPlane,
@@ -173,6 +182,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 "execution-job-store",
                 _jobStore is not null,
                 now),
+            .. storeSources,
             BuildServingLatencyRollupSource(now, options, rollupDegraded),
             BuildStoreSource(
                 EvidencePostureVocabulary.SourceIds.FindingsDatabasePressure,
@@ -185,9 +195,8 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 _batchBackends.Count > 0,
                 now,
                 EvidencePostureVocabulary.BackendKinds.InProcess),
-        };
+        ];
 
-        sections.AddRange(durableSources);
         if (managedTargets.Count > 0) sections.Add(ManagedComposeObserver.Source(managedTargets));
         var validated = sections.Select(source => EvidencePostureFactory.Validate(source, now)).ToArray();
         var aggregate = EvidencePostureFactory.Aggregate(
