@@ -63,7 +63,17 @@ internal sealed class ClarificationContinuation
         };
         return new ClarificationContinuation(continuation, answers)
         {
-            Request = GroundingToolMapper.ToDomain(resumed),
+            Request = answers.Count > 0 ? GroundingToolMapper.ToDomain(resumed)
+                : GroundingToolMapper.ToDomain(new McpGroundCandidatesArgument
+                {
+                    IntentId = intentId,
+                    Goal = original.Goal,
+                    WorkflowFamilyHint = original.WorkflowFamilyHint,
+                    Constraints = original.Constraints,
+                    ExplicitInputs = original.ExplicitInputs,
+                    AssumptionPolicy = original.AssumptionPolicy,
+                    Context = original.Context,
+                }),
             Declined = declined,
         };
     }

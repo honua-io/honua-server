@@ -109,6 +109,7 @@ public sealed class McpMrtrClarificationTests
 
     [UnitTheory]
     [InlineData("""{"clarify":{"action":"decline"}}""")]
+    [InlineData("""{"clarify":{"action":"cancel"}}""")]
     [InlineData("""{"clarify":{"action":"accept","content":{}}}""")]
     [InlineData("""{"clarify":{"action":"accept","content":{"workflow_family":"  "}}}""")]
     public async Task GroundCandidates_DeclinedOrEmptyRetry_ReturnsEnvelopeInsteadOfAskingAgain(string responses)
@@ -126,6 +127,10 @@ public sealed class McpMrtrClarificationTests
 
         result.GetProperty("resultType").GetString().Should().Be("complete");
         result.GetProperty("structuredContent").TryGetProperty("clarification", out _).Should().BeTrue();
+        await _grounding.Received(1).GroundAsync(
+            Arg.Is<GroundingRequest>(request => request.IntentId == "intent-abc"
+                && request.ClarificationResponse == null),
+            Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTheory]
