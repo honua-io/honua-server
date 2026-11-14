@@ -1789,7 +1789,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Stac.RetiredHostedSampleTests" \
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
-    "STAC Protocol 1" \
+    "STAC Protocol 2" \
   `# #3204 September 2026 shard-headroom rebalance: pin one class on each side of` \
   `# every capacity split, so a later filter edit cannot quietly move a heavy` \
   `# class back onto the shard the split took it off (or orphan it entirely).` \

@@ -388,7 +388,7 @@ if [[ -z "${python_bin}" ]]; then
 else
   audit_dir="${workdir}/audit"
   mkdir -p "${audit_dir}"
-  audit_shard="Migration"
+  audit_shard="Migration 1"
   audit_cap="$(jq -r --arg s "${audit_shard}" \
     '.shards[] | select(.shard_name == $s) | .test_timeout_minutes' "${REPO_ROOT}/.github/ci-shards.json")"
   [[ -n "${audit_cap}" && "${audit_cap}" != "null" ]] || fail "could not read ${audit_shard} cap from ci-shards.json"
