@@ -117,12 +117,101 @@ public sealed class DenseLowZoomMvtBudgetIntegrationTests : IAsyncLifetime
         AssertWithinBudget(sourceFitted);
     }
 
+    [IntegrationTheory]
+    [InlineData(0)]
+    [InlineData(1000)]
+    public async Task GetMvtTile_AttributeHeavy_RetainsEveryFeatureIdentity(int configuredLimit)
+    {
+        await InsertAttributeHeavyFeaturesAsync();
+        var query = new FeatureQuery { SpatialReferenceSrid = 4326 };
+        var limits = new TileLimits { MaxTileSize = 512_000, MaxFeaturesPerTile = configuredLimit };
+        var builder = CreateQueryBuilder();
+        var expectedIds = Enumerable.Range(1, 16).Select(id => (long)id)
+            .Concat([101L, 102L]).Concat(Enumerable.Range(2001, 5000).Select(id => (long)id))
+            .Take(configuredLimit > 0 ? configuredLimit : int.MaxValue).ToArray();
+
+        for (MvtTileBudgetStep? step = MvtTileBudgetStep.Full; step is { } current; step = current.Next())
+        {
+            var pass = await ExecuteScalarAsync(builder.BuildMvtTileQuery(
+                1, 0, 0, 0, query, Options, limits, CoreGeometryStorageType.Geometry, null, current));
+            MvtTileDecoder.Decode(pass!).Layer("layer").Features
+                .Select(feature => Convert.ToInt64(feature.Attributes["objectid"], System.Globalization.CultureInfo.InvariantCulture))
+                .Should().BeEquivalentTo(expectedIds, $"pass {current.Index} must retain the same identities");
+        }
+
+        var builtIn = await MvtTileBudgetFitter.ReadAsync(
+            limits.MaxTileSize,
+            step => builder.BuildMvtTileQuery(
+                1, 0, 0, 0, query, Options, limits, CoreGeometryStorageType.Geometry, null, step),
+            ReadManagedAsync,
+            CancellationToken.None);
+        var mapped = await CreateReader().GetMvtTileAsync(1, 0, 0, 0, query, Options, limits);
+        foreach (var payload in new[] { builtIn, mapped })
+        {
+            payload.Should().NotBeNull();
+            payload!.Length.Should().BeLessThanOrEqualTo((int)limits.MaxTileSize);
+            MvtTileDecoder.Decode(payload).Layer("layer").Features
+                .Select(feature => Convert.ToInt64(feature.Attributes["objectid"], System.Globalization.CultureInfo.InvariantCulture))
+                .Should().BeEquivalentTo(expectedIds);
+        }
+    }
+
+    private async Task InsertAttributeHeavyFeaturesAsync()
+    {
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO {_schema}.features (layer_id, objectid, geometry, attributes)
+            SELECT 1, 2000 + g,
+                ST_SetSRID(ST_MakePoint(-120 + g * 0.001, 35), 4326),
+                jsonb_build_object('payload', repeat('x', 1024) || g::text)
+            FROM generate_series(1, 5000) g;
+            INSERT INTO {_schema}.dense_features (objectid, geom, payload)
+            SELECT objectid, geometry, attributes->>'payload'
+            FROM {_schema}.features WHERE objectid > 2000;
+            """);
+    }
+
     [IntegrationTest]
-    public async Task GetMvtTile_OneByteBudget_StillRefuses()
+    public async Task EncodeGeometry_SimplificationMovesLineOutsideTile_RetainsOriginalIdentity()
+    {
+        const string original = "ST_GeomFromText('LINESTRING(-1 1,1 2,-1 3)')";
+        const string simplified = $"ST_SimplifyPreserveTopology({original}, 100)";
+        const string envelope = "ST_MakeEnvelope(0,0,100,100)";
+        var encoded = MvtTileBudget.EncodeGeometry(simplified, original, new(envelope, "4096", "0"));
+        await using var connection = new NpgsqlConnection(_fixture.ConnectionString);
+        await connection.OpenAsync();
+        await using var check = new NpgsqlCommand($"SELECT ST_AsMVTGeom({simplified}, {envelope}, 4096, 0) IS NULL", connection);
+        (await check.ExecuteScalarAsync()).Should().Be(true, "PostGIS returns NULL when the simplified line misses the clip");
+        await using var command = new NpgsqlCommand($"SELECT ST_AsMVT(tile, 'layer', 4096, 'geom') FROM (SELECT 42::bigint AS objectid, {encoded} AS geom) tile", connection);
+        var payload = (byte[])(await command.ExecuteScalarAsync())!;
+        var feature = MvtTileDecoder.Decode(payload).Layer("layer").Features.Should().ContainSingle().Subject;
+        Convert.ToInt64(feature.Attributes["objectid"], System.Globalization.CultureInfo.InvariantCulture).Should().Be(42);
+        feature.GeometryType.Should().Be(MvtGeometryType.LineString);
+        feature.Points.Count().Should().BeGreaterOrEqualTo(2);
+    }
+
+    [IntegrationTest]
+    public async Task EncodeGeometry_SimplificationCreatesVisibleChord_DoesNotAddIdentity()
+    {
+        const string original = "ST_GeomFromText('LINESTRING(-1 1,-1 101,101 101,101 1)')";
+        const string simplified = $"ST_SimplifyPreserveTopology({original}, 101)";
+        const string envelope = "ST_MakeEnvelope(0,0,100,100)";
+        var encoded = MvtTileBudget.EncodeGeometry(simplified, original, new(envelope, "4096", "0"));
+        await using var connection = new NpgsqlConnection(_fixture.ConnectionString);
+        await connection.OpenAsync();
+        await using var check = new NpgsqlCommand($"SELECT ST_AsMVTGeom({original}, {envelope}, 4096, 0) IS NULL AND ST_AsMVTGeom({simplified}, {envelope}, 4096, 0) IS NOT NULL", connection);
+        (await check.ExecuteScalarAsync()).Should().Be(true, "simplification can draw a chord across a tile the original line misses");
+        await using var command = new NpgsqlCommand($"SELECT {encoded} IS NULL", connection);
+        (await command.ExecuteScalarAsync()).Should().Be(true);
+    }
+
+    [IntegrationTheory]
+    [InlineData(1)]
+    [InlineData(128)]
+    public async Task GetMvtTile_InsufficientBudget_RefusesInsteadOfReturningSubset(int maxBytes)
     {
         var query = new FeatureQuery { SpatialReferenceSrid = 4326 };
         var options = Options;
-        var limits = new TileLimits { MaxTileSize = 1, MaxFeaturesPerTile = 0 };
+        var limits = new TileLimits { MaxTileSize = maxBytes, MaxFeaturesPerTile = 0 };
         var builder = CreateQueryBuilder();
 
         await Assert.ThrowsAsync<TileSizeLimitExceededException>(() =>
