@@ -345,6 +345,70 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     // Delivers to this task's sessions; every task receives each change from the change log.
     public int Broadcast(FeatureStreamMessage message) => BroadcastLocally(message);
 
+    // The task's realtime relay follows the feature log once and broadcasts every change in
+    // generation order, so a session has nothing to read from the store while it has been offered
+    // everything the relay has broadcast. Its periodic store read then becomes a memory check
+    // instead of one query per session per interval (specification section 12 item 9). Without an
+    // attached, positioned relay, or once a session falls behind it, the session reads the store.
+    // SSE sessions use this; WebSocket control subscriptions advance their own poll cursors and
+    // still read the store on every interval.
+    private Func<long>? _relayPosition;
+    private long _relayStart;
+    private long _relayedThrough;
+
+    internal void AttachRelay(Func<long> position)
+    {
+        Interlocked.Exchange(ref _relayStart, 0);
+        Volatile.Write(ref _relayPosition, position);
+    }
+
+    internal void DetachRelay() => Volatile.Write(ref _relayPosition, null);
+
+    // Called after a change has been offered to every local session.
+    internal void MarkRelayed(long generation) => InterlockedMax(ref _relayedThrough, generation);
+
+    // Called when the relay could not offer a change to local sessions. Every session must then
+    // read the store through it, even after later changes are offered live.
+    internal void MarkUnrelayed(long generation) => InterlockedMax(ref _storeReadRequiredThrough, generation);
+
+    private long _storeReadRequiredThrough;
+
+    internal bool NeedsStorePoll(Guid sessionId, long replayCursor)
+    {
+        var relay = Volatile.Read(ref _relayPosition);
+        if (relay is null || replayCursor < Interlocked.Read(ref _storeReadRequiredThrough) ||
+            !_sessions.TryGetValue(sessionId, out var entry))
+        {
+            return true;
+        }
+
+        var position = relay();
+        if (position <= 0)
+        {
+            return true;
+        }
+
+        // The first positioned reading marks where the relay began; a session that started
+        // before it reads the store once to cover what came before.
+        Interlocked.CompareExchange(ref _relayStart, position, 0);
+        var relayed = Math.Max(Interlocked.Read(ref _relayedThrough), Interlocked.Read(ref _relayStart));
+        return Math.Max(entry.ConsideredThrough, replayCursor) < relayed;
+    }
+
+    private static void InterlockedMax(ref long target, long value)
+    {
+        var seen = Interlocked.Read(ref target);
+        while (value > seen)
+        {
+            var prior = Interlocked.CompareExchange(ref target, value, seen);
+            if (prior == seen)
+            {
+                return;
+            }
+            seen = prior;
+        }
+    }
+
     private int BroadcastLocally(FeatureStreamMessage message)
     {
         var delivered = 0;
@@ -366,6 +430,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
                 continue;
             }
+
+            // Offered, whether or not it matches: a filtered-out change needs no store read either.
+            entry.MarkConsidered(message.Envelope.Cursor);
 
             var matches = entry.GetMatchingSubscriptions(
                 message.Envelope,
@@ -727,6 +794,13 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         {
             Interlocked.Exchange(ref _lastQueuedCursor, cursor);
         }
+
+        private long _consideredThrough;
+
+        // The highest generation offered to this session by a live broadcast.
+        public long ConsideredThrough => Interlocked.Read(ref _consideredThrough);
+
+        public void MarkConsidered(long cursor) => InterlockedMax(ref _consideredThrough, cursor);
 
         public void SetDrainGrace(long count)
         {

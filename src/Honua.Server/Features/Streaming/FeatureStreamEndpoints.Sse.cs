@@ -403,6 +403,12 @@ internal static partial class FeatureStreamEndpoints
                         // Ignore expected cancellation for the alternate waiter.
                     }
 
+                    if (!sessionManager.NeedsStorePoll(session.SessionId, replayCursor))
+                    {
+                        nextPollAt = DateTimeOffset.UtcNow + options.CrossNodeSyncInterval;
+                        continue;
+                    }
+
                     replayCursor = await ReplayToSseAsync(
                         context.Response,
                         eventStore,
@@ -520,7 +526,12 @@ internal static partial class FeatureStreamEndpoints
                 // drain, run the poll inline now — otherwise continuous broadcast
                 // traffic could keep us pinned in the read branch and the
                 // durable-store sweep would never fire.
-                if (DateTimeOffset.UtcNow >= nextPollAt)
+                if (DateTimeOffset.UtcNow >= nextPollAt &&
+                    !sessionManager.NeedsStorePoll(session.SessionId, replayCursor))
+                {
+                    nextPollAt = DateTimeOffset.UtcNow + options.CrossNodeSyncInterval;
+                }
+                else if (DateTimeOffset.UtcNow >= nextPollAt)
                 {
                     replayCursor = await ReplayToSseAsync(
                         context.Response,
