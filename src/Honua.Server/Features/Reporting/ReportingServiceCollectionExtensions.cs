@@ -28,17 +28,7 @@ internal static class ReportingServiceCollectionExtensions
             return services;
         }
 
-        var hasCustomStore = services.Any(descriptor => descriptor.ServiceType == typeof(IAnalysisReportStore));
-        services.AddAnalysisReportingCore(configuration);
-        if (!hasCustomStore)
-        {
-            var localStore = services.Last(descriptor => descriptor.ServiceType == typeof(IAnalysisReportStore));
-            services.Replace(ServiceDescriptor.Singleton<IAnalysisReportStore>(sp =>
-                sp.GetService<NpgsqlDataSource>() is not null
-                    ? new PostgresAnalysisReportStore(sp.GetRequiredService<JobStoreDatabase>(),
-                        sp.GetRequiredService<IOptions<ReportingConfiguration>>())
-                    : (IAnalysisReportStore)localStore.ImplementationFactory!(sp)));
-        }
+        services.AddReportStore(configuration);
         services.AddMemoryCache();
 
         services.TryAddSingleton<IAnalysisReportService, AnalysisReportService>();
@@ -70,6 +60,21 @@ internal static class ReportingServiceCollectionExtensions
 
         endpoints.MapAnalysisReportEndpoints();
         return endpoints;
+    }
+
+    private static void AddReportStore(this IServiceCollection services, IConfiguration configuration)
+    {
+        var hasCustomStore = services.Any(descriptor => descriptor.ServiceType == typeof(IAnalysisReportStore));
+        services.AddAnalysisReportingCore(configuration);
+        if (!hasCustomStore)
+        {
+            var localStore = services.Last(descriptor => descriptor.ServiceType == typeof(IAnalysisReportStore));
+            services.Replace(ServiceDescriptor.Singleton<IAnalysisReportStore>(sp =>
+                sp.GetService<NpgsqlDataSource>() is not null
+                    ? new PostgresAnalysisReportStore(sp.GetRequiredService<JobStoreDatabase>(),
+                        sp.GetRequiredService<IOptions<ReportingConfiguration>>())
+                    : (IAnalysisReportStore)localStore.ImplementationFactory!(sp)));
+        }
     }
 
     private static bool IsReportingEnabled(IConfigurationSection section)
