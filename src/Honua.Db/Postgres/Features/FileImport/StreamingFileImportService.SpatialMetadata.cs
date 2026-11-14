@@ -41,8 +41,8 @@ internal sealed partial class StreamingFileImportService
 
         var existed = await ImportTableExistsAsync(connection, options.Schema, options.Table, cancellationToken, transaction);
         var mode = options.Request.EffectiveLoadMode;
-        // A replace drops the live options.Table. Prove ownership before resolving geometry:
-        // an unowned options.Table may have no geometry column, and that lookup would report
+        // A replace drops the live table. Prove ownership before resolving geometry:
+        // an unowned table may have no geometry column, and that lookup would report
         // a missing identity instead of IMPORT_TARGET_NOT_OWNED. The swap rechecks
         // under its own lock.
         if (existed && mode == ImportLoadMode.Replace &&
@@ -84,9 +84,9 @@ internal sealed partial class StreamingFileImportService
             await TargetIsImporterOwnedAsync(connection, options.Schema, options.Table, cancellationToken, transaction);
         if (options.Request.CommitParticipant is not null && mode != ImportLoadMode.Replace && !stagedAppend)
         {
-            // Keep the direct-mode refusal inside preparation so new options.Schema/facts roll back too.
+            // Keep the direct-mode refusal inside preparation so new schema/facts roll back too.
             throw new InvalidDataException(
-                "This import must commit its receipt with the rows. The target is not an importer-owned options.Table.");
+                "This import must commit its receipt with the rows. The target is not an importer-owned table.");
         }
         var loadTable = mode == ImportLoadMode.Replace || stagedAppend
             ? await CreateStagingTableAsync(connection, options.Schema, options.Table, storageSrid, cancellationToken, transaction)
