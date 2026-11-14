@@ -232,7 +232,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         _fixture.Services.GetRequiredService<ILoggerFactory>().AddProvider(errors);
         (await CountSourceRowsAsync(_firstTable)).Should().Be(1);
         (await CountSourceRowsAsync(_secondTable)).Should().Be(2);
-        var first = await PublishAsync(_firstTable, "first layer");
+        var first = await PublishAsync(_firstTable, "first layer", "Succeeded");
         first.GetProperty("status").GetString().Should().Be("Completed", "{0}{1}{2}",
             first.GetRawText(), Environment.NewLine, errors.Diagnostics);
         var firstDetails = first.GetProperty("result").GetProperty("details");
@@ -244,7 +244,8 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         var firstStorageId = int.Parse(firstDetails.GetProperty("storageLayerId").GetString()!, CultureInfo.InvariantCulture);
         _publishedLayerIds.Add(firstStorageId);
 
-        var second = await PublishAsync(_secondTable, "second layer");
+        // A queued publication is approved into the job pipeline, not completed inline.
+        var second = await PublishAsync(_secondTable, "second layer", "Submitted");
         second.GetProperty("status").GetString().Should().Be("Queued");
         var jobId = second.GetProperty("jobId").GetString();
         jobId.Should().NotBeNullOrWhiteSpace();
@@ -346,7 +347,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
             .Should().BeTrue();
     }
 
-    private async Task<JsonElement> PublishAsync(string table, string layerName)
+    private async Task<JsonElement> PublishAsync(string table, string layerName, string expectedApprovalStatus)
     {
         using var response = await _client.PostAsJsonAsync("/mcp", new
         {
@@ -378,15 +379,16 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         var result = document.RootElement.GetProperty("result");
         result.TryGetProperty("isError", out var isError);
         (isError.ValueKind == JsonValueKind.True).Should().BeFalse(body);
-        return await ApproveAndReadAcceptedHandleAsync(result.GetProperty("structuredContent"), body);
+        return await ApproveAndReadAcceptedHandleAsync(result.GetProperty("structuredContent"), body, expectedApprovalStatus);
     }
 
-    private async Task<JsonElement> ApproveAndReadAcceptedHandleAsync(JsonElement proposal, string body)
+    private async Task<JsonElement> ApproveAndReadAcceptedHandleAsync(
+        JsonElement proposal, string body, string expectedApprovalStatus)
     {
         proposal.GetProperty("status").GetString().Should().Be("RequiresApproval", body);
         var proposalId = proposal.GetProperty("proposalId").GetString();
         proposalId.Should().NotBeNullOrWhiteSpace();
-        var live = await HumanApprovedOperation.ApproveAndReadHandleAsync(_fixture, proposalId!);
+        var live = await HumanApprovedOperation.ApproveAndReadHandleAsync(_fixture, proposalId!, expectedApprovalStatus);
         // The worker may finish before HTTP readback. Assert queued admission
         // against the persisted handle, then verify live completion separately.
         var accepted = await _fixture.Services.GetRequiredService<IOperationInstanceStore>()
