@@ -22,31 +22,38 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed partial class ServiceSettingsEndpointsTests : IAsyncLifetime
+public sealed partial class ServiceSettingsEndpointsTests
+    : IClassFixture<ServiceSettingsEndpointsTests.SeededHost>, IAsyncLifetime
 {
     private const string AdminPassword = "service-settings-admin-key";
+    private readonly SeededHost _host;
     private readonly WebAppFixture _fixture;
-    private HttpClient _client = null!;
+    private readonly HttpClient _client;
 
-    public ServiceSettingsEndpointsTests()
+    public ServiceSettingsEndpointsTests(SeededHost host)
     {
-        _fixture = new WebAppFixture()
-            .UseSeed("tests/seed/server.yaml")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-            });
-    }
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
+        _host = host;
+        _fixture = host.Application;
         _client = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task InitializeAsync() => _host.RestoreSeededStateAsync();
+
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
+    }
+
+    // Cases write only the metadata graph, which the seeded host restores before each case.
+    public sealed class SeededHost() : SeededMetadataHost(new WebAppFixture()
+        .UseSeed("tests/seed/server.yaml")
+        .ConfigureWebHost(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+        }));
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/services")]

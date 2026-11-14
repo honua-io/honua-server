@@ -38,14 +38,14 @@ flowchart LR
   end
 
   subgraph storage["Storage"]
-    postgis["PostGIS — read/write"]
+    postgis["PostgreSQL/PostGIS — data and durable control plane"]
     duckdb["DuckDB — read-only"]
     mssql["SQL Server — read-only"]
     oracle["Oracle — read-only"]
     mysql["MySQL / MariaDB — read-only"]
   end
 
-  redis["Redis — optional<br/>shared cache · governed operations"]
+  redis["Redis — optional<br/>shared cache"]
   files["File storage<br/>local · S3 · Azure Blob"]
 
   geoservices --> adapters
@@ -63,10 +63,10 @@ flowchart LR
   pipeline -.-> files
 ```
 
-Dashed edges are optional infrastructure: remove Redis and the server still
-runs, with caching falling back to in-memory and the governed proposal and
-workflow endpoints reporting unavailable. Background jobs are stored in
-PostgreSQL and keep running.
+Dashed edges are optional infrastructure. Without a shared cache, response caching
+uses per-node memory. PostgreSQL stores background jobs, workflow definitions and
+runs, schedule and trigger cursors, and governed operation proposals and approvals;
+these capabilities remain available without Redis.
 
 Every protocol endpoint is a thin adapter over the same canonical query, edit, metadata, and rendering pipeline. Publish a layer once and it is served simultaneously through every protocol its service enables — see [Data model](data-model.md) and the [protocol matrix](protocols.md).
 
@@ -87,7 +87,7 @@ Read-only providers support query, count, extent, and pagination; they report un
 
 ## Optional infrastructure
 
-- **Redis** — distributed caching for multi-node deployments, and the durable store for governed proposals and workflow orchestration. Without Redis, caching falls back to in-memory and the proposal and workflow endpoints report unavailable. Background jobs do not use Redis.
+- **Shared cache** — optional response caching for multi-node deployments; per-node memory is the fallback. Durable jobs, governed proposals and approvals, and workflow orchestration use PostgreSQL.
 - **File storage** — attachments, imports, and raster assets use the local filesystem by default; S3-compatible storage (including MinIO) and Azure Blob Storage are configurable alternatives (`FileStorage__Provider`).
 
 ## Compute tier
