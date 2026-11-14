@@ -22,7 +22,7 @@ public sealed class PostgresOAuthScopeCatalogueTests(DatabaseFixtureAdapter data
     {
         await database.CreateSchemaUnderLockAsync(_schema);
         await using var stream = typeof(PostgresOAuthScopeCatalogue).Assembly.GetManifestResourceStream(
-            "Honua.Server.Migrations.165_CreateOAuthScopeCatalogue.sql")
+            "Honua.Server.Migrations.178_CreateOAuthScopeCatalogue.sql")
             ?? throw new InvalidOperationException("OAuth catalogue migration is missing.");
         using var reader = new StreamReader(stream);
         await database.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync())
