@@ -124,6 +124,7 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
 
             if (!_request.Writer.TryWrite(new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, head)))
             {
+                RecordDropped(1);
                 CloseLocked(new RealtimeSubscriptionClosedException(RealtimeResetReasons.SlowConsumer));
                 return;
             }
@@ -314,6 +315,7 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
 
         if (matches && !_request.Writer.TryWrite(new RealtimeDelivery.Event(realtimeEvent)))
         {
+            RecordDropped(1);
             _request.Writer.TryWrite(new RealtimeDelivery.Reset(RealtimeResetReasons.SlowConsumer, head));
             CloseLocked(new RealtimeSubscriptionClosedException(RealtimeResetReasons.SlowConsumer));
         }
@@ -351,10 +353,20 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
         if (error is RealtimeSubscriptionClosedException { Reason: RealtimeResetReasons.SlowConsumer })
         {
             RealtimeMetrics.SlowConsumerClosed.Add(1, new KeyValuePair<string, object?>("family", Family.Name));
-            RealtimeMetrics.FramesDropped.Add(1, new KeyValuePair<string, object?>("family", Family.Name));
         }
+
+        // Events held for a replay that will not finish are never delivered to this session.
+        RecordDropped(_handoff.Count);
         _handoff.Clear();
         _dispatcher.Remove(this);
         _request.Writer.TryComplete(error);
+    }
+
+    private void RecordDropped(int frames)
+    {
+        if (frames > 0)
+        {
+            RealtimeMetrics.FramesDropped.Add(frames, new KeyValuePair<string, object?>("family", Family.Name));
+        }
     }
 }

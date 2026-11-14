@@ -212,14 +212,17 @@ public sealed class RealtimeStreamLifecycleTests
     }
 
     [UnitTest]
-    public void DeliveryLatency_BucketBoundaries_ResolveSubSecondDeliveriesAndTheOneSecondAlarm()
+    public void LatencyHistograms_BucketBoundaries_ResolveSubSecondValuesAndTheAlarmThresholds()
     {
-        var boundaries = RealtimeMetrics.DeliveryLatency.Advice?.HistogramBucketBoundaries;
+        foreach (var histogram in new[] { RealtimeMetrics.DeliveryLatency, RealtimeMetrics.DispatchLagSeconds })
+        {
+            var boundaries = histogram.Advice?.HistogramBucketBoundaries;
 
-        boundaries.Should().NotBeNull();
-        boundaries!.Should().BeInAscendingOrder();
-        boundaries.Should().Contain(1);
-        boundaries.Count(boundary => boundary < 1).Should().BeGreaterThanOrEqualTo(5);
+            boundaries.Should().NotBeNull(histogram.Name);
+            boundaries!.Should().BeInAscendingOrder();
+            boundaries.Should().Contain([1, 5], "the operator guide alarms at one and five seconds");
+            boundaries.Count(boundary => boundary < 1).Should().BeGreaterThanOrEqualTo(5);
+        }
     }
 
     private static RealtimeStreamLifecycle CreateLifecycle()

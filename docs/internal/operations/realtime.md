@@ -1,12 +1,18 @@
 # Realtime stream operations
 
 The shared lifecycle closes admission as soon as application shutdown starts. Readiness
-then returns 503 with `Cache-Control: no-store`; liveness remains available. Transport
+then returns 503 with `Cache-Control: no-store` while the server still accepts connections;
+liveness remains available. Kestrel stops listening early in host shutdown, so a load balancer
+usually sees refused connections rather than that 503: rely on target deregistration (and its
+delay) to stop routing, not on the readiness response alone. Transport
 handlers must register each session with `IRealtimeStreamLifecycle`, reject a null
 registration with 503 and `Retry-After: 2`, and dispose the session when it closes.
 
-The default drain budget is `Realtime:ShutdownDrain` = 20 seconds. Sessions receive a
-staggered cancellation signal during that budget. An SSE handler sends its terminal
+The default drain budget is `Realtime:ShutdownDrain` = 20 seconds. Keep it below the host
+shutdown timeout (`HostOptions.ShutdownTimeout`, 30 seconds by default) with a few seconds to
+spare: the host cancels the drain at its own timeout and every remaining stream is aborted then.
+Sessions receive staggered cancellation signals over the first 75% of the budget, so the last
+one signalled still has a quarter of the budget to flush its terminal frame. An SSE handler sends its terminal
 retry frame using the session's randomized 1000–5000 ms retry value; a WebSocket handler
 sends service-restart close code 1012. Remaining sessions are aborted at the deadline.
 The log tail and dedicated listener stop after this drain. Handlers use the shared
@@ -14,7 +20,8 @@ The log tail and dedicated listener stop after this drain. Handlers use the shar
 with `X-Accel-Buffering: no` and `Cache-Control: no-store, no-transform`.
 
 Transport integration is required: registering the shared service alone does not add
-heartbeats, terminal frames, or authorization checks to a handler. Verify every transport
+heartbeats, terminal frames, or authorization checks to a handler, and a transport that does not
+register its sessions emits none of the per-session signals below. Verify every transport
 on a live rolling restart before treating the lifecycle journey as passed.
 
 ## Signals and recommended alarms
@@ -28,15 +35,15 @@ are seconds. Avoid tenant, user, subscription, or event identifiers as metric la
 | `honua.realtime.subscribers` | Active registered sessions by family and transport. Alert above 80% of the configured per-task cap; compare on the same task, rather than summing across tasks. |
 | `honua.realtime.log.head` | Last observed committed sequence by family. |
 | `honua.realtime.dispatch.position` | Last dispatched sequence by family. |
-| `honua.realtime.dispatch.lag.events` | Last observed head minus dispatch position. Sustained growth requires investigation even if the listener is connected. |
-| `honua.realtime.dispatch.lag.seconds` | Age of the oldest observed undispatched event. Alert when the p99 exceeds five seconds over five minutes. Evaluate within each task and family. |
+| `honua.realtime.dispatch.lag.events` | Events waiting when the dispatcher last woke (head minus dispatch position). Sustained growth requires investigation even if the listener is connected. |
+| `honua.realtime.dispatch.lag.seconds` | Histogram of how long the oldest event of each dispatched batch waited in the log. Alert when the p99 exceeds five seconds over five minutes. Evaluate within each task and family. |
 | `honua.realtime.delivery.latency` | Commit-to-flushed-frame histogram by family and transport. Alert when p95 exceeds one second for ten minutes. Record only after the frame is flushed. |
 | `honua.realtime.listener.connected` | Dedicated listener state, 0 or 1. Alert on 0 for two minutes on a task configured for the PostgreSQL provider. An in-process provider has no dedicated listener. |
 | `honua.realtime.listener.reconnects` | Successful reconnects following failure. Use increases to correlate connection instability with lag. |
-| `honua.realtime.wakeups` | Wake-ups by `source`: `notify`, `safety-poll`, or `degraded-poll`. Polling preserves delivery when notifications are unavailable. |
+| `honua.realtime.wakeups` | Wake-ups by `source`: `notify`, `safety-poll`, `degraded-poll`, or `local-poll` (the in-process provider, which has no listener). Polling preserves delivery when notifications are unavailable. |
 | `honua.realtime.resets` | Reset frames written, by family, transport, and reason. A reset requires the client to resynchronize its snapshot. |
 | `honua.realtime.slow_consumer.closed` | Subscriptions closed when their bounded channel filled. Alert when five-minute closures exceed 1% of active subscribers, accounting for periods with no subscribers. |
-| `honua.realtime.frames.dropped` | Frames rejected by a full bounded channel. Correlate with slow-consumer closures and client reconnects. |
+| `honua.realtime.frames.dropped` | Frames a session never received: rejected by its full bounded channel, or held for a replay when the session closed. Correlate with slow-consumer closures and client reconnects. |
 | `honua.realtime.authz.frames_filtered` | Frames filtered by authorization, by family and transport. |
 | `honua.realtime.authz.streams_revoked` | Sessions closed after access revocation, by family and transport. |
 | `honua.realtime.notify_queue.usage` | Database-wide PostgreSQL notification queue fraction. Alert above 0.25. The maintenance lease holder samples once per minute; missing samples require checking the sampler warning log and lease/database health. |

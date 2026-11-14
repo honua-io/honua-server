@@ -58,15 +58,21 @@ internal sealed partial class RealtimeTailBackgroundService(
         await Task.WhenAll(listening, flushing).ConfigureAwait(false);
     }
 
-    internal TimeSpan CurrentPollInterval()
+    internal TimeSpan CurrentPollInterval() => CurrentPoll().Interval;
+
+    // The interval and the wake-up source are chosen together, before the wait, so a listener that
+    // reconnects during the wait does not relabel the poll that follows it.
+    private (TimeSpan Interval, string Source) CurrentPoll()
     {
         var current = options.Value;
         if (listener is null)
         {
-            return current.LocalPollInterval;
+            return (current.LocalPollInterval, "local-poll");
         }
 
-        return listener.IsConnected ? current.SafetyPollInterval : current.DegradedPollInterval;
+        return listener.IsConnected
+            ? (current.SafetyPollInterval, "safety-poll")
+            : (current.DegradedPollInterval, "degraded-poll");
     }
 
     private async Task FollowAsync(RealtimeDispatcher active, CancellationToken stoppingToken)
@@ -88,7 +94,8 @@ internal sealed partial class RealtimeTailBackgroundService(
                 LogDispatchFailed(logger, exception);
             }
 
-            if (await active.WaitForWakeAsync(CurrentPollInterval(), stoppingToken).ConfigureAwait(false))
+            var poll = CurrentPoll();
+            if (await active.WaitForWakeAsync(poll.Interval, stoppingToken).ConfigureAwait(false))
             {
                 var coalesce = options.Value.WakeCoalesceWindow;
                 if (coalesce > TimeSpan.Zero)
@@ -100,8 +107,7 @@ internal sealed partial class RealtimeTailBackgroundService(
             }
             else
             {
-                RealtimeMetrics.Wakeups.Add(1, new KeyValuePair<string, object?>("source",
-                    listener?.IsConnected == true ? "safety-poll" : "degraded-poll"));
+                RealtimeMetrics.Wakeups.Add(1, new KeyValuePair<string, object?>("source", poll.Source));
             }
         }
     }

@@ -1105,9 +1105,9 @@
     },
     {
       "instrument": "honua.realtime.dispatch.lag.seconds",
-      "kind": "Gauge",
+      "kind": "Histogram",
       "unit": null,
-      "series": ["honua_realtime_dispatch_lag_seconds"],
+      "series": ["honua_realtime_dispatch_lag_seconds_bucket", "honua_realtime_dispatch_lag_seconds_count", "honua_realtime_dispatch_lag_seconds_sum"],
       "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
     },
     {

@@ -8,6 +8,11 @@ namespace Honua.Server.Features.Realtime;
 
 internal sealed class RealtimeStreamLifecycle(TimeProvider clock, IOptions<RealtimeOptions> options) : IRealtimeStreamLifecycle
 {
+    // Close signals spread over this share of the drain budget, so the last session signalled still
+    // has a quarter of the budget to flush its retry frame before the abort.
+    private const int SignalSpreadPercent = 75;
+    private static readonly TimeSpan Heartbeat = TimeSpan.FromSeconds(15);
+
     private readonly Lock _gate = new();
     private readonly HashSet<StreamSession> _sessions = [];
     private readonly TaskCompletionSource _empty = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -15,7 +20,7 @@ internal sealed class RealtimeStreamLifecycle(TimeProvider clock, IOptions<Realt
 
     public bool IsDraining { get { lock (_gate) { return _draining is not null; } } }
 
-    public TimeSpan HeartbeatInterval => TimeSpan.FromSeconds(15);
+    public TimeSpan HeartbeatInterval => Heartbeat;
 
     public IRealtimeStreamSession? TryOpen(RealtimeStreamRegistration registration)
     {
@@ -79,8 +84,9 @@ internal sealed class RealtimeStreamLifecycle(TimeProvider clock, IOptions<Realt
 
         using var deadline = new CancellationTokenSource(options.Value.ShutdownDrain, clock);
         using var stagger = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        var spread = options.Value.ShutdownDrain.Ticks * SignalSpreadPercent / 100;
         var signals = Task.WhenAll(sessions.Select((session, index) => SignalCloseAsync(
-            session, TimeSpan.FromTicks(options.Value.ShutdownDrain.Ticks * index / sessions.Length), stagger.Token)));
+            session, TimeSpan.FromTicks(spread * index / sessions.Length), stagger.Token)));
         try
         {
             // Sessions that close on their own end the drain without waiting out the stagger.
