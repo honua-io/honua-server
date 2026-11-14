@@ -1153,6 +1153,21 @@ def validate_cog(path: Path, args: argparse.Namespace) -> list[dict]:
     return observations
 
 
+def validate_zarr_support_contract(evidence: dict, matrix_path: Path) -> None:
+    matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
+    if matrix.get("format") != "honua.zarr-support/v1" or evidence.get("support_contract") != matrix["format"]:
+        raise ValueError("Honua Zarr support contract is missing or has an unknown version")
+    metadata = evidence["store_metadata"]
+    observed = {
+        "version": metadata["zarr_format"],
+        "dataType" if metadata["zarr_format"] == 2 else "normalizedDataType": metadata["dtype"],
+        "order": metadata["order"], "chunkKeyEncoding": metadata["chunk_key_encoding"],
+        "separator": metadata["separator"], "codec": metadata["compressor"] or "none",
+    }
+    if not any(all(cell.get(key) == value for key, value in observed.items()) for cell in matrix["cells"]):
+        raise ValueError("Honua Zarr fixture is outside the executable support contract")
+
+
 def validate_honua_zarr_subset(path: Path, args: argparse.Namespace) -> list[dict]:
     """
     Validates the Zarr subset **Honua decoded** out of the canonical store.
@@ -1178,6 +1193,7 @@ def validate_honua_zarr_subset(path: Path, args: argparse.Namespace) -> list[dic
     transfer = dict(zarr_evidence.get("observed_transfer") or {})
 
     def honua_subset_check() -> None:
+        validate_zarr_support_contract(zarr_evidence, args.artifacts / "zarr-support-matrix.v1.json")
         start = list(zarr_evidence["start"])
         stop = list(zarr_evidence["stop"])
         shape = list(zarr_evidence["shape"])

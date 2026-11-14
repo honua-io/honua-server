@@ -52,6 +52,8 @@ internal static class HonuaConsumerArtifacts
     /// </summary>
     internal static async Task<JsonObject> GenerateAsync(string fixtureDirectory, string outputDirectory)
     {
+        using (var matrix = File.Create(Path.Combine(outputDirectory, "zarr-support-matrix.v1.json")))
+            ZarrSupportMatrix.WriteJson(matrix);
         var evidence = new JsonObject
         {
             ["schema"] = "honua-cng-consumer-evidence/v1",
@@ -252,6 +254,7 @@ internal static class HonuaConsumerArtifacts
                 ["artifact"] = "decoded-subset",
                 ["source_artifact"] = ZarrRootKey,
                 ["producer"] = "ZarrMetadataExtractor + ZarrSubsetReader",
+                ["support_contract"] = ZarrSupportMatrix.Format,
                 ["variable"] = subset.Variable,
                 ["start"] = ToJson(SubsetStart),
                 ["stop"] = ToJson(SubsetStop),
@@ -266,6 +269,9 @@ internal static class HonuaConsumerArtifacts
                     ["dtype"] = array.DataType,
                     ["chunk_count"] = totalChunks,
                     ["compressor"] = array.Compressor,
+                    ["order"] = array.Order,
+                    ["chunk_key_encoding"] = array.ChunkKeyEncoding.Prefix == "c" ? "default" : "v2",
+                    ["separator"] = array.ChunkKeyEncoding.Separator,
                     ["dimension_names"] = ToJson(array.DimensionNames),
                 },
                 ["axes"] = axes,

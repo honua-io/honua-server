@@ -136,69 +136,10 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
     }
 
     private static void ValidateCodec(ZarrArrayMetadata array)
-    {
-        var compressor = array.Compressor;
-        if (compressor is null)
-        {
-            return;
-        }
-
-        if (string.Equals(compressor, "zlib", StringComparison.Ordinal) ||
-            string.Equals(compressor, "gzip", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        throw new InvalidOperationException(
-            $"Zarr compressor '{compressor}' is not supported by the MVP reader. Use uncompressed, zlib, or gzip chunks.");
-    }
+        => ZarrSupportMatrix.ValidateCodec(array.Compressor, (int)array.ZarrFormat);
 
     internal static int ResolveElementSize(string dtype)
-    {
-        var span = dtype.AsSpan();
-        if (span.IsEmpty)
-        {
-            throw new InvalidDataException("Zarr dtype is empty.");
-        }
-
-        // dtype follows numpy convention: [<|>|=][kind][bytes], e.g. <f4, |u1, >i8.
-        var endian = span[0];
-        if (endian is not ('<' or '>' or '|' or '='))
-        {
-            throw new InvalidDataException($"Zarr dtype '{dtype}' has unrecognized byte-order prefix.");
-        }
-        if (endian == '>')
-        {
-            throw new InvalidOperationException($"Zarr dtype '{dtype}' is big-endian; only little-endian dtypes are supported by the MVP reader.");
-        }
-
-        if (span.Length < 3)
-        {
-            throw new InvalidDataException($"Zarr dtype '{dtype}' is too short to interpret.");
-        }
-
-        var kind = span[1];
-        if (kind is not ('f' or 'i' or 'u' or 'b'))
-        {
-            throw new InvalidOperationException($"Zarr dtype kind '{kind}' is not supported by the MVP reader (use f, i, u, or b).");
-        }
-
-        if (!int.TryParse(span[2..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var bytes) || bytes <= 0)
-        {
-            throw new InvalidDataException($"Zarr dtype '{dtype}' has an invalid element size suffix.");
-        }
-
-        // All supported numeric dtypes fit within 16 bytes (f16 / complex128 is the largest).
-        // Reject unrealistic values early to prevent oversized allocation.
-        const int MaxSupportedElementBytes = 16;
-        if (bytes > MaxSupportedElementBytes)
-        {
-            throw new InvalidDataException(
-                $"Zarr dtype '{dtype}' has an element size of {bytes} bytes, which exceeds the maximum of {MaxSupportedElementBytes}.");
-        }
-
-        return bytes;
-    }
+        => ZarrSupportMatrix.ResolveElementSize(dtype);
 
     private static async Task CopyChunkIntoSubsetAsync(
         ICloudRangeReader reader,

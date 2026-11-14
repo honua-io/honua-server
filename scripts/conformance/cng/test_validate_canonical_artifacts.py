@@ -24,6 +24,24 @@ IDENTITY = importlib.util.module_from_spec(IDENTITY_SPEC)
 IDENTITY_SPEC.loader.exec_module(IDENTITY)
 
 
+class ZarrSupportContractTests(unittest.TestCase):
+    def test_fixture_eligibility_uses_generated_contract(self):
+        matrix = SCRIPT.parents[3] / "docs/gis/data/zarr-support-matrix.v1.json"
+        evidence = {"support_contract": "honua.zarr-support/v1", "store_metadata": {
+            "zarr_format": 2, "dtype": "<f4", "order": "C",
+            "chunk_key_encoding": "v2", "separator": ".", "compressor": "zlib",
+        }}
+        MODULE.validate_zarr_support_contract(evidence, matrix)
+        evidence["store_metadata"]["dtype"] = "<f16"
+        with self.assertRaisesRegex(ValueError, "outside the executable support contract"):
+            MODULE.validate_zarr_support_contract(evidence, matrix)
+
+    def test_missing_contract_version_fails_closed(self):
+        matrix = SCRIPT.parents[3] / "docs/gis/data/zarr-support-matrix.v1.json"
+        with self.assertRaisesRegex(ValueError, "unknown version"):
+            MODULE.validate_zarr_support_contract({}, matrix)
+
+
 class CandidateIdentityTests(unittest.TestCase):
     def setUp(self):
         self.manifest = {

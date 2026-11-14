@@ -108,6 +108,9 @@ The Zarr reader (`ZarrMetadataExtractor`/`ZarrSubsetReader`) reads both **Zarr v
 
 ### Zarr metadata, chunk integrity, and compatibility
 
+The [executable Zarr support contract](zarr-support.md) publishes supported dtype,
+endianness, order, chunk-key and codec combinations as versioned JSON.
+
 The supported reader validates mandatory metadata at each discovered node against the [Zarr v2 specification](https://zarr-specs.readthedocs.io/en/latest/v2/v2.0.html) and [v3 core specification](https://zarr-specs.readthedocs.io/en/latest/v3/core/index.html). V2 array extension fields remain ignorable; v2 groups reject extra fields. V3 unknown required extensions are rejected, while explicitly ignorable extensions still need valid extension metadata. Built-in v3 data types use string identifiers. Supported v3.1 shorthands include `bytes` for one-byte numeric/boolean samples and `default`/`v2` chunk-key encodings; multi-byte samples require an explicit little-endian bytes configuration. The supported v3 pipeline remains one bytes codec followed by at most one gzip codec. Other codecs, general v3 hierarchy discovery, consolidated-only v3 discovery, scalar arrays, and empty coverage dimensions remain explicitly unsupported.
 
 Missing chunks preserve boolean, signed/unsigned integer, and floating-point fills in the binary subset buffer, including exact 64-bit integers and hexadecimal floating-point bits. Numeric floating fills follow IEEE round-half-to-even. Existing empty objects are not treated as missing chunks. Uncompressed chunks must match their full declared chunk shape, including edge padding. Zlib and gzip reads validate complete streams and checksums; gzip also validates optional header CRCs, member sizes, and concatenated members. Truncation, excess decoded samples, and trailing junk fail explicitly. Previously accepted malformed metadata or inconsistent chunks must be corrected before they can be served.
