@@ -50,11 +50,6 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
 
-        if (!secretKey.StartsWith(KeyVaultPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException($"Invalid Azure secret reference. Expected '{KeyVaultPrefix}<vault>:<secret>[:<version>]'.", nameof(secretKey));
-        }
-
         if (TryGetCached(secretKey, out var cached))
         {
             return cached;
