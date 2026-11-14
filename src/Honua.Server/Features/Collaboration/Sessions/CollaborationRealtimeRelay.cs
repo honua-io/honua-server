@@ -148,29 +148,34 @@ internal sealed partial class CollaborationRealtimeRelay(
         ConsumeAsync(RealtimeFamily.CollabOps, stoppingToken),
         ConsumeAsync(RealtimeFamily.CollabPresence, stoppingToken));
 
-    private sealed record DeliveryBatch(RealtimeFamily Family, ChannelReader<RealtimeDelivery> Reader, long? After);
+    private sealed class DeliveryPosition
+    {
+        public long? After { get; set; }
+    }
+
+    private sealed record DeliveryBatch(RealtimeFamily Family, ChannelReader<RealtimeDelivery> Reader, DeliveryPosition Position);
 
     private async Task ConsumeAsync(RealtimeFamily family, CancellationToken stoppingToken)
     {
-        long? after = null;
+        var position = new DeliveryPosition();
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 var window = await provider.GetWindowAsync(family, stoppingToken).ConfigureAwait(false);
-                after ??= window.Head;
+                position.After ??= window.Head;
                 var deliveries = Channel.CreateBounded<RealtimeDelivery>(256);
-                await using var subscription = provider.Subscribe(new RealtimeSubscriptionRequest(family, [], after, deliveries.Writer));
+                await using var subscription = provider.Subscribe(new RealtimeSubscriptionRequest(family, [], position.After, deliveries.Writer));
                 if (family == RealtimeFamily.CollabOps)
                 {
                     _operationsReady.TrySetResult();
                 }
                 else
                 {
-                    await MarkPresenceReadyAsync(after.Value, stoppingToken).ConfigureAwait(false);
+                    await MarkPresenceReadyAsync(position.After.Value, stoppingToken).ConfigureAwait(false);
                 }
 
-                after = await ReadDeliveriesAsync(new DeliveryBatch(family, deliveries.Reader, after), stoppingToken).ConfigureAwait(false);
+                await ReadDeliveriesAsync(new DeliveryBatch(family, deliveries.Reader, position), stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -181,7 +186,7 @@ internal sealed partial class CollaborationRealtimeRelay(
                 Log.DeliveryFailed(logger, family.Name, ex);
                 if (family == RealtimeFamily.CollabPresence)
                 {
-                    after = null;
+                    position.After = null;
                 }
                 await ResetAsync(Sessions, family, stoppingToken).ConfigureAwait(false);
                 await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
@@ -189,15 +194,18 @@ internal sealed partial class CollaborationRealtimeRelay(
         }
     }
 
-    private async Task<long?> ReadDeliveriesAsync(DeliveryBatch batch, CancellationToken stoppingToken)
+    private async Task ReadDeliveriesAsync(DeliveryBatch batch, CancellationToken stoppingToken)
     {
-        var (family, deliveries, after) = batch;
+        var (family, deliveries, position) = batch;
         await foreach (var delivery in deliveries.ReadAllAsync(stoppingToken).ConfigureAwait(false))
         {
-            if (delivery is RealtimeDelivery.Reset)
+            if (delivery is RealtimeDelivery.Reset(_, var head))
             {
+                // The reset boundary predates the resync notice. A later window head can
+                // include operations committed after a client has already resynchronized.
+                position.After = head;
                 await ResetAsync(Sessions, family, stoppingToken).ConfigureAwait(false);
-                return null;
+                return;
             }
 
             if (delivery is not RealtimeDelivery.Event(var value))
@@ -213,9 +221,8 @@ internal sealed partial class CollaborationRealtimeRelay(
             {
                 await DeliverOperationAsync(value, stoppingToken).ConfigureAwait(false);
             }
-            after = value.Sequence;
+            position.After = value.Sequence;
         }
-        return after;
     }
 
     private async Task DeliverOperationAsync(RealtimeEvent value, CancellationToken stoppingToken)
