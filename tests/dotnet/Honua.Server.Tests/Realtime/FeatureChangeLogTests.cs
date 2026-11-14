@@ -106,6 +106,26 @@ public sealed class FeatureChangeLogTests(FeatureChangeDatabaseFixture database)
     }
 
     [IntegrationTest(Timeout = 120000)]
+    public async Task ReadWindowAsync_CachedBoundary_RefreshesWhenHeadAdvances()
+    {
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734210);
+        await layer.InsertAsync("""{"n":1}""");
+        var log = CreateLog(new RealtimeOptions { ResumeMaxEvents = 2 });
+        var initial = await log.ReadWindowAsync(CancellationToken.None);
+
+        for (var i = 0; i < 3; i++)
+        {
+            await layer.InsertAsync("""{"n":2}""");
+        }
+
+        var generations = await layer.GenerationsAsync();
+        var advanced = await log.ReadWindowAsync(CancellationToken.None);
+
+        advanced.Head.Should().BeGreaterThan(initial.Head);
+        advanced.Oldest.Should().BeGreaterThan(generations[1]);
+    }
+
+    [IntegrationTest(Timeout = 120000)]
     public async Task ReadAsync_CapturedPublicIdentity_IsUsedForUpdatesAndDeletes()
     {
         await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734207);

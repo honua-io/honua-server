@@ -29,7 +29,7 @@ internal sealed class PostgresFeatureChangeLog(
     private readonly string _changes = database.Table("feature_changes");
     private readonly string _outbox = database.Table("feature_change_outbox");
     private readonly Lock _windowGate = new();
-    private (long Oldest, DateTimeOffset ReadAt)? _cachedOldest;
+    private (long Head, long Oldest, DateTimeOffset ReadAt)? _cachedOldest;
 
     public RealtimeFamily Family => RealtimeFamily.Features;
 
@@ -107,14 +107,15 @@ internal sealed class PostgresFeatureChangeLog(
     // Oldest is the first position still resumable: every change after Oldest - 1 is within both the
     // age limit (Realtime:Retention:features) and the count limit (Realtime:ResumeMaxEvents), and was
     // not pruned. It is the boundary after the newest change outside the window, not the oldest
-    // change inside it, because a generation gap before that change loses nothing. Cached for 30 s.
+    // change inside it, because a generation gap before that change loses nothing. Cached for 30 s
+    // only while the head is unchanged; new generations can advance the count boundary immediately.
     public async Task<RealtimeLogWindow> ReadWindowAsync(CancellationToken cancellationToken)
     {
         var head = await ReadHeadAsync(cancellationToken).ConfigureAwait(false);
         var now = timeProvider.GetUtcNow();
         lock (_windowGate)
         {
-            if (_cachedOldest is { } cached && now - cached.ReadAt < _windowCacheLifetime)
+            if (_cachedOldest is { } cached && cached.Head == head && now - cached.ReadAt < _windowCacheLifetime)
             {
                 return new RealtimeLogWindow(Family, Math.Min(cached.Oldest, head + 1), head);
             }
@@ -123,7 +124,7 @@ internal sealed class PostgresFeatureChangeLog(
         var oldest = await ReadOldestResumableAsync(head, now, cancellationToken).ConfigureAwait(false);
         lock (_windowGate)
         {
-            _cachedOldest = (oldest, now);
+            _cachedOldest = (head, oldest, now);
         }
 
         return new RealtimeLogWindow(Family, oldest, head);
