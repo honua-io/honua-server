@@ -4277,7 +4277,9 @@
         "Mcp::resources/templates/list",
         "Mcp::resources/read",
         "Mcp::prompts/list",
-        "Mcp::prompts/get"
+        "Mcp::prompts/get",
+        "Mcp::skills/list",
+        "Mcp::skills/get"
       ],
       "proofs": [
         {
