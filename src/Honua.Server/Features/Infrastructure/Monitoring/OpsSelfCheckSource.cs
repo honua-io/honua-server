@@ -69,7 +69,7 @@ internal sealed class OpsSelfCheckSource(
             return document is not null && document.RootElement.ValueKind == JsonValueKind.Object
                 && document.RootElement.TryGetProperty("issuer", out var issuer)
                 && issuer.ValueKind == JsonValueKind.String
-                && string.Equals(issuer.GetString()?.TrimEnd('/'), provider.Authority.TrimEnd('/'), StringComparison.Ordinal);
+                && IsExpectedIssuer(provider, issuer.GetString());
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -79,6 +79,39 @@ internal sealed class OpsSelfCheckSource(
         {
             return false;
         }
+    }
+
+    internal static bool IsExpectedIssuer(OidcProviderRegistration provider, string? issuer)
+    {
+        var authority = provider.Authority?.TrimEnd('/');
+        if (string.IsNullOrEmpty(authority) || string.IsNullOrEmpty(issuer))
+        {
+            return false;
+        }
+        if (string.Equals(issuer.TrimEnd('/'), authority, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // Entra's tenant-independent discovery returns a template, not the configured alias.
+        // This only checks discovery health; token issuer validation remains with the OIDC handler.
+        if (provider.Type != "AzureAd" || !Uri.TryCreate(authority, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+        var tenant = uri.AbsolutePath.Trim('/').Split('/');
+        if (tenant.Length != 2 || tenant[1] != "v2.0")
+        {
+            return false;
+        }
+        var expectedTenant = tenant[0] switch
+        {
+            "common" or "organizations" => "{tenantid}",
+            "consumers" => "9188040d-6c67-4c5b-b112-36a304b66dad",
+            _ => null
+        };
+        return expectedTenant is not null && string.Equals(issuer.TrimEnd('/'),
+            uri.GetLeftPart(UriPartial.Authority) + "/" + expectedTenant + "/v2.0", StringComparison.Ordinal);
     }
 
     public async Task<OpsPublishedRelease?> ReadLatestReleaseAsync(CancellationToken cancellationToken)

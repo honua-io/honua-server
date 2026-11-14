@@ -46,6 +46,26 @@ public sealed class OpsSelfCheckSourceTests
         Assert.Null(factory.Authorization);
     }
 
+    [UnitTheory]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/common/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", true)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/organizations/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", true)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/consumers/v2.0", "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0", true)]
+    [InlineData("AzureAd", "https://login.microsoftonline.us/organizations/v2.0", "https://login.microsoftonline.us/{tenantid}/v2.0", true)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/common/v2.0", "https://other.example/{tenantid}/v2.0", false)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/common/v2.0", "https://login.microsoftonline.com/other-tenant/v2.0", false)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/consumers/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", false)]
+    [InlineData("AzureAd", "https://login.microsoftonline.com/643bcfd3-a3d1-470c-a659-f9547d6d3447/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", false)]
+    [InlineData("Generic", "https://login.microsoftonline.com/common/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", false)]
+    [InlineData("Generic", "https://example.com", "https://example.com/", true)]
+    [InlineData("Generic", "https://example.com", "https://other.example", false)]
+    [InlineData("Generic", "https://example.com", null, false)]
+    [Operation(Operations.TestInfrastructure)]
+    public void DiscoveryIssuer_RecognizesEntraAliasesAndPreservesStrictGenericMatching(
+        string type, string authority, string? issuer, bool expected)
+    {
+        Assert.Equal(expected, OpsSelfCheckSource.IsExpectedIssuer(Provider(authority) with { Type = type }, issuer));
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task ReadProviders_DisabledOrInvalid_OnlyEnabledProviderReported()

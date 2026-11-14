@@ -156,8 +156,10 @@ Current rung by concern:
 Read `honua_ops_findings` or the MCP resource `honua://ops/findings` to see
 these findings. Long-running hosts sample once a minute, with sign-in discovery
 cached for five minutes and the public GitHub latest-release feed cached for
-24 hours. Lambda evaluates them on a findings read and retains that cache only
-for the lifetime of the execution environment. Each replica keeps its own cache.
+24 hours. API Lambda hosts also register the sampler while their execution
+environment is running. Event-handler-only Lambda profiles evaluate checks on a
+findings read. Lambda caches last only for the lifetime of the execution
+environment. Each replica keeps its own cache.
 
 The certificate check reads the expiry of the certificate actually loaded to
 protect the encryption key ring. A host without a configured certificate emits
