@@ -81,7 +81,15 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
             return false;
         }
 
-        var envelope = new DatumAreaEnvelope(west, south, east, north);
+        return TrySelectArea(candidates, new DatumAreaEnvelope(west, south, east, north), out selection);
+    }
+
+    private static bool TrySelectArea(
+        IReadOnlyList<AreaCandidate> candidates,
+        DatumAreaEnvelope envelope,
+        [NotNullWhen(true)] out DatumTransformationSelection? selection)
+    {
+        selection = null;
         int? priority = null;
         foreach (var candidate in candidates)
         {
