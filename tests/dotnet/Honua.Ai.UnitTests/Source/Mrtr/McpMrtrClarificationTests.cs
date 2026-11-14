@@ -27,12 +27,13 @@ public sealed class McpMrtrClarificationTests
     private readonly IGroundingService _grounding = Substitute.For<IGroundingService>();
 
     [UnitTheory]
-    [InlineData("destructive.confirm", false)]
-    [InlineData("destructive.confirm", true)]
-    [InlineData("workflow_family.blocked", false)]
-    [InlineData("workflow_family.blocked", true)]
-    public async Task GroundCandidates_BooleanConfirmation_OnlyTrueResolvesQuestion(string questionId, bool confirmed)
+    [InlineData("destructive.confirm", "false")]
+    [InlineData("destructive.confirm", "true")]
+    [InlineData("workflow_family.blocked", "false")]
+    [InlineData("workflow_family.blocked", "true")]
+    public async Task GroundCandidates_BooleanConfirmation_OnlyTrueResolvesQuestion(string questionId, string answer)
     {
+        var confirmed = answer == "true";
         Grounds(Asking(questionId));
         using var services = Services(_grounding);
         // A negative answer must also withdraw a confirmation carried from an earlier round.
@@ -49,7 +50,7 @@ public sealed class McpMrtrClarificationTests
             new(McpRequestStateKind.Clarification, reference, InMinutes(services, 5)));
         var responses = JsonSerializer.Serialize(new
         {
-            clarify = new { action = "accept", content = new Dictionary<string, bool> { [questionId] = confirmed } },
+            clarify = new { action = "accept", content = new Dictionary<string, bool> { [questionId] = bool.Parse(answer) } },
         });
 
         var result = (await SendAsync(services, new McpCall(Goal, FormCapable)

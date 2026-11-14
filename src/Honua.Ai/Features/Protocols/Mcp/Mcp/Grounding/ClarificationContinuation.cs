@@ -50,7 +50,32 @@ internal sealed class ClarificationContinuation
             : new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         var answers = Merge(given, earlier, currentAnswers);
         var declined = !response.Accepted || currentAnswers.Count == 0;
-        var resumed = new McpClarifyIntentArgument
+        return new ClarificationContinuation(continuation, answers)
+        {
+            Request = Resume(original, intentId, answers),
+            Declined = declined,
+        };
+    }
+
+    // The same intent with every answer so far, or the plain re-grounding call when none remain.
+    private static GroundingRequest Resume(
+        McpClarifyIntentArgument original, string intentId, Dictionary<string, IReadOnlyList<string>> answers)
+    {
+        if (answers.Count == 0)
+        {
+            return GroundingToolMapper.ToDomain(new McpGroundCandidatesArgument
+            {
+                IntentId = intentId,
+                Goal = original.Goal,
+                WorkflowFamilyHint = original.WorkflowFamilyHint,
+                Constraints = original.Constraints,
+                ExplicitInputs = original.ExplicitInputs,
+                AssumptionPolicy = original.AssumptionPolicy,
+                Context = original.Context,
+            });
+        }
+
+        return GroundingToolMapper.ToDomain(new McpClarifyIntentArgument
         {
             IntentId = intentId,
             Goal = original.Goal,
@@ -60,22 +85,7 @@ internal sealed class ClarificationContinuation
             AssumptionPolicy = original.AssumptionPolicy,
             Context = original.Context,
             Response = new McpClarificationResponseInput { Answers = answers },
-        };
-        return new ClarificationContinuation(continuation, answers)
-        {
-            Request = answers.Count > 0 ? GroundingToolMapper.ToDomain(resumed)
-                : GroundingToolMapper.ToDomain(new McpGroundCandidatesArgument
-                {
-                    IntentId = intentId,
-                    Goal = original.Goal,
-                    WorkflowFamilyHint = original.WorkflowFamilyHint,
-                    Constraints = original.Constraints,
-                    ExplicitInputs = original.ExplicitInputs,
-                    AssumptionPolicy = original.AssumptionPolicy,
-                    Context = original.Context,
-                }),
-            Declined = declined,
-        };
+        });
     }
 
     public static McpClarifyIntentArgument FromGround(McpGroundCandidatesArgument? argument) => new()

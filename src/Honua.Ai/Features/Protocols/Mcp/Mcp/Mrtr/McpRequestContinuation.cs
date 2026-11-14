@@ -194,9 +194,13 @@ internal sealed class McpRequestContinuation
 }
 
 // Elicitation modes the request declared in io.modelcontextprotocol/clientCapabilities.
-// An empty elicitation object means form mode only, as in the 2025-11-25 schema.
-internal readonly record struct McpElicitationModes(bool Form, bool Url)
+// An empty elicitation object means form mode only, as the MCP elicitation schema defines.
+internal readonly record struct McpElicitationModes
 {
+    public bool Form { get; init; }
+
+    public bool Url { get; init; }
+
     public static McpElicitationModes Read(JsonElement? meta)
     {
         if (meta is not { ValueKind: JsonValueKind.Object } value
@@ -210,6 +214,6 @@ internal readonly record struct McpElicitationModes(bool Form, bool Url)
 
         var form = elicitation.TryGetProperty("form", out var f) && f.ValueKind == JsonValueKind.Object;
         var url = elicitation.TryGetProperty("url", out var u) && u.ValueKind == JsonValueKind.Object;
-        return form || url ? new McpElicitationModes(form, url) : new McpElicitationModes(true, false);
+        return form || url ? new McpElicitationModes { Form = form, Url = url } : new McpElicitationModes { Form = true };
     }
 }

@@ -64,16 +64,21 @@ public sealed class McpRequestStateCodecTests
     }
 
     [UnitTheory]
-    [InlineData("""{}""", false, false)]
-    [InlineData("""{"elicitation":{}}""", true, false)]
-    [InlineData("""{"elicitation":{"form":{}}}""", true, false)]
-    [InlineData("""{"elicitation":{"url":{}}}""", false, true)]
-    [InlineData("""{"elicitation":{"form":{},"url":{}}}""", true, true)]
-    public void ElicitationModes_DeclaredCapabilities_AreRead(string capabilities, bool form, bool url)
+    [InlineData("""{}""", "")]
+    [InlineData("""{"elicitation":{}}""", "form")]
+    [InlineData("""{"elicitation":{"form":{}}}""", "form")]
+    [InlineData("""{"elicitation":{"url":{}}}""", "url")]
+    [InlineData("""{"elicitation":{"form":{},"url":{}}}""", "form,url")]
+    public void ElicitationModes_DeclaredCapabilities_AreRead(string capabilities, string expectedModes)
     {
         var meta = Json($$$"""{"io.modelcontextprotocol/clientCapabilities":{{{capabilities}}}}""");
+        var expected = expectedModes.Split(',', StringSplitOptions.RemoveEmptyEntries);
 
-        McpElicitationModes.Read(meta).Should().Be(new McpElicitationModes(form, url));
+        McpElicitationModes.Read(meta).Should().Be(new McpElicitationModes
+        {
+            Form = expected.Contains("form"),
+            Url = expected.Contains("url"),
+        });
     }
 
     [UnitTheory]
