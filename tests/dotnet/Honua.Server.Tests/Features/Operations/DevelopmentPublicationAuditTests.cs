@@ -8,6 +8,8 @@ using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Server.Tests.Admin;
+using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Hosting;
@@ -34,7 +36,9 @@ public sealed class DevelopmentPublicationAuditTests
         resolver.ResolveConnectionStringAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
         resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
 
-        var fixture = new WebAppFixture().UseEnvironment(Environments.Development)
+        using var identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
+        var fixture = HumanApprovalHttpClient.Configure(
+                new WebAppFixture().UseEnvironment(Environments.Development), identityProvider)
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("Licensing:Mode", "Disabled");
@@ -46,6 +50,7 @@ public sealed class DevelopmentPublicationAuditTests
         try
         {
             using var admin = fixture.CreateAdminClient();
+            await McpPublicationFixtureSetup.UseManagedPublicationKeyAsync(fixture.Services, admin);
             using var publish = await admin.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0",
@@ -67,8 +72,9 @@ public sealed class DevelopmentPublicationAuditTests
             publish.StatusCode.Should().Be(HttpStatusCode.OK);
             using var receipt = JsonDocument.Parse(await publish.Content.ReadAsStringAsync());
             var result = receipt.RootElement.GetProperty("result").GetProperty("structuredContent");
-            result.GetProperty("status").GetString().Should().Be("Completed", result.GetRawText());
-            var operationId = result.GetProperty("operationInstanceId").GetString();
+            using var human = await HumanApprovalHttpClient.AuthenticateAsync(fixture, identityProvider);
+            var completed = await McpPublicationFixtureSetup.ApprovePublicationAsync(human, admin, result);
+            var operationId = completed.OperationInstanceId;
             operationId.Should().NotBeNullOrWhiteSpace();
             using var response = await admin.GetAsync($"/api/v1/admin/observability/audit?resourceId={Uri.EscapeDataString(operationId!)}&action=operation.completed");
             response.StatusCode.Should().Be(HttpStatusCode.OK);

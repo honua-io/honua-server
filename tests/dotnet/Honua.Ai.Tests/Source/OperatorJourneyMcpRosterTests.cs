@@ -18,10 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// The closed operator roster is advertised by the default Postgres composition, and its
-/// direct writes are not operator-gated.
-/// </summary>
 public sealed class OperatorJourneyMcpRosterTests
 {
     private static readonly string[] DirectWrites =
@@ -29,12 +25,16 @@ public sealed class OperatorJourneyMcpRosterTests
         "admin.connections.create",
         "admin.import.upload-object",
         "admin.import.upload-url",
+    ];
+
+    private static readonly string[] GatedWrites =
+    [
         "admin.layer.publish",
         "admin.services.access-policy.set",
     ];
 
     [UnitTest]
-    public async Task Roster_IsAdvertisedByTheDefaultComposition_AndWritesAreNotOperatorGated()
+    public async Task Roster_DefaultComposition_AdvertisesToolsWithRequiredApproval()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(RepositoryPaths.Resolve(
             "docs", "gis", "data", "operator-journey-mcp-roster.v1.json")));
@@ -65,10 +65,14 @@ public sealed class OperatorJourneyMcpRosterTests
                 .Order(StringComparer.Ordinal);
             row.GetProperty("inputFields").EnumerateArray().Select(field => field.GetString())
                 .Should().BeEquivalentTo(fields, $"{toolName} input fields must match the published schema");
-            if (DirectWrites.Contains(operationId, StringComparer.Ordinal))
+            if (DirectWrites.Contains(operationId, StringComparer.Ordinal) ||
+                GatedWrites.Contains(operationId, StringComparer.Ordinal))
             {
                 mode.Should().Be("execute");
-                descriptor.ApprovalModel.Should().Be(OperationApprovalModel.None, toolName);
+                descriptor.ApprovalModel.Should().Be(
+                    GatedWrites.Contains(operationId, StringComparer.Ordinal)
+                        ? OperationApprovalModel.OperatorGate
+                        : OperationApprovalModel.None, toolName);
             }
             else
             {
