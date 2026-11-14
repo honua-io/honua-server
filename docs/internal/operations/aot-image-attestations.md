@@ -115,7 +115,7 @@ Dispatch `nightly-container-build.yml` on the implementation branch. Branch runs
 build and verify Lambda and Functions immutable candidates and upload the
 receipts. They skip canonical/JIT builds and all public nightly tag promotion;
 trunk runs, and the `nightly-candidate-<sha7>` tag runs a trunk run hands a
-certified sha to (see [Nightly images](nightly-images.md#one-sha-per-image)),
+certified sha to (see [Nightly images](../../guides/operate/nightly-images.md#one-sha-per-image)),
 retain those publication gates. Branch base-image mirrors use a
 run-scoped `honua-server-base/proof-<run-id>` repository, preventing interference
 with trunk base tags. Read `imagetools inspect` output in
