@@ -83,6 +83,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/collect-impact-routing-runs.test.py "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
   run_fixture scripts/ci/audit-affected-shards.test.py "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
   run_fixture scripts/ci/affected-shard-verdict.test.py "${PYTHON_BIN}" scripts/ci/affected-shard-verdict.test.py
+  run_fixture scripts/ci/download-affected-receipts.test.py "${PYTHON_BIN}" scripts/ci/download-affected-receipts.test.py
 else
   echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
 fi
@@ -1714,6 +1715,10 @@ run_fixture scripts/ci/test-streaming-capacity-partition.py "${PYTHON_BIN}" scri
 run_fixture scripts/ci/test-live-output-capacity-partitions.py "${PYTHON_BIN}" scripts/ci/test-live-output-capacity-partitions.py
 run_fixture scripts/ci/check-server-test-shard-coverage.test.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.CatalogCapabilitiesMetadataTests" \
+    "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
+    "OGC Classic Maps Supporting" \
   --assert-owner \
     "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
