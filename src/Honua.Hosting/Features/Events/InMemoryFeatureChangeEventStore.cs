@@ -806,26 +806,6 @@ internal sealed class InMemoryFeatureChangeEventStore(
         };
     }
 
-    // Test hosts reuse one store across cases. This returns it to the fresh in-memory
-    // cursor and buffer a newly constructed store would have. Redis-backed stores are
-    // not reusable this way.
-    internal void ResetForTests()
-    {
-        if (_redisDb is not null)
-        {
-            throw new InvalidOperationException("ResetForTests only supports the in-memory event store.");
-        }
-
-        lock (_sync)
-        {
-            _events.Clear();
-            _eventsById.Clear();
-            _nextCursor = 1;
-            _lastObservedRedisCursor = 0;
-            _redisUnavailable = false;
-        }
-    }
-
     public void Dispose()
     {
     }

@@ -1010,16 +1010,19 @@ The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migr
 ### Feature stream default application lifetime
 
 `FeatureStreamEndpointsTests` shares one seeded Pro application through its
-class fixture. Sequential default-host cases clear sessions and the in-memory
-event log and create a fresh admin client. Cases that replace licensing,
+class fixture. Sequential default-host cases clear sessions, replace the in-memory event
+store through a test-only delegate and create a fresh admin client. Cases that replace licensing,
 metadata or other configuration still build and dispose their own application.
 The shared host uses a one-hour heartbeat interval to avoid unsolicited frames
 between cases; scheduled-heartbeat cases retain their separate configured hosts.
 Credential expiry settings and every assertion are unchanged.
 
 Paired build-host runs of the complete class passed all 126 cases: 802 seconds
-before and 632 seconds after, saving 170 seconds (2.83 runner-minutes) with one
-test process in each run. Full-shard elapsed savings have not yet been measured.
+before and 632 seconds after the shared-host change, saving 170 seconds
+(2.83 runner-minutes) with one
+test process in each run. These measurements precede the test-only event-store
+replacement repair; its final-head validation runs in the PR Gate. Full-shard
+elapsed savings have not yet been measured.
 All cases remain in the selected streaming shards and twice-daily full trunk
 runs. This changes no runner count, required check name, required aggregate
 dependency, workflow or shard definition.
