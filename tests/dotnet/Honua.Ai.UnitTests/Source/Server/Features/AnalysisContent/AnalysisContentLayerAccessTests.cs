@@ -15,6 +15,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Security.Domain;
+using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -123,7 +124,7 @@ public sealed class AnalysisContentLayerAccessTests
                 SavedQuery = kind == AnalysisContentKind.SavedQuery ? new SavedQueryContent { LayerId = 42 } : null,
                 AnalysisPackage = kind == AnalysisContentKind.AnalysisPackage ? new AnalysisPackageContent
                 {
-                    Plan = new AnalysisPlan { Steps = [LayerStep(42), LayerStep(43)] }
+                    Plan = new AnalysisPlan { PlanId = "plan", IntentId = "intent", Steps = [LayerStep(42), LayerStep(43)] }
                 } : null
             });
             Service = new AnalysisContentService(Store, Graph, Substitute.For<IQueryProcessor>(), Reader,
