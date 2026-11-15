@@ -17,26 +17,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Collaboration.FeatureLocks;
 
-/// <summary>
-/// Proves the recorded honua-server#4402 dispositions are published by the machine-readable
-/// capability manifest, not only by the docs page (acceptance criterion 1).
-/// </summary>
-/// <remarks>
-/// <para>
-/// <c>docs/reference/collaboration/feature-locks.md</c> tells a client that everything the
-/// disposition table answers "not implemented" is reported that way by the capability
-/// manifest "so a client can discover it without reading this page". These tests are what
-/// makes that sentence true and keeps it true: a client that reads
-/// <c>/api/v1/capabilities/manifest</c> learns that leases are enforced, that no lease can
-/// be granted until an authorizer is supplied, that cross-node leases depend on the selected store, and that the
-/// GeoServices <c>applyEdits</c> surface honours no client-supplied version token.
-/// </para>
-/// <para>
-/// Both manifest composition paths are covered — the hand-curated roster and the #2335
-/// registry-derived projection — because the two must stay wire-identical, and a gap that
-/// is honest on only one of them is a gap a client can still be lied to about.
-/// </para>
-/// </remarks>
+// The capability manifest publishes the feature-lock dispositions, not only the docs page. A client that reads
+// /api/v1/capabilities/manifest learns that leases are enforced, that no lease can be granted until an authorizer
+// is supplied, that cross-node leases need the PostgreSQL store, and that the GeoServices applyEdits surface honours
+// no client-supplied version token. Both composition paths are covered (the hand-curated roster and the
+// registry-derived projection), because the two must stay wire-identical.
 [Collection("Database")]
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Metadata)]
@@ -118,21 +103,23 @@ public sealed class FeatureLockCapabilityManifestTests
         gap.GetProperty("reasonCode").GetString().Should().Be("unsupported");
     }
 
+    // Each host shape names its composition path ("registry" or the curated roster), whether it has the shared
+    // PostgreSQL store, and whether an authorizer that can grant leases is registered.
     [IntegrationTheory]
-    [InlineData(false, false, true, null)]
-    [InlineData(true, false, true, null)]
-    [InlineData(false, false, false, "disabled-by-configuration")]
-    [InlineData(true, false, false, "disabled-by-configuration")]
-    [InlineData(false, true, true, "dependency-unavailable")]
-    [InlineData(true, true, true, "dependency-unavailable")]
-    [InlineData(false, true, false, "dependency-unavailable")]
-    [InlineData(true, true, false, "dependency-unavailable")]
+    [InlineData("curated shared-store authorizer", null)]
+    [InlineData("registry shared-store authorizer", null)]
+    [InlineData("curated shared-store", "disabled-by-configuration")]
+    [InlineData("registry shared-store", "disabled-by-configuration")]
+    [InlineData("curated authorizer", "dependency-unavailable")]
+    [InlineData("registry authorizer", "dependency-unavailable")]
+    [InlineData("curated", "dependency-unavailable")]
+    [InlineData("registry", "dependency-unavailable")]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task Manifest_CrossNodeAvailability_FollowsSelectedStoreAndAuthorizer(
-        bool fromRegistry, bool localStore, bool allowWrite, string? expectedReason)
+    public async Task Manifest_CrossNodeAvailability_FollowsSelectedStoreAndAuthorizer(string hostShape, string? expectedReason)
     {
-        var fixture = CreateFixture(allowWrite, fromRegistry);
-        if (localStore)
+        var shape = hostShape.Split(' ');
+        var fixture = CreateFixture(shape.Contains("authorizer"), shape.Contains("registry"));
+        if (!shape.Contains("shared-store"))
         {
             fixture = fixture.ConfigureServices(services =>
             {

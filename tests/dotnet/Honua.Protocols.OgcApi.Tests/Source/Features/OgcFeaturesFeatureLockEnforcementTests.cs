@@ -17,11 +17,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
-using Honua.ControlPlane;
-using Honua.Server.Features.Collaboration.FeatureLocks;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -41,9 +36,9 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 [Collection("Database")]
 public sealed class OgcFeaturesFeatureLockEnforcementTests : IAsyncLifetime
 {
-    private const int TestLayerId = 0;
-    private const string ServiceName = "test";
-    private const string Holder = "alice";
+    internal const int TestLayerId = 0;
+    internal const string ServiceName = "test";
+    internal const string Holder = "alice";
 
     // Test hosts share one system schema, so leases in the shared store would block other classes' edits of the
     // same object ids. These cases are about one host; the two-host case below has a lease schema of its own.
@@ -172,61 +167,6 @@ public sealed class OgcFeaturesFeatureLockEnforcementTests : IAsyncLifetime
             "neither protocol may write through another editor's lease");
     }
 
-    [IntegrationTest]
-    [Operation(Operations.Update)]
-    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
-    public async Task Replace_OnASecondTask_IsRefusedWhileTheFirstTaskHoldsTheLease_AndAcceptedAfterRelease()
-    {
-        var leaseSchema = "feature_locks_" + Guid.NewGuid().ToString("N");
-        await using var firstTask = SharedLeaseHost(leaseSchema);
-        await firstTask.InitializeAsync();
-        firstTask.EnableV2ServiceEditingCapabilities(ServiceName, ["Create", "Update", "Delete"]);
-        await CreateLeaseTableAsync(firstTask.Postgres, leaseSchema);
-        await using var secondTask = SharedLeaseHost(leaseSchema).ShareSchemaWith(firstTask);
-        await secondTask.InitializeAsync();
-        secondTask.EnableV2ServiceEditingCapabilities(ServiceName, ["Create", "Update", "Delete"]);
-        var objectId = await firstTask.InsertFeatureAsync(TestLayerId, "two-task-original");
-        var feature = FeatureRef.Canonical(ServiceName, TestLayerId, objectId);
-        var firstTaskLocks = firstTask.GetService<IFeatureLockService>();
-        (await firstTaskLocks.ClaimAsync(feature, new LockHolder(Holder), TimeSpan.FromMinutes(1), FeatureLockAccessContext.AuthorizedWrite))
-            .IsSuccess.Should().BeTrue();
-        var path = $"/ogc/features/collections/{TestLayerId}/items/{objectId}";
-
-        using (var intruder = ReplacementBody(objectId, "two-task-intruder"))
-        {
-            (await secondTask.Client.PutAsync(path, intruder)).StatusCode.Should().Be(HttpStatusCode.Locked);
-        }
-        (await firstTask.ReadStoredFeatureNameAsync(TestLayerId, objectId)).Should().Be(
-            "two-task-original", "a lease taken on one task binds the other");
-
-        (await firstTaskLocks.ReleaseAsync(feature, new LockHolder(Holder), FeatureLockAccessContext.AuthorizedWrite)).Status
-            .Should().Be(FeatureLockReleaseStatus.Released);
-        using var afterRelease = ReplacementBody(objectId, "two-task-after-release");
-        (await secondTask.Client.PutAsync(path, afterRelease)).IsSuccessStatusCode.Should().BeTrue();
-        (await firstTask.ReadStoredFeatureNameAsync(TestLayerId, objectId)).Should().Be("two-task-after-release");
-        await firstTask.Postgres.DropSchemaAsync(leaseSchema);
-    }
-
-    // A host whose PostgreSQL lease store reads and writes the given schema; two such hosts are two tasks.
-    private static WebAppFixture SharedLeaseHost(string leaseSchema)
-        => new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureServices(services =>
-        {
-            services.RemoveAll<IFeatureLockService>();
-            services.AddSingleton<IFeatureLockService>(provider => new PostgresFeatureLockService(
-                new JobStoreDatabase(provider.GetRequiredService<NpgsqlDataSource>(), leaseSchema)));
-        });
-
-    private static async Task CreateLeaseTableAsync(PostgresFixture postgres, string leaseSchema)
-    {
-        await postgres.CreateSchemaUnderLockAsync(leaseSchema);
-        await using var stream = typeof(PostgresFeatureLockService).Assembly.GetManifestResourceStream(
-            "Honua.Server.Migrations.180_CreateFeatureLocks.sql")
-            ?? throw new InvalidOperationException("Feature lock migration is missing.");
-        using var reader = new StreamReader(stream);
-        await postgres.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync())
-            .Replace("$HonuaSchema$", new NpgsqlCommandBuilder().QuoteIdentifier(leaseSchema), StringComparison.Ordinal));
-    }
-
     private async Task ClaimLeaseAsync(long objectId)
     {
         var claim = await _fixture.GetService<IFeatureLockService>().ClaimAsync(
@@ -241,7 +181,7 @@ public sealed class OgcFeaturesFeatureLockEnforcementTests : IAsyncLifetime
     private Task<string?> ReadStoredNameAsync(long objectId)
         => _fixture.ReadStoredFeatureNameAsync(TestLayerId, objectId);
 
-    private static StringContent ReplacementBody(long objectId, string name)
+    internal static StringContent ReplacementBody(long objectId, string name)
     {
         var feature = new GeoJsonFeature
         {
