@@ -46,7 +46,7 @@ def terminate_tree(process):
         subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
                        check=False, capture_output=True)
     else:
-        # Freeze the tree before killing the supervisor: detached children get reparented.
+        # Stop and kill the whole tree first; the group sweep then catches members that left it.
         kill_descendants(process.pid)
         with suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)

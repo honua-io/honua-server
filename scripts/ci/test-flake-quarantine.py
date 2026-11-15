@@ -36,6 +36,18 @@ runner = module('retry', 'retry-failed-shard-tests.py')
 publisher = module('publisher', 'quarantine-issues.py')
 
 
+def wait_until(condition, seconds=5):
+    deadline = time.monotonic() + seconds
+    while not condition() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return condition()
+
+
+def kill_recorded(path):
+    with suppress(FileNotFoundError, ValueError, ProcessLookupError):
+        os.kill(int(path.read_text()), signal.SIGKILL)
+
+
 def process_alive(pid):
     """A killed orphan may linger as a zombie until its new parent reaps it."""
     stat = Path('/proc') / str(pid) / 'stat'
@@ -266,33 +278,38 @@ class RunnerTests(unittest.TestCase):
             late = Path(directory) / 'late.pid'
             # The child forks a detached grandchild from its TERM handler, i.e. after the
             # supervisor's pre-TERM snapshot; killing only that snapshot orphans the grandchild.
+            # The parent publishes the pid atomically, so a stopped grandchild cannot hide it.
             source = ('import os, pathlib, signal, sys, time\n'
                       'def spawn(*_):\n'
-                      '    if os.fork() == 0:\n'
+                      '    pid = os.fork()\n'
+                      '    if pid == 0:\n'
                       '        os.setsid()\n'
-                      '        pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\n'
                       '        time.sleep(30)\n'
                       '        os._exit(0)\n'
+                      '    staging = pathlib.Path(sys.argv[1] + ".tmp")\n'
+                      '    staging.write_text(str(pid))\n'
+                      '    os.replace(staging, sys.argv[1])\n'
                       'signal.signal(signal.SIGTERM, spawn)\n'
                       'print("ready", flush=True)\n'
                       'while True:\n'
                       '    time.sleep(1)\n')
-            with subprocess.Popen([sys.executable, '-c', source, str(late)], stdout=subprocess.PIPE) as child:
+            real_kill = runner.kill_descendants
+
+            def kill_after_fork(*parents):
+                # Make "forked after the snapshot" a guarantee rather than a timing assumption.
+                wait_until(late.exists)
+                real_kill(*parents)
+
+            with subprocess.Popen([sys.executable, '-c', source, str(late)], stdout=subprocess.PIPE) as child, \
+                    patch.object(runner, 'kill_descendants', kill_after_fork):
                 try:
                     self.assertEqual(b'ready\n', child.stdout.readline())
                     runner.terminate_test(child, signal.SIGTERM)
-                    self.assertTrue(late.exists(), 'TERM handler did not fork before cleanup')
                     pid = int(late.read_text())
-                    for _ in range(50):
-                        if not process_alive(pid):
-                            break
-                        time.sleep(0.1)
-                    self.assertFalse(process_alive(pid), f'grandchild {pid} survived cleanup')
+                    self.assertTrue(wait_until(lambda: not process_alive(pid)), f'grandchild {pid} survived cleanup')
                 finally:
-                    if late.exists():
-                        with suppress(ProcessLookupError):
-                            os.kill(int(late.read_text()), signal.SIGKILL)
                     child.kill()
+                    kill_recorded(late)
 
     def assert_timeout_cleanup(self, foreground, descendant_setup='pass'):
         with tempfile.TemporaryDirectory() as directory:
@@ -316,7 +333,9 @@ class RunnerTests(unittest.TestCase):
                         except ProcessLookupError:
                             # The timeout supervisor may already have reaped this process.
                             pass
-            command = ['timeout', *(['--foreground'] if foreground else []), '--kill-after=1', '1', sys.executable,
+            # Production grants a 30 s grace; 5 s keeps a loaded runner's interpreter start-up from
+            # killing the supervisor mid-cleanup. A setsid descendant is still outside timeout's reach.
+            command = ['timeout', *(['--foreground'] if foreground else []), '--kill-after=5', '1', sys.executable,
                        str(Path(runner.__file__).with_name('run-quarantine-filtered-tests.py')),
                        'dotnet', 'test', PROJECT]
             with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}',
@@ -331,9 +350,9 @@ class RunnerTests(unittest.TestCase):
                     raise
             self.assertEqual(124, result.returncode)
             for suffix in ('.pid', '.descendant.pid'):
-                process = Path('/proc') / fake.with_suffix(suffix).read_text() / 'stat'
-                if process.exists():
-                    self.assertEqual('Z', process.read_text().split(') ', 1)[1].split()[0])
+                # A SIGKILLed process can show as running briefly while a loaded kernel tears it down.
+                pid = int(fake.with_suffix(suffix).read_text())
+                self.assertTrue(wait_until(lambda: not process_alive(pid)), f'{suffix} {pid} survived cleanup')
 
     def test_retry_is_bounded_by_the_original_outer_timeout(self):
         with tempfile.TemporaryDirectory() as directory:
