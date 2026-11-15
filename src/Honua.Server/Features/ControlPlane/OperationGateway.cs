@@ -266,7 +266,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
         {
             await OperationApprovalDenialRecorder.RecordAsync(
-                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.CurrentAuthority, OperationApprovalDecision.Approve, cancellationToken)
+                _scopeFactory,
+                new(proposal, approvedBy, OperationApprovalDenialReason.CurrentAuthority, OperationApprovalDecision.Approve),
+                cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -288,7 +290,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
         {
             await OperationApprovalDenialRecorder.RecordAsync(
-                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.EvidenceInvalid, OperationApprovalDecision.Approve, cancellationToken)
+                _scopeFactory,
+                new(proposal, approvedBy, OperationApprovalDenialReason.EvidenceInvalid, OperationApprovalDecision.Approve),
+                cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -1025,8 +1029,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
         catch (InvalidOperationException exception) when (exception is not ServiceUnavailableException)
         {
-            await OperationApprovalDenialRecorder.RecordAsync(_scopeFactory, proposal, approval.ApprovedBy,
-                OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Approve, cancellationToken).ConfigureAwait(false);
+            await OperationApprovalDenialRecorder.RecordAsync(_scopeFactory,
+                new(proposal, approval.ApprovedBy, OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Approve),
+                cancellationToken).ConfigureAwait(false);
             throw;
         }
     }

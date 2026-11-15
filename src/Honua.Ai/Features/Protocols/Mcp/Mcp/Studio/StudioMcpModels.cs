@@ -590,11 +590,9 @@ internal sealed class McpStudioProposePublicationOutput
     [JsonPropertyName("operationInstanceId")]
     public required string OperationInstanceId { get; init; }
 
-    /// <summary>Proposal a person approves in Console before the publication pointer moves.</summary>
     [JsonPropertyName("proposalId")]
     public required string ProposalId { get; init; }
 
-    /// <summary>Resource URI of <see cref="ProposalId"/>.</summary>
     [JsonPropertyName("proposalUri")]
     public required string ProposalUri { get; init; }
 

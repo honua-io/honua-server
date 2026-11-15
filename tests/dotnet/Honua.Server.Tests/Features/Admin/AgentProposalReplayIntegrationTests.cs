@@ -67,46 +67,52 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        HumanApprovalHttpClient.ConfigureKestrel(_fixture, _identity).ConfigureWebHost(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.UseSetting("Licensing:DevGrantEdition", "Pro");
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-            builder.UseSetting("Oidc:Enabled", "true");
-            builder.UseSetting("Oidc:RequireHttps", "true");
-            builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
-            builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
-            builder.UseSetting("Oidc:Generic:Enabled", "true");
-            builder.UseSetting("Oidc:Generic:Authority", Issuer);
-            builder.UseSetting("Oidc:Generic:ClientId", Audience);
-            builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
-            builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
-            builder.UseSetting("Authentication:OperatorBearer:SigningKey", OperatorBearerSigningKey);
-        }).ConfigureServices(services =>
-        {
-            // An installed database already carries its migrations, and the fixture schema is installed
-            // at start. Running them again inside the replayed publish would take DDL locks while the
-            // approval request holds its own; migrations are not what these tests cover.
-            services.RemoveAll<IDatabaseMigrationRunner>();
-            services.AddSingleton<IDatabaseMigrationRunner, AlreadyMigratedRunner>();
-            // Published layers keep their attachment metadata in the canonical honua schema, the same
-            // authority the layer publishing tests use.
-            services.RemoveAll<PostgresAttachmentStore>();
-            services.AddScoped(provider => new PostgresAttachmentStore(
-                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                provider.GetService<ICloudFileStorage>(),
-                provider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
-                schemaName: "honua",
-                orphanLedger: provider.GetRequiredService<IAttachmentOrphanLedger>(),
-                attachmentLimits: provider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments ?? new AttachmentLimits(),
-                migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
-        });
+        HumanApprovalHttpClient.ConfigureKestrel(_fixture, _identity)
+            .ConfigureWebHost(ConfigureIdentity)
+            .ConfigureServices(ConfigureReplayServices);
         await NoRedisJobHost.StartAsync(_fixture);
         await ServerTestData.EnsureFixtureAttachmentsAsync(_fixture.Postgres, "honua");
         _proposals = _fixture.Services.GetRequiredService<IOperationProposalStore>();
         UnavailableOperationProposalStore.IsDurable(_proposals).Should().BeTrue("approval replay needs the durable store");
         _approver = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity, "agent-change-approver", Tenant);
+    }
+
+    private static void ConfigureIdentity(IWebHostBuilder builder)
+    {
+        builder.UseEnvironment("Test");
+        builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+        builder.UseSetting("HONUA_DEV_AUTH", "false");
+        builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        builder.UseSetting("Oidc:Enabled", "true");
+        builder.UseSetting("Oidc:RequireHttps", "true");
+        builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
+        builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+        builder.UseSetting("Oidc:Generic:Enabled", "true");
+        builder.UseSetting("Oidc:Generic:Authority", Issuer);
+        builder.UseSetting("Oidc:Generic:ClientId", Audience);
+        builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
+        builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+        builder.UseSetting("Authentication:OperatorBearer:SigningKey", OperatorBearerSigningKey);
+    }
+
+    private static void ConfigureReplayServices(IServiceCollection services)
+    {
+        // An installed database already carries its migrations, and the fixture schema is installed
+        // at start. Running them again inside the replayed publish would take DDL locks while the
+        // approval request holds its own; migrations are not what these tests cover.
+        services.RemoveAll<IDatabaseMigrationRunner>();
+        services.AddSingleton<IDatabaseMigrationRunner, AlreadyMigratedRunner>();
+        // Published layers keep their attachment metadata in the canonical honua schema, the same
+        // authority the layer publishing tests use.
+        services.RemoveAll<PostgresAttachmentStore>();
+        services.AddScoped(provider => new PostgresAttachmentStore(
+            provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+            provider.GetService<ICloudFileStorage>(),
+            provider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
+            schemaName: "honua",
+            orphanLedger: provider.GetRequiredService<IAttachmentOrphanLedger>(),
+            attachmentLimits: provider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments ?? new AttachmentLimits(),
+            migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
     }
 
     public async Task DisposeAsync()
@@ -158,30 +164,11 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
         var table = $"agent_replay_{suffix}";
         var service = $"agent_replay_{suffix}";
         var connectionId = await CreateConnectionAsync($"agent-replay-{suffix}");
-        await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
-            CREATE TABLE public.{table} (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                geom geometry(Point, 4326) NOT NULL
-            );
-            INSERT INTO public.{table} (name, geom) VALUES ('Replayed', ST_SetSRID(ST_Point(1, 1), 4326));
-            """);
+        await CreatePointTableAsync(table);
         try
         {
             using var agent = await CreateCallerAsync("operator-bearer-mcp");
-            var proposalId = await SubmitMcpAsync(agent, "honua_admin_layer_publish", new
-            {
-                connectionId = connectionId.ToString("D"),
-                schema = "public",
-                table,
-                layerName = "Agent replay",
-                serviceName = service,
-                geometryColumn = "geom",
-                geometryType = "Point",
-                srid = 4326,
-                primaryKey = "id",
-                fields = new[] { "id", "name" },
-            });
+            var proposalId = await SubmitLayerPublishAsync(agent, connectionId, table, service);
 
             (await PublishedLayerNamesAsync(connectionId, service)).Should().BeEmpty("an agent's publish waits for a person");
             await ApproveAndAssertSucceededAsync(proposalId);
@@ -191,18 +178,47 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            // Publishing also writes the global compatibility catalog; remove this service before
-            // the connection so the next seed is not blocked by its foreign key.
-            await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
-                "DELETE FROM honua.services WHERE service_name = @serviceName;",
-                command => command.Parameters.AddWithValue("serviceName", service));
-            using (var scope = _fixture.Services.CreateScope())
-            {
-                await scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>().DeleteConnectionAsync(connectionId);
-            }
-
-            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{table};");
+            await RemovePublishedLayerAsync(connectionId, table, service);
         }
+    }
+
+    private Task CreatePointTableAsync(string table) => _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
+        CREATE TABLE public.{table} (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            geom geometry(Point, 4326) NOT NULL
+        );
+        INSERT INTO public.{table} (name, geom) VALUES ('Replayed', ST_SetSRID(ST_Point(1, 1), 4326));
+        """);
+
+    private Task<string> SubmitLayerPublishAsync(HttpClient agent, Guid connectionId, string table, string service) =>
+        SubmitMcpAsync(agent, "honua_admin_layer_publish", new
+        {
+            connectionId = connectionId.ToString("D"),
+            schema = "public",
+            table,
+            layerName = "Agent replay",
+            serviceName = service,
+            geometryColumn = "geom",
+            geometryType = "Point",
+            srid = 4326,
+            primaryKey = "id",
+            fields = new[] { "id", "name" },
+        });
+
+    private async Task RemovePublishedLayerAsync(Guid connectionId, string table, string service)
+    {
+        // Publishing also writes the global compatibility catalog; remove this service before
+        // the connection so the next seed is not blocked by its foreign key.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            "DELETE FROM honua.services WHERE service_name = @serviceName;",
+            command => command.Parameters.AddWithValue("serviceName", service));
+        using (var scope = _fixture.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>().DeleteConnectionAsync(connectionId);
+        }
+
+        await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{table};");
     }
 
     private async Task ApproveAndAssertSucceededAsync(string proposalId)

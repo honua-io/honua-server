@@ -142,7 +142,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
                     .OrderBy(static scope => scope, StringComparer.Ordinal).ToArray(),
                 // Every MCP caller is an agent, administrators included, so the publication
                 // always waits for a person. Without this floor a direct-execute edition published
-                // first and reported failure after the published pointer had already moved (#3429).
+                // first and reported failure after the published pointer had already moved.
                 ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
             },
             cancellationToken).ConfigureAwait(false);

@@ -20,19 +20,23 @@ internal enum OperationApprovalDecision
     Reject
 }
 
+internal readonly record struct OperationApprovalDenial(
+    OperationProposal Proposal,
+    string Actor,
+    OperationApprovalDenialReason Reason,
+    OperationApprovalDecision Decision);
+
 internal static class OperationApprovalDenialRecorder
 {
     internal const string UnavailableMessage = "The approval decision audit is unavailable.";
 
     public static async Task RecordAsync(
         IServiceScopeFactory scopeFactory,
-        OperationProposal proposal,
-        string actor,
-        OperationApprovalDenialReason reason,
-        OperationApprovalDecision decision,
+        OperationApprovalDenial denial,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var (proposal, actor, reason, decision) = denial;
         var reasonCode = reason switch
         {
             OperationApprovalDenialReason.HumanSessionRequired => "human_session_required",

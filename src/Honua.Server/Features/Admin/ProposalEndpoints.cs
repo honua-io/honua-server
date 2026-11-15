@@ -258,8 +258,9 @@ internal static class ProposalEndpoints
         catch (HumanApprovalRequiredException exception)
         {
             await OperationApprovalDenialRecorder.RecordAsync(
-                context.RequestServices.GetRequiredService<IServiceScopeFactory>(), proposal, actor,
-                OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Approve, context.RequestAborted).ConfigureAwait(false);
+                context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
+                new(proposal, actor, OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Approve),
+                context.RequestAborted).ConfigureAwait(false);
             return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
         }
 
@@ -281,8 +282,9 @@ internal static class ProposalEndpoints
         catch (HumanApprovalRequiredException)
         {
             await OperationApprovalDenialRecorder.RecordAsync(
-                context.RequestServices.GetRequiredService<IServiceScopeFactory>(), proposal, actor,
-                OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Reject, context.RequestAborted).ConfigureAwait(false);
+                context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
+                new(proposal, actor, OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Reject),
+                context.RequestAborted).ConfigureAwait(false);
             return Results.Problem(detail: HumanRejectionRequiredMessage, statusCode: StatusCodes.Status403Forbidden);
         }
     }
@@ -353,7 +355,7 @@ internal static class ProposalEndpoints
             return scopeDenied;
         }
 
-        // A rejection is a decision: only a person in an interactive Console session may make it.
+        // Only a person in an interactive Console session may reject a proposal.
         var humanDenial = await DenyNonHumanRejectionAsync(proposal, actor!, context).ConfigureAwait(false);
         if (humanDenial is not null) return humanDenial;
 
