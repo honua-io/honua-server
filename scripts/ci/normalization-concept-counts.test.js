@@ -97,3 +97,18 @@ test('the aggregate derived-page limit is enforced', async () => {
   }
   await assert.rejects(derive(before, after, pages), /aggregate byte bound/);
 });
+
+
+test('an earlier inline example is preserved while only the validated row changes', async () => {
+  const original = Buffer.from('Example: | Proving tests | 597 |\n' + page.toString());
+  const { result } = await derive([[key, 597]], [[key, 599]], { [path]: original });
+  assert.equal(Buffer.from(result[0].content_base64, 'base64').toString(),
+    'Example: | Proving tests | 597 |\n' + page.toString().replace('| Proving tests | 597 |', '| Proving tests | 599 |'));
+});
+
+test('UTF-8 BOM and unrelated bytes survive numeric projection', async () => {
+  const original = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), page]);
+  const { result } = await derive([[key, 597]], [[key, 599]], { [path]: original });
+  assert.deepEqual(Buffer.from(result[0].content_base64, 'base64'),
+    Buffer.from(original.toString().replace('| Proving tests | 597 |', '| Proving tests | 599 |')));
+});

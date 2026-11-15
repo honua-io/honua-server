@@ -16,7 +16,7 @@ function boundedBytes(value, limit, label) {
   if (!Buffer.isBuffer(value) || value.length === 0 || value.length > limit) {
     throw new Error(`${label} exceeds its byte bound or is not blob data`);
   }
-  return new TextDecoder('utf-8', { fatal: true }).decode(value);
+  return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(value);
 }
 
 function proofCounts(bytes) {
@@ -54,7 +54,11 @@ function updateProofCount(bytes, key, { previous, next }) {
   }
   if ((rows.length && Number(rows[0][1]) === next) || (!rows.length && next === 0)) return null;
   if (rows.length) {
-    return text.replace(`${rows[0][0]}\n`, next ? `| Proving tests | ${next} |\n` : '');
+    const row = rows[0];
+    const end = row.index + row[0].length;
+    const removeNewline = !next && text[end] === '\n' ? 1 : 0;
+    return text.slice(0, row.index) + (next ? `| Proving tests | ${next} |` : '')
+      + text.slice(end + removeNewline);
   }
   if (text.split(FACTS).length !== 2) throw new Error(`${key} has no unique generated facts boundary`);
   return text.replace(FACTS, `\n| Proving tests | ${next} |${FACTS}`);
