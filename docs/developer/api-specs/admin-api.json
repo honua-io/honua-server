@@ -11487,7 +11487,7 @@
           "Operations"
         ],
         "summary": "Get Cache Health",
-        "description": "Reports the health and effective configuration of the memory cache on the node that serves the request.",
+        "description": "Reports the health and effective configuration of the cache on the node that serves the request.",
         "operationId": "getOperationsCacheHealth",
         "responses": {
           "200": {
@@ -11515,7 +11515,7 @@
           "Operations"
         ],
         "summary": "Get Cache Statistics",
-        "description": "Returns cache hit/miss/eviction counters with per-cache-type breakdowns and the local cache key count for the node that serves the request.",
+        "description": "Returns cache hit/miss/eviction counters with per-cache-type breakdowns and the local and distributed key counts for the node that serves the request.",
         "operationId": "getOperationsCacheStatistics",
         "responses": {
           "200": {

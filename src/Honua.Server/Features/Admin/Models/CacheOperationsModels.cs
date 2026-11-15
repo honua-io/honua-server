@@ -15,7 +15,6 @@ internal sealed class CacheHealthResponse
 
     public int DefaultTtlSeconds { get; init; }
 
-
     public string? MetricsEndpoint { get; init; }
 
     public DateTimeOffset GeneratedAt { get; init; }

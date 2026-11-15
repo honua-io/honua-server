@@ -81,7 +81,7 @@ public sealed class CacheOperationsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    public async Task GetRetiredRedisMetrics_ReturnsNotFound()
+    public async Task GetRedisMetrics_AfterRetirement_ReturnsNotFound()
     {
         var response = await _client.GetAsync("/api/v1/admin/operations/cache/redis");
 
