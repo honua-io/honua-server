@@ -14,14 +14,18 @@ class TrustedSupersessionTests(unittest.TestCase):
         events = workflow.get('on', workflow.get(True))
         self.assertEqual(set(events), {'pull_request_target', 'workflow_run'})
         self.assertEqual(events['workflow_run']['workflows'], ['CodeQL', 'Code Quality: PR #*'])
-        self.assertEqual(events['workflow_run']['types'], ['requested', 'in_progress'])
+        self.assertEqual(events['workflow_run']['types'], ['requested', 'in_progress', 'completed'])
         job = workflow['jobs']['cancel-superseded']
         self.assertIn("workflow_run.path == 'dynamic/github-code-quality/codeql'", job['if'])
         self.assertTrue(job['concurrency']['cancel-in-progress'])
         self.assertIn('pull_request.number', job['concurrency']['group'])
         self.assertIn('workflow_run.head_branch', job['concurrency']['group'])
         self.assertNotIn('concurrency', workflow)
-        checkout, cancel = job['steps']
+        bootstrap, checkout, cancel = job['steps']
+        self.assertIn('RUNNER_TEMP', bootstrap['run'])
+        self.assertIn("workflow_run.path == '.github/workflows/codeql.yml'", job['if'])
+        self.assertIn('workflow_run.pull_requests[0].number', job['if'])
+        self.assertIn('await admit({github, context, core})', cancel['with']['script'])
         self.assertEqual(checkout['with'], {
             'ref': '${{ github.event.repository.default_branch }}', 'persist-credentials': False})
         self.assertTrue(checkout['uses'].startswith('actions/checkout@'))

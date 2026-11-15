@@ -155,7 +155,7 @@ completion cannot cancel a resolver for the current head. They skip ordinary dra
 PR payloads and re-read live draft state before attestation, including comment
 and workflow-completion events. CodeQL already cancels by PR number and skips
 draft PR analysis; its scheduled/manual analysis remains enabled.
-`analysis-run-admission.yml` reconciles the two allowlisted analysis workflows
+`code-quality-supersession.yml` reconciles the two allowlisted analysis workflows
 from trusted trunk code. It cancels superseded PR heads and coalesces active
 same-head duplicates only when another active run or completed successful Analyze
 jobs preserve the analysis. Failed, cancelled and skipped analyses remain retryable.
@@ -185,8 +185,8 @@ cannot cancel current validation.
 
 GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so
 their workflow cannot declare repository-owned concurrency.
-`code-quality-supersession.yml` reconciles PR and managed-workflow start events
-using trusted default-branch code. It cancels only active managed Code Quality
+`code-quality-supersession.yml` reconciles PR events and allowlisted analysis start/completion events
+using trusted default-branch code. Its PR-event path cancels only active managed Code Quality
 runs for the same PR whose SHA differs from the live PR head, rechecking that
 head before each cancellation. Current-head coverage, trunk scans, required
 checks and other PRs remain protected.
@@ -503,7 +503,7 @@ which is why both the run count and exact observed span are recorded.
 | `server-test-prebuild-evidence-ledger.yml` | Server Test Prebuild Evidence Ledger | daily `schedule`, `workflow_dispatch` | Audits retained prebuild parity receipts. |
 | `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of retained Review Gate observation receipts; replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness. Cannot change mode, status, labels, runs, train state, or merge state. |
 | `impact-routing-evidence-ledger.yml` | Impact Routing Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of attempt-bound PR Gate and native-image impact receipts; reconciles native decisions with successful exact-head Serving/GDAL image outcomes. |
-| `code-quality-supersession.yml` | Cancel superseded Code Quality | `pull_request_target`, managed `workflow_run` | Trusted default-branch controller cancels only older active managed C# Code Quality runs for the same verified PR; preserves current-head coverage. |
+| `code-quality-supersession.yml` | Cancel superseded Code Quality | `pull_request_target`, analysis `workflow_run` | Trusted default-branch controller cancels older PR heads and active same-head duplicates of CodeQL or managed Code Quality only when replacement coverage is present; completed evidence requires successful Analyze jobs and a stable attempt. |
 | `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Trusted admission cancels only older producer generations for the same PR. Observe mode validates envelopes and reports drift without writing PR branches; the existing trunk regeneration producer publishes generated documents. |
 | `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
 

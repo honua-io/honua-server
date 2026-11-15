@@ -6,7 +6,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_run:
     workflows: ["CodeQL", "Code Quality: PR #*"]
-    types: [requested, in_progress]
+    types: [requested, in_progress, completed]
 
 permissions:
   actions: write
@@ -18,13 +18,23 @@ jobs:
     if: >-
       github.event_name == 'pull_request_target' ||
       (github.event.workflow_run.path == 'dynamic/github-code-quality/codeql' &&
-       startsWith(github.event.workflow_run.head_branch, 'refs/pull/'))
+       startsWith(github.event.workflow_run.head_branch, 'refs/pull/')) ||
+      (github.event.workflow_run.path == '.github/workflows/codeql.yml' &&
+       github.event.workflow_run.pull_requests[0].number != null)
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
     concurrency:
       group: code-quality-supersession-${{ github.event.pull_request.number && format('refs/pull/{0}/head', github.event.pull_request.number) || github.event.workflow_run.head_branch }}
       cancel-in-progress: true
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       - name: Checkout trusted default-branch helper
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,3 +46,7 @@ jobs:
           script: |
             const {cancelSuperseded} = require('./scripts/ci/cancel-superseded-code-quality.js');
             await cancelSuperseded({github, context, core});
+            if (context.payload.workflow_run) {
+              const {admit} = require('./scripts/ci/analysis-run-admission.js');
+              await admit({github, context, core});
+            }

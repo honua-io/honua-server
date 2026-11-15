@@ -4,7 +4,7 @@ const ANALYSIS_PATHS = new Set([CODEQL_PATH, 'dynamic/github-code-quality/codeql
 const ACTIVE = ['queued', 'in_progress', 'waiting', 'pending', 'requested'];
 
 function prNumber(run) {
-  const branch = /^refs\/pull\/(\d+)\/head$/.exec(run.head_branch || '');
+  const branch = /^refs\/pull\/([1-9]\d*)\/head$/.exec(run.head_branch || '');
   return run.pull_requests?.[0]?.number || (branch ? Number(branch[1]) : undefined);
 }
 
@@ -31,7 +31,13 @@ async function completedEvidence(client, run) {
 function apiClient(github, repo) {
   return {
     run: async id => (await github.rest.actions.getWorkflowRun({ ...repo, run_id: id })).data,
-    pull: async number => (await github.rest.pulls.get({ ...repo, pull_number: number })).data,
+    pull: async number => {
+      const {data: pull} = await github.rest.pulls.get({ ...repo, pull_number: number });
+      if (pull.base.repo.full_name !== `${repo.owner}/${repo.repo}`) {
+        throw new Error('Analysis subject belongs to a different repository');
+      }
+      return pull;
+    },
     runs: options => github.paginate(github.rest.actions.listWorkflowRuns, { ...repo, per_page: 100, ...options }),
     jobs: id => github.paginate(github.rest.actions.listJobsForWorkflowRun, {
       ...repo, run_id: id, filter: 'latest', per_page: 100,

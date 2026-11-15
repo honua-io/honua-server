@@ -41,8 +41,16 @@ jobs:
           python3 "$policy_dir/check-evidence-paths.py" --base "$BASE_SHA" --head "$HEAD_SHA"
   retired-cache-mentions:
     name: Retired cache mentions
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -103,7 +111,7 @@ jobs:
           done
           python3 "$policy_dir/check-generated-file-ownership.py" --base "$policy_ref" --head "$HEAD_SHA"
   shared-hygiene:
-    uses: honua-io/.github/.github/workflows/repo-hygiene.yml@7e93a67a13dc498cc4e5032f00cd9e93171afb95 # light runner switch
+    uses: honua-io/.github/.github/workflows/repo-hygiene.yml@d05acacf878e6abe755cab07bbb8f127d3802ac3 # light runner switch
   repo-hygiene:
     name: repo-hygiene / Repository hygiene
     # A superseded run must cancel rather than run a failing aggregate.

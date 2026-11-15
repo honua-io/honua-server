@@ -1454,8 +1454,8 @@ Both manual rollback and MCP lifecycle startup share the service-state allowlist
 
 GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so their
 workflow cannot declare repository-owned concurrency. `code-quality-supersession.yml`
-reconciles PR and managed-workflow start events using trusted default-branch code.
-It cancels only active managed Code Quality runs for the same PR whose SHA differs
+reconciles PR events and allowlisted analysis start/completion events using trusted default-branch code.
+Its PR-event path cancels only active managed Code Quality runs for the same PR whose SHA differs
 from the live PR head, rechecking that head before each cancellation. Current-head
 coverage, trunk scans, required checks and other PRs remain protected. The helper
 checks out no PR code and grants only Actions write, contents read and PR read.
