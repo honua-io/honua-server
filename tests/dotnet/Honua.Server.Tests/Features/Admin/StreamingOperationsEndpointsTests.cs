@@ -22,6 +22,12 @@ public sealed class StreamingOperationsEndpointsTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        const string migrationResource = "Honua.Server.Migrations.158_CreateRealtimeEventLog.sql";
+        await using var stream = typeof(Program).Assembly.GetManifestResourceStream(migrationResource)
+            ?? throw new InvalidOperationException($"Embedded migration '{migrationResource}' was not found.");
+        using var reader = new StreamReader(stream);
+        var migration = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", "\"honua\"", StringComparison.Ordinal);
+        await _fixture.Postgres.ExecuteDdlUnderLockAsync(migration);
         _client = _fixture.CreateAdminClient();
     }
 
@@ -58,9 +64,9 @@ public sealed class StreamingOperationsEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
     public async Task ListSubscribers_AfterSubscribe_ReturnsSubscriberInfo()
     {
-        var broadcaster = _fixture.GetService<IAlertNotificationBroadcaster>();
-        using var sub = broadcaster.Subscribe(
-            (_, _) => Task.CompletedTask,
+        var broadcaster = _fixture.GetService<Honua.Alerts.RealtimeAlertNotificationBroadcaster>();
+        using var sub = await broadcaster.SubscribeAsync(
+            (_, _, _) => Task.CompletedTask,
             new SubscriptionOptions("test-client"));
 
         var response = await _client.GetAsync("/api/v1/admin/operations/streaming/subscribers");
@@ -85,9 +91,9 @@ public sealed class StreamingOperationsEndpointsTests : IAsyncLifetime
     [Endpoint("DELETE /api/v1/admin/operations/streaming/subscribers/{subscriberId}")]
     public async Task DisconnectSubscriber_ExistingId_ReturnsSuccess()
     {
-        var broadcaster = _fixture.GetService<IAlertNotificationBroadcaster>();
-        using var sub = broadcaster.Subscribe(
-            (_, _) => Task.CompletedTask,
+        var broadcaster = _fixture.GetService<Honua.Alerts.RealtimeAlertNotificationBroadcaster>();
+        using var sub = await broadcaster.SubscribeAsync(
+            (_, _, _) => Task.CompletedTask,
             new SubscriptionOptions("disconnect-test"));
 
         // Get the subscriber ID

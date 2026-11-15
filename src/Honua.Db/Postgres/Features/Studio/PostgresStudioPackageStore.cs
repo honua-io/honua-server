@@ -27,6 +27,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _itemsTable;
     private readonly string _draftsTable;
+    private readonly string _draftRevisionsTable;
     private readonly string _versionsTable;
     private readonly string _checkpointVersionsTable;
     private readonly string _dependenciesTable;
@@ -40,6 +41,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         _connectionProvider = connectionProvider;
         _itemsTable = SchemaSearchPath.QualifyTable("studio_content_items", schemaName);
         _draftsTable = SchemaSearchPath.QualifyTable("studio_package_drafts", schemaName);
+        _draftRevisionsTable = SchemaSearchPath.QualifyTable("studio_draft_revisions", schemaName);
         _versionsTable = SchemaSearchPath.QualifyTable("studio_content_versions", schemaName);
         _checkpointVersionsTable = SchemaSearchPath.QualifyTable("saved_map_checkpoint_versions", schemaName);
         _dependenciesTable = SchemaSearchPath.QualifyTable("studio_content_version_dependencies", schemaName);
