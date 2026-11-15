@@ -682,6 +682,7 @@ jobs:
           set -euo pipefail
           python3 scripts/security/test-existing-image-scan.py
           python3 scripts/security/test-release-images.py
+          node --test scripts/security/private-findings.test.js
           python3 scripts/security/release_images.py inventory-validate
           python3 scripts/security/release_images.py vex-validate
 
@@ -705,6 +706,7 @@ jobs:
         run: |
           python3 scripts/security/test-existing-image-scan.py
           python3 scripts/security/test-release-images.py
+          node --test scripts/security/private-findings.test.js
       - name: Read supported release digests
         id: inventory
         run: |
@@ -851,7 +853,15 @@ jobs:
           github-token: ${{ secrets.SECURITY_FINDINGS_TOKEN }}
           script: |
             const fs = require('fs');
-            const [owner, repo] = process.env.SECURITY_FINDINGS_REPO.split('/');
+            const destination = process.env.SECURITY_FINDINGS_REPO || '';
+            if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(destination)) {
+              throw new Error('Security findings require an owner/repository destination');
+            }
+            const [owner, repo] = destination.split('/');
+            const { data: repository } = await github.rest.repos.get({ owner, repo });
+            if (repository.private !== true) {
+              throw new Error('Security findings require a private destination repository');
+            }
             const { findings } = JSON.parse(fs.readFileSync('release-private.json', 'utf8'));
             const run = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
             const open = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', per_page: 100 });

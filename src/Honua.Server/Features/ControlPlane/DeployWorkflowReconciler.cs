@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Microsoft.Extensions.Hosting;
 
 namespace Honua.ControlPlane;
@@ -1200,9 +1201,10 @@ internal sealed partial class DeployWorkflowReconciler(
 internal sealed class DeployWorkflowReconcilerBackgroundService(
     IWorkflowOperationStore workflowStore,
     IWorkflowOperationReconciler reconciler,
-    ILogger<DeployWorkflowReconcilerBackgroundService> logger) : BackgroundService
+    ILogger<DeployWorkflowReconcilerBackgroundService> logger,
+    PollWakeSignal<IWorkflowOperationStore>? wake = null) : BackgroundService
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    private readonly IdlePollPacer _pacer = new(wake);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -1210,9 +1212,12 @@ internal sealed class DeployWorkflowReconcilerBackgroundService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            _pacer.BeginPoll();
+            var idle = false;
             try
             {
                 var activeOperations = await workflowStore.ListActiveAsync(WorkflowOperationKind.Deploy, stoppingToken).ConfigureAwait(false);
+                idle = activeOperations.Count == 0;
                 foreach (var operation in activeOperations)
                 {
                     stoppingToken.ThrowIfCancellationRequested();
@@ -1240,7 +1245,7 @@ internal sealed class DeployWorkflowReconcilerBackgroundService(
                 DeployWorkflowReconciler.Log.WorkflowOperationPollLoopFailed(logger, ex);
             }
 
-            await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+            await (idle ? _pacer.WaitIdleAsync(stoppingToken) : _pacer.WaitAfterWorkAsync(stoppingToken)).ConfigureAwait(false);
         }
     }
 }
