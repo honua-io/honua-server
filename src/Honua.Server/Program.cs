@@ -359,6 +359,9 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
         return;
     }
 
+    builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
+        new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+
     if (nativeAot)
     {
         keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
@@ -1109,7 +1112,7 @@ builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
 
 // ---- Extracted: feature-change events, streaming, transactional outbox
 //      (Startup/FeatureEventsAndStreamingRegistration.cs)
-builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration, requiresDurableDistributedEvents);
+builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration);
 // ---- End extracted block
 
 // ---- Cross-node realtime: event log and fan-out provider (ADR-0085)

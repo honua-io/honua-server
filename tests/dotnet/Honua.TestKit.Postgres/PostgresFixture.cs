@@ -30,7 +30,7 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
             "154_CreatePackageDraftsAndMcpSessions.sql", "156_CreateConfigurationDocuments.sql",
             "158_CreateRealtimeEventLog.sql", "161_CreateOpsNotificationSchedules.sql",
             "166_CreateSourceWatermarks.sql", "167_CreateWorkflowStores.sql",
-            "176_CreateRemoteImportCommitReceipt.sql"];
+            "174_CreateOperationProposalBatches.sql", "176_CreateRemoteImportCommitReceipt.sql"];
 
     // Upload tests run with HONUA_SKIP_MIGRATIONS and a seed that mirrors older import
     // functions, not this script. The importer calls these after every committed load.
