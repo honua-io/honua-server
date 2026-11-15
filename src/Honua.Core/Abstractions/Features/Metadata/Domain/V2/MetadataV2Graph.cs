@@ -12,12 +12,15 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 
 public sealed record MetadataV2Graph : ExtensibleJsonRecord, IJsonOnDeserializing, IJsonOnDeserialized
 {
-    private bool _readingJson;
 
-    void IJsonOnDeserializing.OnDeserializing() => _readingJson = true;
+    void IJsonOnDeserializing.OnDeserializing()
+    {
+        _publications = _publications.BeginRead();
+        _resources = _resources.BeginRead();
+    }
+
     void IJsonOnDeserialized.OnDeserialized()
     {
-        _readingJson = false;
         _publications = _publications.CompleteRead();
         _resources = _resources.CompleteRead();
     }
@@ -55,14 +58,14 @@ public sealed record MetadataV2Graph : ExtensibleJsonRecord, IJsonOnDeserializin
     public IReadOnlyList<MetadataV2Object> Resources
     {
         get => _resources.Value ?? Array.Empty<MetadataV2Object>();
-        set => _resources = _resources.WithLegacy(value, _readingJson);
+        set => _resources = _resources.WithLegacy(value);
     }
 
     [JsonPropertyName("objects")]
     public IReadOnlyList<MetadataV2Object> Objects
     {
         get => Resources;
-        set => _resources = _resources.WithCanonical(value, _readingJson);
+        set => _resources = _resources.WithCanonical(value);
     }
 
     [JsonPropertyName("connections")]
@@ -92,14 +95,14 @@ public sealed record MetadataV2Graph : ExtensibleJsonRecord, IJsonOnDeserializin
     public IReadOnlyList<MetadataV2Layer> Publications
     {
         get => _publications.Value ?? Array.Empty<MetadataV2Layer>();
-        set => _publications = _publications.WithLegacy(value, _readingJson);
+        set => _publications = _publications.WithLegacy(value);
     }
 
     [JsonPropertyName("layers")]
     public IReadOnlyList<MetadataV2Layer> Layers
     {
         get => Publications;
-        set => _publications = _publications.WithCanonical(value, _readingJson);
+        set => _publications = _publications.WithCanonical(value);
     }
 
     [JsonPropertyName("projectionProfiles")]
@@ -124,14 +127,17 @@ public sealed record MetadataV2Graph : ExtensibleJsonRecord, IJsonOnDeserializin
 
 public sealed record MetadataV2Object : ExtensibleJsonRecord, IJsonOnDeserializing, IJsonOnDeserialized
 {
-    private bool _readingJson;
     private MetadataV2JsonAlias<PreservedEnumValue<MetadataV2ObjectType>> _type =
-        new(MetadataV2ObjectType.FeatureDataset, false);
+        new(MetadataV2ObjectType.FeatureDataset);
 
-    void IJsonOnDeserializing.OnDeserializing() => _readingJson = true;
+    void IJsonOnDeserializing.OnDeserializing()
+    {
+        _styleResourceIds = _styleResourceIds.BeginRead();
+        _type = _type.BeginRead();
+    }
+
     void IJsonOnDeserialized.OnDeserialized()
     {
-        _readingJson = false;
         _styleResourceIds = _styleResourceIds.CompleteRead();
         _type = _type.CompleteRead();
     }
@@ -161,7 +167,7 @@ public sealed record MetadataV2Object : ExtensibleJsonRecord, IJsonOnDeserializi
     public PreservedEnumValue<MetadataV2ObjectType> TypeValue
     {
         get => _type.Value;
-        set => _type = _type.WithLegacy(value, _readingJson);
+        set => _type = _type.WithLegacy(value);
     }
 
     [JsonPropertyName("objectType")]
@@ -169,7 +175,7 @@ public sealed record MetadataV2Object : ExtensibleJsonRecord, IJsonOnDeserializi
     public PreservedEnumValue<MetadataV2ObjectType> ObjectTypeValue
     {
         get => TypeValue;
-        set => _type = _type.WithCanonical(value, _readingJson);
+        set => _type = _type.WithCanonical(value);
     }
 
     [JsonPropertyName("storageBindingIds")]
@@ -251,14 +257,14 @@ public sealed record MetadataV2Object : ExtensibleJsonRecord, IJsonOnDeserializi
     public IReadOnlyList<string> StyleResourceIds
     {
         get => _styleResourceIds.Value ?? Array.Empty<string>();
-        set => _styleResourceIds = _styleResourceIds.WithLegacy(value, _readingJson);
+        set => _styleResourceIds = _styleResourceIds.WithLegacy(value);
     }
 
     [JsonPropertyName("styleObjectIds")]
     public IReadOnlyList<string> StyleObjectIds
     {
         get => StyleResourceIds;
-        set => _styleResourceIds = _styleResourceIds.WithCanonical(value, _readingJson);
+        set => _styleResourceIds = _styleResourceIds.WithCanonical(value);
     }
 
     [JsonPropertyName("style")]
@@ -372,12 +378,14 @@ public sealed record MetadataV2Connection : ExtensibleJsonRecord
 
 public sealed record MetadataV2StorageBinding : ExtensibleJsonRecord, IJsonOnDeserializing, IJsonOnDeserialized
 {
-    private bool _readingJson;
 
-    void IJsonOnDeserializing.OnDeserializing() => _readingJson = true;
+    void IJsonOnDeserializing.OnDeserializing()
+    {
+        _resourceId = _resourceId.BeginRead();
+    }
+
     void IJsonOnDeserialized.OnDeserialized()
     {
-        _readingJson = false;
         _resourceId = _resourceId.CompleteRead();
     }
 
@@ -389,14 +397,14 @@ public sealed record MetadataV2StorageBinding : ExtensibleJsonRecord, IJsonOnDes
     public string ResourceId
     {
         get => _resourceId.Value ?? string.Empty;
-        set => _resourceId = _resourceId.WithLegacy(value, _readingJson);
+        set => _resourceId = _resourceId.WithLegacy(value);
     }
 
     [JsonPropertyName("objectId")]
     public string ObjectId
     {
         get => ResourceId;
-        set => _resourceId = _resourceId.WithCanonical(value, _readingJson);
+        set => _resourceId = _resourceId.WithCanonical(value);
     }
 
     [JsonPropertyName("connectionId")]
@@ -448,12 +456,14 @@ public sealed record MetadataV2StorageBinding : ExtensibleJsonRecord, IJsonOnDes
 
 public sealed record MetadataV2Service : ExtensibleJsonRecord, IJsonOnDeserializing, IJsonOnDeserialized
 {
-    private bool _readingJson;
 
-    void IJsonOnDeserializing.OnDeserializing() => _readingJson = true;
+    void IJsonOnDeserializing.OnDeserializing()
+    {
+        _publicationIds = _publicationIds.BeginRead();
+    }
+
     void IJsonOnDeserialized.OnDeserialized()
     {
-        _readingJson = false;
         _publicationIds = _publicationIds.CompleteRead();
     }
 
@@ -493,14 +503,14 @@ public sealed record MetadataV2Service : ExtensibleJsonRecord, IJsonOnDeserializ
     public IReadOnlyList<string> PublicationIds
     {
         get => _publicationIds.Value ?? Array.Empty<string>();
-        set => _publicationIds = _publicationIds.WithLegacy(value, _readingJson);
+        set => _publicationIds = _publicationIds.WithLegacy(value);
     }
 
     [JsonPropertyName("layerIds")]
     public IReadOnlyList<string> LayerIds
     {
         get => PublicationIds;
-        set => _publicationIds = _publicationIds.WithCanonical(value, _readingJson);
+        set => _publicationIds = _publicationIds.WithCanonical(value);
     }
 
     [JsonPropertyName("accessPolicy")]
@@ -594,12 +604,15 @@ public sealed record MetadataV2ServiceSettings : ExtensibleJsonRecord
 
 public sealed record MetadataV2Layer : ExtensibleJsonRecord, IJsonOnDeserializing, IJsonOnDeserialized
 {
-    private bool _readingJson;
 
-    void IJsonOnDeserializing.OnDeserializing() => _readingJson = true;
+    void IJsonOnDeserializing.OnDeserializing()
+    {
+        _resourceId = _resourceId.BeginRead();
+        _publicationType = _publicationType.BeginRead();
+    }
+
     void IJsonOnDeserialized.OnDeserialized()
     {
-        _readingJson = false;
         _resourceId = _resourceId.CompleteRead();
         _publicationType = _publicationType.CompleteRead();
     }
@@ -618,14 +631,14 @@ public sealed record MetadataV2Layer : ExtensibleJsonRecord, IJsonOnDeserializin
     public string ResourceId
     {
         get => _resourceId.Value ?? string.Empty;
-        set => _resourceId = _resourceId.WithLegacy(value, _readingJson);
+        set => _resourceId = _resourceId.WithLegacy(value);
     }
 
     [JsonPropertyName("objectId")]
     public string ObjectId
     {
         get => ResourceId;
-        set => _resourceId = _resourceId.WithCanonical(value, _readingJson);
+        set => _resourceId = _resourceId.WithCanonical(value);
     }
 
     [JsonPropertyName("serviceId")]
@@ -646,7 +659,7 @@ public sealed record MetadataV2Layer : ExtensibleJsonRecord, IJsonOnDeserializin
     public PreservedEnumValue<MetadataV2LayerType> PublicationTypeValue
     {
         get => _publicationType.Value;
-        set => _publicationType = _publicationType.WithLegacy(value, _readingJson);
+        set => _publicationType = _publicationType.WithLegacy(value);
     }
 
     [JsonPropertyName("layerType")]
@@ -654,7 +667,7 @@ public sealed record MetadataV2Layer : ExtensibleJsonRecord, IJsonOnDeserializin
     public PreservedEnumValue<MetadataV2LayerType> LayerTypeValue
     {
         get => PublicationTypeValue;
-        set => _publicationType = _publicationType.WithCanonical(value, _readingJson);
+        set => _publicationType = _publicationType.WithCanonical(value);
     }
 
     [JsonPropertyName("titleOverride")]

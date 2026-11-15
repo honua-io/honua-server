@@ -8,11 +8,17 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 // Alias properties use ordinary setters so source generation assigns them after
 // OnDeserializing, including on .NET 10; init accessors run during construction.
 // Keep this state as a value so a record's with-expression cannot mutate its source.
-internal readonly record struct MetadataV2JsonAlias<T>(T? Value, bool HasLegacyValue)
+internal readonly record struct MetadataV2JsonAlias<T>(T? Value)
 {
-    public MetadataV2JsonAlias<T> CompleteRead() => new(Value, false);
+    private bool IsReading { get; init; }
+    private bool HasLegacyValue { get; init; }
 
-    public MetadataV2JsonAlias<T> WithLegacy(T? value, bool readingJson) => this with { Value = value, HasLegacyValue = readingJson };
+    public MetadataV2JsonAlias<T> BeginRead() => this with { IsReading = true, HasLegacyValue = false };
 
-    public MetadataV2JsonAlias<T> WithCanonical(T? value, bool readingJson) => readingJson && HasLegacyValue ? this : new(value, false);
+    public MetadataV2JsonAlias<T> CompleteRead() => this with { IsReading = false, HasLegacyValue = false };
+
+    public MetadataV2JsonAlias<T> WithLegacy(T? value) => this with { Value = value, HasLegacyValue = IsReading };
+
+    public MetadataV2JsonAlias<T> WithCanonical(T? value) =>
+        IsReading && HasLegacyValue ? this : this with { Value = value, HasLegacyValue = false };
 }

@@ -10,12 +10,14 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 public sealed record MetadataV2Relationship : ExtensibleJsonRecord, IJsonOnDeserializing, IJsonOnDeserialized
 {
     private MetadataV2JsonAlias<string> _relatedObjectId;
-    private bool _readingJson;
 
-    void IJsonOnDeserializing.OnDeserializing() => _readingJson = true;
+    void IJsonOnDeserializing.OnDeserializing()
+    {
+        _relatedObjectId = _relatedObjectId.BeginRead();
+    }
+
     void IJsonOnDeserialized.OnDeserialized()
     {
-        _readingJson = false;
         _relatedObjectId = _relatedObjectId.CompleteRead();
     }
 
@@ -32,14 +34,14 @@ public sealed record MetadataV2Relationship : ExtensibleJsonRecord, IJsonOnDeser
     public string RelatedResourceId
     {
         get => _relatedObjectId.Value ?? string.Empty;
-        set => _relatedObjectId = _relatedObjectId.WithLegacy(value, _readingJson);
+        set => _relatedObjectId = _relatedObjectId.WithLegacy(value);
     }
 
     [JsonPropertyName("relatedObjectId")]
     public string RelatedObjectId
     {
         get => RelatedResourceId;
-        set => _relatedObjectId = _relatedObjectId.WithCanonical(value, _readingJson);
+        set => _relatedObjectId = _relatedObjectId.WithCanonical(value);
     }
 
     [JsonPropertyName("role")]
