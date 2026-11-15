@@ -25,7 +25,8 @@ namespace Honua.Server.Tests.Features.Admin.Routing;
 [Collection("Redis")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
-public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
+public class NetworkTopologyPromotionAdminEndpointsTests
+    : IClassFixture<NetworkTopologyPromotionAdminEndpointsTests.SharedApplication>, IAsyncLifetime
 {
     private const string AdminPassword = "netpromote-admin-key";
 
@@ -35,35 +36,98 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly WebAppFixture _fixture;
+    private readonly RedisFixture _redis;
+    private readonly SharedApplication _application;
+    private WebAppFixture _fixture = null!;
     private HttpClient _client = null!;
 
-    public NetworkTopologyPromotionAdminEndpointsTests(RedisFixture redis)
+    public NetworkTopologyPromotionAdminEndpointsTests(RedisFixture redis, SharedApplication application)
     {
+        _redis = redis;
+        _application = application;
+    }
+
+    public async Task InitializeAsync()
+    {
+        _fixture = await _application.GetAsync(_redis);
+        _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+    }
+
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// One application and schema per class, started on first use because the Redis
+    /// connection comes from the collection fixture. Every case registers its own randomly
+    /// named dataset and asserts only on that dataset's generations, attempts and jobs, so a
+    /// host per case bought no isolation.
+    /// </summary>
+    public sealed class SharedApplication : IAsyncLifetime
+    {
+        private readonly SemaphoreSlim _start = new(1, 1);
+        private WebAppFixture? _fixture;
+
+        public async Task<WebAppFixture> GetAsync(RedisFixture redis)
+        {
+            await _start.WaitAsync();
+            try
+            {
+                if (_fixture is null)
+                {
+                    var fixture = Create(redis.ConnectionString);
+                    try
+                    {
+                        await fixture.InitializeAsync();
+                    }
+                    catch
+                    {
+                        await fixture.DisposeAsync();
+                        throw;
+                    }
+
+                    _fixture = fixture;
+                }
+
+                return _fixture;
+            }
+            finally
+            {
+                _start.Release();
+            }
+        }
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public async Task DisposeAsync()
+        {
+            if (_fixture is not null)
+            {
+                await _fixture.DisposeAsync();
+            }
+
+            _start.Dispose();
+        }
+
         // Reaching a "ready" candidate generation drives a rebuild submission, which creates
         // a durable ExecutionJobRecord via the shared job infrastructure (#2718). The
         // production composition root only wires AddJobOrchestration/AddJobWorker when a
         // Redis connection and a Redis-cache license entitlement are present — mirrors
         // GpJobWorkerCompositionRootTests.
-        _fixture = new WebAppFixture().WithProductionJobSubstrate()
-            .UseSeed("tests/seed/server.yaml")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
-                builder.UseSetting("Licensing:DevGrantEdition", "Pro");
-            });
+        private static WebAppFixture Create(string redisConnectionString) =>
+            new WebAppFixture().WithProductionJobSubstrate()
+                .UseSeed("tests/seed/server.yaml")
+                .ConfigureWebHost(builder =>
+                {
+                    builder.UseEnvironment("Test");
+                    builder.UseSetting("HONUA_DEV_AUTH", "false");
+                    builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                    builder.UseSetting("ConnectionStrings:redis", redisConnectionString);
+                    builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+                });
     }
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-    }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     private static string NewId(string suffix) =>
         $"ntp-{suffix}-{Guid.NewGuid():N}".Substring(0, 24).ToLowerInvariant();
