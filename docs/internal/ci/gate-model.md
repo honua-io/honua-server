@@ -1057,11 +1057,26 @@ runs and twice-daily full runs. That job already participates in CI Gate; no
 required check name or aggregate dependency changes. The runtime URL scan still
 runs and fails the trunk gate when a source/config link breaks.
 
-Derived Artifact Normalization watches .NET generator/proving-test code and
-client compatibility receipts instead of every test language, and GIS data
-instead of GIS prose. Runtime source, generator scripts, CITE status and all
-existing build/setup inputs remain covered. Its producer/consumer security
-boundary and deterministic replay are unchanged.
+Derived Artifact Normalization runs on pull requests only when its own recipe
+can change: the producer workflow, the .NET setup action, the envelope builder,
+every generator input the envelope pins (`GENERATOR_INPUTS` in
+`scripts/ci/normalization-envelope.py`) and the three projections. Its consumer
+is observe-only since feature PRs stopped committing these projections (14 Nov),
+so an envelope for an ordinary source change produced no result anyone used.
+That generation still runs: PR Gate's architecture job regenerates the same
+projections and reports drift on every ready PR, ci.yml's foundation job does
+the same on affected trunk and twice-daily full runs, and the nightly
+generated-files-on-trunk writer publishes them. `validate-optional-pr-inputs.py`
+fails if a pinned generator input stops admitting the producer. The
+producer/consumer security boundary and deterministic replay are unchanged.
+
+The review-first and router validators project the workflow inventory into a
+scratch file (or compare it with `--check`) instead of rewriting the tracked
+page. The page is trunk-published and may lag the workflow YAML; a rewrite left
+the PR Gate checkout dirty, and the later private-feed restore proof, which
+requires an unchanged tracked checkout, failed on any PR touching its inputs.
+Only `scripts/ci/regenerate-generated-files.sh` rewrites the page, and
+`generate-workflow-inventory.test.py` enforces that.
 
 ## Server test fixture lifetimes
 

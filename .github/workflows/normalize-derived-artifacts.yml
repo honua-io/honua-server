@@ -7,29 +7,41 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]
     branches: [trunk]
+    # The consumer is observe-only (founder 14 Nov: feature PRs never commit
+    # these projections), so a PR-time envelope for ordinary source changes adds
+    # no result: PR Gate's architecture job regenerates the same projections and
+    # reports drift on every PR, and the nightly generated-files-on-trunk writer
+    # and twice-daily full CI regenerate them on trunk. The envelope itself runs
+    # when its recipe changes: this producer, the setup action, the envelope
+    # builder, every pinned GENERATOR_INPUTS entry and the projections.
+    # validate-optional-pr-inputs.py fails if a pinned input stops admitting it.
     paths:
-      - 'src/**'
-      - 'tests/dotnet/**'
-      - 'tests/fixtures/plugins/**'
-      - 'tests/baselines/client-compat/**'
+      - '.github/workflows/normalize-derived-artifacts.yml'
+      - '.github/actions/setup-dotnet-ci/**'
+      - 'scripts/ci/normalization-envelope.py'
+      - 'global.json'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'NuGet.config'
       - 'scripts/ci/generate-feature-catalog.sh'
       - 'scripts/ci/generate-admin-operation-parity-exports.sh'
-      - 'scripts/ci/verify-admin-operation-parity.py'
-      - 'docs/gis/data/admin-openapi-operation-ids.json'
-      - 'docs/gis/data/admin-mcp-projection-manifest.json'
       - 'scripts/ci/generate-geoservices-parity.sh'
       - 'scripts/ci/capability-impact.py'
       - 'scripts/ci/generate-capability-matrix.py'
-      - 'scripts/ci/normalization-envelope.py'
-      - 'docs/cite-status.md'
-      - 'docs/gis/data/**'
-      - '*.sln'
-      - '**/*.props'
-      - '**/*.targets'
-      - 'global.json'
-      - 'NuGet.config'
-      - '.github/actions/setup-dotnet-ci/**'
-      - '.github/workflows/normalize-derived-artifacts.yml'
+      - 'scripts/ci/verify-admin-operation-parity.py'
+      - 'tests/dotnet/Honua.Architecture.Tests/ArchitectureTestHelpers.cs'
+      - 'tests/dotnet/Honua.Architecture.SourceTests/ArchitectureTestHelpers.Source.cs'
+      - 'tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj'
+      - 'tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/**'
+      - 'tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Operations/AdminOperationParityExportTests.cs'
+      - 'docs/gis/data/capability-route-mapping.v1.json'
+      - 'docs/gis/data/geoservices-parity-judgment.json'
+      - 'docs/gis/data/public-interface-proof.json'
+      - 'docs/gis/data/feature-catalog.json'
+      - 'docs/gis/data/geoservices-rest-parity.json'
+      - 'docs/gis/data/capability-matrix.v1.json'
 
 permissions:
   actions: read

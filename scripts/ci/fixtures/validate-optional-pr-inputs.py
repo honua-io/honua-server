@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check optional PR admission boundaries and retained trunk link coverage."""
 from functools import lru_cache
+import importlib.util
 import json
 import os
 import re
@@ -97,16 +98,27 @@ def path_matches(path, pattern):
 
 
 class OptionalInputTests(unittest.TestCase):
-    def test_normalization_retains_generators_receipts_and_build_inputs(self):
+    def test_normalization_runs_for_its_recipe_and_every_pinned_generator_input(self):
         name = "normalize-derived-artifacts.yml"
-        for path in ("src/Honua.Server/Program.cs", "tests/dotnet/Honua.Server.Tests/NewTests.cs",
-                     "tests/baselines/client-compat/maplibre/latest.cert.json",
-                     "docs/gis/data/capability-route-mapping.v1.json", "global.json",
-                     "tests/fixtures/plugins/Honua.Sample.UtilityValidationPlugin/Plugin.cs",
-                     "Directory.Build.props", "src/Nested/Build.props"):
+        spec = importlib.util.spec_from_file_location(
+            "envelope", ROOT / "scripts/ci/normalization-envelope.py")
+        envelope = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(envelope)
+        recipe = (".github/workflows/normalize-derived-artifacts.yml", ".github/actions/setup-dotnet-ci/action.yml",
+                  "scripts/ci/normalization-envelope.py", *envelope.OUTPUT_LIMITS)
+        for path in (*recipe, *envelope.GENERATOR_INPUTS):
             self.assertTrue(admitted(name, path), path)
-        for path in ("docs/gis/new-guide.md", "tests/python/unrelated_test.py", "README.md"):
+        # Ordinary source still regenerates and reports drift in PR Gate's
+        # architecture job; the observe-only envelope adds nothing there.
+        for path in ("src/Honua.Server/Program.cs", "tests/dotnet/Honua.Server.Tests/NewTests.cs",
+                     "docs/gis/new-guide.md", "tests/python/unrelated_test.py", "README.md"):
             self.assertFalse(admitted(name, path), path)
+        lean_gate = (ROOT / ".github/actions/lean-gate/action.yml").read_text()
+        self.assertIn("bash scripts/ci/regenerate-generated-files.sh --configuration Release", lean_gate)
+        self.assertIn("bash scripts/ci/report-generated-file-drift.sh", lean_gate)
+        fast = workflow("pr-gate.yml")["jobs"]["fast-tests"]
+        self.assertIn("architecture", fast["strategy"]["matrix"]["test-group"])
+        self.assertNotIn("if", fast)
 
     def test_github_globs_respect_directory_boundaries(self):
         self.assertTrue(path_matches("Directory.Build.props", "**/*.props"))
@@ -159,6 +171,10 @@ class OptionalInputTests(unittest.TestCase):
         steps = [step for step in router["steps"] if "check-doc-links.py" in step.get("run", "")]
         self.assertEqual(len(steps), 1)
         self.assertIn("python3 scripts/ci/check-doc-links.test.py", steps[0]["run"])
+        # The router leaves the tracked inventory page untouched; links are
+        # checked against this head's projection, as in Docs Link Gate.
+        self.assertLess(steps[0]["run"].index("python3 scripts/ci/generate-workflow-inventory.py\n"),
+                        steps[0]["run"].index("python3 scripts/ci/check-doc-links.py"))
         self.assertNotIn("if", steps[0])
         self.assertNotIn("continue-on-error", steps[0])
         self.assertNotIn("continue-on-error", router)
