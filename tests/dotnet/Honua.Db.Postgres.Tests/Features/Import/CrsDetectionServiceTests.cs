@@ -543,6 +543,11 @@ public class CrsDetectionServiceTests : IAsyncLifetime
     public async Task DetectFromPrjAsync_EsriProjectedWithoutAuthority_MatchesEpsgByParameters(string fixture, int expected)
     {
         var prj = (string)typeof(EsriProjectedPrj).GetField(fixture)!.GetValue(null)!;
+        // Known ESRI names resolve before parameter matching. Replace only the projected name
+        // so these cases exercise the PostGIS parameter fallback with the original CRS definition.
+        var nameStart = prj.IndexOf('"');
+        var nameEnd = prj.IndexOf('"', nameStart + 1);
+        prj = prj[..(nameStart + 1)] + "Unrecognised_Parameter_Grid" + prj[nameEnd..];
 
         var result = await _service!.DetectFromPrjAsync(prj);
 
