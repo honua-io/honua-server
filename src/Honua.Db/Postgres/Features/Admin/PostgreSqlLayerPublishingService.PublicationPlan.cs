@@ -83,7 +83,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    private MetadataV2Object BuildPublicationResource(PublishedLayerGraphPlan plan)
+    private static MetadataV2Object BuildPublicationResource(PublishedLayerGraphPlan plan)
     {
         // Managed storage belongs to the server, even when the source route has a connection ID.
         var connectionId = plan.Storage.IsManagedStore ? null : plan.Request.ConnectionId;
@@ -94,7 +94,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return plan.StyleResourceIds.Count > 0 ? resource with { StyleResourceIds = plan.StyleResourceIds } : resource;
     }
 
-    private MetadataV2Layer BuildPlannedPublication(PublishedLayerGraphPlan plan,
+    private static MetadataV2Layer BuildPlannedPublication(PublishedLayerGraphPlan plan,
         (MetadataV2Service Service, MetadataV2Object Resource, MetadataV2StorageBinding Binding) objects, MetadataV2LayerType layerType)
     {
         var primary = layerType == MetadataV2LayerType.EsriFeatureLayer;
@@ -107,7 +107,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return publication with { Metadata = ApplyPublicationScope(publication.Metadata, plan.Scope) };
     }
 
-    private MetadataV2Graph AssemblePublicationGraph(PublishedLayerGraphPlan plan, PublicationGraphObjects objects,
+    private static MetadataV2Graph AssemblePublicationGraph(PublishedLayerGraphPlan plan, PublicationGraphObjects objects,
         MetadataV2Graph organizedGraph)
     {
         var graph = plan.Graph;
@@ -128,7 +128,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    private static IReadOnlyList<MetadataV2Object> BuildPlannedResources(PublishedLayerGraphPlan plan, MetadataV2Object resource)
+    private static List<MetadataV2Object> BuildPlannedResources(PublishedLayerGraphPlan plan, MetadataV2Object resource)
     {
         var resources = UpsertById(plan.Graph.Resources, resource, static item => item.Metadata.Id);
         foreach (var styleResource in plan.StyleResources)

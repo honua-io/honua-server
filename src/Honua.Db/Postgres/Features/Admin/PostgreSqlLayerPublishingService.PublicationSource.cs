@@ -242,7 +242,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     private sealed record PublicationSourceCompletion(PublicationSourceRequest Source, PreparedPublicationSource Prepared);
 
-    private async Task<PreparedPublicationSource> CompletePublicationSourceAsync(NpgsqlConnection connection,
+    private static async Task<PreparedPublicationSource> CompletePublicationSourceAsync(NpgsqlConnection connection,
         PublicationSourceCompletion completion, CancellationToken cancellationToken)
     {
         var source = completion.Source;
