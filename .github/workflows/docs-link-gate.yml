@@ -94,7 +94,13 @@ jobs:
 
       - name: Regenerate trunk-owned documentation for validation
         run: |
-          python3 scripts/ci/generate-workflow-inventory.py
+          # Older PR heads predate the inventory generator and retain an authored inventory.
+          # Existing generators must still fail the gate if regeneration fails.
+          if [[ -f scripts/ci/generate-workflow-inventory.py ]]; then
+            python3 scripts/ci/generate-workflow-inventory.py
+          else
+            echo "Legacy PR head: validating the authored workflow inventory."
+          fi
           python3 scripts/ci/generate-capability-concepts.py
 
       # The checker's own tests run first and are self-contained (synthetic docs
