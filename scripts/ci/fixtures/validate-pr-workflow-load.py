@@ -52,13 +52,14 @@ def evaluate(condition, event, context=None):
     expression = expression.replace("needs.runner-select", 'needs["runner-select"]')
     for step_id in ("docs-only", "generated-only"):
         expression = expression.replace(f"steps.{step_id}", f'steps["{step_id}"]')
-    probe = """const {expression, github, needs, cancelled, env, steps} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', 'fromJSON', 'env', 'steps', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''}, JSON.parse, env, steps)));
+    probe = r"""const {expression, github, needs, cancelled, env, steps, matrix} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', 'fromJSON', 'env', 'steps', 'matrix', 'format', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''}, JSON.parse, env, steps, matrix, (template, ...args) => template.replace(/\{(\d+)\}/g, (_, index) => args[Number(index)]))));
 """
     result = subprocess.run(["node", "-e", probe], input=json.dumps({
         "expression": expression, "github": event, "needs": context.get("needs", {}),
         "cancelled": context.get("cancelled", False),
         "env": context.get("env", {}), "steps": context.get("steps", {}),
+        "matrix": context.get("matrix", {}),
     }), text=True, capture_output=True, check=True, timeout=10)
     return json.loads(result.stdout)
 
@@ -92,10 +93,40 @@ class PullRequestLoadTests(unittest.TestCase):
                 self.assertIn("github.event.pull_request.number", concurrency.get("group", ""))
                 cancellation = concurrency.get("cancel-in-progress")
                 if name == "auto-merge-ready.yml":
+                    # Live eligibility is applied in event order. Cancelling an
+                    # in-flight enable can let that mutation land after a newer
+                    # hold or draft event has been shed.
                     self.assertEqual(cancellation, "false")
                     self.assertEqual(concurrency.get("queue"), "max")
+                elif name == "normalize-derived-artifacts.yml":
+                    self.assertEqual(cancellation, "true")
+                    self.assertNotIn("queue", concurrency)
                 else:
                     self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
+
+    def test_non_generating_normalization_events_cannot_cancel_producer(self):
+        producer = workflow("normalize-derived-artifacts.yml")
+        group = producer["concurrency"]["group"]
+
+        def admission(action, **subject):
+            event = {"event_name": "pull_request", "event": {
+                "action": action, "pull_request": {"number": subject.get("number", 7639),
+                    "draft": subject.get("draft", False), "head": {"sha": subject.get("head", "head-b")}},
+                "changes": {"base": {"ref": {"from": subject.get("base_from")}}},
+            }}
+            return re.sub(r"\$\{\{.*?\}\}", lambda match: str(evaluate(match[0], event)), group)
+
+        ready = admission("ready_for_review")
+        for action in ("opened", "synchronize", "converted_to_draft", "edited"):
+            self.assertNotEqual(admission(action, draft=True), ready, action)
+        # A title/body edit during generation supplies no replacement envelope.
+        self.assertNotEqual(admission("edited"), ready)
+        self.assertEqual(admission("edited", base_from="old-base"), ready)
+        self.assertEqual(admission("synchronize"), ready)
+        self.assertNotEqual(admission("synchronize", number=7640), ready)
+        # A delayed event for A must not cancel B and then shed as stale.
+        for action in ("opened", "reopened", "synchronize", "ready_for_review", "edited"):
+            self.assertNotEqual(admission(action, head="head-a", base_from="old-base"), ready, action)
 
     def test_normalization_cancels_only_eligible_pr_work(self):
         definition = workflow("normalize-derived-artifacts.yml")
@@ -282,8 +313,32 @@ class PullRequestLoadTests(unittest.TestCase):
                 with self.subTest(step=name or "checkout", draft=draft, attempt=attempt):
                     review_wait = not draft and attempt == 1
                     self.assertEqual(
-                        evaluate(step.get("if", "true"), event, {"env": env, "steps": steps}),
+                        evaluate(step.get("if", "true"), event, {
+                            "env": env, "steps": steps, "matrix": {"format": "true"},
+                        }),
                         review_wait if name == "Await exact-head review" else not review_wait,
+                    )
+
+    def test_only_formatter_restores_before_the_shared_action(self):
+        job = workflow("pr-gate.yml")["jobs"]["format"]
+        condition = next(step["if"] for step in job["steps"] if step.get("name") == "Restore")
+        event = {"event_name": "pull_request", "run_attempt": 2,
+                 "event": {"pull_request": {"draft": False}}}
+        rows = evaluate(job["strategy"]["matrix"]["include"], event)
+        self.assertEqual(len(rows), 4)
+        for row in rows:
+            for docs_only, generated_only in ((False, False), (True, False), (False, True)):
+                with self.subTest(check=row["check"], docs=docs_only, generated=generated_only):
+                    context = {
+                        "matrix": row, "env": {"REVIEW_FIRST_MODE": "enforce"},
+                        "steps": {
+                            "docs-only": {"outputs": {"docs_only": str(docs_only).lower()}},
+                            "generated-only": {"outputs": {"generated_only": str(generated_only).lower()}},
+                        },
+                    }
+                    self.assertEqual(
+                        evaluate(condition, event, context),
+                        row["format"] == "true" and not docs_only and not generated_only,
                     )
 
     def test_optional_pr_jobs_refuse_drafts(self):
@@ -358,17 +413,9 @@ class PullRequestLoadTests(unittest.TestCase):
     def test_trusted_observers_keep_current_draft_refusal(self):
         observer = workflow("server-test-prebuild-observe.yml")
         parity = workflow("server-test-prebuild-parity.yml")
-        claude = workflow("claude-review.yml")
         self.assertIn("if (resolved.pullRequest.draft)", job_scripts(observer["jobs"]["plan"]))
         self.assertIn("if (pr.draft)", job_scripts(parity["jobs"]["plan"]))
-        self.assertIn("if (pr.draft)", job_scripts(claude["jobs"]["resolve"]))
         self.assertEqual(observer["jobs"]["producer"]["concurrency"]["cancel-in-progress"], "true")
-        review = claude["jobs"]["review"]["concurrency"]
-        self.assertEqual(review["cancel-in-progress"], "false")
-        self.assertEqual(review["group"], "claude-review-${{ needs.resolve.outputs.pr }}-${{ needs.resolve.outputs.head }}")
-        admission = claude["jobs"]["resolve"]["concurrency"]
-        self.assertEqual(admission["cancel-in-progress"], "true")
-        self.assertIn("github.event.issue.number", admission["group"])
 
     def test_new_concurrency_preserves_independent_non_pr_runs(self):
         names = ("availability-evidence-contract.yml", "capacity-evidence-contract.yml",

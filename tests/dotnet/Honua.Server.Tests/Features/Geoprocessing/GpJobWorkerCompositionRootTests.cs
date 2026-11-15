@@ -118,7 +118,9 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis) : IClass
             using var submitDoc = JsonDocument.Parse(await submit.Content.ReadAsStringAsync());
             var jobId = submitDoc.RootElement.GetProperty("jobId").GetString();
             jobId.Should().NotBeNullOrWhiteSpace();
-            submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+            // The production worker can advance the durable job before submission returns.
+            submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().BeOneOf(
+                "esriJobSubmitted", "esriJobWaiting", "esriJobExecuting", "esriJobSucceeded");
 
             // The composition-root-wired worker must drain the queue to a terminal success.
             var terminalStatus = await PollUntilSucceededAsync(client, jobId!);

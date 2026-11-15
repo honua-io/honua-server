@@ -15,28 +15,6 @@ namespace Honua.Db.Postgres.Features.Scene;
 /// </summary>
 internal static class SceneDatasetServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the Postgres-backed <see cref="ISceneDatasetRegistry"/> and
-    /// <see cref="ISceneRegistrationService"/>, falling back to a
-    /// configuration-backed registry for entries that are not persisted in
-    /// Postgres.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Order with respect to <c>AddScene(...)</c> is irrelevant. The
-    /// configuration-backed registry registered by <c>AddScene</c> is preserved
-    /// as <see cref="IConfigurationSceneDatasetRegistry"/> so it can be used as
-    /// a fallback for local-dev/test scenarios where datasets are declared via
-    /// the <c>Scenes:Datasets</c> configuration section.
-    /// </para>
-    /// <para>
-    /// When the active <c>DataSource:Provider</c> is not Postgres (e.g. DuckDB),
-    /// this method is a no-op: the configuration-backed registry stays the
-    /// authoritative <see cref="ISceneDatasetRegistry"/>, and
-    /// <see cref="ISceneRegistrationService"/> is left unregistered so the
-    /// admin endpoints decline to map themselves.
-    /// </para>
-    /// </remarks>
     public static IServiceCollection AddPostgresSceneRegistry(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -49,7 +27,7 @@ internal static class SceneDatasetServiceCollectionExtensions
 
         // Promote any prior ISceneDatasetRegistry registration (typically
         // ConfigurationSceneDatasetRegistry from AddScene) to the
-        // IConfigurationSceneDatasetRegistry alias so the composite below can
+        // ConfigurationSceneDatasetRegistryAdapter alias so the composite below can
         // delegate to it without colliding on the primary interface.
         for (var i = services.Count - 1; i >= 0; i--)
         {
@@ -61,7 +39,7 @@ internal static class SceneDatasetServiceCollectionExtensions
 
             services.RemoveAt(i);
             services.Add(new ServiceDescriptor(
-                typeof(IConfigurationSceneDatasetRegistry),
+                typeof(ConfigurationSceneDatasetRegistryAdapter),
                 sp => new ConfigurationSceneDatasetRegistryAdapter(
                     (ISceneDatasetRegistry)CreateInstance(sp, descriptor)),
                 descriptor.Lifetime));
@@ -73,7 +51,7 @@ internal static class SceneDatasetServiceCollectionExtensions
         services.AddScoped<ISceneDatasetRegistry>(sp =>
         {
             var primary = sp.GetRequiredService<PostgresSceneDatasetRegistry>();
-            var fallback = sp.GetService<IConfigurationSceneDatasetRegistry>();
+            var fallback = sp.GetService<ConfigurationSceneDatasetRegistryAdapter>();
             return fallback is null
                 ? primary
                 : new CompositeSceneDatasetRegistry(primary, primary, fallback);
@@ -114,15 +92,7 @@ internal static class SceneDatasetServiceCollectionExtensions
     }
 }
 
-/// <summary>
-/// Marker interface used to chain a non-Postgres scene registry behind the
-/// Postgres-backed primary. The configuration-backed registry installed by
-/// <c>AddScene</c> is promoted to this alias so it remains available as a
-/// fallback without conflicting on <see cref="ISceneDatasetRegistry"/>.
-/// </summary>
-internal interface IConfigurationSceneDatasetRegistry : ISceneDatasetRegistry;
-
-internal sealed class ConfigurationSceneDatasetRegistryAdapter : IConfigurationSceneDatasetRegistry
+internal sealed class ConfigurationSceneDatasetRegistryAdapter : ISceneDatasetRegistry
 {
     private readonly ISceneDatasetRegistry _inner;
 
