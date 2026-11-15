@@ -63,7 +63,10 @@ the change ID `external-layer:<layer-id>:<latest revision>`. With tag invalidati
 enabled, changes that all supply an extent purge regional native tiles, overview
 tiles, buffered tile responses (including H3 tiles) and tile metadata for their
 combined extent. A change without an extent makes that purge layer-wide. Other
-protocols retain their layer-wide purge.
+protocols retain their layer-wide purge. A slow request that started before the
+edit committed and finishes after the purge can still put the earlier response
+into the CDN until its cache lifetime ends; origin caches are not affected,
+because that response is keyed to the earlier revision.
 Unsupported or oversized invalidations fall back to a broad purge. CDN propagation
 still takes the time required by the configured provider.
 

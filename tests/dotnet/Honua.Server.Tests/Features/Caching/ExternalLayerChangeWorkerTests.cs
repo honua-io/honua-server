@@ -5,7 +5,6 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
-using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.SharedCaching;
@@ -104,16 +103,22 @@ public sealed class ExternalLayerChangeWorkerTests(DatabaseFixtureAdapter fixtur
     public void Backoff_DoublesFromTheWindowUpToFifteenMinutes(int failures, int seconds)
         => ExternalLayerChangeWorker.Backoff(failures).Should().Be(TimeSpan.FromSeconds(seconds));
 
-    [UnitTest]
-    public void CombinedExtent_CoversEveryChange_AndAnyUnboundedChangeIsLayerWide()
-    {
-        var a = new ExternalLayerChange(7, 1, BoundingBox.FromArray([1d, 2d, 3d, 4d], 4326));
-        var b = new ExternalLayerChange(7, 2, BoundingBox.FromArray([-1d, 3d, 2d, 6d], 4326));
-        ExternalLayerChangeWorker.CombinedExtent([a, b])!.Value.ToArray().Should().Equal(-1d, 2d, 3d, 6d);
-        ExternalLayerChangeWorker.CombinedExtent([a, b with { Extent = null }]).Should().BeNull();
-        ExternalLayerChangeWorker.CombinedExtent([a, b with { Extent = BoundingBox.FromArray([170d, 0d, -170d, 1d], 4326) }])
-            .Should().BeNull();
-    }
+    [IntegrationTest]
+    public Task PendingChanges_AreReadAsOneRowPerLayerCoveringEveryExtent()
+        => InSchemaAsync(async database =>
+        {
+            await RegisterAsync(database, 8);
+            await RecordAsync(database, 8, [1d, 2d, 3d, 4d]);
+            await RecordAsync(database, 8, [-1d, 3d, 2d, 6d]);
+            using var worker = Worker(database, Cdn(CdnInvalidationOutcome.Submitted));
+
+            var pending = await worker.ReadBatchAsync(default);
+
+            pending.Select(change => change.Layer).Should().Equal(7, 8);
+            pending[0].Extent.Should().BeNull("layer 7's change has no extent");
+            pending[1].Revision.Should().Be(2);
+            pending[1].Extent!.Value.ToArray().Should().Equal(-1d, 2d, 3d, 6d);
+        });
 
     [IntegrationTest]
     public Task RevisionRead_IsPinnedWithinRequestAndRefreshesOnTheNextRequest()
@@ -167,11 +172,16 @@ public sealed class ExternalLayerChangeWorkerTests(DatabaseFixtureAdapter fixtur
         }
     }
 
-    private static Task RecordAsync(JobStoreDatabase database, int layerId = 7)
+    private static Task RecordAsync(JobStoreDatabase database, int layerId = 7, double[]? extent = null)
         => database.ExecuteAsync(async (connection, token) =>
         {
-            await using var command = new NpgsqlCommand($"SELECT {database.Table("record_external_layer_change")}(@layer)", connection);
+            await using var command = new NpgsqlCommand(
+                $"SELECT {database.Table("record_external_layer_change")}(@layer, @extent)", connection);
             command.Parameters.AddWithValue("layer", layerId);
+            command.Parameters.Add(new NpgsqlParameter("extent", NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Double)
+            {
+                Value = (object?)extent ?? DBNull.Value,
+            });
             await command.ExecuteNonQueryAsync(token);
         }, StatementRepeat.NotAfterSend, default);
 

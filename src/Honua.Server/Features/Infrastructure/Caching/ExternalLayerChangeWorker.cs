@@ -23,8 +23,7 @@ internal sealed partial class ExternalLayerChangeWorker(
 {
     internal static readonly TimeSpan PurgeWindow = TimeSpan.FromSeconds(30);
     internal static readonly TimeSpan MaximumBackoff = TimeSpan.FromMinutes(15);
-    private const int ChangesPerLayer = 200;
-    private const int ChangesPerBatch = 1000;
+    private const int LayersPerBatch = 1024;
 
     private readonly string _leaseOwner = $"external-layer:{Environment.MachineName}:{Guid.NewGuid():N}";
     private readonly Dictionary<int, LayerSchedule> _schedule = [];
@@ -65,98 +64,92 @@ internal sealed partial class ExternalLayerChangeWorker(
         }
 
         var acknowledged = 0;
-        foreach (var layer in pending.GroupBy(change => change.Layer))
+        foreach (var layer in pending)
         {
-            acknowledged += await ProcessLayerAsync(layer.Key, [.. layer], cancellationToken).ConfigureAwait(false);
+            acknowledged += await ProcessLayerAsync(layer, cancellationToken).ConfigureAwait(false);
         }
 
         return acknowledged;
     }
 
-    private async Task<int> ProcessLayerAsync(int layerId, ExternalLayerChange[] changes, CancellationToken cancellationToken)
+    private async Task<int> ProcessLayerAsync(ExternalLayerChange pending, CancellationToken cancellationToken)
     {
         var now = Clock.GetUtcNow();
-        _schedule.TryGetValue(layerId, out var schedule);
+        _schedule.TryGetValue(pending.Layer, out var schedule);
         if (now < schedule.NextAttempt)
         {
             return 0;
         }
 
-        if (services.GetService<ILeaseStore>() is { } leases && !await leases.TryAcquireAsync(
-            new LeaseClaim($"external-layer-purge:{layerId.ToString(CultureInfo.InvariantCulture)}", _leaseOwner),
-            PurgeWindow, cancellationToken).ConfigureAwait(false))
+        var leases = services.GetService<ILeaseStore>();
+        var claim = new LeaseClaim($"external-layer-purge:{pending.Layer.ToString(CultureInfo.InvariantCulture)}", _leaseOwner);
+        if (leases is not null && !await leases.TryAcquireAsync(claim, PurgeWindow, cancellationToken).ConfigureAwait(false))
         {
             return 0;
         }
 
-        var changeId = string.Create(CultureInfo.InvariantCulture,
-            $"external-layer:{layerId}:{changes.Max(change => change.Revision)}");
+        var changeId = string.Create(CultureInfo.InvariantCulture, $"external-layer:{pending.Layer}:{pending.Revision}");
         try
         {
-            await invalidation.InvalidateExternalEditAsync(layerId, CombinedExtent(changes), changeId, cancellationToken)
+            await invalidation.InvalidateExternalEditAsync(pending.Layer, pending.Extent, changeId, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested && exception is not OutOfMemoryException)
         {
             var failures = schedule.Failures + 1;
-            _schedule[layerId] = new(failures, now + Backoff(failures));
-            LogLayerRetry(Logger, layerId, failures, exception);
+            var backoff = Backoff(failures);
+            _schedule[pending.Layer] = new(failures, now + backoff);
+            if (leases is not null)
+            {
+                // Holding the claim for the backoff keeps the other tasks from retrying sooner.
+                await leases.RenewAsync(claim, backoff, cancellationToken).ConfigureAwait(false);
+            }
+
+            LogLayerRetry(Logger, pending.Layer, failures, exception);
             return 0;
         }
 
-        _schedule[layerId] = new(0, now + PurgeWindow);
-        return await AcknowledgeAsync(layerId, [.. changes.Select(change => change.Revision)], cancellationToken)
-            .ConfigureAwait(false);
+        _schedule[pending.Layer] = new(0, now + PurgeWindow);
+        return await AcknowledgeAsync(pending, cancellationToken).ConfigureAwait(false);
     }
 
     internal static TimeSpan Backoff(int failures)
         => failures >= 5 ? MaximumBackoff : TimeSpan.FromTicks(Math.Min(PurgeWindow.Ticks << failures, MaximumBackoff.Ticks));
 
-    // Any change without an extent, or one crossing the antimeridian, makes the purge layer-wide.
-    internal static BoundingBox? CombinedExtent(IReadOnlyList<ExternalLayerChange> changes)
-    {
-        if (changes.Any(change => change.Extent is not { IsAntimeridianCrossing: false }))
-        {
-            return null;
-        }
-
-        var extents = changes.Select(change => change.Extent!.Value).ToArray();
-        return BoundingBox.FromArray(
-            [extents.Min(box => box.MinX), extents.Min(box => box.MinY), extents.Max(box => box.MaxX), extents.Max(box => box.MaxY)],
-            4326);
-    }
-
-    private Task<List<ExternalLayerChange>> ReadBatchAsync(CancellationToken cancellationToken)
+    // One row per layer: its latest revision and the extent covering every pending change, which is
+    // unbounded when any change has no extent. One purge then covers a layer's whole backlog, and the
+    // batch is bounded by the number of tracked layers rather than by the number of changes.
+    internal Task<List<ExternalLayerChange>> ReadBatchAsync(CancellationToken cancellationToken)
         => database.ExecuteAsync(async (connection, _, token) =>
         {
-            // The oldest changes of every layer, so one layer's backlog cannot hide the others.
             await using var command = new NpgsqlCommand($"""
-                SELECT layer_id, revision, extent FROM (
-                    SELECT layer_id, revision, extent, changed_at,
-                           row_number() OVER (PARTITION BY layer_id ORDER BY changed_at, revision) AS position
-                      FROM {database.Table("external_layer_changes")}) queued
-                 WHERE position <= {ChangesPerLayer}
-                 ORDER BY changed_at, layer_id, revision LIMIT {ChangesPerBatch}
+                SELECT layer_id, max(revision), bool_or(extent IS NULL),
+                       min(extent[1]), min(extent[2]), max(extent[3]), max(extent[4])
+                  FROM {database.Table("external_layer_changes")}
+                 GROUP BY layer_id
+                 ORDER BY min(changed_at), layer_id LIMIT {LayersPerBatch}
                 """, connection);
             var changes = new List<ExternalLayerChange>();
             await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
             while (await reader.ReadAsync(token).ConfigureAwait(false))
             {
-                changes.Add(new(reader.GetInt32(0), reader.GetInt64(1),
-                    reader.IsDBNull(2) ? null : BoundingBox.FromArray(reader.GetFieldValue<double[]>(2), 4326)));
+                changes.Add(new(reader.GetInt32(0), reader.GetInt64(1), reader.GetBoolean(2) ? null : BoundingBox.FromArray(
+                    [reader.GetDouble(3), reader.GetDouble(4), reader.GetDouble(5), reader.GetDouble(6)], 4326)));
             }
 
             return changes;
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 
-    private Task<int> AcknowledgeAsync(int layerId, long[] revisions, CancellationToken cancellationToken)
+    // Every revision up to the one read has committed or rolled back: the recording hook holds the
+    // layer's revision row from its increment until commit.
+    private Task<int> AcknowledgeAsync(ExternalLayerChange purged, CancellationToken cancellationToken)
         => database.ExecuteAsync(async (connection, _, token) =>
         {
             await using var command = new NpgsqlCommand(
-                $"DELETE FROM {database.Table("external_layer_changes")} WHERE layer_id = @layer AND revision = ANY(@revisions)",
+                $"DELETE FROM {database.Table("external_layer_changes")} WHERE layer_id = @layer AND revision <= @revision",
                 connection);
-            command.Parameters.AddWithValue("layer", layerId);
-            command.Parameters.AddWithValue("revisions", revisions);
+            command.Parameters.AddWithValue("layer", purged.Layer);
+            command.Parameters.AddWithValue("revision", purged.Revision);
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 
@@ -171,4 +164,5 @@ internal sealed partial class ExternalLayerChangeWorker(
     private static partial void LogLayerRetry(ILogger logger, int layerId, int attempts, Exception exception);
 }
 
+// A layer's pending changes: the latest revision and the extent covering all of them (null when unbounded).
 internal sealed record ExternalLayerChange(int Layer, long Revision, BoundingBox? Extent);
