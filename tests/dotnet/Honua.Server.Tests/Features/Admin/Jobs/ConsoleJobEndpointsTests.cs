@@ -81,18 +81,10 @@ public sealed partial class ConsoleJobEndpointsTests
         return Task.CompletedTask;
     }
 
-    // Cases reset and reseed the in-memory doubles. The timer-driven job-store pollers are
-    // removed so they cannot rewrite a case's seeded jobs mid-request.
+    // Cases reset and reseed the in-memory doubles. The Test environment hosts none of the
+    // timer-driven job-store pollers, so nothing rewrites a case's seeded jobs mid-request.
     public sealed class SharedApplication : IAsyncLifetime
     {
-        private static readonly HashSet<string> _jobStorePollers = new(StringComparer.Ordinal)
-        {
-            "ExecutionJobBackstopSweepService",
-            "ExecutionJobReconcilerBackgroundService",
-            "ExecutionQueueDepthCollectorBackgroundService",
-            "JobStoreRetentionSweepService",
-        };
-
         internal RetentionTestClock RetentionClock { get; } = new();
         internal InMemoryJobStore JobStore { get; } = new();
         internal InMemoryLogStore LogStore { get; } = new();
@@ -107,16 +99,6 @@ public sealed partial class ConsoleJobEndpointsTests
             Fixture = new WebAppFixture()
                 .ConfigureServices(services =>
                 {
-                    foreach (var poller in services
-                        .Where(descriptor =>
-                            descriptor.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService) &&
-                            descriptor.ImplementationType is { } implementation &&
-                            _jobStorePollers.Contains(implementation.Name))
-                        .ToList())
-                    {
-                        services.Remove(poller);
-                    }
-
                     services.RemoveAll<TimeProvider>();
                     services.AddSingleton<TimeProvider>(RetentionClock);
                     services.RemoveAll<IExecutionJobStore>();
