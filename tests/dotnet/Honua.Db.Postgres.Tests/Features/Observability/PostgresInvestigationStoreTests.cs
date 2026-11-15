@@ -216,6 +216,11 @@ public sealed partial class PostgresInvestigationStoreTests(PostgresFixture fixt
                 created_by TEXT NOT NULL
             );
             """);
+        await ApplyIncidentReferenceMigrationAsync(schema);
+    }
+
+    private async Task ApplyIncidentReferenceMigrationAsync(string schema)
+    {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
         {

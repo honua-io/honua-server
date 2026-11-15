@@ -278,16 +278,7 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
             return null;
         }
 
-        var deleteSql = $"""
-            WITH legacy AS (
-                DELETE FROM {_pinsTable}
-                WHERE investigation_id = @investigation_id AND pin_id = @pin_id RETURNING 1
-            ), incident AS (
-                DELETE FROM {_incidentPinsTable}
-                WHERE investigation_id = @investigation_id AND pin_id = @pin_id RETURNING 1
-            )
-            SELECT (SELECT COUNT(*) FROM legacy) + (SELECT COUNT(*) FROM incident)
-            """;
+        var deleteSql = BuildReferenceDeletionSql(_pinsTable, _incidentPinsTable, "pin_id");
         int deleted;
         await using (var delete = new NpgsqlCommand(deleteSql, connection, transaction))
         {
@@ -366,16 +357,7 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
             return null;
         }
 
-        var deleteSql = $"""
-            WITH legacy AS (
-                DELETE FROM {_linksTable}
-                WHERE investigation_id = @investigation_id AND link_id = @link_id RETURNING 1
-            ), incident AS (
-                DELETE FROM {_incidentLinksTable}
-                WHERE investigation_id = @investigation_id AND link_id = @link_id RETURNING 1
-            )
-            SELECT (SELECT COUNT(*) FROM legacy) + (SELECT COUNT(*) FROM incident)
-            """;
+        var deleteSql = BuildReferenceDeletionSql(_linksTable, _incidentLinksTable, "link_id");
         int deleted;
         await using (var delete = new NpgsqlCommand(deleteSql, connection, transaction))
         {
@@ -395,6 +377,18 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return record;
     }
+
+    private static string BuildReferenceDeletionSql(string legacyTable, string incidentTable, string idColumn)
+        => $"""
+            WITH legacy AS (
+                DELETE FROM {legacyTable}
+                WHERE investigation_id = @investigation_id AND {idColumn} = @{idColumn} RETURNING 1
+            ), incident AS (
+                DELETE FROM {incidentTable}
+                WHERE investigation_id = @investigation_id AND {idColumn} = @{idColumn} RETURNING 1
+            )
+            SELECT (SELECT COUNT(*) FROM legacy) + (SELECT COUNT(*) FROM incident)
+            """;
 
     private async Task<bool> ExistsAsync(
         NpgsqlConnection connection,
