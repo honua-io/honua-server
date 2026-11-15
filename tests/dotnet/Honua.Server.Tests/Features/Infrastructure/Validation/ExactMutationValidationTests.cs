@@ -49,7 +49,7 @@ public sealed class ExactMutationValidationTests
     [InlineData("-0.0000000000000000000000000001", false)]
     public void ValidateAttributes_DecimalRange_EnforcesExactBounds(string text, bool accepted)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new()
             {
@@ -65,7 +65,7 @@ public sealed class ExactMutationValidationTests
         result.IsValid.Should().Be(accepted, result.ErrorMessage);
     }
 
-    private static MetadataV2Resource Resource(MetadataV2FieldType type) => new()
+    private static MetadataV2Object Resource(MetadataV2FieldType type) => new()
     {
         SchemaFields = [new() { Name = "value", Type = type, Nullable = true }]
     };

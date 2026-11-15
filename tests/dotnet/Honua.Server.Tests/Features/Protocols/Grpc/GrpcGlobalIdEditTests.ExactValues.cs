@@ -48,7 +48,9 @@ public sealed partial class GrpcGlobalIdEditTests
 
         var queried = await _sut.QueryFeatures(new Proto.QueryFeaturesRequest
         {
-            ServiceId = "test", LayerId = 0, ReturnGeometry = false
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnGeometry = false
         }, CallContext("query"));
 
         queried.Features.Should().ContainSingle().Which.Attributes["exact"].Should().Be(wireValue);

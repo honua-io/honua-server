@@ -196,8 +196,8 @@ public sealed class GrpcTypedValueTests
     [UnitTest]
     public void Predicate_UuidColumnMatchesLowercase_TextColumnMatchesStoredSpellings()
     {
-        var uuid = new MetadataV2Resource { SchemaFields = [new MetadataV2Field { Name = "GlobalID", TypeValue = MetadataV2FieldType.Uuid }] };
-        var text = new MetadataV2Resource { SchemaFields = [new MetadataV2Field { Name = "GlobalID", TypeValue = MetadataV2FieldType.String }] };
+        var uuid = new MetadataV2Object { SchemaFields = [new MetadataV2Field { Name = "GlobalID", TypeValue = MetadataV2FieldType.Uuid }] };
+        var text = new MetadataV2Object { SchemaFields = [new MetadataV2Field { Name = "GlobalID", TypeValue = MetadataV2FieldType.String }] };
 
         GrpcGlobalIds.Predicate(uuid, "GlobalID", [GlobalId]).Should().Be($"GlobalID IN ('{GlobalId}')");
         GrpcGlobalIds.Predicate(text, "GlobalID", [GlobalId]).Should().Contain($"'{{{GlobalId.ToUpperInvariant()}}}'");
@@ -217,7 +217,7 @@ public sealed class GrpcTypedValueTests
         => FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(NumericResource(type), DecimalBatch(value)))
             .Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
 
-    private static MetadataV2Resource NumericResource(MetadataV2FieldType type)
+    private static MetadataV2Object NumericResource(MetadataV2FieldType type)
         => new() { SchemaFields = [new MetadataV2Field { Name = "n", TypeValue = type }] };
 
     private static FeatureEditBatch DecimalBatch(string value)
@@ -228,7 +228,7 @@ public sealed class GrpcTypedValueTests
     {
         var batch = Batch(ImmutableDictionary<string, object?>.Empty.Add("signed", DateTimeOffset.UnixEpoch));
 
-        FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(new MetadataV2Resource(), batch))
+        FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(new MetadataV2Object(), batch))
             .Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
     }
 
@@ -237,11 +237,14 @@ public sealed class GrpcTypedValueTests
     [InlineData("12345678901234567890.1000", "2026-11-14T08:30:00.0000001+05:45")]
     public void EnsureStorable_ExactSchema_PreservesWireTextAcrossCreatesUpdatesAndOperations(string amount, string offsetText)
     {
-        var resource = new MetadataV2Resource { SchemaFields =
+        var resource = new MetadataV2Object
+        {
+            SchemaFields =
         [
             new() { Name = "AMOUNT", TypeValue = MetadataV2FieldType.Decimal },
             new() { Name = "signed", TypeValue = MetadataV2FieldType.TimestampOffset }
-        ] };
+        ]
+        };
         var feature = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
             .Add("amount", GrpcTypedValues.ExactDecimal(amount))
             .Add("signed", GrpcTypedValues.ExactTimestampOffset(offsetText)));
