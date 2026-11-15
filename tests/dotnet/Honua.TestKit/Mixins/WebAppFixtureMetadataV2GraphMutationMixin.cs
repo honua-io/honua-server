@@ -390,7 +390,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     internal static Task UpdateResourceAsync(
         WebAppFixture fixture,
         int layerIndex,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate)
+        Func<MetadataV2Object, MetadataV2Object> mutate)
     {
         var provider = RequireProvider(fixture);
         var snapshot = ReadCurrent(fixture, provider);
