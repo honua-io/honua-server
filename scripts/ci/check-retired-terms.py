@@ -118,10 +118,17 @@ def changed_paths(status):
 
 
 def text_lines(path):
+    # Audit mode reads tracked files. NUL bytes mark data, which is skipped; None marks bytes
+    # that are not UTF-8 (such as image fixtures) so the caller can name the skipped file.
+    # Added lines in --base mode must still decode.
     body = path.read_bytes()
     if b"\0" in body:
         return []
-    return [line.removesuffix("\r") for line in body.decode("utf-8").split("\n")]
+    try:
+        text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    return [line.removesuffix("\r") for line in text.split("\n")]
 
 
 class VocabularyCheck:
@@ -191,7 +198,11 @@ class VocabularyCheck:
         path = self.root / name
         if not self.is_safe_path(name) or not path.is_file():
             return []
-        return self.file_findings(name, enumerate(text_lines(path), 1))
+        lines = text_lines(path)
+        if lines is None:
+            print(f"Skipped (not UTF-8): {name}", file=sys.stderr)
+            return []
+        return self.file_findings(name, enumerate(lines, 1))
 
     def file_findings(self, name, lines):
         findings = []

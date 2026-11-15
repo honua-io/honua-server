@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -23,6 +25,16 @@ class RetiredTermsTests(RetiredTermsTestCase):
 
     def test_all_mode_reports_existing_debt(self):
         self.assertEqual(self.check().audit(), ["page.md:1: legacy: use canonical phrase"])
+
+    def test_all_mode_names_and_skips_tracked_data_that_is_not_utf8(self):
+        (self.root / "fixture.bin").write_bytes(b"\xff\xd8retired phrase\n")
+        self.run_git("add", "fixture.bin")
+        self.run_git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                     "commit", "-qm", "data fixture")
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self.assertEqual(self.check().audit(), ["page.md:1: legacy: use canonical phrase"])
+        self.assertEqual(stderr.getvalue(), "Skipped (not UTF-8): fixture.bin\n")
 
     def test_exception_requires_exact_path_rule_line_and_nonempty_reason(self):
         self.write("page.md", "allowed retired phrase\n")
