@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Xunit.Abstractions;
 using Honua.TestKit;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
@@ -17,12 +18,14 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
 {
     private const string TestEncryptionMasterKey = "test-master-key-that-is-at-least-32-characters-long";
     private readonly ITestOutputHelper _output;
+    private readonly DatabaseFixtureAdapter _database;
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
 
-    public SimpleAuthenticationTests(ITestOutputHelper output)
+    public SimpleAuthenticationTests(DatabaseFixtureAdapter database, ITestOutputHelper output)
     {
         _output = output;
+        _database = database;
         _factory = new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
@@ -38,7 +41,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:honua"] = TestConnectionStrings.DefaultPostgresConnectionString
+                        ["ConnectionStrings:honua"] = _database.ConnectionString
                     });
                 });
             });
@@ -87,7 +90,8 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString
+                        ["ConnectionStrings:DefaultConnection"] = _database.ConnectionString,
+                        ["ConnectionStrings:honua"] = _database.ConnectionString
                     });
                 });
             });
@@ -116,7 +120,8 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString
+                        ["ConnectionStrings:DefaultConnection"] = _database.ConnectionString,
+                        ["ConnectionStrings:honua"] = _database.ConnectionString
                     });
                 });
             });
@@ -142,8 +147,8 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString,
-                        ["ConnectionStrings:honua"] = TestConnectionStrings.DefaultPostgresConnectionString,
+                        ["ConnectionStrings:DefaultConnection"] = _database.ConnectionString,
+                        ["ConnectionStrings:honua"] = _database.ConnectionString,
                         ["ConnectionStrings:redis"] = "localhost"
                     });
                 });
@@ -175,8 +180,8 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString,
-                        ["ConnectionStrings:honua"] = TestConnectionStrings.DefaultPostgresConnectionString,
+                        ["ConnectionStrings:DefaultConnection"] = _database.ConnectionString,
+                        ["ConnectionStrings:honua"] = _database.ConnectionString,
                         ["ConnectionStrings:redis"] = "localhost"
                     });
                 });
@@ -203,8 +208,8 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString,
-                        ["ConnectionStrings:honua"] = TestConnectionStrings.DefaultPostgresConnectionString,
+                        ["ConnectionStrings:DefaultConnection"] = _database.ConnectionString,
+                        ["ConnectionStrings:honua"] = _database.ConnectionString,
                         ["ConnectionStrings:redis"] = "localhost"
                     });
                 });
