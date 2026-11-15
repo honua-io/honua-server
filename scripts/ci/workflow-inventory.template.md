@@ -265,6 +265,9 @@ the changed paths on stdin.
 
 The analyzer build step disables persistent MSBuild servers and node reuse;
 all compiler, analyzer and timeout failures still fail the check.
+Only the formatter matrix row performs the preliminary whole-solution restore.
+Analyzer rows restore their selected Release graph inside the shared format
+action before source ownership evaluation and compilation.
 
 Outside `PR Gate`, `docs-link-gate.yml` keeps firing on `docs/**/*.md`, the
 data files its checkers read, and `README.md`: links, anchors, and the gate that rejects
