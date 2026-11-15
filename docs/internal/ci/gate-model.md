@@ -144,8 +144,12 @@ See [the workflow inventory](workflow-inventory.md#neutral-automation-helpers)
 for helper check names and queue policy. Helper completion does not grant
 admission: draft helpers skip without publishing success; `ready_for_review`
 re-enters attestation. Blocking reviews retain failure, and real attestation/API
-errors fail. Review helpers cancel superseded events per PR and re-read live
-review/admission state before acting. Normalization cancels repeated eligible
+errors fail. Review helpers queue superseded events per PR (`queue: max`)
+instead of cancelling them, so a superseded resolver or bridge run ends green
+rather than as a cancelled red mark on the PR page. Each attestation re-reads
+live review/admission state before acting; a draft head fails final review
+revalidation, and `ready_for_review` re-attests the live head.
+Normalization cancels repeated eligible
 producers for the same PR head. Different heads use separate groups so a delayed
 old event cannot cancel current work and then shed without replacement. Draft
 and title/body-edit events use isolated groups because they cannot generate a
@@ -155,9 +159,9 @@ validation. Live-head checks and compare-and-swap remain required before branch
 mutation. Auto-merge eligibility events retain FIFO serialization because each
 event can change merge eligibility.
 
-Completions without a PR number use an isolated resolver group per run; once resolved, publication cancels older work by PR number. An unresolvable completion cannot cancel a resolver for another run.
+Completions without a PR number use an isolated resolver group per run; once resolved, publication queues behind older work by PR number. An unresolvable completion cannot delay or cancel a resolver for another run.
 
-Review event ordering is not guaranteed. A late old-head event reconciles the current live PR head after cancelling an older resolver. Draft conversion retains a lightweight cancellation path into the shared attestation group; the live draft is then shed before checkout or status publication. Other draft pull-request payloads skip resolution.
+Review event ordering is not guaranteed. A late old-head event queues behind newer ones and reconciles the current live PR head. Draft conversion still reaches the shared attestation group, queues, and sheds the live draft before checkout or status publication. Other draft pull-request payloads skip resolution.
 
 ## Verification stages
 

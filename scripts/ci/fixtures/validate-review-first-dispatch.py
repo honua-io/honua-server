@@ -230,7 +230,13 @@ def main() -> None:
         "github.event.workflow_run.conclusion == 'success'",
         "only successful bridge runs may start trusted resolution",
     )
-    require(review_gate, "cancel-in-progress: true", "superseded review helpers must release runner capacity")
+    # Superseded review helpers queue instead of cancelling: a cancelled run is a
+    # red mark on the PR page. Every queued run re-reads live review state.
+    for source, label in [(review_gate, "review gate"), (review_bridge, "review bridge")]:
+        if "cancel-in-progress: true" in source or "cancel-in-progress: ${{" in source:
+            raise AssertionError(f"{label} helpers must queue superseded events, not cancel them red")
+    if review_gate.count("queue: max") != 2 or review_bridge.count("queue: max") != 1:
+        raise AssertionError("review resolver, attestation and bridge must queue every superseded event")
     require(
         review_gate,
         "group: review-gate-${{ needs.resolve.outputs.pr }}",
@@ -269,10 +275,6 @@ def main() -> None:
     )
     if "core.setFailed(" in review_bridge:
         raise AssertionError("superseded bridge events must complete neutrally")
-    for source in [review_gate, review_bridge]:
-        require(source, "cancel-in-progress: true", "superseded review helpers must release runner capacity")
-        if "queue: max" in source:
-            raise AssertionError("review helpers must not retain superseded pending events")
     require(
         review_gate,
         "ref: ${{ github.workflow_sha }}",
