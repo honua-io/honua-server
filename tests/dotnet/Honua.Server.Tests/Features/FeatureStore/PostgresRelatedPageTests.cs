@@ -29,7 +29,8 @@ public partial class PostgresFeatureStoreIntegrationTests
         var childA = await AddAsync(LinesLayerId, "road_type", "page-key");
         var childB = await AddAsync(LinesLayerId, "road_type", "page-key");
         var query = RelatedQuery.ForObjects([empty.Id, originB.Id, originA.Id], LinesLayerId, "category", "road_type")
-            with { OutFields = ["objectid"] };
+            with
+        { OutFields = ["objectid"] };
         var positions = new List<RelatedFeaturePosition>();
         RelatedPageCursor? cursor = null;
         for (var pageNumber = 0; pageNumber < 5; pageNumber++)
@@ -79,9 +80,9 @@ public partial class PostgresFeatureStoreIntegrationTests
         var child = await writer.CreateAsync(LinesLayerId, Feature.Create(0, CreateLineStringWkb([(0, 0), (1, 1)]),
             ImmutableDictionary<string, object?>.Empty.Add("road_type", "restricted-page")), CancellationToken.None);
         var filters = Substitute.For<IRowLevelSecurityFilterSource>();
-        filters.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        filters.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(call => new SqlFragment("objectid <> @p0", [
-                call.Arg<MetadataV2Resource>().Metadata.Id == "res-test-points" ? hidden.Id : child.Id]));
+                call.Arg<MetadataV2Object>().Metadata.Id == "res-test-points" ? hidden.Id : child.Id]));
         var query = RelatedQuery.ForObjects([visible.Id, hidden.Id], LinesLayerId, "category", "road_type");
 
         var page = await CreateFeatureStore(rowFilters: filters).QueryRelatedPageAsync(PointsLayerId, new RelatedPageQuery(query, 10));
@@ -95,7 +96,7 @@ public partial class PostgresFeatureStoreIntegrationTests
     public async Task QueryRelatedPageAsync_MaskedJoinKeyAlias_IsRejected()
     {
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("objectid"));
         var query = RelatedQuery.ForObjects([1], LinesLayerId, "object_id", "road_type");
         var action = () => CreateFeatureStore(fieldMasks: masks)
@@ -114,7 +115,7 @@ public partial class PostgresFeatureStoreIntegrationTests
         await writer.CreateAsync(LinesLayerId, Feature.Create(0, CreateLineStringWkb([(0, 0), (1, 1)]),
             ImmutableDictionary<string, object?>.Empty.Add("road_type", "masked-page").Add("length_km", 7)), CancellationToken.None);
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("length_km"));
         var query = RelatedQuery.ForObjects([origin.Id], LinesLayerId, "category", "road_type");
 
