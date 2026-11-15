@@ -8,7 +8,7 @@ internal sealed class ProjectedWktDefinition
     private string Datum { get; init; } = string.Empty;
     private string Projection { get; init; } = string.Empty;
     private string Axes { get; init; } = string.Empty;
-    private IReadOnlyDictionary<string, double> Numbers { get; init; } = new Dictionary<string, double>();
+    private Dictionary<string, double> Numbers { get; init; } = new();
     private double[]? Transform { get; init; }
 
     internal static ProjectedWktDefinition? Parse(string text)
@@ -113,7 +113,7 @@ internal sealed class ProjectedWktDefinition
         }
     }
 
-    private static string CanonicalProjection(string name, IReadOnlyDictionary<string, double> numbers) => Normalize(name) switch
+    private static string CanonicalProjection(string name, Dictionary<string, double> numbers) => Normalize(name) switch
     {
         "lambertconformalconic" when numbers.ContainsKey("standardparallel1") && numbers.ContainsKey("standardparallel2")
             => "lambertconformalconic2sp",
