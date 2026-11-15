@@ -193,6 +193,28 @@ public sealed class ManagedImportConnectionTests
     }
 
     [UnitTest]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The service provider disposes the registered data source.")]
+    public async Task PasswordlessRunningDatabaseDoesNotFollowADifferentCaseName()
+    {
+        var encryption = new RememberingEncryption();
+        var running = "Host=db.internal;Port=5432;Database=honua;Username=honua_app;SSL Mode=Disable";
+        var configured = ConnectionString.Replace("Database=honua", "Database=Honua", StringComparison.Ordinal);
+#pragma warning disable CA2000 // The service provider disposes the registered data source.
+        var dataSource = Npgsql.NpgsqlDataSource.Create(running);
+#pragma warning restore CA2000
+        using var services = Services(encryption, configured, dataSource);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        var connection = Assert.Single(await services.GetRequiredService<ISecureConnectionRegistry>().GetActiveConnectionsAsync());
+        Assert.Equal("honua", connection.DatabaseName);
+        Assert.DoesNotContain(Password, encryption.Stored, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public async Task EncryptionFailureLeavesTheListUnchanged()
     {
         var registry = new InMemorySecureConnectionRegistry();

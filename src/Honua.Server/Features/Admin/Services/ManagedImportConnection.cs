@@ -312,7 +312,7 @@ internal static partial class ManagedImportConnection
             var right = new NpgsqlConnectionStringBuilder(configured);
             return string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
                 && left.Port == right.Port
-                && string.Equals(left.Database, right.Database, StringComparison.OrdinalIgnoreCase);
+                && string.Equals(left.Database, right.Database, StringComparison.Ordinal);
         }
         catch (ArgumentException)
         {
