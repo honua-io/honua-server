@@ -207,6 +207,8 @@ class CustomerJourney:
         self.archive = archive
         self.blocks = blocks
         self.server_source = server_source
+        self.receipt = {"installations": []}
+        self.stage = "installations"
 
     def install(self, number: int) -> dict:
         with tempfile.TemporaryDirectory(prefix="honua-package-") as work:
@@ -225,16 +227,17 @@ class CustomerJourney:
             finally:
                 installation.down()
 
-    def run(self) -> dict:
-        installations = []
+    def run(self) -> None:
         previous = None
         for number in (1, 2):
+            self.stage = f"installation-{number}"
             current = self.install(number)
             if previous is not None:
                 check_fresh_credentials(previous, current["credentials"])
             previous = current["credentials"]
-            installations.append(current["result"])
-        return {"installations": installations, "version": current["version"], "freshSecondInstallCredentials": True}
+            self.receipt["installations"].append(current["result"])
+            self.receipt["version"] = current["version"]
+        self.receipt["freshSecondInstallCredentials"] = True
 
 
 def main() -> int:
@@ -249,18 +252,23 @@ def main() -> int:
                "installations": []}
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     stage = "validate-input"
+    journey = None
     try:
         receipt.update(proof_inputs(args.input, args.archive))
         stage = "validate-document"
         blocks = public_blocks(args.document)
         publication_filename(blocks)
         stage = "installations"
-        receipt.update(CustomerJourney(args.archive, blocks, receipt["serverSourceSha"]).run())
+        journey = CustomerJourney(args.archive, blocks, receipt["serverSourceSha"])
+        journey.run()
         receipt.update(passed=True, cleanup=True, customerJourneyComplete=True, authenticatedConsoleStudio=True)
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
+        stage = journey.stage if journey is not None else stage
         receipt.update(failedStage=stage, errorType=type(error).__name__)
         print("Archived quickstart proof failed at " + stage + "; command output withheld")
     finally:
+        if journey is not None:
+            receipt.update(journey.receipt)
         args.receipt.write_text(json.dumps(receipt, indent=2) + "\n")
     return 0 if receipt["passed"] else 1
 

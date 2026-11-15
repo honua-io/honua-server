@@ -211,6 +211,22 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(123, receipt["publishedRunId"])
         self.assertEqual("c" * 64, receipt["publishedArchiveSha256"])
 
+    def test_second_failure_preserves_sanitized_first_installation_evidence(self):
+        installations = [Mock(), Mock()]
+        for index, installation in enumerate(installations):
+            installation.run.return_value = "a" * 40
+            installation.credentials.return_value = {"admin": f"private-{index}"}
+        self.assertEqual(1, self.execute(installations, [{"publishQuery": True}, RuntimeError("private failure")]))
+        receipt = json.loads(self.receipt.read_text())
+        self.assertEqual([{"publishQuery": True}], receipt["installations"])
+        self.assertEqual("fixture", receipt["version"])
+        self.assertEqual("installation-2", receipt["failedStage"])
+        self.assertFalse(receipt["passed"])
+        self.assertFalse(receipt["customerJourneyComplete"])
+        self.assertNotIn("private", self.receipt.read_text())
+        for installation in installations:
+            installation.down.assert_called_once()
+
     def test_mismatched_or_missing_image_revision_never_passes(self):
         for label in ("b" * 40, "<no value>"):
             installations = [Mock(), Mock()]
