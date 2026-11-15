@@ -18128,6 +18128,7 @@
         "Honua.Server.Tests.Import.StreamingImportTests.Import_EsriJsonFeatureSet_AutoDetectsAndImports",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_FlatGeobufFile_StreamsFeaturesAndDetectsFormat",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonMissingGeometry_ReturnsStructuredValidationAndDoesNotCreateTable",
+        "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonNullGeometryFeature_ImportsEveryFeatureAndWarnsWithItsIndex",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonWithDifferentSourceAndTargetSrid_TransformsAtImport",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonWithMultipleFeatureTypes_StreamsCorrectly",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_GeoJsonWithUnsupportedTargetSrid_ReturnsStructuredValidationAndDoesNotCreateTable",
