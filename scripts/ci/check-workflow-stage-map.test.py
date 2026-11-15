@@ -115,11 +115,23 @@ class StageMapTests(unittest.TestCase):
 
     def test_retired_wire_spelling_requires_explicit_exception(self):
         binding = self.row["surfaces"]["sdk"]["bindings"][0]
-        binding["operation"] = "read_workspace"
-        self.write("docs/sdk.md", "read_workspace()\n`honua layers`\n`honua_list_layers`\n")
-        self.assertTrue(self.errors())
-        binding["literalReason"] = "Exact unreplaced wire identifier, not a user object name."
-        self.assertEqual([], self.errors())
+        samples = [
+            "read_workspace",
+            "client.getWorkspace",
+            "honua-published-layer",
+            "honua_list_workspaces",
+            "serving-target",
+        ]
+        rules, _ = checker.policy_literals(checker.REPO)
+        samples.append(next(literal for literal in rules if " " not in literal))
+        for operation in samples:
+            with self.subTest(operation=operation):
+                binding["operation"] = operation
+                binding.pop("literalReason", None)
+                self.write("docs/sdk.md", operation + "()\n`honua layers`\n`honua_list_layers`\n")
+                self.assertTrue(self.errors())
+                binding["literalReason"] = "Exact source spelling kept so the binding can be found."
+                self.assertEqual([], self.errors())
 
     def test_docs_gate_triggers_for_every_recorded_source(self):
         root = checker.REPO

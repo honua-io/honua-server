@@ -445,7 +445,7 @@
         "mcp": {
           "bindings": [
             {"verb": "validate_publication_intent", "operation": "honua_studio_get_version", "source": "docs/studio/mcp-tools.md"},
-            {"verb": "validate_publication_intent", "operation": "honua_validate_package", "source": "docs/guides/connect/ai-agents-mcp.md"}
+            {"verb": "validate_publication_intent", "operation": "honua_validate_package", "source": "docs/guides/connect/ai-agents-mcp.md", "literalReason": "Exact source spelling kept so the binding can be found. It does not name a user-facing object."}
           ]
         },
         "skill": {
@@ -469,7 +469,7 @@
         "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
         "mcp": {
           "bindings": [
-            {"verb": "submit_publication", "operation": "honua_studio_propose_publication", "source": "docs/studio/mcp-tools.md"}
+            {"verb": "submit_publication", "operation": "honua_studio_propose_publication", "source": "docs/studio/mcp-tools.md", "literalReason": "Exact source spelling kept so the binding can be found. It does not name a user-facing object."}
           ]
         },
         "skill": {
