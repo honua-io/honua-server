@@ -1031,7 +1031,8 @@ internal sealed partial class JobExecutionService(
         string workerId,
         ExecutionJobStatus terminalStatus,
         string reason,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool recoverOutcome = true)
     {
         var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (job == null)
@@ -1047,7 +1048,7 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
-        if ((terminalStatus == ExecutionJobStatus.Cancelled || reason == "license expired") &&
+        if (recoverOutcome &&
             await TryRecoverOutcomeAsync(job, workerId, cancellationToken).ConfigureAwait(false))
         {
             return;

@@ -50,6 +50,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public NpgsqlDataSource DataSource => _jobs.DataSource;
 
+    public PostgresExecutionJobStore CreateJobStore() => _jobs.CreateNodeJobStore();
+
     public static async Task<ControlPlaneStateHarness> CreateAsync(IDatabaseFixture fixture, string testClassName)
     {
         var jobs = await PostgresJobSubstrateHarness.CreateAsync(fixture, testClassName);

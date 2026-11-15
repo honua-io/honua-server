@@ -31,7 +31,7 @@ internal sealed class GeoservicesImportJobManager : IDistributedImportJobManager
                 GeoservicesImportJsonContext.Default.GeoservicesImportProgress,
                 progress => IsTerminalStatus(progress.Status),
                 ProjectEndedJob,
-                (current, next) => current.Status == GeoservicesImportStatus.Cancelled &&
+                (current, next) => !current.DataCommitted &&
                     next.DataCommitted && IsTerminalStatus(next.Status)),
             new DistributedProgressStoreAdapter<GeoservicesImportProgress>(progressStore),
             progressStore,
@@ -63,6 +63,9 @@ internal sealed class GeoservicesImportJobManager : IDistributedImportJobManager
 
     public Task RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default)
         => _jobs.RequestCancellationAsync(jobId, cancellationToken);
+
+    internal IDistributedProgressStore<GeoservicesImportProgress> ProgressStoreForAttempt(ExecutionJobRecord job)
+        => _jobs.ProgressStoreForAttempt(job);
 
     internal GeoservicesImportRequest? ReadRequest(ExecutionJobRecord job) => _jobs.ReadRequest(job);
 

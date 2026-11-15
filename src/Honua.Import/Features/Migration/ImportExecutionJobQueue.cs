@@ -47,6 +47,7 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
 
     private readonly ImportExecutionJobKindSpec<TRequest, TProgress> _spec;
     private readonly IUniversalProgressStore _universalProgressStore;
+    private readonly IDistributedProgressStore<TProgress> _innerProgressStore;
     private readonly IExecutionJobStore? _jobStore;
     private readonly IJobQueue? _jobQueue;
     private readonly ILogger _logger;
@@ -60,15 +61,21 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
         ILogger logger)
     {
         _spec = spec ?? throw new ArgumentNullException(nameof(spec));
+        _innerProgressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _jobStore = jobStore;
         _jobQueue = jobQueue;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _universalProgressStore = universalProgressStore ?? throw new ArgumentNullException(nameof(universalProgressStore));
-        ArgumentNullException.ThrowIfNull(progressStore);
         ProgressStore = new EndedJobProgressStore(this, progressStore);
     }
 
     public IDistributedProgressStore<TProgress> ProgressStore { get; }
+
+    internal IDistributedProgressStore<TProgress> ProgressStoreForAttempt(ExecutionJobRecord job)
+        => _jobStore is not null && job.ClaimedBy is not null
+            ? new EndedJobProgressStore(this, _innerProgressStore,
+                new ProgressExecutionFence(job.ClaimedBy, job.AttemptCount))
+            : ProgressStore;
 
     public async Task SubmitAsync(
         ImportExecutionSubmission<TRequest, TProgress> submission,
@@ -265,7 +272,8 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
 
     private sealed class EndedJobProgressStore(
         ImportExecutionJobQueue<TRequest, TProgress> owner,
-        IDistributedProgressStore<TProgress> inner) : IDistributedProgressStore<TProgress>
+        IDistributedProgressStore<TProgress> inner,
+        ProgressExecutionFence? executionFence = null) : IDistributedProgressStore<TProgress>
     {
         public async Task SetProgressAsync(string jobId, TProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
@@ -276,7 +284,7 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
                    owner._spec.AllowTerminalReplacement?.Invoke(current, progress) == true)
             {
                 var result = await owner._universalProgressStore.TryReplaceProgressAsync(
-                    new OperationProgressWrite(jobId, progress, ttl), current, cancellationToken).ConfigureAwait(false);
+                    new OperationProgressWrite(jobId, progress, ttl) { ExecutionFence = executionFence }, current, cancellationToken).ConfigureAwait(false);
                 if (result.Outcome == ProgressCompareAndSetOutcome.Updated)
                 {
                     return;

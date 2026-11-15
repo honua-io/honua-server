@@ -59,6 +59,9 @@ internal sealed class GeoServerImportJobManager
     internal Task RequestCancellationAsync(string jobId, CancellationToken cancellationToken)
         => _jobs.RequestCancellationAsync(jobId, cancellationToken);
 
+    internal IDistributedProgressStore<GeoServerImportProgress> ProgressStoreForAttempt(ExecutionJobRecord job)
+        => _jobs.ProgressStoreForAttempt(job);
+
     internal GeoServerImportRequest? ReadRequest(ExecutionJobRecord job) => _jobs.ReadRequest(job);
 
     internal Task<ProgressCompareAndSetResult> TryTransitionAsync(

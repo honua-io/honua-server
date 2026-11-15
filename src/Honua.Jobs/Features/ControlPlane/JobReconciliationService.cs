@@ -401,6 +401,12 @@ internal sealed partial class JobReconciliationService(
             return false;
         }
 
+        if (ExecutionJobCancellationHelper.RequiresCommitRecovery(current!))
+        {
+            return await RequeueImportRecoveryAsync(current!, freshNow, cancellationToken,
+                executionExpired: true).ConfigureAwait(false);
+        }
+
         Log.TimeoutExpired(logger, current!.OperationId);
 
         var failed = current with

@@ -54,7 +54,7 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
         var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
         using var progress = new ImportJobProgressController<GeoServerImportProgress>(jobId,
-            _jobManager.ProgressStore, finalProgressTtl: ImportExecutionJobQueue<GeoServerImportRequest, GeoServerImportProgress>.Retention);
+            _jobManager.ProgressStoreForAttempt(job), finalProgressTtl: ImportExecutionJobQueue<GeoServerImportRequest, GeoServerImportProgress>.Retention);
         var run = new ImportRun(jobId, request, progress, stopwatch, licenseCancellation, linked.Token);
 
         return await ExecuteRunAsync(run).ConfigureAwait(false);

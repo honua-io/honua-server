@@ -72,4 +72,37 @@ public sealed partial class JobExecutionServiceTests
         await executor.Received(1).ExecuteAsync(Arg.Any<ExecutionJobRecord>(),
             Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
     }
+
+    [UnitTest]
+    public async Task ProcessJob_TimeoutAfterCommit_RecoversReceiptInsteadOfFailing()
+    {
+        var durable = CreateProvisioningJob() with
+        {
+            TimeoutPolicy = new JobTimeoutPolicy { MaxDuration = TimeSpan.FromMilliseconds(50) },
+            RetryPolicy = JobRetryPolicy.None
+        };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        var executor = Substitute.For<IJobExecutor, IJobOutcomeRecoveryExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        var recovery = ConfigureOutcomeRecovery(executor,
+            JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true });
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return JobExecutionResult.Succeeded();
+            });
+        using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
+            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, durable.OperationId, durable.ClaimedBy!);
+
+        Assert.Equal(ExecutionJobStatus.Succeeded, durable.Status);
+        await recovery.Received(1).RecoverOutcomeAsync(Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
 }

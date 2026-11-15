@@ -109,6 +109,11 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
     public async Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
     {
+        if (write.ExecutionFence is not null)
+        {
+            throw new NotSupportedException("Execution-fenced progress requires durable job storage.");
+        }
+
         var effectiveTtl = write.Ttl ?? TimeSpan.FromHours(24);
 
         if (AllowsLocalFallback)
@@ -160,6 +165,11 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         if (expectedProgress is not null && write.Progress.Type != expectedProgress.Type)
         {
             throw new ArgumentException("A progress update cannot change the operation type.", nameof(write));
+        }
+
+        if (write.ExecutionFence is not null)
+        {
+            throw new NotSupportedException("Execution-fenced progress requires durable job storage.");
         }
 
         var effectiveTtl = write.Ttl ?? TimeSpan.FromHours(24);

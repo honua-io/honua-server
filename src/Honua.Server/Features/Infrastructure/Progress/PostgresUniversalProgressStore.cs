@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Migration;
@@ -43,7 +44,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
 
         var updated = await WriteAsync(
             $"UPDATE {_progress} SET {SnapshotAssignments} WHERE {LiveOperation} AND status = @guard",
-            new SnapshotWrite(write.OperationId, write.Progress, write.Ttl ?? _defaultLifetime),
+            new SnapshotWrite(write.OperationId, write.Progress, write.Ttl ?? _defaultLifetime) { ExecutionFence = write.ExecutionFence },
             expectedStatus.ToString(),
             cancellationToken).ConfigureAwait(false);
         return updated
@@ -78,7 +79,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
 
         var updated = await WriteAsync(
             $"UPDATE {_progress} SET {SnapshotAssignments} WHERE {LiveOperation} AND payload = @guard",
-            new SnapshotWrite(write.OperationId, write.Progress, write.Ttl ?? _defaultLifetime),
+            new SnapshotWrite(write.OperationId, write.Progress, write.Ttl ?? _defaultLifetime) { ExecutionFence = write.ExecutionFence },
             storedPayload,
             cancellationToken).ConfigureAwait(false);
         return updated
@@ -96,7 +97,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
             ON CONFLICT (operation_id) DO UPDATE SET {SnapshotAssignments}
             WHERE snapshot.expires_at <= now()
             """,
-            new SnapshotWrite(write.OperationId, write.Progress, write.Ttl ?? _defaultLifetime),
+            new SnapshotWrite(write.OperationId, write.Progress, write.Ttl ?? _defaultLifetime) { ExecutionFence = write.ExecutionFence },
             guard: null,
             cancellationToken).ConfigureAwait(false);
         return created
@@ -177,7 +178,24 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
         => database.ExecuteAsync(
             async (connection, _, token) =>
             {
-                await using var command = new NpgsqlCommand(statement, connection);
+                await using var transaction = write.ExecutionFence is not null
+                    ? await connection.BeginTransactionAsync(token).ConfigureAwait(false) : null;
+                if (write.ExecutionFence is { } fence)
+                {
+                    // Lock the job before writing progress, serializing against requeue and reclaim.
+                    await using var lease = new NpgsqlCommand(
+                        $"SELECT operation_id FROM {database.Table("execution_jobs")} WHERE operation_id = @id AND claimed_by = @worker AND attempt_count = @attempt AND status IN ('Running', 'Provisioning') FOR UPDATE",
+                        connection, transaction);
+                    lease.Parameters.AddWithValue("id", write.OperationId);
+                    lease.Parameters.AddWithValue("worker", fence.WorkerId);
+                    lease.Parameters.AddWithValue("attempt", fence.AttemptCount);
+                    if (await lease.ExecuteScalarAsync(token).ConfigureAwait(false) is null)
+                    {
+                        throw new OperationCanceledException("The execution attempt no longer owns this import's progress.");
+                    }
+                }
+
+                await using var command = new NpgsqlCommand(statement, connection, transaction);
                 var parameters = command.Parameters;
                 parameters.Add(new NpgsqlParameter("operation_id", NpgsqlDbType.Text) { Value = write.OperationId });
                 parameters.Add(new NpgsqlParameter("operation_type", NpgsqlDbType.Text) { Value = write.Progress.Type.ToString() });
@@ -189,7 +207,13 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
                     parameters.Add(new NpgsqlParameter("guard", NpgsqlDbType.Text) { Value = guard });
                 }
 
-                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+                var updated = await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+                if (transaction is not null)
+                {
+                    await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
+                }
+
+                return updated;
             },
             write.Repeat,
             cancellationToken);
@@ -241,6 +265,7 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
 
     private readonly record struct SnapshotWrite(string OperationId, IOperationProgress Progress, TimeSpan Lifetime)
     {
+        public ProgressExecutionFence? ExecutionFence { get; init; }
         public StatementRepeat Repeat { get; init; } = StatementRepeat.NotAfterSend;
     }
 }

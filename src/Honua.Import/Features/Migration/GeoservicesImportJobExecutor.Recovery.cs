@@ -23,7 +23,7 @@ internal sealed partial class GeoservicesImportJobExecutor
         var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
         using var recoveryCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
         using var progress = new ImportJobProgressController<GeoservicesImportProgress>(job.OperationId,
-            _jobManager.ProgressStore,
+            _jobManager.ProgressStoreForAttempt(job),
             ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
         var run = new ImportRun(job.OperationId, request with { JobId = job.OperationId }, progress,
             context, Stopwatch.StartNew(), licenseCancellation, recoveryCancellation.Token);
@@ -48,7 +48,7 @@ internal sealed partial class GeoservicesImportJobExecutor
         var stored = await _jobManager.ProgressStore.GetProgressAsync(run.JobId, run.Token).ConfigureAwait(false);
         run.Progress.Seed(stored);
         if (stored != null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status) &&
-            (stored.Status != GeoservicesImportStatus.Cancelled || stored.DataCommitted))
+            stored.DataCommitted)
         {
             if (stored.DataCommitted)
             {

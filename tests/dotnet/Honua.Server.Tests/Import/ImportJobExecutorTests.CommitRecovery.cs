@@ -13,8 +13,10 @@ namespace Honua.Server.Tests.Import;
 
 public sealed partial class ImportJobExecutorTests
 {
-    [UnitTest]
-    public async Task ExecuteAsync_CancelledAfterCrash_RecoversCommittedRows()
+    [UnitTheory]
+    [InlineData(GeoservicesImportStatus.Failed)]
+    [InlineData(GeoservicesImportStatus.Cancelled)]
+    public async Task ExecuteAsync_TerminalAfterCrash_RecoversCommittedRows(GeoservicesImportStatus terminalStatus)
     {
         var request = GeoservicesRequest(Guid.NewGuid().ToString("N"));
         var importer = Substitute.For<IGeoservicesImportService, IGeoservicesImportCommitRecovery>();
@@ -26,7 +28,10 @@ public sealed partial class ImportJobExecutorTests
         var initial = GeoservicesImportProgress.CreateInitial(
             request.JobId!, request.ServiceUrl, request.LayerId, request.TableName);
         await manager.SubmitAsync(request, initial);
-        await RecordCancellationAsync(manager, initial);
+        await manager.ProgressStore.SetProgressAsync(request.JobId!, initial with
+        {
+            Status = terminalStatus, ErrorMessage = "Superseded failure"
+        }, TimeSpan.FromMinutes(10));
 
         var result = await executor.ExecuteAsync((await jobs.GetAsync(request.JobId!))!,
             Substitute.For<IJobExecutionContext>(), CancellationToken.None);
@@ -123,7 +128,7 @@ public sealed partial class ImportJobExecutorTests
     }
 
     [UnitTest]
-    public async Task ExecuteAsync_TerminalFailure_ReplaysWithoutCommitRecovery()
+    public async Task ExecuteAsync_TerminalFailureWithoutReceipt_ReplaysAfterCommitRecovery()
     {
         var request = GeoservicesRequest(Guid.NewGuid().ToString("N"));
         var importer = Substitute.For<IGeoservicesImportService, IGeoservicesImportCommitRecovery>();
@@ -143,7 +148,7 @@ public sealed partial class ImportJobExecutorTests
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         (await manager.ProgressStore.GetProgressAsync(request.JobId!))!.ErrorMessage.Should().Be("Original failure");
-        await ((IGeoservicesImportCommitRecovery)importer).DidNotReceive()
+        await ((IGeoservicesImportCommitRecovery)importer).Received(1)
             .RecoverCommittedImportAsync(Arg.Any<GeoservicesImportRequest>(), Arg.Any<CancellationToken>());
         await importer.DidNotReceive().ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(),
             Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>());

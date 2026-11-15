@@ -28,7 +28,7 @@ internal sealed partial class JobExecutionService
         if (job.AttemptCount > (job.RetryPolicy ?? JobRetryPolicy.Default).MaxAttempts)
         {
             await TerminateJobAsync(job.OperationId, workerId, ExecutionJobStatus.Failed,
-                "Execution retry budget exhausted; no committed import outcome was found.", cancellationToken).ConfigureAwait(false);
+                "Execution retry budget exhausted; no committed import outcome was found.", cancellationToken, recoverOutcome: false).ConfigureAwait(false);
             return true;
         }
 

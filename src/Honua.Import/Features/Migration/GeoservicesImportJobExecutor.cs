@@ -52,14 +52,14 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobO
         if (request is null)
         {
             Log.JobRequestNotFound(_logger, jobId);
-            return await FailMissingRequestAsync(jobId).ConfigureAwait(false);
+            return await FailMissingRequestAsync(job).ConfigureAwait(false);
         }
 
         var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
         using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
         using var progress = new ImportJobProgressController<GeoservicesImportProgress>(
             jobId,
-            _jobManager.ProgressStore,
+            _jobManager.ProgressStoreForAttempt(job),
             finalProgressTtl: ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
         var run = new ImportRun(jobId, request with { JobId = jobId }, progress, context, Stopwatch.StartNew(), licenseCancellation, jobCancellation.Token);
 
@@ -317,12 +317,14 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobO
         Log.JobCancelled(_logger, run.JobId, run.Stopwatch.Elapsed.TotalSeconds);
     }
 
-    private async Task<JobExecutionResult> FailMissingRequestAsync(string jobId)
+    private async Task<JobExecutionResult> FailMissingRequestAsync(ExecutionJobRecord job)
     {
-        var progress = await _jobManager.ProgressStore.GetProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+        var jobId = job.OperationId;
+        var store = _jobManager.ProgressStoreForAttempt(job);
+        var progress = await store.GetProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
         if (progress != null && !GeoservicesImportJobManager.IsTerminalStatus(progress.Status))
         {
-            await _jobManager.ProgressStore.SetProgressAsync(jobId, progress with
+            await store.SetProgressAsync(jobId, progress with
             {
                 Status = GeoservicesImportStatus.Failed,
                 CompletedAt = DateTimeOffset.UtcNow,
