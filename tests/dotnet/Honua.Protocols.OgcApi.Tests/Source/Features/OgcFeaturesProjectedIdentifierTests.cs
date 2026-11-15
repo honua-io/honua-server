@@ -72,8 +72,9 @@ public sealed class OgcFeaturesProjectedIdentifierTests : IClassFixture<OgcFeatu
         features.Should().ContainSingle();
         var feature = features[0];
         feature.GetProperty("id").GetString().Should().Be("public-1");
-        var names = feature.GetProperty("properties").EnumerateObject().Select(property => property.Name);
-        names.Should().BeEquivalentTo(includeIdentifier ? new[] { "name", "public_id" } : new[] { "name" });
+        var names = feature.GetProperty("properties").EnumerateObject().Select(property => property.Name).ToArray();
+        names.Should().HaveCount(includeIdentifier ? 2 : 1).And.Contain("name");
+        names.Contains("public_id").Should().Be(includeIdentifier);
     }
 
     [IntegrationTest]
@@ -88,5 +89,4 @@ public sealed class OgcFeaturesProjectedIdentifierTests : IClassFixture<OgcFeatu
         document.Descendants().Where(element => element.Name.LocalName == "name").Should().ContainSingle();
         document.Descendants().Where(element => element.Name.LocalName == "public_id").Should().BeEmpty();
     }
-
 }
