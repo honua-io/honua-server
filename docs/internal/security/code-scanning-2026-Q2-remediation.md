@@ -538,8 +538,9 @@ in either ignore file.
 
 ### Stranded `container-security-scan` alerts
 
-`security-nightly.yml` now uploads `trivy-container-jit-debian` and
-`trivy-container-aot-alpine`. The old category
+`security-nightly.yml` uploads `trivy-container-jit-chiseled` and
+`trivy-container-aot-chiseled` (the earlier labels were `jit-debian` and
+`aot-alpine`). The old category
 `.github/workflows/security-nightly.yml:container-security-scan` no longer
 receives a SARIF upload, so GitHub cannot auto-close findings that the
 2026-10-08 scans already omit. These eleven were real and are already gone
