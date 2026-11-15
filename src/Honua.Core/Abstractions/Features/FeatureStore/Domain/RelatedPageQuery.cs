@@ -16,6 +16,8 @@ public readonly record struct RelatedFeaturePage(ImmutableArray<RelatedFeaturePo
 
 public readonly record struct RelatedPageQuery(RelatedQuery Relationship, int PositionLimit, RelatedPageCursor? After = null)
 {
+    public int? OutputSrid { get; init; }
+
     public const int MaximumOrigins = 1000;
     public const int MaximumPositions = 1000;
 

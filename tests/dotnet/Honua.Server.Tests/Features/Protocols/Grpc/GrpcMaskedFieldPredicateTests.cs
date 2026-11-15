@@ -46,7 +46,7 @@ public sealed partial class GrpcMaskedFieldPredicateTests
     private const string MaskedField = "secret";
 
     private readonly IResourceValidator _resourceValidator = Substitute.For<IResourceValidator>();
-    private readonly IFeatureReader _featureReader = Substitute.For<IFeatureReader>();
+    private readonly IFeatureReader _featureReader = Substitute.For<IFeatureReader, IRelationshipStore>();
     private readonly IStreamingFeatureStore _streamingStore = Substitute.For<IStreamingFeatureStore>();
     private readonly IFieldMaskSource _fieldMaskSource = Substitute.For<IFieldMaskSource>();
     private readonly ISqlFilterTranslator _sqlFilterTranslator = Substitute.For<ISqlFilterTranslator>();

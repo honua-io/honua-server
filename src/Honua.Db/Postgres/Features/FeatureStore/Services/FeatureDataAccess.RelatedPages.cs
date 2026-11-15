@@ -20,7 +20,7 @@ internal sealed partial class FeatureDataAccess
         request.Query.Validate();
         ValidateRelatedPageFields(request);
         var geometryType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-        var geometry = _geometryProcessor.GetGeometrySelectExpression(geometryType, new FeatureQuery());
+        var geometry = _geometryProcessor.GetGeometrySelectExpression(geometryType, new FeatureQuery { OutputSrid = request.Query.OutputSrid });
         var (sql, parameters) = RelatedPageSqlBuilder.Build(request, _tableName, geometry);
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateSafeCommand(connection, sql);
