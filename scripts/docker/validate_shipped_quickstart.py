@@ -202,25 +202,39 @@ def proof_inputs(path: Path, archive: Path) -> dict:
                                           "publishedArchiveSha256", "publishedRunId", "packageKind")}
 
 
-def prove_installation(archive: Path, blocks: dict[str, str], number: int, receipt: dict) -> dict[str, str]:
-    with tempfile.TemporaryDirectory(prefix="honua-package-") as work:
-        directory = Path(work)
-        lock = unpack(archive, directory)
-        installation = Installation(directory)
-        try:
-            resources = ("image", "container", "volume") if number == 1 else ("container", "volume")
-            check_empty(installation, resources)
-            result = exercise(installation, blocks)
-            revision = installation.run(["docker", "image", "inspect", lock["server"], "--format",
-                                         '{{index .Config.Labels "org.opencontainers.image.revision"}}']).strip()
-            if revision != receipt["serverSourceSha"]:
-                raise ValueError("Installed serving image does not match the selected candidate source")
-            credentials = installation.credentials()
-            receipt["installations"].append(result)
-            receipt["version"] = lock["version"]
-            return credentials
-        finally:
-            installation.down()
+class CustomerJourney:
+    def __init__(self, archive: Path, blocks: dict[str, str], server_source: str):
+        self.archive = archive
+        self.blocks = blocks
+        self.server_source = server_source
+
+    def install(self, number: int) -> dict:
+        with tempfile.TemporaryDirectory(prefix="honua-package-") as work:
+            directory = Path(work)
+            lock = unpack(self.archive, directory)
+            installation = Installation(directory)
+            try:
+                resources = ("image", "container", "volume") if number == 1 else ("container", "volume")
+                check_empty(installation, resources)
+                result = exercise(installation, self.blocks)
+                revision = installation.run(["docker", "image", "inspect", lock["server"], "--format",
+                                             '{{index .Config.Labels "org.opencontainers.image.revision"}}']).strip()
+                if revision != self.server_source:
+                    raise ValueError("Installed serving image does not match the selected candidate source")
+                return {"credentials": installation.credentials(), "result": result, "version": lock["version"]}
+            finally:
+                installation.down()
+
+    def run(self) -> dict:
+        installations = []
+        previous = None
+        for number in (1, 2):
+            current = self.install(number)
+            if previous is not None:
+                check_fresh_credentials(previous, current["credentials"])
+            previous = current["credentials"]
+            installations.append(current["result"])
+        return {"installations": installations, "version": current["version"], "freshSecondInstallCredentials": True}
 
 
 def main() -> int:
@@ -240,14 +254,8 @@ def main() -> int:
         stage = "validate-document"
         blocks = public_blocks(args.document)
         publication_filename(blocks)
-        previous = None
-        for number in (1, 2):
-            stage = f"installation-{number}"
-            current = prove_installation(args.archive, blocks, number, receipt)
-            if previous is not None:
-                check_fresh_credentials(previous, current)
-                receipt["freshSecondInstallCredentials"] = True
-            previous = current
+        stage = "installations"
+        receipt.update(CustomerJourney(args.archive, blocks, receipt["serverSourceSha"]).run())
         receipt.update(passed=True, cleanup=True, customerJourneyComplete=True, authenticatedConsoleStudio=True)
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
         receipt.update(failedStage=stage, errorType=type(error).__name__)
