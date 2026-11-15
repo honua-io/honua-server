@@ -106,15 +106,25 @@ internal sealed partial class CdnInvalidationService
             return;
         }
 
-        if (_stopping)
+        // Checked and scheduled under the lock the flush takes, so a settle is either drained by it or logged.
+        bool stopping;
+        DateTimeOffset? due = null;
+        lock (_gate)
         {
-            Log.ShutdownPurgesNotSent(logger, sent.Count, string.Join(' ', sent));
-            return;
+            stopping = _stopping;
+            if (!stopping)
+            {
+                due = _delivery.ScheduleSettle(sent);
+            }
         }
 
-        if (_delivery.ScheduleSettle(sent) is { } due)
+        if (stopping)
         {
-            _ = SettleWhenDueAsync(due);
+            Log.ShutdownPurgesNotSent(logger, sent.Count, string.Join(' ', sent));
+        }
+        else if (due is { } settleAt)
+        {
+            _ = SettleWhenDueAsync(settleAt);
         }
     }
 

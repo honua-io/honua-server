@@ -203,8 +203,9 @@ internal sealed partial class CdnInvalidationService(
         }
 
         // A result that is still busy has already used its retries: an edit made now would not reach the CDN either. A
-        // stopping task's send skips those retries, so its busy answer says too little to hold off the fleet.
-        if (result.Failed && cause.Kind is not CdnPurgeKind.Shutdown)
+        // stopping task's send skips those retries, so its busy answer says too little to hold off the fleet; an outright
+        // refusal still does.
+        if (result.Failed && !(cause.Kind is CdnPurgeKind.Shutdown && result.Outcome is CdnInvalidationOutcome.Busy))
         {
             _reliability?.RecordFailedPurge();
         }
