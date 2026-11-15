@@ -397,6 +397,51 @@ class AffectedShardVerdictTests(unittest.TestCase):
         self.assertEqual(outcome["exit_code"], 1)
         self.assertEqual(outcome["receipt"]["verdict"], "untrusted_skip")
 
+    def test_cli_creates_a_missing_receipt_parent_for_cancelled_shards(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = root / "artifacts" / "server-shard-verdict.json"
+            timings = root / "missing-timings"
+            summary = root / "summary.md"
+            self.assertFalse(receipt.parent.exists())
+            self.assertFalse(timings.exists())
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/ci/affected-shard-verdict.py"),
+                    "--timings",
+                    str(timings),
+                    "--receipt",
+                    str(receipt),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "MODE": "enforce",
+                    "SELECT_RESULT": "success",
+                    "SELECT_SKIP": "false",
+                    "SELECT_REASON": "selected_server_shards",
+                    "SELECT_COUNT": "2",
+                    "SELECT_MATRIX": json.dumps([{"shard_name": "Core"}, {"shard_name": "WFS"}]),
+                    "SHARDS_RESULT": "cancelled",
+                    "GITHUB_STEP_SUMMARY": str(summary),
+                },
+            )
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            self.assertIn(
+                "HONUA_AFFECTED_SHARD_UNAVAILABLE shard jobs concluded 'cancelled' with no timing receipt.",
+                completed.stdout,
+            )
+            body = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual(body["verdict"], "no_receipts")
+            self.assertFalse(body["test_pass"])
+            self.assertEqual(body["check_exit"], 1)
+            self.assertFalse(timings.exists())
+            self.assertIn("no_receipts", summary.read_text(encoding="utf-8"))
+
     def test_cli_writes_the_report_mode_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
