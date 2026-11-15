@@ -88,6 +88,12 @@ capability and caller authorization. Unsupported operations remain false;
 attachment and related-query flags do not imply implementations. Clients must
 respect these flags and surface unsupported operations explicitly.
 
+The server maintains the editing tracking fields, as GeoServices `applyEdits`
+does. `ApplyEdits` ignores client values for the creator, created-at, editor and
+updated-at fields. An insert stamps all four from the authenticated caller and
+the server clock. An update stamps the editor and updated-at fields and keeps
+the stored creator values.
+
 ## Feature query result contract (REST parity)
 
 `QueryFeatures` (`QueryFeaturesResponse`) and `QueryFeaturesStream` (the first

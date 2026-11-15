@@ -300,6 +300,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         EnsureEditLimits(editBatch, _editLimits);
         (editBatch, var globalIds) = await PrepareGlobalIdsAsync(new EditCall(request, layer, context), editBatch)
             .ConfigureAwait(false);
+        editBatch = GrpcEditorTracking.OmitClientValues(layer.Resource, editBatch);
         editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
             .ConfigureAwait(false);
 
@@ -367,12 +368,13 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         // The same owner policy the REST edit protocols apply. A gRPC editor must not
         // update or delete another principal's row, and inserts stamp the owner (#6357).
+        var principal = ServiceDataEditorAuthorization.ResolveEditPrincipal(grpcHttpContext);
         var ownerPrepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
             _featureReader,
             layer.StorageLayerId,
             layer.Resource.OwnerEditPolicy,
             editBatch,
-            ServiceDataEditorAuthorization.ResolveEditPrincipal(grpcHttpContext),
+            principal,
             context.CancellationToken).ConfigureAwait(false);
         if (!ownerPrepared.IsAllowed)
         {
@@ -381,7 +383,10 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                 ownerPrepared.DenialReason ?? "Edit not permitted."));
         }
 
-        editBatch = ownerPrepared.Batch;
+        // Change events carry the stamped tracking values, as GeoServices events do.
+        var stampedAt = (grpcHttpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+        editBatch = GrpcEditorTracking.Stamp(layer.Resource, ownerPrepared.Batch, principal.Name, stampedAt);
+        requestBatch = GrpcEditorTracking.Stamp(layer.Resource, requestBatch, principal.Name, stampedAt);
 
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             grpcHttpContext,

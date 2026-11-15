@@ -23,10 +23,7 @@ internal static class ServerMaintainedEditFields
         var editing = resource.Editing;
         if (editing is not null)
         {
-            Add(omit, editing.CreatorField);
-            Add(omit, editing.CreatedAtField);
-            Add(omit, editing.EditorField);
-            Add(omit, editing.UpdatedAtField);
+            omit.UnionWith(EditorTrackingFields.Names(editing));
             if (isUpdate || !useGlobalIds)
             {
                 Add(omit, editing.GlobalIdField);
@@ -97,18 +94,24 @@ internal static class ServerMaintainedEditFields
         if (isInsert)
         {
             StampInsertGlobalId(resource, attributes, editing.GlobalIdField, useGlobalIds);
-            SetUser(resource, attributes, editing.CreatorField, principal.Name);
-            SetUser(resource, attributes, editing.EditorField, principal.Name);
-            SetTime(resource, attributes, editing.CreatedAtField, utcNow);
-            SetTime(resource, attributes, editing.UpdatedAtField, utcNow);
-            return;
+        }
+        else
+        {
+            Restore(resource, attributes, existingAttributes, editing.GlobalIdField);
+            Restore(resource, attributes, existingAttributes, editing.CreatorField);
+            Restore(resource, attributes, existingAttributes, editing.CreatedAtField);
         }
 
-        Restore(resource, attributes, existingAttributes, editing.GlobalIdField);
-        Restore(resource, attributes, existingAttributes, editing.CreatorField);
-        Restore(resource, attributes, existingAttributes, editing.CreatedAtField);
-        SetUser(resource, attributes, editing.EditorField, principal.Name);
-        SetTime(resource, attributes, editing.UpdatedAtField, utcNow);
+        EditorTrackingFields.Stamp(
+            resource,
+            attributes,
+            isInsert,
+            principal.Name,
+            (MetadataV2Field? field, out object? value) =>
+            {
+                value = TimeValue(field, utcNow);
+                return true;
+            });
     }
 
     private static void StampInsertGlobalId(
@@ -127,41 +130,13 @@ internal static class ServerMaintainedEditFields
         attributes[name] = InsertGlobalIds.Resolve(supplied);
     }
 
-    private static void SetUser(
-        MetadataV2Object resource,
-        IDictionary<string, object?> attributes,
-        string? fieldName,
-        string? principalName)
+    private static object TimeValue(MetadataV2Field? field, DateTimeOffset utcNow) => field?.Type switch
     {
-        if (string.IsNullOrWhiteSpace(fieldName))
-        {
-            return;
-        }
-
-        attributes[CanonicalName(resource, fieldName)] = principalName;
-    }
-
-    private static void SetTime(
-        MetadataV2Object resource,
-        IDictionary<string, object?> attributes,
-        string? fieldName,
-        DateTimeOffset utcNow)
-    {
-        if (string.IsNullOrWhiteSpace(fieldName))
-        {
-            return;
-        }
-
-        var name = CanonicalName(resource, fieldName);
-        var field = FindField(resource, fieldName);
-        attributes[name] = field?.Type switch
-        {
-            MetadataV2FieldType.Date => GeoServicesFieldConventions.ToEpochMilliseconds(
-                DateOnly.FromDateTime(utcNow.UtcDateTime)),
-            MetadataV2FieldType.String => utcNow.ToString("O", CultureInfo.InvariantCulture),
-            _ => utcNow.ToUnixTimeMilliseconds(),
-        };
-    }
+        MetadataV2FieldType.Date => GeoServicesFieldConventions.ToEpochMilliseconds(
+            DateOnly.FromDateTime(utcNow.UtcDateTime)),
+        MetadataV2FieldType.String => utcNow.ToString("O", CultureInfo.InvariantCulture),
+        _ => utcNow.ToUnixTimeMilliseconds(),
+    };
 
     private static void Restore(
         MetadataV2Object resource,
@@ -190,20 +165,7 @@ internal static class ServerMaintainedEditFields
            fieldName.Equals(globalIdField, StringComparison.OrdinalIgnoreCase);
 
     private static string CanonicalName(MetadataV2Object resource, string fieldName)
-        => FindField(resource, fieldName)?.Name ?? fieldName;
-
-    private static MetadataV2Field? FindField(MetadataV2Object resource, string fieldName)
-    {
-        foreach (var field in resource.SchemaFields)
-        {
-            if (field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                return field;
-            }
-        }
-
-        return null;
-    }
+        => EditorTrackingFields.CanonicalName(resource, fieldName);
 
     private static bool TryGet(IDictionary<string, object?> attributes, string name, out object? value)
         => TryGetValue(attributes, name, out value);
