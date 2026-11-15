@@ -89,20 +89,17 @@ internal sealed class RealtimeStreamLifecycle(TimeProvider clock, IOptions<Realt
             session, TimeSpan.FromTicks(spread * index / sessions.Length), stagger.Token)));
         try
         {
-            // Sessions that close on their own end the drain without waiting out the stagger.
             await _empty.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested)
         {
-            // The grace period expired; force the remaining transports closed below.
         }
         finally
         {
             await stagger.CancelAsync().ConfigureAwait(false);
             try
             {
-                // A close callback may wait for its transport to abort. Enforce the
-                // deadline before waiting for those callbacks to complete.
+                // Close callbacks may wait for transport abort; enforce the deadline first.
                 AbortRemaining();
             }
             finally
