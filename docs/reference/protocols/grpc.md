@@ -48,7 +48,7 @@ certified operations.
 
 | Service | RPCs | Purpose |
 | --- | --- | --- |
-| `FeatureService` | `QueryFeatures`, `QueryFeaturesStream` (server streaming), `ApplyEdits` | Feature query and edits; respects per-service protocol enablement and access policy. |
+| `FeatureService` | `DescribeService`, `DescribeLayer`, `QueryFeatures`, `QueryFeaturesStream` (server streaming), `ApplyEdits` | Feature query and edits; respects per-service protocol enablement and access policy. |
 | `ProcessService` | `ValidatePlan`, `DryRunPlan`, `ExecutePlan`, `ExecutePlanStream` (server streaming), `SubmitJob`, `GetJob`, `GetJobResult`, `CancelJob` | Canonical geoprocessing runtime (same backend as GPServer and OGC API Processes). |
 | `SpecService` | `PlanSpec`, `ApplySpec` (server streaming), `CancelApply` | Spec plan/apply engine. |
 | `SceneService` | `ListScenes`, `GetScene` | Scene dataset discovery. |
@@ -61,6 +61,32 @@ grpcurl -plaintext server.example.com:8081 list
 grpcurl -plaintext -d '{"serviceId":"roads","layerId":0,"where":"1=1"}' \
   server.example.com:8081 geospatial.v1.FeatureService/QueryFeatures
 ```
+
+## Native metadata discovery
+
+Use unary `DescribeService` followed by `DescribeLayer` to discover the feature
+surface over gRPC or gRPC-Web. Neither operation reads feature rows or needs a
+GeoServices REST metadata request. The descriptors come from the same canonical
+metadata snapshot and authorization policy as feature access.
+
+`DescribeService` lists routable layers visible to the caller in ascending public
+layer-id order. `page_size` defaults to 100 and accepts 1–1000; follow
+`next_page_token` until empty. Tokens are bound to the service and snapshot
+revision. Invalid or stale tokens return `INVALID_ARGUMENT`; each page evaluates
+access again. Service capabilities are the union of its visible layers; check the
+individual layer before enabling an operation.
+
+`DescribeLayer` returns field definitions, scalar defaults, coded/range domains,
+subtypes and creation templates, relationships to accessible layers, spatial and
+time metadata, editing tracking fields, and effective capabilities. Field masks
+also apply to defaults, templates, key-field references and relationship keys.
+The server omits facts absent from canonical metadata, including unknown time
+zones and tracking timestamps. An absent default differs from an explicit null.
+
+Managed edit capabilities require a writable storage binding, declared publication
+capability and caller authorization. Unsupported operations remain false;
+attachment and related-query flags do not imply implementations. Clients must
+respect these flags and surface unsupported operations explicitly.
 
 ## Feature query result contract (REST parity)
 
@@ -94,8 +120,8 @@ Notes:
 - Metadata-fallback contract: if a client is pinned to an older `Geospatial.Grpc`
   package whose `geospatial.v1` messages predate one of these fields, that field
   is absent (proto3 implicit default) and the client should fall back to the
-  layer metadata surface (`FeatureService` reflection / the REST layer document)
-  for the missing descriptor. Current `geospatial.v1` carries all four fields.
+  native `DescribeLayer` RPC for the missing descriptor. Current `geospatial.v1`
+  carries all four fields.
 
 ## Versioning and deprecation policy
 
@@ -112,7 +138,7 @@ Breaking changes require a new major version introduced alongside the old one: o
 
 CI enforcement: protobuf changes in the `Geospatial.Grpc` package must pass a breaking-change linter (`buf breaking`) against the latest release tag, and the server pins a specific package version so consumer breaks fail the build.
 
-The server pins `Geospatial.Grpc` **1.0.0**, which is on
+The server pins `Geospatial.Grpc` **1.1.0**, which is on
 [nuget.org](https://www.nuget.org/packages/Geospatial.Grpc/) and restores
 anonymously.
 

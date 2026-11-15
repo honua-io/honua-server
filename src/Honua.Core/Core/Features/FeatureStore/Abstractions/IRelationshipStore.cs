@@ -11,6 +11,11 @@ namespace Honua.Core.Features.FeatureStore.Abstractions;
 /// </summary>
 public interface IRelationshipStore
 {
+    bool SupportsRelatedPages => false;
+
+    Task<RelatedFeaturePage> QueryRelatedPageAsync(int layerId, RelatedPageQuery query, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("The provider does not support bounded relationship pages.");
+
     /// <summary>
     /// Queries features related to the specified source features through a relationship
     /// </summary>
