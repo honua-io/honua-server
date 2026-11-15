@@ -1054,9 +1054,13 @@ measured rank, else its contract estimate, else its parent's rank. A measured
 child's estimate is removed from its contract, and the rule that estimates may
 not add up to less than the parent applies only while every child of a split is
 still estimated: measured children of the 15 Nov splits ran in 2.5 to 8.6 minutes,
-well under their estimates. Of the 22 unmeasured shards, the last child of each
-recent split keeps its contract estimate; Server Features Streaming Snapshot and
-Conformance changed its filter on 15 Nov (#7820) and keeps its rank. Ranks sum to
+well under their estimates. Of the 22 unmeasured shards, 16 are the last child
+of a recent split and keep their contract estimate, and STAC Protocol 4 (no passing
+job yet) keeps its parent's 13.6. Five changed their filter after the newest run
+and so leave the record, keeping their previous rank until a run measures the new
+filter: Server Features Streaming Snapshot and Conformance, Miscellaneous 1 and 2
+(#7820), and Admin Layer Publishing and Admin Runtime Operations (renamed publishing
+test method, 49518429d9). Ranks sum to
 1,546.5 runner-minutes (was 1,806.1); 161 of 200 shards fit the 10-minute PR
 shard budget (was 150). The 14 Nov refresh is superseded.
 
