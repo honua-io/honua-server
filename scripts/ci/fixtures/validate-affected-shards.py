@@ -157,6 +157,24 @@ def runnable_method_index(classes: dict[str, dict[str, Any]]) -> dict[str, list[
     return _RUNNABLE_METHODS
 
 
+def independent_namespace_owners(config: dict[str, Any]) -> dict[str, set[str]]:
+    # Capacity siblings deliberately share paths. Cover each namespace once,
+    # and require all its owners rather than discarding split families.
+    namespaces: dict[str, set[str]] = {}
+    for shard in config["shards"]:
+        for prefix in shard.get("paths", ()):
+            if prefix.endswith("/") and prefix.startswith(("src/", "tests/")):
+                namespaces.setdefault(prefix, set()).add(shard["name"])
+    return {
+        prefix: owners
+        for prefix, owners in namespaces.items()
+        if not any(
+            prefix != other and (prefix.startswith(other) or other.startswith(prefix))
+            for other in namespaces
+        )
+    }
+
+
 def check_feature_namespace_selects_its_shard(
     config: dict[str, Any], *, config_path: Path = CONFIG_PATH
 ) -> int:
@@ -166,20 +184,9 @@ def check_feature_namespace_selects_its_shard(
     `src/Honua.Protocols/OgcClassic/Wfs20/` stops selecting `WFS`, PR Gate
     silently stops predicting the trailing matrix for that family.
     """
-    # Capacity siblings deliberately share paths. Cover each namespace once,
-    # and require all its owners rather than discarding split families.
-    namespaces: dict[str, set[str]] = {}
-    for shard in config["shards"]:
-        for prefix in shard.get("paths", ()):
-            if prefix.endswith("/") and prefix.startswith(("src/", "tests/")):
-                namespaces.setdefault(prefix, set()).add(shard["name"])
+    namespaces = independent_namespace_owners(config)
     covered = 0
     for prefix, owners in namespaces.items():
-        if any(
-            prefix != other and (prefix.startswith(other) or other.startswith(prefix))
-            for other in namespaces
-        ):
-            continue
         covered += 1
         probe = f"{prefix}AffectedShardsFixtureProbe.cs"
         result = select_offline(
