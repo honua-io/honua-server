@@ -80,7 +80,7 @@ WARNING:
   Cross-repo work gets an umbrella issue plus linked children.
 - **Required checks are `PR Gate` and `Review Gate`**; the full CI matrix trails on trunk. The fleet's
   lander merges green, thread-free, non-draft PRs based on `trunk`; do not dispatch anything.
-  A bare `gh workflow run merge-train.yml` is a dry run. Never touch `land/batch/*` or `train/batch/*`.
+  Never touch `land/batch/*` branches.
   Details and stacking recovery: [merge coordination runbook](docs/internal/contributor/merge-coordination-runbook.md).
 - **Scope**: planning lives in issues; build nothing unscoped. Delete scratch plans and notes before
   committing, or fold them into canonical docs and ADRs.

@@ -41,7 +41,6 @@ const extractStepScript = (workflow, stepName) => {
 const GATE_SHED = extractStepScript('review-gate.yml', 'Shed superseded review event');
 const BRIDGE_SHED = extractStepScript('review-event-bridge.yml', 'Shed superseded review event');
 const ATTEST_SHED = extractStepScript('review-gate.yml', 'Shed superseded review subject');
-const CLAUDE_SHED = extractStepScript('claude-review.yml', 'Shed superseded review subject');
 
 // Minimal stand-ins for the github-script globals the shed touches.
 const runShed = async (script, { payload = {}, env = {}, pull, associated = [] }) => {
@@ -86,7 +85,7 @@ const runShed = async (script, { payload = {}, env = {}, pull, associated = [] }
     repo: { owner: 'honua-io', repo: 'honua-server' },
   };
 
-  // The attest/claude-review sheds run before any checkout, so they read their
+  // The attest shed runs before any checkout, so it reads its
   // subject from `env:` rather than from the webhook payload.
   const sandbox = { github, core, context, console, require, process: { env } };
   const runner = vm.runInNewContext(
@@ -314,55 +313,6 @@ test('every paid step of the trusted attestation is behind the shed', () => {
       `"${marker}" runs before the shed decides`,
     );
   }
-});
-
-// -- claude-review: decide the subject before paying for the trusted tree. ---
-
-test('the Claude lane sheds closed, draft and moved subjects', async () => {
-  const cases = [
-    ['workflow_run', { RUN_PR: '42', RUN_HEAD: 'a'.repeat(40) }, MERGED_PR, /PR #42 is closed\./],
-    ['workflow_run', { RUN_PR: '42', RUN_HEAD: 'b'.repeat(40) }, OPEN_PR, /moved past b{40}/],
-    ['issue_comment', { COMMENT_ISSUE: '42' }, { ...OPEN_PR, draft: true }, /PR #42 is a draft\./],
-    ['workflow_dispatch', { CATCHUP_PR: '42', CATCHUP_HEAD: 'b'.repeat(40) }, OPEN_PR,
-      /moved past b{40}/],
-  ];
-  for (const [eventName, env, pull, expected] of cases) {
-    const result = await runShed(CLAUDE_SHED, { payload: { eventName }, env, pull });
-    assert.equal(result.superseded, true, `${eventName} ${JSON.stringify(env)} was not shed`);
-    assert.match(result.notices.join('\n'), expected);
-  }
-});
-
-test('the Claude lane admits a live exact head and falls through when unidentifiable', async () => {
-  const live = await runShed(CLAUDE_SHED, {
-    payload: { eventName: 'workflow_run' },
-    env: { RUN_PR: '42', RUN_HEAD: 'a'.repeat(40) },
-    pull: OPEN_PR,
-  });
-  assert.equal(live.superseded, false);
-
-  // Fork and association gaps must reach the trusted resolver, which fails
-  // closed itself -- shedding them here would hide that decision.
-  const unidentified = await runShed(CLAUDE_SHED, {
-    payload: { eventName: 'workflow_run' },
-    env: { RUN_PR: '', RUN_HEAD: 'a'.repeat(40) },
-  });
-  assert.equal(unidentified.superseded, false);
-  assert.equal(unidentified.calls.pullsGet, 0);
-});
-
-test('the Claude lane sheds before it checks out the trusted reviewer policy', () => {
-  const lane = fs.readFileSync(path.join(WORKFLOWS, 'claude-review.yml'), 'utf8');
-  const resolveJob = lane.slice(lane.indexOf('\n  resolve:'), lane.indexOf('\n  review:'));
-  const shedAt = resolveJob.indexOf('- name: Shed superseded review subject');
-  const checkoutAt = resolveJob.indexOf('uses: actions/checkout@');
-  assert.ok(shedAt >= 0 && checkoutAt > shedAt, 'the shed must precede the trusted checkout');
-  assert.match(
-    resolveJob,
-    /- name: Check out trusted reviewer policy\n\s+if: steps\.stale\.outputs\.superseded != 'true'/);
-  assert.match(resolveJob, /id: target\n\s+if: steps\.stale\.outputs\.superseded != 'true'/);
-  // Shedding may only withhold a review, never grant one.
-  assert.doesNotMatch(CLAUDE_SHED, /setOutput\('skip', 'false'\)/);
 });
 
 // Exercise status publication separately from the paid admission API queries.
