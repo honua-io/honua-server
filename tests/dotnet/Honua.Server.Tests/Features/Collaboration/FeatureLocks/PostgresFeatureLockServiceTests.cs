@@ -166,5 +166,19 @@ public sealed class PostgresFeatureLockServiceTests(DatabaseFixtureAdapter datab
         (await meter.HasAnyActiveLeasesAsync()).Should().BeFalse();
     }
 
+    [IntegrationTest]
+    public async Task RenewAsync_LeaseWithoutPrincipal_AdmitsTheSameHolderAndKeepsItWithoutPrincipal()
+    {
+        var unauthenticated = _holder with { PrincipalName = null };
+        (await Store().ClaimAsync(_feature, unauthenticated, TimeSpan.FromMinutes(2), _write)).Status
+            .Should().Be(FeatureLockClaimStatus.Claimed);
+
+        var renewed = await Store().RenewAsync(_feature, _holder, TimeSpan.FromMinutes(2), _write);
+
+        renewed.Status.Should().Be(FeatureLockRenewStatus.Renewed);
+        (await Store().GetActiveLeaseAsync(_feature))!.Holder.PrincipalName.Should().BeNull(
+            "a renewal cannot bind a lease without a principal to the renewing principal");
+    }
+
     private PostgresFeatureLockService Store() => new(new JobStoreDatabase(database.DataSource, _schema));
 }

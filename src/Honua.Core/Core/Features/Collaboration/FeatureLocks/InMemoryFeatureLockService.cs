@@ -210,7 +210,7 @@ public sealed class InMemoryFeatureLockService : IFeatureLockService
         DateTimeOffset now)
         => existing with
         {
-            Holder = holder,
+            Holder = existing.Holder.RenewedBy(holder),
             RenewedAt = now,
             ExpiresAt = now.Add(leaseDuration)
         };

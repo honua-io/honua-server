@@ -68,6 +68,14 @@ public sealed record LockHolder(
         return (string.IsNullOrWhiteSpace(TenantId) && string.IsNullOrWhiteSpace(candidate.TenantId))
             || string.Equals(TenantId, candidate.TenantId, StringComparison.Ordinal);
     }
+
+    // The holder recorded when an admitted candidate renews: its display fields, but this lease's principal, so a
+    // caller admitted through the caller-supplied fields cannot bind a lease without a principal to its own.
+    public LockHolder RenewedBy(LockHolder candidate)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        return candidate with { PrincipalName = PrincipalName };
+    }
 }
 
 public sealed record FeatureLockLease(

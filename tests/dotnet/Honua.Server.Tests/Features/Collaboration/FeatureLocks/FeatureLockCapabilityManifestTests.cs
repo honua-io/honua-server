@@ -125,6 +125,8 @@ public sealed class FeatureLockCapabilityManifestTests
     [InlineData(true, false, false, "disabled-by-configuration")]
     [InlineData(false, true, true, "dependency-unavailable")]
     [InlineData(true, true, true, "dependency-unavailable")]
+    [InlineData(false, true, false, "dependency-unavailable")]
+    [InlineData(true, true, false, "dependency-unavailable")]
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task Manifest_CrossNodeAvailability_FollowsSelectedStoreAndAuthorizer(
         bool fromRegistry, bool localStore, bool allowWrite, string? expectedReason)

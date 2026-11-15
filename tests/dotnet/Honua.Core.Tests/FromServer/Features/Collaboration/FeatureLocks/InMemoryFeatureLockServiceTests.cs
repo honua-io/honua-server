@@ -18,17 +18,17 @@ public sealed class InMemoryFeatureLockServiceTests
 
     [UnitTest]
     [Operation(Operations.Security)]
-    public void Admits_RequiresTheRecordedPrincipal_AndFallsBackToClientFieldsWithoutOne()
+    public async Task Renew_LeaseWithoutPrincipal_KeepsItWithoutPrincipal()
     {
-        var owner = Alice with { PrincipalName = "alice@example.test" };
+        var service = new InMemoryFeatureLockService(new MutableTimeProvider(Instant()));
+        var access = FeatureLockAccessContext.AuthorizedWrite;
+        await service.ClaimAsync(Feature, Alice, LeaseDuration, access);
 
-        owner.Admits(owner with { DisplayName = "Renamed" }).Should().BeTrue();
-        owner.Admits(owner with { PrincipalName = "other@example.test" }).Should().BeFalse();
-        owner.Admits(owner with { PrincipalName = null }).Should().BeFalse();
-        owner.Admits(owner with { SessionId = "session-b" }).Should().BeFalse();
-        Alice.Admits(Alice with { PrincipalName = "alice@example.test" }).Should().BeTrue(
-            "a lease taken outside an authenticated request is matched on the caller-supplied fields");
-        Alice.Admits(Alice with { HolderId = "bob" }).Should().BeFalse();
+        var renewed = await service.RenewAsync(Feature, Alice with { PrincipalName = "bob@example.test" }, LeaseDuration, access);
+
+        renewed.Status.Should().Be(FeatureLockRenewStatus.Renewed);
+        renewed.Lease!.Holder.PrincipalName.Should().BeNull("a renewal cannot bind the lease to the renewing principal");
+        (await service.RenewAsync(Feature, Alice, LeaseDuration, access)).Status.Should().Be(FeatureLockRenewStatus.Renewed);
     }
 
     [UnitTest]

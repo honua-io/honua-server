@@ -32,7 +32,7 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
             }
             var lease = existing is null
                 ? new FeatureLockLease(Guid.NewGuid().ToString("N"), feature, holder, now, now.Add(leaseDuration))
-                : Renew(existing with { Holder = holder }, leaseDuration, now);
+                : Renew(existing with { Holder = existing.Holder.RenewedBy(holder) }, leaseDuration, now);
             return (new(existing is null ? FeatureLockClaimStatus.Claimed : FeatureLockClaimStatus.Renewed, Lease: lease), lease);
         }, cancellationToken);
     }
@@ -55,7 +55,7 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
             {
                 return (new(FeatureLockRenewStatus.HeldByOther, Error: FeatureLockHeldError.FromLease(existing)), existing);
             }
-            var lease = Renew(existing with { Holder = holder }, leaseDuration, now);
+            var lease = Renew(existing with { Holder = existing.Holder.RenewedBy(holder) }, leaseDuration, now);
             return (new(FeatureLockRenewStatus.Renewed, Lease: lease), lease);
         }, cancellationToken);
     }
@@ -151,7 +151,8 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
             var mutation = new LeaseMutation(transaction, feature, _table);
             var existing = await mutation.ReadAsync(now, token).ConfigureAwait(false);
             var (result, lease) = transition(existing, now);
-            // A refusal returns the live lease unchanged, and rewriting it would only add a row version.
+            // A refusal returns the live lease unchanged, and rewriting it would only add a row version. A null result
+            // (released, or no live lease) always deletes, which also clears an expired row left for the sweep.
             if (lease is null || !ReferenceEquals(lease, existing))
             {
                 await mutation.WriteAsync(lease, token).ConfigureAwait(false);
