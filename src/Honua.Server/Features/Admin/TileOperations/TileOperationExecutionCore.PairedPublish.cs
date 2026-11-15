@@ -70,6 +70,12 @@ internal sealed partial class TileOperationExecutionCore
             throw new PairedPublicationException("The layer was rebound while the publish started; retry the publish.");
         }
 
+        var previous = await context.Store.BeginOperationAsync(progress.JobId, context.Run, cancellationToken).ConfigureAwait(false);
+        if (previous is not null)
+        {
+            return await RecoverActivatedAsync(context, previous, progress, cancellationToken).ConfigureAwait(false);
+        }
+
         var reader = await context.Source.ResolveReaderAsync(graphProvider, services, cancellationToken).ConfigureAwait(false);
         var capture = await PairedPublicationCapture.ReadAsync(
             reader, context.Source.StorageLayerId, context.Fields, cancellationToken).ConfigureAwait(false);
@@ -288,7 +294,7 @@ internal sealed partial class TileOperationExecutionCore
                 item, "application/geo+json", ImmutableDictionary<string, string>.Empty, cancellationToken).ConfigureAwait(false);
         }
 
-        await SwitchPointerAsync(context).ConfigureAwait(false);
+        await SwitchPointerAsync(context.Store, context.Run, context.PointerETag).ConfigureAwait(false);
         TileOperationLog.PairedPublishActivated(_logger, current.JobId, run.PublicationId, run.Version);
         return current with
         {
@@ -299,45 +305,6 @@ internal sealed partial class TileOperationExecutionCore
             ErrorMessage = null,
             CurrentPhase = "Paired publish completed"
         };
-    }
-
-    // The switch is not cancellable: once storage may have applied it, the job must learn which
-    // version is current rather than abandon the answer.
-    private static async Task SwitchPointerAsync(PairedPublishContext context)
-    {
-        var run = context.Run;
-        var pointer = new PublicationPointer(
-            run.PublicationId, run.Version, $"{run.Version}/{PairedPublicationDescriptorFactory.DescriptorFileName}", DateTimeOffset.UtcNow);
-        bool switched;
-        var outcomeKnown = true;
-        try
-        {
-            switched = await context.Store.SwitchPointerAsync(pointer, context.PointerETag, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            // A write that threw may still land later, so no read now can rule it out.
-            switched = false;
-            outcomeKnown = false;
-        }
-
-        if (switched)
-        {
-            return;
-        }
-
-        var state = await context.Store.PointerStateAsync(run.Version).ConfigureAwait(false);
-        switch (state)
-        {
-            case PointerState.NamesVersion:
-                return;
-            case PointerState.Unknown:
-            case PointerState.NamesOther when !outcomeKnown:
-                throw new PairedActivationUnknownException(
-                    $"The activation outcome of version {run.Version} is unknown; the version was kept. Check the publication pointer before retrying.");
-            default:
-                throw new PairedPublicationException("The publication pointer was not switched (another publish moved it first, or storage refused the write); this version was not activated.");
-        }
     }
 
     private static async Task<PublicationValidationCheck> StoredCopyCheckAsync(

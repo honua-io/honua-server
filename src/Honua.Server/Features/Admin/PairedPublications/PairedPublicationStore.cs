@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -37,6 +38,43 @@ internal sealed class PairedPublicationStore
     }
 
     public string VersionKey(string version, string fileName) => $"{_publicationKey}/{version}/{fileName}";
+
+    // A create-only marker fences overlapping attempts before any artifact upload. It also
+    // survives a lost job receipt; retries recover its version instead of recapturing data.
+    public async Task<PublicationPointer?> BeginOperationAsync(string operationId, PairedPublicationRun run, CancellationToken cancellationToken)
+    {
+        var operationKey = $"{_publicationKey}/operations/{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(operationId)))}.json";
+        var pointer = new PublicationPointer(run.PublicationId, run.Version,
+            $"{run.Version}/{PairedPublicationDescriptorFactory.DescriptorFileName}", DateTimeOffset.UtcNow);
+        using var content = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(pointer, PublicationDescriptorJsonContext.Default.PublicationPointer));
+        UploadResult result;
+        try
+        {
+            result = await _storage.UploadIfMatchAsync(new FileUploadRequest
+            {
+                Content = content,
+                FileName = Path.GetFileName(operationKey),
+                ContentType = JsonContentType,
+                CachePolicy = StoredObjectCachePolicy.NotShared,
+                SizeBytes = content.Length,
+                TimeToLive = null,
+                ObjectKeyOverride = operationKey,
+                Metadata = ImmutableDictionary<string, string>.Empty
+            }, expectedETag: null, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            throw new PairedActivationUnknownException("The publication operation could not be reserved; no artifacts were uploaded.");
+        }
+
+        if (result.Success)
+        {
+            return null;
+        }
+
+        return await ReadJsonAsync(operationKey, PublicationDescriptorJsonContext.Default.PublicationPointer, cancellationToken).ConfigureAwait(false)
+            ?? throw new PairedActivationUnknownException("The publication operation reservation is unknown; no artifacts were uploaded.");
+    }
 
     // Null when no version has been switched in yet.
     public async Task<string?> ReadPointerETagAsync(CancellationToken cancellationToken)
