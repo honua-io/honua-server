@@ -1293,17 +1293,17 @@ jobs:
     # exclusion is safe for every shard's csproj, not only the legacy
     # Honua.Server.Tests.csproj default.
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
-    # Even matrix indices run on the build host's honua-heavy runners when
-    # vars.HONUA_HEAVY_RUNNER holds their runner JSON; fork code never does.
-    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (endsWith(format('{0}', strategy.job-index), '0') || endsWith(format('{0}', strategy.job-index), '2') || endsWith(format('{0}', strategy.job-index), '4') || endsWith(format('{0}', strategy.job-index), '6') || endsWith(format('{0}', strategy.job-index), '8')) && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
+    # Keep one matrix on one pool: hosted jobs waiting for capacity also occupy
+    # max-parallel slots and can prevent idle heavy runners from receiving work.
+    # Fork code stays on the existing fallback.
+    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     # Explicit producer dependency; only unmaterialized projects compile here.
     needs: [changes, targeted-shards, build]
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
       # Keep the affected budget even when routing expands to full coverage.
-      # Full runs take 16 of the org's 60 hosted runners: other per-PR
-      # workflows already hold 20-35, and PR Gate starved at 24 (11 Nov).
+      # Full runs retain their 16-job bound, including hosted fallback runs.
       max-parallel: ${{ inputs.selective_base && fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 16 }}
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}

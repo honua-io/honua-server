@@ -34,16 +34,17 @@ PINNED_JOBS = {
 }
 
 
-# Even matrix indices of the server test shards; forks never reach self-hosted compute.
+# Forks never reach self-hosted compute; PR Gate retains its proven even-shard split.
 EVEN_INDEX = " || ".join(f"endsWith(format('{{0}}', strategy.job-index), '{digit}')" for digit in "02468")
-HEAVY_SHARD_RUNNER = (
-    "vars.HONUA_HEAVY_RUNNER && (" + EVEN_INDEX + ")"
-    " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
+TRUSTED_HEAVY_SOURCE = (
+    "(!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
     " && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)"
     " && fromJSON(vars.HONUA_HEAVY_RUNNER)"
 )
+TRUSTED_HEAVY_RUNNER = "vars.HONUA_HEAVY_RUNNER && " + TRUSTED_HEAVY_SOURCE
+HEAVY_SHARD_RUNNER = "vars.HONUA_HEAVY_RUNNER && (" + EVEN_INDEX + ") && " + TRUSTED_HEAVY_SOURCE
 SHARD_JOBS = {
-    "ci.yml": ("server-tests", "${{ " + HEAVY_SHARD_RUNNER + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"),
+    "ci.yml": ("server-tests", "${{ " + TRUSTED_HEAVY_RUNNER + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"),
     "pr-gate.yml": ("affected-shard", "${{ needs.pr-gate.outputs.heavy_ready == 'true' && " + HEAVY_SHARD_RUNNER + " || 'ubuntu-latest' }}"),
 }
 
@@ -53,10 +54,34 @@ class ShardRunnerRoutingTests(unittest.TestCase):
         name, _ = SHARD_JOBS[workflow]
         return yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"][name]
 
-    def test_even_shards_use_the_fork_guarded_heavy_pool_with_hosted_fallback(self):
+    def test_shards_use_their_fork_guarded_pool_with_hosted_fallback(self):
         for workflow, (_, runs_on) in SHARD_JOBS.items():
             with self.subTest(workflow=workflow):
                 self.assertEqual(self.shard_job(workflow)["runs-on"], runs_on)
+
+    def test_full_matrix_never_waits_for_hosted_capacity_when_heavy_is_configured(self):
+        expression = self.shard_job("ci.yml")["runs-on"]
+        self.assertNotIn("strategy.job-index", expression)
+        probe = """const {expression, event, fork, heavy, fallback} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const repository = 'owner/repo', source = fork ? 'fork/repo' : repository;
+const payload = event === 'pull_request' ? {pull_request: {head: {repo: {full_name: source}}}} :
+    event === 'workflow_run' ? {workflow_run: {head_repository: {full_name: source}}} : {};
+const github = {repository, event: payload}, vars = {HONUA_HEAVY_RUNNER: heavy, HONUA_CI_HEAVY_RUNNER: fallback};
+process.stdout.write(JSON.stringify(new Function('github', 'vars', 'fromJSON', `return (${expression});`)(github, vars, JSON.parse)));
+"""
+        pool = {"group": "honua-heavy", "labels": ["honua-heavy"]}
+        for event, fork, configured, fallback in product(
+                ["push", "workflow_dispatch", "pull_request", "workflow_run"],
+                [False, True], [False, True], ["", "ubuntu-24.04"]):
+            trusted = event not in {"pull_request", "workflow_run"} or not fork
+            expected = pool if configured and trusted else fallback or "ubuntu-latest"
+            context = {"expression": expression[3:-2].strip(), "event": event,
+                       "fork": fork, "heavy": json.dumps(pool) if configured else "",
+                       "fallback": fallback}
+            with self.subTest(event=event, fork=fork, configured=configured, fallback=fallback):
+                result = subprocess.run(["node", "-e", probe], input=json.dumps(context),
+                                        text=True, capture_output=True, check=True)
+                self.assertEqual(json.loads(result.stdout), expected)
 
     def test_postgres_uses_an_ephemeral_host_port_that_the_tests_receive(self):
         for workflow in SHARD_JOBS:

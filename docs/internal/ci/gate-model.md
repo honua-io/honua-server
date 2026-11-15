@@ -1230,9 +1230,16 @@ router full-coverage escalation, API failure or a larger bound
 leaves coverage to the unchanged twice-daily full runs. A deferred dispatcher does
 not launch CI. A previously queued execution rechecks admission and cancels itself
 before publishing change outputs; neither cancellation nor a failed cancellation request can advance the successful CI base.
-Admitted affected runs use two concurrent server shards. Even matrix indices
-use the `honua-heavy` pool, so a run usually holds one heavy runner and at most
-two; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today.
+Admitted affected runs use two concurrent server shards. All trusted indices
+use the configured `honua-heavy` pool, so a run holds at most two heavy runners;
+side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today. Full server
+matrices retain their 16-job limit. A single pool prevents admitted hosted shards
+waiting for capacity from exhausting that limit while heavy runners remain idle.
+Full run 43709972683 had 13 waiting hosted shards plus three executing shards at
+14:17 UTC on 15 Nov, blocking admission of 58 queued heavy shards. The measured
+heavy runner listen-to-next-job gaps were 579 s, 673 s and 869 s for runners 6, 5
+and 3 respectively. These are before-change observations; live after-change
+measurements remain pending. Fork guards and configured/hosted fallback remain.
 An active PR Gate does not defer or cancel an affected run. With up to ten open
 PRs a PR Gate is almost always active: from 05:52 to 17:02 UTC on 14 Nov 2026 the
 former PR-activity rule admitted 0 of 32 dispatches, leaving trunk with only the
