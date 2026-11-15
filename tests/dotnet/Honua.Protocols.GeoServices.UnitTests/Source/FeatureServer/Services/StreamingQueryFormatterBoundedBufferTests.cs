@@ -75,7 +75,7 @@ public sealed class StreamingQueryFormatterBoundedBufferTests
     private static StreamingQueryFormatter CreateFormatter()
         => new(Options.Create(new LimitsOptions()));
 
-    private static MetadataV2Resource CreateResource()
+    private static MetadataV2Object CreateResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "stream-layer", Name = "stream-layer" },
