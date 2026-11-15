@@ -18,7 +18,8 @@ internal static class MetadataReleaseEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Metadata", "Releases")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/environments/{environment}/inventory", HandleGetInventory)
             .WithDisplayName("Get Metadata Semantic Inventory")

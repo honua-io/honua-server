@@ -387,6 +387,74 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         result.Should().NotBe(26917);
     }
 
+    [IntegrationTheory]
+    [InlineData("NAD_1983_StatePlane_New_York_Long_Island_FIPS_3104_Feet", 2263)]
+    [InlineData("NAD_1983_2011_StatePlane_New_York_Long_Isl_FIPS_3104_Ft_US", 6539)]
+    [InlineData("NAD_1983_StatePlane_California_V_FIPS_0405_Feet", 2229)]
+    [InlineData("RGF_1993_Lambert_93", 2154)]
+    [InlineData("British_National_Grid", 27700)]
+    [InlineData("NAD_1983_BC_Environment_Albers", 3005)]
+    [InlineData("GDA_1994_MGA_Zone_55", 28355)]
+    [InlineData("GDA_1994_Australia_Albers", 3577)]
+    public async Task DetectFromPrjAsync_WithEsriProjectedNameWithoutAuthority_ReturnsEpsg(string name, int epsg)
+    {
+        // Desktop GIS and the Shapefile driver write ESRI WKT1 with no AUTHORITY node.
+        var prj = $"""
+            PROJCS["{name}",
+                GEOGCS["GCS_Base",
+                    DATUM["D_Base",
+                        SPHEROID["GRS_1980",6378137.0,298.257222101]],
+                    PRIMEM["Greenwich",0.0],
+                    UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Lambert_Conformal_Conic"],
+                UNIT["Meter",1.0]]
+            """;
+
+        var result = await _service!.DetectFromPrjAsync(prj);
+
+        result.Should().Be(epsg);
+    }
+
+    [IntegrationTest]
+    public async Task DetectFromPrjAsync_WithEsriNameAndBaseGeographicAuthority_ReturnsProjectedCode()
+    {
+        // The only AUTHORITY node is the base geographic CRS. It must not beat the projected name.
+        var prj = """
+            PROJCS["British_National_Grid",
+                GEOGCS["GCS_OSGB_1936",
+                    DATUM["D_OSGB_1936",
+                        SPHEROID["Airy_1830",6377563.396,299.3249646]],
+                    PRIMEM["Greenwich",0.0],
+                    UNIT["Degree",0.0174532925199433],
+                    AUTHORITY["EPSG","4277"]],
+                PROJECTION["Transverse_Mercator"],
+                UNIT["Meter",1.0]]
+            """;
+
+        var result = await _service!.DetectFromPrjAsync(prj);
+
+        result.Should().Be(27700);
+    }
+
+    [IntegrationTest]
+    public async Task DetectFromPrjAsync_WithUnknownProjectedNameWithoutAuthority_ReturnsNull()
+    {
+        var prj = """
+            PROJCS["Not_A_Real_Projected_Crs_Name",
+                GEOGCS["GCS_Base",
+                    DATUM["D_Base",
+                        SPHEROID["GRS_1980",6378137.0,298.257222101]],
+                    PRIMEM["Greenwich",0.0],
+                    UNIT["Degree",0.0174532925199433]],
+                PROJECTION["Lambert_Conformal_Conic"],
+                UNIT["Meter",1.0]]
+            """;
+
+        var result = await _service!.DetectFromPrjAsync(prj);
+
+        result.Should().BeNull();
+    }
+
     [IntegrationTest]
     public async Task DetectFromWktAsync_WithCompoundCrs_ResolvesHorizontalNotVerticalAuthority()
     {
