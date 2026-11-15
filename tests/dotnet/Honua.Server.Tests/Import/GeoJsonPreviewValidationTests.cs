@@ -30,7 +30,8 @@ public sealed class GeoJsonPreviewValidationTests : IAsyncLifetime
     public async Task Preview_MalformedGeoJson_ReturnsBadRequest()
     {
         using var content = new MultipartFormDataContent();
-        content.Add(new StringContent(MalformedGeoJson, Encoding.UTF8, "application/geo+json"), "file", "invalid.geojson");
+        using var fileContent = new StringContent(MalformedGeoJson, Encoding.UTF8, "application/geo+json");
+        content.Add(fileContent, "file", "invalid.geojson");
 
         using var response = await _fixture.Client.PostAsync("/api/v1/admin/import/preview", content);
 
