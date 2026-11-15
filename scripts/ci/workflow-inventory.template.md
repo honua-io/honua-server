@@ -998,7 +998,9 @@ The selector is read-only: it never wakes or resizes capacity. Its 90-second
 heartbeat proof binds the current instance and available heavy worker. Forks,
 non-PR callers, missing configuration/credentials, busy/stale hosts and health
 read errors use hosted compute. The existing OIDC trust is PR-only. Selection
-errors also preserve hosted execution through caller fallback expressions;
+errors also preserve hosted execution through caller fallback expressions.
+Each consumer independently checks repository trust before accepting the
+selected runner and uses hosted compute for forks;
 Serving Image Boundary still requires successful impact detection. No CodeQL
 language/build mode, image variant, test or gate is removed. Native GitHub Code
 Quality uses a managed workflow and is outside these runner-routing changes.

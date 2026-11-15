@@ -203,6 +203,8 @@ esac
                 self.assertIn('always() && !cancelled()', job['if'])
                 self.assertIn('!github.event.pull_request.draft)', job['if'])
                 self.assertIn(f"'\"{hosted}\"'", job['runs-on'])
+                self.assertIn('(!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(', job['runs-on'])
+                self.assertTrue(job['runs-on'].endswith(" || 'ubuntu-latest' }}"))
                 self.assertTrue(job['steps'])
         serving = yaml.safe_load((ROOT / '.github/workflows/serving-image-boundary.yml').read_text())
         self.assertIn("needs.detect.result == 'success'", serving['jobs']['build-and-verify']['if'])

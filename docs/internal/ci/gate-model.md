@@ -1442,6 +1442,8 @@ failure all fall back to hosted compute. This selector never wakes or resizes
 the host; AWS retries and step timeouts are bounded. The current role trusts PR
 subjects only, so scheduled/manual/full-CI callers retain hosted compute.
 
+Each consumer also checks the PR's repository before accepting the selected
+runner and falls back to hosted compute for forks, independently of the selector.
 Forks stay hosted and do not receive the health credential. CodeQL coverage,
 build modes, image matrices, evidence uploads and required check names remain
 unchanged. A selector failure cannot skip analysis; image impact detection must

@@ -177,7 +177,7 @@ jobs:
     name: Build and verify ${{ matrix.description }}
     needs: [detect, runner-select]
     if: ${{ always() && !cancelled() && needs.detect.result == 'success' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.detect.outputs.selected != '[]') }}
-    runs-on: ${{ fromJSON(needs.runner-select.outputs.runner || '"ubuntu-latest"') }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '"ubuntu-latest"') || 'ubuntu-latest' }}
     # Still 180, even though a leg now builds ONE variant instead of three in
     # series. A cold native-AOT build of a single variant has been observed not
     # to fit in 90 minutes (nightly-container-build's build-lambda-aot carries
