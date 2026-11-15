@@ -1,10 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
@@ -16,13 +14,13 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
 {
     [IntegrationTheory]
-    [InlineData(false, null)]
-    [InlineData(true, null)]
-    [InlineData(true, "PrimaryKeyColumn")]
-    [InlineData(true, "GeometryColumn")]
-    [InlineData(true, "AttributesColumn")]
-    [InlineData(true, "LayerDiscriminatorColumn")]
-    public async Task SaveAsync_GlobalIdLayer_EnforcesNormalizedIdentityPerLayer(bool sourceBacked, string? ignoredOption)
+    [InlineData("native", null)]
+    [InlineData("source", null)]
+    [InlineData("source", "PrimaryKeyColumn")]
+    [InlineData("source", "GeometryColumn")]
+    [InlineData("source", "AttributesColumn")]
+    [InlineData("source", "LayerDiscriminatorColumn")]
+    public async Task SaveAsync_GlobalIdLayer_EnforcesNormalizedIdentityPerLayer(string bindingKind, string? ignoredOption)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("global_id_integrity");
         try
@@ -34,76 +32,15 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             await command.ExecuteNonQueryAsync();
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
-            var graph = GlobalIdGraph(schema);
-            if (sourceBacked)
-            {
-                graph = graph with
-                {
-                    StorageBindings = [graph.StorageBindings[0] with
-                    {
-                        Options = new Dictionary<string, JsonElement>
-                        {
-                            ["sourceBacked"] = JsonSerializer.SerializeToElement(true),
-                            ["schemaName"] = JsonSerializer.SerializeToElement(schema),
-                            ["tableName"] = JsonSerializer.SerializeToElement("features"),
-                            ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
-                            ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
-                        }
-                    }]
-                };
-            }
-            if (ignoredOption is not null)
-            {
-                graph = graph with { StorageBindings = [graph.StorageBindings[0] with
-                {
-                    Options = new Dictionary<string, JsonElement>(graph.StorageBindings[0].Options)
-                    { [ignoredOption] = JsonSerializer.SerializeToElement("other_column") }
-                }] };
-            }
+            var graph = CreateGlobalIdBinding(schema, bindingKind, ignoredOption);
             var mapping = FeatureStorageMapping.FromMetadata(graph.Resources[0], graph.StorageBindings[0]);
             mapping.SupportsManagedWrites.Should().BeTrue();
             mapping.PrimaryKeyColumn.Should().Be("objectid");
             mapping.GeometryColumn.Should().BeNull();
             await store.SaveAsync(graph, expectedEtag: null);
 
-            command.CommandText = $$"""
-                INSERT INTO "{{schema}}".features VALUES
-                    (7, '{"globalid":"6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f"}'),
-                    (8, '{"globalid":"6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f"}'),
-                    (7, '{}'), (7, '{}'), (7, '{"globalid":""}')
-                """;
-            await command.ExecuteNonQueryAsync();
-            command.CommandText = $$"""
-                INSERT INTO "{{schema}}".features VALUES
-                    (7, '{"globalid":"{6F1c2D3e-4B5a-4C6d-8E7f-0A1b2C3d4E5f}"}')
-                """;
-            var duplicate = async () => await command.ExecuteNonQueryAsync();
-            (await duplicate.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
-
-            command.CommandText = $$"""
-                UPDATE "{{schema}}".features
-                SET attributes = '{"globalid":"{6F1c2D3e-4B5a-4C6d-8E7f-0A1b2C3d4E5f}"}'
-                WHERE layer_id = 7 AND attributes = '{}'::jsonb
-                """;
-            (await duplicate.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
-
-            await using var firstTransaction = await connection.BeginTransactionAsync();
-            command.Transaction = firstTransaction;
-            command.CommandText = $$"""
-                INSERT INTO "{{schema}}".features VALUES
-                    (7, '{"globalid":"f65f3d6c-7adc-4c28-a888-b274345b1e14"}')
-                """;
-            await command.ExecuteNonQueryAsync();
-            await using var competingConnection = await fixture.DataSource.OpenConnectionAsync();
-            await using var competingCommand = competingConnection.CreateCommand();
-            competingCommand.CommandText = $$"""
-                INSERT INTO "{{schema}}".features VALUES
-                    (7, '{"globalid":"{F65F3D6C-7ADC-4C28-A888-B274345B1E14}"}')
-                """;
-            var competingWrite = competingCommand.ExecuteNonQueryAsync();
-            await firstTransaction.CommitAsync();
-            var observeCompetingWrite = async () => await competingWrite;
-            (await observeCompetingWrite.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
+            await AssertGlobalIdRowsConstrainedAsync(schema, command);
+            await AssertConcurrentGlobalIdInsertRejectedAsync(schema, connection, command);
         }
         finally
         {
@@ -137,12 +74,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             mapping.TableName.Should().Be("features");
             var undeclared = declared with { Resources = [declared.Resources[0] with { Editing = null }] };
             var original = await store.SaveAsync(undeclared, expectedEtag: null);
-            command.CommandText = $$"""
-                INSERT INTO "{{schema}}".features VALUES
-                    (7, '{"globalid":"6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f"}'),
-                    (7, '{"globalid":"{6F1c2D3e-4B5a-4C6d-8E7f-0A1b2C3d4E5f}"}')
-                """;
-            await command.ExecuteNonQueryAsync();
+            await InsertDuplicateGlobalIdsAsync(schema, command);
 
             var activate = async () => await store.SaveAsync(declared, original.Etag);
 
@@ -202,15 +134,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         try
         {
             await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
-            await fixture.ExecuteAsync($$"""
-                CREATE TABLE "{{schema}}".features (layer_id integer NOT NULL, attributes jsonb NOT NULL);
-                CREATE ROLE {{role}};
-                GRANT USAGE ON SCHEMA "{{schema}}" TO {{role}};
-                GRANT SELECT, INSERT ON "{{schema}}".features TO {{role}};
-                ALTER TABLE "{{schema}}".features ENABLE ROW LEVEL SECURITY;
-                CREATE POLICY visible_rows ON "{{schema}}".features FOR SELECT USING (false);
-                CREATE POLICY writable_rows ON "{{schema}}".features FOR INSERT WITH CHECK (true);
-                """);
+            await CreateRowSecuredGlobalIdTableAsync(schema, role);
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
             await store.SaveAsync(GlobalIdGraph(schema), expectedEtag: null);
@@ -272,18 +196,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             command.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".features";
             (await command.ExecuteScalarAsync()).Should().Be(2);
 
-            // Only an explicit data repair permits migration; the migration never discards a row.
-            command.CommandText = $$"""
-                DELETE FROM "{{schema}}".features WHERE attributes->>'globalid' LIKE '{%'
-                """;
-            await command.ExecuteNonQueryAsync();
-            await CoreMigrationTestFixture.ApplyGlobalIdIntegrityAsync(fixture, schema);
-            command.CommandText = $$"""
-                INSERT INTO "{{schema}}".features VALUES
-                    (7, '{"globalid":"{6F1c2D3e-4B5a-4C6d-8E7f-0A1b2C3d4E5f}"}')
-                """;
-            var duplicate = async () => await command.ExecuteNonQueryAsync();
-            (await duplicate.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
+            await AssertExplicitRepairEnablesMigrationAsync(schema, command);
         }
         finally
         {
@@ -314,28 +227,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             // The metadata store qualifies its own tables; the managed writer uses a separate search path.
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, featureSchema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, metadataSchema);
-            var graph = GlobalIdGraph(featureSchema);
-            if (optionCase != 0)
-            {
-                var options = new Dictionary<string, JsonElement>
-                {
-                    [optionCase == 2 ? "SchemaName" : "schemaName"] = JsonSerializer.SerializeToElement(
-                        optionCase switch { 1 => featureSchema, 3 => string.Empty, 4 => "\t", 5 => $"\t{featureSchema}\r\n", 6 => "\u00a0\u2003", _ => "unrelated" }),
-                    [optionCase == 2 ? "TableName" : "tableName"] = JsonSerializer.SerializeToElement(optionCase == 5 ? "\tfeatures\n" : "features")
-                };
-                if (optionCase == 3)
-                {
-                    options["schema"] = JsonSerializer.SerializeToElement("unrelated");
-                }
-                graph = graph with
-                {
-                    StorageBindings = [graph.StorageBindings[0] with
-                    {
-                        Locator = optionCase == 1 ? "unrelated.features" : $"{featureSchema}.features",
-                        Options = options
-                    }]
-                };
-            }
+            var graph = CreateSeparateSchemaGlobalIdGraph(featureSchema, optionCase);
             var mapping = FeatureStorageMapping.FromMetadata(graph.Resources[0], graph.StorageBindings[0]);
             mapping.SchemaName?.Trim().Should().Be(optionCase is 3 or 4 or 6 ? string.Empty : featureSchema);
             mapping.TableName.Trim().Should().Be("features");
@@ -355,12 +247,12 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
     }
 
     [IntegrationTheory]
-    [InlineData(false, null)]
-    [InlineData(false, "false")]
-    [InlineData(true, null)]
-    [InlineData(false, "\ttrue\r\n")]
-    [InlineData(false, "\u00a0true\u2003")]
-    public async Task SaveAsync_SourceBackedGlobalIds_DoesNotConstrainUnrelatedManagedRows(bool externalConnection, string? sourceBackedText)
+    [InlineData("local", null)]
+    [InlineData("local", "false")]
+    [InlineData("external", null)]
+    [InlineData("local", "\ttrue\r\n")]
+    [InlineData("local", "\u00a0true\u2003")]
+    public async Task SaveAsync_SourceBackedGlobalIds_DoesNotConstrainUnrelatedManagedRows(string connectionKind, string? sourceBackedText)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("global_id_source");
         var sourceSchema = await fixture.CreateIsolatedSchemaAsync("global_id_external");
@@ -375,24 +267,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                     (7, '{"globalid":"{6F1C2D3E-4B5A-4C6D-8E7F-0A1B2C3D4E5F}"}');
                 """);
             await fixture.ExecuteAsync($"INSERT INTO \"{sourceSchema}\".features SELECT * FROM \"{schema}\".features");
-            var graph = GlobalIdGraph(externalConnection ? schema : sourceSchema);
-            graph = graph with
-            {
-                StorageBindings = [graph.StorageBindings[0] with
-                {
-                    ConnectionId = externalConnection ? "conn" : null,
-                    Options = new Dictionary<string, JsonElement>
-                    {
-                        ["sourceBacked"] = sourceBackedText is null
-                            ? JsonSerializer.SerializeToElement(true)
-                            : JsonSerializer.SerializeToElement(sourceBackedText),
-                        ["schemaName"] = JsonSerializer.SerializeToElement(externalConnection ? schema : sourceSchema),
-                        ["tableName"] = JsonSerializer.SerializeToElement("features"),
-                        ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
-                        ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
-                    }
-                }]
-            };
+            var graph = CreateExternalGlobalIdGraph((schema, sourceSchema), connectionKind, sourceBackedText);
             FeatureStorageMapping.FromMetadata(graph.Resources[0], graph.StorageBindings[0]).IsSourceBacked.Should().Be(sourceBackedText != "false");
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
@@ -411,23 +286,4 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         }
     }
 
-    private static MetadataV2Graph GlobalIdGraph(string schema) => new()
-    {
-        Environment = "Test",
-        GeneratedAt = DateTimeOffset.UtcNow,
-        Connections = [new MetadataV2Connection { Metadata = new() { Id = "conn", Name = "managed" } }],
-        StorageBindings = [new MetadataV2StorageBinding
-        {
-            Metadata = new() { Id = "binding", Name = "features" },
-            ResourceId = "resource", StorageLayerId = 7,
-            Locator = $"{schema}.features"
-        }],
-        Resources = [new MetadataV2Object
-        {
-            Metadata = new() { Id = "resource", Name = "features" },
-            StorageBindingIds = ["binding"],
-            Editing = new() { GlobalIdField = "globalid" },
-            SchemaFields = [new MetadataV2Field { Name = "globalid", Type = MetadataV2FieldType.Uuid }]
-        }]
-    };
 }
