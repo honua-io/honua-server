@@ -63,6 +63,7 @@ internal sealed class QueryFeaturesTool : IMcpTool
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Read, cancellationToken)
             .ConfigureAwait(false);
 
+        RejectUnknownArguments(arguments);
         var argument = McpToolHelpers.ParseArguments(arguments, MapToolJsonContext.Default.McpQueryFeaturesArgument);
 
         var graphProvider = httpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
@@ -168,6 +169,31 @@ internal sealed class QueryFeaturesTool : IMcpTool
             output,
             MapToolJsonContext.Default.McpQueryFeaturesOutput,
             SummarizeQueryResult);
+    }
+
+    // Refuse names the schema does not list before deserialization, so the
+    // caller sees the argument name and not the internal argument type.
+    private static void RejectUnknownArguments(JsonElement? arguments)
+    {
+        if (arguments is not { } element || element.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var allowed = MapToolSchemas.QueryFeaturesArgumentSchema.GetProperty("properties");
+        foreach (var property in element.EnumerateObject())
+        {
+            if (allowed.TryGetProperty(property.Name, out _))
+            {
+                continue;
+            }
+
+            var guidance = property.NameEquals("layerId")
+                ? " Use serviceLayerIndex from honua_list_layers."
+                : "";
+            throw new GeoprocessingValidationException(
+                $"'{property.Name}' is not a query argument.{guidance}");
+        }
     }
 
     private static string SummarizeQueryResult(McpQueryFeaturesOutput output)
