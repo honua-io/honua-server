@@ -23,7 +23,9 @@ BEGIN
                 COALESCE((SELECT jsonb_object_agg(lower(option.key), option.value)
                     FROM jsonb_each(COALESCE(binding->'options', '{}'::jsonb)) option), '{}'::jsonb) AS options,
                 CASE WHEN binding->>'locator' !~ '[:/]'
-                    THEN string_to_array(binding->>'locator', '.') END AS locator_parts
+                    THEN ARRAY(SELECT btrim(component, identifier_whitespace)
+                        FROM unnest(string_to_array(binding->>'locator', '.')) WITH ORDINALITY AS parts(component, position)
+                        WHERE btrim(component, identifier_whitespace) <> '' ORDER BY position) END AS locator_parts
             FROM active_graphs
             CROSS JOIN LATERAL jsonb_array_elements(document->'storageBindings') binding
             WHERE binding->>'storageType' = 'relational-table'
@@ -48,7 +50,7 @@ BEGIN
                         AND array_length(locator_parts, 1) > 1
                         THEN trim(both '"' FROM btrim(locator_parts[array_length(locator_parts, 1) - 1], identifier_whitespace)) END),
                     identifier_whitespace) AS schema_name,
-                lower(btrim(COALESCE(options->>'sourcebacked', 'false'))) = 'true' AS source_backed
+                lower(btrim(COALESCE(options->>'sourcebacked', 'false'), identifier_whitespace)) = 'true' AS source_backed
             FROM explicit_names
         ), resolved_bindings AS (
             SELECT *, to_regclass(CASE WHEN COALESCE(schema_name, '') = '' THEN format('%I', table_name)
