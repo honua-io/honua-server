@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Admin;
 public sealed partial class McpPublishedServicePostgresDurabilityTests
 {
     [IntegrationTest]
-    [Operation(Operations.Read)]
+    [Operation(Operations.Validation)]
     [Endpoint("POST /mcp")]
     public async Task PublicationPreview_ReportsTheSourceAndMetadataBase_WithoutPublishing()
     {
