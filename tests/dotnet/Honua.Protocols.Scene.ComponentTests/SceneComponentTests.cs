@@ -4,6 +4,7 @@
 using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -65,7 +66,8 @@ public sealed class SceneComponentTests
         }
     }
 
-    internal static Task<ComponentTestHost> StartAsync(string? assetRoot = null, string sceneId = "public")
+    internal static Task<ComponentTestHost> StartAsync(string? assetRoot = null, string sceneId = "public",
+        IConfigurationGenerationSource? generations = null)
     {
         var root = assetRoot ?? FindFixture();
         return ComponentTestHost.StartAsync(builder =>
@@ -81,6 +83,10 @@ public sealed class SceneComponentTests
                 ["Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false"
             });
             builder.Services.AddScene(builder.Configuration);
+            if (generations is not null)
+            {
+                builder.Services.AddSingleton(generations);
+            }
             builder.Services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
             builder.Services.Configure<OutputCacheTtlOptions>(_ => { });
             OutputCachingRegistration.ConfigureOutputCaching(builder.Services, builder.Configuration);
