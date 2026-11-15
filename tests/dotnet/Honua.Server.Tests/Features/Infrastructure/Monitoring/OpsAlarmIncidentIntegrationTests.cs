@@ -205,8 +205,12 @@ public sealed class OpsAlarmIncidentIntegrationTests : IAsyncLifetime
         var observations = (await ReadObservationsAsync(provider)).Observations;
         observations.Should().HaveCount(2);
         observations.Select(o => o.ObservedAt).Distinct().Should().HaveCount(2);
-        (await ReadEpisodesAsync()).Should().HaveCount(first == 0 ? 1 : 0)
-            .And.OnlyContain(e => e.State == OpsIncidentEpisodeState.Recovered);
+        var episodes = await ReadEpisodesAsync();
+        episodes.Should().HaveCount(first == 0 ? 1 : 0);
+        if (first == 0)
+        {
+            episodes.Single().State.Should().Be(OpsIncidentEpisodeState.Recovered);
+        }
     }
 
     [IntegrationTheory]
