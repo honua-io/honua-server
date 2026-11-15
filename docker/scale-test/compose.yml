@@ -216,7 +216,7 @@ services:
   redis-insight:
     image: redislabs/redisinsight:latest
     ports:
-      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_SCALE_TEST_REDIS_INSIGHT_PORT:-8001}:8001"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:8001:8001"
     environment:
       RIPORT: 8001
       RIHOST: "0.0.0.0"
