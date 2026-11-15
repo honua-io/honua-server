@@ -143,6 +143,26 @@ public sealed class OpsSelfChecksTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task Evidence_DailyReleaseCache_RemainsActionableAfterProviderRefresh()
+    {
+        var clock = new TestClock();
+        var source = new FakeSource { Release = new("2026.2", ReleaseNotes) };
+        using var checks = new OpsSelfChecks(clock, source);
+        var initial = await checks.EvaluateWithEvidenceAsync();
+        clock.Advance(TimeSpan.FromMinutes(6));
+
+        var refreshed = await checks.EvaluateWithEvidenceAsync();
+        var posture = EvidencePostureFactory.Build(clock.Now,
+            EvidencePostureFactory.Aggregate("test.self-checks", "test", TimeSpan.FromMinutes(5), refreshed.Sources));
+
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Complete, posture.Status);
+        Assert.Equal(initial.Sources.Min(item => item.ObservedAt), Assert.Single(posture.Sources).ObservedAt);
+        Assert.Equal(2, source.ProviderReads);
+        Assert.Equal(1, source.ReleaseReads);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task ConcurrentEvaluations_ShareOneProbePerCadence()
     {
         var source = new FakeSource { ProbeGate = new(TaskCreationOptions.RunContinuationsAsynchronously) };
