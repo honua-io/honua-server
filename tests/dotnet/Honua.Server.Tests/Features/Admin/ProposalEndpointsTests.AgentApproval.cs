@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Console.Domain;
 using Honua.Server.Features.Console;
@@ -229,6 +230,46 @@ public sealed partial class ProposalEndpointsTests
         await AssertAgentApprovalRefusalAsync(link, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
         await AssertAgentApprovalRefusalAsync(unmask, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
         await AssertAgentApprovalRefusalAsync(unmaskFields, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/rls-policies")]
+    public async Task CreateRowPolicy_AgentKey_IsRefusedAndStoresNothing()
+    {
+        using var agent = await CreateKeyClientAsync("agent-rls-create", AgentKeyPermissions);
+        using var human = await CreateKeyClientAsync("human-rls-create", HumanKeyPermissions);
+        var store = _fixture.Services.GetRequiredService<IRlsPolicyStore>();
+        var agentRole = $"agent-rls-{Guid.NewGuid():N}";
+        var humanRole = $"human-rls-{Guid.NewGuid():N}";
+        object Policy(string role) => new
+        {
+            role,
+            service = "*",
+            layer = "*",
+            attribute = "category",
+            claimType = "category",
+            comparison = "in",
+        };
+
+        try
+        {
+            using var refused = await agent.PostAsJsonAsync("/api/v1/admin/rls-policies", Policy(agentRole));
+            using var admitted = await human.PostAsJsonAsync("/api/v1/admin/rls-policies", Policy(humanRole));
+
+            await AssertAgentApprovalRefusalAsync(refused, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
+            // The same request from a person is valid and stored, so the refusal is the agent filter's.
+            admitted.StatusCode.Should().Be(HttpStatusCode.Created, await admitted.Content.ReadAsStringAsync());
+            var stored = await store.ListPoliciesAsync();
+            stored.Should().Contain(candidate => candidate.Role == humanRole);
+            stored.Should().NotContain(candidate => candidate.Role == agentRole, "a refused agent request must not persist a row policy");
+        }
+        finally
+        {
+            foreach (var created in (await store.ListPoliciesAsync()).Where(item => item.Role == agentRole || item.Role == humanRole))
+            {
+                await store.DeletePolicyAsync(created.PolicyId);
+            }
+        }
     }
 
     [IntegrationTest]

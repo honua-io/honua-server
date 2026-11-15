@@ -2,10 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Server.Features.Admin.Services;
 using Honua.Infrastructure.Configuration;
-using Microsoft.Extensions.DependencyInjection;
+using Honua.Server.Features.Admin.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
 
@@ -16,7 +16,7 @@ public static class AdminServiceCollectionExtensions
         services.TryAddSingleton<IConfigurationValidator, ConfigurationValidator>();
         services.TryAddSingleton<IConfigurationDiscovery>(sp => (ConfigurationValidator)sp.GetRequiredService<IConfigurationValidator>());
         services.TryAddSingleton<IExternalServiceDiscoveryNetworkGuard, ExternalServiceDiscoveryNetworkGuard>();
-        services.TryAddScoped<IExternalServiceDiscoveryService, ExternalServiceDiscoveryService>();
+        services.TryAddScoped<ExternalServiceDiscoveryService>();
         services.AddHttpClient(ExternalServiceDiscoveryService.HttpClientName, client =>
         {
             client.DefaultRequestHeaders.UserAgent.ParseAdd("HonuaServer/1.0");
@@ -43,7 +43,7 @@ public static class AdminServiceCollectionExtensions
         // Register startup connectivity testing service
         services.TryAddScoped<StartupConnectivityTestService>();
 
-        services.TryAddScoped<ILayerValidationService, LayerValidationService>();
+        services.TryAddScoped<LayerValidationService>();
 
         // Secure-connection governance (#354): host allowlist enforcement + connection
         // audit trail. Scoped because it consumes the scoped IAuditLog sink.

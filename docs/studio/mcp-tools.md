@@ -86,15 +86,8 @@ realtime product direction, not a reason for clients to invent approval steps fo
 every design turn. Respect the actual operation outcome and report the mismatch.
 Do not change deployment policy as an implicit part of a creative edit.
 
-Publication has a separate branch: an authorized admin receives `Published`,
-`humanConfirmationRequired: false`, and the server-issued `shareUrl` only after
-completion. A non-admin receives `AwaitingApproval`,
+Publication always waits for a person. Every MCP caller is an agent,
+administrators included, so the tool returns `AwaitingApproval`,
 `humanConfirmationRequired: true`, and the proposal identity with no share URL.
-Follow that proposal to its decision and activation; never have the proposer
-approve itself. Neither path changes the requested audience implicitly.
-
-A browser client can support fewer result branches than the server. In particular,
-the Studio Preview sharing adapter currently models the non-admin proposal path;
-its fixture evidence does not establish support for the admin direct-publication
-response. Use the installed client/server contracts, not a shared product name,
-to determine which journey is supported.
+A person approves or rejects the proposal in Console; an agent credential cannot
+decide it. The publication does not change the requested audience implicitly.
