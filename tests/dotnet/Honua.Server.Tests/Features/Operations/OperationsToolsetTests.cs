@@ -1712,8 +1712,8 @@ public sealed class OperationsToolsetTests
             Arg.Any<string>(),
             Arg.Is<LayerPublishRequest>(r => r.Schema == "public" && r.Table == "parcels" && r.LayerName == "Parcels"),
             Arg.Any<CancellationToken>());
-        notifications.Received(1).BroadcastResourcesListChanged();
-        notifications.Received(1).BroadcastToolsListChanged();
+        await notifications.Received(1).BroadcastResourcesListChanged();
+        await notifications.Received(1).BroadcastToolsListChanged();
     }
 
     [UnitTest]
@@ -1752,7 +1752,7 @@ public sealed class OperationsToolsetTests
         handle.ResourceIds.Should().NotContainKey("serviceName");
         await publishing.Received(1).PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-        notifications.Received(1).BroadcastToolsListChanged();
+        await notifications.Received(1).BroadcastToolsListChanged();
     }
 
     [UnitTest]

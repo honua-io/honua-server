@@ -11,7 +11,7 @@ namespace Honua.Core.Features.Studio.Services;
 /// <summary>
 /// In-memory Studio package store for tests and local fallback scenarios.
 /// </summary>
-public sealed class InMemoryStudioPackageStore : IStudioPackageStore
+public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
 {
     private const int DefaultListLimit = 25;
     private const int MaxListLimit = 200;
@@ -60,8 +60,9 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                     UpdatedBy = draft.UpdatedBy,
                     UpdatedAt = draft.UpdatedAt,
                 };
-            _drafts.Add(draft.DraftId, draft);
-            return Task.FromResult(draft);
+            var stored = SnapshotDraft(draft);
+            _drafts.Add(draft.DraftId, stored);
+            return Task.FromResult(SnapshotDraft(stored));
         }
     }
 
@@ -72,7 +73,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         lock (_gate)
         {
             _drafts.TryGetValue(draftId, out var draft);
-            return Task.FromResult(draft);
+            return Task.FromResult(draft is null ? null : SnapshotDraft(draft));
         }
     }
 
@@ -95,7 +96,8 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             }
 
             EnsurePackageKeyAvailable(draft);
-            var updated = draft with { Generation = existing.Generation + 1 };
+            var updated = SnapshotDraft(draft with { Generation = existing.Generation + 1 });
+            ArchiveDraftRevision(existing);
             _drafts[draft.DraftId] = updated;
             _items[draft.ItemId] = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.TenantId, draft.CreatedBy, draft.CreatedAt) with
             {
@@ -105,7 +107,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 UpdatedBy = draft.UpdatedBy,
                 UpdatedAt = draft.UpdatedAt,
             };
-            return Task.FromResult<StudioPackageDraft?>(updated);
+            return Task.FromResult<StudioPackageDraft?>(SnapshotDraft(updated));
         }
     }
 
@@ -132,6 +134,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             }
 
             _drafts.Remove(draftId);
+            _draftRevisions.Remove(draftId);
 
             // Cascade-delete an orphan content item: if this was the item's last remaining
             // draft and no version has ever been saved for it, the item has nothing openable
@@ -390,7 +393,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 nextCursor = StudioListCursor.Encode(lastKept.UpdatedAt, lastKept.DraftId);
             }
 
-            IReadOnlyList<StudioPackageDraft> items = page;
+            IReadOnlyList<StudioPackageDraft> items = page.Select(SnapshotDraft).ToArray();
             return Task.FromResult(new StudioPackageDraftListResult
             {
                 Items = items,
