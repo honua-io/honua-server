@@ -728,7 +728,9 @@ foundation security build and test failures count even when built separately.
 Each shard job uploads its results as `<artifact>-attempt-<run_attempt>`.
 The PR Gate aggregate (`scripts/ci/download-affected-receipts.py`) lists the
 run's artifacts and downloads only the newest id for each selected shard whose
-attempt is at most the current run attempt. A shard a failed-jobs rerun did
+attempt is at most the current run attempt. It reads the compact receipt
+matrix (shard name and artifact suffix), not the execution matrix, so test
+filters stay out of the job environment. A shard a failed-jobs rerun did
 not repeat keeps its earlier receipt; an expired, ambiguous or digest-mismatched
 newest receipt fails closed and is not replaced by an older copy. Full CI still
 downloads every attempt directory by name, without merging them. Each shard's

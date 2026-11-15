@@ -546,7 +546,7 @@
     },
     {
       "name": "OGC Classic Maps",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.CapabilitiesMetadataXmlTests",
       "children": [
         "OGC Classic Maps Core",
         "OGC Classic Maps Supporting"
@@ -2928,13 +2928,14 @@
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
       "_comment": "Capacity split #6318: exact class/complement partition of the original Wms namespace. Retains every other Wms class, including rendered-raster, hidden-field, authorization, capabilities, exception-mapping, temporal, CRS and Mapsui coverage. Original source triggers, test assembly, Tier exclusions, parallelism and 20m/30m budgets remain unchanged.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests)|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.CapabilitiesMetadataXmlTests",
       "paths": [
         "src/Honua.Core/Core/Features/Metadata/Domain/V2/",
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/GeoServices/MapServer/",
         "src/Honua.Protocols/OgcClassic/Wms/",
         "src/Honua.Server/Features/StaticMap/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesMetadataXmlTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/MetadataV2LifecycleRoutingTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/"
       ]

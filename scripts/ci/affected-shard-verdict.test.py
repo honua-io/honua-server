@@ -220,7 +220,8 @@ class AffectedShardVerdictTests(unittest.TestCase):
         bounded = next(step for step in gate["jobs"]["affected-shards"]["steps"]
                        if step.get("name") == "Download affected shard receipts")
         self.assertIn("download-affected-receipts.py", bounded["run"])
-        self.assertIn("matrix_include", bounded["env"]["SELECT_MATRIX"])
+        self.assertIn("receipt_matrix", bounded["env"]["SELECT_MATRIX"])
+        self.assertNotIn("matrix_include", bounded["env"]["SELECT_MATRIX"])
         full = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         full_upload = next(step for step in full["jobs"]["server-tests"]["steps"]
                            if str(step.get("with", {}).get("name", "")).startswith("server-test-results-"))

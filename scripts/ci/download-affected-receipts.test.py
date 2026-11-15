@@ -179,7 +179,8 @@ class WorkflowContractTest(unittest.TestCase):
         download = next(step for step in workflow["jobs"]["affected-shards"]["steps"]
                         if step.get("name") == "Download affected shard receipts")
         self.assertIn("download-affected-receipts.py", download["run"])
-        self.assertIn("matrix_include", download["env"]["SELECT_MATRIX"])
+        self.assertIn("receipt_matrix", download["env"]["SELECT_MATRIX"])
+        self.assertNotIn("matrix_include", download["env"]["SELECT_MATRIX"])
         self.assertNotIn("merge-multiple", download)
         full = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         downloads = [step for job in full["jobs"].values() for step in job.get("steps", [])

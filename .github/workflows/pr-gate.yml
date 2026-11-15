@@ -943,7 +943,7 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          SELECT_MATRIX: ${{ needs.affected-shards-select.outputs.matrix_include }}
+          SELECT_MATRIX: ${{ needs.affected-shards-select.outputs.receipt_matrix }}
         run: python3 scripts/ci/download-affected-receipts.py --output artifacts/pr-gate/shard-results
 
       - name: Report affected-shard verdict
