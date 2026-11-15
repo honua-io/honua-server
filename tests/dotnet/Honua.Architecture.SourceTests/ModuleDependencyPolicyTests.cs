@@ -40,7 +40,6 @@ public sealed class ModuleDependencyPolicyTests
         Plugins,
         Server,
         ServiceDefaults,
-        AppHost,
         Worker,
     }
 
@@ -311,10 +310,6 @@ public sealed class ModuleDependencyPolicyTests
         // references Core for shared logging/diagnostics primitives.
         (ModuleRole.ServiceDefaults, ModuleRole.Abstractions),
         (ModuleRole.ServiceDefaults, ModuleRole.Core),
-
-        // AppHost is the Aspire orchestration shell; references only
-        // ServiceDefaults today.
-        (ModuleRole.AppHost, ModuleRole.ServiceDefaults),
 
         // Worker.Gdal is a side-car GDAL process. Per ADR-0038 it deliberately
         // does NOT reference Honua.Server (to avoid pulling the whole host into
@@ -737,14 +732,10 @@ public sealed class ModuleDependencyPolicyTests
             return ModuleRole.Server;
         }
 
-        // Out-of-stack: shared utility, Aspire shell, side-car worker.
+        // Out-of-stack: shared utility and side-car worker.
         if (projectName.Equals("Honua.ServiceDefaults", StringComparison.Ordinal))
         {
             return ModuleRole.ServiceDefaults;
-        }
-        if (projectName.Equals("Honua.AppHost", StringComparison.Ordinal))
-        {
-            return ModuleRole.AppHost;
         }
         if (projectName.StartsWith("Honua.Worker.", StringComparison.Ordinal))
         {

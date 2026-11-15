@@ -1,17 +1,16 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Claims;
-using System.Security.Cryptography.X509Certificates;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Cryptography.X509Certificates;
 
 namespace Honua.Server.Features.Admin;
 
@@ -454,7 +453,7 @@ internal static class ClientCertificateAdminEndpoints
             Issuer = request.Issuer,
             SerialNumber = request.SerialNumber,
             Reason = request.Reason,
-            Actor = ResolveActor(context),
+            Actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName),
             RevokedAt = DateTimeOffset.UtcNow,
             Enabled = true,
         });
@@ -711,13 +710,5 @@ internal static class ClientCertificateAdminEndpoints
         };
 
         return encoding != (ForwardedClientCertificateEncoding)(-1);
-    }
-
-    private static string ResolveActor(HttpContext context)
-    {
-        var principal = context.User;
-        return principal.FindFirstValue(ClaimTypes.NameIdentifier) ??
-            principal.Identity?.Name ??
-            "anonymous";
     }
 }

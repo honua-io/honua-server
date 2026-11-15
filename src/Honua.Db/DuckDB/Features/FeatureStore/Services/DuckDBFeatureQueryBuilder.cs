@@ -1196,34 +1196,17 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
     {
         // Use direct column references for DuckDB (no JSONB path expressions)
         // Delegate to shared WHERE parsing with DuckDB column mapping
-        var expressions = WhereClauseSplitter.SplitOnAnd(whereClause);
-        if (expressions.Count == 0)
+        var parameterizedExpressions = new List<string>();
+        foreach (var expression in LegacyWhereClauseParser.Parse(WhereClauseSplitter.SplitOnAnd(whereClause), LegacyWhereGrammar.Basic))
         {
-            throw new ArgumentException("WHERE clause format not supported.");
-        }
-
-        var parameterizedExpressions = new List<string>(expressions.Count);
-
-        // Not rewritten as .Select(): each iteration is a multi-branch parser that can
-        // throw, mutate the shared `paramIndex`/`parameters` accumulators, and `continue`
-        // early per branch -- not a pure map of one iteration variable to another.
-        foreach (var trimmed in (expressions).Select(expression => expression.Trim()))
-        {
-            if (trimmed.Length == 0)
-            {
-                throw new ArgumentException("WHERE clause format not supported.");
-            }
-
-            if (trimmed.Equals("1=1", StringComparison.Ordinal) ||
-                trimmed.Equals("TRUE", StringComparison.OrdinalIgnoreCase))
+            if (expression.Kind == LegacyWhereExpressionKind.True)
             {
                 parameterizedExpressions.Add("TRUE");
                 continue;
             }
 
-            // NULL check pattern: field IS [NOT] NULL
-            var nullMatch = NullCheckRegex().Match(trimmed);
-            if (nullMatch.Success)
+            var nullMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var field = nullMatch.Groups["field"].Value;
                 ValidateFieldName(field);
@@ -1235,15 +1218,15 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             }
 
             // Comparison pattern: field op value
-            var compMatch = ComparisonRegex().Match(trimmed);
-            if (compMatch.Success)
+            var compMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.Comparison)
             {
                 var field = compMatch.Groups["field"].Value;
                 ValidateFieldName(field);
                 EnsureFieldIsConfigured(field, mapping);
-                var op = NormalizeOperator(compMatch.Groups["op"].Value);
+                var op = LegacyWhereClauseParser.NormalizeOperator(compMatch.Groups["op"].Value, LegacyWhereGrammar.Basic);
                 var valueToken = compMatch.Groups["value"].Value;
-                var value = ParseValueToken(valueToken);
+                var value = LegacyWhereClauseParser.ParseValueToken(valueToken);
 
                 parameterizedExpressions.Add($"{DuckDBExternalSourceSql.QuoteIdentifier(field)} {op} ${paramIndex++}");
                 parameters.Add(value);
@@ -1255,45 +1238,6 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
         return string.Join(" AND ", parameterizedExpressions);
     }
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ComparisonRegex();
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex NullCheckRegex();
-
-    private static string NormalizeOperator(string op) => op.Trim().ToUpperInvariant() switch
-    {
-        "NOT LIKE" => "NOT LIKE",
-        "LIKE" => "LIKE",
-        ">=" => ">=",
-        "<=" => "<=",
-        "!=" or "<>" => "!=",
-        "=" => "=",
-        ">" => ">",
-        "<" => "<",
-        _ => throw new ArgumentException($"Unsupported operator: {op}")
-    };
-
-    private static object ParseValueToken(string valueToken)
-    {
-        if (valueToken.StartsWith('\'') && valueToken.EndsWith('\''))
-        {
-            return valueToken[1..^1].Replace("''", "'");
-        }
-
-        if (decimal.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var num))
-        {
-            return num;
-        }
-
-        return valueToken;
-    }
-
 
     /// <summary>
     /// Builds the SQL expression for a spatial filter geometry parameter, transforming

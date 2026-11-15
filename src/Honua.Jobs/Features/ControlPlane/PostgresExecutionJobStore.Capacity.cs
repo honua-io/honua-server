@@ -17,7 +17,7 @@ internal sealed partial class PostgresExecutionJobStore
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumOutstanding);
         var created = job with { Version = 1 };
         var row = ExecutionJobRow.From(created);
-        return await _database.ExecuteAsync(async (connection, attempt, token) =>
+        var admitted = await _database.ExecuteAsync(async (connection, attempt, token) =>
         {
             if (attempt.EarlierAttemptMayHaveCommitted
                 && await IsStoredAsync(connection, created, row, token).ConfigureAwait(false))
@@ -42,6 +42,12 @@ internal sealed partial class PostgresExecutionJobStore
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             return inserted;
         }, StatementRepeat.SafeToRepeat, cancellationToken).ConfigureAwait(false);
+        if (admitted)
+        {
+            _wake?.Wake();
+        }
+
+        return admitted;
     }
 
     public async Task<bool> TryRetryWithinCapacityAsync(
@@ -56,7 +62,7 @@ internal sealed partial class PostgresExecutionJobStore
         }
 
         var row = ExecutionJobRow.From(job);
-        return await _database.ExecuteAsync(async (connection, attempt, token) =>
+        var admitted = await _database.ExecuteAsync(async (connection, attempt, token) =>
         {
             if (attempt.EarlierAttemptMayHaveCommitted
                 && await IsStoredAsync(connection, job with { Version = job.Version + 1 }, row, token).ConfigureAwait(false))
@@ -77,6 +83,12 @@ internal sealed partial class PostgresExecutionJobStore
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             return updated;
         }, StatementRepeat.SafeToRepeat, cancellationToken).ConfigureAwait(false);
+        if (admitted)
+        {
+            _wake?.Wake();
+        }
+
+        return admitted;
     }
 
     private NpgsqlCommand CreateRetryCommand(NpgsqlTransaction transaction, ExecutionJobRecord job, ExecutionJobRow row)
