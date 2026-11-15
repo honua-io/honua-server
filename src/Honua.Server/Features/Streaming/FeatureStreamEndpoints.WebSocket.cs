@@ -253,7 +253,7 @@ internal static partial class FeatureStreamEndpoints
                     // delivers everything in cursor order including grace-drops.
                     while (session.Reader.TryRead(out _))
                     {
-                        // Discard: the store sweep re-delivers these in cursor order.
+                        // Discard: the store sweep delivers these in cursor order.
                     }
 
                     previousCursor = replayCursor;
@@ -311,7 +311,7 @@ internal static partial class FeatureStreamEndpoints
                         // delivers everything in cursor order including grace-drops.
                         while (session.Reader.TryRead(out _))
                         {
-                            // Discard: the store sweep re-delivers these in cursor order.
+                            // Discard: the store sweep delivers these in cursor order.
                         }
 
                         long prev = cursor;
