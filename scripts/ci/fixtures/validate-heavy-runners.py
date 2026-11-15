@@ -158,7 +158,9 @@ SELECTED_RUNNER = (
 )
 PR_GATE_LIGHT_JOBS = {"runner-select", "format", "affected-shards-select", "affected-shards", "ci-router-validation", "required"}
 LIGHT_RUNNER = (
-    "${{ vars.HONUA_LIGHT_RUNNER"
+    "${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk'"
+    " && inputs.qualify_light && fromJSON('{\"group\":\"honua-light\",\"labels\":[\"honua-light\"]}')"
+    " || vars.HONUA_LIGHT_RUNNER"
     " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
     " && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)"
     " && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}"
@@ -194,10 +196,11 @@ class PrGateRunnerRoutingTests(unittest.TestCase):
 
     def test_early_checks_never_use_producer_admission_or_static_heavy_labels(self):
         probe = """const {expression, light, fork, selected, draft} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-const github = {repository: 'owner/repo', event: {pull_request: {draft, head: {repo: {full_name: fork ? 'fork/repo' : 'owner/repo'}}}}};
+const inputs = {qualify_light: false};
+const github = {event_name: 'pull_request', ref: 'refs/pull/1/merge', repository: 'owner/repo', event: {pull_request: {draft, head: {repo: {full_name: fork ? 'fork/repo' : 'owner/repo'}}}}};
 const needs = {'runner-select': {outputs: {runner: selected}}};
 const vars = {HONUA_PR_GATE_RUNNER: 'honua-build', HONUA_HEAVY_RUNNER: '{"group":"honua-heavy"}', HONUA_LIGHT_RUNNER: light};
-process.stdout.write(JSON.stringify(new Function('context', `const {github, needs, vars, fromJSON} = context; return (${expression});`)({github, needs, vars, fromJSON: JSON.parse})));
+process.stdout.write(JSON.stringify(new Function('context', `const {github, inputs, needs, vars, fromJSON} = context; return (${expression});`)({github, inputs, needs, vars, fromJSON: JSON.parse})));
 """
         pool = {"group": "honua-light", "labels": ["honua-light"]}
         scenarios = [
@@ -238,6 +241,41 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, need
         for name in PR_GATE_LIGHT_JOBS:
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], LIGHT_RUNNER)
+
+    def test_light_qualification_is_a_default_off_boolean(self):
+        workflow = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())
+        dispatch = workflow[True]["workflow_dispatch"]
+        self.assertIsInstance(dispatch, dict)
+        self.assertEqual(set(dispatch["inputs"]), {"qualify_light"})
+        qualification = dispatch["inputs"]["qualify_light"]
+        self.assertEqual(qualification["type"], "boolean")
+        self.assertIs(qualification["default"], False)
+
+    def test_only_trunk_dispatch_can_override_the_disabled_light_pool(self):
+        probe = """const {expression, event, ref, qualify, light, fork} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const inputs = {qualify_light: qualify};
+const github = {event_name: event, ref, repository: 'owner/repo', event: {}};
+if (event === 'pull_request') github.event.pull_request = {head: {repo: {full_name: fork ? 'fork/repo' : 'owner/repo'}}};
+if (event === 'workflow_run') github.event.workflow_run = {head_repository: {full_name: fork ? 'fork/repo' : 'owner/repo'}};
+const vars = {HONUA_LIGHT_RUNNER: light};
+process.stdout.write(JSON.stringify(new Function('context', `const {github, inputs, vars, fromJSON} = context; return (${expression});`)({github, inputs, vars, fromJSON: JSON.parse})));
+"""
+        configured_pool = {"group": "configured-light", "labels": ["configured-light"]}
+        for event, ref, qualify, light, fork in product(
+            ["workflow_dispatch", "pull_request", "workflow_run"],
+            ["refs/heads/trunk", "refs/heads/feature", "refs/tags/trunk"],
+            [True, False, None], ["", json.dumps(configured_pool)], [True, False],
+        ):
+            expected = "ubuntu-latest"
+            if light and (event == "workflow_dispatch" or not fork):
+                expected = configured_pool
+            if event == "workflow_dispatch" and ref == "refs/heads/trunk" and qualify:
+                expected = {"group": "honua-light", "labels": ["honua-light"]}
+            # All six selectors have the identical expression (asserted above).
+            context = {"expression": self.jobs["required"]["runs-on"][3:-2].strip(),
+                       "event": event, "ref": ref, "qualify": qualify, "light": light, "fork": fork}
+            with self.subTest(event=event, ref=ref, qualify=qualify, light=light, fork=fork):
+                self.assertEqual(self.evaluate_routing(probe, context), expected)
 
     def test_light_jobs_pin_temp_to_the_runner_directory_before_other_work(self):
         for name in PR_GATE_LIGHT_JOBS:

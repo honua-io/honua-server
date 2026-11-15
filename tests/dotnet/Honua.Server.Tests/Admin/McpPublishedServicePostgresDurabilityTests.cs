@@ -46,7 +46,7 @@ namespace Honua.Server.Tests.Admin;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
+public sealed partial class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
 {
     private readonly string _environment = $"mcpdur-{Guid.NewGuid():N}";
     private readonly string _serviceName = $"mcpdur_{Guid.NewGuid():N}";

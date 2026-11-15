@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-public sealed class AwsEcsAlbDeployBackendTests
+public sealed partial class AwsEcsAlbDeployBackendTests
 {
     private const string Cluster = "honua-prod-ecs";
     private const string CanaryService = "honua-prod-canary";
@@ -913,10 +913,10 @@ public sealed class AwsEcsAlbDeployBackendTests
         StubAwsEcsClient? ecsClient = null,
         IRollbackDataPlaneProbe? dataPlaneProbe = null)
         => new(
-            albClient ?? new StubAwsAlbClient(),
-            ecsClient ?? new StubAwsEcsClient(),
-            NullLogger<AwsEcsAlbDeployBackend>.Instance,
-            dataPlaneProbe);
+            new AwsEcsAlbDeployClients(
+                albClient ?? new StubAwsAlbClient(),
+                ecsClient ?? new StubAwsEcsClient(), dataPlaneProbe),
+            NullLogger<AwsEcsAlbDeployBackend>.Instance);
 
     private static DeployOperationSpec CreateSpec(
         string desiredRevision = TaskDefArn,
