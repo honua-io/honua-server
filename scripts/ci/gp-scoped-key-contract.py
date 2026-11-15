@@ -84,9 +84,16 @@ def verify(project: Project, case: dict) -> str | None:
     try:
         require(execution.returncode == 0, f"dotnet test exited {execution.returncode}")
         print("Actual GP key contract counters:", check(project.results / f"{case['name']}.trx", case))
-    except (ContractError, OSError, KeyError, AttributeError, ET.ParseError) as error:
+    except (ContractError, OSError, KeyError, AttributeError, TypeError, ValueError, ET.ParseError) as error:
         return str(error)
     return None
+
+
+def validate_cases(cases) -> None:
+    """A job must name at least one case, and each case its own TRX file."""
+    require(isinstance(cases, list) and cases, "No GP scoped-key cases configured")
+    names = [case.get("name") for case in cases]
+    require(all(names) and len(set(names)) == len(names), f"Case names must be present and unique: {names}")
 
 
 def main() -> int:
@@ -96,6 +103,11 @@ def main() -> int:
     parser.add_argument("--results", type=Path, required=True)
     args = parser.parse_args()
     cases = json.loads(args.cases)
+    try:
+        validate_cases(cases)
+    except ContractError as error:
+        print(f"::error::{error}", flush=True)
+        return 1
     project = Project(args.project, os.environ.get("HONUA_GP_DB_URL", ""), args.results)
     subprocess.run(["dotnet", "build", project.path, "--configuration", "Release", "-m:1"], check=True)
     failures = []

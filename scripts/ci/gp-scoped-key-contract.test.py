@@ -108,6 +108,27 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(1, contract.main())
         self.assertEqual(3, run.call_count)
 
+    def test_empty_or_ambiguous_case_lists_fail_before_building(self):
+        for cases in ([], [{"name": "a", "filter": "A"}, {"name": "a", "filter": "B"}], [{"filter": "A"}]):
+            with self.subTest(cases=cases), patch.object(contract.subprocess, "run") as run, \
+                    patch.object(contract.sys, "argv", ["x", "--project", "p", "--cases", json.dumps(cases),
+                                                        "--results", str(self.root)]):
+                self.assertEqual(1, contract.main())
+                run.assert_not_called()
+
+    def test_a_malformed_trx_fails_its_case_and_the_next_case_still_runs(self):
+        bad = self.root / "bad.trx"
+        bad.write_text(trx(PASSING, executed="many"))
+        good = self.root / "good.trx"
+        good.write_text(trx(PASSING))
+        cases = [{"name": "bad", "filter": "A", "required_classes": "AdminTests"},
+                 {"name": "good", "filter": "B", "required_classes": "AdminTests"}]
+        with patch.object(contract.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run, \
+                patch.object(contract.sys, "argv", ["x", "--project", "p", "--cases", json.dumps(cases),
+                                                    "--results", str(self.root)]):
+            self.assertEqual(1, contract.main())
+        self.assertEqual(3, run.call_count)
+
     def test_workflow_keeps_every_case_and_runs_each_project_once(self):
         workflow = yaml.safe_load((HERE.parents[1] / ".github/workflows/gp-scoped-key-contract.yml").read_text())
         include = workflow["jobs"]["contract"]["strategy"]["matrix"]["include"]
@@ -115,6 +136,8 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(len(projects), len(set(projects)))
         self.assertEqual(13, sum(len(job["cases"]) for job in include))
         for job in include:
+            names = [case["name"] for case in job["cases"]]
+            self.assertTrue(names and len(set(names)) == len(names), job["name"])
             for case in job["cases"]:
                 self.assertTrue(case["filter"] and (case.get("source") or case.get("required_classes")), case)
                 if job.get("needs_postgres") is False:

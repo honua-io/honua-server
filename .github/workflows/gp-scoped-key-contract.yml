@@ -31,6 +31,7 @@ on:
       - 'tests/dotnet/Honua.Server.Tests/Features/Eval/EvalHarnessTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/**'
       - 'scripts/ci/gp-scoped-key-contract.py'
+      - 'scripts/ci/gp-scoped-key-contract.test.py'
       - '.github/workflows/gp-scoped-key-contract.yml'
 
 permissions:
@@ -153,6 +154,10 @@ jobs:
       - uses: ./.github/actions/setup-dotnet-ci
         with:
           nuget-cache-read-only: 'true'
+      - name: Check the contract runner and its case inventory
+        run: |
+          python3 -m pip install -r scripts/ci/okf-requirements.txt
+          python3 scripts/ci/gp-scoped-key-contract.test.py
       # One build per test project; each case keeps its own filter, TRX and execution proof.
       - name: Run the actual shared gates and GP HTTP runtime, requiring every regression to execute
         env:
