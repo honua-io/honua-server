@@ -48,9 +48,10 @@ jobs:
           policy_dir="$(mktemp -d)"
           trap 'rm -rf "$policy_dir"' EXIT
           policy_ref="$BASE_SHA"
-          # Bootstrap the policy in its introducing PR; later PRs use the trusted base.
+          # Older PR bases load the policy from trusted trunk.
           if ! git cat-file -e "$BASE_SHA:scripts/ci/check-retired-cache.py"; then
-            policy_ref="$HEAD_SHA"
+            git fetch --no-tags origin trunk
+            policy_ref="$(git rev-parse origin/trunk)"
           fi
           git show "$policy_ref:scripts/ci/check-retired-cache.py" > "$policy_dir/check-retired-cache.py"
           git show "$policy_ref:scripts/ci/check-retired-cache.test.py" > "$policy_dir/check-retired-cache.test.py"

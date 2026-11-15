@@ -1474,3 +1474,5 @@ read-only Actions, Contents and Pull requests permissions, and its existing
 installation-token and compare-and-swap mutation controls.
 
 Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
+
+Older PR bases that lack the retired-cache policy load it from fetched trusted trunk. The explicit base/head diff is still checked, head-supplied policy cannot replace it, and a missing or incomplete trusted policy fails the required hygiene job.
