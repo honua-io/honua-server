@@ -720,6 +720,18 @@ When initialization or the health read fails, the receipt also records the
 Compose version and each service's name, state, health and exit code (60-second
 reads, only short identifier-like values), and teardown still runs.
 
+### GP Scoped Key Contract
+
+`gp-scoped-key-contract.yml` runs one job per test project (6 jobs). Each job
+builds its project once and runs every case with `--no-build`, its own filter,
+its own TRX and the same execution proof: every source-derived method and theory
+row, required class and named method must run and pass
+(`scripts/ci/gp-scoped-key-contract.py`). Cases that never used PostgreSQL keep
+an empty `HONUA_TEST_DB_URL`. Before this, 8 of 13 jobs each compiled
+Honua.Server.Tests for one filter: run 43759686692 spent about 5,950 job-seconds,
+4,000 of them in those 8 jobs, mostly compiling. A failing case no longer stops
+the others; the job fails after all of them run.
+
 ### Check registration
 
 Before adding a new workflow or check:
