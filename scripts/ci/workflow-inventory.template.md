@@ -1068,3 +1068,29 @@ Advisory heavy selection preserves runner-group restrictions in object selectors
 After the existing scoped restore, each test analyzer job evaluates `IsTestProject` after SDK and NuGet imports and builds those test roots. All multi-targeted roots remain selected conservatively because test ownership can depend on the inner target framework. Forward project references still compile; the independent source analyzer job retains all source roots and source diagnostics. An empty evaluated root set skips compilation explicitly. Restore scope, diagnostic policy, required job names and job dependencies are unchanged. Standalone single-targeted source roots no longer compile merely because they are solution members.
 
 Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
+
+### SensorThings collection host lifetime
+
+The SensorThings `Database` collection holds a collection-scoped default
+`WebAppFixture`. Its reference keeps the shared default host alive, so the
+serial default-configuration classes (query options, paging, ingest, ingest
+identity, navigation and review regressions) no longer rebuild that host for
+every case. Each case still creates its own `WebAppFixture`, schema and seed.
+Classes with their own configuration, such as core CRUD with development
+authentication off and the multi-tenant streams, keep their private hosts.
+The expiring portal credential in the stream authorization theory now lives 20
+seconds instead of 45; connect, publish and the first observation take about 3
+seconds, and the case still asserts the observation arrives before expiry and the
+stream then ends with `authorization-ended`.
+
+Paired build-host runs of the complete SensorThings test project on trunk
+c06ce1031a passed the same 135 cases with no skips. VSTest execution fell from
+13m08s to 7m55s, saving 313 seconds (5.2 runner-minutes); the TRX interval fell
+from 789.2 to 477.2 seconds. Query options fell from 116.7 to 11.0 seconds of
+fixture-inclusive time and paging from 57.8 to 6.4. The baseline shared the build
+host with another lane job, so part of the difference may be load; the per-case
+fixture time removed (about 5 seconds per default-host case) accounts for most of
+it. Full CI job savings are unmeasured.
+All cases remain in the SensorThings shard on selected PR runs and twice-daily
+full trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow or shard definition.
