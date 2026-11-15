@@ -91,6 +91,50 @@ def check_services(configuration: dict, observed: list[dict]) -> None:
             raise ValueError("A package service is not running and healthy")
 
 
+# Only fixed labels cross the subprocess boundary; captured output may hold secrets.
+FAILURE_SIGNALS = {
+    "permission-denied": "permission denied",
+    "registry-unauthorized": "unauthorized",
+    "registry-rate-limit": "toomanyrequests",
+    "image-not-found": "manifest unknown",
+    "image-pull-denied": "pull access denied",
+    "build-failed": "failed to solve",
+    "dockerfile-missing": "failed to read dockerfile",
+    "daemon-unavailable": "cannot connect to the docker daemon",
+    "platform-unavailable": "no matching manifest",
+    "port-conflict": "address already in use",
+    "operation-denied": "operation not permitted",
+    "registry-status-error": "unexpected status",
+    "registry-too-many-requests": "too many requests",
+    "network-unreachable": "network is unreachable",
+    "dns-failed": "no such host",
+    "connection-refused": "connection refused",
+    "download-failed": "curl:",
+    "no-disk-space": "no space left on device",
+    "container-unhealthy": "is unhealthy",
+    "dependency-failed": "dependency failed to start",
+    "initializer-failed": "didn't complete successfully",
+    "compose-unavailable": "is not a docker command",
+    "initializer-refused": "quickstart initialization failed",
+}
+
+
+class CommandFailure(RuntimeError):
+    def __init__(self, command: list[str], result: subprocess.CompletedProcess):
+        super().__init__("Archived installation command failed; output withheld")
+        known = {
+            ("python3", "quickstart.py"): "initialize",
+            ("docker", "compose", "down"): "teardown",
+            ("docker", "compose", "config"): "configuration",
+            ("docker", "compose", "ps"): "service-health",
+        }
+        operation = next((label for prefix, label in known.items()
+                          if tuple(command[:len(prefix)]) == prefix), "other")
+        output = (result.stdout + result.stderr).lower()
+        self.diagnostic = {"operation": operation, "exitCode": result.returncode,
+                           "signals": [label for label, marker in FAILURE_SIGNALS.items() if marker in output]}
+
+
 class Installation:
     def __init__(self, directory: Path):
         self.directory = directory
@@ -103,7 +147,7 @@ class Installation:
         result = subprocess.run(command, cwd=self.directory, env=self.environment, capture_output=True,
                                 text=True, timeout=timeout)
         if result.returncode:
-            raise RuntimeError(f"{command[0]} returned exit code {result.returncode}; output withheld")
+            raise CommandFailure(command, result)
         return result.stdout
 
     def compose(self, *arguments: str) -> str:
@@ -223,9 +267,17 @@ class CustomerJourney:
                                              '{{index .Config.Labels "org.opencontainers.image.revision"}}']).strip()
                 if revision != self.server_source:
                     raise ValueError("Installed serving image does not match the selected candidate source")
-                return {"credentials": installation.credentials(), "result": result, "version": lock["version"]}
-            finally:
+                installed = {"credentials": installation.credentials(), "result": result, "version": lock["version"]}
+            except BaseException:
+                # Preserve the original cause if teardown fails as well.
+                try:
+                    installation.down()
+                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                    self.receipt["cleanupFailed"] = True
+                raise
+            else:
                 installation.down()
+            return installed
 
     def run(self) -> None:
         previous = None
@@ -265,6 +317,8 @@ def main() -> int:
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
         stage = journey.stage if journey is not None else stage
         receipt.update(failedStage=stage, errorType=type(error).__name__)
+        if isinstance(error, CommandFailure):
+            receipt["commandFailure"] = error.diagnostic
         print("Archived quickstart proof failed at " + stage + "; command output withheld")
     finally:
         if journey is not None:

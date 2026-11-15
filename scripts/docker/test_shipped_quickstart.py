@@ -143,6 +143,13 @@ class AssertionTests(unittest.TestCase):
                 installation.run(["docker", "compose", "config"])
             self.assertNotIn("private", str(result.exception))
 
+    def test_failure_diagnostics_only_emit_fixed_labels(self):
+        result = subprocess.CompletedProcess([], 1, "private token", "failed to solve: private password")
+        error = proof.CommandFailure(["python3", "quickstart.py"], result)
+        self.assertEqual({"operation": "initialize", "exitCode": 1, "signals": ["build-failed"]},
+                         error.diagnostic)
+        self.assertNotIn("private", json.dumps(error.diagnostic))
+
     def test_inherited_credentials_and_compose_overrides_are_not_forwarded(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(proof.os.environ, {
                 "GH_TOKEN": "private", "COMPOSE_FILE": "/outside", "HONUA_ADMIN_PASSWORD": "private"}):
@@ -210,6 +217,18 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual("prospective-pr", receipt["packageKind"])
         self.assertEqual(123, receipt["publishedRunId"])
         self.assertEqual("c" * 64, receipt["publishedArchiveSha256"])
+
+    def test_cleanup_failure_preserves_original_bounded_command_diagnostic(self):
+        installation = Mock()
+        installation.down.side_effect = RuntimeError("private teardown output")
+        failure = proof.CommandFailure(["python3", "quickstart.py"], subprocess.CompletedProcess(
+            [], 1, "private stdout", "permission denied: private path"))
+        self.assertEqual(1, self.execute([installation], [failure]))
+        receipt = json.loads(self.receipt.read_text())
+        self.assertEqual(failure.diagnostic, receipt["commandFailure"])
+        self.assertTrue(receipt["cleanupFailed"])
+        self.assertNotIn("private", self.receipt.read_text())
+        installation.down.assert_called_once()
 
     def test_second_failure_preserves_sanitized_first_installation_evidence(self):
         installations = [Mock(), Mock()]
