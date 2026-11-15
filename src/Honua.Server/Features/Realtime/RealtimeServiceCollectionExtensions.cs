@@ -4,6 +4,7 @@
 using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Realtime;
+using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -54,6 +55,7 @@ internal static class RealtimeServiceCollectionExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<IRealtimeStreamLifecycle, RealtimeStreamLifecycle>();
         services.TryAddSingleton<RealtimeDispatcher>();
+        services.TryAddSingleton<IRealtimeWakeSignal>(provider => provider.GetRequiredService<RealtimeDispatcher>());
         services.TryAddSingleton<RealtimePresenceBatcher>();
 
         var crossNode = UsesPostgresProvider(configuration);

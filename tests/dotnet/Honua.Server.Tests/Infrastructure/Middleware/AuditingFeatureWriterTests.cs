@@ -8,6 +8,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Infrastructure.Middleware;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
@@ -156,6 +157,34 @@ public sealed class AuditingFeatureWriterTests
         _auditLog.Events.Should().ContainSingle();
     }
 
+    [UnitTheory]
+    [InlineData(FeatureWriterTransactionCommitOutcome.Committed, AuditOutcome.Success)]
+    [InlineData(FeatureWriterTransactionCommitOutcome.Unknown, AuditOutcome.Failure)]
+    [InlineData(FeatureWriterTransactionCommitOutcome.SupersededByExistingReceipt, AuditOutcome.Failure)]
+    public async Task Transaction_ReceiptCommit_ForwardsReceiptAndAuditsAcknowledgedOutcome(
+        FeatureWriterTransactionCommitOutcome outcome, AuditOutcome expectedAudit)
+    {
+        _inner.CommitOutcome = outcome;
+        _inner.EditResult = FeatureEditResult.Success(0, 0, 2);
+        var receipt = new FeatureWriterTransactionReceipt
+        {
+            Scope = "transaction-retry-scope",
+            Payload = new byte[] { 1, 2 },
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+        };
+        using var cancellation = new CancellationTokenSource();
+        await using (var transaction = await _writer.BeginTransactionAsync())
+        {
+            transaction.SupportsDurableReceipts.Should().BeTrue();
+            await transaction.ApplyEditsAsync(7, FeatureEditBatch.Create(deletes: [42L, 43L]));
+            (await transaction.CommitAsync(receipt, cancellation.Token)).Should().Be(outcome);
+        }
+
+        _inner.Transaction!.Receipt.Should().Be(receipt);
+        _inner.Transaction.CommitCancellation.Should().Be(cancellation.Token);
+        _auditLog.Events.Should().ContainSingle().Which.Outcome.Should().Be(expectedAudit);
+    }
+
     private static Feature NewFeature() => new()
     {
         Id = 0,
@@ -166,6 +195,9 @@ public sealed class AuditingFeatureWriterTests
     private sealed class StubFeatureWriter : IFeatureWriter
     {
         public StubFeatureWriterTransaction? Transaction { get; private set; }
+
+        public FeatureWriterTransactionCommitOutcome CommitOutcome { get; set; } =
+            FeatureWriterTransactionCommitOutcome.Committed;
 
         public bool DeleteResult { get; set; } = true;
 
@@ -208,6 +240,18 @@ public sealed class AuditingFeatureWriterTests
     private sealed class StubFeatureWriterTransaction(StubFeatureWriter owner) : IFeatureWriterTransaction
     {
         public bool RolledBack { get; private set; }
+
+        public bool SupportsDurableReceipts => true;
+        public FeatureWriterTransactionReceipt? Receipt { get; private set; }
+        public CancellationToken CommitCancellation { get; private set; }
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            FeatureWriterTransactionReceipt receipt, CancellationToken cancellationToken = default)
+        {
+            Receipt = receipt;
+            CommitCancellation = cancellationToken;
+            return Task.FromResult(owner.CommitOutcome);
+        }
 
         public Task<FeatureEditResult> ApplyEditsAsync(
             int layerId,

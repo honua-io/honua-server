@@ -8,7 +8,7 @@ input shape without network access. JSON and Markdown render from one summary.
 Examples::
 
     scripts/ci/measure-actions-baseline.py \
-      --workflow pr-gate.yml --workflow merge-train.yml --limit 30
+      --workflow pr-gate.yml --workflow ci.yml --limit 30
 
     scripts/ci/measure-actions-baseline.py \
       --fixture scripts/ci/fixtures/actions-baseline.sample.json --format markdown
