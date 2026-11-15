@@ -85,7 +85,7 @@ public sealed partial class TemporalHistorySliceEndpointsTests
             .Select(row => row.GetProperty("generation").GetInt64()).Should().Equal(2, 4, 6, 8);
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("v1:2:6")]
     [InlineData("v1:6:5")]
     [InlineData("v1:-1:5")]
@@ -93,7 +93,6 @@ public sealed partial class TemporalHistorySliceEndpointsTests
     [InlineData("v1:2:5:7")]
     [InlineData("v2:2:5")]
     [InlineData("not-a-cursor")]
-    [IntegrationTest]
     [Endpoint(TimelineEndpoint)]
     public async Task Timeline_InvalidCursor_ReturnsBadRequest(string cursor)
     {
