@@ -32,7 +32,8 @@ public sealed class PortalTokenSecretAuthorityTests
         using var environment = new CredentialEnvironment();
         using var handler = new AuthorityHandler(provider);
         using var client = new HttpClient(handler);
-        using var metadata = new HttpClient(new TokenHandler());
+        using var tokenHandler = new TokenHandler();
+        using var metadata = new HttpClient(tokenHandler, disposeHandler: false);
         var factory = new ClientFactory(client, metadata);
         using var cloud = provider == "aws"
             ? (IDisposable)new AwsSecretsManagerResolver(factory, NullLogger<AwsSecretsManagerResolver>.Instance)
