@@ -3,6 +3,7 @@
 const CONSUMER = '.github/workflows/normalize-derived-artifacts-consumer.yml';
 const ACTIVE = new Set(['queued', 'in_progress', 'waiting', 'pending', 'requested']);
 const TITLE = /^Normalization producer ([1-9]\d*) attempt ([1-9]\d*)$/;
+const ALREADY_COMPLETED = 409;
 
 function olderGeneration(candidate, producer) {
   const match = TITLE.exec(candidate.display_title || '');
@@ -31,13 +32,17 @@ async function cancelOlderConsumers({github, context, core}, number) {
   for (const candidate of runs) {
     const producerId = olderGeneration(candidate, producer);
     if (!producerId || !await samePullRequest({github, context}, producerId, number)) continue;
-    try {
-      await github.rest.actions.cancelWorkflowRun({...context.repo, run_id: candidate.id});
-      core.info(`Cancelled older normalization consumer ${candidate.id} for PR #${number}`);
-    } catch (error) {
-      if (error.status !== 409) throw error;
-      core.info(`Normalization consumer ${candidate.id} already completed`);
-    }
+    await cancelRun({github, context, core}, candidate, number);
+  }
+}
+
+async function cancelRun({github, context, core}, candidate, number) {
+  try {
+    await github.rest.actions.cancelWorkflowRun({...context.repo, run_id: candidate.id});
+    core.info(`Cancelled older normalization consumer ${candidate.id} for PR #${number}`);
+  } catch (error) {
+    if (error.status !== ALREADY_COMPLETED) throw error;
+    core.info(`Normalization consumer ${candidate.id} already completed`);
   }
 }
 
