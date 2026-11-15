@@ -581,7 +581,14 @@ internal sealed partial class JobExecutionService(
                 return;
             }
 
-            if (stoppingToken.IsCancellationRequested)
+            // A completed external publication cannot be safely replayed on shutdown.
+            // Require both the executor's explicit completion signal and its durable
+            // receipt; an earlier side effect alone does not complete ordinary work.
+            if (stoppingToken.IsCancellationRequested
+                && (result.Status != ExecutionJobStatus.Succeeded
+                    || !result.CompletedWithCommittedEffects
+                    || await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false)
+                        is not { CommittedEffectReferences.Count: > 0 }))
             {
                 if (Volatile.Read(ref _drainDeadlineExpired) != 0)
                 {

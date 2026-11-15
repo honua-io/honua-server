@@ -1352,7 +1352,6 @@
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/OgcClassic/Wmts/",
-        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesMetadataXmlTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
       ],
       "_comment": "ADR-0037 finer-sharding: carved from OGC Classic Maps. Selects the Wmts namespace (OgcClassicWmtsTests is the heaviest class in the original Maps shard)."

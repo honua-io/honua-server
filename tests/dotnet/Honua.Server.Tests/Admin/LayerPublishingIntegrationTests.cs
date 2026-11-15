@@ -209,15 +209,37 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
-    public async Task PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile()
+    [Endpoint("GET /api/v1/admin/connections")]
+    public async Task PublishUploadedGeoJson_ThroughBuiltInConnection_ServesQueryAndVectorTile()
     {
         await DeleteSecureConnectionAsync();
         _connectionCreated = false;
-        var publishConnection = new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
+        var registry = _fixture.GetService<ISecureConnectionRegistry>();
+        foreach (var connection in await registry.GetAllConnectionsAsync())
         {
-            SearchPath = $"{_fixture.CurrentSchema},public"
-        };
-        await CreateSecureConnectionAsync(publishConnection.ConnectionString);
+            await registry.DeleteConnectionAsync(connection.ConnectionId);
+        }
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var listed = await _client.GetAsync("/api/v1/admin/connections");
+            var payload = await listed.Content.ReadAsStringAsync();
+            listed.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+            using var document = JsonDocument.Parse(payload);
+            var connection = document.RootElement.GetProperty("data").EnumerateArray().Should().ContainSingle().Subject;
+            connection.GetProperty("connectionId").GetGuid().Should().Be(
+                Honua.Server.Features.Admin.Services.ManagedImportConnection.Id);
+            connection.GetProperty("name").GetString().Should().Be("Imported data");
+            connection.TryGetProperty("password", out _).Should().BeFalse();
+            connection.TryGetProperty("encryptedConnectionString", out _).Should().BeFalse();
+        }
+
+        var builtIn = (await registry.GetAllConnectionsAsync()).Should().ContainSingle().Subject;
+        builtIn.IsEncrypted.Should().BeTrue();
+        builtIn.EncryptedConnectionString.Should().NotBeEmpty();
+        _connectionId = builtIn.ConnectionId;
+        _connectionName = builtIn.Name;
+        _connectionCreated = true;
 
         var logicalTableName = $"quickstart_points_{Guid.NewGuid():N}";
         const string geoJson = """
@@ -232,15 +254,17 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             """;
 
         using var upload = new MultipartFormDataContent();
-        var file = new StringContent(geoJson, Encoding.UTF8, "application/geo+json");
+        using var file = new StringContent(geoJson, Encoding.UTF8, "application/geo+json");
         file.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
             Name = "File",
             FileName = "quickstart-points.geojson"
         };
         upload.Add(file);
-        upload.Add(new StringContent(logicalTableName), "TableName");
-        upload.Add(new StringContent("4326"), "TargetSrid");
+        using var tableName = new StringContent(logicalTableName);
+        using var targetSrid = new StringContent("4326");
+        upload.Add(tableName, "TableName");
+        upload.Add(targetSrid, "TargetSrid");
 
         var uploadResponse = await _client.PostAsync("/api/v1/admin/import/upload", upload);
         var uploadPayload = await uploadResponse.Content.ReadAsStringAsync();
@@ -1746,13 +1770,9 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         (await GetManagedStoreRowCountAsync(_layerId.Value)).Should().Be(2);
     }
 
-    /// <summary>
-    /// Re-registers the test's secure connection against the server's own feature database
-    /// schema. A deployment's publish connection reaches the database the server writes (its
-    /// managed <c>features</c> table resolves identically); this fixture isolates the server
-    /// in a per-test schema, so the connection must name that schema the same way
-    /// <see cref="PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile"/> does.
-    /// </summary>
+    // Re-register the fixture connection against the server's feature database.
+    // Its managed features table lives in the isolated per-test schema, which
+    // the connection must name explicitly.
     private async Task UseServerFeatureStoreConnectionAsync()
     {
         await DeleteSecureConnectionAsync();
