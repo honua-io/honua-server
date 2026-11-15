@@ -18,7 +18,7 @@ namespace Honua.Core.Tests.Features.FeatureStore;
 /// keep-server resolution plan a no-op and mark itself resolved while the client's overwrite is still
 /// committed.
 /// </summary>
-public sealed class ReplicaSyncClientEditAttributionTests
+public sealed partial class ReplicaSyncClientEditAttributionTests
 {
     [UnitTest]
     public async Task ApplyUpload_MixedOutcomeBatch_AttributesClientEditPerEditNotPerLayer()
@@ -897,6 +897,8 @@ public sealed class ReplicaSyncClientEditAttributionTests
         /// <summary>Edits the sync service actually dispatched.</summary>
         public ImmutableArray<ReplicaUploadEdit> DispatchedEdits { get; private set; }
 
+        public ImmutableArray<ImmutableArray<FeatureOperationEvidence>> OperationEvidence { get; init; }
+
         public Task<ReplicaLayerApplyResult> ApplyAsync(
             string serviceId,
             int publicLayerId,
@@ -919,7 +921,10 @@ public sealed class ReplicaSyncClientEditAttributionTests
                     : [.. committedEditIndexes],
                 IndeterminateEditIndexes: indeterminateEditIndexes is null
                     ? default
-                    : [.. indeterminateEditIndexes]));
+                    : [.. indeterminateEditIndexes])
+            {
+                OperationEvidence = OperationEvidence
+            });
         }
     }
 
