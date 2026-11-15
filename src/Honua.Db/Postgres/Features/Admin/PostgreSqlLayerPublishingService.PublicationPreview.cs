@@ -84,8 +84,8 @@ internal sealed partial class PostgreSqlLayerPublishingService : ILayerPublicati
         await ValidateLockedPreviewSourceAsync(session, cancellationToken).ConfigureAwait(false);
         var plan = await BuildPreviewPlanAsync(session, cancellationToken).ConfigureAwait(false);
         var planned = BuildPublishedLayerGraph(plan);
-        var fingerprint = await ReadPublicationSourceFingerprintAsync(connection, transaction, context.Request,
-            context.Source, cancellationToken).ConfigureAwait(false);
+        var fingerprint = await ReadPublicationSourceFingerprintAsync(new PublicationFingerprintContext(
+            connection, transaction, context.Request, context.Source), cancellationToken).ConfigureAwait(false);
         return SelectPublicationPreview(planned, plan, context.MetadataBase) with { SourceFingerprint = fingerprint };
     }
 
@@ -129,9 +129,9 @@ internal sealed partial class PostgreSqlLayerPublishingService : ILayerPublicati
             source.GeometryColumn, source.StorageSrid,
             source.SelectedColumns.Where(column => column.DataType.Equals("smallint", StringComparison.OrdinalIgnoreCase))
                 .Select(column => column.Name).ToArray());
-        var epoch = await ResolveImportedStorageEpochAsync(session.Connection, session.Transaction, request,
-            schema, table, source.GeometryColumn, source.StorageSrid, storage.StorageSrid,
-            cancellationToken, readOnly: true).ConfigureAwait(false);
+        var epoch = await ReadImportedStorageEpochAsync(new StorageEpochContext(session.Connection, session.Transaction, request,
+            schema, table, source.GeometryColumn, source.StorageSrid, storage.StorageSrid),
+            cancellationToken).ConfigureAwait(false);
         var extent = await ReadLayerExtentAsync(session.Connection, session.Transaction, schema, table, source.GeometryColumn,
             source.StorageSrid, managedLayerId: null, cancellationToken).ConfigureAwait(false);
         return CreatePreviewPlan(context, storage) with { StorageCoordinateEpoch = epoch, Extent = extent };

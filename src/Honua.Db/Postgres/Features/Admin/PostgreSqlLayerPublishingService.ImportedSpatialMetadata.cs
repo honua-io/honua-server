@@ -9,22 +9,33 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    private async Task<double?> ResolveImportedStorageEpochAsync(
+    private sealed record StorageEpochContext(NpgsqlConnection Connection, NpgsqlTransaction Transaction,
+        LayerPublishRequest Request, string Schema, string Table, string? GeometryColumn,
+        int SourceStorageSrid, int PublishedStorageSrid);
+
+    private Task<double?> ResolveImportedStorageEpochAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, LayerPublishRequest request,
         string schema, string table, string? geometryColumn, int sourceStorageSrid, int publishedStorageSrid,
-        CancellationToken cancellationToken, bool readOnly = false)
+        CancellationToken cancellationToken) =>
+        ResolveStorageEpochCoreAsync(new StorageEpochContext(connection, transaction, request, schema, table,
+            geometryColumn, sourceStorageSrid, publishedStorageSrid), ReadLockedSpatialFactsAsync, cancellationToken);
+
+    private Task<double?> ReadImportedStorageEpochAsync(StorageEpochContext context, CancellationToken cancellationToken) =>
+        ResolveStorageEpochCoreAsync(context, ImportedDatasetSpatialMetadata.ReadSnapshotAsync, cancellationToken);
+
+    private static Task<ImportedDatasetSpatialMetadata.Facts?> ReadLockedSpatialFactsAsync(
+        ImportedDatasetSpatialMetadata.ReadTarget target, CancellationToken cancellationToken) =>
+        ImportedDatasetSpatialMetadata.ReadAsync(target.Connection, target.Transaction, target.MetadataSchema,
+            target.Schema, target.Table, target.GeometryColumn, target.Identity, cancellationToken);
+
+    private async Task<double?> ResolveStorageEpochCoreAsync(StorageEpochContext context,
+        Func<ImportedDatasetSpatialMetadata.ReadTarget, CancellationToken, Task<ImportedDatasetSpatialMetadata.Facts?>> readFacts,
+        CancellationToken cancellationToken)
     {
-        var hint = request.StorageCrsCoordinateEpoch;
-        if (hint.HasValue && !double.IsFinite(hint.Value))
-        {
-            throw new LayerPublishingException(LayerPublishingErrorKind.Validation, "Coordinate epoch must be finite.");
-        }
+        var (connection, transaction, _, schema, table, geometryColumn, _, _) = context;
+        var hint = ValidateEpochHint(context);
         if (string.IsNullOrWhiteSpace(geometryColumn))
         {
-            if (hint.HasValue)
-            {
-                throw new LayerPublishingException(LayerPublishingErrorKind.Validation, "Coordinate epoch requires a geometry column.");
-            }
             return null;
         }
 
@@ -43,9 +54,29 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
         var identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
             connection, transaction, schema, table, geometryColumn, cancellationToken);
-        var facts = await ImportedDatasetSpatialMetadata.ReadAsync(
-            connection, transaction, _schemaConfiguration.MetadataSchema, schema, table, geometryColumn,
-            identity, cancellationToken, forUpdate: !readOnly);
+        var facts = await readFacts(new ImportedDatasetSpatialMetadata.ReadTarget(
+            connection, transaction, _schemaConfiguration.MetadataSchema, schema, table, geometryColumn, identity),
+            cancellationToken);
+        return ValidateResolvedEpoch(context, facts);
+    }
+
+    private static double? ValidateEpochHint(StorageEpochContext context)
+    {
+        var hint = context.Request.StorageCrsCoordinateEpoch;
+        if (hint.HasValue && !double.IsFinite(hint.Value))
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.Validation, "Coordinate epoch must be finite.");
+        }
+        if (string.IsNullOrWhiteSpace(context.GeometryColumn) && hint.HasValue)
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.Validation, "Coordinate epoch requires a geometry column.");
+        }
+        return hint;
+    }
+
+    private static double? ValidateResolvedEpoch(StorageEpochContext context, ImportedDatasetSpatialMetadata.Facts? facts)
+    {
+        var hint = context.Request.StorageCrsCoordinateEpoch;
         if (facts is null)
         {
             if (hint.HasValue)
@@ -55,13 +86,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
             }
             return null;
         }
-        if (facts.Value.StorageSrid != sourceStorageSrid ||
+        if (facts.Value.StorageSrid != context.SourceStorageSrid ||
             (hint.HasValue && hint != facts.Value.CoordinateEpoch))
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
                 "Source storage CRS or coordinate epoch conflicts with imported metadata.");
         }
-        if (facts.Value.CoordinateEpoch.HasValue && publishedStorageSrid != facts.Value.StorageSrid)
+        if (facts.Value.CoordinateEpoch.HasValue && context.PublishedStorageSrid != facts.Value.StorageSrid)
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
                 "Coordinate epoch cannot be preserved through this managed-copy CRS transformation.");

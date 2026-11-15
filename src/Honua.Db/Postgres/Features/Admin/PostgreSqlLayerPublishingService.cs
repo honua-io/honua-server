@@ -298,7 +298,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
                 "Source schema changed while preparing publication; retry against the current source.");
         }
-        await VerifyPublicationSourceFingerprintAsync(connection, transaction, request, source, cancellationToken);
+        await VerifyPublicationSourceFingerprintAsync(new PublicationFingerprintContext(
+            connection, transaction, request, source), cancellationToken);
         var transactionId = await PostgresTransactionOutcomeObserver
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);

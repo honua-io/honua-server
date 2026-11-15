@@ -92,25 +92,36 @@ internal static class ImportedDatasetSpatialMetadata
         return new Identity(reader.GetFieldValue<uint>(0), reader.GetInt16(1));
     }
 
-    internal static async Task<Facts?> ReadAsync(
+    internal sealed record ReadTarget(NpgsqlConnection Connection, NpgsqlTransaction Transaction,
+        string MetadataSchema, string Schema, string Table, string GeometryColumn, Identity Identity);
+
+    internal static Task<Facts?> ReadAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, string metadataSchema,
-        string schema, string table, string geometryColumn, Identity identity, CancellationToken cancellationToken, bool forUpdate = true)
+        string schema, string table, string geometryColumn, Identity identity, CancellationToken cancellationToken) =>
+        ReadCoreAsync(new ReadTarget(connection, transaction, metadataSchema, schema, table, geometryColumn, identity),
+            "FOR UPDATE", cancellationToken);
+
+    internal static Task<Facts?> ReadSnapshotAsync(ReadTarget target, CancellationToken cancellationToken) =>
+        ReadCoreAsync(target, string.Empty, cancellationToken);
+
+    private static async Task<Facts?> ReadCoreAsync(ReadTarget target, string lockingClause,
+        CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand($"""
             SELECT storage_srid, coordinate_epoch
-            FROM {RegistryTable(metadataSchema)}
+            FROM {RegistryTable(target.MetadataSchema)}
             WHERE schema_name = @schema AND table_name = @table AND geometry_column = @geometry
                 AND relation_oid = @relation_oid AND geometry_attnum = @attnum
-            {(forUpdate ? "FOR UPDATE" : string.Empty)}
-            """, connection, transaction);
-        AddTarget(command, schema, table, geometryColumn);
-        AddIdentity(command, identity);
+            {lockingClause}
+            """, target.Connection, target.Transaction);
+        AddTarget(command, target.Schema, target.Table, target.GeometryColumn);
+        AddIdentity(command, target.Identity);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
             return null;
         }
-        return new Facts(identity, reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetDouble(1));
+        return new Facts(target.Identity, reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetDouble(1));
     }
 
     internal static async Task WriteAsync(

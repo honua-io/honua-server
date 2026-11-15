@@ -11,14 +11,18 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    private async Task VerifyPublicationSourceFingerprintAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
-        LayerPublishRequest request, PreparedPublicationSource source, CancellationToken cancellationToken)
+    private sealed record PublicationFingerprintContext(NpgsqlConnection Connection, NpgsqlTransaction Transaction,
+        LayerPublishRequest Request, PreparedPublicationSource Source);
+
+    private async Task VerifyPublicationSourceFingerprintAsync(PublicationFingerprintContext context,
+        CancellationToken cancellationToken)
     {
+        var request = context.Request;
         if (request.ExpectedSourceFingerprint is not { } expected)
         {
             return;
         }
-        var current = await ReadPublicationSourceFingerprintAsync(connection, transaction, request, source, cancellationToken)
+        var current = await ReadPublicationSourceFingerprintAsync(context, cancellationToken)
             .ConfigureAwait(false);
         if (!string.Equals(expected, current, StringComparison.Ordinal))
         {
@@ -29,13 +33,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     // Call only while holding the import session lock and the relation's ACCESS SHARE lock.
     // Relation OID detects replacement; ordered physical attributes and constraints bind implicit fields too.
-    private async Task<string> ReadPublicationSourceFingerprintAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
-        LayerPublishRequest request, PreparedPublicationSource source, CancellationToken cancellationToken)
+    private async Task<string> ReadPublicationSourceFingerprintAsync(PublicationFingerprintContext context,
+        CancellationToken cancellationToken)
     {
+        var (connection, transaction, request, source) = context;
         var schema = request.Schema.Trim();
         var table = request.Table.Trim();
-        var epoch = await ResolveImportedStorageEpochAsync(connection, transaction, request, schema, table,
-            source.GeometryColumn, source.StorageSrid, source.StorageSrid, cancellationToken, readOnly: true).ConfigureAwait(false);
+        var epoch = await ReadImportedStorageEpochAsync(new StorageEpochContext(connection, transaction, request, schema, table,
+            source.GeometryColumn, source.StorageSrid, source.StorageSrid), cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand("""
             SELECT jsonb_build_object('database', current_database(), 'relation', c.oid, 'kind', c.relkind,
                 'columns', (SELECT jsonb_agg(jsonb_build_array(a.attnum, a.attname, a.atttypid,

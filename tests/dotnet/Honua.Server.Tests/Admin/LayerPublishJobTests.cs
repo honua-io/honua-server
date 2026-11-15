@@ -220,9 +220,7 @@ public sealed class LayerPublishJobTests
             ExpectedMetadataRevision = 7,
             ExpectedMetadataEtag = "etag-7",
         };
-        Assert.True(LayerPublishJobPayload.TryParse(
-            new Dictionary<string, string> { [LayerPublishJobPayload.ParameterName] = payload.ToJson() },
-            out var restarted, out _));
+        var restarted = RoundTripPayload(payload);
 
         var result = await LayerPublishJobWork.ExecuteAsync(
             ScopeFactory(publisher, resolver),
@@ -233,10 +231,7 @@ public sealed class LayerPublishJobTests
             context: null,
             CancellationToken.None);
 
-        await publisher.Received(1).PublishLayerAsync(Arg.Any<string>(),
-            Arg.Is<LayerPublishRequest>(request => request.ExpectedSourceFingerprint == "preview-source"
-                && request.ExpectedMetadataRevision == 7 && request.ExpectedMetadataEtag == "etag-7"),
-            Arg.Any<CancellationToken>());
+        await AssertPreviewPinsAsync(publisher);
         Assert.Equal(ExecutionJobStatus.Succeeded, result.Status);
         Assert.True(result.CompletedWithCommittedEffects);
         var progress = await store.GetProgressAsync<LayerPublishJobProgress>(jobId, CancellationToken.None);
@@ -245,6 +240,20 @@ public sealed class LayerPublishJobTests
         Assert.Equal(7, progress.LayerId);
         Assert.Equal(11, progress.MetadataRevision);
     }
+
+    private static LayerPublishJobPayload RoundTripPayload(LayerPublishJobPayload payload)
+    {
+        Assert.True(LayerPublishJobPayload.TryParse(
+            new Dictionary<string, string> { [LayerPublishJobPayload.ParameterName] = payload.ToJson() },
+            out var restarted, out _));
+        return restarted!;
+    }
+
+    private static Task AssertPreviewPinsAsync(ILayerPublishingService publisher) =>
+        publisher.Received(1).PublishLayerAsync(Arg.Any<string>(),
+            Arg.Is<LayerPublishRequest>(request => request.ExpectedSourceFingerprint == "preview-source"
+                && request.ExpectedMetadataRevision == 7 && request.ExpectedMetadataEtag == "etag-7"),
+            Arg.Any<CancellationToken>());
 
     [UnitTest]
     public async Task Execute_QueuedCommittedSink_RechecksDurableSourceBeforePublishing()
