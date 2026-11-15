@@ -155,6 +155,20 @@ public sealed class ReleaseImageConvergenceTests
         var persisted = Checkpointed(operation, checkpoint);
         await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
         await backend.PromoteAsync(persisted);
+        persisted = persisted with
+        {
+            Deploy = persisted.Deploy! with
+            {
+                Protection = new DeployProtectionState
+                {
+                    PreviousRevision = CurrentTaskDef,
+                    CandidateRevision = Digest,
+                    FirstExposureAt = DateTimeOffset.UtcNow.AddHours(-2),
+                    ObservationDeadline = DateTimeOffset.UtcNow.AddHours(-1),
+                    PolicyDigest = "policy"
+                }
+            }
+        };
         var pending = await backend.CompleteProtectionAsync(persisted);
         pending.Status.Should().Be(WorkflowOperationStatus.Reconciling);
         ecs.StableTaskDefinition.Should().Be(RegisteredTaskDef);
@@ -202,6 +216,12 @@ public sealed class ReleaseImageConvergenceTests
                 }
             }
         };
+        await backend.ActivateCheckpointAsync(persisted, CancellationToken.None);
+        await backend.PromoteAsync(persisted);
+        await backend.CompleteProtectionAsync(persisted);
+        ecs.RolloutState = "IN_PROGRESS";
+        ecs.DeploymentCreatedAt = DateTimeOffset.UtcNow.AddHours(-1);
+        ecs.Calls.Clear();
         var result = await backend.CompleteProtectionAsync(persisted);
         result.Status.Should().Be(WorkflowOperationStatus.Failed);
         ecs.Calls.Should().NotContain("update-service");
@@ -503,7 +523,7 @@ public sealed class ReleaseImageConvergenceTests
         };
 
     private static AwsEcsAlbDeployBackend Backend(DigestAlbClient alb, DigestEcsClient ecs)
-        => new(alb, ecs, NullLogger<AwsEcsAlbDeployBackend>.Instance);
+        => new(new AwsEcsAlbDeployClients(alb, ecs), NullLogger<AwsEcsAlbDeployBackend>.Instance);
 
     private static Dictionary<string, string> EcsParameters()
         => new(StringComparer.Ordinal)
@@ -689,6 +709,8 @@ public sealed class ReleaseImageConvergenceTests
 
         public string RolloutState { get; set; } = "COMPLETED";
 
+        public DateTimeOffset DeploymentCreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
         public Task<AwsEcsServiceState> DescribeServiceAsync(string cluster, string serviceName, string? region, CancellationToken cancellationToken = default)
         {
             Calls.Add("describe-service");
@@ -711,6 +733,7 @@ public sealed class ReleaseImageConvergenceTests
                     new AwsEcsDeploymentState
                     {
                         Status = "PRIMARY",
+                        CreatedAt = DeploymentCreatedAt,
                         TaskDefinitionArn = arn,
                         RolloutState = UpdatedTaskDefinition is null ? "COMPLETED" : RolloutState,
                         RunningCount = 2,

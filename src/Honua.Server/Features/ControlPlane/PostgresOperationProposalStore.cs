@@ -16,12 +16,13 @@ namespace Honua.ControlPlane;
 internal sealed partial class PostgresOperationProposalStore(
     ControlPlaneStorage storage,
     IOptions<ControlPlaneRetentionOptions> retention,
-    ILogger<PostgresOperationProposalStore> logger) : IOperationProposalStore, IExpiredRowSweep
+    ILogger<PostgresOperationProposalStore> logger) : IOperationProposalStore, IOperationProposalBatchStore, IExpiredRowSweep
 {
     private readonly JobStoreDatabase _database = storage.Database;
     private const string SelectColumns = "version, updated_at, record";
 
     private readonly string _proposals = storage.Database.Table("operation_proposals");
+    private readonly string _batches = storage.Database.Table("operation_proposal_batches");
     private readonly string _notificationSchedules = storage.Database.Table("ops_notification_schedules");
     private readonly OperationLeases _operationLeases = new(storage.Leases, "operation-proposal:");
 
@@ -123,25 +124,32 @@ internal sealed partial class PostgresOperationProposalStore(
                 await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
                 await using var command = new NpgsqlCommand(
                     $"""
-                    UPDATE {_proposals}
-                    SET version = @version, kind = @kind, active = @active, updated_at = now(),
-                        expires_at = now() + @retention,
-                        record = jsonb_set(@record::jsonb, ARRAY['approvalExpiresAt'],
-                            to_jsonb(COALESCE((record->>'approvalExpiresAt')::timestamptz,
+                    WITH updated AS (
+                        UPDATE {_proposals}
+                        SET version = @version, kind = @kind, active = @active, updated_at = now(),
+                            expires_at = now() + @retention,
+                            record = jsonb_set(@record::jsonb, ARRAY['approvalExpiresAt'],
+                                to_jsonb(COALESCE((record->>'approvalExpiresAt')::timestamptz,
+                                    (record->>'createdAt')::timestamptz +
+                                    CASE WHEN record->'autonomyMetadata'->>'severity' = '2'
+                                    OR (record->'autonomyMetadata'->>'severity' IS NULL
+                                        AND record->'plan'->>'riskLevel' = '2')
+                                        THEN interval '72 hours' ELSE interval '24 hours' END)))::json
+                        WHERE proposal_id = @proposal_id AND version = @expected_version
+                            AND (record->>'status' <> '10' OR @next_status = 10)
+                            AND (@executing = FALSE OR record->>'status' = '8' OR now() < COALESCE(
+                                (record->>'approvalExpiresAt')::timestamptz,
                                 (record->>'createdAt')::timestamptz +
                                 CASE WHEN record->'autonomyMetadata'->>'severity' = '2'
-                                OR (record->'autonomyMetadata'->>'severity' IS NULL
-                                    AND record->'plan'->>'riskLevel' = '2')
-                                    THEN interval '72 hours' ELSE interval '24 hours' END)))::json
-                    WHERE proposal_id = @proposal_id AND version = @expected_version
-                        AND (record->>'status' <> '10' OR @next_status = 10)
-                        AND (@executing = FALSE OR record->>'status' = '8' OR now() < COALESCE(
-                            (record->>'approvalExpiresAt')::timestamptz,
-                            (record->>'createdAt')::timestamptz +
-                            CASE WHEN record->'autonomyMetadata'->>'severity' = '2'
-                                OR (record->'autonomyMetadata'->>'severity' IS NULL
-                                    AND record->'plan'->>'riskLevel' = '2')
-                                THEN interval '72 hours' ELSE interval '24 hours' END))
+                                    OR (record->'autonomyMetadata'->>'severity' IS NULL
+                                        AND record->'plan'->>'riskLevel' = '2')
+                                    THEN interval '72 hours' ELSE interval '24 hours' END))
+                        RETURNING proposal_id
+                    ), completed AS (
+                        UPDATE {_batches} SET completed = TRUE
+                        WHERE @succeeded AND proposal_id IN (SELECT proposal_id FROM updated)
+                    )
+                    SELECT EXISTS (SELECT 1 FROM updated)
                     """,
                     connection, transaction);
                 AddRecordParameters(command, next, ttl);
@@ -151,7 +159,11 @@ internal sealed partial class PostgresOperationProposalStore(
                     Value = next.Status == OperationProposalStatus.Executing
                 });
                 command.Parameters.Add(new NpgsqlParameter("expected_version", NpgsqlDbType.Bigint) { Value = expectedVersion });
-                var changed = await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+                command.Parameters.Add(new NpgsqlParameter("succeeded", NpgsqlDbType.Boolean)
+                {
+                    Value = proposal.Status == OperationProposalStatus.Succeeded
+                });
+                var changed = (bool)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
                 if (changed && storage.Realtime is { } realtime)
                 {
                     await realtime.AppendProposalAsync(next, new ControlPlaneWriteContext(transaction, token)).ConfigureAwait(false);
