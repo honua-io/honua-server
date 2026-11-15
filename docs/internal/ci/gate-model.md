@@ -1544,5 +1544,24 @@ host with another lane job, so part of the difference may be load; the per-case
 fixture time removed (about 5 seconds per default-host case) accounts for most of
 it. Full CI job savings are unmeasured.
 All cases remain in the SensorThings shard on selected PR runs and twice-daily
+### GeoServices MapServer collection host lifetime
+
+The `Database.GeoServicesMapServer` collection holds a collection-scoped default
+`WebAppFixture`. Its reference keeps the shared default host alive, so the
+serial MapServer, export and identify classes no longer rebuild that host for
+every case after the previous case releases it. Each case still creates its own
+`WebAppFixture`, schema and seed, and the KML cleanup in
+`MapServerEndpointTestBase` is unchanged. Classes that replace services keep
+their private hosts.
+
+Paired build-host runs on trunk c06ce1031a used the three CI shard filters with
+one test process each and passed the same cases with no skips. TRX intervals:
+GeoServices MapServer 562.3 to 33.3 seconds (56 cases), MapServer Export 804.2 to
+34.0 seconds (65 cases), MapServer Identify 625.5 to 32.0 seconds (52 cases). The
+build host was heavily loaded, so its per-case host rebuild (about 10 seconds)
+exceeds CI's: full run 43709972683 spent 212 and 225 seconds of per-case fixture
+time in the MapServer and Export classes (3.5 to 3.8 seconds per case), which is
+the expected CI saving for those shards. Full CI job savings are unmeasured.
+All cases remain in their existing shards on selected PR runs and twice-daily
 full trunk runs. This changes no runner count, required check name, required
 aggregate dependency, workflow or shard definition.
