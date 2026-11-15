@@ -28,9 +28,9 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 // The job service is the only substitute: it returns a completed job whose artifact is inline
 // GeoJSON. Authorization, the dispatcher, the approval gateway, the import ledger and the
 // PostGIS import all run in the real host.
-[Collection(RedisFixture.CollectionName)]
+[Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class StagedImportMcpIntegrationTests(RedisFixture redis)
+public sealed class StagedImportMcpIntegrationTests
 {
     private const string JobId = "gp-staged-import";
 
@@ -72,7 +72,7 @@ public sealed class StagedImportMcpIntegrationTests(RedisFixture redis)
         }
     }
 
-    private WebAppFixture CreateFixture(string artifact)
+    private static WebAppFixture CreateFixture(string artifact)
     {
         var jobs = Substitute.For<IGeoprocessingJobService>();
         jobs.GetJobAsync(JobId, Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(CompletedJob(artifact));
@@ -80,7 +80,6 @@ public sealed class StagedImportMcpIntegrationTests(RedisFixture redis)
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("Public:BaseUrl", "http://localhost");
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
