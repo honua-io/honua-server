@@ -13,7 +13,9 @@ public sealed class AgentAuthorityTests
 {
     private static readonly OperationPolicyContext Agent = new()
     {
-        PrincipalId = "agent-a", TenantId = "tenant-a", Roles = ["agent", "admin"],
+        PrincipalId = "agent-a",
+        TenantId = "tenant-a",
+        Roles = ["agent", "admin"],
     };
 
     [Theory]
@@ -48,6 +50,18 @@ public sealed class AgentAuthorityTests
     {
         Assert.False(await AgentAuthorityPolicy.AllowsAsync(null, Descriptor(), Agent, default));
         Assert.True(await AgentAuthorityPolicy.AllowsAsync(null, Descriptor(), Agent with { Roles = ["admin"] }, default));
+    }
+
+    [Fact]
+    public async Task NoCeiling_AllowsOnlyReadOnlyAgentOperations()
+    {
+        var readOnly = Descriptor() with { Policy = Descriptor().Policy with { SideEffectClass = OperationSideEffectClass.ReadOnly } };
+        Assert.True(await AgentAuthorityPolicy.AllowsAsync(Store(null), readOnly, Agent, default));
+        Assert.True(await AgentAuthorityPolicy.AllowsAsync(null, readOnly, Agent, default));
+        Assert.False(await AgentAuthorityPolicy.AllowsAsync(Store(null), Descriptor(), Agent, default));
+        var disabled = Store(Ceiling() with { Enabled = false });
+        Assert.False(await AgentAuthorityPolicy.AllowsAsync(disabled, readOnly, Agent, default));
+        Assert.False(await AgentAuthorityPolicy.AllowsAsync(Store(null), readOnly, Agent with { PrincipalId = " " }, default));
     }
 
     [Fact]
@@ -155,7 +169,9 @@ public sealed class AgentAuthorityTests
 
     private static AgentAuthorityCeiling Ceiling() => new()
     {
-        TenantId = Agent.TenantId, PrincipalId = Agent.PrincipalId!, AllowedOperationIds = ["service.publish"],
+        TenantId = Agent.TenantId,
+        PrincipalId = Agent.PrincipalId!,
+        AllowedOperationIds = ["service.publish"],
         MaximumBlastRadius = OperationBlastRadiusClass.ServiceScope,
         MaximumSideEffect = OperationSideEffectClass.CreatesMetadata,
     };

@@ -8,11 +8,10 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
-using Honua.Core.Features.Operations.Policy;
 
 namespace Honua.Core.Features.Operations.Services;
 
-public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalSubmitter
+public sealed partial class OperationDispatcher : IOperationInvoker, IOperationProposalSubmitter
 {
     private static readonly TimeSpan PostActuationPersistenceTimeout = TimeSpan.FromSeconds(10);
 
@@ -335,23 +334,11 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         PolicyDecision decision;
         try
         {
-            decision = !await AgentAuthorityPolicy.AllowsAsync(_agentAuthorityStore, descriptor, invocationContext, cancellationToken).ConfigureAwait(false)
-                ? new PolicyDecision { Kind = PolicyDecisionKind.Deny, Reason = "Operation exceeds the agent authority ceiling." }
-                : string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)
-                ? await _policy
-                    .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
-                    .ConfigureAwait(false)
-                : PolicyDecision.Allowed;
-            // Only this trusted mode adds an approval floor. A refusal is never promoted,
-            // and verified approved replay remains on the ordinary submission path.
-            if (proposalOnly && decision.Kind == PolicyDecisionKind.Allow)
+            decision = await EvaluateSubmissionDecisionAsync(descriptor, request, invocationContext, cancellationToken)
+                .ConfigureAwait(false);
+            if (proposalOnly)
             {
-                decision = new PolicyDecision
-                {
-                    Kind = PolicyDecisionKind.RequireApproval,
-                    ApprovalLane = "control-plane",
-                    Reason = "Operator-gated proposal submission requires separate approval.",
-                };
+                decision = RequireProposalApproval(decision);
             }
             envelope = envelope with
             {
@@ -468,26 +455,16 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         }
         else
         {
-            var actuationStarted = false;
+            var refused = await RefuseRevokedAgentAuthorityAsync(envelope, descriptor, invocationContext, cancellationToken)
+                .ConfigureAwait(false);
+            if (refused is not null)
+            {
+                return refused;
+            }
+
             try
             {
-                if (!await AgentAuthorityPolicy.AllowsAsync(_agentAuthorityStore, descriptor, invocationContext, cancellationToken).ConfigureAwait(false))
-                {
-                    return await PersistAsync(envelope with
-                    {
-                        Status = OperationHandleStatus.Denied,
-                        PolicyDecision = PolicyDecisionKind.Deny,
-                        UpdatedAt = _clock.GetUtcNow(),
-                        Reason = "Agent authority was revoked before actuation.",
-                    }, cancellationToken).ConfigureAwait(false);
-                }
-                actuationStarted = true;
                 executed = await executor.SubmitAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!actuationStarted)
-            {
-                await PersistPreActuationCancellationAsync(envelope, invocationContext).ConfigureAwait(false);
-                throw;
             }
             catch (OperationCanceledException)
             {
