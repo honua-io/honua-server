@@ -1040,24 +1040,25 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (14 Nov 2026): every `dispatch_rank` with a passing job is the
+Measured ranks (15 Nov 2026): every `dispatch_rank` with a passing job is the
 median passing job duration of full trunk runs 43348507021, 43471044721,
-43540829683, 43564575677, 43580101834 and 43612492209. A run counts for a shard
-only when that shard's filter at the run's head equals the current filter, so
-re-split children are never ranked by their predecessor. 159 of 164 shards are
-measured (1 to 6 samples, median 3); `scripts/ci/fixtures/measured-dispatch-ranks.json`
+43540829683, 43564575677, 43580101834, 43612492209, 43661416329, 43703260559,
+43709972683 and 43726623779. The four newest runs were cancelled before they
+finished, so only their passing jobs count. A run counts for a shard only when
+that shard's filter at the run's head equals the current filter, so re-split
+children are never ranked by their predecessor. 178 of 200 shards are measured
+(1 to 7 samples, median 2); `scripts/ci/fixtures/measured-dispatch-ranks.json`
 records the values and runs, and `test-full-run-capacity-partitions.py` fails when
 a rank drifts from it. Split-contract tests require each child to carry its
-measured rank, else its contract estimate, else its parent's rank. Unmeasured:
-Operator Eval Harness 2 and STAC Protocol 2 and 4 (cancelled in 43612492209) keep
-their parent's rank; the two Packages and Temporal children carry estimates. Ranks
-sum to 1,603 runner-minutes (was 1,818.5); 98 of 164 shards fit the 10-minute PR
-shard budget (was 84 of 163). Many unsplit shards measured slower than on 11 Nov
-(for example Core Endpoint Mutations 9.8 to 14.5): 20 shards, the replaced Packages
-and Temporal parent among them, leave the budget and 34, most of them split
-children, enter it. Of 794 shard source paths, 666 now have an owner that fits the
-budget (was 583): 140 gained one and 57 lost their last one, all owned by 15 shards
-now above 10 minutes, whose split is tracked in #7678.
+measured rank, else its contract estimate, else its parent's rank. A measured
+child's estimate is removed from its contract, and the rule that estimates may
+not add up to less than the parent applies only while every child of a split is
+still estimated: measured children of the 15 Nov splits ran in 2.5 to 8.6 minutes,
+well under their estimates. Of the 22 unmeasured shards, the last child of each
+recent split keeps its contract estimate; Server Features Streaming Snapshot and
+Conformance changed its filter on 15 Nov (#7820) and keeps its rank. Ranks sum to
+1,546.5 runner-minutes (was 1,806.1); 161 of 200 shards fit the 10-minute PR
+shard budget (was 150). The 14 Nov refresh is superseded.
 
 ### Standalone tooling in affected producer builds
 
