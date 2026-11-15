@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Built from the exact serving candidate, never a moving channel tag.
 ARG HONUA_SERVER_IMAGE
-ARG DOCKER_CLI_IMAGE=docker:28.5.1-cli@sha256:9190b0613792e658a7783cf14b2d5ace5941bb68ede7276922ea36ee457d76ad
+ARG DOCKER_CLI_IMAGE=docker:29.9.3-cli@sha256:5a7af0dcb0e46c803efe9b45371dd21cb500e5b4453250394ac6f06d49b6e6f1
 FROM ${DOCKER_CLI_IMAGE} AS docker-cli
 RUN mkdir -p /run/honua-compose && chown 1002:1001 /run/honua-compose && \
     docker --version && docker compose version
