@@ -24,7 +24,7 @@ import Point from "@arcgis/core/geometry/Point.js";
 import FeatureLayer from "@arcgis/core/layers/FeatureLayer.js";
 
 const layer = new FeatureLayer({
-  url: "http://localhost:8080/rest/services/parks/FeatureServer/0",
+  url: "http://localhost:8080/rest/services/parks/FeatureServer/1", // a layer id from the service's layers list
 });
 await layer.load();
 const objectIdField = layer.objectIdField;
@@ -95,7 +95,7 @@ OGC API Features takes `Content-Type: application/geo+json` bodies; a successful
 
 Query the layer and confirm your edit round-trips:
 
-Open `http://localhost:8080/rest/services/parks/FeatureServer/0/query?where=name%3D%27Honolulu%20Hale%27&outFields=*&f=json` in a browser and compare it with the expected response:
+Open `http://localhost:8080/rest/services/parks/FeatureServer/1/query?where=name%3D%27Honolulu%20Hale%27&outFields=*&f=json` in a browser and compare it with the expected response:
 
 ```json
 { "features": [ { "attributes": { "OBJECTID": 1, "name": "Honolulu Hale" }, "geometry": { "x": -157.8583, "y": 21.3069 } } ] }
