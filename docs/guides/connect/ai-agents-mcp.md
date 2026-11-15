@@ -335,7 +335,7 @@ The curated prompts select the view that owns each stage. Dashboard authoring us
 
 Required-input descriptions identify caller-supplied values or their producer tools. Input-validation refusals include source guidance in both JSON channels; missing fields and invalid types also carry field paths.
 
-Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `layerId` from `honua_list_layers`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
+Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `serviceLayerIndex` from `honua_list_layers`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
 
 Layer display and spatial configuration are available through the admin `full` catalog as
 `honua_admin_layer_display_get`, `honua_admin_layer_display_set`,

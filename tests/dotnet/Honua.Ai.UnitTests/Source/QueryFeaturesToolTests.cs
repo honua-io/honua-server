@@ -58,8 +58,10 @@ public sealed class QueryFeaturesToolTests
             $$"""{"serviceId":"{{serviceId}}","serviceLayerIndex":0,"layerId":{{layerId}}}""");
 
         AssertInvalidArgument(response);
-        response.Result!.Value.GetProperty("structuredContent").GetProperty("message")
-            .GetString().Should().Contain("layerId");
+        var message = response.Result!.Value.GetProperty("structuredContent").GetProperty("message").GetString();
+        message.Should().Contain("layerId");
+        message.Should().Contain("serviceLayerIndex");
+        message.Should().NotContain("Honua.Ai");
         reader.ReceivedCalls().Should().BeEmpty();
     }
 
