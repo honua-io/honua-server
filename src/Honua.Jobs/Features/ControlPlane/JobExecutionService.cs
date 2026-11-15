@@ -1049,7 +1049,7 @@ internal sealed partial class JobExecutionService(
         }
 
         if (recoverOutcome &&
-            await TryRecoverOutcomeAsync(job, workerId, cancellationToken).ConfigureAwait(false))
+            await TryRecoverOutcomeAsync(job, workerId, cancellationToken, recoveryOnly: true).ConfigureAwait(false))
         {
             return;
         }

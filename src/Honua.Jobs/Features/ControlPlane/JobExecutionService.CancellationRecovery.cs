@@ -36,7 +36,7 @@ internal sealed partial class JobExecutionService
     }
 
     private async Task<bool> TryRecoverOutcomeAsync(
-        ExecutionJobRecord job, string workerId, CancellationToken cancellationToken)
+        ExecutionJobRecord job, string workerId, CancellationToken cancellationToken, bool recoveryOnly = false)
     {
         if (ResolveExecutor(job.Spec.Kind, job.Spec.RuntimeProfile) is not IJobOutcomeRecoveryExecutor recovery)
         {
@@ -59,35 +59,35 @@ internal sealed partial class JobExecutionService
                 return false;
             }
 
-            await FinalizeOutcomeRecoveryAsync(job, result, recoveryCancellation.Token).ConfigureAwait(false);
+            await FinalizeOutcomeRecoveryAsync(job, result, recoveryCancellation.Token, recoveryOnly).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
         {
             // License expiry stops execution and publication, but cannot establish whether COMMIT landed.
             // Keep the receipt lookup pending until a valid license permits recovery.
-            await RequeueOutcomeRecoveryAsync(job, workerId).ConfigureAwait(false);
+            await RequeueOutcomeRecoveryAsync(job, workerId, recoveryOnly).ConfigureAwait(false);
         }
         // An unavailable receipt is an unknown outcome, never evidence that no rows committed.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.JobExecutionFailed(logger, job.OperationId, ex);
-            await RequeueOutcomeRecoveryAsync(job, workerId).ConfigureAwait(false);
+            await RequeueOutcomeRecoveryAsync(job, workerId, recoveryOnly).ConfigureAwait(false);
         }
 
         return true;
     }
 
     private async Task FinalizeOutcomeRecoveryAsync(
-        ExecutionJobRecord job, JobExecutionResult result, CancellationToken cancellationToken)
+        ExecutionJobRecord job, JobExecutionResult result, CancellationToken cancellationToken, bool recoveryOnly)
     {
         var workerId = job.ClaimedBy!;
         if (!await FinalizeJobAsync(job.OperationId, workerId, result, null, null, cancellationToken).ConfigureAwait(false))
         {
-            await RequeueOutcomeRecoveryAsync(job, workerId).ConfigureAwait(false);
+            await RequeueOutcomeRecoveryAsync(job, workerId, recoveryOnly).ConfigureAwait(false);
         }
     }
 
-    private async Task RequeueOutcomeRecoveryAsync(ExecutionJobRecord original, string workerId)
+    private async Task RequeueOutcomeRecoveryAsync(ExecutionJobRecord original, string workerId, bool recoveryOnly)
     {
         using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var current = await jobStore.GetAsync(original.OperationId, cleanup.Token).ConfigureAwait(false);
@@ -107,6 +107,9 @@ internal sealed partial class JobExecutionService
             UpdatedAt = now,
             CompletedAt = null,
             NextRetryAt = now.Add(delay),
+            RetryPolicy = recoveryOnly
+                ? (current.RetryPolicy ?? JobRetryPolicy.Default) with { MaxAttempts = current.AttemptCount }
+                : current.RetryPolicy,
             CurrentPhase = OutcomeRecoveryPhase
         };
         if (!await jobStore.TrySetAsync(queued, cancellationToken: cleanup.Token).ConfigureAwait(false))
