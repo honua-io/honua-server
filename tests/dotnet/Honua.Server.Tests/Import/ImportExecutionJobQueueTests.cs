@@ -199,7 +199,7 @@ public sealed partial class ImportExecutionJobQueueTests
     {
         var jobs = ImportExecutionTestJobs.Create();
         var manager = new GeoServerImportJobManager(
-            new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance),
+            new UniversalProgressStore(),
             NullLogger<GeoServerImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
         var request = new GeoServerImportRequest
         {
@@ -215,7 +215,7 @@ public sealed partial class ImportExecutionJobQueueTests
     }
 
     private static GeoservicesImportJobManager Manager(IExecutionJobStore jobs, IJobQueue queue)
-        => new(new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance),
+        => new(new UniversalProgressStore(),
             NullLogger<GeoservicesImportJobManager>.Instance, jobs, queue);
 
     private static GeoservicesImportRequest Request() => new()

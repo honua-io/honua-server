@@ -56,7 +56,7 @@ public sealed class GeoservicesImportTenantTests
             return importer;
         });
         using var provider = services.BuildServiceProvider();
-        var progressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        var progressStore = new UniversalProgressStore();
         var records = ImportExecutionTestJobs.Create();
         var jobs = new GeoservicesImportJobManager(progressStore,
             NullLogger<GeoservicesImportJobManager>.Instance, records, Substitute.For<IJobQueue>());

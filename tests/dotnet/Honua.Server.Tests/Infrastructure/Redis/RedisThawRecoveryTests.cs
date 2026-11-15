@@ -1,24 +1,19 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Models;
-using Honua.Migration;
 using Honua.Infrastructure.Progress;
 using Honua.Infrastructure.Redis;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Redis;
 
 /// <summary>
 /// A thawed Lambda sandbox tears down its Redis connections under the first commands it sends,
 /// which fail with the completed-reader pipe fault (honua-server#6753). These cases simulate that
-/// fault on the shared post-idle probe and on the progress-store read paths.
+/// fault on the shared post-idle probe and map it through the exception mapper.
 /// </summary>
 [Collection("Unit")]
 public sealed class RedisThawRecoveryTests
@@ -108,36 +103,6 @@ public sealed class RedisThawRecoveryTests
     }
 
     [UnitTest]
-    public async Task UniversalProgressStore_GetProgressAsync_CompletedReaderOnce_ReadsAndStaysOnRedis()
-    {
-        var cache = new CompletedReaderOnceCache();
-        var store = new UniversalProgressStore(cache, NullLogger<UniversalProgressStore>.Instance);
-        var progress = ExportProgress.CreateInitial("export-1", "csv", "svc", 1, 10);
-        await store.SetProgressAsync("export-1", progress, TimeSpan.FromMinutes(5));
-
-        cache.FaultNextRead();
-        var loaded = await store.GetProgressAsync<ExportProgress>("export-1");
-
-        Assert.NotNull(loaded);
-        Assert.False(store.IsUsingFallback);
-        Assert.Equal(0, cache.PendingFaults);
-    }
-
-    [UnitTest]
-    public async Task UniversalProgressStore_GetProgressAsync_CompletedReaderTwice_MapsTo503()
-    {
-        var cache = new CompletedReaderOnceCache();
-        var store = new UniversalProgressStore(cache, NullLogger<UniversalProgressStore>.Instance);
-
-        cache.FaultNextRead(times: 2);
-        var exception = await Assert.ThrowsAsync<DistributedProgressStateUnavailableException>(
-            () => store.GetProgressAsync("job-1"));
-
-        Assert.True(RedisClientFault.ContainsCompletedReader(exception));
-        Assert.Equal(StatusCodes.Status503ServiceUnavailable, ExceptionMapper.Map(exception).StatusCode);
-    }
-
-    [UnitTest]
     public void ExceptionMapper_DistributedProgressStateUnavailable_Is503()
     {
         var exception = new DistributedProgressStateUnavailableException("get progress", new TimeoutException());
@@ -180,48 +145,6 @@ public sealed class RedisThawRecoveryTests
             }
 
             return Task.CompletedTask;
-        }
-    }
-
-    /// <summary>A memory cache whose next reads fail like a torn StackExchange.Redis pipe.</summary>
-    private sealed class CompletedReaderOnceCache : IDistributedCache
-    {
-        private readonly MemoryDistributedCache _inner = new(Options.Create(new MemoryDistributedCacheOptions()));
-
-        public int PendingFaults { get; private set; }
-
-        public void FaultNextRead(int times = 1) => PendingFaults = times;
-
-        public byte[]? Get(string key) => ThrowIfFaulted() ?? _inner.Get(key);
-
-        public Task<byte[]?> GetAsync(string key, CancellationToken token = default)
-        {
-            ThrowIfFaulted();
-            return _inner.GetAsync(key, token);
-        }
-
-        public void Refresh(string key) => _inner.Refresh(key);
-
-        public Task RefreshAsync(string key, CancellationToken token = default) => _inner.RefreshAsync(key, token);
-
-        public void Remove(string key) => _inner.Remove(key);
-
-        public Task RemoveAsync(string key, CancellationToken token = default) => _inner.RemoveAsync(key, token);
-
-        public void Set(string key, byte[] value, DistributedCacheEntryOptions options) => _inner.Set(key, value, options);
-
-        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
-            => _inner.SetAsync(key, value, options, token);
-
-        private byte[]? ThrowIfFaulted()
-        {
-            if (PendingFaults > 0)
-            {
-                PendingFaults--;
-                throw new InvalidOperationException(RedisClientFault.CompletedReaderMessage);
-            }
-
-            return null;
         }
     }
 

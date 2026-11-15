@@ -3,7 +3,6 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -20,142 +19,37 @@ using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Temporal.Domain;
 using Honua.Infrastructure.Progress;
-using Honua.Infrastructure.Redis;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.StackExchangeRedis;
-using StackExchange.Redis;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Migration;
 
-internal sealed partial class UniversalProgressStore : IUniversalProgressStore, IProgressStoreRecovery
+/// <summary>
+/// Process-local progress store for a host without a system database (unit-level hosts and
+/// tests). A host with a system database registers <c>PostgresUniversalProgressStore</c>, the
+/// only shared progress store; this one never claims cross-node visibility.
+/// </summary>
+internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 {
-    private readonly IDistributedCache? _cache;
-    private readonly string _cacheInstanceName;
-    private readonly IConnectionMultiplexer? _redis;
-    private readonly ILogger<UniversalProgressStore> _logger;
     private const string KeyPrefix = "universal:progress:";
-    private const string TypePrefix = "universal:type:";
-    private const string HealthCheckKey = "universal:progress:health";
-    private const string ActiveOperationIdsKey = "universal:progress:active";
-    private const string ActiveOperationTypePrefix = "universal:progress:active:type:";
-    private const string ConditionalWriteLockPrefix = "universal:progress:cas-lock:";
-    private static readonly TimeSpan _conditionalWriteLockTtl = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan _conditionalWriteLockRetryDelay = TimeSpan.FromMilliseconds(50);
-    private const int ConditionalWriteLockMaxAttempts = 40;
-    private const string ConditionalWriteLockReleaseScript =
-        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
-    private const int MaxFallbackEntries = 5000;
-    private static readonly TimeSpan _fallbackCleanupInterval = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan _redisRetryInterval = TimeSpan.FromSeconds(30);
+    private const int MaxEntries = 5000;
+    private static readonly TimeSpan _cleanupInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan _defaultTtl = TimeSpan.FromHours(24);
     private long _lastCleanupTick = Environment.TickCount64;
-    private DateTime _lastRedisFailure = DateTime.MinValue;
-    private volatile bool _isUsingFallback;
-    private bool AllowsLocalFallback => _cache == null;
-    private bool CanUseRedisBackplane =>
-        _redis != null &&
-        _cache is RedisCache &&
-        !_isUsingFallback;
 
-    public UniversalProgressStore(
-        IDistributedCache? cache,
-        ILogger<UniversalProgressStore> logger,
-        IConnectionMultiplexer? redis = null,
-        IOptions<RedisCacheOptions>? cacheOptions = null)
-    {
-        _cache = cache;
-        _cacheInstanceName = cacheOptions?.Value.InstanceName ?? string.Empty;
-        _logger = logger;
-        _redis = redis;
-        _isUsingFallback = cache == null;
-    }
-
-    internal bool IsUsingFallback => _isUsingFallback;
-
-    public async Task ProbeRecoveryAsync(CancellationToken cancellationToken = default)
+    public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
-        {
-            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
-        }
+        Store(operationId, progress, ttl ?? _defaultTtl);
+        return Task.CompletedTask;
     }
 
-    public async Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+    public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
     {
-        var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
-
-        // Serialize terminal-status writes on the per-operation conditional-write lock so a worker's
-        // Completed/Failed write cannot interleave between a concurrent compare-and-set's read and write
-        // (for example an admin cancel) and be silently overwritten (honua-server#1593). Non-terminal
-        // progress ticks stay on the cheap unguarded path.
-        if (IsTerminalStatus(progress.Status) && !AllowsLocalFallback)
-        {
-            var lockToken = await TryAcquireConditionalWriteLockAsync(operationId, cancellationToken).ConfigureAwait(false);
-            try
-            {
-                await SetProgressUnguardedAsync(operationId, progress, effectiveTtl, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                await ReleaseConditionalWriteLockAsync(operationId, lockToken).ConfigureAwait(false);
-            }
-
-            return;
-        }
-
-        await SetProgressUnguardedAsync(operationId, progress, effectiveTtl, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        RejectExecutionFence(write);
+        return Task.FromResult(TrySetProgress(write, expectedStatus, write.Ttl ?? _defaultTtl));
     }
 
-    public async Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
-    {
-        ThrowIfExecutionFenced(write);
-
-        var effectiveTtl = write.Ttl ?? TimeSpan.FromHours(24);
-
-        if (AllowsLocalFallback)
-        {
-            return TrySetProgressInFallback(write, expectedStatus, effectiveTtl);
-        }
-
-        if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
-        {
-            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        if (_isUsingFallback)
-        {
-            throw CreateDistributedStateUnavailableException("conditionally set progress");
-        }
-
-        // Serialize competing conditional writers (and terminal-status plain writes) on a per-operation
-        // Redis lock, then read-check-write. Lock acquisition is best-effort: when the lock cannot be
-        // obtained the check-and-write still runs immediately before the write, which is the narrowest
-        // window achievable over IDistributedCache.
-        var lockToken = await TryAcquireConditionalWriteLockAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var current = await GetProgressAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
-            if (current is null)
-            {
-                return ProgressCompareAndSetResult.NotFound;
-            }
-
-            if (current.Status != expectedStatus)
-            {
-                return ProgressCompareAndSetResult.StatusMismatch(current);
-            }
-
-            await SetProgressUnguardedAsync(write.OperationId, write.Progress, effectiveTtl, cancellationToken).ConfigureAwait(false);
-            return ProgressCompareAndSetResult.Updated;
-        }
-        finally
-        {
-            await ReleaseConditionalWriteLockAsync(write.OperationId, lockToken).ConfigureAwait(false);
-        }
-    }
-
-    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
+    public Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress? expectedProgress, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(write.Progress);
         cancellationToken.ThrowIfCancellationRequested();
@@ -164,245 +58,47 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             throw new ArgumentException("A progress update cannot change the operation type.", nameof(write));
         }
 
-        ThrowIfExecutionFenced(write);
-
-        var effectiveTtl = write.Ttl ?? TimeSpan.FromHours(24);
-        if (AllowsLocalFallback)
-        {
-            return TryReplaceProgressInFallback(write, expectedProgress, effectiveTtl);
-        }
-
-        RedisValue persisted = RedisValue.Null;
-        IOperationProgress? current;
-        var key = (RedisKey)$"{_cacheInstanceName}{KeyPrefix}{write.OperationId}";
-        if (!CanUseRedisBackplane)
-        {
-            throw CreateDistributedStateUnavailableException("atomically replace progress");
-        }
-        persisted = await RedisClientFault.RetryCompletedReaderAsync(
-            () => _redis!.GetDatabase().HashGetAsync(key, "data"),
-            cancellationToken).ConfigureAwait(false);
-        current = persisted.HasValue ? DeserializeProgress(persisted.ToString(), write.OperationId) : null;
-        if (current is null && expectedProgress is not null)
-        {
-            return ProgressCompareAndSetResult.NotFound;
-        }
-
-        if (current is not null && (expectedProgress is null || !OperationProgressSerializer.SameSnapshot(current, expectedProgress)))
-        {
-            return ProgressCompareAndSetResult.StatusMismatch(current);
-        }
-
-        // RedisCache stores payload and expiration metadata in this hash. Compare and update
-        // inside one Redis transaction, including expiry, so lock loss/expiry and unguarded
-        // write.Progress writers cannot turn an old heartbeat snapshot into an accepted write.
-        var transaction = _redis!.GetDatabase().CreateTransaction();
-        transaction.AddCondition(expectedProgress is null
-            ? Condition.KeyNotExists(key)
-            : Condition.HashEqual(key, "data", persisted));
-        _ = transaction.HashSetAsync(key,
-        [
-            new HashEntry("data", OperationProgressSerializer.Serialize(write.Progress)),
-            new HashEntry("absexp", DateTimeOffset.UtcNow.Add(effectiveTtl).Ticks),
-            new HashEntry("sldexp", -1)
-        ]);
-        _ = transaction.KeyExpireAsync(key, effectiveTtl);
-        if (await transaction.ExecuteAsync().ConfigureAwait(false))
-        {
-            return ProgressCompareAndSetResult.Updated;
-        }
-
-        current = await GetProgressAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
-        return current is null ? ProgressCompareAndSetResult.NotFound : ProgressCompareAndSetResult.StatusMismatch(current);
-    }
-
-    private static void ThrowIfExecutionFenced(OperationProgressWrite write)
-    {
-        if (write.ExecutionFence is not null)
-        {
-            throw new NotSupportedException("Execution-fenced progress requires durable job storage.");
-        }
-    }
-
-    private async Task SetProgressUnguardedAsync(string operationId, IOperationProgress progress, TimeSpan effectiveTtl, CancellationToken cancellationToken)
-    {
-        var key = $"{KeyPrefix}{operationId}";
-        var typeKey = $"{TypePrefix}{operationId}";
-
-        if (AllowsLocalFallback)
-        {
-            CacheFallback(operationId, progress, effectiveTtl);
-        }
-
-        if (_isUsingFallback && _cache != null && ShouldRetryRedis(DateTime.UtcNow))
-        {
-            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        if (_isUsingFallback || _cache == null)
-        {
-            if (_cache != null)
-            {
-                throw CreateDistributedStateUnavailableException("set progress");
-            }
-
-            return;
-        }
-
-        try
-        {
-            var json = OperationProgressSerializer.Serialize(progress);
-            await _cache.SetStringAsync(key, json,
-                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = effectiveTtl },
-                cancellationToken);
-
-            // Store operation type for filtering
-            await _cache.SetStringAsync(typeKey, progress.Type.ToString(),
-                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = effectiveTtl },
-                cancellationToken);
-
-            if (CanUseRedisBackplane)
-            {
-                await AddToRedisIndexAsync(operationId, progress.Type).ConfigureAwait(false);
-            }
-            else
-            {
-                CacheFallback(operationId, progress, effectiveTtl);
-            }
-        }
-        // Intentional: this is the Redis/distributed-cache boundary for every operation in
-        // this store; any failure is translated into the typed
-        // DistributedStateUnavailableException (after flagging fallback mode) so callers get
-        // a single well-known error rather than a leaked provider exception type. This
-        // pattern repeats across the Redis-backed methods below.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            HandleRedisFailure(ex, "set progress");
-            throw CreateDistributedStateUnavailableException("set progress", ex);
-        }
+        RejectExecutionFence(write);
+        return Task.FromResult(TryReplaceProgress(write, expectedProgress, write.Ttl ?? _defaultTtl));
     }
 
     public async Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
         where TProgress : class, IOperationProgress
+        => await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false) as TProgress;
+
+    public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
     {
-        var progress = await GetProgressAsync(operationId, cancellationToken);
-        return progress as TProgress;
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(GetEntry($"{KeyPrefix}{operationId}")?.Progress);
     }
 
-    public async Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-    {
-        var key = $"{KeyPrefix}{operationId}";
-
-        if (_isUsingFallback && _cache != null && ShouldRetryRedis(DateTime.UtcNow))
-        {
-            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        if (_isUsingFallback || _cache == null)
-        {
-            if (_cache != null)
-            {
-                throw CreateDistributedStateUnavailableException("get progress");
-            }
-
-            return GetFallbackEntry(key)?.Progress;
-        }
-
-        string? json;
-        try
-        {
-            json = await RedisClientFault.RetryCompletedReaderAsync(
-                () => _cache.GetStringAsync(key, cancellationToken),
-                cancellationToken).ConfigureAwait(false);
-            if (json == null)
-            {
-                RemoveFallbackEntry(key);
-                return null;
-            }
-        }
-        // Intentional: see the "set progress" catch above — same translate-to-typed-exception
-        // pattern for the Redis boundary.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            HandleRedisFailure(ex, "get progress");
-            throw CreateDistributedStateUnavailableException("get progress", ex);
-        }
-
-        return DeserializeProgress(json, operationId);
-    }
-
-    public async Task QuarantineProgressAsync(
+    public Task QuarantineProgressAsync(
         string operationId,
         OperationType operationType,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_cache != null && _isUsingFallback)
-        {
-            throw CreateDistributedStateUnavailableException("quarantine progress");
-        }
-        if (CanUseRedisBackplane)
-        {
-            try
-            {
-                await RemoveFromRedisIndexAsync(operationId, operationType).ConfigureAwait(false);
-            }
-            catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
-            {
-                HandleRedisFailure(exception, "quarantine progress");
-                throw CreateDistributedStateUnavailableException("quarantine progress", exception);
-            }
-        }
-        RemoveFallbackEntry($"{KeyPrefix}{operationId}");
+        RemoveEntry($"{KeyPrefix}{operationId}");
+        return Task.CompletedTask;
     }
 
-    public async Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
+    public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
     {
-        var key = $"{KeyPrefix}{operationId}";
-        var typeKey = $"{TypePrefix}{operationId}";
-
-        _fallbackStore.TryRemove(key, out _);
-
-        if (_isUsingFallback && _cache != null && ShouldRetryRedis(DateTime.UtcNow))
-        {
-            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        if (_cache != null && !_isUsingFallback)
-        {
-            try
-            {
-                var storedType = await TryGetStoredOperationTypeAsync(operationId, cancellationToken).ConfigureAwait(false);
-                await _cache.RemoveAsync(key, cancellationToken);
-                await _cache.RemoveAsync(typeKey, cancellationToken);
-                if (CanUseRedisBackplane)
-                {
-                    await RemoveFromRedisIndexAsync(operationId, storedType).ConfigureAwait(false);
-                }
-            }
-            // Intentional: see the "set progress" catch above — same translate-to-typed-exception
-            // pattern for the Redis boundary.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                HandleRedisFailure(ex, "delete progress");
-                throw CreateDistributedStateUnavailableException("delete progress", ex);
-            }
-        }
-        else if (_cache != null)
-        {
-            throw CreateDistributedStateUnavailableException("delete progress");
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        RemoveEntry($"{KeyPrefix}{operationId}");
+        return Task.CompletedTask;
     }
 
     public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default)
     {
-        return GetActiveOperationIdsInternalAsync(operationType, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<string>>(GetActiveOperationIds(operationType));
     }
 
     public async Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(OperationType operationType, CancellationToken cancellationToken = default)
         where TProgress : class, IOperationProgress
     {
-        var operationIds = await GetActiveOperationIdsAsync(operationType, cancellationToken);
+        var operationIds = await GetActiveOperationIdsAsync(operationType, cancellationToken).ConfigureAwait(false);
         var operations = new List<TProgress>();
 
         await foreach (var progress in ProgressStoreReader.ReadAvailableAsync(this, operationIds, cancellationToken))
@@ -416,290 +112,16 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         return operations;
     }
 
-    private IOperationProgress? DeserializeProgress(string json, string operationId)
+    private static void RejectExecutionFence(OperationProgressWrite write)
     {
-        try
+        if (write.ExecutionFence is not null)
         {
-            return OperationProgressSerializer.Deserialize(json);
+            throw new NotSupportedException("Execution-fenced progress requires durable job storage.");
         }
-        catch (InvalidPersistedExportProgressException exception)
-        {
-            Log.InvalidProgressRead(_logger, operationId, exception);
-            throw;
-        }
-    }
-
-    private static bool IsTerminalStatus(OperationStatus status)
-        => status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
-
-    private async Task<string?> TryAcquireConditionalWriteLockAsync(string operationId, CancellationToken cancellationToken)
-    {
-        if (_redis is null || _isUsingFallback)
-        {
-            return null;
-        }
-
-        var lockKey = $"{ConditionalWriteLockPrefix}{operationId}";
-        var token = Guid.NewGuid().ToString("N");
-
-        try
-        {
-            var db = _redis.GetDatabase();
-            for (var attempt = 0; attempt < ConditionalWriteLockMaxAttempts; attempt++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (await db.StringSetAsync(lockKey, token, _conditionalWriteLockTtl, When.NotExists).ConfigureAwait(false))
-                {
-                    return token;
-                }
-
-                await Task.Delay(_conditionalWriteLockRetryDelay, cancellationToken).ConfigureAwait(false);
-            }
-
-            Log.ConditionalWriteLockUnavailable(_logger, operationId, null);
-        }
-        // Intentional: lock acquisition is best-effort — a Redis failure resolves to "no
-        // lock" (null) rather than throwing, letting the caller proceed unconditionally;
-        // cancellation is excluded so it still propagates.
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            Log.ConditionalWriteLockUnavailable(_logger, operationId, ex);
-        }
-
-        return null;
-    }
-
-    private async Task ReleaseConditionalWriteLockAsync(string operationId, string? token)
-    {
-        if (token is null || _redis is null)
-        {
-            return;
-        }
-
-        try
-        {
-            var db = _redis.GetDatabase();
-
-            // Compare-and-delete so a lock that expired and was re-acquired by another writer is not released.
-            await db.ScriptEvaluateAsync(
-                ConditionalWriteLockReleaseScript,
-                [(RedisKey)$"{ConditionalWriteLockPrefix}{operationId}"],
-                [(RedisValue)token]).ConfigureAwait(false);
-        }
-        // Intentional: lock release is best-effort — the compare-and-delete script above
-        // already guards against releasing a lock this writer no longer owns, and any
-        // remaining lock still expires on its own TTL, so a release failure is logged and
-        // swallowed rather than failing the caller.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Log.ConditionalWriteLockReleaseFailed(_logger, operationId, ex);
-        }
-    }
-
-    private bool ShouldRetryRedis(DateTime now)
-    {
-        return _cache != null && now - _lastRedisFailure > _redisRetryInterval;
-    }
-
-    private async Task<bool> TryRestoreRedisAsync(CancellationToken cancellationToken)
-    {
-        if (_cache == null)
-        {
-            return false;
-        }
-
-        try
-        {
-            await RedisClientFault.RetryCompletedReaderAsync(
-                () => _cache.GetStringAsync(HealthCheckKey, cancellationToken),
-                cancellationToken).ConfigureAwait(false);
-            _isUsingFallback = false;
-            Log.RedisConnectionRestored(_logger);
-            return true;
-        }
-        // Intentional: this is a probe attempting to exit fallback mode; a failure just
-        // means Redis is still unavailable, so it is logged and reported as "not restored"
-        // rather than thrown.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            _lastRedisFailure = DateTime.UtcNow;
-            Log.RedisFailed(_logger, "restore progress", ex);
-            return false;
-        }
-    }
-
-    private void HandleRedisFailure(Exception ex, string operation)
-    {
-        _lastRedisFailure = DateTime.UtcNow;
-        if (!_isUsingFallback)
-        {
-            _isUsingFallback = true;
-        }
-
-        Log.RedisFailed(_logger, operation, ex);
-    }
-
-    private static DistributedProgressStateUnavailableException CreateDistributedStateUnavailableException(string operation, Exception? innerException = null)
-        => new($"Distributed import progress state is unavailable while attempting to {operation}.", innerException);
-
-    private async Task<IReadOnlyList<string>> GetActiveOperationIdsInternalAsync(
-        OperationType? operationType,
-        CancellationToken cancellationToken)
-    {
-        if (_cache == null)
-        {
-            return GetActiveOperationIdsFromFallback(operationType);
-        }
-
-        if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
-        {
-            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        if (CanUseRedisBackplane)
-        {
-            try
-            {
-                return await GetActiveOperationIdsFromRedisAsync(operationType, cancellationToken).ConfigureAwait(false);
-            }
-            // Intentional: see the "set progress" catch above — same translate-to-typed-exception
-            // pattern for the Redis boundary.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                HandleRedisFailure(ex, "scan progress");
-                throw CreateDistributedStateUnavailableException("list active operations", ex);
-            }
-        }
-
-        if (!_isUsingFallback)
-        {
-            return GetActiveOperationIdsFromFallback(operationType);
-        }
-
-        throw CreateDistributedStateUnavailableException("list active operations");
-    }
-
-    private async Task<IReadOnlyList<string>> GetActiveOperationIdsFromRedisAsync(
-        OperationType? operationType,
-        CancellationToken cancellationToken)
-    {
-        var db = _redis!.GetDatabase();
-        var setKey = operationType.HasValue
-            ? GetActiveOperationTypeKey(operationType.Value)
-            : ActiveOperationIdsKey;
-        var members = await RedisClientFault.RetryCompletedReaderAsync(
-            () => db.SetMembersAsync(setKey),
-            cancellationToken).ConfigureAwait(false);
-        var activeIds = new List<string>(members.Length);
-
-        foreach (var member in members)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var operationId = member.ToString();
-            if (string.IsNullOrWhiteSpace(operationId))
-            {
-                continue;
-            }
-
-            // Check if progress entry still exists
-            var progressExists = await ProgressEntryExistsAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (!progressExists)
-            {
-                await RemoveFromRedisIndexAsync(operationId, operationType).ConfigureAwait(false);
-                continue;
-            }
-
-            activeIds.Add(operationId);
-        }
-
-        return activeIds;
-    }
-
-    private async Task<OperationType?> TryGetStoredOperationTypeAsync(string operationId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var typeValue = await RedisClientFault.RetryCompletedReaderAsync(
-                () => _cache!.GetStringAsync($"{TypePrefix}{operationId}", cancellationToken),
-                cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(typeValue) &&
-                Enum.TryParse<OperationType>(typeValue.ToString(), true, out var parsedType))
-            {
-                return parsedType;
-            }
-
-            var progressValue = await RedisClientFault.RetryCompletedReaderAsync(
-                () => _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken),
-                cancellationToken).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(progressValue))
-            {
-                return null;
-            }
-
-            var progress = DeserializeProgress(progressValue.ToString(), operationId);
-            return progress?.Type;
-        }
-        // Intentional: operation-type lookup is a best-effort convenience for index
-        // maintenance during delete; a failure to resolve it must not fail the delete, so
-        // it is logged and reported as "unknown type" instead.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Log.StoredOperationTypeLookupFailed(_logger, operationId, ex);
-            return null;
-        }
-    }
-
-    private async Task<bool> ProgressEntryExistsAsync(string operationId, CancellationToken cancellationToken)
-    {
-        var progressJson = await RedisClientFault.RetryCompletedReaderAsync(
-            () => _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken),
-            cancellationToken).ConfigureAwait(false);
-        return !string.IsNullOrWhiteSpace(progressJson);
-    }
-
-    private async Task AddToRedisIndexAsync(string operationId, OperationType operationType)
-    {
-        var db = _redis!.GetDatabase();
-        await db.SetAddAsync(ActiveOperationIdsKey, operationId).ConfigureAwait(false);
-        await db.SetAddAsync(GetActiveOperationTypeKey(operationType), operationId).ConfigureAwait(false);
-    }
-
-    private async Task RemoveFromRedisIndexAsync(string operationId, OperationType? operationType)
-    {
-        var db = _redis!.GetDatabase();
-        await db.SetRemoveAsync(ActiveOperationIdsKey, operationId).ConfigureAwait(false);
-        if (operationType.HasValue)
-        {
-            await db.SetRemoveAsync(GetActiveOperationTypeKey(operationType.Value), operationId).ConfigureAwait(false);
-        }
-    }
-
-    private static string GetActiveOperationTypeKey(OperationType operationType)
-        => $"{ActiveOperationTypePrefix}{operationType.ToString().ToLowerInvariant()}";
-
-    private static partial class Log
-    {
-        [LoggerMessage(7655, LogLevel.Warning, "Operation {OperationId} has invalid persisted export progress")]
-        public static partial void InvalidProgressRead(ILogger logger, string operationId, Exception exception);
-
-        [LoggerMessage(7650, LogLevel.Warning, "Redis {Operation} failed for progress store")]
-        public static partial void RedisFailed(ILogger logger, string operation, Exception exception);
-
-        [LoggerMessage(7651, LogLevel.Information, "Redis connection restored for progress store")]
-        public static partial void RedisConnectionRestored(ILogger logger);
-
-        [LoggerMessage(7652, LogLevel.Warning, "Conditional-write lock for operation {OperationId} could not be acquired; proceeding without cross-node serialization")]
-        public static partial void ConditionalWriteLockUnavailable(ILogger logger, string operationId, Exception? exception);
-
-        [LoggerMessage(7653, LogLevel.Debug, "Failed to release conditional-write lock for operation {OperationId}")]
-        public static partial void ConditionalWriteLockReleaseFailed(ILogger logger, string operationId, Exception exception);
-
-        [LoggerMessage(7654, LogLevel.Debug, "Failed to resolve stored operation type for operation {OperationId}")]
-        public static partial void StoredOperationTypeLookupFailed(ILogger logger, string operationId, Exception exception);
     }
 }
 
-internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedProgressStore<TProgress>, IProgressStoreRecovery
+internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedProgressStore<TProgress>
     where TProgress : class, IOperationProgress
 {
     private readonly IUniversalProgressStore _universalStore;
@@ -708,11 +130,6 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
     {
         _universalStore = universalStore;
     }
-
-    public Task ProbeRecoveryAsync(CancellationToken cancellationToken = default)
-        => _universalStore is IProgressStoreRecovery recovery
-            ? recovery.ProbeRecoveryAsync(cancellationToken)
-            : Task.CompletedTask;
 
     public async Task SetProgressAsync(string jobId, TProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {

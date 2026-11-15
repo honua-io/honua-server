@@ -41,7 +41,6 @@
         "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.GeoServer.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportJobExecutorTests.Fakes.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportWorkerTestServices.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/ImportDistributedStateFailureTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportHttpClientHelperTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportLeaderLeaseTests.cs",

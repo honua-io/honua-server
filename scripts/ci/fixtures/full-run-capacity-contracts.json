@@ -424,7 +424,6 @@
         "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionTestJobs.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ToolboxTranslationEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalImportJobServiceTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/UniversalProgressStoreIntegrationTests.cs",
         "tests/dotnet/RedisCollection.cs",
         "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
         "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",

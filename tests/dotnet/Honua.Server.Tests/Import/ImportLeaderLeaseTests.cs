@@ -96,7 +96,7 @@ internal static class ImportManagers
 {
     public static GeoservicesImportJobManager Geoservices(string environmentName, ILeaseStore? leases)
         => new(
-            new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance),
+            new UniversalProgressStore(),
             NullLogger<GeoservicesImportJobManager>.Instance,
             leaderElection: leases is not null
                 ? new LeaseLeaderElection(leases, "geoservices:import:leader", LeaseLeaderElection.DefaultLeaseDuration)

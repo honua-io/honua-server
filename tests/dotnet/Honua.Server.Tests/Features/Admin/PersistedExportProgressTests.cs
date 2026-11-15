@@ -8,49 +8,32 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Progress;
-using Honua.Migration;
+using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using StackExchange.Redis;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-[Collection("Redis")]
+// Invalid persisted export records in the PostgreSQL progress store (the only shared store)
+// must not hide healthy operations or leak serializer details through the admin endpoints.
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
-public sealed class PersistedExportProgressTests : IAsyncLifetime
+public sealed class PersistedExportProgressTests(DatabaseFixtureAdapter database)
+    : IClassFixture<DatabaseFixtureAdapter>, IAsyncLifetime
 {
-    private readonly ServiceProvider _services;
-    private readonly ConnectionMultiplexer _redis;
-    private readonly IDistributedCache _cache;
-    private readonly UniversalProgressStore _store;
-    private readonly List<string> _ids = [];
+    private ControlPlaneStateHarness _harness = null!;
+    private Honua.Server.Features.Infrastructure.Progress.PostgresUniversalProgressStore _store = null!;
 
-    public PersistedExportProgressTests(RedisFixture redis)
+    public async Task InitializeAsync()
     {
-        _services = new ServiceCollection().AddStackExchangeRedisCache(options =>
-            options.Configuration = redis.ConnectionString).BuildServiceProvider();
-        _redis = ConnectionMultiplexer.Connect(redis.ConnectionString);
-        _cache = _services.GetRequiredService<IDistributedCache>();
-        _store = new UniversalProgressStore(_cache, NullLogger<UniversalProgressStore>.Instance, _redis);
+        _harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(PersistedExportProgressTests));
+        _store = _harness.CreateProgressStore();
     }
 
-    public Task InitializeAsync() => Task.CompletedTask;
-
-    public async Task DisposeAsync()
-    {
-        foreach (var id in _ids)
-        {
-            await _store.DeleteProgressAsync(id);
-            await _cache.RemoveAsync($"export:request:{id}");
-        }
-        _redis.Dispose();
-        await _services.DisposeAsync();
-    }
+    public async Task DisposeAsync() => await _harness.DisposeAsync();
 
     [IntegrationTheory]
     [InlineData(true)]
@@ -87,7 +70,6 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
         {
             await fixture.DisposeAsync();
         }
-        _store.IsUsingFallback.Should().BeFalse();
     }
 
     [IntegrationTheory]
@@ -117,7 +99,6 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
         {
             await fixture.DisposeAsync();
         }
-        _store.IsUsingFallback.Should().BeFalse();
     }
 
     [IntegrationTheory]
@@ -133,21 +114,18 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
         var operations = await _store.GetActiveOperationsAsync<ExportProgress>(OperationType.Export);
 
         operations.Should().Contain(p => p.JobId == healthyId).And.NotContain(p => p.JobId == invalidId);
-        _store.IsUsingFallback.Should().BeFalse();
     }
 
-    private string NewId()
-    {
-        var id = $"persisted-export-{Guid.NewGuid():N}";
-        _ids.Add(id);
-        return id;
-    }
+    private static string NewId() => $"persisted-export-{Guid.NewGuid():N}";
 
     private async Task<string> SeedInvalidExportAsync(bool legacyShape)
     {
         var id = NewId();
         await _store.SetProgressAsync(id, ExportProgress.CreateInitial(id, "csv", "svc", 3, 1));
-        var json = JsonNode.Parse((await _cache.GetStringAsync($"universal:progress:{id}"))!)!;
+        var table = _harness.Table("operation_progress");
+        var idParameter = new NpgsqlParameter("id", id);
+        var json = JsonNode.Parse((await _harness.ScalarAsync<string>(
+            $"SELECT payload FROM {table} WHERE operation_id = @id", idParameter))!)!;
         var progress = json["Data"]!.AsObject();
         if (legacyShape)
         {
@@ -158,7 +136,10 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
         {
             progress["ServiceLayerIndex"] = "invalid";
         }
-        await _cache.SetStringAsync($"universal:progress:{id}", json.ToJsonString());
+        await _harness.ExecuteAsync(
+            $"UPDATE {table} SET payload = @payload WHERE operation_id = @id",
+            new NpgsqlParameter("payload", json.ToJsonString()),
+            new NpgsqlParameter("id", id));
         return id;
     }
 }
