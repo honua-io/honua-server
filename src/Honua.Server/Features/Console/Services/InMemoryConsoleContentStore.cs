@@ -43,7 +43,7 @@ internal sealed class InMemoryConsoleContentStore : IAuthoredConsoleContent
         };
         if (!_items.TryAdd(id, stored))
         {
-            throw new InvalidOperationException($"Console content item '{id}' already exists.");
+            throw new ConsoleContentIdConflictException(id);
         }
         return Task.FromResult(stored);
     }

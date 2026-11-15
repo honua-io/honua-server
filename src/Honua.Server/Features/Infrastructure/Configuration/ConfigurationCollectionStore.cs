@@ -79,6 +79,18 @@ internal sealed class ConfigurationCollectionStore<T>(
         throw new InvalidOperationException("Concurrent configuration updates exceeded the retry limit.");
     }
 
+    // Deletes the document and, in the same transaction, the documents of the other kinds stored under its key.
+    // Returns whether this collection had the document; dependents left by an earlier delete are removed either way.
+    public async Task<bool> DeleteWithDependentsAsync(string key, IReadOnlyList<string> dependentKinds, CancellationToken token)
+    {
+        var deleted = await documents.DeleteKeyAsync([collection.Kind, .. dependentKinds], key, token).ConfigureAwait(false);
+        if (deleted.Count > 0)
+        {
+            Interlocked.Increment(ref _localWrites);
+        }
+        return deleted.Contains(collection.Kind, StringComparer.Ordinal);
+    }
+
     // The request that wrote must read its own change, and its captured generation is the one before the write.
     // A snapshot whose read began before the write is discarded even when it is stored after it.
     private async Task<bool> WriteAsync(ConfigurationWrite<T> write, CancellationToken token)

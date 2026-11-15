@@ -14,6 +14,11 @@ internal sealed class PostgresConsoleContentStore(
     PostgresConfigurationDocuments documents, TimeProvider timeProvider, IHttpContextAccessor? contexts = null)
     : IAuthoredConsoleContent
 {
+    // An item's share and open-data state is keyed by its id, and an id can be chosen again on create, so that
+    // state is deleted with the item: a new item must not inherit the public links or publication of an old one.
+    private static readonly string[] _dependentKinds =
+        [PostgresConsoleShareStore.Kind, PostgresConsoleOpenDataStore.PageKind, PostgresConsoleOpenDataStore.PublicationKind];
+
     private readonly ConfigurationCollectionStore<ConsoleContentItem> _items = new(
         documents, new("console-content", ConsoleJsonContext.Default.ConsoleContentItem), contexts);
 
@@ -40,7 +45,7 @@ internal sealed class PostgresConsoleContentStore(
         };
         if (!await _items.TryCreateAsync(id, stored, cancellationToken).ConfigureAwait(false))
         {
-            throw new InvalidOperationException($"Console content item '{id}' already exists.");
+            throw new ConsoleContentIdConflictException(id);
         }
         return stored;
     }
@@ -100,7 +105,7 @@ internal sealed class PostgresConsoleContentStore(
     }
 
     public Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default)
-        => _items.DeleteAsync(id, cancellationToken);
+        => _items.DeleteWithDependentsAsync(id, _dependentKinds, cancellationToken);
 
     public async Task<IReadOnlyList<ConsoleContentItem>> GetProvenanceChainAsync(
         string id, int maxDepth, CancellationToken cancellationToken = default)

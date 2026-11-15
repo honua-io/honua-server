@@ -105,6 +105,29 @@ internal sealed partial class PostgresConfigurationDocuments(
             }
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 
+    // Deletes the key's document in each kind in one transaction, for documents that must not outlive another.
+    // Returns the kinds that had a document under the key.
+    public Task<IReadOnlyList<string>> DeleteKeyAsync(IReadOnlyList<string> kinds, string key, CancellationToken cancellationToken)
+        => database.ExecuteAsync<IReadOnlyList<string>>(async (connection, _, token) =>
+        {
+            await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
+            await LockGenerationAsync(connection, token).ConfigureAwait(false);
+            await using var command = new NpgsqlCommand(
+                $"DELETE FROM {_documents} WHERE key = @key AND kind = ANY(@kinds) RETURNING kind", connection);
+            command.Parameters.AddWithValue("key", key);
+            command.Parameters.AddWithValue("kinds", kinds.ToArray());
+            var deleted = new List<string>();
+            await using (var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false))
+            {
+                while (await reader.ReadAsync(token).ConfigureAwait(false))
+                {
+                    deleted.Add(reader.GetString(0));
+                }
+            }
+            await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
+            return deleted;
+        }, StatementRepeat.NotAfterSend, cancellationToken);
+
     public Task<bool> WriteAsync<T>(ConfigurationCollection<T> collection, ConfigurationWrite<T> write, CancellationToken cancellationToken)
         => database.ExecuteAsync(async (connection, _, token) =>
         {

@@ -21,10 +21,12 @@ internal sealed class PostgresConsoleShareStore(
     TimeProvider timeProvider,
     IHttpContextAccessor? contexts = null) : IConsoleShareStore
 {
+    internal const string Kind = "console-share";
+
     private const int TokenByteLength = 32;
 
     private readonly ConfigurationCollectionStore<StoredConsoleShare> _shares = new(
-        documents, new("console-share", ConsoleStateJsonContext.Default.StoredConsoleShare), contexts);
+        documents, new(Kind, ConsoleStateJsonContext.Default.StoredConsoleShare), contexts);
     private LinkIndex? _links;
 
     public async Task<ConsoleShareState?> GetAsync(string itemId, CancellationToken cancellationToken = default)

@@ -1,11 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using Honua.ControlPlane;
 using Honua.Core.Features.EmbedGovernance.Abstractions;
 using Honua.Core.Features.EmbedGovernance.Domain;
 using Honua.Server.Features.Console.Services;
 using Honua.Server.Features.Infrastructure.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -14,12 +16,14 @@ namespace Honua.Server.Features.Admin.EmbedGovernance;
 // Embed keys in the system database. A key is one document under the shared configuration generation (ADR-0086),
 // so a revocation or rotation on one task is refused on every task. Use is counted in its own table: every task
 // adds to the same rate window, and a request is what records the last use (validation alone only reads).
-internal sealed class PostgresEmbedKeyStore(
+internal sealed partial class PostgresEmbedKeyStore(
     PostgresConfigurationDocuments documents,
     JobStoreDatabase database,
     TimeProvider timeProvider,
-    IHttpContextAccessor? contexts = null) : IEmbedKeyStore
+    IHttpContextAccessor? contexts = null,
+    ILogger<PostgresEmbedKeyStore>? logger = null) : IEmbedKeyStore
 {
+    private readonly ILogger _logger = logger ?? (ILogger)NullLogger.Instance;
     private readonly ConfigurationCollectionStore<EmbedKeyRecord> _keys = new(
         documents, new("embed-key", ConsoleStateJsonContext.Default.EmbedKeyRecord), contexts);
     private readonly string _usage = database.Table("embed_key_usage");
@@ -90,14 +94,28 @@ internal sealed class PostgresEmbedKeyStore(
         {
             return null;
         }
-        // The new secret starts with no recorded use and a fresh rate window.
-        await database.ExecuteAsync(async (connection, _, token) =>
-        {
-            await using var command = new NpgsqlCommand($"DELETE FROM {_usage} WHERE key_id = @id", connection);
-            command.Parameters.AddWithValue("id", id);
-            return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
-        }, StatementRepeat.SafeToRepeat, cancellationToken).ConfigureAwait(false);
+        await ResetUsageAsync(id, cancellationToken).ConfigureAwait(false);
         return new(rotated, generated);
+    }
+
+    // The new secret starts with no recorded use and a fresh rate window. The rotation has committed, so the old
+    // secret is refused already and the new one must reach the caller: a failed reset is logged, not raised. A request
+    // that validated the old secret just before the rotation may still count once into the fresh window.
+    private async Task ResetUsageAsync(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await database.ExecuteAsync(async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand($"DELETE FROM {_usage} WHERE key_id = @id", connection);
+                command.Parameters.AddWithValue("id", id);
+                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            }, StatementRepeat.SafeToRepeat, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is DbException or TimeoutException)
+        {
+            UsageResetFailed(_logger, id, exception);
+        }
     }
 
     public async Task<EmbedKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken)
@@ -177,6 +195,9 @@ internal sealed class PostgresEmbedKeyStore(
         => lastUsed.TryGetValue(key.Id, out var usedAt) ? key with { LastUsedAt = usedAt } : key;
 
     private static string Key(Guid id) => id.ToString("D");
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Embed key {KeyId} was rotated, but its recorded use could not be reset.")]
+    private static partial void UsageResetFailed(ILogger logger, Guid keyId, Exception exception);
 
     private sealed record HashIndex(IReadOnlyDictionary<string, EmbedKeyRecord> Keys, Dictionary<string, EmbedKeyRecord> ByHash);
 }

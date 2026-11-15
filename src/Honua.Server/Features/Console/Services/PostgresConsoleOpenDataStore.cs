@@ -14,10 +14,14 @@ internal sealed class PostgresConsoleOpenDataStore(
     PostgresConfigurationDocuments documents, TimeProvider timeProvider, IHttpContextAccessor? contexts = null)
     : IConsoleOpenDataStore
 {
+    internal const string PageKind = "console-open-data-page";
+
+    internal const string PublicationKind = "console-stac-publication";
+
     private readonly ConfigurationCollectionStore<ConsoleOpenDataPage> _pages = new(
-        documents, new("console-open-data-page", ConsoleJsonContext.Default.ConsoleOpenDataPage), contexts);
+        documents, new(PageKind, ConsoleJsonContext.Default.ConsoleOpenDataPage), contexts);
     private readonly ConfigurationCollectionStore<ConsoleStacPublicationState> _publications = new(
-        documents, new("console-stac-publication", ConsoleJsonContext.Default.ConsoleStacPublicationState), contexts);
+        documents, new(PublicationKind, ConsoleJsonContext.Default.ConsoleStacPublicationState), contexts);
 
     public async Task<ConsoleOpenDataPage?> GetPageAsync(string itemId, CancellationToken cancellationToken = default)
         => (await _pages.ReadCurrentByKeyAsync(cancellationToken).ConfigureAwait(false)).GetValueOrDefault(itemId);

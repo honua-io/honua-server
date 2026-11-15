@@ -11,6 +11,7 @@ using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Console;
 
@@ -154,6 +155,64 @@ public sealed class PostgresConsoleStateStoreTests(DatabaseFixtureAdapter databa
         again.CollectionId.Should().Be(first.CollectionId);
         again.FirstPublishedAt.Should().Be(first.FirstPublishedAt);
         (await taskB.GetStacPublicationAsync("item-4")).Revision.Should().Be(3);
+    }
+
+    [IntegrationTest]
+    public async Task ContentDeletedOnTaskA_TakesItsShareAndOpenDataStateWithIt()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var created = await Content(harness).CreateAsync(Item("trails", ConsoleVisibility.Public));
+        var link = await Shares(harness).MintPublicLinkAsync(created.Id, ConsoleShareAccessTier.PublicLink, null, "owner");
+        await OpenData(harness).SavePageAsync(new ConsoleOpenDataPage { ItemId = created.Id, Title = "Trails" }, "editor");
+        await OpenData(harness).PublishStacAsync(created.Id, "editor");
+
+        (await Content(harness).DeleteAsync(created.Id)).Should().BeTrue();
+
+        var taskB = Shares(harness);
+        (await taskB.ResolvePublicLinkAsync(link.Token!)).Should().BeNull();
+        (await OpenData(harness).GetPageAsync(created.Id)).Should().BeNull();
+        (await OpenData(harness).ListPublishedStacItemIdsAsync()).Should().BeEmpty();
+        await Content(harness).CreateAsync(Item("trails again", ConsoleVisibility.Public) with { Id = created.Id });
+        (await taskB.GetAsync(created.Id)).Should().BeNull("a new item with the same id starts with no share state");
+    }
+
+    [IntegrationTest]
+    public async Task WriteInsideARequest_IsReadBackInTheSameRequest()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var documents = harness.CreateConfigurationDocuments();
+        var request = Request(await documents.GetGenerationAsync(CancellationToken.None));
+        var store = new PostgresConsoleOpenDataStore(documents, TimeProvider.System, request);
+        (await store.GetPageAsync("item-5")).Should().BeNull();
+
+        await store.SavePageAsync(new ConsoleOpenDataPage { ItemId = "item-5", Title = "Wells" }, "editor");
+
+        (await store.GetPageAsync("item-5"))!.Title.Should().Be("Wells", "the writing task reads its own change at once");
+    }
+
+    [IntegrationTest]
+    public async Task WriteOnTaskA_ReachesTaskBOnItsNextRequest()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var documents = harness.CreateConfigurationDocuments();
+        var request = Request(await documents.GetGenerationAsync(CancellationToken.None));
+        var taskB = new PostgresConsoleOpenDataStore(documents, TimeProvider.System, request);
+        (await taskB.GetPageAsync("item-6")).Should().BeNull();
+
+        await OpenData(harness).SavePageAsync(new ConsoleOpenDataPage { ItemId = "item-6", Title = "Springs" }, "editor");
+
+        (await taskB.GetPageAsync("item-6")).Should().BeNull("a request keeps the generation it started with");
+        request.HttpContext!.Items[RequestConfigurationGeneration.ContextKey] = await documents.GetGenerationAsync(CancellationToken.None);
+        (await taskB.GetPageAsync("item-6"))!.Title.Should().Be("Springs");
+    }
+
+    // A request that captured the generation at its start. Synchronous on purpose: the accessor's context is
+    // async-local, and a value set inside an async method would not reach the caller.
+    private static HttpContextAccessor Request(long generation)
+    {
+        var context = new DefaultHttpContext();
+        context.Items[RequestConfigurationGeneration.ContextKey] = generation;
+        return new HttpContextAccessor { HttpContext = context };
     }
 
     private static ConsoleContentItem Item(string name, ConsoleVisibility visibility) => new()

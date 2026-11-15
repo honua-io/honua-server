@@ -479,7 +479,9 @@ On a host with a system database, authored content, share state, open-data
 pages, STAC publication state and embed keys are configuration documents in
 PostgreSQL under the shared configuration generation (ADR-0086), so every task
 serves the same state and it survives a restart. A public link keeps only the
-SHA-256 of its token. Embed tokens are short-lived and kept with the other
+SHA-256 of its token. Deleting an item deletes its share, open-data and STAC
+publication state in the same transaction, so an item created later with the
+same id starts with none of it. Embed tokens are short-lived and kept with the other
 expiring security tokens; embed-key request counts and last use are in
 `embed_key_usage`. The session bootstrap reports `persistence.mode = "postgres"`
 there. A host without a system database keeps this state in the memory of its

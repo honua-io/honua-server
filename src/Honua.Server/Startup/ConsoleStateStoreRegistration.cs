@@ -40,7 +40,7 @@ internal static class ConsoleStateStoreRegistration
         services.AddSingleton<IEmbedKeyStore>(static provider => HasDatabase(provider)
             ? new PostgresEmbedKeyStore(
                 Documents(provider), provider.GetRequiredService<JobStoreDatabase>(), Time(provider),
-                provider.GetService<IHttpContextAccessor>())
+                provider.GetService<IHttpContextAccessor>(), provider.GetService<ILogger<PostgresEmbedKeyStore>>())
             : new InMemoryEmbedKeyStore(provider.GetService<TimeProvider>()));
         services.AddSingleton(static provider => HasDatabase(provider)
             ? ConsolePersistenceNotice.Postgres
