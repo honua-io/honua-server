@@ -107,8 +107,9 @@
     },
     {
       "manifestId": "collaboration.feature-locks.cross-node",
-      "disposition": "declared-gap",
-      "note": "Declared gap, not a licensable capability. The only lease store that ships is in-process, so leases do not span nodes; the registry marks the entry Planned and the manifest publishes supported:false, lifecycle:planned, reasonCode:unsupported. Previously mapped to collaboration.map-sessions - an Implemented Community key - which framed an absent behaviour as a property of a working one."
+      "disposition": "mapped",
+      "capability": "collaboration.map-sessions",
+      "note": "Leases are shared through the PostgreSQL lease store, so a lease claimed on one node blocks a competing write on another; a host without the system database keeps the in-process store and the manifest publishes supported:false there. Same licensed capability as collaboration.feature-locks."
     },
     {
       "manifestId": "edit.geoservices-version-tokens",

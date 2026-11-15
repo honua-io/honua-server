@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Collaboration;
 
-// A lease is enforced here and again at the feature writer so a protocol without its own check cannot bypass it, the check is not inside the writer transaction, and enforcement is node-local.
+// A lease is enforced here and again at the feature writer so a protocol without its own check cannot bypass it, the check is not inside the writer transaction, and enforcement spans nodes only when the lease store is shared.
 public static class FeatureEditLockEnforcement
 {
     public const string HolderHeaderName = "X-Honua-Lock-Holder";

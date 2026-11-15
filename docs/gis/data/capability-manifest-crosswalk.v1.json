@@ -10,12 +10,12 @@
   },
   "summary": {
     "manifestIdCount": 48,
-    "resolvedCount": 39,
+    "resolvedCount": 40,
     "byResolution": {
-      "declared-gap": 2,
+      "declared-gap": 1,
       "direct": 21,
       "entitlement": 8,
-      "mapped": 6,
+      "mapped": 7,
       "not-licensable": 7,
       "registered": 4
     }
@@ -69,9 +69,9 @@
       "manifestId": "collaboration.feature-locks.cross-node",
       "category": "collaboration",
       "kind": "Feature",
-      "capability": null,
-      "resolution": "declared-gap",
-      "note": "Declared gap, not a licensable capability. The only lease store that ships is in-process, so leases do not span nodes; the registry marks the entry Planned and the manifest publishes supported:false, lifecycle:planned, reasonCode:unsupported. Previously mapped to collaboration.map-sessions - an Implemented Community key - which framed an absent behaviour as a property of a working one."
+      "capability": "collaboration.map-sessions",
+      "resolution": "mapped",
+      "note": "Leases are shared through the PostgreSQL lease store, so a lease claimed on one node blocks a competing write on another; a host without the system database keeps the in-process store and the manifest publishes supported:false there. Same licensed capability as collaboration.feature-locks."
     },
     {
       "manifestId": "edit.features",

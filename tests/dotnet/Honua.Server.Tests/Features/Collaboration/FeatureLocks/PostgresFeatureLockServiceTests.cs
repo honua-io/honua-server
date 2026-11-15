@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Collaboration.FeatureLocks;
+using Honua.Infrastructure.Collaboration;
 using Honua.Server.Features.Collaboration.FeatureLocks;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
@@ -48,6 +49,36 @@ public sealed class PostgresFeatureLockServiceTests(DatabaseFixtureAdapter datab
         var lease = claims.Single(claim => claim.IsSuccess).Lease;
         (await second.GetActiveLeaseAsync(_feature)).Should().BeEquivalentTo(lease);
         (await first.HasAnyActiveLeasesAsync()).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    public async Task EditOnSecondTask_HonoursLeaseClaimedOnFirstTask_UntilReleased()
+    {
+        await using var firstPool = NpgsqlDataSource.Create(database.ConnectionString);
+        await using var secondPool = NpgsqlDataSource.Create(database.ConnectionString);
+        var firstTask = new PostgresFeatureLockService(new JobStoreDatabase(firstPool, _schema));
+        var secondTask = new PostgresFeatureLockService(new JobStoreDatabase(secondPool, _schema));
+        var secondTaskGuard = new FeatureEditGuard(secondTask);
+        var parcel = FeatureRef.Canonical("Parcels", 3, 7L);
+        var otherEditor = new LockHolder("other-editor", "Other", "other-session", "tenant", "other-principal");
+
+        (await FeatureEditLockEnforcement.IsEvaluationRequiredAsync(secondTask)).Should().BeFalse();
+        (await firstTask.ClaimAsync(parcel, _holder, TimeSpan.FromMinutes(1), _write)).Status
+            .Should().Be(FeatureLockClaimStatus.Claimed);
+
+        (await FeatureEditLockEnforcement.IsEvaluationRequiredAsync(secondTask)).Should().BeTrue();
+        var conflict = await FeatureEditLockEnforcement.EvaluateAsync(secondTaskGuard, "Parcels", 3, 7L, "update", otherEditor);
+        conflict.Should().NotBeNull();
+        conflict!.Lock!.Holder.HolderId.Should().Be(_holder.HolderId);
+        (await FeatureEditLockEnforcement.EvaluateAsync(secondTaskGuard, "Parcels", 3, 7L, "update", _holder)).Should().BeNull();
+        (await FeatureEditLockEnforcement.EvaluateAsync(secondTaskGuard, "Parcels", 3, 8L, "update", otherEditor)).Should().BeNull();
+        (await secondTask.ClaimAsync(parcel, otherEditor, TimeSpan.FromMinutes(1), _write)).Status
+            .Should().Be(FeatureLockClaimStatus.HeldByOther);
+
+        (await secondTask.ReleaseAsync(parcel, _holder, _write)).Status.Should().Be(FeatureLockReleaseStatus.Released);
+        (await FeatureEditLockEnforcement.EvaluateAsync(secondTaskGuard, "Parcels", 3, 7L, "update", otherEditor)).Should().BeNull();
+        (await firstTask.ClaimAsync(parcel, otherEditor, TimeSpan.FromMinutes(1), _write)).Status
+            .Should().Be(FeatureLockClaimStatus.Claimed);
     }
 
     [IntegrationTest]
