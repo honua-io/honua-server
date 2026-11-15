@@ -32,7 +32,7 @@ internal static class PairedPublicationReadEndpoints
         {
             return unauthorized;
         }
-        var target = await reader.ResolveAsync(publicationId, null, cancellationToken).ConfigureAwait(false);
+        var target = await reader.ResolveCurrentAsync(publicationId, cancellationToken).ConfigureAwait(false);
         var error = await RequireAccessAsync(context, target, cancellationToken).ConfigureAwait(false);
         return error ?? Results.Redirect(
             $"{context.Request.PathBase}/api/v1/publications/{publicationId}/{target!.Descriptor.Version}/descriptor.json",
@@ -48,13 +48,14 @@ internal static class PairedPublicationReadEndpoints
         {
             return unauthorized;
         }
-        var target = await reader.ResolveAsync(publicationId, version, cancellationToken).ConfigureAwait(false);
-        var error = await RequireAccessAsync(context, target, cancellationToken).ConfigureAwait(false);
+        var current = await reader.ResolveCurrentAsync(publicationId, cancellationToken).ConfigureAwait(false);
+        var error = await RequireAccessAsync(context, current, cancellationToken).ConfigureAwait(false);
         if (error is not null)
         {
             return error;
         }
-        if (!PairedPublicationReader.IsAllowedFile(target!.Descriptor, fileName))
+        var target = await reader.ResolvePinnedAsync(current!, version, cancellationToken).ConfigureAwait(false);
+        if (target is null || !PairedPublicationReader.IsAllowedFile(target.Descriptor, fileName))
         {
             return Results.NotFound();
         }

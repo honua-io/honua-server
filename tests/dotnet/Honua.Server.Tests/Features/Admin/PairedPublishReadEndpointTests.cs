@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.PairedPublications;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -89,6 +90,32 @@ public sealed partial class PairedPublishEndpointTests
             request.Headers.TryAddWithoutValidation("If-None-Match", "*");
             using var response = await anonymous.SendAsync(request);
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+    }
+
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
+    [Endpoint("HEAD /api/v1/publications/{publicationId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("HEAD /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [InlineData("GET")]
+    [InlineData("HEAD")]
+    public async Task PublicationRead_DeniedExport_IsRefusedBeforeArchivedVersionExistence(string method)
+    {
+        var published = await PublishAsync(IdentityField);
+        var issued = await _fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "publication-read-denied", ["read:unrelated-service/*"], DateTimeOffset.UtcNow.AddMinutes(5),
+            "publication-read-test", CancellationToken.None);
+        using var denied = _fixture.CreateClient(allowAutoRedirect: false);
+        denied.DefaultRequestHeaders.Add("X-API-Key", issued.Key);
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/{_publicationId}.parquet", "missing/descriptor.json", $"missing/{_publicationId}.parquet" })
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
+            request.Headers.TryAddWithoutValidation("If-None-Match", "*");
+            request.Headers.Range = new RangeHeaderValue(0, 15);
+            using var response = await denied.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            response.Headers.CacheControl!.NoStore.Should().BeTrue();
         }
     }
 

@@ -17,10 +17,10 @@ internal sealed class PairedPublicationReader(
     IOptions<CloudStorageOptions> options,
     IMetadataV2GraphProvider graphProvider)
 {
-    internal async Task<PairedPublicationReadTarget?> ResolveAsync(
-        string publicationId, string? version, CancellationToken cancellationToken)
+    internal async Task<PairedPublicationReadTarget?> ResolveCurrentAsync(
+        string publicationId, CancellationToken cancellationToken)
     {
-        if (!PairedPublishRequestRules.IsPublicationId(publicationId) || (version is not null && !IsVersion(version)))
+        if (!PairedPublishRequestRules.IsPublicationId(publicationId))
         {
             return null;
         }
@@ -41,18 +41,34 @@ internal sealed class PairedPublicationReader(
             {
                 return null;
             }
-            if (version is null || version == pointer.Version)
-            {
-                return current;
-            }
-
-            var pinned = await ResolveVersionAsync(store, version, snapshot, cancellationToken).ConfigureAwait(false);
-            return pinned?.Descriptor.PublicationId == publicationId &&
-                PMTilesProxySourceResolver.SameSource(current.Source, pinned.Source) ? pinned : null;
+            return current;
         }
         catch (JsonException)
         {
             // Invalid or oversized control documents never resolve to artifact keys.
+            return null;
+        }
+    }
+
+    internal async Task<PairedPublicationReadTarget?> ResolvePinnedAsync(
+        PairedPublicationReadTarget current, string version, CancellationToken cancellationToken)
+    {
+        if (!IsVersion(version))
+        {
+            return null;
+        }
+        if (version == current.Descriptor.Version)
+        {
+            return current;
+        }
+        try
+        {
+            var pinned = await ResolveVersionAsync(current.Store, version, current.Snapshot, cancellationToken).ConfigureAwait(false);
+            return pinned?.Descriptor.PublicationId == current.Descriptor.PublicationId &&
+                PMTilesProxySourceResolver.SameSource(current.Source, pinned.Source) ? pinned : null;
+        }
+        catch (JsonException)
+        {
             return null;
         }
     }
@@ -88,7 +104,7 @@ internal sealed class PairedPublicationReader(
         {
             return null;
         }
-        return new(store, descriptor, source);
+        return new(store, descriptor, source, snapshot);
     }
 
     internal Task<CloudFile?> GetFileAsync(PairedPublicationReadTarget target, string fileName, CancellationToken cancellationToken)
@@ -120,4 +136,4 @@ internal sealed class PairedPublicationReader(
 }
 
 internal sealed record PairedPublicationReadTarget(
-    PairedPublicationStore Store, PublicationDescriptor Descriptor, PMTilesPublishedSource Source);
+    PairedPublicationStore Store, PublicationDescriptor Descriptor, PMTilesPublishedSource Source, MetadataV2GraphSnapshot Snapshot);
