@@ -1006,3 +1006,22 @@ avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
 The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
+
+### Advisory heavy compute admission
+
+| Workflow file | Trigger | Compute policy |
+|---|---|---|
+| `advisory-runner-select.yml` | `workflow_call` from CodeQL, Store Image Size and Serving Image Boundary | Light bootstrap; same-repository PRs read existing instance/heartbeat with trusted base scripts; healthy idle heavy pool or original hosted label. |
+
+The selector is read-only: it never wakes or resizes capacity. Its 90-second
+heartbeat proof binds the current instance and available heavy worker. Forks,
+non-PR callers, missing configuration/credentials, busy/stale hosts and health
+read errors use hosted compute. The existing OIDC trust is PR-only. Selection
+errors also preserve hosted execution through caller fallback expressions.
+Each consumer independently checks repository trust before accepting the
+selected runner and uses hosted compute for forks;
+Serving Image Boundary still requires successful impact detection. No CodeQL
+language/build mode, image variant, test or gate is removed. Native GitHub Code
+Quality uses a managed workflow and is outside these runner-routing changes.
+
+Advisory heavy selection preserves runner-group restrictions in object selectors as well as label arrays. Store native-runtime checks execute all eight cases as container root through rootless Docker on heavy runners; hosted runners retain their root execution. Both image smoke paths select free loopback ports through the shared ownership helper before publishing them explicitly. This avoids the independent Docker allocators choosing the same default port across rootless accounts; readiness remains bound to the launched container.
