@@ -140,6 +140,8 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
             await store.SaveAsync(GlobalIdGraph(schema), expectedEtag: null);
+            command.CommandText = $"SELECT COUNT(*)::int FROM pg_indexes WHERE schemaname = '{schema}' AND indexname LIKE 'idx_features_gid_%'";
+            (await command.ExecuteScalarAsync()).Should().Be(1);
             await using var writer = await fixture.DataSource.OpenConnectionAsync();
             await using var pendingWrite = await writer.BeginTransactionAsync();
             await using (var insert = new NpgsqlCommand($"INSERT INTO \"{schema}\".features VALUES (7, '{{}}')", writer, pendingWrite))
