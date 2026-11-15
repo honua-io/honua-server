@@ -18,6 +18,9 @@ This section is for people **building or extending** Honua (core contributors, a
 - [Architecture Review Criteria](architecture-criteria.md) — PR review quality gates
 - [Package and Module Governance](package-and-module-governance.md) — central package versions and optional module boundaries
 - [Honua Manifesto](HONUA_MANIFESTO.md) — core principles
+- [Configuration and secret management](architecture/configuration-and-secrets.md)
+- [Local pre-PR validation](local-pre-pr-validation.md) and the [I3S SceneServer smoke](i3s-sceneserver-smoke.md)
+- [Imported editing metadata](imported-editing-metadata.md), [dense mosaic statistics admission](raster-statistics-allocation-budget.md), [service folder rollout](service-folder-rollout.md)
 - Metadata v2 architecture artifacts:
   - [Release Readiness](architecture/metadata-v2-release-readiness.md) — non-authoritative release gates derived from the GitHub issues
   - [Admin UI Information Model](architecture/metadata-v2-admin-ui-information-model.md) — Claude Design handoff for `#1046`
@@ -50,6 +53,8 @@ This section is for people **building or extending** Honua (core contributors, a
 - [Release Checklist](RELEASE_CHECKLIST.md) — required compatibility/client/caveat updates per release
 - [Alpha/Beta Pilot Readiness Checklist](pilot-readiness-checklist.md) — validation gates, evidence packet, and go/no-go rules for quality-sweep pilot readiness
 - [LLM Architecture Review](development/llm-review-setup.md) — automated PR review
+- [Affected shard families in PR Gate](../ci/affected-shards-in-pr-gate.md), [review-first PR Gate](../ci/review-first-pr-gate.md), [timing-aware shard scheduling](../ci/shard-timing-planning.md)
+- [Native-image impact routing](../ci/native-image-impact-routing.md), [serving-image content-addressed skip](../ci/serving-image-content-addressed-skip.md), [nightly GDAL worker publication](../ci/gp-worker-publication.md), [semantic source inventory pilot](../ci/source-inventory-pilot.md)
 
 ## Roadmaps
 
