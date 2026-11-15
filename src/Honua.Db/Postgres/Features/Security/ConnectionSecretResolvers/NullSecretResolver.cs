@@ -26,6 +26,9 @@ internal sealed class NullSecretResolver : IConnectionSecretResolver
             "Either configure a secret management provider or use encrypted credential storage.");
     }
 
+    public Task<string?> ResolveSecretFreshAsync(string secretKey, CancellationToken cancellationToken = default)
+        => ResolveSecretAsync(secretKey, cancellationToken);
+
     /// <inheritdoc />
     public bool CanResolve(string secretKey)
     {

@@ -4,6 +4,7 @@
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Exceptions;
 using Honua.Alerts.Ops;
+using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -657,6 +658,35 @@ internal sealed partial class OperationGateway : IOperationGateway
             }
         }
 
+        if (hasIdempotencyKey && request.ActionDiscriminator == OpsActionNames.RedriveDeadLetters
+            && request.AutonomyContext?.FindingId != null)
+        {
+            if (_proposalStore is not IOperationProposalBatchStore batches)
+            {
+                return new OperationGatewayResult
+                {
+                    Outcome = OperationGatewayOutcome.Failed,
+                    Decision = decision,
+                    Message = "Durable approval batch storage is unavailable."
+                };
+            }
+
+            var batchKey = DeriveProposalId(request.Kind, request.OperationId, request.IdempotencyKey!, request.TenantId);
+            var candidateKey = $"{request.IdempotencyKey}:batch:{Guid.NewGuid():N}";
+            var candidateId = DeriveProposalId(request.Kind, request.OperationId, candidateKey, request.TenantId);
+            var reservedKey = await batches.ReserveBatchAsync(new(batchKey, candidateKey, candidateId), cancellationToken)
+                .ConfigureAwait(false);
+            request = request with { IdempotencyKey = reservedKey };
+            var existing = await FindActiveByIdempotencyKeyAsync(request.Kind, request.OperationId, reservedKey, request.TenantId, cancellationToken)
+                .ConfigureAwait(false);
+            if (existing != null)
+            {
+                return RequiresNewFolderIdempotencyKey(existing, new FolderProposalReuseContext(request, plan, clock))
+                    ? NewIdempotencyKeyRequiredResult(decision)
+                    : ExistingProposalResult(existing, decision, reservedKey);
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(request.OperationInstanceId))
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
@@ -764,16 +794,16 @@ internal sealed partial class OperationGateway : IOperationGateway
                 throw new InvalidOperationException("Failed to durably persist the operation proposal.");
             }
 
-            if (winner.Status != OperationProposalStatus.Expired)
+            // Renewal ordinals live outside the caller-key hash namespace. A literal
+            // caller key ending in "#1" must never alias another key's renewal.
+            var renewedId = $"{proposalId}-renewal-{(renewal + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            if (!await TryRetargetOpenBatchAsync(winner, renewedId, cancellationToken).ConfigureAwait(false))
             {
                 return RequiresNewFolderIdempotencyKey(winner, new FolderProposalReuseContext(request, plan, clock))
                     ? NewIdempotencyKeyRequiredResult(decision)
                     : ExistingProposalResult(winner, decision, request.IdempotencyKey!);
             }
 
-            // Renewal ordinals live outside the caller-key hash namespace. A literal
-            // caller key ending in "#1" must never alias another key's renewal.
-            var renewedId = $"{proposalId}-renewal-{(renewal + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
             proposal = proposal with { ProposalId = renewedId, Audit = proposal.Audit with { ProposalId = renewedId } };
         }
 
@@ -863,6 +893,28 @@ internal sealed partial class OperationGateway : IOperationGateway
             PolicyDecision = PolicyDecisionKind.RequireApproval,
             UpdatedAt = DateTimeOffset.UtcNow,
         }, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> TryRetargetOpenBatchAsync(
+        OperationProposal winner, string renewedId, CancellationToken cancellationToken)
+    {
+        if (_proposalStore is not IOperationProposalBatchStore batches)
+        {
+            return winner.Status == OperationProposalStatus.Expired;
+        }
+
+        if (winner.Status == OperationProposalStatus.Succeeded)
+        {
+            await batches.CompleteOpenBatchAsync(winner.ProposalId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (winner.Status != OperationProposalStatus.Expired)
+        {
+            return false;
+        }
+
+        await batches.RetargetOpenBatchAsync(winner.ProposalId, renewedId, cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     private async Task TryFailPlannedProposalAsync(

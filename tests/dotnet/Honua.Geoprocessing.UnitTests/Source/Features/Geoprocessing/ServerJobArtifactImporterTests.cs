@@ -24,7 +24,7 @@ using NSubstitute;
 
 namespace Honua.Geoprocessing.Tests;
 
-public sealed class ServerJobArtifactImporterTests
+public sealed partial class ServerJobArtifactImporterTests
 {
     // EWKB POINT(0 0) with embedded SRID 3857.
     private const string PointEwkbSrid3857Base64 = "AQEAACARDwAAAAAAAAAAAAAAAAAAAAAAAA==";

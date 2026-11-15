@@ -184,7 +184,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
         schemas.GetProperty("UpdateLayerMetadataRequest").GetProperty("properties").GetProperty("editing")
             .GetProperty("$ref").GetString().Should().Be("#/components/schemas/MetadataV2EditingPatch");
         schemas.GetProperty("LayerMetadataResponse").GetProperty("properties").GetProperty("editing")
-            .GetProperty("$ref").GetString().Should().Be("#/components/schemas/MetadataV2ObjectEditing");
+            .GetProperty("$ref").GetString().Should().Be("#/components/schemas/MetadataV2ResourceEditing");
         var request = schemas.GetProperty("MetadataV2EditingPatch");
         request.GetProperty("nullable").GetBoolean().Should().BeTrue();
         request.GetProperty("properties").EnumerateObject().Select(property => property.Name)
@@ -192,7 +192,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
         var intent = request.GetProperty("properties").GetProperty("supportsAttachments");
         intent.GetProperty("type").GetString().Should().Be("boolean");
         intent.GetProperty("nullable").GetBoolean().Should().BeTrue();
-        var response = schemas.GetProperty("MetadataV2ObjectEditing");
+        var response = schemas.GetProperty("MetadataV2ResourceEditing");
         response.GetProperty("nullable").GetBoolean().Should().BeTrue();
         var properties = response.GetProperty("properties");
         properties.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(

@@ -2,6 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.ControlPlane.Executors;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Guardrails.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using NSubstitute;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Server.Tests.Infrastructure;
@@ -243,6 +248,108 @@ public sealed class PostgresOperationProposalStoreTests(DatabaseFixtureAdapter d
         (await store.RenewLeaseAsync(leaseId, "node-a", leaseDuration)).Should().BeTrue();
         await store.ReleaseLeaseAsync(leaseId, "node-a");
         (await harness.CreateProposalStore().TryAcquireLeaseAsync(leaseId, "node-b", leaseDuration)).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    public async Task ReserveBatchAsync_ConcurrentReplicas_ShareOnePendingReservation()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var keys = await Task.WhenAll(Enumerable.Range(0, 8).Select(index =>
+            harness.CreateProposalStore().ReserveBatchAsync(new("finding", $"key-{index}", $"proposal-{index}"))));
+
+        keys.Distinct().Should().ContainSingle();
+        (await harness.CreateProposalStore().ReserveBatchAsync(new("finding", "restart", "restart-id")))
+            .Should().Be(keys[0]);
+    }
+
+    [IntegrationTest]
+    public async Task ReserveBatchAsync_CompletionSurvivesRetention_AdvancesOnlyAfterSuccessfulVersionedWrite()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var proposal = Proposal();
+        await store.ReserveBatchAsync(new("finding", "first", proposal.ProposalId));
+        await store.TryCreateAsync(proposal);
+        (await store.TrySetAsync(proposal with { Version = 9, Status = OperationProposalStatus.Succeeded })).Should().BeFalse();
+        (await store.ReserveBatchAsync(new("finding", "stale", "stale-id"))).Should().Be("first");
+        (await store.TrySetAsync(proposal with { Status = OperationProposalStatus.Succeeded })).Should().BeTrue();
+        await harness.ExecuteAsync($"UPDATE {harness.Table("operation_proposals")} SET expires_at = now() - interval '1 second'");
+        (await store.DeleteExpiredAsync(100, CancellationToken.None)).Should().Be(1);
+
+        (await harness.CreateProposalStore().ReserveBatchAsync(new("finding", "next", "next-id"))).Should().Be("next");
+    }
+
+    [IntegrationTest]
+    public async Task ReserveBatchAsync_RenewedProposal_CompletesTheOriginalBatch()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var expired = Proposal();
+        await store.ReserveBatchAsync(new("finding", "first", expired.ProposalId));
+        await store.TryCreateAsync(expired);
+        (await store.TrySetAsync(expired with { Status = OperationProposalStatus.Expired })).Should().BeTrue();
+        var renewal = expired with { ProposalId = expired.ProposalId + "-renewal-1" };
+        await store.RetargetOpenBatchAsync(expired.ProposalId, renewal.ProposalId);
+        (await store.ReserveBatchAsync(new("finding", "during", "during-id"))).Should().Be("first");
+        await store.TryCreateAsync(renewal);
+        (await store.TrySetAsync(renewal with { Status = OperationProposalStatus.Succeeded })).Should().BeTrue();
+
+        (await harness.CreateProposalStore().ReserveBatchAsync(new("finding", "next", "next-id"))).Should().Be("next");
+    }
+
+    [IntegrationTest]
+    public async Task ReserveBatchAsync_RejectedProposal_DoesNotOpenAnotherBatch()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var proposal = Proposal();
+        await store.ReserveBatchAsync(new("finding", "first", proposal.ProposalId));
+        await store.TryCreateAsync(proposal);
+        await store.TrySetAsync(proposal with { Status = OperationProposalStatus.Rejected });
+
+        (await harness.CreateProposalStore().ReserveBatchAsync(new("finding", "next", "next-id"))).Should().Be("first");
+    }
+
+    [IntegrationTest]
+    public async Task CreateApprovalProposalAsync_RedriveBacklogGrows_PendingBatchStaysSealedThenNextBatchIsFresh()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.AdminConfigChange).Returns(new GuardrailDecision(
+            GuardrailTier.RequiresApproval, OperationClass.AdminConfigChange, HonuaEdition.Pro, "test"));
+        var gateway = CanonicalOperationGatewayTestComposition.Build(store, ladder, []);
+        var request = new OperationGatewayRequest
+        {
+            Kind = OperationClass.AdminConfigChange,
+            RequestedByAgent = "ops-findings",
+            ActionDiscriminator = OpsActionNames.RedriveDeadLetters,
+            IdempotencyKey = "stable-finding",
+            Plan = new OperationProposalPlan { Summary = "Redrive one", ExecutionPayload = OpsActionExecutionPayloads.RedriveDeadLetters(1) },
+            AutonomyContext = new OperationGatewayAutonomyContext
+            {
+                FindingId = "stable-finding",
+                Rule = "alert-dispatch-backlog",
+                ActionMarkedAutoSafe = true
+            }
+        };
+        var first = await gateway.CreateApprovalProposalAsync("instance-first", request);
+        first.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, first.Message);
+        var grown = request with
+        {
+            Plan = new OperationProposalPlan { Summary = "Redrive five hundred", ExecutionPayload = OpsActionExecutionPayloads.RedriveDeadLetters(500) }
+        };
+        var pending = await gateway.CreateApprovalProposalAsync("instance-retry", grown);
+        pending.ProposalId.Should().Be(first.ProposalId);
+        var stored = await store.GetAsync(first.ProposalId!);
+        stored!.Plan.ExecutionPayload.Should().Be(request.Plan.ExecutionPayload);
+        await store.TrySetAsync(stored with { Status = OperationProposalStatus.Succeeded });
+
+        var restartedGateway = CanonicalOperationGatewayTestComposition.Build(harness.CreateProposalStore(), ladder, []);
+        var next = await restartedGateway.CreateApprovalProposalAsync("instance-next", grown);
+        next.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, next.Message);
+        next.ProposalId.Should().NotBe(first.ProposalId);
+        (await store.GetAsync(next.ProposalId!))!.Plan.ExecutionPayload.Should().Be(grown.Plan.ExecutionPayload);
     }
 
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
