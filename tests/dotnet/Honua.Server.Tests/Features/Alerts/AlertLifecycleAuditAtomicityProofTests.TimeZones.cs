@@ -18,7 +18,7 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests
     [InlineData("2026-10-31T12:00:00Z")]
     public async Task SuppressAsync_DaylightSavingBoundary_EnforcesElapsedHours(string timestamp)
     {
-        var settings = new NpgsqlConnectionStringBuilder(_fixture.Postgres.DataSource.ConnectionString)
+        var settings = new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
         {
             Timezone = "America/Los_Angeles"
         };
