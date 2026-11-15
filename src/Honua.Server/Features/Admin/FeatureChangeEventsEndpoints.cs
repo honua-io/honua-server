@@ -17,7 +17,8 @@ internal static class FeatureChangeEventsEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Feature Events")
             .WithDescription("Feature change event replay endpoints")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         _ = group.Map("/replay", HandleReplay)
             .WithName("ReplayFeatureEvents")
