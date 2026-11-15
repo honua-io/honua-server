@@ -322,6 +322,16 @@ recorded tenant binding. Explicitly enabling
 `MultiTenancy:Enabled` opts into claim/header resolution; bearer calls to
 tenant-bound routes then require a valid tenant claim or an authorized override.
 
+With multi-tenancy enabled, global credential, identity-provider, certificate,
+license, tenant-lifecycle and metadata-release administration also requires
+platform authority. Tenant-bound administrators need a role listed in
+`MultiTenancy:MultiTenantAdminRoles` (defaults: `multi_tenant_admin` and
+`platform_admin`). The same authority rule applies to deployment and coordinated
+release operations. An administrator credential without a tenant binding retains
+platform access; single-tenant deployments retain their existing administration
+behavior. A tenant header does not grant platform authority. A refusal returns
+`403` with code `platform_admin_required`.
+
 To grant admin access through Cognito groups, configure the additional role claim
 and the group names that confer admin access (role claim selection requires Pro):
 
