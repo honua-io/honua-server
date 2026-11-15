@@ -127,7 +127,7 @@ Paired publish needs a layer stored in Honua's managed feature table (imported o
 
 Authenticated `GET` or `HEAD` requests to `/api/v1/publications/{publicationId}/current.json` return a `307` redirect to the current version's `descriptor.json`. Resolve the descriptor's relative artifact links against that immutable URL to keep both files on the same capture when a later publish moves the pointer. Versioned files support byte ranges, `HEAD` and conditional requests with `ETag`.
 
-Every read requires export access to the current source layer and checks its tenant, publication and visible fields. Retiring or rebinding the source, changing its tenant or hiding a published field can make retained versions unavailable. Responses use `private, no-store` so shared caches cannot bypass these checks.
+Every read requires export access to the current source layer and checks its tenant, publication and visible fields. Retiring or rebinding the source, changing its tenant or hiding a published field can make retained versions unavailable. Immutable artifacts cannot apply current row filters or field masks, so a read returns `403` when the current policy requires either. This also applies to redirects, conditional requests and byte ranges. Responses use `private, no-store` so shared caches cannot bypass these checks.
 
 ## Troubleshoot
 

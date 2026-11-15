@@ -1,7 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.FileStorage;
@@ -83,7 +87,24 @@ internal static class PairedPublicationReadEndpoints
         {
             return Results.NotFound();
         }
-        return await AccessPolicyHelpers.RequireResourceAccessAsync(
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
             context, target.Source.Resource, AuthorizationOperation.Export, target.Source.Service, cancellationToken).ConfigureAwait(false);
+        if (accessError is not null)
+        {
+            return accessError;
+        }
+
+        // Immutable archives cannot apply request-specific read policies. Resolve the
+        // same current policy as feature reads before redirects, conditions or bytes.
+        var services = context.RequestServices;
+        var security = new LayerReadSecurityResolver(
+            null,
+            services.GetRequiredService<IFilterExpressionService>(),
+            services.GetRequiredService<IRowLevelSecurityFilterSource>(),
+            services.GetRequiredService<IFieldMaskSource>());
+        var query = await security.ApplyAsync(target.Source.Resource, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        return query.EnforcedSqlFilter is not null || query.EnforcedMaskedFields is { IsDefaultOrEmpty: false }
+            ? StandardErrorHelpers.CreateForbidden(context, "This publication cannot satisfy the current read policy.")
+            : null;
     }
 }

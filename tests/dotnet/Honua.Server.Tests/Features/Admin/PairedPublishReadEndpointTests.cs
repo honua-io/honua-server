@@ -4,6 +4,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Descriptors;
@@ -20,6 +22,78 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed partial class PairedPublishEndpointTests
 {
     private string PublicationRoute => $"/api/v1/publications/{_publicationId}";
+
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
+    [Endpoint("HEAD /api/v1/publications/{publicationId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("HEAD /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [InlineData("GET", false)]
+    [InlineData("HEAD", false)]
+    [InlineData("GET", true)]
+    [InlineData("HEAD", true)]
+    public async Task PublicationRead_CurrentCallerPolicy_RefusesCurrentAndArchivedArtifacts(string method, bool restrictRows)
+    {
+        var first = await PublishAsync(IdentityField);
+        var second = await PublishAsync(IdentityField);
+        var route = $"{PublicationRoute}/{first.Version}/{_publicationId}.parquet";
+        using var before = await _client.GetAsync(route);
+        before.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var rows = scope.ServiceProvider.GetRequiredService<IRlsPolicyStore>();
+        var fields = scope.ServiceProvider.GetRequiredService<IFieldMaskPolicyStore>();
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId];
+        var policyId = Guid.NewGuid();
+        try
+        {
+            if (restrictRows)
+            {
+                await rows.CreatePolicyAsync(new RlsPolicy
+                {
+                    PolicyId = policyId, Role = "admin", Service = "*", Layer = resource.Metadata.Name,
+                    Attribute = IdentityField, ClaimType = "publication-test-missing-claim"
+                });
+            }
+            else
+            {
+                await fields.CreatePolicyAsync(new FieldMaskPolicy
+                {
+                    PolicyId = policyId, Role = "admin", Service = "*", Layer = resource.Metadata.Name,
+                    Attribute = IdentityField
+                });
+            }
+
+            var suffixes = new[] { "current.json" }.Concat(new[] { first.Version, second.Version }
+                .SelectMany(version => new[] { "descriptor.json", "item.json", $"{_publicationId}.pmtiles", $"{_publicationId}.parquet" }
+                    .Select(file => $"{version}/{file}")));
+            foreach (var suffix in suffixes)
+            {
+                using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
+                request.Headers.TryAddWithoutValidation("If-None-Match", "*");
+                request.Headers.Range = new RangeHeaderValue(0, 15);
+                using var response = await _client.SendAsync(request);
+                response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                response.Headers.CacheControl!.NoStore.Should().BeTrue();
+                response.Headers.Location.Should().BeNull();
+                response.Content.Headers.ContentRange.Should().BeNull();
+            }
+        }
+        finally
+        {
+            if (restrictRows)
+            {
+                await rows.DeletePolicyAsync(policyId);
+            }
+            else
+            {
+                await fields.DeletePolicyAsync(policyId);
+            }
+        }
+
+        using var after = await _client.GetAsync(route);
+        after.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
