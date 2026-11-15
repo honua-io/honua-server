@@ -1148,7 +1148,7 @@ internal static partial class MapServerEndpoints
         string? layersParam,
         IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
         HttpContext context,
-        string responseFormat)
+        string responseFormat = "json")
     {
         var layerLookup = publishedLayers.ToDictionary(static layer => layer.PublicLayerId);
         if (dynamicLayers.Count == 0)
