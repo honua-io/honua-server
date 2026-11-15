@@ -55,13 +55,8 @@ internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneSe
 
         var registration = ResolveRegistrationService(context);
 
-        // ListScenes intentionally mirrors the public HTTP scene discovery
-        // catalog (SceneDiscoveryEndpoints), which lists every active scene —
-        // including protected ones — and advertises their auth posture rather
-        // than gating the listing itself. Per-scene authorization is enforced
-        // when metadata or tiles are actually fetched (GetScene / GetTile /
-        // StreamTiles), so the discovery surface stays at parity across
-        // protocols. Keep this method ungated to preserve that parity.
+        // ListScenes mirrors the HTTP scene discovery catalog: it lists the active scenes the
+        // caller may read, under the same decision GetScene, GetTile and StreamTiles enforce.
         //
         // The active, deduped, ordered catalog merge (database-over-config
         // precedence) is shared with the HTTP discovery surface via SceneCatalog;
@@ -70,9 +65,10 @@ internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneSe
         var catalog = await SceneCatalog
             .ListActiveAsync(registration, _registry, _options, context.CancellationToken)
             .ConfigureAwait(false);
+        var readable = SceneAccessGuard.FilterReadable(context, catalog);
 
-        var scenes = new List<Proto.SceneMetadata>(catalog.Count);
-        foreach (var resolved in catalog)
+        var scenes = new List<Proto.SceneMetadata>(readable.Count);
+        foreach (var resolved in readable)
         {
             scenes.Add(resolved.Record is not null
                 ? SceneGrpcMapping.ToSceneMetadata(resolved.Record)

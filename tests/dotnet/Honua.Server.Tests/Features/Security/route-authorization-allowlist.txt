@@ -448,11 +448,8 @@ none DELETE /healthz/ready
 none DELETE /mcp
 none GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex:int}/content
 none GET /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}
-# UNVERIFIED src/Honua.Protocols/Scene/SceneDiscoveryEndpoints.cs - no access check; protected and (with includeDisabled) inactive scenes are listed to anonymous callers
 none GET /api/scenes
-# UNVERIFIED src/Honua.Protocols/Scene/SceneDiscoveryEndpoints.cs - no access check; protected and (with includeDisabled) inactive scenes are listed to anonymous callers
 none GET /api/scenes/{sceneId}
-# UNVERIFIED src/Honua.Protocols/Scene/SceneDiscoveryEndpoints.cs - no access check; protected and (with includeDisabled) inactive scenes are listed to anonymous callers
 none GET /api/scenes/{sceneId}/resolve
 none GET /api/styles/{publicationId}.json
 none GET /api/v1/rasters/cog/{*artifactId}
@@ -810,7 +807,6 @@ none POST /geospatial.v1.ProcessService/GetJobResult
 none POST /geospatial.v1.ProcessService/SubmitJob
 none POST /geospatial.v1.ProcessService/ValidatePlan
 none POST /geospatial.v1.SceneService/GetScene
-# UNVERIFIED src/Honua.Scene/Grpc/HonuaSceneGrpcService.cs - ListScenes has no access or tenant filter (comment says deliberate); protected scenes are listed
 none POST /geospatial.v1.SceneService/ListScenes
 none POST /geospatial.v1.TileService/GetTile
 none POST /geospatial.v1.TileService/StreamTiles

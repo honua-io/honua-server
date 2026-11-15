@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Grpc.Core;
+using Honua.Core.Features.Scene.Catalog;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.Http;
@@ -72,5 +73,18 @@ internal static class SceneAccessGuard
         throw new RpcException(new Status(
             status,
             decision.FailureReason ?? "Access to this scene is denied."));
+    }
+
+    // A listing shows only the scenes the caller may read; the rest are left out, not refused.
+    public static IReadOnlyList<ResolvedScene> FilterReadable(ServerCallContext context, IReadOnlyList<ResolvedScene> scenes)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(scenes);
+
+        var http = context.GetHttpContext();
+        return scenes
+            .Where(scene => scene.AccessPolicy is null
+                            || (http is not null && SceneReadAccess.IsReadable(http, scene.AccessPolicy)))
+            .ToArray();
     }
 }

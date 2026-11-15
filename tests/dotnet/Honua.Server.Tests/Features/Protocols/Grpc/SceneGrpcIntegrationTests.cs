@@ -1544,20 +1544,23 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
-    public async Task ListScenes_ProtectedScene_WithoutAuth_StillListsScene()
+    public async Task ListScenes_ProtectedScene_WithoutAuth_OmitsScene()
     {
-        // Documented intentional divergence (HonuaSceneGrpcService.ListScenes):
-        // ListScenes is ungated and mirrors the public HTTP scene-discovery
-        // catalog, so it lists EVERY active scene — including protected ones —
-        // while per-scene authorization is enforced only when metadata or tiles are
-        // actually fetched (GetScene / GetTile / StreamTiles, covered above). This
-        // pins that discovery parity so a future change that filters protected
-        // scenes from the anonymous listing fails here instead of silently
-        // diverging from the HTTP surface.
         var response = await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers);
 
-        response.Scenes.Should().Contain(scene => scene.SceneId == ProtectedSceneId,
-            "ListScenes is intentionally ungated and lists protected scenes for discovery parity.");
+        response.Scenes.Should().NotContain(scene => scene.SceneId == ProtectedSceneId,
+            "a listing shows only the scenes the caller may read, as the HTTP catalog does.");
+        response.Scenes.Should().Contain(scene => scene.SceneId == PublicSceneId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_ProtectedScene_WithAuthorizedRole_ListsScene()
+    {
+        var response = await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _authHeaders);
+
+        response.Scenes.Should().Contain(scene => scene.SceneId == ProtectedSceneId);
         response.Scenes.Should().Contain(scene => scene.SceneId == PublicSceneId);
     }
 

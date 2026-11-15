@@ -4,6 +4,7 @@
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Scene;
+using AccessPolicy = Honua.Core.Features.Security.Domain.AccessPolicy;
 
 namespace Honua.Core.Features.Scene.Catalog;
 
@@ -19,6 +20,10 @@ public readonly record struct ResolvedScene(SceneDatasetRecord? Record, SceneDat
 {
     /// <summary>The scene's stable url identifier, regardless of source.</summary>
     public string Id => Record?.Id ?? Scene!.Id;
+
+    public AccessPolicy? AccessPolicy => Record is { } record
+        ? SceneServingProjection.ToAccessPolicy(record)
+        : Scene!.AccessPolicy;
 }
 
 /// <summary>

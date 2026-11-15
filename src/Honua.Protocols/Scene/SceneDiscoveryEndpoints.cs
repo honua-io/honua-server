@@ -1,9 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Catalog;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Scene;
@@ -33,6 +35,8 @@ internal static partial class SceneDiscoveryEndpoints
             .WithDescription("Returns SDK-compatible scene summaries for public/mobile discovery without exposing admin management operations.")
             .WithTags(ScenesTag)
             .Produces<PublicSceneListResponse>(StatusCodes.Status200OK, contentType: "application/json")
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status500InternalServerError);
 
         endpoints.MapGet("/api/scenes/{sceneId}/resolve", HandleResolveScene)
@@ -43,6 +47,8 @@ internal static partial class SceneDiscoveryEndpoints
             .WithTags(ScenesTag)
             .Produces<PublicSceneResolution>(StatusCodes.Status200OK, contentType: "application/json")
             .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status500InternalServerError);
 
         endpoints.MapGet("/api/scenes/{sceneId}", HandleGetScene)
@@ -53,6 +59,8 @@ internal static partial class SceneDiscoveryEndpoints
             .WithTags(ScenesTag)
             .Produces<PublicSceneMetadata>(StatusCodes.Status200OK, contentType: "application/json")
             .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status500InternalServerError);
 
         return endpoints;
@@ -70,6 +78,11 @@ internal static partial class SceneDiscoveryEndpoints
         try
         {
             var includeInactive = ParseBoolean(context.Request.Query["includeDisabled"].ToString());
+            if (includeInactive && await RequireAdministratorAsync(context).ConfigureAwait(false) is { } inactiveDenied)
+            {
+                return inactiveDenied;
+            }
+
             var requestedCapabilities = ParseRequestedCapabilities(context.Request.Query["capabilities"].ToString());
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var summaries = new List<PublicSceneSummary>();
@@ -124,7 +137,7 @@ internal static partial class SceneDiscoveryEndpoints
                     .ListActiveAsync(registration, registry, options.Value ?? new SceneDatasetOptions(), cancellationToken)
                     .ConfigureAwait(false);
 
-                foreach (var resolved in catalog)
+                foreach (var resolved in catalog.Where(scene => SceneReadAccess.IsReadable(context, scene.AccessPolicy)))
                 {
                     if (resolved.Record is { } record)
                     {
@@ -168,14 +181,19 @@ internal static partial class SceneDiscoveryEndpoints
 
         try
         {
-            var resolved = await ResolveSceneForDiscoveryAsync(
+            var lookup = await ResolveSceneForDiscoveryAsync(
                 sceneId,
                 context,
                 registry,
                 cancellationToken).ConfigureAwait(false);
-            if (resolved is null)
+            if (lookup is not { } resolved)
             {
                 return StandardErrorHelpers.CreateNotFound(context, "Scene was not found.");
+            }
+
+            if (RequireReadAccess(context, resolved) is { } denied)
+            {
+                return denied;
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -204,14 +222,19 @@ internal static partial class SceneDiscoveryEndpoints
 
         try
         {
-            var resolved = await ResolveSceneForDiscoveryAsync(
+            var lookup = await ResolveSceneForDiscoveryAsync(
                 sceneId,
                 context,
                 registry,
                 cancellationToken).ConfigureAwait(false);
-            if (resolved is null)
+            if (lookup is not { } resolved)
             {
                 return StandardErrorHelpers.CreateNotFound(context, "Scene was not found.");
+            }
+
+            if (RequireReadAccess(context, resolved) is { } denied)
+            {
+                return denied;
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -229,7 +252,33 @@ internal static partial class SceneDiscoveryEndpoints
         }
     }
 
-    private static async Task<SceneDiscoveryLookup?> ResolveSceneForDiscoveryAsync(
+    // The same decision the scene's asset routes make, so discovery describes a scene only to a
+    // caller who may fetch it.
+    private static IResult? RequireReadAccess(HttpContext context, ResolvedScene scene)
+        => scene.AccessPolicy is { } accessPolicy
+            ? AccessPolicyHelpers.CreateAccessDeniedResult(context, SceneReadAccess.Evaluate(context, accessPolicy))
+            : null;
+
+    // Inactive scene records are an administrative view.
+    private static async Task<IResult?> RequireAdministratorAsync(HttpContext context)
+    {
+        if (await OperationAdminAuthorization
+                .IsAuthorizedAsync(context, context.User, OperationSideEffectClass.ReadOnly, context.RequestAborted)
+                .ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        if (context.User.Identity?.IsAuthenticated == true)
+        {
+            return StandardErrorHelpers.CreateForbidden(context, "Listing inactive scenes requires an administrator.");
+        }
+
+        AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+        return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
+    }
+
+    private static async Task<ResolvedScene?> ResolveSceneForDiscoveryAsync(
         string sceneId,
         HttpContext context,
         ISceneDatasetRegistry registry,
@@ -247,13 +296,13 @@ internal static partial class SceneDiscoveryEndpoints
             if (record is not null)
             {
                 return record.Status == SceneDatasetStatus.Active
-                    ? new SceneDiscoveryLookup(record, Scene: null)
+                    ? new ResolvedScene(record, Scene: null)
                     : null;
             }
         }
 
         var scene = await registry.FindAsync(sceneId, cancellationToken).ConfigureAwait(false);
-        return scene is null ? null : new SceneDiscoveryLookup(Record: null, Scene: scene);
+        return scene is null ? null : new ResolvedScene(Record: null, Scene: scene);
     }
 
     private static PublicSceneSummary ToSummary(SceneDatasetRecord record, string baseUrl)
@@ -396,16 +445,13 @@ internal static partial class SceneDiscoveryEndpoints
             RequiresAuthentication = requiresAuthentication
         };
 
-    private static PublicSceneAuthRequirements ToAuth(SceneDatasetRecord record)
+    internal static PublicSceneAuthRequirements ToAuth(SceneDatasetRecord record)
     {
-        var requiresAuthentication = record.RequiresAuth || !record.IsPublic;
+        var requiresAuthentication = SceneServingProjection.ToAccessPolicy(record) is not null;
         return new PublicSceneAuthRequirements
         {
             RequiresAuthentication = requiresAuthentication,
-            Schemes = requiresAuthentication ? ProtectedSchemes : [],
-            Policy = requiresAuthentication && record.AllowedRoles is { Count: > 0 }
-                ? string.Join(',', record.AllowedRoles)
-                : null
+            Schemes = requiresAuthentication ? ProtectedSchemes : []
         };
     }
 
@@ -467,8 +513,6 @@ internal static partial class SceneDiscoveryEndpoints
     private static bool IsHostedTilesCapability(string capability)
         => string.Equals(capability, ThreeDimensionalTilesCapability, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(capability, HostedTilesDatasetType, StringComparison.OrdinalIgnoreCase);
-
-    private sealed record SceneDiscoveryLookup(SceneDatasetRecord? Record, SceneDataset? Scene);
 
     private static partial class Log
     {
