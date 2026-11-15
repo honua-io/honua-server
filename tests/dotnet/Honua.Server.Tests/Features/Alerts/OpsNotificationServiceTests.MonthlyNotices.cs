@@ -50,6 +50,26 @@ public sealed partial class OpsNotificationServiceTests
     }
 
     [UnitTest]
+    public async Task PublishPendingAsync_NoEligibleChannels_RetriesAfterChannelRestored()
+    {
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var store = PendingMonthlyNotice();
+        store.MarkQueuedAsync(Arg.Any<AiMonthlyActorNotice>(), Arg.Any<CancellationToken>()).Returns(true);
+        var unavailable = Create(outbox, out _, out _, enabled: true, channels: []);
+
+        (await new AiMonthlyActorNoticePublisher(store, unavailable).PublishPendingAsync(default)).Should().Be(0);
+        await store.DidNotReceive().MarkQueuedAsync(Arg.Any<AiMonthlyActorNotice>(), Arg.Any<CancellationToken>());
+        await outbox.DidNotReceive().CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>());
+
+        var restored = Create(outbox, out _, out _, enabled: true, channels: ["webhook"]);
+        (await new AiMonthlyActorNoticePublisher(store, restored).PublishPendingAsync(default)).Should().Be(1);
+        await store.Received(1).MarkQueuedAsync(Arg.Any<AiMonthlyActorNotice>(), Arg.Any<CancellationToken>());
+        await outbox.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task PublishPendingAsync_OutboxFailure_PropagatesAndLeavesNoticePending()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
