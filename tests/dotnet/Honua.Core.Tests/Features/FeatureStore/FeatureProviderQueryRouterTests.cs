@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -47,12 +48,19 @@ public sealed partial class FeatureProviderQueryRouterTests
         var router = CreateRouter(connectionId, DataProviderNames.DuckDb, provider);
         var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
 
-        var activities = new List<Activity>();
+        using var parent = new Activity(nameof(FeatureProviderQueryRouterTests)).Start();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = static source => source.Name == "Honua.Core.FeatureStore",
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activities.Add,
+            ActivityStopped = activity =>
+            {
+                if (activity.ParentSpanId == parent.SpanId)
+                {
+                    activities.Add(activity);
+                }
+            },
         };
         ActivitySource.AddActivityListener(listener);
 
@@ -87,12 +95,19 @@ public sealed partial class FeatureProviderQueryRouterTests
         var router = CreateRouter(connectionId, DataProviderNames.DuckDb, provider);
         var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
 
-        var activities = new List<Activity>();
+        using var parent = new Activity(nameof(FeatureProviderQueryRouterTests)).Start();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = static source => source.Name == "Honua.Core.FeatureStore",
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activities.Add,
+            ActivityStopped = activity =>
+            {
+                if (activity.ParentSpanId == parent.SpanId)
+                {
+                    activities.Add(activity);
+                }
+            },
         };
         ActivitySource.AddActivityListener(listener);
 
