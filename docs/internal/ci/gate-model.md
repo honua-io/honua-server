@@ -789,6 +789,10 @@ unchanged. Bot-authored issues provide a validated, project-scoped exclusion lis
 25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean
 gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
 quarantined methods without exclusions or retries and is explicitly non-gating.
+Before execution, the shared filter runner logs `HONUA_QUARANTINE_FILTER` with the effective
+filter and the current project's excluded methods, owning issues and expiry times. Shard
+test-result logs retain this record so live verification can distinguish the applied filter
+from the supervisor's base filter; the record does not replace execution or retry evidence.
 
 The publisher has issue-write permission only on trusted default-branch code, reached by
 same-repository successful/failed `workflow_run` completions, a twice-hourly recovery

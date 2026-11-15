@@ -73,6 +73,10 @@ def snapshot_filter(command, project):
     entries = load_snapshot(path)
     expression = command[command.index('--filter') + 1] if '--filter' in command else ''
     expression = exclude_filter(expression, entries, project)
+    evidence = {'project': project, 'effective_filter': expression,
+                'exclusions': [{key: entry[key] for key in ('test', 'issue', 'expires_at')}
+                               for entry in entries if entry['project'] == project]}
+    print('HONUA_QUARANTINE_FILTER ' + json.dumps(evidence, sort_keys=True), flush=True)
     if '--filter' in command:
         return replace_option(command, '--filter', expression)
     return [*command, '--filter', expression] if expression else command

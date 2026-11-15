@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Quarantine expiry and retry completeness must fail closed."""
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -100,10 +102,30 @@ class PolicyTests(unittest.TestCase):
 class DuplicateCoverageTests(unittest.TestCase):
     def test_unfiltered_foundation_command_gets_exact_exclusion(self):
         command = ['dotnet', 'test', PROJECT]
+        output = io.StringIO()
         with patch.dict(os.environ, {'HONUA_TEST_QUARANTINE_FILE': 'snapshot.json'}, clear=True), \
-                patch.object(runner, 'load_snapshot', return_value=[entry()]):
+                patch.object(runner, 'load_snapshot', return_value=[entry()]), redirect_stdout(output):
             filtered = runner.snapshot_filter(command, PROJECT)
         self.assertEqual([*command, '--filter', 'FullyQualifiedName!=Honua.Tests.Case.Test0'], filtered)
+        prefix, payload = output.getvalue().strip().split(' ', 1)
+        self.assertEqual('HONUA_QUARANTINE_FILTER', prefix)
+        evidence = json.loads(payload)
+        self.assertEqual(PROJECT, evidence['project'])
+        self.assertEqual(filtered[-1], evidence['effective_filter'])
+        self.assertEqual([{key: entry()[key] for key in ('test', 'issue', 'expires_at')}],
+                         evidence['exclusions'])
+
+    def test_filter_evidence_only_lists_exclusions_for_the_executed_project(self):
+        command = ['dotnet', 'test', PROJECT, '--filter', 'Tier=Fast|Tier=Unit']
+        other = {**entry(1), 'project': 'other.csproj'}
+        output = io.StringIO()
+        with patch.dict(os.environ, {'HONUA_TEST_QUARANTINE_FILE': 'snapshot.json'}, clear=True), \
+                patch.object(runner, 'load_snapshot', return_value=[other, entry()]), redirect_stdout(output):
+            filtered = runner.snapshot_filter(command, PROJECT)
+        evidence = json.loads(output.getvalue().split(' ', 1)[1])
+        self.assertEqual('(Tier=Fast|Tier=Unit)&FullyQualifiedName!=Honua.Tests.Case.Test0', filtered[-1])
+        self.assertEqual(filtered[-1], evidence['effective_filter'])
+        self.assertEqual(['Honua.Tests.Case.Test0'], [item['test'] for item in evidence['exclusions']])
 
 
 class RetryTests(unittest.TestCase):
