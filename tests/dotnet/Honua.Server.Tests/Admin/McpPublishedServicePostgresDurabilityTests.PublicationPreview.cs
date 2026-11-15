@@ -19,6 +19,7 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
     {
         var revision = await ReadPersistedRevisionAsync();
         var sourceRows = await CountSourceRowsAsync(_firstTable);
+        var sourceHash = await ReadPreviewSourceHashAsync();
         var result = await PreviewPublicationAsync();
         var handle = result.GetProperty("structuredContent");
         handle.GetProperty("status").GetString().Should().Be("Completed", handle.GetRawText());
@@ -33,6 +34,15 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
         (await PublishedLayerCountAsync(_firstTable)).Should().Be(0);
         (await ReadPersistedRevisionAsync()).Should().Be(revision);
         (await CountSourceRowsAsync(_firstTable)).Should().Be(sourceRows);
+        (await ReadPreviewSourceHashAsync()).Should().Be(sourceHash);
+    }
+
+    private async Task<string> ReadPreviewSourceHashAsync()
+    {
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT md5(string_agg(row_to_json(source)::text, ',' ORDER BY id)) FROM public.{_firstTable} source";
+        return (string)(await command.ExecuteScalarAsync())!;
     }
 
     private async Task<JsonElement> PreviewPublicationAsync()
