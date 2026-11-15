@@ -12,6 +12,20 @@ namespace Honua.Server.Tests.Features.FeatureStore;
 
 public sealed partial class BranchVersioningIntegrationTests
 {
+    private async Task InitializeReceiptEvidenceSchemaAsync()
+    {
+        var assembly = typeof(Program).Assembly;
+        foreach (var suffix in new[] { "130_CreateGrpcApplyEditsReceipt.sql", "195_AddGrpcReceiptOperationEvidence.sql" })
+        {
+            var resource = assembly.GetManifestResourceNames().Single(name => name.EndsWith(suffix, StringComparison.Ordinal));
+            await using var stream = assembly.GetManifestResourceStream(resource)!;
+            using var reader = new StreamReader(stream);
+            var sql = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", _schema, StringComparison.Ordinal);
+            await using var command = _fixture.DataSource.CreateCommand(sql);
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEditsAsync_DurableOperationReceipt_ReplaysExactCommittedUpdates()
