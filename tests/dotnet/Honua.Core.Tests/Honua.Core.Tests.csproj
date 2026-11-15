@@ -50,5 +50,6 @@
 
   <ItemGroup>
     <Compile Include="../Shared/OutboundSecurity/OutboundAddressCases.cs" Link="Shared/OutboundAddressCases.cs" />
+    <Compile Include="../Shared/MetadataReleaseSupport/MetadataReleaseParcelsGraph.cs" Link="Shared/MetadataReleaseParcelsGraph.cs" />
   </ItemGroup>
 </Project>

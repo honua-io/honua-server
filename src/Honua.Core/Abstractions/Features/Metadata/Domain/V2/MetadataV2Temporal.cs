@@ -16,7 +16,7 @@ public sealed record MetadataV2TimeRange : ExtensibleJsonRecord
     public DateTimeOffset? End { get; init; }
 }
 
-public sealed record MetadataV2ResourceTemporal : ExtensibleJsonRecord
+public sealed record MetadataV2ObjectTemporal : ExtensibleJsonRecord
 {
     [JsonPropertyName("startTimeField")]
     public string? StartTimeField { get; init; }

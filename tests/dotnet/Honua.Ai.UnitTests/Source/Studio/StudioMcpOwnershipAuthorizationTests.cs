@@ -356,7 +356,8 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         auditLog.Events.Should().ContainSingle().Which.Should().BeEquivalentTo(new
         {
             EventType = AuditEventType.Authorization,
-            Actor = Bob,
+            // Studio authorization audits record the canonical actor tenant resolution stamps.
+            Actor = $"test:subject:-:{Bob}",
             ActorType = AuditActorType.UserId,
             ResourceType = "studio-package-draft",
             ResourceId = DraftId.ToString("D"),
