@@ -256,8 +256,8 @@ internal static class EvidencePostureFactory
             ExpectedComponentIds = expected,
         };
 
-        // The aggregate is only as fresh as the oldest component it actually summarizes. Individual
-        // reason codes stay on the components that earned them; the aggregate reports coverage.
+        // Preserve the oldest observation while respecting each component's collection cadence.
+        // Individual reason codes stay on the components; the aggregate reports coverage.
         var componentObservations = components
             .Where(IsActionable)
             .Select(component => component.ObservedAt)
@@ -275,6 +275,7 @@ internal static class EvidencePostureFactory
         }
 
         var aggregateObservedAt = componentObservations.Min().ToUniversalTime();
+        var validUntil = AggregateValidUntil(components, maximumAge);
         return new EvidenceSourceEnvelope
         {
             SourceId = sourceId,
@@ -286,10 +287,17 @@ internal static class EvidencePostureFactory
                 ? EvidencePostureVocabulary.Completeness.Complete
                 : EvidencePostureVocabulary.Completeness.Partial,
             Coverage = coverage,
-            MaximumAgeSeconds = (long)maximumAge.TotalSeconds,
-            ValidUntil = aggregateObservedAt.Add(maximumAge),
+            MaximumAgeSeconds = (long)(validUntil - aggregateObservedAt).TotalSeconds,
+            ValidUntil = validUntil,
         };
     }
+
+    private static DateTimeOffset AggregateValidUntil(
+        IReadOnlyList<EvidenceSourceEnvelope> components, TimeSpan fallbackMaximumAge)
+        => components.Where(IsActionable)
+            .Select(component => component.ValidUntil
+                ?? component.ObservedAt!.Value.Add(fallbackMaximumAge))
+            .Min().ToUniversalTime();
 
     public static EvidencePosture Build(DateTimeOffset evaluatedAt, params EvidenceSourceEnvelope[] sources)
     {

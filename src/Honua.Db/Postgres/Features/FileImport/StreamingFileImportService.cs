@@ -73,7 +73,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private static readonly CompositeFormat _partialImportWarningFormat =
         CompositeFormat.Parse("{0} row(s) failed while continue-on-error was enabled; previously imported rows were retained.");
     private static readonly CompositeFormat _csvUnparseableGeometryWarningFormat =
-        CompositeFormat.Parse("{0} row(s) had a geometry value that could not be parsed as WKT, EWKT, or WKB; each raw value was preserved as an attribute and the row was imported without geometry.");
+        CompositeFormat.Parse("{0} row(s) had a geometry value that could not be read as longitude/latitude numbers or as WKT, EWKT, or WKB; each raw value was preserved as an attribute and the row was imported without geometry.");
     private static readonly CompositeFormat _wktUnparseableGeometryWarningFormat =
         CompositeFormat.Parse("{0} record(s) could not be parsed as WKT, EWKT, or WKB and were skipped.");
     private static readonly CompositeFormat _csvGeocodeFailureWarningFormat =
@@ -334,11 +334,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 GeoPackageLayerInfo layer;
                 try
                 {
-                    layer = ResolveSingleGeoPackageImportLayer(layers);
+                    layer = ResolveGeoPackageImportLayer(layers, request.SourceLayer);
                 }
-                catch (InvalidDataException)
+                catch (InvalidDataException ex)
                 {
-                    errorMessage = "Invalid GeoPackage import request.";
+                    errorMessage = SanitizeImportValidationMessage(ex);
                     result = ImportResult.CreateFailure(
                         request.TableName,
                         format.Value,
@@ -502,7 +502,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             var sourceSrid = request.SourceSrid ?? detectedSrid;
             if (!sourceSrid.HasValue)
             {
-                errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
+                errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected. Supply the EPSG code of the source CRS as sourceSrid.";
                 var validationErrors = SourceSridRequiredIssues(errorMessage);
                 result = ImportResult.CreateFailure(
                     request.TableName,

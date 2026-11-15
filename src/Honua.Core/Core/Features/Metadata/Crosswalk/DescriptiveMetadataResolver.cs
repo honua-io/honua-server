@@ -61,7 +61,7 @@ public static class DescriptiveMetadataResolver
         return ForService(graph, service) with
         {
             Title = First(chain, metadata => metadata.Title) ?? service.EffectivePublicName,
-            Description = First(chain, metadata => metadata.Description),
+            Description = DescriptionOf(chain),
             Keywords = Terms(chain, metadata => metadata.Keywords),
         };
     }
@@ -107,7 +107,7 @@ public static class DescriptiveMetadataResolver
             Identifier = item.Id,
             Kind = kind,
             Title = item.Name,
-            Description = First(own, metadata => metadata.Description),
+            Description = DescriptionOf(own),
             Keywords = Terms(own, metadata => metadata.Keywords),
             Themes = Terms(own, metadata => metadata.Themes),
             TopicCategories = FirstList(own, metadata => metadata.TopicCategories),
@@ -171,6 +171,9 @@ public static class DescriptiveMetadataResolver
 
     private static IReadOnlyList<string> Terms(MetadataV2ObjectMetadata[] own, Func<MetadataV2ObjectMetadata, IReadOnlyList<string>> field)
         => own.Select(metadata => NormalizedTerms(field(metadata))).FirstOrDefault(values => values.Count > 0) ?? [];
+
+    private static string? DescriptionOf(MetadataV2ObjectMetadata[] own)
+        => own.Select(metadata => metadata.Description).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     private static string? First(MetadataV2ObjectMetadata[] own, Func<MetadataV2ObjectMetadata, string?> field)
         => own.Select(field).Select(Text).FirstOrDefault(value => value is not null);
