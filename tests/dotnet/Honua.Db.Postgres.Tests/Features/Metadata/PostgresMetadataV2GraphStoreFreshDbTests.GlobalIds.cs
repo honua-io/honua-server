@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
@@ -13,8 +14,10 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
 public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
 {
-    [IntegrationTest]
-    public async Task SaveAsync_GlobalIdLayer_EnforcesNormalizedIdentityPerLayer()
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SaveAsync_GlobalIdLayer_EnforcesNormalizedIdentityPerLayer(bool sourceBacked)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("global_id_integrity");
         try
@@ -26,7 +29,25 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             await command.ExecuteNonQueryAsync();
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
-            await store.SaveAsync(GlobalIdGraph(schema), expectedEtag: null);
+            var graph = GlobalIdGraph(schema);
+            if (sourceBacked)
+            {
+                graph = graph with
+                {
+                    StorageBindings = [graph.StorageBindings[0] with
+                    {
+                        Options = new Dictionary<string, JsonElement>
+                        {
+                            ["sourceBacked"] = JsonSerializer.SerializeToElement(true),
+                            ["schemaName"] = JsonSerializer.SerializeToElement(schema),
+                            ["tableName"] = JsonSerializer.SerializeToElement("features"),
+                            ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
+                            ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
+                        }
+                    }]
+                };
+            }
+            await store.SaveAsync(graph, expectedEtag: null);
 
             command.CommandText = $$"""
                 INSERT INTO "{{schema}}".features VALUES
@@ -243,6 +264,105 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SaveAsync_GlobalIdLayer_WithSeparateFeatureSchema_EnforcesIdentity(bool explicitOptions)
+    {
+        var metadataSchema = await fixture.CreateIsolatedSchemaAsync("global_id_metadata");
+        var featureSchema = await fixture.CreateIsolatedSchemaAsync("global_id_features");
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, metadataSchema);
+            await fixture.ExecuteAsync($$"""
+                CREATE TABLE "{{featureSchema}}".features (layer_id integer NOT NULL, attributes jsonb NOT NULL);
+                INSERT INTO "{{featureSchema}}".features VALUES
+                    (7, '{"globalid":"6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f"}');
+                """);
+            // The metadata store qualifies its own tables; the managed writer uses a separate search path.
+            var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, featureSchema),
+                "Test", FixtureBypassDatabaseSchemaGuard.Instance, metadataSchema);
+            var graph = GlobalIdGraph(featureSchema);
+            if (explicitOptions)
+            {
+                graph = graph with
+                {
+                    StorageBindings = [graph.StorageBindings[0] with
+                    {
+                        Locator = "unrelated.features",
+                        Options = new Dictionary<string, JsonElement>
+                        {
+                            ["SchemaName"] = JsonSerializer.SerializeToElement(featureSchema),
+                            ["TableName"] = JsonSerializer.SerializeToElement("features")
+                        }
+                    }]
+                };
+            }
+            await store.SaveAsync(graph, expectedEtag: null);
+
+            var duplicate = async () => await fixture.ExecuteAsync($$"""
+                INSERT INTO "{{featureSchema}}".features VALUES
+                    (7, '{"globalid":"{6F1C2D3E-4B5A-4C6D-8E7F-0A1B2C3D4E5F}"}');
+                """);
+            (await duplicate.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(metadataSchema);
+            await fixture.DropSchemaAsync(featureSchema);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SaveAsync_SourceBackedGlobalIds_DoesNotConstrainUnrelatedManagedRows(bool externalConnection)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("global_id_source");
+        var sourceSchema = await fixture.CreateIsolatedSchemaAsync("global_id_external");
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            await fixture.ExecuteAsync($$"""
+                CREATE TABLE "{{schema}}".features (layer_id integer NOT NULL, attributes jsonb NOT NULL);
+                CREATE TABLE "{{sourceSchema}}".features (layer_id integer NOT NULL, attributes jsonb NOT NULL);
+                INSERT INTO "{{schema}}".features VALUES
+                    (7, '{"globalid":"6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f"}'),
+                    (7, '{"globalid":"{6F1C2D3E-4B5A-4C6D-8E7F-0A1B2C3D4E5F}"}');
+                """);
+            var graph = GlobalIdGraph(externalConnection ? schema : sourceSchema);
+            graph = graph with
+            {
+                StorageBindings = [graph.StorageBindings[0] with
+                {
+                    ConnectionId = externalConnection ? "conn" : null,
+                    Options = new Dictionary<string, JsonElement>
+                    {
+                        ["sourceBacked"] = JsonSerializer.SerializeToElement(true),
+                        ["schemaName"] = JsonSerializer.SerializeToElement(externalConnection ? schema : sourceSchema),
+                        ["tableName"] = JsonSerializer.SerializeToElement("features"),
+                        ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
+                        ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
+                    }
+                }]
+            };
+            var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
+                "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
+
+            await store.SaveAsync(graph, expectedEtag: null);
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*)::int FROM pg_indexes WHERE schemaname IN ('{schema}', '{sourceSchema}') AND indexname LIKE 'idx_features_gid_%'";
+            (await command.ExecuteScalarAsync()).Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+            await fixture.DropSchemaAsync(sourceSchema);
+        }
+    }
+
     private static MetadataV2Graph GlobalIdGraph(string schema) => new()
     {
         Environment = "Test",
@@ -251,7 +371,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         StorageBindings = [new MetadataV2StorageBinding
         {
             Metadata = new() { Id = "binding", Name = "features" },
-            ResourceId = "resource", ConnectionId = "conn", StorageLayerId = 7,
+            ResourceId = "resource", StorageLayerId = 7,
             Locator = $"{schema}.features"
         }],
         Resources = [new MetadataV2Object

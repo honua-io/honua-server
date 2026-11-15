@@ -4,21 +4,11 @@
 CREATE OR REPLACE FUNCTION $HonuaSchema$.sync_metadata_global_id_indexes()
 RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
-    feature_table regclass := to_regclass('$HonuaSchema$.features');
-    feature_schema text;
     identity record;
     index_name text;
 BEGIN
-    IF feature_table IS NULL THEN
-        RETURN;
-    END IF;
-
-    SELECT namespace.nspname INTO feature_schema
-    FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
-    WHERE relation.oid = feature_table;
-
-    -- Separate statements obtain a fresh READ COMMITTED snapshot after another environment commits.
-    PERFORM pg_advisory_xact_lock(hashtextextended(feature_table::text || ':global-ids', 0));
+    -- Serialize activation across environments before reading the committed active graphs.
+    PERFORM pg_advisory_xact_lock(hashtextextended('$HonuaSchema$:global-ids', 0));
 
     FOR identity IN
         WITH active_graphs AS (
@@ -26,35 +16,59 @@ BEGIN
             FROM $HonuaSchema$.metadata_v2_current current
             JOIN $HonuaSchema$.metadata_v2_snapshots snapshot
                 ON snapshot.environment = current.environment AND snapshot.revision = current.revision
-        ), declarations AS (
-            SELECT resource, binding, field->>'name' AS field_name
+        ), normalized_bindings AS (
+            SELECT document, binding,
+                COALESCE((SELECT jsonb_object_agg(lower(option.key), option.value)
+                    FROM jsonb_each(COALESCE(binding->'options', '{}'::jsonb)) option), '{}'::jsonb) AS options,
+                CASE WHEN binding->>'locator' !~ '[:/]'
+                    THEN string_to_array(binding->>'locator', '.') END AS locator_parts
             FROM active_graphs
-            CROSS JOIN LATERAL jsonb_array_elements(document->'resources') resource
             CROSS JOIN LATERAL jsonb_array_elements(document->'storageBindings') binding
-            CROSS JOIN LATERAL jsonb_array_elements(resource->'schemaFields') field
-            WHERE lower(field->>'name') = lower(resource->'editing'->>'globalIdField')
-                AND binding->>'resourceId' = resource->'metadata'->>'id'
-                AND resource->'storageBindingIds' ? (binding->'metadata'->>'id')
-                AND binding->>'storageType' = 'relational-table'
+            WHERE binding->>'storageType' = 'relational-table'
                 AND binding->>'storageLayerId' IS NOT NULL
+                AND binding->>'connectionId' IS NULL
+        ), binding_names AS (
+            SELECT *,
+                COALESCE(NULLIF(options->>'tablename', ''), NULLIF(options->>'table', ''),
+                    trim(both '"' FROM btrim(locator_parts[array_length(locator_parts, 1)]))) AS table_name,
+                COALESCE(NULLIF(options->>'schemaname', ''), NULLIF(options->>'schema', ''),
+                    CASE WHEN COALESCE(NULLIF(options->>'tablename', ''), NULLIF(options->>'table', '')) IS NULL
+                        AND array_length(locator_parts, 1) > 1
+                        THEN trim(both '"' FROM btrim(locator_parts[array_length(locator_parts, 1) - 1])) END) AS schema_name,
+                lower(btrim(COALESCE(options->>'sourcebacked', 'false'))) = 'true' AS source_backed
+            FROM normalized_bindings
+        ), resolved_bindings AS (
+            SELECT *, to_regclass(CASE WHEN schema_name IS NULL THEN format('%I', table_name)
+                ELSE format('%I.%I', schema_name, table_name) END) AS feature_table
+            FROM binding_names WHERE table_name = 'features'
+        ), managed_bindings AS (
+            SELECT * FROM resolved_bindings binding
+            WHERE feature_table IS NOT NULL AND (
+                NOT source_backed OR (
+                    lower(options->>'attributescolumn') = 'attributes'
+                    AND lower(options->>'layerdiscriminatorcolumn') = 'layer_id'
+                    AND lower(COALESCE(options->>'primarykeycolumn', 'objectid')) = 'objectid'
+                    AND lower(COALESCE(options->>'geometrycolumn', 'geometry')) = 'geometry'
+                    AND (feature_table = to_regclass('features') OR EXISTS (
+                        SELECT 1 FROM resolved_bindings native
+                        WHERE NOT native.source_backed AND native.feature_table = binding.feature_table
+                    ))
+                )
+            )
         )
-        SELECT DISTINCT (binding->>'storageLayerId')::integer AS layer_id, field_name
-        FROM declarations
-        WHERE NOT EXISTS (
-            SELECT 1 FROM jsonb_each(COALESCE(binding->'options', '{}'::jsonb)) option
-            WHERE lower(option.key) = 'sourcebacked' AND lower(btrim(option.value #>> '{}')) = 'true'
-        ) OR (
-            lower(COALESCE(NULLIF(binding->'options'->>'tableName', ''),
-                NULLIF(binding->'options'->>'table', ''),
-                trim(both '"' FROM btrim(regexp_replace(binding->>'locator', '^.*\.', ''))))) = 'features'
-            AND lower(binding->'options'->>'attributesColumn') = 'attributes'
-            AND lower(binding->'options'->>'layerDiscriminatorColumn') = 'layer_id'
-        )
+        SELECT DISTINCT feature_table, (binding->>'storageLayerId')::integer AS layer_id,
+            field->>'name' AS field_name
+        FROM managed_bindings
+        CROSS JOIN LATERAL jsonb_array_elements(document->'resources') resource
+        CROSS JOIN LATERAL jsonb_array_elements(resource->'schemaFields') field
+        WHERE lower(field->>'name') = lower(resource->'editing'->>'globalIdField')
+            AND binding->>'resourceId' = resource->'metadata'->>'id'
+            AND resource->'storageBindingIds' ? (binding->'metadata'->>'id')
     LOOP
         index_name := 'idx_features_gid_' || md5(identity.layer_id::text || ':' || identity.field_name);
         EXECUTE format(
-            'CREATE UNIQUE INDEX IF NOT EXISTS %I ON %I.features ((NULLIF(attributes->>%L, '''')::uuid)) WHERE layer_id = %s',
-            index_name, feature_schema, identity.field_name, identity.layer_id);
+            'CREATE UNIQUE INDEX IF NOT EXISTS %I ON %s ((NULLIF(attributes->>%L, '''')::uuid)) WHERE layer_id = %s',
+            index_name, identity.feature_table, identity.field_name, identity.layer_id);
     END LOOP;
 
 END;
