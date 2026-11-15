@@ -38,6 +38,61 @@ public sealed class StreamingGeoJsonReaderTests
         stream.Position.Should().Be(0);
     }
 
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ValidateAsync_NullGeometryFeature_IsValidWithIndexedWarning()
+    {
+        const string json = """
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"n":1}},
+              {"type":"Feature","geometry":null,"properties":{"n":2}},
+              {"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{"n":3}}]}
+            """;
+        await using var stream = new FragmentedStream(Encoding.UTF8.GetBytes(json), 7);
+
+        var result = await new StreamingGeoJsonReader().ValidateAsync(stream);
+
+        result.IsValid.Should().BeTrue();
+        result.FeatureCount.Should().Be(3);
+        result.Issues.Should().ContainSingle(issue =>
+            issue.Severity == ImportValidationSeverity.Warning &&
+            issue.Code == ImportValidationErrorCodes.GeometryMissing &&
+            issue.FeatureIndex == 2 &&
+            issue.Field == "geometry");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ValidateAsync_AbsentGeometryMember_StillFails()
+    {
+        const string json = """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"n":1}}]}""";
+        await using var stream = new FragmentedStream(Encoding.UTF8.GetBytes(json), 7);
+
+        var result = await new StreamingGeoJsonReader().ValidateAsync(stream);
+
+        result.IsValid.Should().BeFalse();
+        result.Issues.Should().ContainSingle(issue =>
+            issue.Severity == ImportValidationSeverity.Error && issue.Code == ImportValidationErrorCodes.GeometryMissing);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ValidateAsync_ManyNullGeometryWarnings_DoNotHideALaterError()
+    {
+        var unlocated = string.Join(',', Enumerable.Repeat("""{"type":"Feature","geometry":null,"properties":{}}""", 150));
+        var json = $$"""{"type":"FeatureCollection","features":[{{unlocated}},{"type":"Feature","geometry":{"type":"Nope","coordinates":[]},"properties":{}}]}""";
+        await using var stream = new FragmentedStream(Encoding.UTF8.GetBytes(json), 64);
+
+        var result = await new StreamingGeoJsonReader().ValidateAsync(stream);
+
+        result.IsValid.Should().BeFalse();
+        result.Issues.Should().Contain(issue =>
+            issue.Severity == ImportValidationSeverity.Error && issue.FeatureIndex == 151);
+    }
+
     [Theory]
     [InlineData(1, false)]
     [InlineData(7, false)]
