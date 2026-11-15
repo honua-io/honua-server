@@ -19,6 +19,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     private const string TestEncryptionMasterKey = "test-master-key-that-is-at-least-32-characters-long";
     private readonly ITestOutputHelper _output;
     private readonly DatabaseFixtureAdapter _database;
+    private readonly TestWebApplicationFactory _baseFactory;
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
 
@@ -26,7 +27,8 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     {
         _output = output;
         _database = database;
-        _factory = new TestWebApplicationFactory()
+        _baseFactory = new TestWebApplicationFactory();
+        _factory = _baseFactory
             .WithWebHostBuilder(builder =>
             {
                 // Configure test-specific settings
@@ -57,6 +59,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     {
         _client.Dispose();
         _factory.Dispose();
+        _baseFactory.Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -64,6 +67,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
     {
         _client.Dispose();
         await _factory.DisposeAsync();
+        await _baseFactory.DisposeAsync();
     }
 
     [Fact]
