@@ -767,7 +767,7 @@ public sealed partial class ReplicaSyncClientEditAttributionTests
         repository.DetectionUpdates.Count(u => u.ClientEditApplied == true).Should().Be(1);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(60)]
     [InlineData(90)]
     public async Task ApplyUpload_WithoutOperationEvidence_KeepsThePreBatchConflictBase(long postBatchGeneration)

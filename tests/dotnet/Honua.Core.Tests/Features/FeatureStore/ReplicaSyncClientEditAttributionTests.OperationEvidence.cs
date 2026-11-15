@@ -5,13 +5,14 @@ using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
 public sealed partial class ReplicaSyncClientEditAttributionTests
 {
-    [Fact]
+    [UnitTest]
     public async Task ApplyUpload_ExactOperationEvidence_DoesNotAbsorbLaterForeignEdit()
     {
         var repository = await ApplyWithEvidenceAsync([[Evidence(55)]]);
@@ -20,7 +21,7 @@ public sealed partial class ReplicaSyncClientEditAttributionTests
             .Which.ResolutionBaseGeneration.Should().Be(55);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("empty")]
     [InlineData("layer")]
     [InlineData("identity")]
@@ -44,7 +45,7 @@ public sealed partial class ReplicaSyncClientEditAttributionTests
             .Which.ResolutionBaseGeneration.Should().Be(50);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ApplyUpload_RepeatedObjectEdits_UsesEachSlotsOwnGeneration()
     {
         var repository = await ApplyWithEvidenceAsync([[Evidence(55)], [Evidence(60)]]);
@@ -53,7 +54,7 @@ public sealed partial class ReplicaSyncClientEditAttributionTests
             .Should().Equal(55, 60);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task ApplyUpload_UnconfirmedOperationEvidence_DoesNotRaiseBase(bool unknown)
@@ -68,7 +69,7 @@ public sealed partial class ReplicaSyncClientEditAttributionTests
             .Which.ResolutionBaseGeneration.Should().Be(50);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ApplyUpload_BranchEvidence_UsesLogicalObjectIdentity()
     {
         var repository = await ApplyWithEvidenceAsync(

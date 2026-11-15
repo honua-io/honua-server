@@ -1241,10 +1241,10 @@ internal sealed partial class FeatureDataAccess
                             cancellationToken,
                             requireTransaction: writeCheck is not null).ConfigureAwait(false);
                         createdIds.Add(created.Value.Id);
-                        createResults.Add(EditOperationResult.Success(
+                        var createdResult = EditOperationResult.Success(
                             created.Value.Id,
-                            feature.Attributes.GetValueOrDefault("globalId")?.ToString())
-                        with { OperationEvidence = created.Evidence });
+                            feature.Attributes.GetValueOrDefault("globalId")?.ToString());
+                        createResults.Add(createdResult with { OperationEvidence = created.Evidence });
                         return true;
                     }
                     // Intentionally broad: per-operation failure in an ordered batch; sanitize via
@@ -1268,10 +1268,10 @@ internal sealed partial class FeatureDataAccess
                         var updated = await ApplyBatchUpdateAsync(feature,
                             new(new(connection, transaction, new(_tableName, layerId, (null, feature.Id))),
                                 (writeCheck, OwnerEditGuard.Find(ownerGuards, feature.Id)), preconditions), cancellationToken).ConfigureAwait(false);
-                        updateResults.Add(EditOperationResult.Success(
+                        var updatedResult = EditOperationResult.Success(
                             updated.Value.Id,
-                            feature.Attributes.GetValueOrDefault("globalId")?.ToString())
-                        with { OperationEvidence = updated.Evidence });
+                            feature.Attributes.GetValueOrDefault("globalId")?.ToString());
+                        updateResults.Add(updatedResult with { OperationEvidence = updated.Evidence });
                         return true;
                     }
                     catch (FeatureEditPreconditionFailedException ex)

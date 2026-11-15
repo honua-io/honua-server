@@ -28,6 +28,7 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
     public Task DisposeAsync() => database.DropSchemaAsync(_schema);
 
     [IntegrationTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task CommittedSidecar_ReplaysOnNewConnection_WithoutChangingLegacyBytes()
     {
         await using var connection = await database.DataSource.OpenConnectionAsync();
@@ -46,6 +47,7 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
     }
 
     [IntegrationTheory]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     [InlineData("receipt = '\\x0104'")]
     [InlineData("receipt = receipt")]
     [InlineData("expires_at = now() + interval '2 hours'")]
@@ -59,6 +61,7 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
     }
 
     [IntegrationTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task LegacyExpiredScopeUpsert_ClearsEvidenceFromPriorAttempt()
     {
         await ExecuteAsync($"INSERT INTO {Table} (scope_key, receipt, expires_at) VALUES ('retry', '\\x0102', now() - interval '1 hour')");
@@ -71,6 +74,7 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
     }
 
     [IntegrationTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task Migration_Reapplied_PreservesCommittedEvidenceAndInvalidation()
     {
         await SeedEvidenceAsync();
@@ -83,6 +87,7 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
     }
 
     [IntegrationTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task RolledBackSidecar_IsNeverVisibleToAnotherConnection()
     {
         await SeedEvidenceAsync();
@@ -99,6 +104,7 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
     }
 
     [IntegrationTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task TryReadAsync_SidecarPresentOrAbsent_PreservesLegacyPayload()
     {
         await SeedEvidenceAsync();
@@ -112,6 +118,7 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
     }
 
     [IntegrationTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task TryReadWithEvidenceAsync_CommittedSidecar_PreservesUnavailableAndConfirmedEmpty()
     {
         await SeedEvidenceAsync();
@@ -131,6 +138,7 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
     }
 
     [IntegrationTheory]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     [InlineData("null")]
     [InlineData("{\"version\":1}")]
     [InlineData("{\"version\":2,\"payloadSha256\":\"$hash\",\"creates\":[],\"updates\":[],\"deletes\":[]}")]
@@ -164,6 +172,7 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
     }
 
     [IntegrationTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task TryReadWithEvidenceAsync_LegacySchema_PreservesPayloadWithUnavailableEvidence()
     {
         await SeedEvidenceAsync();

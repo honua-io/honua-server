@@ -29,7 +29,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS capture_feature_operation_evidence ON honua.feature_changes;
-CREATE TRIGGER capture_feature_operation_evidence
+CREATE OR REPLACE TRIGGER capture_feature_operation_evidence
     AFTER INSERT ON honua.feature_changes
     FOR EACH ROW EXECUTE FUNCTION honua.capture_feature_operation_evidence();
