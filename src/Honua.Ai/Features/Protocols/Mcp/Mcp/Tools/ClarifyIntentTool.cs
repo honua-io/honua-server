@@ -7,10 +7,11 @@ using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Grounding;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Mrtr;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-internal sealed class ClarifyIntentTool : IMcpTool
+internal sealed class ClarifyIntentTool : IMcpTool, IMcpInputRequiredTool
 {
     public const string ToolName = "honua_clarify_intent";
 
@@ -31,6 +32,8 @@ internal sealed class ClarifyIntentTool : IMcpTool
     }
 
     public string Name => ToolName;
+
+    public bool Resumes(McpRequestStateKind kind) => kind == McpRequestStateKind.Clarification;
 
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Planning;
 
@@ -62,7 +65,8 @@ internal sealed class ClarifyIntentTool : IMcpTool
             .ConfigureAwait(false);
 
         var argument = McpToolHelpers.ParseArguments(arguments, GroundingJsonContext.Default.McpClarifyIntentArgument);
-        var request = GroundingToolMapper.ToDomain(argument);
+        var continuation = ClarificationContinuation.Begin(httpContext, argument ?? new McpClarifyIntentArgument());
+        var request = continuation.Request ?? GroundingToolMapper.ToDomain(argument);
 
         var result = await _groundingService.GroundAsync(request, principal, cancellationToken).ConfigureAwait(false);
         var output = GroundingToolMapper.ToWire(result);
@@ -80,6 +84,7 @@ internal sealed class ClarifyIntentTool : IMcpTool
             workflowFamily: result.WorkflowFamily.Value.ToString(),
             clarified: result.Clarification is not null);
 
-        return McpToolHelpers.SuccessResult(output, GroundingJsonContext.Default.McpGroundingOutput);
+        return continuation.NextInput(result.Clarification)
+            ?? McpToolHelpers.SuccessResult(output, GroundingJsonContext.Default.McpGroundingOutput);
     }
 }

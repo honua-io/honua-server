@@ -42,7 +42,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
+internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -688,16 +688,6 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             ? await ApplyPermanentFilterAsync(layerId, query.Value, cancellationToken).ConfigureAwait(false)
             : await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-        if (_queryBuilder is FeatureQueryBuilder postgresBuilder)
-        {
-            return await MvtTileBudgetFitter.ReadAsync(
-                tileLimits.MaxTileSize,
-                step => postgresBuilder.BuildH3TileQuery(
-                    layerId, x, y, z, resolution, query, tileOptions, tileLimits, geometryStorageType, step),
-                (tileQuery, maxTileSize, token) => _dataAccess.GetMvtTileAsync(layerId, tileQuery, maxTileSize, token),
-                cancellationToken).ConfigureAwait(false);
-        }
-
         var tileQuery = _queryBuilder.BuildH3TileQuery(layerId, x, y, z, resolution, query, tileOptions, tileLimits, geometryStorageType);
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, tileLimits.MaxTileSize, cancellationToken);
     }
@@ -1167,7 +1157,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(int layerId, CancellationToken cancellationToken)
         => _readSecurity.ResolveEnforcedSqlFilterAsync(layerId, cancellationToken);
 
-    private async Task<MetadataV2Resource> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
+    private async Task<MetadataV2Object> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
     {
         if (_v2Provider == null)
         {

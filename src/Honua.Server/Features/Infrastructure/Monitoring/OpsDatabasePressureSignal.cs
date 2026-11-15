@@ -58,6 +58,8 @@ internal sealed class OpsFindingsExtendedSignals
 
     public IRuntimeTunableAdmissionGate? AdmissionGate { get; init; }
 
+    public Honua.Core.Features.Metadata.Abstractions.ICatalogActivationWatchStore? CatalogActivationWatches { get; init; }
+
     public IOpsHealthRollupStore? RollupStore { get; init; }
 
     public IOpsExternalEventStore? ExternalEventStore { get; init; }

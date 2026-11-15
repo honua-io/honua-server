@@ -1,0 +1,307 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
+using Honua.Server.Features.Admin.Services;
+using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
+
+namespace Honua.Server.Tests.Features.Admin;
+
+public sealed class ManagedImportConnectionTests
+{
+    private const string Password = "secret-value";
+    private const string ConnectionString =
+        "Host=db.internal;Port=5432;Database=honua;Username=honua_app;Password=" + Password + ";SSL Mode=Disable";
+
+    [UnitTest]
+    public async Task FreshInstallListsOneImportedDataConnectionWithoutThePassword()
+    {
+        var encryption = new RememberingEncryption();
+        using var services = Services(encryption, ConnectionString);
+        var registry = services.GetRequiredService<ISecureConnectionRegistry>();
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        var connection = Assert.Single(await registry.GetActiveConnectionsAsync());
+        Assert.Equal(ManagedImportConnection.Id, connection.ConnectionId);
+        Assert.Equal(ManagedImportConnection.Name, connection.Name);
+        Assert.Equal("db.internal", connection.Host);
+        Assert.Equal(5432, connection.Port);
+        Assert.Equal("honua", connection.DatabaseName);
+        Assert.Equal("honua_app", connection.Username);
+        Assert.Equal(SslMode.Disable, connection.SslMode);
+        Assert.False(connection.SslRequired);
+        Assert.Equal(ConnectionString, encryption.Stored);
+        Assert.Equal(1, encryption.EncryptCalls);
+        Assert.DoesNotContain(Password, connection.Host + connection.DatabaseName + connection.Username + connection.Description);
+    }
+
+    [UnitTest]
+    public async Task ChangedServerDatabaseReplacesTheStoredConnectionString()
+    {
+        var encryption = new RememberingEncryption();
+        using var services = Services(encryption, ConnectionString);
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+        var moved = ConnectionString.Replace("db.internal", "db.moved", StringComparison.Ordinal);
+        using var relocated = Services(encryption, moved, services.GetRequiredService<ISecureConnectionRegistry>());
+
+        await ManagedImportConnection.EnsureAsync(relocated, CancellationToken.None);
+
+        var connection = Assert.Single(await relocated.GetRequiredService<ISecureConnectionRegistry>().GetActiveConnectionsAsync());
+        Assert.Equal("db.moved", connection.Host);
+        Assert.Equal(moved, encryption.Stored);
+        Assert.Equal(2, encryption.EncryptCalls);
+    }
+
+    [UnitTest]
+    public async Task MissingOrUnreadableServerDatabaseAddsNothing()
+    {
+        var encryption = new RememberingEncryption();
+        using var missing = Services(encryption, null);
+        using var broken = Services(encryption, "not a connection string");
+
+        await ManagedImportConnection.EnsureAsync(missing, CancellationToken.None);
+        await ManagedImportConnection.EnsureAsync(broken, CancellationToken.None);
+
+        Assert.Empty(await missing.GetRequiredService<ISecureConnectionRegistry>().GetAllConnectionsAsync());
+        Assert.Empty(await broken.GetRequiredService<ISecureConnectionRegistry>().GetAllConnectionsAsync());
+        Assert.Equal(0, encryption.EncryptCalls);
+    }
+
+    [UnitTest]
+    public async Task NameAlreadyUsedForThisDatabaseAddsNothing()
+    {
+        var encryption = new RememberingEncryption();
+        var registry = new InMemorySecureConnectionRegistry();
+        await registry.CreateConnectionAsync(Seed("11111111-1111-4111-8111-111111111111", ManagedImportConnection.Name, ConnectionString));
+        using var services = Services(encryption, ConnectionString, registry);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        Assert.Single(await registry.GetAllConnectionsAsync());
+        Assert.Equal(0, encryption.EncryptCalls);
+    }
+
+    [UnitTest]
+    public async Task NameAlreadyUsedForAnotherDatabaseUsesTheBuiltInName()
+    {
+        var encryption = new RememberingEncryption();
+        var registry = new InMemorySecureConnectionRegistry();
+        await registry.CreateConnectionAsync(Seed(
+            "22222222-2222-4222-8222-222222222222",
+            ManagedImportConnection.Name,
+            "Host=elsewhere;Port=5432;Database=other;Username=other;Password=other"));
+        using var services = Services(encryption, ConnectionString, registry);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        var created = Assert.Single(await registry.GetActiveConnectionsAsync(), connection => connection.ConnectionId == ManagedImportConnection.Id);
+        Assert.Equal(ManagedImportConnection.FallbackName, created.Name);
+        Assert.Equal(2, (await registry.GetAllConnectionsAsync()).Count());
+    }
+
+    [UnitTest]
+    public async Task BuiltInNameAlreadyUsedForThisDatabaseAddsNothing()
+    {
+        var encryption = new RememberingEncryption();
+        var registry = new InMemorySecureConnectionRegistry();
+        await registry.CreateConnectionAsync(Seed(
+            "33333333-3333-4333-8333-333333333333",
+            ManagedImportConnection.FallbackName,
+            ConnectionString));
+        using var services = Services(encryption, ConnectionString, registry);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        Assert.Single(await registry.GetAllConnectionsAsync());
+        Assert.Equal(0, encryption.EncryptCalls);
+    }
+
+    [UnitTest]
+    public async Task RunningDatabaseWinsOverAReloadedConfiguration()
+    {
+        var encryption = new RememberingEncryption();
+        var running = ConnectionString.Replace("db.internal", "db.running", StringComparison.Ordinal);
+        var reloaded = ConnectionString.Replace("db.internal", "db.reloaded", StringComparison.Ordinal);
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(running) { PersistSecurityInfo = true, Multiplexing = true, Options = "-c search_path=public" };
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(builder.ConnectionString);
+        using var services = Services(encryption, reloaded, dataSource);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        var connection = Assert.Single(await services.GetRequiredService<ISecureConnectionRegistry>().GetActiveConnectionsAsync());
+        Assert.Equal("db.running", connection.Host);
+        Assert.Contains("db.running", encryption.Stored, StringComparison.Ordinal);
+        Assert.DoesNotContain("db.reloaded", encryption.Stored, StringComparison.Ordinal);
+        Assert.Equal(1, encryption.EncryptCalls);
+        var stored = new Npgsql.NpgsqlConnectionStringBuilder(encryption.Stored);
+        Assert.DoesNotContain("Persist Security Info", stored.Keys);
+        Assert.DoesNotContain("Multiplexing", stored.Keys);
+        Assert.DoesNotContain("Options", stored.Keys);
+        Assert.Equal(Password, stored.Password);
+    }
+
+    [UnitTest]
+    public async Task RunningPasswordAvoidsAnUnavailableConfiguredSecret()
+    {
+        var encryption = new RememberingEncryption();
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(ConnectionString) { PersistSecurityInfo = true };
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(builder.ConnectionString);
+        var resolver = Substitute.For<IConnectionSecretResolver>();
+        resolver.CanResolveSecretAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new InvalidOperationException("Secret provider unavailable.")));
+        var registrations = Compose(encryption, "vault:database", new InMemorySecureConnectionRegistry());
+        registrations.AddSingleton(dataSource);
+        registrations.AddSingleton(resolver);
+        using var services = registrations.BuildServiceProvider();
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        Assert.Single(await services.GetRequiredService<ISecureConnectionRegistry>().GetActiveConnectionsAsync());
+        Assert.Equal(Password, new Npgsql.NpgsqlConnectionStringBuilder(encryption.Stored).Password);
+        await resolver.DidNotReceive().CanResolveSecretAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task PasswordlessRunningDatabaseWinsOverAReloadedConfiguration()
+    {
+        var encryption = new RememberingEncryption();
+        var running = "Host=db.running;Port=5432;Database=honua;Username=honua_app;SSL Mode=Disable";
+        var reloaded = ConnectionString.Replace("db.internal", "db.reloaded", StringComparison.Ordinal);
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(running);
+        using var services = Services(encryption, reloaded, dataSource);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        var connection = Assert.Single(await services.GetRequiredService<ISecureConnectionRegistry>().GetActiveConnectionsAsync());
+        Assert.Equal("db.running", connection.Host);
+        Assert.Contains("db.running", encryption.Stored, StringComparison.Ordinal);
+        Assert.DoesNotContain("db.reloaded", encryption.Stored, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public async Task PasswordlessRunningDatabaseKeepsTheConfiguredPasswordForThatDatabase()
+    {
+        var encryption = new RememberingEncryption();
+        var running = "Host=db.internal;Port=5432;Database=honua;Username=honua_app;SSL Mode=Disable";
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(running);
+        using var services = Services(encryption, ConnectionString, dataSource);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        var connection = Assert.Single(await services.GetRequiredService<ISecureConnectionRegistry>().GetActiveConnectionsAsync());
+        Assert.Equal("db.internal", connection.Host);
+        Assert.Contains(Password, encryption.Stored, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public async Task PasswordlessRunningDatabaseDoesNotFollowADifferentCaseName()
+    {
+        var encryption = new RememberingEncryption();
+        var running = "Host=db.internal;Port=5432;Database=honua;Username=honua_app;SSL Mode=Disable";
+        var configured = ConnectionString.Replace("Database=honua", "Database=Honua", StringComparison.Ordinal);
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(running);
+        using var services = Services(encryption, configured, dataSource);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        var connection = Assert.Single(await services.GetRequiredService<ISecureConnectionRegistry>().GetActiveConnectionsAsync());
+        Assert.Equal("honua", connection.DatabaseName);
+        Assert.DoesNotContain(Password, encryption.Stored, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public async Task EncryptionFailureLeavesTheListUnchanged()
+    {
+        var registry = new InMemorySecureConnectionRegistry();
+        using var services = Services(new RememberingEncryption { Fail = true }, ConnectionString, registry);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        Assert.Empty(await registry.GetAllConnectionsAsync());
+    }
+
+    private static ServiceProvider Services(
+        RememberingEncryption encryption,
+        string? connectionString,
+        ISecureConnectionRegistry? registry = null)
+        => Compose(encryption, connectionString, registry ?? new InMemorySecureConnectionRegistry()).BuildServiceProvider();
+
+    private static ServiceProvider Services(
+        RememberingEncryption encryption,
+        string? connectionString,
+        Npgsql.NpgsqlDataSource dataSource)
+    {
+        var services = Compose(encryption, connectionString, new InMemorySecureConnectionRegistry());
+        services.AddSingleton(dataSource);
+        return services.BuildServiceProvider();
+    }
+
+    private static IServiceCollection Compose(
+        RememberingEncryption encryption,
+        string? connectionString,
+        ISecureConnectionRegistry registry)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = connectionString
+        }).Build();
+        return new ServiceCollection()
+            .AddSingleton<IConfiguration>(configuration)
+            .AddSingleton<IConnectionEncryptionService>(encryption)
+            .AddSingleton(registry);
+    }
+
+    private sealed class RememberingEncryption : IConnectionEncryptionService
+    {
+        public string? Stored { get; private set; }
+        public int EncryptCalls { get; private set; }
+        public bool Fail { get; init; }
+
+        public Task<byte[]> EncryptConnectionStringAsync(string connectionString)
+        {
+            if (Fail)
+            {
+                throw new InvalidOperationException("The encryption key is not available.");
+            }
+
+            EncryptCalls++;
+            Stored = connectionString;
+            return Task.FromResult(System.Text.Encoding.UTF8.GetBytes(connectionString));
+        }
+
+        public Task<string> DecryptConnectionStringAsync(byte[] encryptedData, int keyVersion)
+            => Task.FromResult(System.Text.Encoding.UTF8.GetString(encryptedData));
+
+        public Task<int> GetCurrentKeyVersionAsync() => Task.FromResult(1);
+        public Task<bool> ValidateEncryptionAsync() => Task.FromResult(true);
+        public Task<int> RotateKeyAsync() => Task.FromResult(2);
+    }
+
+    private static DataConnection Seed(string id, string name, string connectionString)
+    {
+        var connectionId = Guid.Parse(id);
+        var connection = DataConnection.CreateWithEncryptedCredentials(
+            name,
+            "elsewhere",
+            5432,
+            "other",
+            "other",
+            System.Text.Encoding.UTF8.GetBytes(connectionString),
+            1,
+            "operator",
+            "operator connection",
+            sslRequired: false,
+            SslMode.Disable);
+        connection.ConnectionId = connectionId;
+        connection.Id = connectionId.ToString("D");
+        return connection;
+    }
+}

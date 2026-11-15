@@ -43,6 +43,7 @@ if args[0] == "compose":
     else:
         assert path.is_file(), "configuration must exist before any mutation"
         assert "synthetic-license" in path.read_text(), "startup inputs must survive"
+        if args[5] == "ps": print(os.environ.get("CONTAINERS", "fixture-candidate-container"))
         if args[5] == "up" and os.environ.get("UP_FAIL"): sys.exit(12)
         if args[5] == "down" and os.environ.get("DOWN_FAIL"): sys.exit(13)
 else:
@@ -73,13 +74,25 @@ def test_cleanup_reuses_private_configuration_without_startup_environment(substr
     assert started.returncode == 0, started.stderr
     assert stat.S_IMODE(prepared.stat().st_mode) == 0o600
     assert stat.S_IMODE(prepared.parent.stat().st_mode) == 0o700
+    assert prepared.with_name("server-container").read_text().strip() == "fixture-candidate-container"
     finished = run("cleanup")
     assert finished.returncode == 0, finished.stderr
     mutations = [call for call in _calls(calls) if call[0] == "compose" and call[5] in ("up", "down")]
     assert [call[5] for call in mutations] == ["up", "down"]
     assert mutations[0][1:5] == mutations[1][1:5]  # Same project and exact private file.
     assert not prepared.exists()
+    assert not prepared.with_name("server-container").exists()
     assert "synthetic-license" not in started.stdout + started.stderr + finished.stdout + finished.stderr
+
+
+@pytest.mark.parametrize("containers", ["", "first\nsecond"])
+def test_start_refuses_missing_or_ambiguous_candidate(substrate, containers):
+    run, prepared, _ = substrate
+    started = run("start", SOAK_LICENSE_CONTENT="synthetic-license", CONTAINERS=containers)
+    assert started.returncode != 0
+    assert "Expected exactly one" in started.stderr
+    assert not prepared.with_name("server-container").exists()
+    assert run("cleanup").returncode == 0
 
 
 def test_partial_startup_still_has_cleanup_inputs(substrate):

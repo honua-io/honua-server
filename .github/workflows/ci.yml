@@ -4,9 +4,10 @@ run-name: "CI ${{ github.ref == 'refs/heads/trunk' && (github.event_name == 'sch
 on:
   schedule:
     # Full integration lane. PR CI is selective; release workflows own
-    # packaging/publishing smoke.
-    - cron: '23 9 * * *'
-    - cron: '23 21 * * *'
+    # packaging/publishing smoke. Keep full runs outside 07:00–22:00 Pacific
+    # standard time: 23:23 and 05:23 PST.
+    - cron: '23 7 * * *'
+    - cron: '23 13 * * *'
   # Per-PR verification lives in pr-gate.yml. Full CI runs on trunk twice
   # daily or by dispatch, keeping runtime proofs and protocol builds off the
   # per-push critical path while preserving complete integration coverage.
@@ -953,7 +954,9 @@ jobs:
       - name: Restore complete format context
         run: scripts/ci/dotnet-restore-retry.sh Honua.sln
       - name: Format Check
-        run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
+        # The analyzer builds enforce these rules with the per-finding baseline;
+        # dotnet format does not load DiagnosticSuppressor (dotnet/sdk#51364).
+        run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic --exclude-diagnostics CA2000 IDE0063 RS0030 S1244 S2486 S108 CA1508 CA1851
 
   # Foundation test FAMILIES (#3567). This lane used to be a single serial job
   # whose per-family steps ran back to back: on the 2026-08-27 batch run
@@ -1607,17 +1610,17 @@ jobs:
           images=()
           case "${SERVER_SHARD}" in
             'Admin & Infrastructure '[0-9]*| \
-            'Migration'| \
+            'Migration '[0-9]*| \
             'FeatureServer Editing and Relationships'| \
             'FeatureServer Query Services and Replication '[0-9]*| \
-            'OGC API Tiles Coverages and Processes'| \
-            'GeoServices GPServer and NAServer'| \
+            'OGC API Tiles Coverages and Processes '[0-9]*| \
+            'GeoServices GPServer and NAServer '[0-9]*| \
             'Caching File Storage Styling and Infrastructure'| \
-            'Operator Eval Harness'| \
+            'Operator Eval Harness '[0-9]*| \
             'gRPC Protocol and Scene'| \
-            'MCP and Sessions'| \
+            'MCP and Sessions '[0-9]*| \
             'Server Features Admin Runtime Operations'| \
-            'Server Features Admin Authorization'| \
+            'Server Features Admin Authorization '[0-9]*| \
             'Server Features Admin Authorization Matrix'| \
             'Server Features Admin Network and Jobs'| \
             'Server Features Admin Integrations and Automation '[0-9]*| \
@@ -1627,11 +1630,11 @@ jobs:
             'Server Features Miscellaneous '[0-9]*| \
             'Server Features Studio Packaging '[0-9]*) images+=(redis) ;;
           esac
-          if [[ "${SERVER_SHARD}" == 'Operator Eval Harness' ]]; then
+          if [[ "${SERVER_SHARD}" == 'Operator Eval Harness '[0-9]* ]]; then
             images+=(postgis17)
           fi
           # These real-process/seed proofs create their own PostGIS containers.
-          if [[ "${SERVER_SHARD}" == 'Core and Cloud Contracts' ]]; then
+          if [[ "${SERVER_SHARD}" == 'Core and Cloud Contracts '[0-9]* ]]; then
             images+=(postgis16 postgis18)
           fi
           if (( ${#images[@]} > 0 )); then
@@ -1734,7 +1737,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         timeout-minutes: 3
         with:
-          name: server-test-results-${{ matrix.artifact_suffix }}
+          # The attempt suffix keeps a rerun's receipt apart from the earlier
+          # attempt's artifact; the receipt check keeps each shard's newest.
+          name: server-test-results-${{ matrix.artifact_suffix }}-attempt-${{ github.run_attempt }}
           path: artifacts/test-results/
           retention-days: 7
 
@@ -2110,7 +2115,6 @@ jobs:
         with:
           pattern: server-test-results-*
           path: artifacts/server-shard-results
-          merge-multiple: true
 
       - name: Download selected shard matrix
         if: always() && needs.changes.outputs.integration_changes == 'true'
@@ -2931,7 +2935,7 @@ jobs:
 
       - name: Restore
         # Scoped to Honua.Core's transitive ProjectReferences; the package
-        # job only pack's Honua.Core. Full-sln restore was over-fetching
+        # job packs Core and its abstractions. Full-sln restore was over-fetching
         # for the entire repo every run.
         run: scripts/ci/dotnet-restore-retry.sh src/Honua.Core/Core/Honua.Core.csproj
 
@@ -2957,11 +2961,13 @@ jobs:
 
       - name: Test package integration
         run: |
-          mkdir -p package-test
-          cd package-test
-          dotnet new console
+          package_version="0.0.0-ci.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          for framework in net10.0 net11.0; do
+          consumer_dir="$(mktemp -d)"
+          dotnet new console --framework "${framework}" --output "${consumer_dir}" --no-restore
+          PACKAGE_SOURCE="$(realpath packages)"
+          pushd "${consumer_dir}" >/dev/null
 
-          PACKAGE_SOURCE="$(realpath ../packages)"
           cat > NuGet.config <<EOF
           <?xml version="1.0" encoding="utf-8"?>
           <configuration>
@@ -3001,11 +3007,21 @@ jobs:
           EOF
 
           # Add package under test
-          VERSION=$(basename "$(ls ../packages/Honua.Core*.nupkg | head -1)" | sed -E 's/^Honua\.Core\.([0-9A-Za-z.-]+)\.nupkg$/\1/')
-          dotnet add package Honua.Core --version "$VERSION"
+          dotnet add package Honua.Core --version "${package_version}"
+
+          cat > Program.cs <<'EOF'
+          using Honua.Core.Exceptions;
+          using Honua.Core.Features.Shared.Models;
+
+          _ = new ValidationException("Package consumer smoke");
+          _ = new SpatialReference { Wkid = 4326 };
+          EOF
 
           # Test build
           dotnet build --configuration Release
+          popd >/dev/null
+          rm -rf "${consumer_dir}"
+          done
 
       - name: Validate server compatibility
         run: |
@@ -3366,6 +3382,7 @@ jobs:
     permissions:
       contents: read
       packages: read
+      id-token: write
   # Pull requests run these two interop proofs only for Parquet/Arrow-named
   # inputs; the full run covers every shared build, model and host change.
   geoparquet-interop:

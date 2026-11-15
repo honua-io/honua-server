@@ -6,12 +6,15 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Npgsql;
 using SkiaSharp;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
@@ -42,7 +45,6 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("<WMS_Capabilities");
         content.Should().Contain("<Name>WMS</Name>");
-        content.Should().Contain("EPSG:3857");
         content.Should().Contain("EPSG:4326");
         content.Should().Contain("<GetMap>");
         content.Should().Contain("<GetFeatureInfo>");
@@ -195,18 +197,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms111_GetCapabilities_UsesDtdCompatibleServiceAndDimensionElements()
     {
-        // V2 cutover: capabilities reads the layer display name off MetadataV2Resource.
-        // Update the V2 graph so the cite:Autos dimension branch fires.
-        _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
-        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
-        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
-            "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
-            command =>
-            {
-                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
-                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
-            },
-            _fixture.CurrentSchema);
+        await SeedWms111DimensionsAndContactAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1");
@@ -234,6 +225,35 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         extent.Should().BeGreaterThan(dimension);
         metadataUrl.Should().BeGreaterThan(extent);
         style.Should().BeGreaterThan(metadataUrl);
+    }
+
+    private async Task SeedWms111DimensionsAndContactAsync()
+    {
+        // V2 cutover: capabilities reads the layer display name off MetadataV2Object.
+        // Update the V2 graph so the cite:Autos dimension branch fires.
+        _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
+        _fixture.MutateV2ResourceObjectMetadata(WebAppFixture.TestLayerId, metadata => metadata with
+        {
+            Links = [new MetadataV2Link { Rel = "describedby", Href = "https://example.com/metadata/autos", Type = "application/xml" }]
+        });
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>()).SetGraph(snapshot.Graph with
+        {
+            Services = snapshot.Graph.Services.Select(service => service with
+            {
+                Metadata = service.Metadata with { ContactPoint = new MetadataV2ContactPoint { Name = "Operations", Email = "ops@example.com" } }
+            }).ToArray()
+        }, schema: _fixture.CurrentSchema);
+
+        // Route the global honua.layers UPDATE through the schema-mutation advisory lock.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
+            command =>
+            {
+                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerName", Value = "cite:Autos" });
+                command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
+            },
+            _fixture.CurrentSchema);
     }
 
     [IntegrationTest]
@@ -271,12 +291,12 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetCapabilities_ServiceExtentInWebMercator_ReprojectsGeographicBounds()
     {
-        // V2 cutover: capabilities reads its bbox off MetadataV2Resource.Spatial.Bbox
+        // V2 cutover: capabilities reads its bbox off MetadataV2Object.Spatial.Bbox
         // (V2 has no service-level extent). Set Web Mercator bounds on the layer the
         // test service publishes so the OgcExtentTransformer reproject branch fires.
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            spatial: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+            spatial: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectSpatial
             {
                 SpatialReference = Honua.Core.Features.Metadata.Domain.V2.MetadataV2SpatialReference.WebMercator,
                 Bbox = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2Bbox

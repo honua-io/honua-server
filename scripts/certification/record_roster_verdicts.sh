@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run both bounded-roster verifiers and return their combined status.
+# Require candidate-bound release passes and a ready producer/denominator contract.
 # Arguments: evidence-dir candidate
 # candidate names an associative array with source_sha, image_digest, cut_at
 # and producer_sha.
@@ -19,6 +19,7 @@ record_verdicts() {
     --output "$evidence/verdict.release.json" | tee "$evidence/verdict.release.txt"
   release_status=$?
   python3 scripts/certification/verify-client-certification-receipts.py \
+    --check-readiness \
     --output "$evidence/verdict.contract.json" > "$evidence/verdict.contract.txt"
   contract_status=$?
   set -e

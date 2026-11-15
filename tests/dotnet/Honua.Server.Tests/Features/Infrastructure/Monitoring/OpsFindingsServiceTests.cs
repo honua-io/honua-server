@@ -32,7 +32,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// rule at a time against fake seams.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
-public sealed class OpsFindingsServiceTests
+public sealed partial class OpsFindingsServiceTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
@@ -161,9 +161,11 @@ public sealed class OpsFindingsServiceTests
         Assert.False(OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out _));
     }
 
-    [UnitTest]
+    [UnitTheory]
+    [InlineData(2, 2)]
+    [InlineData(600, 500)]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Evaluate_AlertDispatchDeadLetters_ProducesCriticalFindingWithRedriveAction()
+    public async Task Evaluate_AlertDispatchDeadLetters_ProducesCriticalFindingWithRedriveAction(int deadLetters, int expectedBound)
     {
         // #2556: the registered alerts.redrive_dead_letters actuator (#2579) means dead-letters now
         // carry a real recommended action instead of being purely informational.
@@ -171,7 +173,7 @@ public sealed class OpsFindingsServiceTests
         {
             IsDispatcherEnabled = true,
             IsDispatcherRunning = true,
-            LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = deadLetters },
         };
         var service = CreateService(alertHealth: alertHealth);
 
@@ -183,6 +185,9 @@ public sealed class OpsFindingsServiceTests
         Assert.NotNull(finding.RecommendedAction);
         Assert.Equal(OperationClass.AdminConfigChange, finding.RecommendedAction!.Kind);
         Assert.Contains("\"action\":\"alerts.redrive_dead_letters\"", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+        Assert.Contains($"\"maxCount\":{expectedBound}", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+        Assert.Equal(expectedBound, finding.RecommendedAction.BlastRadius);
+        Assert.False(finding.RecommendedAction.AutoSafe);
     }
 
     [UnitTest]
@@ -627,6 +632,39 @@ public sealed class OpsFindingsServiceTests
                 TotalCount = operations.Length,
                 HasMore = false,
             }));
+    }
+
+    [UnitTheory]
+    [InlineData(8, 0)]
+    [InlineData(1, 1)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_AnonymousAdmissionActive_ExplainsTemporaryLimit(int inFlight, int queued)
+    {
+        var gate = Substitute.For<IRuntimeTunableAdmissionGate>();
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(inFlight, 10, queued, 0, 0));
+        var service = CreateService(admissionGate: gate);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, finding => finding.Rule == "anonymous-pressure-admission");
+        Assert.Equal(OpsFindingSeverity.Warning, finding.Severity);
+        Assert.Contains("anonymous", finding.Explanation, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("automatically", finding.Explanation, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(finding.RecommendedAction);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_AnonymousAdmissionPressureClears_RemovesFindingDespitePastTimeouts()
+    {
+        var gate = Substitute.For<IRuntimeTunableAdmissionGate>();
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(8, 10, 0, 0, 0));
+        var service = CreateService(admissionGate: gate);
+        Assert.Contains(await service.EvaluateAsync(), finding => finding.Rule == "anonymous-pressure-admission");
+
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(1, 10, 0, 0, 20));
+
+        Assert.DoesNotContain(await service.EvaluateAsync(), finding => finding.Rule == "anonymous-pressure-admission");
     }
 
     [UnitTest]

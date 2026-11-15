@@ -31,21 +31,11 @@ internal static class HostedBlazorAssetHelpers
         private readonly EndpointDataSource _innerDataSource = innerDataSource;
         private readonly IReadOnlyCollection<string> _blockedPrefixes = blockedPrefixes;
 
-        public override IReadOnlyList<Endpoint> Endpoints => FilterEndpoints();
+        public override IReadOnlyList<Endpoint> Endpoints => _innerDataSource.Endpoints
+            .Where(ShouldKeepEndpoint)
+            .ToArray();
 
         public override IChangeToken GetChangeToken() => _innerDataSource.GetChangeToken();
-
-        private IReadOnlyList<Endpoint> FilterEndpoints()
-        {
-            if (_blockedPrefixes.Count == 0)
-            {
-                return _innerDataSource.Endpoints;
-            }
-
-            return _innerDataSource.Endpoints
-                .Where(ShouldKeepEndpoint)
-                .ToArray();
-        }
 
         private bool ShouldKeepEndpoint(Endpoint endpoint)
         {
