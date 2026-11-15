@@ -175,7 +175,7 @@ manifest="$(
         blockers: $blockers
       };
 
-    (($imageDigest | test("\\Asha256:[0-9a-f]{64}\\z")) and $imageTag != "") as $imageReady |
+    (($imageDigest | test("\\Asha256:[0-9a-f]{64}\\z")) and $imageTag != "" and $imageRepo != "") as $imageReady |
 
     {
       "$schema": "https://honua.io/schemas/release-train-manifest.v1.json",
@@ -194,7 +194,7 @@ manifest="$(
           blockers: (if $imageReady then [] else
             [ { repo: "honua-io/honua-devops", number: 41,
                 url: "https://github.com/honua-io/honua-devops/issues/41",
-                reason: "Release-candidate image requires a published tag and valid sha256 digest." } ] end)
+                reason: "Release-candidate image requires a repository, published tag and valid sha256 digest." } ] end)
         }
       },
       sdkCompatibilityManifest: ($ev.meta.sdkCompatibilityManifest // "docs/developer/sdk-compatibility-versions.json"),

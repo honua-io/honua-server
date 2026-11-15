@@ -105,6 +105,17 @@ jq -e '.releaseIssue.number == 876 and (.childTickets|length==1)' "$WORKDIR/mani
   || { echo "[ERROR] meta (releaseIssue/childTickets) not carried from evidence" >&2; exit 1; }
 echo "[OK] image-ready manifest generated"
 
+
+echo "Validating: a candidate image without a repository is blocked"
+"$GEN" "${COMMON_ARGS[@]}" --image-repository "" \
+  --image-tag "rc-honua-test-rc-deadbee" \
+  --image-digest "sha256:1111111111111111111111111111111111111111111111111111111111111111" \
+  --output "$WORKDIR/manifest-no-repository.json" >/dev/null
+jq -e '.candidate.image.repository == null and .candidate.image.evidenceState == "blocked"
+       and (.candidate.image.blockers | length > 0)' "$WORKDIR/manifest-no-repository.json" >/dev/null \
+  || { echo "[ERROR] missing repository passed candidate image evidence" >&2; exit 1; }
+echo "[OK] missing repository blocks candidate image evidence"
+
 echo
 echo "Validating: CI conclusions map to evidenceState and blockers are preserved"
 jq -e '.releaseGates[] | select(.id=="server-sdk-compatibility") | .evidenceState=="passed" and .latestEvidence.conclusion=="success"' "$WORKDIR/manifest-ready.json" >/dev/null \
