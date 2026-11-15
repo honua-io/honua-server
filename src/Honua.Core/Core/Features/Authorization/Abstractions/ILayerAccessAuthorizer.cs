@@ -53,8 +53,8 @@ public interface ILayerAccessAuthorizer
     /// </summary>
     Task<AccessDecision> AuthorizePublicationAsync(
         ClaimsPrincipal principal,
-        MetadataV2Publication publication,
-        MetadataV2Resource resource,
+        MetadataV2Layer publication,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default);

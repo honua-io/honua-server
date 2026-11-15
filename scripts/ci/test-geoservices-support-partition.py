@@ -2,6 +2,7 @@
 """Prove the measured Catalog capacity cut keeps every runnable original method exactly once."""
 
 import copy
+from shard_capacity_partition import capacity_split_names
 import importlib.util
 import json
 from pathlib import Path
@@ -15,7 +16,7 @@ PARENT = '(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.
 PROJECT = 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj'
 NAMES = ('GeoServices Catalog and ImageServer Support', 'GeoServices ImageServer Rendering and Support',
          'GeoServices ImageServer Raster Rendering')
-CHILDREN = [next(s for s in CONFIG['shards'] if s['name'] == n) for n in NAMES]
+CHILDREN = [next(s for s in CONFIG['shards'] if s['name'] == n) for parent in NAMES for n in capacity_split_names(CONFIG, parent)]
 METHODS = MODULE.selection_pool(MODULE.enumerate_test_classes(), PROJECT)
 EXPECTED = {m for m in METHODS if MODULE._eval(MODULE._FilterParser(PARENT).parse(), m)}
 assert EXPECTED, 'The actual GeoServices source inventory must be present.'
@@ -37,9 +38,11 @@ counts = check(CHILDREN)
 for mutation in ('lost', 'duplicated', 'foreign'):
     changed = copy.deepcopy(CHILDREN)
     if mutation == 'lost':
-        changed[2]['filter'] = '(' + changed[2]['filter'] + ')&FullyQualifiedName!~ImageServerWmtsReprojectionTests'
+        method = min(m for m in EXPECTED if MODULE._eval(MODULE._FilterParser(changed[0]['filter']).parse(), m))
+        changed[0]['filter'] = '(' + changed[0]['filter'] + ')&FullyQualifiedName!=' + method
     elif mutation == 'duplicated':
-        changed[0]['filter'] += '|FullyQualifiedName~ImageServerWmtsReprojectionTests'
+        method = min(m for m in EXPECTED if MODULE._eval(MODULE._FilterParser(changed[1]['filter']).parse(), m))
+        changed[0]['filter'] += '|FullyQualifiedName=' + method
     else:
         changed[1]['filter'] += '|FullyQualifiedName~ImageServerEndpointsTests'
     try:
