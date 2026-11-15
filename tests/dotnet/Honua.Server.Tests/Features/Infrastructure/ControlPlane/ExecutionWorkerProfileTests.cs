@@ -20,7 +20,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -630,10 +629,9 @@ public sealed class ExecutionWorkerProfileTests
         IConfiguration configuration,
         IHostEnvironment environment)
     {
-        // Mirrors the serving composition of Program.cs on a host with a system database and an
-        // entitled Redis, with the real registration extensions where they exist. Nothing here
-        // opens a connection: no hosted service is started.
-        services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
+        // Mirrors the serving composition of Program.cs on a host with a system database, with
+        // the real registration extensions where they exist. Nothing here opens a connection: no
+        // hosted service is started.
         services.AddSingleton(_ => NpgsqlDataSource.Create("Host=localhost;Database=unused"));
         services.TryAddPostgresExecutionJobStore(configuration).Should().BeTrue();
         services.AddSingleton(Substitute.For<IUniversalProgressStore>());

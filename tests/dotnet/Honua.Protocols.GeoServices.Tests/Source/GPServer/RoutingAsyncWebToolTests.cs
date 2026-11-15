@@ -58,7 +58,7 @@ public sealed class RoutingAsyncWebToolTests
                 var application = Fixture(_provider);
                 try
                 {
-                    await NoRedisJobHost.StartAsync(application);
+                    await DurableJobHost.StartAsync(application);
                 }
                 catch
                 {
@@ -71,7 +71,7 @@ public sealed class RoutingAsyncWebToolTests
             }
 
             await _application.Postgres.DataSource.ClearJobSubstrateAsync();
-            NoRedisJobHost.AssertJobsRunWithoutRedis(_application);
+            DurableJobHost.AssertJobsRunOnPostgreSql(_application);
             return _application;
         }
 
@@ -661,7 +661,7 @@ public sealed class RoutingAsyncWebToolTests
                     return provider;
                 });
             });
-        await NoRedisJobHost.StartAsync(fixture);
+        await DurableJobHost.StartAsync(fixture);
         fixture.GetService<IWebHostEnvironment>().EnvironmentName.Should().Be("Development");
         fixture.GetService<IConfiguration>()["HONUA_DEV_AUTH"].Should().Be("false");
         var client = fixture.CreateAdminClient();
@@ -711,7 +711,7 @@ public sealed class RoutingAsyncWebToolTests
         return provider;
     }
 
-    private static WebAppFixture Fixture(IRoutingProvider provider) => NoRedisJobHost.Create()
+    private static WebAppFixture Fixture(IRoutingProvider provider) => DurableJobHost.Create()
         .ConfigureServices(services =>
         {
             services.RemoveAll<IRoutingProvider>();

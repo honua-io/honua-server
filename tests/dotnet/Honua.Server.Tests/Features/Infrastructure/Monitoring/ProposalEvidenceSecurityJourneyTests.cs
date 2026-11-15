@@ -40,7 +40,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
-using StackExchange.Redis;
 using Xunit.Abstractions;
 using LegacyExecutor = Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor;
 
@@ -51,12 +50,10 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// The only substituted boundaries are the deterministic model provider, mutation spies,
 /// clock, signing secret, and explicit durable-store failure switches.
 /// </summary>
-[Collection(RedisFixture.CollectionName)]
+[Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class ProposalEvidenceSecurityJourneyTests(
-    RedisFixture redis,
-    ITestOutputHelper output) : IAsyncLifetime
+public sealed class ProposalEvidenceSecurityJourneyTests(ITestOutputHelper output) : IAsyncLifetime
 {
     private const string TenantA = "tenant-a";
     private const string TenantB = "tenant-b";
@@ -74,7 +71,6 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
     private readonly AuditFailureSwitch _auditFailure = new();
     private readonly List<HttpClient> _clients = [];
     private readonly Dictionary<string, ToolDescriptor> _descriptors = new(StringComparer.Ordinal);
-    private ConnectionMultiplexer _redis = null!;
     private Honua.Server.Tests.Features.Infrastructure.ControlPlane.ControlPlaneStateHarness _controlPlaneState = null!;
     private FaultSwitchProposalStore _proposals = null!;
     private WebAppFixture _fixture = null!;
@@ -84,7 +80,6 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
 
     public async Task InitializeAsync()
     {
-        _redis = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         _controlPlaneState = await Honua.Server.Tests.Features.Infrastructure.ControlPlane.SharedControlPlaneState.GetAsync();
         _proposals = new FaultSwitchProposalStore(_controlPlaneState.CreateProposalStore());
 
@@ -106,7 +101,6 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         }
 
         await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -1040,8 +1034,6 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         services.RemoveAll<IStudioAiProxyAdapter>();
         services.AddSingleton<IStudioAiProxyAdapter>(_adapter);
 
-        services.RemoveAll<IConnectionMultiplexer>();
-        services.AddSingleton<IConnectionMultiplexer>(_redis);
         services.RemoveAll<IOperationProposalStore>();
         services.AddSingleton<IOperationProposalStore>(_proposals);
         services.RemoveAll<IOperationInstanceStore>();

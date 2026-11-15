@@ -16,18 +16,13 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// An admin finishes the closed operator roster through MCP. A caller without the admin grant
-/// is permission_denied and creates no connection row.
-/// </summary>
-/// <remarks>
-/// Lane A and Lane B executors compose only when a durable proposal store is already registered.
-/// Entitled Redis is what makes <c>Program</c> register that store before
-/// <c>AddOperationsToolset</c>, which is the same host the operator journey runs against.
-/// </remarks>
-[Collection(RedisFixture.CollectionName)]
+// An admin finishes the closed operator roster through MCP. A caller without the admin grant
+// is permission_denied and creates no connection row. Lane A and Lane B executors compose only
+// when a durable proposal store is registered; the system database provides it before
+// AddOperationsToolset, which is the same host the operator journey runs against.
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Mcp)]
-public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
+public sealed class OperatorJourneyMcpIntegrationTests
 {
     private const string SecretVariable = "HONUA_OPERATOR_ROSTER_PG";
     private const string SourceUrl = "https://s3.amazonaws.com/sample-bucket/parcels.geojson";
@@ -45,7 +40,6 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
             .UseKestrel()
             .ConfigureWebHost(builder =>
             {
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");

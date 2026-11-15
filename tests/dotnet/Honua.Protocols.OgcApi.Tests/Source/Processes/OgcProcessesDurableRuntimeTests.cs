@@ -40,14 +40,14 @@ public sealed class OgcProcessesDurableRuntimeTests
         // AddGeoprocessing; this test exercises the durable-runtime
         // protocol projection independently of the buffer implementation,
         // so swap in a deterministic fixture executor instead.
-        var fixture = NoRedisJobHost.Create()
+        var fixture = DurableJobHost.Create()
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IJobExecutor>();
                 services.AddSingleton<IJobExecutor, SuccessfulOgcVectorProcessExecutor>();
             });
 
-        await NoRedisJobHost.StartAsync(fixture);
+        await DurableJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();

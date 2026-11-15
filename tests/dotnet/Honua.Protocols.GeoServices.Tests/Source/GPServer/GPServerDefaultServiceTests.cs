@@ -63,7 +63,7 @@ public sealed class GPServerDefaultServiceTests
 
         // The real geometry.buffer executor and worker run, so the seeded service is
         // driven to a genuine terminal result, not a fixture stub.
-        var fixture = NoRedisJobHost.Create()
+        var fixture = DurableJobHost.Create()
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IMetadataV2GraphProvider>();
@@ -72,7 +72,7 @@ public sealed class GPServerDefaultServiceTests
                 services.AddSingleton<IMetadataV2GraphStore>(graphProvider);
             });
 
-        await NoRedisJobHost.StartAsync(fixture);
+        await DurableJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();

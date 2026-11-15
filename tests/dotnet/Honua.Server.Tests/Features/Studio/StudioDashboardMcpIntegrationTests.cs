@@ -31,17 +31,14 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private readonly RedisFixture _redis = new();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly string _studioSchema = $"dashboard_{Guid.NewGuid():N}";
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         HumanApprovalHttpClient.Configure(_fixture, _identityProvider).ConfigureWebHost(builder =>
         {
-            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
         });
         _fixture.ConfigureServices(services =>
@@ -81,7 +78,6 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         _client.Dispose();
         await _fixture.Postgres.DropSchemaAsync(_studioSchema);
         await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
         _identityProvider.Dispose();
     }
 
