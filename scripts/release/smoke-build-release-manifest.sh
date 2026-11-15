@@ -105,6 +105,17 @@ jq -e '.releaseIssue.number == 876 and (.childTickets|length==1)' "$WORKDIR/mani
   || { echo "[ERROR] meta (releaseIssue/childTickets) not carried from evidence" >&2; exit 1; }
 echo "[OK] image-ready manifest generated"
 
+
+echo "Validating: a candidate image without a repository is blocked"
+"$GEN" "${COMMON_ARGS[@]}" --image-repository "" \
+  --image-tag "rc-honua-test-rc-deadbee" \
+  --image-digest "sha256:1111111111111111111111111111111111111111111111111111111111111111" \
+  --output "$WORKDIR/manifest-no-repository.json" >/dev/null
+jq -e '.candidate.image.repository == null and .candidate.image.evidenceState == "blocked"
+       and (.candidate.image.blockers | length > 0)' "$WORKDIR/manifest-no-repository.json" >/dev/null \
+  || { echo "[ERROR] missing repository passed candidate image evidence" >&2; exit 1; }
+echo "[OK] missing repository blocks candidate image evidence"
+
 echo
 echo "Validating: CI conclusions map to evidenceState and blockers are preserved"
 jq -e '.releaseGates[] | select(.id=="server-sdk-compatibility") | .evidenceState=="passed" and .latestEvidence.conclusion=="success"' "$WORKDIR/manifest-ready.json" >/dev/null \
@@ -113,12 +124,72 @@ jq -e '.releaseGates[] | select(.id=="server-security-nightly") | .evidenceState
   || { echo "[ERROR] failing gate not mapped to blocked with blocker" >&2; exit 1; }
 echo "[OK] conclusion->evidenceState mapping correct"
 
+
+echo "Validating: only explicit successful conclusions pass across every evidence surface"
+jq -n '
+  ["success", "passed", "green", "ok", "SUCCESS", "completed", "failure",
+   "cancelled", "skipped", "neutral", "timed_out", "action_required", "", null]
+  | map(. as $conclusion | {
+      id: ((if (["success", "passed", "green", "ok", "SUCCESS"] | index($conclusion))
+           then "passed-" else "blocked-" end) + ($conclusion // "missing")),
+      conclusion: $conclusion
+    })
+  | {releaseGates: ., repositoryLanes: ., releaseLaneCriteria: .}
+' >"$WORKDIR/conclusions.json"
+"$GEN" "${COMMON_ARGS[@]}" --evidence "$WORKDIR/conclusions.json" \
+  --output "$WORKDIR/manifest-conclusions.json" >/dev/null
+jq -e '
+  [.releaseGates[], .repositoryLanes[], .releaseLaneCriteria[]]
+  | length == 42 and all(.[];
+      .evidenceState == (if (.id | startswith("passed-")) then "passed" else "blocked" end))
+' "$WORKDIR/manifest-conclusions.json" >/dev/null \
+  || { echo "[ERROR] non-success conclusion passed or success alias blocked" >&2; exit 1; }
+echo "[OK] all three evidence surfaces require explicit success"
+
+
+echo "Validating: explicit blockers override successful conclusions on every evidence surface"
+jq -n '
+  [ ["success", "passed", "green", "ok", "SUCCESS"][] as $conclusion
+    | ["absent", "null", "empty", "blocked"][] as $kind
+    | {id: ($conclusion + "-" + $kind), conclusion: $conclusion}
+      + (if $kind == "absent" then {}
+         elif $kind == "null" then {blockers: null}
+         elif $kind == "empty" then {blockers: []}
+         else {blockers: [{reason: "Required candidate proof is missing."}]} end) ]
+  | {releaseGates: ., repositoryLanes: ., releaseLaneCriteria: .}
+' >"$WORKDIR/blockers.json"
+"$GEN" "${COMMON_ARGS[@]}" --evidence "$WORKDIR/blockers.json" \
+  --output "$WORKDIR/manifest-blockers.json" >/dev/null
+jq -e '
+  [.releaseGates[], .repositoryLanes[], .releaseLaneCriteria[]]
+  | length == 60 and all(.[];
+      if (.id | endswith("-blocked")) then
+        .evidenceState == "blocked" and .blockers == [{reason: "Required candidate proof is missing."}]
+      else .evidenceState == "passed" and .blockers == [] end)
+' "$WORKDIR/manifest-blockers.json" >/dev/null \
+  || { echo "[ERROR] successful conclusion masked blockers or healthy evidence was blocked" >&2; exit 1; }
+echo "[OK] explicit blockers take precedence across all three evidence surfaces"
+
 echo
 echo "Validating: without a digest, candidate.image is blocked with the #41 follow-up"
 "$GEN" "${COMMON_ARGS[@]}" --output "$WORKDIR/manifest-noimage.json" >/dev/null
 jq -e '.candidate.image.evidenceState == "blocked" and (.candidate.image.blockers[0].url|test("honua-devops/issues/41"))' "$WORKDIR/manifest-noimage.json" >/dev/null \
   || { echo "[ERROR] missing-digest manifest should block candidate.image with #41" >&2; exit 1; }
 echo "[OK] missing-digest manifest blocks candidate.image"
+
+
+echo
+echo "Validating: malformed digests cannot pass candidate image evidence"
+for digest in "pending" "sha256:abc" "sha256:$(printf '%064d' 0)0" \
+  "sha256:$(printf 'g%.0s' {1..64})" "sha512:$(printf '%064d' 0)" \
+  "sha256:$(printf 'a%.0s' {1..64})"$'\n'; do
+  "$GEN" "${COMMON_ARGS[@]}" --image-tag "rc-honua-test-rc-deadbee" \
+    --image-digest "$digest" --output "$WORKDIR/manifest-invalid-image.json" >/dev/null
+  jq -e '.candidate.image.evidenceState == "blocked" and (.candidate.image.blockers | length > 0)' \
+    "$WORKDIR/manifest-invalid-image.json" >/dev/null \
+    || { echo "[ERROR] malformed digest passed candidate image evidence: $digest" >&2; exit 1; }
+done
+echo "[OK] malformed digests block candidate image evidence"
 
 echo
 echo "Validating: output is deterministic for identical inputs"
