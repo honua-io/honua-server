@@ -315,7 +315,7 @@ internal sealed class GeometryServiceHandler(
             return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(transformationValue))
+        if (!string.IsNullOrWhiteSpace(transformationValue) || datumSelection.RequiresCoordinateEpoch)
         {
             return datumSelection;
         }
@@ -421,19 +421,22 @@ internal sealed class GeometryServiceHandler(
                 projectEnvelope = new DatumAreaEnvelope(west, south, east, north);
             }
 
-            if (!GeoServicesDatumTransformationResolver.TryResolveWithDirection(
-                    datumCatalog,
-                    transformationValue,
-                    transformForward,
-                    transformationInSr,
-                    transformationOutSr,
-                    out var datumSelection,
-                    out var datumError,
-                    projectEnvelope))
+            var datumResolution = GeoServicesDatumTransformationResolver.Resolve(datumCatalog,
+                new GeoServicesDatumTransformationResolver.ResolutionRequest
+                {
+                    Value = transformationValue,
+                    Forward = transformForward,
+                    FromSrid = transformationInSr,
+                    ToSrid = transformationOutSr,
+                    Envelope = projectEnvelope,
+                    CoordinateEpoch = GeometryServiceRequestParser.GetValue(values, "coordinateEpoch")
+                });
+            if (datumResolution.Error is { } datumError)
             {
-                GeometryServiceLog.InvalidGeometryInput(_logger, "project", datumError ?? "Invalid transformation");
-                return CreateError(context, 400, datumError ?? "Invalid transformation.");
+                GeometryServiceLog.InvalidGeometryInput(_logger, "project", datumError);
+                return CreateError(context, 400, datumError);
             }
+            var datumSelection = datumResolution.Selection;
 
             var parameters = new ProjectParameters
             {

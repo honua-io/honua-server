@@ -866,7 +866,8 @@
         "storageMode",
         "subtypes",
         "supportsAttachments",
-        "table"
+        "table",
+        "temporalColumn"
       ],
       "outputFields": [
         "approvalLane",
