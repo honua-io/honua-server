@@ -100,8 +100,8 @@ def _catalog(request: DownloadRequest) -> list[dict]:
 
 def _verify_digest(archive: Path, artifact: dict) -> None:
     digest = artifact.get("digest")
-    if not digest:
-        return
+    if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        raise ValueError(f"missing or malformed archive digest for {artifact['name']}")
     with archive.open("rb") as handle:
         actual = "sha256:" + hashlib.sha256(handle.read()).hexdigest()
     if digest != actual:

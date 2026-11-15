@@ -731,8 +731,8 @@ run's artifacts and downloads only the newest id for each selected shard whose
 attempt is at most the current run attempt. It reads the compact receipt
 matrix (shard name and artifact suffix), not the execution matrix, so test
 filters stay out of the job environment. A shard a failed-jobs rerun did
-not repeat keeps its earlier receipt; an expired, ambiguous or digest-mismatched
-newest receipt fails closed and is not replaced by an older copy. Full CI still
+not repeat keeps its earlier receipt; an expired, ambiguous, digest-missing,
+digest-malformed or digest-mismatched newest receipt fails closed and is not replaced by an older copy. Full CI still
 downloads every attempt directory by name, without merging them. Each shard's
 highest attempt present is the one counted, so a rerun's receipt replaces the
 earlier attempt's. A newer failing attempt still overrides an older passing one.

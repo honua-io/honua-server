@@ -164,6 +164,29 @@ class DownloadCommandTest(unittest.TestCase):
             self.assertIn("digest mismatch", run.stderr)
             self.assertFalse(output.exists() and any(output.iterdir()))
 
+    def test_missing_or_malformed_digest_leaves_the_destination_empty(self) -> None:
+        for fields in ({}, {"digest": None}, {"digest": ""}, {"digest": "sha256:bad"},
+                       {"digest": 123}, {"digest": "sha256:" + "G" * 64}):
+            with self.subTest(fields=fields), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                newest = artifact("pr-gate-affected-shard-packages-attempt-2", 22)
+                newest.update(fields)
+                older = artifact("pr-gate-affected-shard-packages-attempt-1", 11,
+                                 "sha256:" + hashlib.sha256(zip_bytes()).hexdigest())
+                self._fake_gh(root, [older, newest], zip_bytes())
+                env = {**os.environ, "PATH": f"{root}:{os.environ['PATH']}",
+                       "GITHUB_REPOSITORY": "honua-io/honua-server", "GITHUB_RUN_ID": "1",
+                       "GITHUB_RUN_ATTEMPT": "2",
+                       "SELECT_MATRIX": json.dumps([{"artifact_suffix": "packages"}])}
+                output = root / "shard-results"
+                run = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts/ci/download-affected-receipts.py"),
+                     "--output", str(output)], env=env, capture_output=True, text=True)
+                self.assertEqual(run.returncode, 1)
+                self.assertIn("missing or malformed archive digest", run.stderr)
+                self.assertFalse(output.exists() and any(output.iterdir()))
+                self.assertNotIn("/artifacts/11/zip", (root / "calls.txt").read_text())
+
 
 class WorkflowContractTest(unittest.TestCase):
     def test_pr_gate_downloads_explicit_ids_and_full_ci_keeps_unmerged_patterns(self) -> None:
