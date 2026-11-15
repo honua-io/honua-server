@@ -24,6 +24,7 @@ using Honua.Core.Features.Security;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Server.Features.AgentWorkspace;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Federation;
 using Honua.Server.Features.Admin.Jobs;
@@ -375,6 +376,9 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
         return;
     }
 
+    builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
+        new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+
     if (nativeAot)
     {
         keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
@@ -721,6 +725,12 @@ Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(bu
 
 // Configure caching options and register cache services
 InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration);
+if (builder.Configuration.GetValue<bool>("ExternalEdits:Enabled")
+    && Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
+{
+    builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Caching.ExternalLayerChangeWorker>();
+}
+
 
 if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
 {
@@ -997,6 +1007,7 @@ if (Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneTriggerModeResolve
 
 // Register shared validation services
 builder.Services.AddValidationServices();
+builder.Services.AddLocalProcessWorkspaces();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(
@@ -1125,7 +1136,7 @@ builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
 
 // ---- Extracted: feature-change events, streaming, transactional outbox
 //      (Startup/FeatureEventsAndStreamingRegistration.cs)
-builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration, requiresDurableDistributedEvents);
+builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration);
 // ---- End extracted block
 
 // ---- Cross-node realtime: event log and fan-out provider (ADR-0085)
@@ -1979,6 +1990,7 @@ app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapStudioPublishedRouteEndpoints();
 app.MapStudioSessionEndpoints();
+app.MapLocalProcessWorkspaces();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
 Honua.Server.Features.Studio.Ai.StudioAiProxyEndpoints.MapStudioAiProxyEndpoints(app);
