@@ -429,13 +429,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Top-feature queries are not supported for source-backed PostGIS layers yet.");
 
-    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
-        int layerId,
-        FeatureQuery query,
-        DateBinDefinition dateBin,
-        CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("Date bins are not supported for source-backed PostGIS layers yet.");
-
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
         int layerId,
         FeatureQuery query,
@@ -913,16 +906,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
         }
 
-        foreach (var statistic in query.OutStatistics!.Value)
-        {
-            var field = ResolveFieldDefinition(statistic.OnStatisticField);
-            var fieldExpression = ResolveColumnExpression(statistic.OnStatisticField, sql);
-            var aggregateExpression = BuildStatisticsAggregateExpression(
-                statistic.StatisticType,
-                fieldExpression,
-                field.Type);
-            selectParts.Add($"{aggregateExpression} AS {ValidateAndQuoteIdentifier(statistic.OutStatisticFieldName)}");
-        }
+        AddOutStatistics(selectParts, query.OutStatistics!.Value, sql);
 
         sql.Append(CultureInfo.InvariantCulture, $"SELECT {string.Join(", ", selectParts)} FROM {BuildFeatureSource(query, sql)}");
         AppendFilter(sql, query);
@@ -936,6 +920,27 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         AppendStatisticsOrderBy(sql, query);
         AppendPagination(sql, query);
 
+        return await ReadStatisticsRowsAsync(sql, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void AddOutStatistics(List<string> selectParts, ImmutableArray<StatisticDefinition> statistics, SqlBuilder sql)
+    {
+        foreach (var statistic in statistics)
+        {
+            var field = ResolveFieldDefinition(statistic.OnStatisticField);
+            var fieldExpression = ResolveColumnExpression(statistic.OnStatisticField, sql);
+            var aggregateExpression = BuildStatisticsAggregateExpression(
+                statistic.StatisticType,
+                fieldExpression,
+                field.Type);
+            selectParts.Add($"{aggregateExpression} AS {ValidateAndQuoteIdentifier(statistic.OutStatisticFieldName)}");
+        }
+    }
+
+    private async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ReadStatisticsRowsAsync(
+        SqlBuilder sql,
+        CancellationToken cancellationToken)
+    {
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateReadCommand(connection, sql);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
