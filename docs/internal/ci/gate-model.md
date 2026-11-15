@@ -1,5 +1,7 @@
 # CI Gate Model
 
+A source path needs at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a change leaves a path with only over-budget owners. Paths that already have no budgeted owner are listed in `scripts/ci/fixtures/pr-owner-coverage-debt.json`; remove an entry only after a measured owner lands. The guard does not claim complete PR coverage.
+
 The latest full-run capacity audit partitions eleven additional parents into 26
 children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
 Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
@@ -128,7 +130,7 @@ NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory
 
 4. **New checks default to nightly** unless explicitly justified as PR-blocking. Justification requires: deterministic behavior, sub-5-minute runtime, and author-actionable failure messages.
 
-   **Named PR checks — `PR Gate`, `Review Gate`, and Repository hygiene.** Together, `PR Gate` and `Review Gate` remain the required PR lane on `trunk`: unprivileged verification and trusted exact-head admission. Verification uses an affected-scope managed build producer, selected shard consumers, and independent Fast/architecture, format and CI-router jobs. The producer retains the server boot/migration smoke. Fast, architecture and governance verification remain required on PRs and build independently alongside the producer. Native GDAL/PDAL execution proofs and import/export fidelity run in `ci.yml`, whose aggregate requires the runtime-proof job whenever the managed build is selected. `Review Gate` adds no build runner. Repository hygiene publishes `repo-hygiene / Repository hygiene` through the SHA-pinned shared workflow. The execution-evidence job materializes its checker and tests from the trusted base commit, so older heads need no checker files and PR changes cannot replace the policy. It checks the explicit base/head diff; both this job and shared hygiene must succeed. Shared hygiene deterministically judges added paths against trusted-base policy, has a five-minute job timeout, and reports author-actionable path violations. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
+   **Named PR checks — `PR Gate`, `Review Gate`, and Repository hygiene.** Together, `PR Gate` and `Review Gate` remain the required PR lane on `trunk`: unprivileged verification and trusted exact-head admission. Verification uses an affected-scope managed build producer, selected shard consumers, and independent Fast/architecture, format and CI-router jobs. The producer retains the server boot/migration smoke. Fast, architecture and governance verification remain required on PRs and build independently alongside the producer. Native GDAL/PDAL execution proofs and import/export fidelity run in `ci.yml`, whose aggregate requires the runtime-proof job whenever the managed build is selected. `Review Gate` adds no build runner. Repository hygiene publishes `repo-hygiene / Repository hygiene` through the SHA-pinned shared workflow. The execution-evidence job materializes its checker and tests from the trusted base commit, so older heads need no checker files and PR changes cannot replace the policy. It checks the explicit base/head diff; both this job and shared hygiene must succeed. Shared hygiene deterministically judges added paths against trusted-base policy, has a five-minute job timeout, and reports author-actionable path violations. Shard identity validation checks the PR merge tree, rejecting duplicate names globally and duplicate filters within a test project (including grouped-project overlap). Disjoint test projects may share a namespace filter. This deterministic check has a five-minute timeout and feeds the existing required hygiene aggregate, so concurrent additions fail before landing without adding a required check name. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
 
 5. **AOT verification is full-CI only until trim debt is retired.** The `AOT Build Verification` job in `ci.yml` runs in the full scheduled/manual integration lane or on PRs explicitly labeled `ci/full`, not on routine PRs or merge-to-trunk pushes, because its current failures are not consistently fast or author-actionable within the default PR lane.
 
@@ -143,8 +145,12 @@ for helper check names and queue policy. Helper completion does not grant
 admission: draft helpers skip without publishing success; `ready_for_review`
 re-enters attestation. Blocking reviews retain failure, and real attestation/API
 errors fail. Review helpers cancel superseded events per PR and re-read live
-review/admission state before acting. Superseded normalization producers
-and consumers exit neutrally before producing data or mutating a branch.
+review/admission state before acting. Normalization producers and consumers
+cancel superseded work per PR. Draft and metadata-only producer events use
+isolated groups so they cannot cancel eligible generation. A trusted consumer
+admission job resolves the live PR and rejects old-head completions before
+entering the producer-generation concurrency group. Live-head checks and compare-and-swap
+remain required before producing data or mutating a branch.
 
 Completions without a PR number use an isolated resolver group per run; once resolved, publication cancels older work by PR number. An unresolvable completion cannot cancel a resolver for another run.
 
@@ -164,7 +170,9 @@ earlier one could not.
 | **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over new merges since the latest completed CI run (`selective_base`): the shards and lanes those merges touch | No; a red run is assigned to an owning lane |
 | **4 Full** | `schedule` 07:23 and 13:23 UTC | `ci.yml` | The full matrix, compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
 
-Full runs use off-hour minutes to reduce schedule-delivery contention. The
+Full runs use off-hour minutes to reduce schedule-delivery contention. GitHub still delivers these crons hours late, so
+`full-ci-dispatch.yml` dispatches the full run itself on trunk pushes between 22:00 and
+03:00 Pacific when no full run is active and trunk head has no full result (at most two a night). The
 half-hourly `trunk-signal-watchdog.yml` reports a missing scheduled start after
 20 hours, independently of affected CI activity. It also reports outstanding work without a usable
 result for 2 hours, runs queued over 45 minutes, and excessive cancellations;
@@ -295,7 +303,12 @@ diff base. At the default depth 1 those parent commits are absent, the scope
 computation force-fulls, and the optimization silently never fires.
 
 **Format scope.** The PR's existing independent format job retains its affected
-or full document selection and complete formatter restore context. A parallel
+or full document selection and complete formatter restore context.
+Analyzer rows skip that preliminary whole-solution restore: the shared format
+action restores their selected graph in Release before compilation and source
+ownership evaluation. Scope selection itself does not require restored assets.
+The formatter retains its whole-solution restore for `dotnet format --no-restore`.
+A parallel
 `PR Gate / Analyzers` (source) and `PR Gate / Analyzers (tests)` jobs of the
 same matrix own disjoint analyzer passes: every other
 PR build runs with `/p:RunAnalyzers=false`, and both jobs build the diff's
@@ -359,6 +372,8 @@ carries two independent gate lanes per sampled operation:
   scorecard shape are covered offline by `GeoServicesPerfParityGateTests` and smoke-tested on every PR
   via pass/fail fixtures under `scripts/ci/fixtures/`; the live latency measurement runs in
   `geoservices-import-fidelity-external.yml` (on-demand).
+
+Shared OGC capabilities XML tests run in a standalone metadata shard, leaving the WMS class/complement partition and its legacy budgets unchanged.
 
 ## Verification receipts and batch landing (quality-contract amendment, 2026-09)
 
@@ -503,12 +518,15 @@ wake/wait orchestration. Both sparse checkouts include the shared validator.
 ## PR Gate compute runner selection
 
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
-`server-test-producer` run. The selector itself, Format/analyzers and all four Fast/architecture
-groups use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with
-`ubuntu-latest` fallback, independently of gate admission or heavy settings.
-These nine jobs never inherit the producer label. The selector can start on the
-light pool without waiting for hosted capacity; forks and an unset light-runner
-variable retain the hosted fallback. With the repository variable
+`server-test-producer` run. The selector itself, Format and source Analyzers use the
+fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback.
+Both test-analyzer rows and the four Fast/architecture matrix jobs always use
+`ubuntu-latest`. Test analyzers stay hosted even during light-pool qualification.
+All eight remain independent of producer admission and heavy settings and keep
+their existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
+availability switch: keep it unset while the light pool is unhealthy; new jobs
+then fall back to hosted runners. Forks always use hosted runners. Routing does
+not move an already queued job when pool health changes. With the repository variable
 `HONUA_PR_GATE_RUNNER` unset, its steps skip and the two producers stay on
 `ubuntu-latest`. Set it to `honua-build` to use the ephemeral runners on the lane
 build host (honua-iac `bootstrap/aws-build-host`, "PR Gate runners"). It also
@@ -526,8 +544,23 @@ host and read its heartbeat, nothing else) and runs
   `continue-on-error`, so the job cannot fail and skip the required producer,
   which carries no job condition.
 
+A manual PR Gate dispatch on `trunk` can set the boolean `qualify_light` input
+(default `false`) to qualify the light pool while `HONUA_LIGHT_RUNNER` stays unset.
+Only `workflow_dispatch` on `refs/heads/trunk` honors this override. It pins the
+`honua-light` runner group and label for the six existing light jobs; it accepts
+no runner label input. Both test-analyzer rows remain hosted; producer,
+heavy-shard and Fast/architecture routing stays unchanged. Other refs and events retain the normal variable and fork
+guards. Qualification is an operator-run health check; the input does not enable
+normal routing or change repository settings. Record ten consecutive green runs
+and their actual runner assignments before restoring the availability variable.
+
 Draft Format and admission/control jobs also use the fork-guarded light selector;
-with `HONUA_LIGHT_RUNNER` unset they stay hosted. The existing
+with `HONUA_LIGHT_RUNNER` unset they stay hosted. Runner select, the format/analyzer
+matrix, affected-shard selection, the affected-shard aggregate, CI router validation
+and the required aggregate each set `TMPDIR`, `TEMP` and `TMP` to that job's
+`RUNNER_TEMP` before any other step. Verdict fixtures select the named verdict
+step so setup steps cannot replace the failure checks under test. Several self-hosted accounts share one host,
+and a fixed `/tmp` path collides across them. The existing
 even-index affected-shard split additionally requires independent version-1 heavy
 availability from the same current-instance heartbeat. An integer idle-heavy count
 from 1 through 8 permits the configured heavy JSON selector; absent, invalid,
@@ -696,6 +729,40 @@ rather than treated as a silent addition (rule 4).
 
 ## Adding New Checks
 
+### Archived quickstart customer journey
+
+`shipped-quickstart.yml` runs nightly and on package-related PRs. Nightly/manual
+runs consume the newest available official candidate archive and its source-bound
+customer document. PRs package their exact source revision with that candidate's
+immutable image lock and a successful official Console trunk artifact. Their
+receipts identify this as a prospective PR package, not a shipped artifact.
+The nightly producer includes the static Console bundle, checksum and producing
+Console workflow/run/source identity inside the customer archive. Cross-repository
+artifact access uses a Console-scoped bot token with only Actions read permission.
+The separate installation job replaces the disposable hosted runner's Docker
+daemon with an empty data directory. It compiles no server code and never prunes
+a shared developer host.
+
+Assertions cover both documented profiles, completed initialization services,
+healthy runtime services, secret-free rendered Compose configuration, documented
+sample publication/query, HTTPS password sign-in to Console, an authenticated
+embedded Studio session, idempotent initializer/credential preservation, removal
+of all containers and volumes, and fresh credentials on a second installation.
+Passwords travel to the browser through a generated secret file; reports, traces,
+screenshots and videos are disabled, and browser output is withheld on failure.
+Missing Console package files or immutable release pins fail. The external installed
+proof is an explicit package-path PR exception to the ordinary five-minute
+PR guidance below; offline controls run separately. This workflow does not dispatch
+full CI or change required contexts.
+
+Receipts have scope `archived-customer-journey`, distinguish `candidate` from
+`prospective-pr`, and retain official publication run and archive digests.
+`customerJourneyComplete` becomes true only after both complete installations
+and their cleanup pass. A prospective PR receipt cannot qualify a shipped archive;
+release verification needs a recorded pass from the published candidate.
+
+### Check registration
+
 Before adding a new workflow or check:
 
 1. **Identify the tier.** Default to nightly unless the check meets PR-lane criteria.
@@ -722,12 +789,18 @@ and successful jobs. Full CI also checks the merged foundation TRX outcomes;
 foundation security build and test failures count even when built separately.
 `CI Gate` depends on these enforced test summaries.
 
-Each shard job uploads its results as `<artifact>-attempt-<run_attempt>`, and
-both aggregates download every attempt into its own directory. A failed-jobs
-rerun re-runs only failed or cancelled shards; each shard's highest attempt is
-the one counted, so a rerun's receipt replaces the earlier attempt's and a
-shard the rerun did not repeat keeps its earlier passing receipt. A newer
-failing attempt still overrides an older passing one. Before this change the
+Each shard job uploads its results as `<artifact>-attempt-<run_attempt>`.
+The PR Gate aggregate (`scripts/ci/download-affected-receipts.py`) lists the
+run's artifacts and downloads only the newest id for each selected shard whose
+attempt is at most the current run attempt. It reads the compact receipt
+matrix (shard name and artifact suffix), not the execution matrix, so test
+filters stay out of the job environment. A shard a failed-jobs rerun did
+not repeat keeps its earlier receipt; an expired, ambiguous, digest-missing,
+digest-malformed or digest-mismatched newest receipt fails closed and is not replaced by an older copy. Full CI still
+downloads every attempt directory by name, without merging them. Each shard's
+highest attempt present is the one counted, so a rerun's receipt replaces the
+earlier attempt's. A newer failing attempt still overrides an older passing one.
+Before this change the
 aggregates merged same-named artifacts, and GitHub's artifact ids do not follow
 upload order: on honua-server#7648 run 43603773296 attempt 2, attempt 1's empty
 `Packages and Temporal` artifact outranked attempt 2's receipt, leaving 5/6
@@ -735,6 +808,11 @@ receipts. This adds no jobs or runners and changes no required check names or
 `needs`; the receipt count, TRX re-verification and job-result checks are
 unchanged. The quarantine publisher keeps one artifact per shard, the newest
 attempt.
+
+`CapabilitiesMetadataXmlTests` is outside the Wms namespace, so it is not part of
+the OGC Classic Maps class partition. The shard `OGC Classic Capabilities Metadata`
+claims that class alone. Its dispatch rank is an unmeasured 6.0 until a full run
+records it. The WMS children keep the original namespace cut, budgets and paths.
 
 The retained `*.timing.json` includes `execution` with actual result counts,
 TRX SHA-256, source SHA/dirty flag, project, and runner/verifier hashes. The timing
@@ -761,12 +839,31 @@ unchanged. Bot-authored issues provide a validated, project-scoped exclusion lis
 gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
 quarantined methods without exclusions or retries and is explicitly non-gating.
 
-The publisher has issue-write permission only on a trusted `workflow_run` path. It checks
-same-repository provenance, checks out default-branch code, validates raw case evidence and
-hashes, and never executes downloaded data or checks out the triggering branch.
-Publication uses GitHub's FIFO concurrency queue (`queue: max`, up to 100 pending
-runs), keeping issue mutations serial without replacing a pending completion event.
-If that service limit is reached, rerun canceled publishers to recover their evidence.
+The publisher has issue-write permission only on trusted default-branch code, reached by
+same-repository successful/failed `workflow_run` completions, a twice-hourly recovery
+schedule, or default-branch manual dispatch. Checkout is pinned to the default branch;
+checkpoints from branch dispatches are ignored. It validates source workflow/repository provenance, raw case
+evidence and hashes, and never executes downloaded data or checks out the triggering branch.
+Job-level concurrency filters cancelled and fork completions before admission, serializes
+issue writes, and replaces pending sweeps instead of overflowing a 100-run FIFO queue.
+Each sweep discovers all retained evidence artifacts, including reruns of old source runs,
+selects each shard's highest attempt, and processes at most 25 completed source runs.
+Remaining artifacts stay discoverable for the next event or scheduled sweep.
+
+Only a fully successful publication uploads its checkpoint; failed publication or checkpoint
+upload replays from the previous successful checkpoint. Successful skipped jobs are ignored
+when finding that checkpoint. Artifact IDs prevent repeat downloads, and source-attempt
+links use the artifact's producing attempt, preventing a partial rerun from changing
+unchanged evidence identity. Previously quarantined evidence timestamps also prevent
+legacy backfill from reopening expired/closed issues. Missing new
+checkpoints, unsafe archives, excessive inventory and untrusted sources fail closed.
+Migration reconciles every retained artifact rather than treating one successful legacy
+event as a global watermark; first installation
+backfills 14 days. The checkpoint retains processed IDs while artifacts remain available,
+and expires after 90 days. Recovery therefore requires source evidence still retained by
+GitHub. The existing 25-method cap, 14-day expiry, proof validation and required gates remain
+unchanged. This adds no PR-time jobs or runners; recovery uses one publisher job per sweep.
+
 
 ### Grouped unit and component shards
 
@@ -1406,4 +1503,47 @@ no lifecycle rerun or runtime savings are claimed from unit validation.
 
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
 
+GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so their
+workflow cannot declare repository-owned concurrency. `code-quality-supersession.yml`
+reconciles PR and managed-workflow start events using trusted default-branch code.
+It cancels only active managed Code Quality runs for the same PR whose SHA differs
+from the live PR head, rechecking that head before each cancellation. Current-head
+coverage, trunk scans, required checks and other PRs remain protected. The helper
+checks out no PR code and grants only Actions write, contents read and PR read.
+CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
+already cancel superseded PR runs through their existing per-PR concurrency groups.
+
+Normalization consumer admission reads the exact producer attempt before joining
+its per-PR cancellation group. Only a successful envelope-packaging job admits
+validation; late same-SHA metadata or draft skips cannot cancel useful work.
+Publication of generated documents stays with the trunk producer: feature PRs
+keep envelope validation and drift reporting, and the consumer stays in observe
+mode. Trusted admission cancels only consumers of older producer generations
+associated with that PR; delayed old completions cannot cancel newer work. Only
+admission has Actions write permission for cancellation. Validation retains
+read-only Actions, Contents and Pull requests permissions, and its existing
+installation-token and compare-and-swap mutation controls.
+
 Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
+
+### Advisory image and CodeQL runner selection
+
+CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
+`advisory-runner-select.yml` before allocating compute. Same-repository PRs use
+trusted base scripts and the existing OIDC role to read the build-host instance
+and heartbeat. A heartbeat no older than 90 seconds must match the current
+instance and advertise an idle heavy runner. Otherwise the job uses its existing
+hosted label. Missing configuration, credentials, read failures and selector
+failure all fall back to hosted compute. This selector never wakes or resizes
+the host; AWS retries and step timeouts are bounded. The current role trusts PR
+subjects only, so scheduled/manual/full-CI callers retain hosted compute.
+
+Each consumer also checks the PR's repository before accepting the selected
+runner and falls back to hosted compute for forks, independently of the selector.
+Forks stay hosted and do not receive the health credential. CodeQL coverage,
+build modes, image matrices, evidence uploads and required check names remain
+unchanged. A selector failure cannot skip analysis; image impact detection must
+still succeed before its selected matrix executes. Hosted disk cleanup runs only
+on GitHub-hosted runners.
+
+Advisory heavy selection preserves runner-group restrictions in object selectors as well as label arrays. Store native-runtime checks execute all eight cases as container root through rootless Docker on heavy runners; hosted runners retain their root execution. Both image smoke paths select free loopback ports through the shared ownership helper before publishing them explicitly. This avoids the independent Docker allocators choosing the same default port across rootless accounts; readiness remains bound to the launched container.

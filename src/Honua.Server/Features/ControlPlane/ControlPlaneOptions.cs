@@ -25,6 +25,10 @@ internal sealed class ControlPlaneOptions
 
     public PlatformReleaseOptions PlatformRelease { get; set; } = new();
 
+    // Off by default: serving telemetry alone never changes the catalog. When off, a regressed
+    // activation is reported and its watch ends; when on, rollbacks that change access are still refused.
+    public bool AutomaticCatalogRollback { get; set; }
+
     // Single-host batch backends fail closed on serverless, or on multi-node without a shared work directory.
     public SubstrateOptions Substrate { get; set; } = new();
 }

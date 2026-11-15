@@ -56,6 +56,9 @@ internal sealed class EnvironmentSecretResolver : IConnectionSecretResolver
         return Task.FromResult<string?>(value);
     }
 
+    public Task<string?> ResolveSecretFreshAsync(string secretKey, CancellationToken cancellationToken = default)
+        => ResolveSecretAsync(secretKey, cancellationToken);
+
     /// <inheritdoc />
     public bool CanResolve(string secretKey)
     {

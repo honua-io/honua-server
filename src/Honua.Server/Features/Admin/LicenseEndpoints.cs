@@ -44,7 +44,8 @@ internal static partial class LicenseEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "License")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/", HandleGetLicenseStatus)
             .WithDisplayName("Get License Status")

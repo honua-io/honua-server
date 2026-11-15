@@ -16,7 +16,7 @@ internal sealed class StubFeatureSource : ISceneFeatureSource
     public int StreamInvocationCount { get; private set; }
 
     public async IAsyncEnumerable<SceneFeature> StreamAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IReadOnlyList<string> includeAttributes,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)

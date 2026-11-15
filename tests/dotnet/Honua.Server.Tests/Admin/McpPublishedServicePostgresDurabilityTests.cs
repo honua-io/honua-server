@@ -46,7 +46,7 @@ namespace Honua.Server.Tests.Admin;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
+public sealed partial class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
 {
     private readonly string _environment = $"mcpdur-{Guid.NewGuid():N}";
     private readonly string _serviceName = $"mcpdur_{Guid.NewGuid():N}";
@@ -310,7 +310,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
         var service = snapshot.Graph.Services.Single(candidate => candidate.Metadata.Name == _serviceName);
         var publications = snapshot.Graph.Publications.Where(publication =>
             publication.ServiceId == service.Metadata.Id &&
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer).ToArray();
+            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer).ToArray();
         publications.Should().HaveCount(2);
         var storageIds = publications.Select(publication =>
             snapshot.ResolveStorageBinding(publication)!.StorageLayerId).ToArray();

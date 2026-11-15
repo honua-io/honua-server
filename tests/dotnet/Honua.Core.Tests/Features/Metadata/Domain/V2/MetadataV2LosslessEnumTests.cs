@@ -11,6 +11,20 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
 public sealed class MetadataV2LosslessEnumTests
 {
+    [UnitTheory]
+    [InlineData("decimal", MetadataV2FieldType.Decimal)]
+    [InlineData("timestamp-offset", MetadataV2FieldType.TimestampOffset)]
+    public void ExactFieldTypes_AreKnownAndSurviveMetadataRoundTrip(string token, MetadataV2FieldType expected)
+    {
+        var json = "{\"resources\":[{\"schemaFields\":[{\"name\":\"value\",\"type\":\"" + token + "\"}]}]}";
+        var graph = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        graph.Resources[0].SchemaFields[0].Type.Should().Be(expected);
+        var persisted = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
+        var restored = JsonSerializer.Deserialize(persisted, MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        restored.Resources[0].SchemaFields[0].Type.Should().Be(expected);
+        persisted.Should().Contain("\"type\":\"" + token + "\"");
+    }
+
     public static TheoryData<string, string> UnknownTokens()
     {
         var cases = new TheoryData<string, string>();
@@ -90,7 +104,7 @@ public sealed class MetadataV2LosslessEnumTests
     {
         var graph = JsonSerializer.Deserialize("""{"resources":[{"type":"future-kind","status":{}}]}""",
             MetadataV2JsonContext.Default.MetadataV2Graph)!;
-        var edited = graph with { Resources = [graph.Resources[0] with { Type = MetadataV2ResourceType.Table }] };
+        var edited = graph with { Resources = [graph.Resources[0] with { Type = MetadataV2ObjectType.Table }] };
         var json = JsonSerializer.Serialize(edited, MetadataV2JsonContext.Default.MetadataV2Graph);
 
         JsonNode.Parse(json)!["resources"]![0]!["type"]!.GetValue<string>().Should().Be("table");
@@ -101,7 +115,7 @@ public sealed class MetadataV2LosslessEnumTests
     {
         var graph = JsonSerializer.Deserialize("""{"resources":[{"type":"future-kind","status":{}}]}""",
             MetadataV2JsonContext.Default.MetadataV2Graph)!;
-        var edited = graph with { Resources = [graph.Resources[0] with { Type = MetadataV2ResourceType.Unknown }] };
+        var edited = graph with { Resources = [graph.Resources[0] with { Type = MetadataV2ObjectType.Unknown }] };
         using var persisted = JsonDocument.Parse(JsonSerializer.Serialize(edited, MetadataV2JsonContext.Default.MetadataV2Graph));
 
         persisted.RootElement.GetProperty("resources")[0].GetProperty("type").GetString().Should().Be("unknown");
@@ -132,7 +146,7 @@ public sealed class MetadataV2LosslessEnumTests
 
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph));
 
-        graph.Resources.Single().Type.Should().Be(MetadataV2ResourceType.Table);
+        graph.Resources.Single().Type.Should().Be(MetadataV2ObjectType.Table);
         json.RootElement.GetProperty("resources")[0].GetProperty("type").GetString().Should().Be(expected);
     }
 

@@ -88,7 +88,7 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
                     id, generation, expectedRowVersion, target.SourceRevision, target.Srid, cancellationToken)
                 .ConfigureAwait(false);
 
-            var actor = ResolveActor(context);
+            var actor = ActorResolver.Resolve(context, ActorResolution.AdminName);
             NetworkTopologyRebuildAdminLog.RebuildSubmitted(logger, id, generation, result.Attempt, actor);
             return Results.Json(
                 new NetworkTopologyRebuildSubmissionDto { OperationId = result.OperationId, Generation = result.Generation, Attempt = result.Attempt },
@@ -217,9 +217,6 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
         NetworkTopologyRebuildCheckpointStatus.Failed => "failed",
         _ => "unknown",
     };
-
-    private static string ResolveActor(HttpContext context)
-        => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
     internal sealed class NetworkTopologyRebuildAdminLogCategory;
 

@@ -50,11 +50,16 @@ router_fixtures_init "$@"
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-router-fixtures.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-router-fixtures.py
+  run_fixture code-quality-trust "${PYTHON_BIN}" scripts/ci/fixtures/validate-code-quality-supersession.py
   run_fixture generated-file-ownership "${PYTHON_BIN}" scripts/ci/check-generated-file-ownership.test.py
   run_fixture workflow-inventory "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.test.py
+  run_fixture shard-identities-tests "${PYTHON_BIN}" scripts/ci/check-shard-identities.test.py
+  run_fixture shard-identities "${PYTHON_BIN}" scripts/ci/check-shard-identities.py
   run_fixture hygiene-cancellation "${PYTHON_BIN}" scripts/ci/fixtures/test-repo-hygiene-cancellation.py
 fi
 
+run_fixture normalization-consumer-admission node --test scripts/ci/admit-normalization-consumer.test.js scripts/ci/cancel-older-normalization-consumers.test.js
+run_fixture code-quality-supersession node --test scripts/ci/cancel-superseded-code-quality.test.js
 run_fixture heavy-shutdown-retry node --test scripts/ci/heavy-shutdown-retry.test.js
 run_fixture review-revalidation node --test .github/scripts/revalidate-exact-head-review.test.cjs
 
@@ -64,10 +69,12 @@ run_fixture scripts/ci/validate-review-first-dispatch.sh scripts/ci/validate-rev
 echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-trunk-signal-watchdog.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-signal-watchdog.py
+  run_fixture full-ci-dispatch "${PYTHON_BIN}" scripts/ci/full-ci-dispatch.test.py
   run_fixture scripts/ci/fixtures/validate-optional-pr-inputs.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-optional-pr-inputs.py
   run_fixture scripts/ci/fixtures/validate-pr-workflow-load.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-workflow-load.py
   run_fixture scripts/ci/fixtures/validate-ogc-rc-workflows.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-ogc-rc-workflows.py
   run_fixture scripts/ci/fixtures/validate-testcontainer-images.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
+  run_fixture scripts/ci/fixtures/validate-advisory-runner.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-advisory-runner.py
   run_fixture scripts/ci/fixtures/validate-heavy-runners.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
   run_fixture scripts/ci/fixtures/test-affected-admission.py "${PYTHON_BIN}" scripts/ci/fixtures/test-affected-admission.py
   run_fixture scripts/ci/fixtures/validate-trunk-affected.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
@@ -79,10 +86,13 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-mcp-server-auth.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
   run_fixture scripts/ci/validate-pr-gate-impact.sh env HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
   run_fixture scripts/ci/check-evidence-workflow.test.py "${PYTHON_BIN}" scripts/ci/check-evidence-workflow.test.py
+  run_fixture scripts/ci/check-retired-cache.test.py "${PYTHON_BIN}" scripts/ci/check-retired-cache.test.py
+  run_fixture scripts/ci/check-retired-cache-workflow.test.py "${PYTHON_BIN}" scripts/ci/check-retired-cache-workflow.test.py
   run_fixture scripts/ci/audit-impact-routing-evidence.test.py "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   run_fixture scripts/ci/collect-impact-routing-runs.test.py "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
   run_fixture scripts/ci/audit-affected-shards.test.py "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
   run_fixture scripts/ci/affected-shard-verdict.test.py "${PYTHON_BIN}" scripts/ci/affected-shard-verdict.test.py
+  run_fixture scripts/ci/download-affected-receipts.test.py "${PYTHON_BIN}" scripts/ci/download-affected-receipts.test.py
 else
   echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
 fi
@@ -1708,12 +1718,17 @@ run_fixture scripts/ci/test-mcp-capacity-partition.py "${PYTHON_BIN}" scripts/ci
 run_fixture scripts/ci/test-console-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-console-capacity-partition.py
 run_fixture scripts/ci/test-odata-core-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-odata-core-capacity-partition.py
 run_fixture scripts/ci/test-full-run-capacity-partitions.py "${PYTHON_BIN}" scripts/ci/test-full-run-capacity-partitions.py
+run_fixture scripts/ci/test-pr-owner-coverage.py "${PYTHON_BIN}" scripts/ci/test-pr-owner-coverage.py
 run_fixture scripts/ci/test-shard-image-selection.py "${PYTHON_BIN}" scripts/ci/test-shard-image-selection.py
 run_fixture scripts/ci/test-replica-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-replica-capacity-partition.py
 run_fixture scripts/ci/test-streaming-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-streaming-capacity-partition.py
 run_fixture scripts/ci/test-live-output-capacity-partitions.py "${PYTHON_BIN}" scripts/ci/test-live-output-capacity-partitions.py
 run_fixture scripts/ci/check-server-test-shard-coverage.test.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.CatalogCapabilitiesMetadataTests" \
+    "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
+    "OGC Classic Maps Supporting" \
   --assert-owner \
     "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -2162,6 +2177,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
+  run_fixture scripts/ci/test-quarantine-sweep.py "${PYTHON_BIN}" scripts/ci/test-quarantine-sweep.py
   run_fixture scripts/ci/test-flake-quarantine.py "${PYTHON_BIN}" scripts/ci/test-flake-quarantine.py
   run_fixture scripts/ci/test-runner-cancellation.py "${PYTHON_BIN}" scripts/ci/test-runner-cancellation.py
 fi
