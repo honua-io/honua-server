@@ -9,10 +9,10 @@ namespace Honua.ControlPlane;
 
 internal sealed partial class JobExecutionService
 {
-    private async Task<bool> TryRecoverCancelledJobAsync(
+    private async Task<bool> TryRecoverOutcomeAsync(
         ExecutionJobRecord job, string workerId, CancellationToken cancellationToken)
     {
-        if (ResolveExecutor(job.Spec.Kind, job.Spec.RuntimeProfile) is not IJobCancellationRecoveryExecutor recovery)
+        if (ResolveExecutor(job.Spec.Kind, job.Spec.RuntimeProfile) is not IJobOutcomeRecoveryExecutor recovery)
         {
             return false;
         }
@@ -26,41 +26,41 @@ internal sealed partial class JobExecutionService
         try
         {
             licenseCancellation.ThrowIfCancellationRequested();
-            var result = await recovery.RecoverCancellationAsync(job, context, recoveryCancellation.Token).ConfigureAwait(false);
+            var result = await recovery.RecoverOutcomeAsync(job, context, recoveryCancellation.Token).ConfigureAwait(false);
             licenseCancellation.ThrowIfCancellationRequested();
             if (result is null)
             {
                 return false;
             }
 
-            await FinalizeCancellationRecoveryAsync(job, result, recoveryCancellation.Token).ConfigureAwait(false);
+            await FinalizeOutcomeRecoveryAsync(job, result, recoveryCancellation.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
         {
             await TerminateJobAsync(job.OperationId, workerId, ExecutionJobStatus.Failed,
                 "license expired", CancellationToken.None).ConfigureAwait(false);
         }
-        // An unavailable receipt is an unknown outcome, never evidence that cancellation won.
+        // An unavailable receipt is an unknown outcome, never evidence that no rows committed.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.JobExecutionFailed(logger, job.OperationId, ex);
-            await RequeueCancellationRecoveryAsync(job, workerId).ConfigureAwait(false);
+            await RequeueOutcomeRecoveryAsync(job, workerId).ConfigureAwait(false);
         }
 
         return true;
     }
 
-    private async Task FinalizeCancellationRecoveryAsync(
+    private async Task FinalizeOutcomeRecoveryAsync(
         ExecutionJobRecord job, JobExecutionResult result, CancellationToken cancellationToken)
     {
         var workerId = job.ClaimedBy!;
         if (!await FinalizeJobAsync(job.OperationId, workerId, result, null, null, cancellationToken).ConfigureAwait(false))
         {
-            await RequeueCancellationRecoveryAsync(job, workerId).ConfigureAwait(false);
+            await RequeueOutcomeRecoveryAsync(job, workerId).ConfigureAwait(false);
         }
     }
 
-    private async Task RequeueCancellationRecoveryAsync(ExecutionJobRecord original, string workerId)
+    private async Task RequeueOutcomeRecoveryAsync(ExecutionJobRecord original, string workerId)
     {
         using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var current = await jobStore.GetAsync(original.OperationId, cleanup.Token).ConfigureAwait(false);
@@ -80,7 +80,7 @@ internal sealed partial class JobExecutionService
             UpdatedAt = now,
             CompletedAt = null,
             NextRetryAt = now.Add(delay),
-            CurrentPhase = "Recovering committed outcome before cancellation"
+            CurrentPhase = "Recovering committed import outcome"
         };
         if (!await jobStore.TrySetAsync(queued, cancellationToken: cleanup.Token).ConfigureAwait(false))
         {

@@ -23,9 +23,9 @@ public sealed partial class JobExecutionServiceTests
         store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
         store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
-        var executor = Substitute.For<IJobExecutor, IJobCancellationRecoveryExecutor>();
+        var executor = Substitute.For<IJobExecutor, IJobOutcomeRecoveryExecutor>();
         executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
-        var recovery = ConfigureCancellationRecovery(executor, expectedStatus == ExecutionJobStatus.Succeeded
+        var recovery = ConfigureOutcomeRecovery(executor, expectedStatus == ExecutionJobStatus.Succeeded
             ? JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true } : null);
         using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
             new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
@@ -37,16 +37,16 @@ public sealed partial class JobExecutionServiceTests
         {
             Assert.Contains("committed-import-receipt", durable.ArtifactReferences);
         }
-        await recovery.Received(1).RecoverCancellationAsync(Arg.Any<ExecutionJobRecord>(),
+        await recovery.Received(1).RecoverOutcomeAsync(Arg.Any<ExecutionJobRecord>(),
             Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
         await executor.DidNotReceive().ExecuteAsync(Arg.Any<ExecutionJobRecord>(),
             Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
     }
 
-    private static IJobCancellationRecoveryExecutor ConfigureCancellationRecovery(IJobExecutor executor, JobExecutionResult? result)
+    private static IJobOutcomeRecoveryExecutor ConfigureOutcomeRecovery(IJobExecutor executor, JobExecutionResult? result)
     {
-        var recovery = (IJobCancellationRecoveryExecutor)executor;
-        recovery.RecoverCancellationAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+        var recovery = (IJobOutcomeRecoveryExecutor)executor;
+        recovery.RecoverOutcomeAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
                 Assert.False(call.Arg<CancellationToken>().IsCancellationRequested);
@@ -74,9 +74,9 @@ public sealed partial class JobExecutionServiceTests
         store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
         store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
-        var executor = Substitute.For<IJobExecutor, IJobCancellationRecoveryExecutor>();
+        var executor = Substitute.For<IJobExecutor, IJobOutcomeRecoveryExecutor>();
         executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
-        ((IJobCancellationRecoveryExecutor)executor).RecoverCancellationAsync(
+        ((IJobOutcomeRecoveryExecutor)executor).RecoverOutcomeAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<JobExecutionResult?>(new IOException("Receipt store unavailable")));
         var queue = Substitute.For<IJobQueue>();

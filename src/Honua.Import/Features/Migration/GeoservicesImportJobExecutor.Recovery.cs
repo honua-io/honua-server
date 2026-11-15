@@ -11,7 +11,7 @@ namespace Honua.Migration;
 
 internal sealed partial class GeoservicesImportJobExecutor
 {
-    public async Task<JobExecutionResult?> RecoverCancellationAsync(
+    public async Task<JobExecutionResult?> RecoverOutcomeAsync(
         ExecutionJobRecord job, IJobExecutionContext context, CancellationToken cancellationToken)
     {
         var request = _jobManager.ReadRequest(job);

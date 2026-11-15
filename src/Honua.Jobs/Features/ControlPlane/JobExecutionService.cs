@@ -382,9 +382,21 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
+        if (executor is IJobOutcomeRecoveryExecutor &&
+            job.AttemptCount > (job.RetryPolicy ?? JobRetryPolicy.Default).MaxAttempts)
+        {
+            if (!await TryRecoverOutcomeAsync(job, workerId, stoppingToken).ConfigureAwait(false))
+            {
+                await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
+                    "Execution retry budget exhausted; no committed import outcome was found.", stoppingToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
         // Transition to Running. Use CAS to prevent overwriting a concurrent
         // cancel signal or terminal write that landed after the re-read above.
-        var now = DateTimeOffset.UtcNow;
         var running = job with
         {
             Status = ExecutionJobStatus.Running,
@@ -1043,7 +1055,7 @@ internal sealed partial class JobExecutionService(
         }
 
         if (terminalStatus == ExecutionJobStatus.Cancelled &&
-            await TryRecoverCancelledJobAsync(job, workerId, cancellationToken).ConfigureAwait(false))
+            await TryRecoverOutcomeAsync(job, workerId, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -1132,7 +1144,7 @@ internal sealed partial class JobExecutionService(
         if (current.CancellationRequestedAt.HasValue)
         {
             Log.AbandonHonouredDurableCancellation(logger, current.OperationId);
-            if (await TryRecoverCancelledJobAsync(current, workerId, cancellationToken).ConfigureAwait(false))
+            if (await TryRecoverOutcomeAsync(current, workerId, cancellationToken).ConfigureAwait(false))
             {
                 return;
             }
@@ -1292,6 +1304,11 @@ internal sealed partial class JobExecutionService(
                 Log.AbandonHonouredDurableCancellation(logger, current.OperationId);
                 await TerminateJobAsync(current.OperationId, workerId, ExecutionJobStatus.Cancelled,
                     "Cancelled by operator (durable signal honoured during abandon).", cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if (await TryRecoverOutcomeAsync(latestBeforeFail, workerId, cancellationToken).ConfigureAwait(false))
+            {
                 return;
             }
 

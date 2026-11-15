@@ -590,6 +590,11 @@ internal sealed partial class GeoservicesImportService
                 fidelityVerdict: fidelity.Verdict,
                 fidelityDifferences: fidelity.Differences);
         }
+        catch (Exception ex) when (stage == ImportFailureStage.Committing && ex is not OutOfMemoryException)
+        {
+            // Release the connection/target lock before the worker resolves the receipt on a fresh connection.
+            throw new GeoservicesImportCommitOutcomeUnknownException(ex);
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             if (stage == ImportFailureStage.AfterCommit)

@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// between the sweep snapshot and the handler invocation.
 /// </summary>
 [Collection("ControlPlaneTransitionTelemetry")]
-public sealed class JobReconciliationServiceTests
+public sealed partial class JobReconciliationServiceTests
 {
     private static ExecutionJobRecord CreateRunningJob(
         string operationId = "job-1",

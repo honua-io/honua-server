@@ -227,6 +227,11 @@ internal sealed partial class JobReconciliationService(
             return false;
         }
 
+        if (ExecutionJobCancellationHelper.RequiresCommitRecovery(current!))
+        {
+            return await RequeueImportRecoveryAsync(current!, freshNow, cancellationToken).ConfigureAwait(false);
+        }
+
         // If cancellation was durably requested before the heartbeat expired,
         // honour it with a terminal Cancelled state instead of retrying. The
         // worker either never observed the signal or crashed before acting on it.

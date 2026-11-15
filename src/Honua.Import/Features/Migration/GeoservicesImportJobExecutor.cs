@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Migration;
 
-internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobCancellationRecoveryExecutor
+internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobOutcomeRecoveryExecutor
 {
     internal const string ImportFailedMessage = "Import failed.";
     internal const string LicenseExpiredMessage = "license expired";
@@ -85,6 +85,11 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobC
             await run.Progress.SetFinalProgressAsync(run.Terminal(GeoservicesImportStatus.Failed, LicenseExpiredMessage,
                 "Failed: license expired; partial import is incomplete"), CancellationToken.None).ConfigureAwait(false);
             return NotRetryable(LicenseExpiredMessage);
+        }
+        catch (GeoservicesImportCommitOutcomeUnknownException)
+        {
+            // Neither cancellation nor an execution error proves that COMMIT rolled back.
+            throw;
         }
         catch (Exception ex) when (run.Token.IsCancellationRequested && ex is not OutOfMemoryException)
         {
