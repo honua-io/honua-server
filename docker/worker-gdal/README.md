@@ -2,9 +2,11 @@
 
 This is the **optional, native-profile** worker image described by
 [ADR-0038](../../docs/internal/contributor/adr/0038-geoetl-pipeline-architecture-and-runtime-boundary.md).
-It is the GDAL-equipped counterpart to the canonical native-AOT serving image
-(`docker/Dockerfile.aot`). The root `Dockerfile` is an auxiliary JIT image for
-development and compatibility testing; it is not a production distribution.
+It is the GDAL-equipped counterpart to the serving image. The rc.2 default is
+the chiseled JIT, PostGIS-only image built by the root `Dockerfile`. Native AOT
+(`docker/Dockerfile.aot`) remains an optional variant. See
+[choose the serving image](../../docs/guides/deploy/choose-serving-image.md)
+for runtime and data-store choices.
 
 ## What it is
 

@@ -329,13 +329,13 @@ See [Connection poolers and proxies](../../reference/configuration/data-sources/
 
 ## Azure Container Apps
 
-- Use the generic web image (`ghcr.io/honua-io/honua-server` at a pinned digest or dated `nightly-YYYYMMDD` tag until the first release; `latest` afterwards); it is native AOT. The `latest-aot` alias is retained for compatibility.
+- Use the generic web image (`ghcr.io/honua-io/honua-server`) at a pinned digest. The rc.2 default is chiseled JIT with PostGIS as its only database store; Native AOT remains an optional `-aot` variant. See [choose the serving image](choose-serving-image.md) for runtime and data-store choices.
 - Configure secrets as Container Apps secrets referenced from env vars; ingress handles TLS.
 - Rollouts use revision traffic splitting: immediate cutover or canary percentage, driven by the deploy backend `honua-azure-container-apps-revision` with a telemetry gate.
 
 ```bash
 az containerapp update --name honua-prod --resource-group honua \
-  --image ghcr.io/honua-io/honua-server:nightly-YYYYMMDD
+  --image 'ghcr.io/honua-io/honua-server@sha256:<digest>'
 ```
 
 ## Azure Functions

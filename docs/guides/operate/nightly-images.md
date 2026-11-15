@@ -82,7 +82,7 @@ for an older revision. Enabling a provider may also require configuration and an
 experimental opt-in. Restart after changing provider configuration, then read the
 manifest again. File-format readers used by imports are independent of this list.
 
-The Store Image Size workflow measures both JIT variants and the default AOT image.
+The Store Image Size workflow measures both JIT variants and the optional PostGIS-only AOT image.
 Its artifacts contain before/after byte counts, publish file manifests, startup-refusal
 logs, format smoke evidence and scan results. It verifies that default publish output
 has no excluded store assemblies or native libraries, retains file I/O libraries, and
