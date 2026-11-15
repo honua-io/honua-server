@@ -215,7 +215,7 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
     private async Task<TProgress?> ReadProgressAsync(IDistributedProgressStore<TProgress> inner, string jobId, CancellationToken cancellationToken)
     {
         var progress = await inner.GetProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if ((progress is not null && _spec.IsTerminal(progress)) || _jobStore is null)
+        if (_jobStore is null)
         {
             return progress;
         }
@@ -226,11 +226,18 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
             return progress;
         }
 
+        // A late license failure is authoritative even when execution already committed data.
+        var licenseExpired = job.Status == ExecutionJobStatus.Failed && job.ErrorMessage == "license expired";
+        if (progress is not null && _spec.IsTerminal(progress) && !licenseExpired)
+        {
+            return progress;
+        }
+
         if (job.Status.IsTerminal())
         {
             // The worker may have persisted final progress after our first read, before ending the job.
             var latest = await inner.GetProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
-            if (latest is not null && _spec.IsTerminal(latest))
+            if (latest is not null && _spec.IsTerminal(latest) && !licenseExpired)
             {
                 return latest;
             }
