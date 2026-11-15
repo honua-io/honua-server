@@ -15,7 +15,7 @@ using Honua.TestKit.Infrastructure;
 using Xunit;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
-namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic;
+namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
 [Collection("Database")]
 public sealed class CapabilitiesMetadataXmlTests
@@ -69,7 +69,7 @@ public sealed class CapabilitiesMetadataXmlTests
     private static async Task AssertCapabilitiesAsync(
         CapabilitiesRequest request, string input, string expected)
     {
-        var provider = CapabilitiesExtentFixture.PublishedLayers(request.Protocol, request.PublicationType);
+        var provider = CapabilitiesExtentFixture.PublishedLayers(request.Protocol, request.LayerType);
         await SetMetadataAsync(provider, input);
         await using var fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
@@ -88,7 +88,7 @@ public sealed class CapabilitiesMetadataXmlTests
         Assert.All(layers, layer =>
         {
             Assert.Equal(expected, layer.Elements().Single(child => child.Name.LocalName == "Title").Value);
-            if (request.PublicationType != MetadataV2LayerType.WmtsLayer)
+            if (request.LayerType != MetadataV2LayerType.WmtsLayer)
             {
                 Assert.Equal(expected, layer.Elements().Single(child => child.Name.LocalName == "Abstract").Value);
             }
@@ -96,7 +96,7 @@ public sealed class CapabilitiesMetadataXmlTests
     }
 
     private sealed record CapabilitiesRequest(
-        string Protocol, MetadataV2LayerType PublicationType, string Url);
+        string Protocol, MetadataV2LayerType LayerType, string Url);
 
     private static async Task SetMetadataAsync(TestMetadataV2GraphProvider provider, string input)
     {

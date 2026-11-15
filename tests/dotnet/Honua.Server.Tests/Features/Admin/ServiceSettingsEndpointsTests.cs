@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class ServiceSettingsEndpointsTests
+public sealed partial class ServiceSettingsEndpointsTests
     : IClassFixture<ServiceSettingsEndpointsTests.SeededHost>, IAsyncLifetime
 {
     private const string AdminPassword = "service-settings-admin-key";
