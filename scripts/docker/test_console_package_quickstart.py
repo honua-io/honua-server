@@ -3,15 +3,44 @@ import hashlib
 import json
 from pathlib import Path
 import stat
+import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
 
-from package_quickstart import CONSOLE_WEB_IMAGE
-from quickstart_testing import QuickstartFixture
+from package_quickstart import CONSOLE_WEB_IMAGE, package
+from quickstart_testing import PACKAGE_IMAGES, QuickstartFixture
 
 
 class ConsolePackageTests(QuickstartFixture, unittest.TestCase):
+    def test_quickstart_cli_explains_why_console_cannot_be_enabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'install'
+            package(path, PACKAGE_IMAGES, 'test')
+
+            result = subprocess.run([
+                sys.executable, str(path / 'quickstart.py'), '--profile', 'console', '--init-only'],
+                capture_output=True, text=True)
+
+            self.assertEqual(1, result.returncode)
+            self.assertIn('The package must include the released Console bundle and an immutable Console web image',
+                          result.stderr)
+
+    def test_quickstart_cli_keeps_invalid_private_file_bytes_out_of_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'install'
+            package(path, PACKAGE_IMAGES, 'test')
+            (path / '.env').write_bytes(b'POSTGRES_PASSWORD=private-value-\xff\n')
+
+            result = subprocess.run([sys.executable, str(path / 'quickstart.py'), '--init-only'],
+                                    capture_output=True, text=True)
+
+            self.assertEqual(1, result.returncode)
+            self.assertIn('Quickstart initialization failed', result.stderr)
+            self.assertNotIn('private-value', result.stdout + result.stderr)
+            self.assertNotIn('0xff', result.stdout + result.stderr)
+
     def test_package_carries_the_verified_console_bundle(self):
         with tempfile.TemporaryDirectory() as directory:
             path, _, digest = self.packaged_console_install(Path(directory))

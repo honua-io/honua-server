@@ -387,8 +387,9 @@ def main():
     except (OSError, ValueError, RuntimeError, KeyError) as error:
         print('Quickstart initialization failed; check the image lock, Docker socket, OpenSSL and private install directory.',
               file=sys.stderr)
-        # These messages name settings and tools only, never a secret value.
-        if isinstance(error, RuntimeError):
+        # Plain validation errors name settings, never their values. Decoding errors
+        # are ValueError subclasses whose messages can expose private file contents.
+        if type(error) is ValueError or isinstance(error, RuntimeError):
             print(str(error), file=sys.stderr)
         return 1
 
