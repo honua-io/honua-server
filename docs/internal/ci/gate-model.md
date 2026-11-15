@@ -1517,3 +1517,6 @@ existing documentation with the complete link and concept suite. A partial
 inventory generator/template pair or a failing generator remains an error. This
 compatibility path adds no jobs and preserves all documentation assertions.
 
+
+Older PR bases that lack the retired-cache policy load it from fetched trusted trunk. The explicit base/head diff is still checked, head-supplied policy cannot replace it, and a missing or incomplete trusted policy fails the required hygiene job.
+
