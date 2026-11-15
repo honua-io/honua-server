@@ -30,6 +30,23 @@ public sealed class PostgresTileCacheGenerationCheckpointStoreTests(DatabaseFixt
     }
 
     [IntegrationTest]
+    public async Task SaveAsync_LongGenerationIds_PreserveDistinctResumePointsAcrossStores()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var prefix = new string('界', 1024);
+        var first = Checkpoint() with { GenerationId = prefix + "first" };
+        var second = Checkpoint() with { GenerationId = prefix + "second" };
+        await harness.CreateTileCheckpointStore().SaveAsync(first);
+        await harness.CreateTileCheckpointStore().SaveAsync(second);
+
+        (await harness.CreateTileCheckpointStore().LoadAsync(first.GenerationId)).Should().BeEquivalentTo(first);
+        (await harness.CreateTileCheckpointStore().LoadAsync(second.GenerationId)).Should().BeEquivalentTo(second);
+        (await harness.CreateTileCheckpointStore().DeleteAsync(first.GenerationId)).Should().BeTrue();
+        (await harness.CreateTileCheckpointStore().LoadAsync(first.GenerationId)).Should().BeNull();
+        (await harness.CreateTileCheckpointStore().LoadAsync(second.GenerationId)).Should().BeEquivalentTo(second);
+    }
+
+    [IntegrationTest]
     public async Task SaveAsync_FailedUnitsOverTheBound_StoresTheSanitizedCheckpoint()
     {
         await using var harness = await CreateHarnessAsync();
@@ -64,12 +81,12 @@ public sealed class PostgresTileCacheGenerationCheckpointStoreTests(DatabaseFixt
         var checkpoint = Checkpoint();
         await store.SaveAsync(checkpoint);
         await harness.ExecuteAsync(
-            $"UPDATE {harness.Table("tile_generation_checkpoints")} SET record = '[1]' WHERE generation_id = @id",
+            $"UPDATE {harness.Table("tile_generation_checkpoints")} SET record = '[1]' WHERE generation_id = encode(sha256(convert_to(@id, 'UTF8')), 'hex')",
             new NpgsqlParameter("id", checkpoint.GenerationId));
 
         await store.Invoking(s => s.LoadAsync(checkpoint.GenerationId).AsTask()).Should().ThrowAsync<InvalidDataException>();
         (await harness.ScalarAsync<long>(
-            $"SELECT count(*) FROM {harness.Table("tile_generation_checkpoints")} WHERE generation_id = @id",
+            $"SELECT count(*) FROM {harness.Table("tile_generation_checkpoints")} WHERE generation_id = encode(sha256(convert_to(@id, 'UTF8')), 'hex')",
             new NpgsqlParameter("id", checkpoint.GenerationId))).Should().Be(1);
     }
 
@@ -83,7 +100,7 @@ public sealed class PostgresTileCacheGenerationCheckpointStoreTests(DatabaseFixt
         await store.SaveAsync(expired);
         await store.SaveAsync(kept);
         await harness.ExecuteAsync(
-            $"UPDATE {harness.Table("tile_generation_checkpoints")} SET expires_at = now() - interval '1 second' WHERE generation_id = @id",
+            $"UPDATE {harness.Table("tile_generation_checkpoints")} SET expires_at = now() - interval '1 second' WHERE generation_id = encode(sha256(convert_to(@id, 'UTF8')), 'hex')",
             new NpgsqlParameter("id", expired.GenerationId));
 
         (await store.LoadAsync(expired.GenerationId)).Should().BeNull();

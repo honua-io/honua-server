@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.Core.Features.Tiles;
@@ -111,7 +113,11 @@ internal sealed partial class PostgresTileCacheGenerationCheckpointStore(
             cancellationToken);
 
     private static NpgsqlParameter GenerationParameter(string generationId)
-        => new("generation_id", NpgsqlDbType.Text) { Value = generationId };
+        // Bound the indexed key without restricting caller-supplied generation IDs.
+        => new("generation_id", NpgsqlDbType.Text)
+        {
+            Value = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(generationId)))
+        };
 
     private static partial class Log
     {
