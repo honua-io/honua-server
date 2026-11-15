@@ -24,7 +24,7 @@ public partial class PostgresAttachmentStoreTests
             Key = key, OffsetBytes = 0, Content = content, Sha256 = SHA256.HashData(content)
         });
         var restarted = NewUploadSessionStore();
-        var results = await Task.WhenAll(store.CommitAsync(key, "prepared-object"), restarted.CommitAsync(key, "prepared-object"));
+        var results = await Task.WhenAll(CommitPreparedSessionAsync(store, key), CommitPreparedSessionAsync(restarted, key));
         Assert.Equivalent(results[0], results[1]);
         Assert.Single(await _attachmentStore.ListAsync(TestLayerId, TestFeatureId));
         await restarted.AbortAsync(key);
@@ -43,7 +43,7 @@ public partial class PostgresAttachmentStoreTests
         {
             Key = key, OffsetBytes = 0, Content = content, Sha256 = SHA256.HashData(content)
         });
-        var failure = await Assert.ThrowsAsync<AttachmentUploadException>(() => store.CommitAsync(key, "prepared-object"));
+        var failure = await Assert.ThrowsAsync<AttachmentUploadException>(() => CommitPreparedSessionAsync(store, key));
         Assert.Equal(AttachmentUploadFailure.InvalidContent, failure.Failure);
         Assert.Empty(await _attachmentStore.ListAsync(TestLayerId, TestFeatureId));
         Assert.Equal(AttachmentUploadState.Uploading, (await store.GetAsync(key)).State);
@@ -58,11 +58,11 @@ public partial class PostgresAttachmentStoreTests
             ALTER TABLE "{_schemaName}".attachment_upload_sessions
             ADD CONSTRAINT reject_commits CHECK (state <> 'committed');
             """);
-        await Assert.ThrowsAsync<Npgsql.PostgresException>(() => store.CommitAsync(key, "prepared-object"));
+        await Assert.ThrowsAsync<Npgsql.PostgresException>(() => CommitPreparedSessionAsync(store, key));
         Assert.Empty(await _attachmentStore.ListAsync(TestLayerId, TestFeatureId));
         Assert.Equal(AttachmentUploadState.Uploading, (await store.GetAsync(key)).State);
         await _fixture.ExecuteAsync($"ALTER TABLE \"{_schemaName}\".attachment_upload_sessions DROP CONSTRAINT reject_commits;");
-        var committed = await store.CommitAsync(key, "prepared-object");
+        var committed = await CommitPreparedSessionAsync(store, key);
         Assert.Equal(committed with { NativeMetadata = null }, Assert.Single(await _attachmentStore.ListAsync(TestLayerId, TestFeatureId)));
     }
 
@@ -71,18 +71,18 @@ public partial class PostgresAttachmentStoreTests
     {
         var store = await CreateUploadSessionStoreAsync();
         var firstKey = await PrepareCommitSessionAsync(store, CreateSessionRequest());
-        var original = await store.CommitAsync(firstKey, "original-object");
+        var original = await CommitPreparedSessionAsync(store, firstKey);
         var replacementKey = await PrepareCommitSessionAsync(store, CreateSessionRequest() with
         {
             IdempotencyKey = "replacement", ReplaceAttachmentId = original.Id, Filename = "replacement.txt"
         });
-        var replacement = await store.CommitAsync(replacementKey, "replacement-object");
+        var replacement = await CommitPreparedSessionAsync(store, replacementKey);
         Assert.Equal(original.Id, replacement.Id);
-        Assert.Equal("replacement-object", replacement.StoragePath);
+        Assert.Equal(AttachmentUploadObjectKey.ForSession(replacementKey.SessionId), replacement.StoragePath);
         Assert.Equal(replacement with { NativeMetadata = null }, Assert.Single(await _attachmentStore.ListAsync(TestLayerId, TestFeatureId)));
         Assert.Equivalent(original, await store.CommitAsync(firstKey, "ignored-object"));
         await using var connection = await _fixture.DataSource.OpenConnectionAsync();
-        await using var cleanup = new Npgsql.NpgsqlCommand($"SELECT count(*) FROM \"{_schemaName}\".import_attachment_cleanup WHERE storage_path = 'original-object'", connection);
+        await using var cleanup = new Npgsql.NpgsqlCommand($"SELECT count(*) FROM \"{_schemaName}\".import_attachment_cleanup WHERE storage_path = '{original.StoragePath}'", connection);
         Assert.Equal(1L, await cleanup.ExecuteScalarAsync());
     }
 
@@ -104,7 +104,7 @@ public partial class PostgresAttachmentStoreTests
         {
             try
             {
-                await store.CommitAsync(key, $"object-{key.SessionId}");
+                await CommitPreparedSessionAsync(store, key);
                 return true;
             }
             catch (Honua.Core.Exceptions.ValidationException)
@@ -115,6 +115,48 @@ public partial class PostgresAttachmentStoreTests
         Assert.Equal(1, outcomes.Count(success => success));
         Assert.Single(await publisher.ListAsync(TestLayerId, TestFeatureId));
     }
+
+    [IntegrationTest]
+    public async Task CommitSession_NonSessionObjectKey_IsRejectedWithoutPublishingMetadata()
+    {
+        var store = await CreateUploadSessionStoreAsync();
+        var key = await PrepareCommitSessionAsync(store, CreateSessionRequest());
+        var failure = await Assert.ThrowsAsync<AttachmentUploadException>(() => store.CommitAsync(key, "untracked-object"));
+        Assert.Equal(AttachmentUploadFailure.InvalidContent, failure.Failure);
+        Assert.Empty(await _attachmentStore.ListAsync(TestLayerId, TestFeatureId));
+        Assert.Equal(AttachmentUploadState.Uploading, (await store.GetAsync(key)).State);
+    }
+
+    [IntegrationTest]
+    public async Task CommitSession_ReceiptFailureAfterObjectWrite_ExpiryRemovesObject()
+    {
+        var store = await CreateUploadSessionStoreAsync();
+        var key = await PrepareCommitSessionAsync(store, CreateSessionRequest());
+        await _fixture.ExecuteAsync($"ALTER TABLE \"{_schemaName}\".attachment_upload_sessions ADD CONSTRAINT reject_commits CHECK (state <> 'committed');");
+        var path = AttachmentUploadObjectKey.ForSession(key.SessionId);
+        await Assert.ThrowsAsync<Npgsql.PostgresException>(() => store.CommitAsync(key, async (session, token) =>
+        {
+            await using var content = new MemoryStream("abcdef"u8.ToArray());
+            var result = await _fileStorage.UploadIfMatchAsync(new Honua.Core.Features.Infrastructure.Domain.FileUploadRequest
+            {
+                Content = content, FileName = "notes.txt", ContentType = "text/plain", ObjectKeyOverride = path
+            }, null, token);
+            Assert.True(result.Success);
+            return path;
+        }));
+        Assert.True(await _fileStorage.ExistsAsync(path));
+        await _fixture.ExecuteAsync($"""
+            UPDATE "{_schemaName}".attachment_upload_sessions
+            SET created_at = clock_timestamp() - interval '2 hours', expires_at = clock_timestamp() - interval '1 hour'
+            WHERE session_id = '{key.SessionId}';
+            """);
+        await new PostgresAttachmentMaintenance(new TestDatabaseConnectionProvider(_fixture.DataSource), _schemaName, _attachmentStore).RunOnceAsync();
+        Assert.False(await _fileStorage.ExistsAsync(path));
+        Assert.Empty(await _attachmentStore.ListAsync(TestLayerId, TestFeatureId));
+    }
+
+    private static Task<Attachment> CommitPreparedSessionAsync(PostgresAttachmentUploadSessionStore store, AttachmentUploadSessionKey key)
+        => store.CommitAsync(key, AttachmentUploadObjectKey.ForSession(key.SessionId));
 
     private static async Task<AttachmentUploadSessionKey> PrepareCommitSessionAsync(PostgresAttachmentUploadSessionStore store, AttachmentUploadRequest request)
     {

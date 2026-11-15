@@ -8,16 +8,45 @@ namespace Honua.Server.Tests;
 
 public partial class PostgresAttachmentStoreTests
 {
+    [IntegrationTheory]
+    [InlineData("new,keywords", false)]
+    [InlineData(null, false)]
+    [InlineData("new,keywords", true)]
+    [InlineData(null, true)]
+    public async Task NativeMetadata_LegacyKeywordEdit_UpdatesNativeReadsAndFilters(string? keywords, bool fullUpdate)
+    {
+        var sessions = await CreateUploadSessionStoreAsync();
+        var key = await PrepareCommitSessionAsync(sessions, CreateSessionRequest() with { Keywords = ["old"] });
+        var attachment = await sessions.CommitAsync(key, AttachmentUploadObjectKey.ForSession(key.SessionId));
+        if (fullUpdate)
+        {
+            await _attachmentStore.UpdateAsync(TestLayerId, TestFeatureId, attachment with { Keywords = keywords });
+        }
+        else
+        {
+            await _attachmentStore.UpdateKeywordsAsync(TestLayerId, TestFeatureId, attachment.Id, keywords);
+        }
+        var metadata = Assert.Single(await _attachmentStore.GetNativeMetadataAsync(
+            new AttachmentNativeMetadataQuery(TestLayerId, TestFeatureId, [attachment.Id]))).Value;
+        Assert.Equal(keywords?.Split(',') ?? [], metadata.Keywords);
+        var query = new AttachmentPageQuery { LayerId = TestLayerId, FeatureId = TestFeatureId, Limit = 10, Keywords = ["old"] };
+        Assert.Empty(await _attachmentStore.QueryPageAsync(query));
+        if (keywords != null)
+        {
+            Assert.Equal(attachment.Id, Assert.Single(await _attachmentStore.QueryPageAsync(query with { Keywords = ["new"] })).Attachment.Id);
+        }
+    }
+
     [IntegrationTest]
     public async Task NativeMetadata_QueryPage_BoundsAndScopesExactKeywordMatches()
     {
         var sessions = await CreateUploadSessionStoreAsync();
-        var first = await sessions.CommitAsync(await PrepareCommitSessionAsync(sessions,
-            CreateSessionRequest() with { IdempotencyKey = "first", Keywords = ["a,b"] }), "first-object");
-        var second = await sessions.CommitAsync(await PrepareCommitSessionAsync(sessions,
-            CreateSessionRequest() with { IdempotencyKey = "second", Keywords = ["a,b"] }), "second-object");
-        await sessions.CommitAsync(await PrepareCommitSessionAsync(sessions,
-            CreateSessionRequest() with { IdempotencyKey = "third", Keywords = ["a", "b"] }), "third-object");
+        var first = await CommitPreparedSessionAsync(sessions, await PrepareCommitSessionAsync(sessions,
+            CreateSessionRequest() with { IdempotencyKey = "first", Keywords = ["a,b"] }));
+        var second = await CommitPreparedSessionAsync(sessions, await PrepareCommitSessionAsync(sessions,
+            CreateSessionRequest() with { IdempotencyKey = "second", Keywords = ["a,b"] }));
+        await CommitPreparedSessionAsync(sessions, await PrepareCommitSessionAsync(sessions,
+            CreateSessionRequest() with { IdempotencyKey = "third", Keywords = ["a", "b"] }));
         var query = new AttachmentPageQuery
         {
             LayerId = TestLayerId, FeatureId = TestFeatureId, Limit = 1,
@@ -40,7 +69,7 @@ public partial class PostgresAttachmentStoreTests
         var sessions = await CreateUploadSessionStoreAsync();
         var request = CreateSessionRequest() with { Keywords = ["a,b", "", " spaced ", "λ"] };
         var key = await PrepareCommitSessionAsync(sessions, request);
-        var attachment = await sessions.CommitAsync(key, "native-object");
+        var attachment = await CommitPreparedSessionAsync(sessions, key);
         var query = new AttachmentNativeMetadataQuery(TestLayerId, TestFeatureId, [attachment.Id]);
         var metadata = Assert.Single(await _attachmentStore.GetNativeMetadataAsync(query)).Value;
         Assert.Equal(request.Keywords, metadata.Keywords);
@@ -51,7 +80,7 @@ public partial class PostgresAttachmentStoreTests
         {
             IdempotencyKey = "replace-native", ReplaceAttachmentId = attachment.Id, Keywords = ["new,value"]
         });
-        await sessions.CommitAsync(replacement, "replacement-object");
+        await CommitPreparedSessionAsync(sessions, replacement);
         var updated = Assert.Single(await _attachmentStore.GetNativeMetadataAsync(query)).Value;
         Assert.Equal(metadata.GlobalId, updated.GlobalId);
         Assert.Equal(["new,value"], updated.Keywords);
@@ -68,7 +97,7 @@ public partial class PostgresAttachmentStoreTests
     {
         var sessions = await CreateUploadSessionStoreAsync();
         var key = await PrepareCommitSessionAsync(sessions, CreateSessionRequest());
-        var attachment = await sessions.CommitAsync(key, "native-object");
+        var attachment = await CommitPreparedSessionAsync(sessions, key);
         await _fixture.ExecuteAsync($"UPDATE \"{_schemaName}\".attachments SET storage_path = 'legacy-replacement' WHERE id = {attachment.Id};");
         Assert.Empty(await _attachmentStore.GetNativeMetadataAsync(new AttachmentNativeMetadataQuery(TestLayerId, TestFeatureId, [attachment.Id])));
     }
@@ -79,7 +108,7 @@ public partial class PostgresAttachmentStoreTests
         var sessions = await CreateUploadSessionStoreAsync();
         var key = await PrepareCommitSessionAsync(sessions, CreateSessionRequest());
         await _fixture.ExecuteAsync($"ALTER TABLE \"{_schemaName}\".attachment_upload_sessions ADD CONSTRAINT reject_commits CHECK (state <> 'committed');");
-        await Assert.ThrowsAsync<Npgsql.PostgresException>(() => sessions.CommitAsync(key, "native-object"));
+        await Assert.ThrowsAsync<Npgsql.PostgresException>(() => CommitPreparedSessionAsync(sessions, key));
         await using var connection = await _fixture.DataSource.OpenConnectionAsync();
         await using var command = new Npgsql.NpgsqlCommand($"SELECT count(*) FROM \"{_schemaName}\".attachment_native_metadata", connection);
         Assert.Equal(0L, await command.ExecuteScalarAsync());

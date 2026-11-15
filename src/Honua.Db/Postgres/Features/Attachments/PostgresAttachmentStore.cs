@@ -183,10 +183,19 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var tables = await ResolveTablesAsync(connection, null, false, cancellationToken).ConfigureAwait(false);
         var sql = $@"
-            UPDATE {tables.Attachments}
-            SET filename = $4, content_type = $5, size = $6, storage_path = $7, keywords = $8
-            WHERE layer_id = $1 AND feature_id = $2 AND id = $3
-            RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
+            WITH updated AS (
+                UPDATE {tables.Attachments}
+                SET filename = $4, content_type = $5, size = $6, storage_path = $7, keywords = $8
+                WHERE layer_id = $1 AND feature_id = $2 AND id = $3
+                RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords
+            ), synced AS (
+                UPDATE {NativeMetadataTable} m
+                SET keywords = COALESCE(string_to_array(u.keywords, ','), ARRAY[]::text[])
+                FROM updated u
+                WHERE m.attachment_authority = $9 AND m.attachment_id = u.id
+                    AND m.layer_id = u.layer_id AND m.feature_id = u.feature_id AND m.storage_path = u.storage_path
+            )
+            SELECT * FROM updated";
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
@@ -196,7 +205,8 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         command.Parameters.AddWithValue(attachment.ContentType);
         command.Parameters.AddWithValue(attachment.Size);
         command.Parameters.AddWithValue(attachment.StoragePath);
-        command.Parameters.AddWithValue(attachment.Keywords ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue(NpgsqlTypes.NpgsqlDbType.Text, attachment.Keywords ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue(tables.Attachments);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -217,16 +227,26 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var tables = await ResolveTablesAsync(connection, null, false, cancellationToken).ConfigureAwait(false);
         var sql = $@"
-            UPDATE {tables.Attachments}
-            SET keywords = $4
-            WHERE layer_id = $1 AND feature_id = $2 AND id = $3
-            RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
+            WITH updated AS (
+                UPDATE {tables.Attachments}
+                SET keywords = $4
+                WHERE layer_id = $1 AND feature_id = $2 AND id = $3
+                RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords
+            ), synced AS (
+                UPDATE {NativeMetadataTable} m
+                SET keywords = COALESCE(string_to_array(u.keywords, ','), ARRAY[]::text[])
+                FROM updated u
+                WHERE m.attachment_authority = $5 AND m.attachment_id = u.id
+                    AND m.layer_id = u.layer_id AND m.feature_id = u.feature_id AND m.storage_path = u.storage_path
+            )
+            SELECT * FROM updated";
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
         command.Parameters.AddWithValue(attachmentId);
         command.Parameters.AddWithValue(NpgsqlTypes.NpgsqlDbType.Text, keywords ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue(tables.Attachments);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

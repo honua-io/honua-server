@@ -15,13 +15,13 @@ public partial class PostgresAttachmentStoreTests
     public async Task DeleteReceipt_ConcurrentRetryAfterRestart_DeletesOnceAndQueuesBlob()
     {
         var sessions = await CreateUploadSessionStoreAsync();
-        var attachment = await sessions.CommitAsync(await PrepareCommitSessionAsync(sessions, CreateSessionRequest()), "delete-object");
+        var attachment = await CommitPreparedSessionAsync(sessions, await PrepareCommitSessionAsync(sessions, CreateSessionRequest()));
         var request = CreateDeleteRequest(attachment.Id);
         await Task.WhenAll(NewMutationStore().DeleteAsync(request), NewMutationStore().DeleteAsync(request));
         Assert.Empty(await _attachmentStore.ListAsync(TestLayerId, TestFeatureId));
         await NewMutationStore().DeleteAsync(request);
         await using var connection = await _fixture.DataSource.OpenConnectionAsync();
-        await using var count = new Npgsql.NpgsqlCommand($"SELECT count(*) FROM \"{_schemaName}\".import_attachment_cleanup WHERE storage_path = 'delete-object'", connection);
+        await using var count = new Npgsql.NpgsqlCommand($"SELECT count(*) FROM \"{_schemaName}\".import_attachment_cleanup WHERE storage_path = '{attachment.StoragePath}'", connection);
         Assert.Equal(1L, await count.ExecuteScalarAsync());
         var conflict = await Assert.ThrowsAsync<AttachmentUploadException>(() => NewMutationStore().DeleteAsync(request with { AttachmentId = attachment.Id + 1 }));
         Assert.Equal(AttachmentUploadFailure.Conflict, conflict.Failure);
@@ -33,7 +33,7 @@ public partial class PostgresAttachmentStoreTests
     public async Task DeleteReceipt_ReceiptFailure_RollsBackDeleteAndCleanup()
     {
         var sessions = await CreateUploadSessionStoreAsync();
-        var attachment = await sessions.CommitAsync(await PrepareCommitSessionAsync(sessions, CreateSessionRequest()), "rollback-object");
+        var attachment = await CommitPreparedSessionAsync(sessions, await PrepareCommitSessionAsync(sessions, CreateSessionRequest()));
         var request = CreateDeleteRequest(attachment.Id);
         await _fixture.ExecuteAsync($"ALTER TABLE \"{_schemaName}\".attachment_mutation_receipts ADD CONSTRAINT reject_receipts CHECK (false);");
         await Assert.ThrowsAsync<Npgsql.PostgresException>(() => NewMutationStore().DeleteAsync(request));

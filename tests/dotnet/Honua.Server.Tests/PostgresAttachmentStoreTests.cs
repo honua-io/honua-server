@@ -81,11 +81,13 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
         var assembly = typeof(Program).Assembly;
         var scripts = new AttachmentSchemaScriptProvider(
             new EmbeddedScriptProvider(assembly,
-                name => name == contract.CreateMigration || name == contract.ImportMigration),
+                name => name == contract.CreateMigration || name == contract.ImportMigration ||
+                    name.EndsWith("182_CreateAttachmentNativeMetadata.sql", StringComparison.Ordinal) ||
+                    name.EndsWith("185_CreateAttachmentCleanupRetries.sql", StringComparison.Ordinal)),
             _schemaName, assembly, contract);
         foreach (var script in scripts.GetScripts(null!))
         {
-            await _fixture.ExecuteAsync(script.Contents);
+            await _fixture.ExecuteAsync(script.Contents.Replace("$HonuaSchema$", $"\"{_schemaName}\"", StringComparison.Ordinal));
         }
 
         _output.WriteLine($"Created isolated schema: {_schemaName}");

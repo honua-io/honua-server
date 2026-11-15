@@ -255,9 +255,15 @@ internal sealed partial class PostgresAttachmentStore
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(CancellationToken.None).ConfigureAwait(false);
             var tables = await ResolveTablesAsync(connection, null, true, CancellationToken.None).ConfigureAwait(false);
             var pending = new List<(string Path, long FeatureId)>();
-            await using (var command = new NpgsqlCommand($"SELECT storage_path, feature_id FROM {tables.Cleanup} WHERE layer_id = $1 ORDER BY storage_path LIMIT 100", connection))
+            await using (var command = new NpgsqlCommand($"""
+                SELECT c.storage_path, c.feature_id FROM {tables.Cleanup} c
+                LEFT JOIN {CleanupRetriesTable} r ON r.cleanup_authority = $2 AND r.storage_path = c.storage_path
+                WHERE c.layer_id = $1 AND (r.next_attempt_at IS NULL OR r.next_attempt_at <= clock_timestamp())
+                ORDER BY r.next_attempt_at NULLS FIRST, c.storage_path LIMIT 100
+                """, connection))
             {
                 command.Parameters.AddWithValue(layerId);
+                command.Parameters.AddWithValue(tables.Cleanup);
                 await using var reader = await command.ExecuteReaderAsync(CancellationToken.None).ConfigureAwait(false);
                 while (await reader.ReadAsync(CancellationToken.None).ConfigureAwait(false))
                 {
@@ -280,9 +286,11 @@ internal sealed partial class PostgresAttachmentStore
                     await using var remove = new NpgsqlCommand($"DELETE FROM {tables.Cleanup} WHERE storage_path = $1", connection);
                     remove.Parameters.AddWithValue(item.Path);
                     await remove.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+                    await ClearCleanupRetryAsync(connection, tables.Cleanup, item.Path).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
+                    await ScheduleCleanupRetryAsync(connection, tables.Cleanup, item.Path).ConfigureAwait(false);
                     await RecordOrphanAsync(item.Path, layerId, item.FeatureId, AttachmentOrphanKind.UndeletedObject,
                         $"Imported attachment cleanup queued for retry ({ex.GetType().Name}).").ConfigureAwait(false);
                 }

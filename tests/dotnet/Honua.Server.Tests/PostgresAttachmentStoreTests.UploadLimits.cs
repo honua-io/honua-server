@@ -25,7 +25,7 @@ public partial class PostgresAttachmentStoreTests
             }, migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!);
         var restarted = new PostgresAttachmentUploadSessionStore(
             new TestDatabaseConnectionProvider(_fixture.DataSource), _schemaName, publisher);
-        await Assert.ThrowsAsync<Honua.Core.Exceptions.ValidationException>(() => restarted.CommitAsync(key, "prepared-object"));
+        await Assert.ThrowsAsync<Honua.Core.Exceptions.ValidationException>(() => CommitPreparedSessionAsync(restarted, key));
         Assert.Empty(await publisher.ListAsync(TestLayerId, TestFeatureId));
         Assert.Equal(AttachmentUploadState.Uploading, (await sessions.GetAsync(key)).State);
     }

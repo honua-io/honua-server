@@ -9,6 +9,28 @@ namespace Honua.Db.Postgres.Features.Attachments;
 
 internal sealed partial class PostgresAttachmentStore
 {
+    private string CleanupRetriesTable => SchemaSearchPath.QualifyTable("attachment_cleanup_retries", _canonicalSchema);
+
+    private async Task ScheduleCleanupRetryAsync(NpgsqlConnection connection, string authority, string path)
+    {
+        await using var command = new NpgsqlCommand($"""
+            INSERT INTO {CleanupRetriesTable} (cleanup_authority, storage_path, next_attempt_at)
+            VALUES ($1, $2, clock_timestamp() + interval '5 minutes')
+            ON CONFLICT (cleanup_authority, storage_path) DO UPDATE SET next_attempt_at = EXCLUDED.next_attempt_at
+            """, connection);
+        command.Parameters.AddWithValue(authority);
+        command.Parameters.AddWithValue(path);
+        await command.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private async Task ClearCleanupRetryAsync(NpgsqlConnection connection, string authority, string path)
+    {
+        await using var command = new NpgsqlCommand($"DELETE FROM {CleanupRetriesTable} WHERE cleanup_authority = $1 AND storage_path = $2", connection);
+        command.Parameters.AddWithValue(authority);
+        command.Parameters.AddWithValue(path);
+        await command.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+    }
+
     internal async Task ExpireUploadSessionsAsync(AttachmentPublicationTransaction database, string sessions)
     {
         var (connection, transaction, cancellationToken) = database;
@@ -65,7 +87,13 @@ internal sealed partial class PostgresAttachmentStore
         await using (var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false))
         {
             var tables = await ResolveTablesAsync(connection, null, true, cancellationToken).ConfigureAwait(false);
-            await using var command = new NpgsqlCommand($"SELECT DISTINCT layer_id FROM {tables.Cleanup} ORDER BY layer_id LIMIT 100", connection);
+            await using var command = new NpgsqlCommand($"""
+                SELECT DISTINCT c.layer_id FROM {tables.Cleanup} c
+                LEFT JOIN {CleanupRetriesTable} r ON r.cleanup_authority = $1 AND r.storage_path = c.storage_path
+                WHERE r.next_attempt_at IS NULL OR r.next_attempt_at <= clock_timestamp()
+                ORDER BY c.layer_id LIMIT 100
+                """, connection);
+            command.Parameters.AddWithValue(tables.Cleanup);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
