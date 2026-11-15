@@ -4,9 +4,9 @@
 using System.Net;
 using Honua.Core.Features.Infrastructure.Validation;
 
-namespace Honua.Infrastructure.Monitoring;
+namespace Honua.Server.Features.Infrastructure.Configuration;
 
-internal static class OpsSelfCheckHttpHandler
+internal static class PublicHealthCheckHttpHandler
 {
     public static HttpMessageHandler Create()
     {

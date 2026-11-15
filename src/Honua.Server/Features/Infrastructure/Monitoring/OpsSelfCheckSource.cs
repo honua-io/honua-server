@@ -2,13 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
-using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Honua.Core.Features.Infrastructure.Validation;
+using Honua.Core.Features.Identity.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Configuration;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -56,63 +56,13 @@ internal sealed class OpsSelfCheckSource(
         {
             return false;
         }
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(RequestTimeout);
-        try
+        var configuration = new OidcProviderConfiguration
         {
-            var discovery = provider.Authority.TrimEnd('/') + "/.well-known/openid-configuration";
-            var validation = await OutboundHttpUrlValidator.ValidateAsync(discovery, timeout.Token).ConfigureAwait(false);
-            if (!validation.IsValid)
-            {
-                return false;
-            }
-            using var document = await ReadDocumentAsync(validation.Uri!, timeout.Token).ConfigureAwait(false);
-            return document is not null && document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("issuer", out var issuer)
-                && issuer.ValueKind == JsonValueKind.String
-                && IsExpectedIssuer(provider, issuer.GetString());
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return false;
-        }
-        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidOperationException or IOException or SocketException)
-        {
-            return false;
-        }
-    }
-
-    internal static bool IsExpectedIssuer(OidcProviderRegistration provider, string? issuer)
-    {
-        var authority = provider.Authority?.TrimEnd('/');
-        if (string.IsNullOrEmpty(authority) || string.IsNullOrEmpty(issuer))
-        {
-            return false;
-        }
-        if (string.Equals(issuer.TrimEnd('/'), authority, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        // Entra's tenant-independent discovery returns a template, not the configured alias.
-        // This only checks discovery health; token issuer validation remains with the OIDC handler.
-        if (provider.Type != "AzureAd" || !Uri.TryCreate(authority, UriKind.Absolute, out var uri))
-        {
-            return false;
-        }
-        var tenant = uri.AbsolutePath.Trim('/').Split('/');
-        if (tenant.Length != 2 || tenant[1] != "v2.0")
-        {
-            return false;
-        }
-        var expectedTenant = tenant[0] switch
-        {
-            "common" or "organizations" => "{tenantid}",
-            "consumers" => "9188040d-6c67-4c5b-b112-36a304b66dad",
-            _ => null
+            Name = provider.DisplayName, ProviderType = provider.Type, Authority = provider.Authority,
+            ClientId = provider.ClientId ?? string.Empty, Enabled = provider.Enabled
         };
-        return expectedTenant is not null && string.Equals(issuer.TrimEnd('/'),
-            uri.GetLeftPart(UriPartial.Authority) + "/" + expectedTenant + "/v2.0", StringComparison.Ordinal);
+        var result = await OidcProviderDiscoveryProbe.TestAsync(configuration, clients, cancellationToken).ConfigureAwait(false);
+        return result.IsReachable;
     }
 
     public async Task<OpsPublishedRelease?> ReadLatestReleaseAsync(CancellationToken cancellationToken)

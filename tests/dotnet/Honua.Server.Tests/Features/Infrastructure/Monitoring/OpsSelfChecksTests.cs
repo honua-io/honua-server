@@ -200,6 +200,38 @@ public sealed class OpsSelfChecksTests
         Assert.Equal(2, source.ProviderReads);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task FailedCollection_EvidenceStaysUnavailableUntilSuccessfulRetry()
+    {
+        var clock = new TestClock();
+        var source = new FakeSource { Providers = [new(Guid.NewGuid(), false)] };
+        using var checks = new OpsSelfChecks(clock, source);
+        var original = await checks.EvaluateWithEvidenceAsync();
+        var observed = original.Sources[0].ObservedAt;
+        Assert.Equal(OpsSelfChecks.IdentityProviderRule, Assert.Single(original.Findings).Rule);
+
+        source.ProviderFailure = new InvalidOperationException();
+        clock.Advance(TimeSpan.FromMinutes(5));
+        var failed = await checks.EvaluateWithEvidenceAsync();
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Unavailable, failed.Sources[0].Completeness);
+        Assert.False(EvidencePostureFactory.IsActionable(failed.Sources[0]));
+        Assert.Equal(observed, failed.Sources[0].ObservedAt);
+        Assert.Equal(observed, failed.Sources[0].LastSuccessfulAt);
+        Assert.Equal(OpsSelfChecks.CollectionRule, Assert.Single(failed.Findings).Rule);
+
+        source.ProviderFailure = null;
+        source.Providers = [];
+        clock.Advance(TimeSpan.FromMinutes(4));
+        Assert.Equal(failed.Sources, (await checks.EvaluateWithEvidenceAsync()).Sources);
+        Assert.Equal(2, source.ProviderReads);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        var recovered = await checks.EvaluateWithEvidenceAsync();
+        Assert.Empty(recovered.Findings);
+        Assert.True(EvidencePostureFactory.IsActionable(recovered.Sources[0]));
+        Assert.Equal(clock.Now, recovered.Sources[0].ObservedAt);
+    }
+
     private static readonly Uri ReleaseNotes = new("https://github.com/honua-io/honua-server/releases/tag/v2026.2");
 
     private sealed class TestClock : TimeProvider

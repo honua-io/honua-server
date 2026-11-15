@@ -14,7 +14,7 @@ internal static class OpsSelfCheckRegistration
     public static void AddOpsSelfChecks(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddHttpClient(OpsSelfCheckSource.HttpClientName)
-            .ConfigurePrimaryHttpMessageHandler(OpsSelfCheckHttpHandler.Create);
+            .ConfigurePrimaryHttpMessageHandler(PublicHealthCheckHttpHandler.Create);
         services.AddSingleton(sp => new OpsSelfCheckEnvironment(
             sp.GetService<OpsKeyRingCertificateLifetime>()?.ExpiresAt,
             OpsSelfCheckEnvironment.ReadVersion()));

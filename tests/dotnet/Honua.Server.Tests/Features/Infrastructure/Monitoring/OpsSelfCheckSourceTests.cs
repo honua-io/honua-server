@@ -4,8 +4,10 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Identity.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -47,6 +49,56 @@ public sealed class OpsSelfCheckSourceTests
     }
 
     [UnitTheory]
+    [InlineData("{\"issuer\":\"https://8.8.8.8\"}", true)]
+    [InlineData("{\"issuer\":\"https://other.example\"}", false)]
+    [InlineData("{}", false)]
+    [InlineData("[]", false)]
+    [InlineData("invalid", false)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task AdminAndScheduledDiscovery_UseTheSameHealthContract(string body, bool expected)
+    {
+        var factory = new FakeClients(body);
+        var provider = new OidcProviderConfiguration
+        {
+            Name = "Test", ProviderType = "Generic", Authority = "https://8.8.8.8", ClientId = "client"
+        };
+        var admin = await OidcProviderDiscoveryProbe.TestAsync(provider, factory, default);
+        var scheduled = Assert.Single(await Create(factory, [Provider(provider.Authority)]).ReadIdentityProvidersAsync(default));
+        Assert.Equal(expected, admin.IsReachable);
+        Assert.Equal(admin.IsReachable, scheduled.IsReachable);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task AdminAndScheduledDiscovery_OversizedDocument_FailsClosed()
+    {
+        var factory = new FakeClients(new string(' ', OpsSelfCheckSource.MaximumResponseBytes + 1));
+        var provider = new OidcProviderConfiguration
+        {
+            Name = "Test", ProviderType = "Generic", Authority = "https://8.8.8.8", ClientId = "client"
+        };
+        Assert.False((await OidcProviderDiscoveryProbe.TestAsync(provider, factory, default)).IsReachable);
+        Assert.False(Assert.Single(await Create(factory, [Provider(provider.Authority)]).ReadIdentityProvidersAsync(default)).IsReachable);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task AdminAndScheduledDiscovery_CallerCancelled_PropagatesCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var factory = new FakeClients("{}");
+        var provider = new OidcProviderConfiguration
+        {
+            Name = "Test", ProviderType = "Generic", Authority = "https://8.8.8.8", ClientId = "client"
+        };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            OidcProviderDiscoveryProbe.TestAsync(provider, factory, cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Create(factory, [Provider(provider.Authority)]).ReadIdentityProvidersAsync(cancellation.Token));
+    }
+
+    [UnitTheory]
     [InlineData("AzureAd", "https://login.microsoftonline.com/common/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", true)]
     [InlineData("AzureAd", "https://login.microsoftonline.com/organizations/v2.0", "https://login.microsoftonline.com/{tenantid}/v2.0", true)]
     [InlineData("AzureAd", "https://login.microsoftonline.com/consumers/v2.0", "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0", true)]
@@ -63,7 +115,7 @@ public sealed class OpsSelfCheckSourceTests
     public void DiscoveryIssuer_RecognizesEntraAliasesAndPreservesStrictGenericMatching(
         string type, string authority, string? issuer, bool expected)
     {
-        Assert.Equal(expected, OpsSelfCheckSource.IsExpectedIssuer(Provider(authority) with { Type = type }, issuer));
+        Assert.Equal(expected, OidcProviderDiscoveryProbe.IsExpectedIssuer(authority, type, issuer));
     }
 
     [UnitTest]
@@ -136,7 +188,7 @@ public sealed class OpsSelfCheckSourceTests
     [Operation(Operations.TestInfrastructure)]
     public void Handler_Defaults_RejectRedirectsCookiesAndProxy()
     {
-        using var handler = Assert.IsType<SocketsHttpHandler>(OpsSelfCheckHttpHandler.Create());
+        using var handler = Assert.IsType<SocketsHttpHandler>(PublicHealthCheckHttpHandler.Create());
         Assert.False(handler.AllowAutoRedirect);
         Assert.False(handler.UseCookies);
         Assert.False(handler.UseProxy);

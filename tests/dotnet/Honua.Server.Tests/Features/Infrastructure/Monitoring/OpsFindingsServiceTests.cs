@@ -56,6 +56,30 @@ public sealed partial class OpsFindingsServiceTests
         Assert.Null(finding.RecommendedAction);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_FailedSelfCheckCollection_PublishesIncompleteEvidence()
+    {
+        var source = Substitute.For<IOpsSelfCheckSource>();
+        source.CurrentVersion.Returns("2026.1");
+        source.ReadIdentityProvidersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<IReadOnlyList<OpsIdentityProviderHealth>>(new InvalidOperationException()));
+        source.ReadLatestReleaseAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<OpsPublishedRelease?>(null));
+        var service = new OpsFindingsService(
+            new StaticOptionsMonitor<OpsFindingsOptions>(new()),
+            new StaticOptionsMonitor<ControlPlaneOptions>(new()),
+            new FakeAlertDispatchHealth(), new FakeDeployPreflightProbe(BuildDeploySnapshot()),
+            extendedSignals: new OpsFindingsExtendedSignals { SelfChecks = new(TimeProvider.System, source) });
+
+        var evaluation = await service.EvaluateWithEvidenceAsync();
+
+        Assert.Contains(evaluation.Findings, finding => finding.Rule == OpsSelfChecks.CollectionRule);
+        Assert.Contains(evaluation.Posture.Sources, item =>
+            item.BackendKind != EvidencePostureVocabulary.BackendKinds.Composite
+            && !EvidencePostureFactory.IsActionable(item)
+            && item.SourceId.Contains("self-check", StringComparison.Ordinal));
+    }
+
     [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]

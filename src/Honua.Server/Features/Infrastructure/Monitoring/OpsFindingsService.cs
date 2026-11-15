@@ -130,9 +130,11 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
         await EvaluateDeployManualInterventionAsync(now, findings, workflowCollection, cancellationToken).ConfigureAwait(false);
         var rollupDegraded = await EvaluateServingLatencySloAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
         await EvaluatePlatformReleaseRuntimeDivergenceAsync(now, findings, workflowCollection, managedTargets, cancellationToken).ConfigureAwait(false);
-        if (_selfChecks is not null)
+        var selfCheckEvaluation = _selfChecks is null ? null
+            : await _selfChecks.EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
+        if (selfCheckEvaluation is not null)
         {
-            findings.AddRange(await _selfChecks.EvaluateAsync(cancellationToken).ConfigureAwait(false));
+            findings.AddRange(selfCheckEvaluation.Findings);
         }
         var catalogSource = await EvaluateCatalogRollbacksAsync(findings, cancellationToken).ConfigureAwait(false);
         var workflowSource = workflowCollection?.Publish(_collectionLedger, SignalValidity)
@@ -142,13 +144,23 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 WorkflowOperationStoreBackendId);
 
         var storeSources = new List<EvidenceSourceEnvelope> { workflowSource, catalogSource };
+        if (selfCheckEvaluation is not null)
+        {
+            storeSources.AddRange(selfCheckEvaluation.Sources);
+        }
         var externalSource = await EvaluateExternalEventsAsync(now, findings, cancellationToken).ConfigureAwait(false);
         if (externalSource is not null)
         {
             storeSources.Add(externalSource);
         }
 
-        return new OpsFindingsEvaluation
+        return CreateEvaluation(now, findings,
+            BuildEvidencePosture(now, options, rollupDegraded, alertSource, storeSources, managedTargets));
+    }
+
+    private static OpsFindingsEvaluation CreateEvaluation(
+        DateTimeOffset now, IReadOnlyList<OpsFinding> findings, EvidencePosture posture)
+        => new()
         {
             EvaluatedAt = now,
             // Most urgent first; stable ordering by rule then id keeps output deterministic.
@@ -157,9 +169,8 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 .ThenBy(f => f.Rule, StringComparer.Ordinal)
                 .ThenBy(f => f.Id, StringComparer.Ordinal)
                 .ToList(),
-            Posture = BuildEvidencePosture(now, options, rollupDegraded, alertSource, storeSources, managedTargets),
+            Posture = posture,
         };
-    }
 
     private EvidencePosture BuildEvidencePosture(
         DateTimeOffset now,

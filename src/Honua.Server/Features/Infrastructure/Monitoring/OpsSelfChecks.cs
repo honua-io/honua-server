@@ -1,9 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Data.Common;
-using System.Net.Sockets;
-using System.Text.Json;
 using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
@@ -23,6 +20,8 @@ internal sealed record OpsIdentityProviderHealth(Guid ProviderId, bool IsReachab
 
 internal sealed record OpsPublishedRelease(string Version, Uri ReleaseNotes);
 
+internal sealed record OpsSelfCheckEvaluation(IReadOnlyList<OpsFinding> Findings, IReadOnlyList<EvidenceSourceEnvelope> Sources);
+
 internal sealed class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource source) : IDisposable
 {
     internal const string CertificateRule = "key-ring-certificate-expiry";
@@ -36,10 +35,14 @@ internal sealed class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource sour
     // public release feed is sampled daily. Certificate lifetime is immutable and evaluated fresh.
     private DateTimeOffset? _providersReadAt;
     private DateTimeOffset? _releaseReadAt;
-    private IReadOnlyList<OpsFinding> _providerFindings = [];
-    private IReadOnlyList<OpsFinding> _releaseFindings = [];
+    private readonly OpsFindingsCollectionLedger _ledger = new();
+    private OpsSelfCheckEvaluation _providerSample = new([], []);
+    private OpsSelfCheckEvaluation _releaseSample = new([], []);
 
     public async Task<IReadOnlyList<OpsFinding>> EvaluateAsync(CancellationToken cancellationToken = default)
+        => (await EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false)).Findings;
+
+    public async Task<OpsSelfCheckEvaluation> EvaluateWithEvidenceAsync(CancellationToken cancellationToken = default)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -47,17 +50,17 @@ internal sealed class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource sour
             var now = clock.GetUtcNow();
             if (_providersReadAt is null || now - _providersReadAt >= TimeSpan.FromMinutes(5))
             {
-                _providerFindings = await CollectAsync(new(ReadProvidersAsync, "sign-in-providers", now), cancellationToken).ConfigureAwait(false);
+                _providerSample = await CollectAsync(new(ReadProvidersAsync, "sign-in-providers", TimeSpan.FromMinutes(5)), now, cancellationToken).ConfigureAwait(false);
                 _providersReadAt = now;
             }
             if (_releaseReadAt is null || now - _releaseReadAt >= TimeSpan.FromDays(1))
             {
-                _releaseFindings = await CollectAsync(new(ReadReleaseAsync, "public-release-feed", now), cancellationToken).ConfigureAwait(false);
+                _releaseSample = await CollectAsync(new(ReadReleaseAsync, "public-release-feed", TimeSpan.FromDays(1)), now, cancellationToken).ConfigureAwait(false);
                 _releaseReadAt = now;
             }
-            var findings = new List<OpsFinding>(_providerFindings.Concat(_releaseFindings));
+            var findings = new List<OpsFinding>(_providerSample.Findings.Concat(_releaseSample.Findings));
             AddCertificateFinding(now, findings);
-            return findings;
+            return new(findings, [.. _providerSample.Sources, .. _releaseSample.Sources]);
         }
         finally
         {
@@ -67,19 +70,17 @@ internal sealed class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource sour
 
     public void Dispose() => _gate.Dispose();
 
-    private static async Task<IReadOnlyList<OpsFinding>> CollectAsync(
-        CollectionRequest request, CancellationToken cancellationToken)
+    private async Task<OpsSelfCheckEvaluation> CollectAsync(CollectionRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        try
-        {
-            return await request.Read(request.Now, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidOperationException or IOException or SocketException or DbException)
-        {
-            return [CreateFinding(new(CollectionRule, new() { WorkloadId = request.Component }, request.Now),
+        var collection = new OpsFindingsStoreCollection("honua_ops_findings.self-check." + request.Component,
+            EvidencePostureVocabulary.BackendKinds.InProcess, request.Component, clock);
+        var result = await collection.ReadAsync(request.Component,
+            token => request.Read(now, token), cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<OpsFinding> findings = result.Succeeded ? result.Value!
+            : [CreateFinding(new(CollectionRule, new() { WorkloadId = request.Component }, now),
                 new(OpsFindingSeverity.Warning, "A scheduled health check could not finish",
                 "Check the configuration store and server's outbound connectivity. This check will retry on its next scheduled run."))];
-        }
+        return new(findings, [collection.Publish(_ledger, request.MaximumAge)]);
     }
 
     private void AddCertificateFinding(DateTimeOffset now, List<OpsFinding> findings)
@@ -121,7 +122,7 @@ internal sealed class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource sour
 
     private sealed record CollectionRequest(
         Func<DateTimeOffset, CancellationToken, Task<IReadOnlyList<OpsFinding>>> Read,
-        string Component, DateTimeOffset Now);
+        string Component, TimeSpan MaximumAge);
 
     private sealed record FindingIdentity(string Rule, OpsFindingSubject Subject, DateTimeOffset Now);
     private sealed record FindingMessage(OpsFindingSeverity Severity, string Title, string Explanation);
