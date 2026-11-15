@@ -27,7 +27,7 @@ internal static class AnalyticsFeatureQueryFactory
     public static async Task<(FeatureQuery? Query, IResult? Error)> TryBuildAsync(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -60,7 +60,7 @@ internal static class AnalyticsFeatureQueryFactory
 
     internal static async Task<LayerSelectionTranslation> TranslateAsync(
         LayerSelectionFilter selection,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int spatialReferenceSrid,
         IServiceProvider services,
         CancellationToken cancellationToken)
@@ -210,7 +210,7 @@ internal static class AnalyticsFeatureQueryFactory
 
     public static ImmutableArray<StatisticDefinition>? ApplyStatisticFieldTypes(
         ImmutableArray<StatisticDefinition>? outStatistics,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         if (!outStatistics.HasValue || outStatistics.Value.IsDefaultOrEmpty)
@@ -232,7 +232,7 @@ internal static class AnalyticsFeatureQueryFactory
         return builder.ToImmutable();
     }
 
-    private static bool TryResolveFieldType(MetadataV2Resource resource, string fieldName, out MetadataV2FieldType fieldType)
+    private static bool TryResolveFieldType(MetadataV2Object resource, string fieldName, out MetadataV2FieldType fieldType)
     {
         var objectIdField = resource.FindPrimaryIdField();
         if (string.Equals(fieldName, objectIdField?.Name, StringComparison.OrdinalIgnoreCase) ||

@@ -35,7 +35,7 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
 
         _fixture.UpdateV2ResourceMetadata(
             TestLayerId,
-            temporal: new MetadataV2ResourceTemporal
+            temporal: new MetadataV2ObjectTemporal
             {
                 StartTimeField = "timestamp",
                 EndTimeField = "event_date",

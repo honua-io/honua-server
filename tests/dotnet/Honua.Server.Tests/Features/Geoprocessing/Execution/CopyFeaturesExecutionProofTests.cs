@@ -32,11 +32,11 @@ public sealed partial class CopyFeaturesExecutionProofTests : IAsyncLifetime
     private readonly WebAppFixture _fixture;
     private readonly IFieldMaskSource _masks = Substitute.For<IFieldMaskSource>();
     private int _sourceId;
-    private MetadataV2Resource _sourceResource = null!;
+    private MetadataV2Object _sourceResource = null!;
 
     public CopyFeaturesExecutionProofTests()
     {
-        _masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>()).Returns(ImmutableArray<string>.Empty);
+        _masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>()).Returns(ImmutableArray<string>.Empty);
         _fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(_masks));
     }
 

@@ -116,17 +116,17 @@ public sealed class Issue5635CacheResilienceTests
         Visibility = visibility,
     };
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Publication Publication, MetadataV2Resource Resource) CreateDivergentLayer()
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Layer Publication, MetadataV2Object Resource) CreateDivergentLayer()
     {
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-maps", Name = "Maps" },
             SpatialReference = MetadataV2SpatialReference.Wgs84,
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-roads", Name = "roads" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-roads"],
         };
         var binding = new MetadataV2StorageBinding
@@ -138,14 +138,14 @@ public sealed class Issue5635CacheResilienceTests
             Locator = "public.roads",
             StorageLayerId = 41,
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-roads", Name = "roads" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = binding.Metadata.Id,
             LayerIndex = 7,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+            Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
         };
         var graph = new MetadataV2Graph
         {

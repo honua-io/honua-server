@@ -88,36 +88,6 @@ public static partial class Extensions
     ];
 
     /// <summary>
-    /// Adds the standard Honua service defaults for telemetry, health checks, and service discovery.
-    /// </summary>
-    /// <param name="builder">The application builder being configured.</param>
-    /// <returns>The application builder for chaining.</returns>
-    [RequiresUnreferencedCode("Calls AddAdaptiveSampling which binds configuration via Configure<TOptions>(IConfiguration).")]
-    public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
-    {
-        // Adaptive sampling configuration
-        builder.AddAdaptiveSampling();
-
-        // OpenTelemetry (traces, metrics, logs)
-        builder.ConfigureOpenTelemetry();
-
-        // Performance monitoring
-        builder.AddPerformanceMonitoring();
-
-        // Health checks
-        builder.AddDefaultHealthChecks();
-
-        // Service discovery
-        builder.Services.AddServiceDiscovery();
-        builder.Services.ConfigureHttpClientDefaults(http =>
-        {
-            http.AddServiceDiscovery();
-        });
-
-        return builder;
-    }
-
-    /// <summary>
     /// Adds the standard telemetry defaults without applying the full service-default stack.
     /// </summary>
     /// <param name="builder">The application builder being configured.</param>
@@ -756,7 +726,7 @@ public static partial class Extensions
     /// <returns>The web application for chaining.</returns>
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
-        // Map health endpoints for Aspire dashboard
+        // Map development health endpoints
         if (app.Environment.IsDevelopment())
         {
             app.MapHealthChecks("/healthz");
