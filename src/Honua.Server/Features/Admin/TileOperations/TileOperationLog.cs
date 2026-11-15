@@ -45,4 +45,7 @@ internal static partial class TileOperationLog
 
     [LoggerMessage(EventId = 9220, Level = LogLevel.Warning, Message = "Failed to delete the completed tile-cache generation checkpoint for generation {GenerationId}; it will self-expire.")]
     public static partial void CheckpointDeleteFailed(ILogger logger, string generationId, Exception exception);
+
+    [LoggerMessage(EventId = 9221, Level = LogLevel.Information, Message = "Paired publish job {JobId} activated version {Version} of publication {PublicationId}.")]
+    public static partial void PairedPublishActivated(ILogger logger, string jobId, string publicationId, string version);
 }

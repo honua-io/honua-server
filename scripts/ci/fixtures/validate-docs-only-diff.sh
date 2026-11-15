@@ -344,7 +344,10 @@ FORMAT_GATED = (
 )
 for name in ("Setup .NET", "Restore", "Format Check"):
     block = fmt.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
-    if FORMAT_GATED not in block:
+    expected = FORMAT_GATED
+    if name == "Restore":
+        expected = "if: matrix.format == 'true' && " + FORMAT_GATED.removeprefix("if: ")
+    if expected not in block:
         problems.append(f"format step {name} must obey draft admission and both diff verdicts")
 for name in ("Setup .NET", "Plan server test producer", "Build server test producer", "Publish selected server test outputs"):
     block = server.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]

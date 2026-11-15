@@ -29,7 +29,8 @@ internal static class AdminLiveEndpoints
             .Produces(StatusCodes.Status401Unauthorized)
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .AddEndpointFilter<LiveStreamAuthorizationFilter>()
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
     private static Task HandleAsync(HttpContext context, AdminLiveStream stream) => stream.HandleAsync(context);
 }
