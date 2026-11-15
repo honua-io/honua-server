@@ -500,7 +500,7 @@ EOF
 # Function to show monitoring URLs
 show_monitoring_urls() {
     log_info "Monitoring URLs (if --monitoring flag was used):"
-    echo "  Redis Insight:  http://localhost:8001"
+    echo "  Insight:        http://127.0.0.1:${HONUA_SCALE_TEST_INSIGHT_PORT:-8001}"
     echo "  Prometheus:     http://127.0.0.1:${HONUA_SCALE_TEST_PROMETHEUS_PORT:-9090}"
     echo "  Grafana:        http://127.0.0.1:${HONUA_SCALE_TEST_GRAFANA_PORT:-3000} (admin/admin)"
     echo ""
