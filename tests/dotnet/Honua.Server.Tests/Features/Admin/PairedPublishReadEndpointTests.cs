@@ -47,6 +47,42 @@ public sealed partial class PairedPublishEndpointTests
     }
 
     [IntegrationTheory]
+    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
+    [Endpoint("HEAD /api/v1/publications/{publicationId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("HEAD /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [InlineData("GET")]
+    [InlineData("HEAD")]
+    public async Task PublicationRead_ImplicitObjectId_RemainsReadableUntilExplicitlyHidden(string method)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resource = snapshot.Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId];
+        var objectId = resource.FindPrimaryIdField()!;
+        _fixture.RestoreV2ResourceSchemaFields(WebAppFixture.TestLayerId,
+            resource.SchemaFields.Where(field => field.Name != objectId.Name).ToArray());
+        var published = await PublishAsync(IdentityField);
+        var descriptor = await ReadJsonAsync<PublicationDescriptor>(published.DescriptorKey);
+        descriptor.Artifacts.Pmtiles.Fields.Should().Contain("objectid");
+        descriptor.Artifacts.Geoparquet.Fields.Should().Contain("objectid");
+        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+        client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
+            using var response = await client.SendAsync(request);
+            response.StatusCode.Should().Be(suffix == "current.json" ? HttpStatusCode.TemporaryRedirect : HttpStatusCode.OK);
+        }
+
+        _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId, objectId with { Hidden = true });
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
+            using var response = await client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
+
+    [IntegrationTheory]
     [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
     [Endpoint("HEAD /api/v1/publications/{publicationId}/{version}/{fileName}")]
     [InlineData("pmtiles")]

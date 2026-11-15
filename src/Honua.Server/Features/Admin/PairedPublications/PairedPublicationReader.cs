@@ -7,6 +7,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Microsoft.Extensions.Options;
 
@@ -99,12 +100,20 @@ internal sealed class PairedPublicationReader(
         }
 
         var fields = descriptor.Artifacts.Pmtiles.Fields.Concat(descriptor.Artifacts.Geoparquet.Fields);
-        if (fields.Any(name => !source.Resource.SchemaFields.Any(field =>
-            !field.Hidden && string.Equals(field.Name, name, StringComparison.OrdinalIgnoreCase))))
+        if (fields.Any(name => !IsPublicField(source.Resource, name)))
         {
             return null;
         }
         return new(store, descriptor, source, snapshot);
+    }
+
+    private static bool IsPublicField(MetadataV2Object resource, string name)
+    {
+        var field = resource.SchemaFields.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
+        // The publisher and GeoParquet writer synthesize this column when the schema has no id.
+        return field is not null ? !field.Hidden :
+            resource.FindPrimaryIdField() is null && string.Equals(name, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
     }
 
     internal Task<CloudFile?> GetFileAsync(PairedPublicationReadTarget target, string fileName, CancellationToken cancellationToken)
