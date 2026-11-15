@@ -152,7 +152,7 @@ internal static partial class GrpcTypedValues
 
     // Metadata has no offset-preserving timestamp or exact decimal type. Refuse these
     // values before writes rather than coerce them to a UTC instant, binary float or text.
-    public static void EnsureStorable(MetadataV2Resource resource, FeatureEditBatch batch)
+    public static void EnsureStorable(MetadataV2Object resource, FeatureEditBatch batch)
     {
         var creates = batch.Creates.IsDefault ? ImmutableArray<Feature>.Empty : batch.Creates;
         var updates = batch.Updates.IsDefault ? ImmutableArray<Feature>.Empty : batch.Updates;
