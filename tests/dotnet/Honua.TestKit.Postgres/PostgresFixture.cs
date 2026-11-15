@@ -18,16 +18,17 @@ namespace Honua.TestKit;
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
 {
-    // The state object is process-wide and every mutation is serialized by _sharedLock.
+    // Fixtures share process-wide state by default; _sharedLock serializes lifecycle mutations.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
-    private static readonly PostgresSharedState SharedState = new();
+    private static readonly PostgresSharedState GlobalSharedState = new();
+    private readonly PostgresSharedState SharedState;
     private static readonly string[] SharedStoreMigrations =
         ["031_CreateMetadataV2Snapshot.sql", "113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql",
             "141_CreateImportedDatasetSpatialMetadata.sql", "147_CreateJobSubstrate.sql",
             "148_CreateControlPlaneState.sql", "149_CreateSecurityState.sql",
-            "150_CreateOAuthClientsAndOperationProgress.sql", "154_CreatePackageDraftsAndMcpSessions.sql",
-            "156_CreateConfigurationDocuments.sql", "158_CreateRealtimeEventLog.sql",
-            "161_CreateOpsNotificationSchedules.sql",
+            "150_CreateOAuthClientsAndOperationProgress.sql", "153_CreateVersionJobsAndTileGenerationCheckpoints.sql",
+            "154_CreatePackageDraftsAndMcpSessions.sql", "156_CreateConfigurationDocuments.sql",
+            "158_CreateRealtimeEventLog.sql", "161_CreateOpsNotificationSchedules.sql",
             "166_CreateSourceWatermarks.sql", "167_CreateWorkflowStores.sql", "192_CreateWfsStoredQueries.sql"];
 
     // Upload tests run with HONUA_SKIP_MIGRATIONS and a seed that mirrors older import
@@ -35,14 +36,36 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
     private static readonly string[] SharedImportFunctionMigrations =
         ["070_AddImportLoadModes.sql", "143_PromoteImportTypedColumns.sql"];
 
-    private sealed class PostgresSharedState
+    internal sealed class PostgresSharedState
     {
-        public PostgreSqlContainer? SharedContainer { get; set; }
+        public IAsyncDisposable? SharedContainer { get; set; }
         public NpgsqlDataSource? SharedDataSource { get; set; }
         public string? SharedConnectionString { get; set; }
         public int SharedRefCount { get; set; }
         public bool SharedInitialized { get; set; }
         public bool BoundedResources { get; set; }
+
+        internal async Task ResetAsync()
+        {
+            var dataSource = SharedDataSource;
+            var container = SharedContainer;
+            SharedDataSource = null;
+            SharedContainer = null;
+            SharedConnectionString = null;
+            SharedInitialized = false;
+            BoundedResources = false;
+
+            try
+            {
+                if (dataSource is not null)
+                    await dataSource.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                if (container is not null)
+                    await container.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
     private const string ExternalConnectionStringEnv = "HONUA_TEST_DB_URL";
     private const string SeedPathEnv = "HONUA_TEST_DB_SEED_PATH";
@@ -59,9 +82,10 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
     }
 
     /// <summary>Optionally bounds the owned Postgres container for local component tests.</summary>
-    internal PostgresFixture(bool boundedResources)
+    internal PostgresFixture(bool boundedResources, PostgresSharedState? sharedState = null)
     {
         _boundedResources = boundedResources;
+        SharedState = sharedState ?? GlobalSharedState;
     }
 
     public string ConnectionString => _connectionString ?? throw new InvalidOperationException("Postgres fixture not initialized.");
@@ -102,10 +126,11 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
                                 parameters.HostConfig.PidsLimit = 256;
                             });
                         }
-                        SharedState.SharedContainer = containerBuilder.Build();
+                        var container = containerBuilder.Build();
+                        SharedState.SharedContainer = container;
                         SharedState.BoundedResources = _boundedResources;
-                        await SharedState.SharedContainer.StartAsync();
-                        var publishedConnectionString = SharedState.SharedContainer.GetConnectionString();
+                        await container.StartAsync();
+                        var publishedConnectionString = container.GetConnectionString();
                         SharedState.SharedConnectionString = publishedConnectionString;
                         await PostgresEndpointProbe.WaitUntilAcceptingAsync(publishedConnectionString).ConfigureAwait(false);
                     }
@@ -821,24 +846,7 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
             lastTransient);
     }
 
-    private static async Task ResetSharedStateAsync()
-    {
-        if (SharedState.SharedDataSource is not null)
-        {
-            await SharedState.SharedDataSource.DisposeAsync().ConfigureAwait(false);
-        }
-
-        if (SharedState.SharedContainer is not null)
-        {
-            await SharedState.SharedContainer.DisposeAsync().ConfigureAwait(false);
-        }
-
-        SharedState.SharedDataSource = null;
-        SharedState.SharedContainer = null;
-        SharedState.SharedConnectionString = null;
-        SharedState.SharedInitialized = false;
-        SharedState.BoundedResources = false;
-    }
+    private Task ResetSharedStateAsync() => SharedState.ResetAsync();
 
     private static bool IsTransientInitializationFailure(Exception ex)
     {
