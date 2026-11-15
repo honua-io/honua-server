@@ -41,6 +41,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             scripts/ci/full-ci-dispatch.py
+            scripts/ci/gh_api.py
             scripts/ci/full-ci-dispatch.test.py
             .github/workflows/full-ci-dispatch.yml
             .github/workflows/ci.yml

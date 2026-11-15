@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Dispatch the full ci.yml matrix on trunk inside the overnight window when the crons did not.
 
-GitHub delivers this repository's `schedule` events hours late: in November 2026 the
-21:23 UTC full-CI cron fired 3.7-4.6 h late and the 09:23 UTC one 6.5-8 h late, and the
-half-hourly watchdog fired every 4-7 h. A late full run lands in the 07:00-22:00 Pacific
+GitHub delivers this repository's `schedule` events hours late. A late full run lands in the 07:00-22:00 Pacific
 daytime window, where it is cancelled to free heavy runners, so trunk never certifies and
 the nightly container build has no candidate to image.
 
@@ -24,15 +22,19 @@ import argparse
 import datetime as dt
 import json
 import os
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from typing import Callable
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
+
+import gh_api
 
 FULL_EVENTS = frozenset({"schedule", "workflow_dispatch"})
 FULL_TITLE_PREFIX = "CI full"
+# Lifecycle order: a run that advances between two listings is still caught by a later one.
+ACTIVE_STATUSES = ("requested", "waiting", "pending", "queued", "in_progress")
 PACIFIC = ZoneInfo("America/Los_Angeles")
 
 
@@ -70,7 +72,7 @@ class Snapshot:
 def decide(snapshot: Snapshot, policy: Policy = Policy()) -> tuple[bool, str]:
     """(dispatch, reason) for one trunk push or backup tick."""
     local = snapshot.now.astimezone(policy.zone)
-    if policy.last_dispatch_hour <= local.hour < policy.window_start_hour:
+    if not in_window(local, policy):
         return False, (f"outside the {policy.window_start_hour:02d}:00-{policy.last_dispatch_hour:02d}:00 "
                        f"{local:%Z} dispatch window ({local:%H:%M} {local:%Z})")
     full = [run for run in snapshot.runs if is_full_run(run, policy.branch)]
@@ -91,33 +93,18 @@ def decide(snapshot: Snapshot, policy: Policy = Policy()) -> tuple[bool, str]:
     return True, f"no full run is active and trunk head {head[:12]} has no full result"
 
 
+def in_window(local: dt.datetime, policy: Policy) -> bool:
+    return not policy.last_dispatch_hour <= local.hour < policy.window_start_hour
+
+
 def night_start(local: dt.datetime, policy: Policy) -> dt.datetime:
     day = local.date() if local.hour >= policy.window_start_hour else local.date() - dt.timedelta(days=1)
     return dt.datetime.combine(day, dt.time(policy.window_start_hour), tzinfo=policy.zone)
 
 
-def gh_once(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess:
-    env = dict(os.environ, NO_COLOR="1", GH_FORCE_TTY="0")
-    return subprocess.run(["gh", "api", *args], input=stdin, capture_output=True, text=True, env=env)
-
-
-def failure_detail(result: subprocess.CompletedProcess) -> str:
-    return " ".join((result.stderr or "").split())
-
-
 def gh_json(path: str) -> dict:
     """GET with backoff on transient failures; a persistent refusal raises."""
-    delays = (10, 30, 60)
-    for attempt in range(len(delays) + 1):
-        result = gh_once([path])
-        if result.returncode == 0:
-            return json.loads(result.stdout)
-        detail = failure_detail(result)
-        if attempt == len(delays) or "HTTP 404" in detail or "HTTP 422" in detail:
-            raise DispatchError(f"gh api {path} failed: {detail}")
-        print(f"::warning::gh api {path} failed ({detail}); retrying in {delays[attempt]}s", file=sys.stderr)
-        time.sleep(delays[attempt])
-    raise AssertionError("unreachable")
+    return gh_api.get_json(path, DispatchError)
 
 
 @dataclass(frozen=True)
@@ -127,25 +114,56 @@ class Target:
     branch: str
 
 
-def list_runs(fetch: Callable[[str], dict], target: Target) -> list[dict]:
-    path = f"repos/{target.repository}/actions/workflows/{target.workflow}/runs?branch={target.branch}&per_page=50"
-    return list(fetch(path).get("workflow_runs", []))
+class RunHistory:
+    """Filtered, fully paged ci.yml run listings on the target branch."""
+
+    def __init__(self, fetch: Callable[[str], dict], target: Target) -> None:
+        self.listing = gh_api.Listing(fetch, DispatchError)
+        self.target = target
+
+    def runs(self, **filters: str) -> list[dict]:
+        query = urlencode({"branch": self.target.branch, **filters})
+        path = f"repos/{self.target.repository}/actions/workflows/{self.target.workflow}/runs?{query}"
+        return list(self.listing.pages(path, "workflow_runs"))
+
+    def active(self) -> list[dict]:
+        return [run for status in ACTIVE_STATUSES for run in self.runs(status=status)]
+
+    def collect(self, head: str, since: dt.datetime) -> list[dict]:
+        """The runs decide() reads: active ones, tonight's and those at trunk head.
+
+        Each comes from its own filtered, fully paged listing, so affected runs dispatched by trunk
+        pushes cannot push an active or counted full run off an unfiltered first page.
+        """
+        created = f">={since.astimezone(dt.timezone.utc):%Y-%m-%dT%H:%M:%SZ}"
+        runs = self.active() + self.runs(created=created) + self.runs(head_sha=head)
+        return list({run.get("id"): run for run in runs}.values())
 
 
 def dispatch_once(target: Target) -> None:
     """POST the dispatch exactly once: a retry GitHub had already accepted would queue a second full run."""
-    result = gh_once([f"repos/{target.repository}/actions/workflows/{target.workflow}/dispatches",
+    result = gh_api.gh_api([f"repos/{target.repository}/actions/workflows/{target.workflow}/dispatches",
                       "--method", "POST", "--input", "-"], json.dumps({"ref": target.branch}))
     if result.returncode != 0:
-        raise DispatchError(f"dispatch of {target.workflow} failed: {failure_detail(result)}")
+        raise DispatchError(f"dispatch of {target.workflow} failed: {gh_api.failure_detail(result)}")
+
+
+def gh_json_once(path: str) -> dict:
+    """GET without backoff, so polling after the dispatch stays inside the job timeout."""
+    return gh_api.get_json(path, DispatchError, delays=())
 
 
 def wait_for_new_run(target: Target, known: set) -> dict | None:
     """Wait for the run to appear so the next serialized dispatcher sees it as active."""
+    history = RunHistory(gh_json_once, target)
     for _ in range(36):
         time.sleep(5)
-        new = [run for run in list_runs(gh_json, target)
-               if run.get("id") not in known and is_full_run(run, target.branch)]
+        try:
+            new = [run for run in history.active()
+                   if run.get("id") not in known and is_full_run(run, target.branch)]
+        except DispatchError as exc:
+            print(f"::warning::listing after dispatch failed ({exc}); polling again", file=sys.stderr)
+            continue
         if new:
             return new[0]
     return None
@@ -160,9 +178,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     target = Target(args.repository, args.workflow, args.branch)
-    head = gh_json(f"repos/{target.repository}/commits/{target.branch}")["sha"]
-    runs = list_runs(gh_json, target)
-    dispatch, reason = decide(Snapshot(dt.datetime.now(dt.timezone.utc), runs, head), Policy(branch=target.branch))
+    policy = Policy(branch=target.branch)
+    now = dt.datetime.now(dt.timezone.utc)
+    local = now.astimezone(policy.zone)
+    head, runs = "", []
+    if in_window(local, policy):
+        head = gh_json(f"repos/{target.repository}/commits/{target.branch}")["sha"]
+        runs = RunHistory(gh_json, target).collect(head, night_start(local, policy))
+    dispatch, reason = decide(Snapshot(now, runs, head), policy)
     if not dispatch:
         print(f"::notice::no dispatch: {reason}")
         return 0

@@ -6,8 +6,11 @@ from __future__ import annotations
 import datetime as dt
 import importlib.util
 import sys
+import subprocess
 import unittest
 from pathlib import Path
+from unittest import mock
+from urllib.parse import parse_qsl
 
 import yaml
 
@@ -114,6 +117,104 @@ class DecideTests(unittest.TestCase):
         self.assertTrue(decide("2026-11-15T10:50:00", runs)[0])
 
 
+class RunHistoryTests(unittest.TestCase):
+    """Filtered, fully paged listings, so selective traffic cannot hide a full run."""
+
+    TARGET = MODULE.Target("honua-io/honua-server", "ci.yml", "trunk")
+    # Tonight's window opened at 22:00 PST, which is 06:00 UTC.
+    SINCE = dt.datetime(2026, 11, 14, 22, tzinfo=MODULE.PACIFIC)
+
+    def fetcher(self, listings: dict[str, list[dict]]):
+        requested = []
+
+        def fetch(path: str) -> dict:
+            requested.append(path)
+            base, _, query = path.partition("?")
+            params = dict(parse_qsl(query))
+            page, size = int(params.pop("page")), int(params.pop("per_page"))
+            self.assertEqual(base, "repos/honua-io/honua-server/actions/workflows/ci.yml/runs")
+            self.assertEqual(params.pop("branch"), "trunk")
+            (name, value), = params.items()
+            rows = listings.get(f"{name}={value}", [])
+            return {"total_count": len(rows), "workflow_runs": rows[(page - 1) * size:page * size]}
+
+        return fetch, requested
+
+    def affected(self, first_id: int, count: int, **fields) -> list[dict]:
+        return [run(first_id + index, "2026-11-15T07:00:00", event="workflow_dispatch",
+                    display_title="CI affected x..y", **fields) for index in range(count)]
+
+    def test_active_full_run_behind_a_page_of_affected_runs_blocks_dispatch(self):
+        full = run(1, "2026-11-15T03:00:00", status="in_progress", conclusion=None)
+        fetch, _ = self.fetcher({"status=in_progress": self.affected(100, 150, status="in_progress",
+                                                                     conclusion=None) + [full]})
+        runs = MODULE.RunHistory(fetch, self.TARGET).collect(HEAD, self.SINCE)
+        self.assertIn(1, {row["id"] for row in runs})
+        dispatch, reason = MODULE.decide(MODULE.Snapshot(at("2026-11-15T08:00:00"), runs, HEAD))
+        self.assertFalse(dispatch)
+        self.assertIn("full run 1 is in_progress", reason)
+
+    def test_tonight_runs_and_head_results_are_read_across_pages(self):
+        tonight = self.affected(200, 120) + [
+            run(2, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="success"),
+            run(3, "2026-11-15T07:30:00", conclusion="failure")]
+        at_head = self.affected(400, 101, head_sha=HEAD) + [
+            run(4, "2026-11-14T06:05:00", conclusion="success", head_sha=HEAD)]
+        fetch, requested = self.fetcher({"created=>=2026-11-15T06:00:00Z": tonight,
+                                         f"head_sha={HEAD}": at_head})
+        ids = {row["id"] for row in MODULE.RunHistory(fetch, self.TARGET).collect(HEAD, self.SINCE)}
+        self.assertTrue({2, 3, 4} <= ids)
+        for status in MODULE.ACTIVE_STATUSES:
+            self.assertTrue(any(f"status={status}&" in path for path in requested), status)
+
+    def test_truncated_listing_refuses_to_decide(self):
+        def fetch(path: str) -> dict:
+            return {"total_count": 5, "workflow_runs": []}
+
+        with self.assertRaisesRegex(MODULE.DispatchError, "truncated"):
+            MODULE.RunHistory(fetch, self.TARGET).collect(HEAD, self.SINCE)
+
+
+class GetJsonTests(unittest.TestCase):
+    """The shared retrying GET in gh_api.py."""
+
+    def results(self, *outcomes: tuple[int, str, str]):
+        return [subprocess.CompletedProcess([], code, out, err) for code, out, err in outcomes]
+
+    def get(self, *outcomes: tuple[int, str, str], delays=(1, 2)):
+        with mock.patch.object(MODULE.gh_api.subprocess, "run", side_effect=self.results(*outcomes)) as run, \
+                mock.patch.object(MODULE.gh_api.time, "sleep") as sleep:
+            try:
+                return MODULE.gh_api.get_json("repos/x", MODULE.DispatchError, delays), run, sleep
+            except MODULE.DispatchError as exc:
+                return exc, run, sleep
+
+    def test_retries_transient_failure_then_returns_json(self):
+        value, run, sleep = self.get((1, "", "HTTP 502"), (0, '{"sha": "a"}', ""))
+        self.assertEqual(value, {"sha": "a"})
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(1)
+
+    def test_404_and_422_fail_without_retry(self):
+        for status in ("HTTP 404", "HTTP 422"):
+            value, run, sleep = self.get((1, "", f"gh: Not Found ({status})"))
+            self.assertIsInstance(value, MODULE.DispatchError)
+            self.assertEqual(run.call_count, 1)
+            sleep.assert_not_called()
+
+    def test_persistent_failure_and_non_json_raise(self):
+        value, run, _ = self.get((1, "", "HTTP 502"), (1, "", "HTTP 502"), (1, "", "HTTP 502"))
+        self.assertIn("failed", str(value))
+        self.assertEqual(run.call_count, 3)
+        value, _, _ = self.get((0, "not json", ""))
+        self.assertIn("non-JSON", str(value))
+
+    def test_no_delays_means_a_single_attempt(self):
+        value, run, _ = self.get((1, "", "HTTP 502"), delays=())
+        self.assertIsInstance(value, MODULE.DispatchError)
+        self.assertEqual(run.call_count, 1)
+
+
 class WorkflowTests(unittest.TestCase):
     def setUp(self):
         text = (ROOT / ".github/workflows/full-ci-dispatch.yml").read_text()
@@ -138,6 +239,10 @@ class WorkflowTests(unittest.TestCase):
         script = next(step["run"] for step in steps if "full-ci-dispatch.py " in step.get("run", ""))
         self.assertNotIn("selective_base", script)
         self.assertIn("python3 scripts/ci/full-ci-dispatch.test.py", "".join(step.get("run", "") for step in steps))
+
+    def test_sparse_checkout_carries_the_shared_gh_api_module(self):
+        checkout = self.workflow["jobs"]["dispatch"]["steps"][0]["with"]["sparse-checkout"].split()
+        self.assertIn("scripts/ci/gh_api.py", checkout)
 
     def test_full_title_prefix_matches_ci_run_name(self):
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
