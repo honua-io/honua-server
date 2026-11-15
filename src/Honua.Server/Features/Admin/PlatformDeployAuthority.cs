@@ -8,13 +8,26 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-// While tenant resolution is enabled, a tenant-bound principal also needs a platform administrator role to create or advance a deploy.
+// Tenant-bound administrators need explicit platform authority for global administration.
 internal static class PlatformDeployAuthority
 {
     internal const string DenialCode = "platform_admin_required";
 
     internal const string DenialMessage =
-        "Deploy and platform-release operations require a platform administrator when multi-tenancy is enabled.";
+        "Platform administration requires a platform administrator when multi-tenancy is enabled.";
+
+    internal static TBuilder RequirePlatformAdminAuthority<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder
+        => builder.AddEndpointFilter(async (invocation, next) =>
+        {
+            var denial = Deny(invocation.HttpContext);
+            if (denial != null)
+            {
+                return denial;
+            }
+
+            return await next(invocation).ConfigureAwait(false);
+        });
 
     public static bool IsAuthorized(ClaimsPrincipal principal, TenantContextOptions? options)
     {

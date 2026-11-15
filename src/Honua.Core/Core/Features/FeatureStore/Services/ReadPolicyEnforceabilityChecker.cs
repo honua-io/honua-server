@@ -132,7 +132,7 @@ public sealed class ReadPolicyEnforceabilityChecker
         return null;
     }
 
-    private static bool IsTargeted(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource, string service, string layer)
+    private static bool IsTargeted(MetadataV2GraphSnapshot snapshot, MetadataV2Object resource, string service, string layer)
     {
         if (string.IsNullOrWhiteSpace(resource.Metadata.Name))
         {
@@ -150,7 +150,7 @@ public sealed class ReadPolicyEnforceabilityChecker
 
     private static bool IsTargetedService(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         string service)
         => service == Wildcard ||
            (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var publishingService) &&

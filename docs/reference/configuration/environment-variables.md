@@ -21,6 +21,18 @@ Honua is configured entirely through environment variables (or the equivalent `a
 | --- | --- | --- |
 | `HONUA_SETTINGS_DOCUMENT` (`Settings__Document`) | — (none) | `aws:secretsmanager:<name-or-arn>` of a secret whose value is a JSON object of configuration keys (nested objects map to `Section:Key`, arrays to `Section:0..n`, flat `Section__Key` names accepted). Loaded once at startup above `appsettings*.json` and below environment variables and the command line. Values may themselves be `aws:secretsmanager:` references. An unreadable, non-JSON, non-object or larger-than-64 KB document refuses startup; only the key count and the reference are logged. Use it to stay under the 4 KB AWS Lambda environment limit; see [Keep settings out of the 4 KB Lambda environment](../../guides/deploy/cloud-deployments.md#keep-settings-out-of-the-4-kb-lambda-environment). |
 
+## Ops autonomy
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `Observability__OpsFindings__Autonomy__Profile` | `Unattended` | Automatically applies allow-listed deterministic tier-1 fixes when the durable policy store and action checks permit them. `ProposeOnly` requires human approval. Persisted rule policies override the profile. Tier 2 remains empty. |
+| `Observability__OpsFindings__Autonomy__KillSwitchEnabled` | `false` | Stops automatic remediation. The persisted kill switch also applies across instances. |
+| `Observability__OpsFindings__Autonomy__DefaultMaxAutoActionsPerWindow` | `1` | Maximum reservations per rule and per action within the window; PostgreSQL enforces the shared action budget across instances. |
+| `Observability__OpsFindings__Autonomy__DefaultWindowSeconds` | `3600` | Reservation budget window in seconds. |
+| `Observability__OpsFindings__Autonomy__DefaultMaxBlastRadius` | `10` | Maximum affected items allowed for an automatic fix. Larger changes require approval. |
+
+The unattended allow-list is currently empty because no shipped actuator has proven automatic compensation. Dead-letter redrive requires human approval; unattended remediation still needs release-gate proof. A finding must also recommend a catalogued tier-1 action; unknown actions and unsafe effects fail closed. See [the autonomy policy](../../internal/contributor/adr/0062-graduated-ops-autonomy-policy.md).
+
 ## Database and providers
 
 | Variable | Default | Purpose |
@@ -159,7 +171,8 @@ These settings bind from the `Mcp` section. See [Harden the MCP endpoint](../../
 | `Mcp__SessionIdleTimeout` | `00:30:00` | Sliding idle TTL for an MCP session. With a system database, this is also the life of the shared session record. |
 | `Mcp__StatelessSessionFallback` | `true` in Development, `false` elsewhere | Development convenience. Serves a well-formed but unknown `Mcp-Session-Id` without a session instead of returning `404`. |
 | `Mcp__SessionMode` | `Auto` | Session mode on a host without a system database: `Auto` (stateless on a multi-instance host such as Lambda, in-memory otherwise), `InMemory`, or `Stateless`. |
-| `Mcp__SessionSigningKey` | — | Secret, shared by every instance, that keys stateless session ids. When unset, `ConnectionStrings__DefaultConnection` is used. |
+| `Mcp__SessionSigningKey` | — | Secret, shared by every instance, that keys stateless session ids and MRTR `requestState` values. When unset, `ConnectionStrings__DefaultConnection` is used. |
+| `Mcp__ApprovalConsoleUrl` | — | Absolute `https` URL of the Console that approves agent changes (`http` only on loopback). When set, a modern MCP request that declares URL-mode elicitation is sent to `<url>/inbox?proposalId=<id>` for approval. When unset, agents report the proposal and people approve in Console as before. |
 | `Mcp__StatelessSessionLifetime` | `08:00:00` | Absolute lifetime of a stateless session id, counted from `initialize`. |
 
 With a system database, MCP session records are shared through the `mcp_sessions` table. A session negotiated on any instance is then honoured by every instance. Without one, a single instance keeps sessions in memory, and a multi-instance host (AWS Lambda, `Deployment__Mode=MultiNode`) issues signed stateless session ids that any instance can validate. The `initialize` result reports the mode in `_meta["honua.io/session-mode"]`.
@@ -328,25 +341,33 @@ Geoprocessing job admission and executor guardrails:
 It limits encoded MVT bytes before HTTP content compression; it does not set tile
 pixel dimensions. Managed and source-backed PostGIS reads check the byte length
 before allocating the response array. A tile that would exceed the budget is
-re-encoded with progressively stricter simplification, snapping, sub-pixel
-dropping, and feature and attribute thinning until the encoded bytes fit. The
-response is never larger than the budget, and a tile that already fits is unchanged.
+re-encoded first without optional attributes (the stable `objectid` remains), then
+with progressively stronger topology-preserving simplification. These seven bounded
+attempts never add a feature cap, snap away small geometries, or filter by pixel size.
+If simplification collapses or moves a feature outside the tile, its original tile
+geometry is retained; a geometry excluded on the first pass stays excluded. The configured `MaxFeaturesPerTile` policy still applies;
+byte-budget retries do not reduce that policy. A configured cap selects features in
+ascending identity order on every pass (H3 tiles use cell order). Normal MVT clipping and quantization
+still determine which input geometries are renderable. H3 tiles preserve their complete
+configured cell selection and refuse an oversized tile after one encoding attempt.
+The response is never larger than the budget. A tile that already fits retains its
+geometry and attributes. On a retry, only `objectid` is guaranteed as an attribute;
+clients should use it to fetch detail, and styles requiring other properties need
+a higher zoom or a tile that fits without retries.
 OGC API Tiles returns HTTP 413 with an `application/problem+json` body
 (`status: 413`, `title: Payload Too Large`), and GeoServices MVT routes return the
-documented HTTP 200 error envelope with `error.code: 413`, only when the strictest
-pass — one feature, no attributes, and no grid snap — still exceeds the budget, or
-when that pass is empty because earlier snaps removed every geometry. A tile that
-was empty on the first pass still returns 204. Request a higher zoom level or raise
-the budget for that pathological tile. An operator-defined gridset snaps to its own
-resolution; the Web Mercator zoom table is only a floor for the built-in pyramid.
+documented HTTP 200 error envelope with `error.code: 413`, when the complete result
+cannot fit after the final retry. A tile that was empty on the first pass still returns
+204. Request a higher zoom level for a tile that cannot fit. An operator-defined
+gridset uses its own resolution for simplification; the Web Mercator zoom table is
+only a floor for the built-in pyramid.
 Tile output-cache keys include the byte budget, so entries created before enforcement
 or under a larger cap cannot bypass the limit.
 
 Previously this option had no effect and its model default was 512 with pixel
 units. Explicitly configured values now mean bytes; review any existing value
-that was chosen as a pixel dimension. A dense layer at zoom 0–2 is served within
-the budget. The database may encode more than one candidate before the fitting
-tile is returned.
+that was chosen as a pixel dimension. Dense layers may require a higher zoom level when their complete tile cannot fit.
+The database may encode more than one candidate before returning a fitting tile or refusal.
 
 ## Studio AI proxy request budget
 

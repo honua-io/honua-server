@@ -6,6 +6,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Services;
+using Honua.Core.Features.Observability.Domain;
+using Honua.Infrastructure.Monitoring;
+using NSubstitute;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -25,6 +28,8 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
+    private readonly IOpsWatchdogKillSwitch _watchdog = Substitute.For<IOpsWatchdogKillSwitch>();
+    private readonly InMemoryOpsAutonomyPolicyStore _store = new();
 
     public OpsAutonomyPolicyEndpointsTests()
     {
@@ -33,7 +38,9 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IOpsAutonomyPolicyStore>();
-                services.AddSingleton<InMemoryOpsAutonomyPolicyStore>();
+                services.AddSingleton(_store);
+                services.AddSingleton(_watchdog);
+                services.AddSingleton<OpsAutonomySettingsWriter>();
                 services.AddSingleton<IOpsAutonomyPolicyStore>(
                     sp => sp.GetRequiredService<InMemoryOpsAutonomyPolicyStore>());
             })
@@ -68,6 +75,46 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/autonomy/policies/{rule}")]
     [Endpoint("GET /api/v1/admin/observability/autonomy/policies")]
+    public async Task PolicyRead_WithoutRuleConfiguration_KeepsApprovalGatedRuleDiscoverable()
+    {
+        var fixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IOpsAutonomyPolicyStore>();
+                services.AddSingleton<IOpsAutonomyPolicyStore, InMemoryOpsAutonomyPolicyStore>();
+            })
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            });
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var response = await client.GetAsync($"/api/v1/admin/observability/autonomy/policies/{Rule}");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal("ProposeOnly", document.RootElement.GetProperty("mode").GetString());
+            Assert.False(document.RootElement.GetProperty("isPersisted").GetBoolean());
+
+            var listResponse = await client.GetAsync("/api/v1/admin/observability/autonomy/policies");
+            Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+            using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+            Assert.Contains(listDocument.RootElement.GetProperty("policies").EnumerateArray(),
+                policy => policy.GetProperty("rule").GetString() == Rule);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/autonomy/policies/{rule}")]
+    [Endpoint("GET /api/v1/admin/observability/autonomy/policies")]
     public async Task PolicyRead_FreshStore_ReturnsRouteEffectiveConfiguredDefaultAsNotPersisted()
     {
         var getResponse = await _client.GetAsync($"/api/v1/admin/observability/autonomy/policies/{Rule}");
@@ -87,7 +134,8 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
         var listResponse = await _client.GetAsync("/api/v1/admin/observability/autonomy/policies");
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
         using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
-        var listed = Assert.Single(listDocument.RootElement.GetProperty("policies").EnumerateArray());
+        var listed = Assert.Single(listDocument.RootElement.GetProperty("policies").EnumerateArray(),
+            policy => policy.GetProperty("rule").GetString() == Rule);
         Assert.Equal(Rule, listed.GetProperty("rule").GetString());
         Assert.False(listed.GetProperty("isPersisted").GetBoolean());
     }
@@ -130,7 +178,8 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
         var listResponse = await _client.GetAsync("/api/v1/admin/observability/autonomy/policies");
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
         using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
-        var listed = Assert.Single(listDocument.RootElement.GetProperty("policies").EnumerateArray());
+        var listed = Assert.Single(listDocument.RootElement.GetProperty("policies").EnumerateArray(),
+            policy => policy.GetProperty("rule").GetString() == Rule);
         Assert.Equal(Rule, listed.GetProperty("rule").GetString());
 
         var settingsResponse = await _client.PutAsJsonAsync(
@@ -149,6 +198,37 @@ public sealed class OpsAutonomyPolicyEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, getSettingsResponse.StatusCode);
         using var getSettingsDocument = JsonDocument.Parse(await getSettingsResponse.Content.ReadAsStringAsync());
         Assert.True(getSettingsDocument.RootElement.GetProperty("killSwitchEnabled").GetBoolean());
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/observability/autonomy/settings")]
+    public async Task Settings_StopWatchdogFails_ReturnsUnavailableAndRetainsStop()
+    {
+        _watchdog.SuspendAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("private mode parameter failed")));
+
+        var response = await _client.PutAsJsonAsync(
+            "/api/v1/admin/observability/autonomy/settings", new { killSwitchEnabled = true });
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.DoesNotContain("private mode parameter", await response.Content.ReadAsStringAsync());
+        Assert.True((await _store.GetSettingsAsync()).KillSwitchEnabled);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/observability/autonomy/settings")]
+    public async Task Settings_RestoreWatchdogFails_ReturnsUnavailableAndRetainsStop()
+    {
+        await _store.SetSettingsAsync(new OpsAutonomySettings { KillSwitchEnabled = true }, "operator");
+        _watchdog.ResumeAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("private mode parameter failed")));
+
+        var response = await _client.PutAsJsonAsync(
+            "/api/v1/admin/observability/autonomy/settings", new { killSwitchEnabled = false });
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.DoesNotContain("private mode parameter", await response.Content.ReadAsStringAsync());
+        Assert.True((await _store.GetSettingsAsync()).KillSwitchEnabled);
     }
 
     [IntegrationTest]

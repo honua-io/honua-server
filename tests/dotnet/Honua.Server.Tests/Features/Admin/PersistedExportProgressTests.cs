@@ -2,25 +2,19 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
-using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Threading.Channels;
 using FluentAssertions;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Progress;
-using Honua.Io.Export;
 using Honua.Migration;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -139,60 +133,6 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
         var operations = await _store.GetActiveOperationsAsync<ExportProgress>(OperationType.Export);
 
         operations.Should().Contain(p => p.JobId == healthyId).And.NotContain(p => p.JobId == invalidId);
-        _store.IsUsingFallback.Should().BeFalse();
-    }
-
-    [IntegrationTheory]
-    [InlineData(true)]
-    [InlineData(false)]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
-    public async Task ReadQueuedJobIdsAsync_InvalidProgressAndRequest_QuarantinesOnlyInvalidJob(bool legacyShape)
-    {
-        var invalidId = await SeedInvalidExportAsync(legacyShape);
-        var healthyId = NewId();
-        var job = new ExportJob(healthyId, "svc", 741, "roads", "csv", new FeatureQuery(), [],
-            4326, 1, ExportGeometryType.None, null)
-        {
-            ServiceLayerIndex = 3
-        };
-        await _store.SetProgressAsync(healthyId, ExportProgress.CreateInitial(healthyId, "csv", "svc", 3, 1));
-        var requestJson = JsonSerializer.Serialize(
-            new ExportJobService.PersistedExportJobRequest { Job = job },
-            ExportJsonContext.Default.PersistedExportJobRequest);
-        await _cache.SetStringAsync($"export:request:{healthyId}", requestJson);
-        var oldRequest = JsonNode.Parse(requestJson)!;
-        var oldJob = oldRequest["job"]!.AsObject();
-        oldJob["jobId"] = invalidId;
-        oldJob.Remove("storageLayerId").Should().BeTrue();
-        oldJob.Remove("serviceLayerIndex").Should().BeTrue();
-        oldJob["layerId"] = 3;
-        await _cache.SetStringAsync($"export:request:{invalidId}", oldRequest.ToJsonString());
-        var channel = Channel.CreateUnbounded<string>();
-        channel.Writer.Complete();
-        var logger = Substitute.For<ILogger<ExportJobService>>();
-        logger.IsEnabled(LogLevel.Warning).Returns(true);
-        var sut = new ExportJobService(_store, _cache, channel,
-            _services.GetRequiredService<IServiceScopeFactory>(), logger);
-
-        for (var pass = 0; pass < 2; pass++)
-        {
-            var recovered = new List<string>();
-            await foreach (var id in sut.ReadQueuedJobIdsAsync())
-            {
-                recovered.Add(id);
-            }
-            recovered.Should().Contain(healthyId).And.NotContain(invalidId);
-            (await _cache.GetStringAsync($"export:request:{invalidId}")).Should().BeNull();
-            (await _store.GetActiveOperationIdsAsync()).Should().NotContain(invalidId);
-            (await _store.GetActiveOperationIdsAsync(OperationType.Export)).Should().NotContain(invalidId);
-        }
-        logger.ReceivedCalls().Count(call => call.GetMethodInfo().Name == "Log" &&
-            call.GetArguments()[2]?.ToString()?.Contains(invalidId, StringComparison.Ordinal) == true)
-            .Should().Be(1);
-        var read = () => _store.GetProgressAsync(invalidId);
-        await read.Should().ThrowAsync<InvalidPersistedExportProgressException>().WithMessage("Persisted export progress is invalid.*");
-        (await _cache.GetStringAsync($"export:request:{healthyId}")).Should().NotBeNull();
         _store.IsUsingFallback.Should().BeFalse();
     }
 

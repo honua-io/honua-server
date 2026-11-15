@@ -24,13 +24,13 @@ public static class FeatureEditLockEnforcement
     // Protocol-specific graph service ids differ, so a lease is keyed on the shared routed service name and binds a competing write from another protocol.
     public static string? ResolveServiceName(
         MetadataV2Service? service,
-        MetadataV2Publication? publication)
+        MetadataV2Layer? publication)
     {
         var name = service?.Metadata?.Name;
         return string.IsNullOrWhiteSpace(name) ? publication?.ServiceId : name;
     }
 
-    public static int ResolveLayerId(MetadataV2Publication? publication, int fallbackLayerId)
+    public static int ResolveLayerId(MetadataV2Layer? publication, int fallbackLayerId)
         => publication?.LayerIndex ?? fallbackLayerId;
 
     // An unidentifiable holder fails any active lease instead of being allowed through.

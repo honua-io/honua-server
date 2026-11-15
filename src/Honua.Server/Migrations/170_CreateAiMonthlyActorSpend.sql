@@ -74,6 +74,7 @@ LANGUAGE plpgsql AS $$
 DECLARE
     cap JSONB;
     current_month TIMESTAMPTZ := date_trunc('month', clock_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
+    next_month TIMESTAMPTZ := ((current_month AT TIME ZONE 'UTC') + INTERVAL '1 month') AT TIME ZONE 'UTC';
     tokens NUMERIC;
     money NUMERIC;
 BEGIN
@@ -83,7 +84,7 @@ BEGIN
     SELECT COALESCE(sum(f.charged_tokens::numeric), 0), COALESCE(sum(f.charged_money::numeric), 0)
         INTO tokens, money FROM $HonuaSchema$.ai_financial_invocations f
         WHERE f.deployment_id = NEW.deployment_id AND f.actor_key = NEW.actor_key
-            AND (f.state <> 'settled' OR (f.reserved_at >= current_month AND f.reserved_at < current_month + INTERVAL '1 month'));
+            AND (f.state <> 'settled' OR (f.reserved_at >= current_month AND f.reserved_at < next_month));
     IF tokens + NEW.charged_tokens::numeric > (cap->>'Tokens')::numeric
         OR money + NEW.charged_money::numeric > (cap->>'Money')::numeric THEN
         RAISE EXCEPTION 'Monthly actor spend cap reached' USING ERRCODE = '23514';
@@ -97,6 +98,7 @@ LANGUAGE plpgsql AS $$
 DECLARE
     cap JSONB;
     current_month TIMESTAMPTZ := date_trunc('month', clock_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
+    next_month TIMESTAMPTZ := ((current_month AT TIME ZONE 'UTC') + INTERVAL '1 month') AT TIME ZONE 'UTC';
 BEGIN
     SELECT policy_json->'Financial'->'MonthlyActor' INTO cap
         FROM $HonuaSchema$.ai_execution_policies WHERE deployment_id = deployment FOR UPDATE;
@@ -107,7 +109,7 @@ BEGIN
         (cap->>'Tokens')::bigint, (cap->>'Money')::bigint
     FROM $HonuaSchema$.ai_financial_invocations f
     WHERE f.deployment_id = deployment AND (actor IS NULL OR f.actor_key = actor)
-        AND (f.state <> 'settled' OR (f.reserved_at >= current_month AND f.reserved_at < current_month + INTERVAL '1 month'))
+        AND (f.state <> 'settled' OR (f.reserved_at >= current_month AND f.reserved_at < next_month))
     GROUP BY f.actor_key
     HAVING sum(f.charged_tokens::numeric) * 5 >= (cap->>'Tokens')::numeric * 4
         OR sum(f.charged_money::numeric) * 5 >= (cap->>'Money')::numeric * 4

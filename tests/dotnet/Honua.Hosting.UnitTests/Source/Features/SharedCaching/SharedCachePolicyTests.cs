@@ -113,7 +113,7 @@ public sealed class SharedCachePolicyTests
         emergency.Layers.Add(emergencyLayer);
         var context = SharedCacheTestContexts.GrantedTile(new SharedCacheOptions { Emergency = emergency });
         var service = new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Name = "parcels" } };
-        var publication = new MetadataV2Publication { LayerIndex = 3 };
+        var publication = new MetadataV2Layer { LayerIndex = 3 };
 
         SharedCacheResponse.UsePublication(context, service, publication);
         SharedCacheResponse.UseTileset(context, new TileOptions(), new TilesetAddress("FeatureServer", "3", "WebMercatorQuad"));

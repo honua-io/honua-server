@@ -135,6 +135,36 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
         (await insert.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("23514");
     }
 
+    [IntegrationTest]
+    public async Task MonthlySchema_NonUtcSession_CountsSettledUsageThroughUtcMonthEnd()
+    {
+        await SeedMonthlySchemaAsync(30);
+        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "CreateAiMonthlyActorSpend.sql"));
+        sql = sql.Replace("$HonuaSchema$", $"\"{_schema}\"", StringComparison.Ordinal)
+            .Replace("clock_timestamp()", "TIMESTAMPTZ '2026-03-15 12:00:00+00'", StringComparison.Ordinal);
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var migration = new NpgsqlCommand(sql, connection);
+        await migration.ExecuteNonQueryAsync();
+        await using var usage = new NpgsqlCommand($$"""
+            SET TIME ZONE 'America/New_York';
+            UPDATE "{{_schema}}".ai_financial_invocations
+            SET charged_tokens = 24, charged_money = 24, state = 'settled',
+                settled_at = TIMESTAMPTZ '2026-03-31 23:59:00+00',
+                reserved_at = TIMESTAMPTZ '2026-03-31 23:59:00+00';
+            """, connection);
+        await usage.ExecuteNonQueryAsync();
+        (await MonthlyNoticeCountAsync()).Should().Be(1);
+        await using var insert = new NpgsqlCommand($$"""
+            INSERT INTO "{{_schema}}".ai_financial_invocations
+            SELECT (jsonb_populate_record(NULL::"{{_schema}}".ai_financial_invocations,
+                to_jsonb(f) || jsonb_build_object('attempt_id', '{{Guid.NewGuid():D}}',
+                    'state', 'reserved', 'settled_at', NULL, 'charged_tokens', 7, 'charged_money', 7))).*
+            FROM "{{_schema}}".ai_financial_invocations f LIMIT 1;
+            """, connection);
+        var reserve = async () => await insert.ExecuteNonQueryAsync();
+        (await reserve.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("23514");
+    }
+
     private async Task<long> MonthlyNoticeCountAsync()
     {
         await using var connection = await fixture.DataSource.OpenConnectionAsync();

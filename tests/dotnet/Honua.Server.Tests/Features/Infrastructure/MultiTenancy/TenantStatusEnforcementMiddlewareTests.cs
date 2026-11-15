@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.MultiTenancy.Domain;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Middleware;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,6 +85,27 @@ public sealed class TenantStatusEnforcementMiddlewareTests
         await middleware.InvokeAsync(context);
 
         nextCalled.Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [InlineData(TenantStatus.Suspended)]
+    [InlineData(TenantStatus.Deleted)]
+    public async Task InvokeAsync_TenantIndependentEndpoint_BypassesTenantStatus(TenantStatus status)
+    {
+        var nextCalled = false;
+        var middleware = new TenantStatusEnforcementMiddleware(_ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
+        var context = CreateContext("acme", status);
+        context.SetEndpoint(new Endpoint(null,
+            new EndpointMetadataCollection(TenantIndependentControlPlaneMetadata.Instance), "probe"));
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
     }
 
     private static DefaultHttpContext CreateContext(string tenantId, TenantStatus catalogStatus)

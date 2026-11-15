@@ -53,6 +53,7 @@ Examples use `http://localhost:8080`, the repository Compose default. A quicksta
 
 | I want to… | Guide |
 |---|---|
+| Connect a standards-capable field client | [Third-party field clients](connect/field-clients.md) |
 | Connect QGIS | [QGIS](connect/qgis.md) |
 | Analyze layers in Excel or Power BI | [Excel and Power BI](connect/excel-power-bi.md) |
 | Build MapLibre web maps | [MapLibre web maps](connect/maplibre-web-maps.md) |
