@@ -14,10 +14,12 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed partial class JobExecutionServiceTests
 {
-    [UnitTest]
-    public async Task ProcessJob_LicenseExpiresDuringSuccessWrite_ScrubsKnownOutcomeWithoutRecovery()
+    [UnitTheory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task ProcessJob_LicenseExpiresDuringSuccessWrite_ScrubsKnownOutcome(int attemptCount)
     {
-        var durable = CreateProvisioningJob();
+        var durable = CreateProvisioningJob() with { AttemptCount = attemptCount };
         using var expiry = new CancellationTokenSource();
         var store = Substitute.For<IExecutionJobStore>();
         store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
@@ -34,6 +36,8 @@ public sealed partial class JobExecutionServiceTests
         var policy = Substitute.For<ILicenseOperationPolicy>();
         policy.OperationCancellation.Returns(expiry.Token);
         var executor = CreateSuccessfulRecoveryExecutor();
+        var recovery = ConfigureOutcomeRecovery(executor,
+            JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true });
         using var service = new JobExecutionService(Substitute.For<IJobQueue>(), store, [executor],
             new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance, policy);
 
@@ -44,7 +48,9 @@ public sealed partial class JobExecutionServiceTests
         Assert.Empty(durable.ArtifactReferences);
         Assert.Empty(durable.CommittedEffectReferences);
         Assert.Null(durable.PercentComplete);
-        await ((IJobOutcomeRecoveryExecutor)executor).DidNotReceive().RecoverOutcomeAsync(
+        await recovery.Received(attemptCount > 1 ? 1 : 0).RecoverOutcomeAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
+        await executor.Received(attemptCount > 1 ? 0 : 1).ExecuteAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
     }
 
@@ -56,6 +62,7 @@ public sealed partial class JobExecutionServiceTests
             .Returns(async call =>
             {
                 await call.Arg<IJobExecutionContext>().PublishArtifactAsync("committed-import-receipt", call.Arg<CancellationToken>());
+                await call.Arg<IJobExecutionContext>().RecordCommittedEffectAsync("committed-import-receipt");
                 return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true };
             });
         return executor;

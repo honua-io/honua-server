@@ -57,8 +57,7 @@ internal sealed partial class JobExecutionService
         }
         catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
         {
-            // License expiry cannot establish whether COMMIT landed; retain the receipt lookup.
-            await RequeueOutcomeRecoveryAsync(attempt).ConfigureAwait(false);
+            await HandleExpiredOutcomeRecoveryAsync(attempt).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -97,6 +96,24 @@ internal sealed partial class JobExecutionService
     }
 
     private sealed record OutcomeRecoveryAttempt(ExecutionJobRecord Job, string WorkerId, OutcomeRecoveryMode Mode);
+
+    private async Task HandleExpiredOutcomeRecoveryAsync(OutcomeRecoveryAttempt attempt)
+    {
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var current = await jobStore.GetAsync(attempt.Job.OperationId, cleanup.Token).ConfigureAwait(false);
+        if (current is { Status: ExecutionJobStatus.Succeeded } &&
+            current.AttemptCount == attempt.Job.AttemptCount &&
+            string.Equals(current.ClaimedBy, attempt.WorkerId, StringComparison.Ordinal))
+        {
+            // The final write landed before cancellation was observed; its outcome is known.
+            await TerminateUncommittedJobAsync(new(current.OperationId, attempt.WorkerId,
+                ExecutionJobStatus.Failed, "license expired"), cleanup.Token).ConfigureAwait(false);
+            return;
+        }
+
+        // License expiry alone cannot establish whether COMMIT landed; retain the lookup.
+        await RequeueOutcomeRecoveryAsync(attempt).ConfigureAwait(false);
+    }
 
     private enum OutcomeRecoveryMode
     {
