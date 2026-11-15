@@ -45,11 +45,7 @@ public sealed class ServerJobArtifactImporterTests
                 request.LocalFilePath.Should().BeNull();
                 request.SourceUrl.Should().BeNull();
                 request.ObjectStoreUri.Should().BeNull();
-                if (!OperatingSystem.IsWindows())
-                {
-                    var scratch = request.FileStream.Should().BeOfType<FileStream>().Subject;
-                    File.GetUnixFileMode(scratch.Name).Should().Be(PrivateTempFile.OwnerReadWrite);
-                }
+                AssertPrivateScratch(request.FileStream);
 
                 request.FileStream!.Position = 0;
                 using var copy = new MemoryStream();
@@ -269,6 +265,15 @@ public sealed class ServerJobArtifactImporterTests
     [UnitTest]
     public void ServerJobArtifactKindIsTheAdmittedVariant()
         => DatasetImportSourceRules.RequireServerJobArtifact(DatasetImportSourceKinds.ServerJobArtifact);
+
+    private static void AssertPrivateScratch(Stream? stream)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            var scratch = stream.Should().BeOfType<FileStream>().Subject;
+            File.GetUnixFileMode(scratch.Name).Should().Be(PrivateTempFile.OwnerReadWrite);
+        }
+    }
 
     private static async Task<ServerJobArtifactImportReceipt> ImportAsync(
         IFileImportService imports,

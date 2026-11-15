@@ -83,16 +83,9 @@ public sealed class TileExportJobExecutorTests
         keys[0].Should().NotBe(keys[1]);
     }
 
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task ExecuteAsync_MapWithReadPolicies_RendersForEachJob()
+    private static void RecordScratchUploads(
+        ICloudFileStorage storage, TileExportJobPlan plan, List<string> scratchPaths, List<UnixFileMode> scratchModes)
     {
-        var plan = CreatePlan();
-        var storage = Substitute.For<ICloudFileStorage>();
-        var scratchPaths = new List<string>();
-        var scratchModes = new List<UnixFileMode>();
-        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(call => StoredFile(call.Arg<string>(), plan, DateTimeOffset.UtcNow.AddHours(2)));
         storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
@@ -106,6 +99,19 @@ public sealed class TileExportJobExecutorTests
                 return UploadResult.CreateSuccess(StoredFile(
                     request.ObjectKeyOverride!, plan, DateTimeOffset.UtcNow.AddHours(2)));
             });
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExecuteAsync_MapWithReadPolicies_RendersForEachJob()
+    {
+        var plan = CreatePlan();
+        var storage = Substitute.For<ICloudFileStorage>();
+        var scratchPaths = new List<string>();
+        var scratchModes = new List<UnixFileMode>();
+        storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => StoredFile(call.Arg<string>(), plan, DateTimeOffset.UtcNow.AddHours(2)));
+        RecordScratchUploads(storage, plan, scratchPaths, scratchModes);
         var producer = Substitute.For<ITileExportPackageProducer>();
         producer.CanProduce(Arg.Any<TileExportJobPlan>()).Returns(true);
         producer.ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>())

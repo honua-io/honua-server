@@ -163,6 +163,14 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         _cache.Dispose();
     }
 
+    private void AssertPrivateUploadScratch()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            _uploadScratchMode.Should().Be(PrivateTempFile.OwnerReadWrite);
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("PUT /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}")]
     [Endpoint("GET /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}")]
@@ -175,10 +183,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         CustomCodeArtifactDescriptor.TryParse(_records["broker-job"].ArtifactReferences.Single(), out var receipt).Should().BeTrue();
         receipt!.Sha256.Should().Be(Convert.ToHexStringLower(SHA256.HashData(bytes)));
         receipt.State.Should().Be("available");
-        if (!OperatingSystem.IsWindows())
-        {
-            _uploadScratchMode.Should().Be(PrivateTempFile.OwnerReadWrite);
-        }
+        AssertPrivateUploadScratch();
         using var download = await _admin.GetAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1");
         download.StatusCode.Should().Be(HttpStatusCode.OK, await download.Content.ReadAsStringAsync());
         (await download.Content.ReadAsByteArrayAsync()).Should().Equal(bytes);
