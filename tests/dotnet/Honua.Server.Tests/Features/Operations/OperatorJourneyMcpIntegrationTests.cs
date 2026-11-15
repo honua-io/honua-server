@@ -212,14 +212,16 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
             file = Convert.ToBase64String(Encoding.UTF8.GetBytes(GeoJson)),
             fileName = "parcels.geojson",
         });
-        ResponseJson(filePreview).RootElement.GetRawText().Should().Contain("Parcel");
+        using var filePreviewBody = ResponseJson(filePreview);
+        filePreviewBody.RootElement.GetRawText().Should().Contain("Parcel");
 
         var urlPreview = await CallOkAsync(admin, "honua_admin_import_preview_url", new
         {
             sourceUrl = SourceUrl,
             fileName = "parcels.geojson",
         });
-        ResponseJson(urlPreview).RootElement.GetRawText().Should().Contain("Parcel");
+        using var urlPreviewBody = ResponseJson(urlPreview);
+        urlPreviewBody.RootElement.GetRawText().Should().Contain("Parcel");
 
         var validated = await CallOkAsync(admin, "honua_admin_connections_tables_validate", new
         {
@@ -228,7 +230,8 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
             table,
             layerName = "Parcels",
         });
-        ResponseJson(validated).RootElement.GetRawText().Should().Contain(table);
+        using var validatedBody = ResponseJson(validated);
+        validatedBody.RootElement.GetProperty("data").GetProperty("table").GetString().Should().Be(table);
     }
 
     private static async Task CallProposalAsync(HttpClient client, string name, object arguments)
