@@ -324,7 +324,23 @@ public sealed class CandidateTelemetryGateCertificationTests
             using var certificate = request.CreateSelfSigned(
                 DateTimeOffset.UtcNow.AddDays(-1),
                 DateTimeOffset.UtcNow.AddDays(1));
-            File.WriteAllBytes(Path.Join(directory, fileName), certificate.Export(X509ContentType.Pfx, password));
+            var path = Path.Join(directory, fileName);
+            File.WriteAllBytes(path, certificate.Export(X509ContentType.Pfx, password));
+
+            // CreateTempSubdirectory makes an owner-only directory, and the replicas read the bind mount as
+            // the image's non-root user, so an owner-only key ring makes every replica exit at startup.
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(
+                    directory,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+                File.SetUnixFileMode(
+                    path,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+            }
+
             return new KeyRingCertificate(directory, "/keyring", fileName, password);
         }
 
