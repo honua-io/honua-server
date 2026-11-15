@@ -252,6 +252,9 @@ internal static class ServiceCollectionExtensions
         services.AddKeyedScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>("postgres", (provider, _) =>
             new Features.Security.Admission.PostgresAiExecutionAdmissionStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));
+        services.AddScoped<Honua.Core.Features.Security.Admission.IAiMonthlyActorNoticeStore>(provider =>
+            (Features.Security.Admission.PostgresAiExecutionAdmissionStore)provider
+                .GetRequiredKeyedService<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>("postgres"));
 
         services.AddScoped<IAlertRuleRepository, PostgresAlertRuleRepository>();
         services.AddScoped<IAlertStateStore, PostgresAlertStateStore>();

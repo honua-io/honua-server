@@ -17,7 +17,7 @@ using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-public sealed class OpsNotificationServiceTests
+public sealed partial class OpsNotificationServiceTests
 {
     [UnitTest]
     public async Task JobTerminalCallback_FailedJobPreservesCanonicalLineageVerbatim()

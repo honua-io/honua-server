@@ -2,10 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Text.Json.Serialization;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Security.Admission;
 
@@ -28,7 +28,6 @@ public sealed record AiFinancialPolicy
     public int PeriodSeconds { get; init; }
     public AiFinancialLimits Deployment { get; init; } = new();
     public AiFinancialLimits Actor { get; init; } = new();
-    /// <summary>Gets optional per-actor UTC calendar-month limits, including all unsettled debt.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AiFinancialLimits? MonthlyActor { get; init; }
     public AiFinancialLimits Cohort { get; init; } = new();

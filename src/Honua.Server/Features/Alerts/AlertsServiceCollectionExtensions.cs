@@ -71,6 +71,8 @@ internal static class AlertsServiceCollectionExtensions
 
         // Second outbox consumer: ops notifications (deploy/job terminal events).
         services.AddScoped<Honua.Alerts.Ops.OpsNotificationService>();
+        services.AddScoped<Honua.Alerts.Ops.AiMonthlyActorNoticePublisher>();
+        services.AddSingleton<Honua.Alerts.Ops.AiMonthlyActorNoticeReconciler>();
         services.AddSingleton<ILeaderElectionStrategy>(serviceProvider => new LeaseLeaderElectionStrategy(
             serviceProvider.SharedLeaseStore(),
             serviceProvider.GetRequiredService<IOptions<AlertOptions>>(),
@@ -109,6 +111,7 @@ internal static class AlertsServiceCollectionExtensions
         if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
         {
             services.AddHostedService(sp => sp.GetRequiredService<AlertAuditOutboxReconciler>());
+            services.AddHostedService(sp => sp.GetRequiredService<Honua.Alerts.Ops.AiMonthlyActorNoticeReconciler>());
         }
 
         return services;
