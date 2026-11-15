@@ -12,6 +12,7 @@ Render a Honua layer in the browser from vector tiles (MVT) using TileJSON metad
 The browser must be allowed to read the layer and to call the server from the page's origin:
 
 - **Read access.** A newly published service requires authentication, so the page below gets `401` and an empty map until you either allow anonymous reads on the service (`"allowAnonymous": true`, see [access control](../secure/access-control.md)) or pass a read-only credential in the TileJSON URL: `${base}/tiles/${layerId}/tile.json?token=<key>`. The server copies that `token` into the TileJSON `tiles` and `style` URLs and into the tile URLs of the style it serves. Use a key scoped to `read:<service>` with `allowedReferrers` set to your page origin ([keys used from browsers](../secure/authentication.md#restrict-keys-used-from-browsers-or-in-urls)); keys with administrative authority are refused in URLs.
+- **CORS.** The page origin must be listed in `Cors:AllowedOrigins`. A quickstart install allows only its own origin (`http://localhost:<HONUA_HTTP_PORT>`, default `18080`), so a page served from `http://localhost:8000` (step 3) is blocked until you add `Cors__AllowedOrigins__1: "http://localhost:8000"` to the `honua` service in a customer override file ([quickstart](../../get-started/quickstart.md)) and re-run `python3 quickstart.py`.
 
 Honua serves per-layer vector tiles and metadata:
 
