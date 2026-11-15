@@ -99,16 +99,11 @@ internal sealed class GdalHardeningOptions
         "RMF",
     };
 
-    /// <summary>
-    /// When <see langword="true"/> (the default), invocations that operate purely on
-    /// local scratch files (no executor-declared object-store path in the argument
-    /// vector) additionally get the remote virtual-filesystem handlers neutralized:
-    /// the <c>/vsicurl</c> family is gated to an unmatchable extension, HTTP retries
-    /// are disabled, and directory pre-scan on open is suppressed. Invocations whose
-    /// arguments include a path the executor declared through
-    /// <see cref="GdalRemoteInputScope"/> (catalog-registered COG and multidimensional
-    /// coverage reads — never an untrusted blob or a job-supplied string) keep remote
-    /// VSI enabled so those bucket-scoped range reads still work.
-    /// </summary>
+    // On by default: local-scratch invocations get the remote virtual-filesystem
+    // handlers neutralized (vsicurl gated to an unmatchable extension, no HTTP retries,
+    // no directory pre-scan on open). Only invocations whose arguments include a path an
+    // executor declared through GdalRemoteInputScope keep remote VSI, for
+    // catalog-registered COG and multidimensional coverage reads, never an untrusted
+    // blob or a job-supplied string.
     public bool DisableRemoteVsiForLocalInputs { get; set; } = true;
 }

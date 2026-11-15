@@ -17,27 +17,11 @@ internal static class GdalRuntimeHardening
     /// <summary>Sentinel extension gated into the <c>/vsicurl</c>-family allow-list to block it.</summary>
     private const string BlockedCurlExtension = ".honua-vsi-blocked";
 
-    /// <summary>
-    /// Builds the GDAL environment variables to set on a subprocess.
-    /// </summary>
-    /// <param name="options">The configured hardening policy.</param>
-    /// <param name="inputReferencesRemoteVsi">
-    /// <see langword="true"/> when an argument is an object-store path the executor
-    /// declared through <see cref="GdalRemoteInputScope"/>. Such an invocation keeps
-    /// remote VSI enabled; every other invocation (including every untrusted-blob
-    /// executor) gets the remote handlers neutralized.
-    /// </param>
-    /// <param name="s3Options">
-    /// Execution-owned S3 endpoint settings projected only for trusted remote-VSI
-    /// invocations. The durable job descriptor remains limited to bucket and key.
-    /// </param>
-    /// <param name="azureOptions">Execution-owned Azure Blob connection settings.</param>
-    /// <param name="inputReferencesS3Vsi">Whether the arguments contain a declared <c>/vsis3</c> path.</param>
-    /// <param name="inputReferencesAzureVsi">Whether the arguments contain a declared <c>/vsiaz</c> path.</param>
-    /// <param name="environmentVariableReader">
-    /// Optional environment seam for tests. Production uses <see cref="Environment.GetEnvironmentVariable(string)"/>.
-    /// </param>
-    /// <returns>An ordered map of environment variable name to value.</returns>
+    // Only an invocation whose arguments include an object-store path declared through
+    // GdalRemoteInputScope keeps remote VSI; every other one, including every
+    // untrusted-blob executor, gets the remote handlers neutralized. The S3 and Azure
+    // settings are execution-owned and projected only for those trusted invocations;
+    // the durable job descriptor stays limited to bucket and key.
     public static IReadOnlyDictionary<string, string> BuildEnvironment(
         GdalHardeningOptions options,
         bool inputReferencesRemoteVsi,

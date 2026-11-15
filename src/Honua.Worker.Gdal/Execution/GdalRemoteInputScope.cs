@@ -5,19 +5,12 @@ using System.Collections.Immutable;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Executor-declared set of object-store paths (<c>/vsis3/…</c>, <c>/vsiaz/…</c>)
-/// that the GDAL runners may open remotely. Remote access is decided by the
-/// executor that built the path with <see cref="GdalVsiPath.Build"/>, never by a
-/// substring of the argument vector: a job-supplied value such as a layer name
-/// that happens to contain <c>/vsi</c> cannot re-enable remote handlers,
-/// project storage credentials or select the remote container network.
-/// </summary>
-/// <remarks>
-/// The scope flows with the async execution context, so it covers every runner
-/// call made (directly or through shared helpers) while it is open, and is
-/// restored when disposed.
-/// </remarks>
+// Object-store paths that the GDAL runners may open remotely. Access is granted by
+// the executor that built the path with GdalVsiPath.Build, never by a substring of
+// the argument vector, so a job value that merely contains "/vsi" cannot re-enable
+// remote handlers, project storage credentials or select the remote container
+// network. The scope flows with the async execution context, covering every runner
+// call made while it is open, and is restored when disposed.
 internal static class GdalRemoteInputScope
 {
     private const string S3Prefix = "/vsis3/";
@@ -25,13 +18,7 @@ internal static class GdalRemoteInputScope
 
     private static readonly AsyncLocal<ImmutableDictionary<string, GdalRemoteInputs>?> Trusted = new();
 
-    /// <summary>
-    /// Trusts the supplied paths for remote access until the returned handle is
-    /// disposed. Null, blank and non-object-store paths (for example a Local
-    /// provider file path) are ignored.
-    /// </summary>
-    /// <param name="paths">Paths built by <see cref="GdalVsiPath.Build"/>.</param>
-    /// <returns>A handle that restores the previous scope.</returns>
+    // Null, blank and non-object-store paths (for example a Local provider file) are ignored.
     public static IDisposable Trust(params string?[] paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -50,15 +37,9 @@ internal static class GdalRemoteInputScope
         return new Restore(previous);
     }
 
-    /// <summary>
-    /// Trusts arguments GDAL derived from an already trusted root (for example
-    /// <c>ZARR:"/vsis3/…":/array</c> subdataset names) with the root's access. A
-    /// root that is not trusted in the current scope trusts nothing, and an
-    /// argument that does not start with <c>ZARR:"&lt;root&gt;":</c> is ignored.
-    /// </summary>
-    /// <param name="arguments">The exact derived arguments.</param>
-    /// <param name="trustedRoot">The trusted path they were derived from.</param>
-    /// <returns>A handle that restores the previous scope.</returns>
+    // Gives Zarr subdataset names derived from a trusted root the root's access. A root
+    // that is not trusted in the current scope trusts nothing, and an argument that
+    // does not start with the quoted root after the ZARR prefix is ignored.
     public static IDisposable TrustDerived(IEnumerable<string> arguments, string trustedRoot)
     {
         ArgumentNullException.ThrowIfNull(arguments);
@@ -82,10 +63,7 @@ internal static class GdalRemoteInputScope
         return new Restore(previous);
     }
 
-    /// <summary>
-    /// Classifies an argument vector against the current scope. Only an argument
-    /// that is exactly a trusted path counts.
-    /// </summary>
+    // Only an argument that is exactly a trusted path counts.
     public static GdalRemoteInputs Classify(IReadOnlyList<string> arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
@@ -138,15 +116,7 @@ internal static class GdalRemoteInputScope
     }
 }
 
-/// <summary>
-/// Remote object-store access an invocation is allowed, derived from
-/// <see cref="GdalRemoteInputScope"/>.
-/// </summary>
-/// <param name="Remote">Whether any trusted remote path is an argument.</param>
-/// <param name="S3">Whether a trusted <c>/vsis3/</c> path is an argument.</param>
-/// <param name="Azure">Whether a trusted <c>/vsiaz/</c> path is an argument.</param>
 internal readonly record struct GdalRemoteInputs(bool Remote, bool S3, bool Azure)
 {
-    /// <summary>No remote access.</summary>
     public static GdalRemoteInputs None => default;
 }
