@@ -745,6 +745,11 @@ receipts. This adds no jobs or runners and changes no required check names or
 unchanged. The quarantine publisher keeps one artifact per shard, the newest
 attempt.
 
+`CapabilitiesMetadataXmlTests` is outside the Wms namespace, so it is not part of
+the OGC Classic Maps class partition. The shard `OGC Classic Capabilities Metadata`
+claims that class alone. Its dispatch rank is an unmeasured 6.0 until a full run
+records it. The WMS children keep the original namespace cut, budgets and paths.
+
 The retained `*.timing.json` includes `execution` with actual result counts,
 TRX SHA-256, source SHA/dirty flag, project, and runner/verifier hashes. The timing
 record retains the effective filter and original shard status. Its count status

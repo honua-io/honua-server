@@ -546,7 +546,7 @@
     },
     {
       "name": "OGC Classic Maps",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.CapabilitiesMetadataXmlTests",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)",
       "children": [
         "OGC Classic Maps Core",
         "OGC Classic Maps Supporting"
@@ -2928,16 +2928,35 @@
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
       "_comment": "Capacity split #6318: exact class/complement partition of the original Wms namespace. Retains every other Wms class, including rendered-raster, hidden-field, authorization, capabilities, exception-mapping, temporal, CRS and Mapsui coverage. Original source triggers, test assembly, Tier exclusions, parallelism and 20m/30m budgets remain unchanged.",
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests)|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.CapabilitiesMetadataXmlTests",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests",
       "paths": [
         "src/Honua.Core/Core/Features/Metadata/Domain/V2/",
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/GeoServices/MapServer/",
         "src/Honua.Protocols/OgcClassic/Wms/",
         "src/Honua.Server/Features/StaticMap/",
-        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesMetadataXmlTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/MetadataV2LifecycleRoutingTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/"
+      ]
+    },
+    {
+      "name": "OGC Classic Capabilities Metadata",
+      "shard_name": "OGC Classic Capabilities Metadata",
+      "dispatch_rank": 6.0,
+      "artifact_suffix": "ogc-classic-capabilities-metadata",
+      "log_name": "server-tests-ogc-classic-capabilities-metadata",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
+      "_comment": "CapabilitiesMetadataXmlTests sits in the Classic namespace, outside the Wms class partition. A separate shard claims it without leaking a foreign class into OGC Classic Maps Core or Supporting.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.CapabilitiesMetadataXmlTests",
+      "paths": [
+        "src/Honua.Core/Core/Features/Metadata/Domain/V2/",
+        "src/Honua.Protocols/OgcClassic/Wms/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesMetadataXmlTests.cs"
       ]
     },
     {
