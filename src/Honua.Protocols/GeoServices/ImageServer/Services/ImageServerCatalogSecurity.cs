@@ -15,7 +15,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 internal static class ImageServerCatalogSecurity
 {
     public static Task<ImmutableArray<string>> ResolveMasksAsync(
-        HttpContext context, MetadataV2Resource? resource, CancellationToken cancellationToken)
+        HttpContext context, MetadataV2Object? resource, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return context.RequestServices.GetRequiredService<IFieldMaskSource>()

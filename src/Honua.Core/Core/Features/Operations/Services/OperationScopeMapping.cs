@@ -65,10 +65,17 @@ public static class OperationScopeMapping
                 "admin.services.timeinfo.set" or "admin.services.layer-metadata.set" or
                 "admin.connections.update" or "admin.connections.extents.refresh" or
                 "admin.connections.features.refresh" => OperatorOperation.Update,
-            _ => default,
+            _ => ResolveLayerConfiguration(request.OperationId),
         };
         return operation != default;
     }
+
+    private static OperatorOperation ResolveLayerConfiguration(string operationId) => operationId switch
+    {
+        "admin.layer.display.get" or "admin.layer.spatial.get" => OperatorOperation.Read,
+        "admin.layer.display.set" or "admin.layer.spatial.set" => OperatorOperation.Update,
+        _ => default,
+    };
 
     // For a scope-governed caller, a missing catalog mapping is refused, because a missing entry cannot grant OAuth authority.
     public static bool ExceedsScopeAuthority(OperationRequest request, OperationPolicyContext context)

@@ -55,7 +55,8 @@ internal sealed partial class Wfs20Handler
 
         try
         {
-            var featureTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
+            var featureTypes = SelectAdvertisedFeatureTypes(
+                await GetPublishedFeatureTypesAsync(context, cancellationToken));
             var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl}/wfs");
             var builtTypes = ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")
                 ? await BuildFeatureTypesAsync(featureTypes, cancellationToken).ConfigureAwait(false)
@@ -115,7 +116,9 @@ internal sealed partial class Wfs20Handler
         {
             var requestedTypes = Wfs20Utilities.ParseTypeNames(typeNames);
             var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
-            var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+            var selectedTypes = requestedTypes.Length == 0
+                ? SelectAdvertisedFeatureTypes(publishedTypes)
+                : ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (selectedTypes.Length == 0 && requestedTypes.Length > 0)
             {
                 throw new ArgumentException($"Requested feature type(s) not found: {string.Join(", ", requestedTypes)}.");
@@ -141,7 +144,7 @@ internal sealed partial class Wfs20Handler
         bool enforceAccess = true)
     {
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var candidates = new List<(int StorageLayerId, MetadataV2Resource Resource, MetadataV2Publication Publication, MetadataV2Service Service)>();
+        var candidates = new List<(int StorageLayerId, MetadataV2Object Resource, MetadataV2Layer Publication, MetadataV2Service Service)>();
         foreach (var publication in snapshot.Graph.Publications)
         {
             if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
@@ -191,6 +194,20 @@ internal sealed partial class Wfs20Handler
 
         return descriptors.ToImmutable();
     }
+
+
+    // A storage layer published through several WFS-enabled services (the compat svc-*-ogc and
+    // svc-*-feature pair) would otherwise be listed once per publication under the same title, which
+    // OWSLib rejects as ambiguous. Only discovery listings collapse; explicit typenames and RESOURCEID
+    // requests still resolve every publication.
+    private static ImmutableArray<WfsFeatureTypeDescriptor> SelectAdvertisedFeatureTypes(
+        ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes)
+        => publishedTypes
+            .OrderBy(static featureType => featureType.StorageLayerId)
+            .ThenBy(static featureType => featureType.Publication.LayerIndex ?? int.MaxValue)
+            .ThenBy(static featureType => featureType.Publication.Metadata.Id, StringComparer.Ordinal)
+            .DistinctBy(static featureType => featureType.StorageLayerId)
+            .ToImmutableArray();
 
 
     private static string GetFeatureNamespacePrefix(string layerName)
@@ -341,7 +358,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static string[] BuildKeywords(MetadataV2Resource resource)
+    private static string[] BuildKeywords(MetadataV2Object resource)
     {
         var keywords = new List<string>
         {
@@ -371,7 +388,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<WGS84BoundingBox?> BuildWgs84BoundingBoxAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         var bbox = resource.ReadBbox();

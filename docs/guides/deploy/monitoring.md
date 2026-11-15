@@ -17,6 +17,7 @@ You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the 
 | `GET /healthz/live` | none | Liveness probe; returns `Healthy` |
 | `GET /healthz/ready` | none | Readiness probe; returns `Ready` |
 | `GET /metrics` | admin | Native Prometheus text exposition |
+| `GET /healthz/deep` | anonymous | Uncached PostgreSQL and serving-catalog probe for an external watchdog |
 | `GET /healthz/metrics` | admin | Lightweight health/performance snapshot incl. license state |
 | `GET /api/v1/metrics/{health,performance,database,cache,memory,streaming}` | admin | JSON metric snapshots |
 | `GET /monitoring/health/production` | admin | Combined health from live request/cache/connection telemetry |
@@ -25,6 +26,27 @@ You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the 
 | `GET /monitoring/alerts` | admin | Current alert conditions from production thresholds |
 | `GET /api/v1/admin/observability/{errors,telemetry,events,migrations}` | admin | Error history, tracing status, Operate events, migration state |
 | `GET /api/v1/operate/status` | ops-reader or admin | **Server-authoritative aggregated status** — one server-computed verdict, per-domain rollups, and an explicitly sourced SLO posture |
+
+## External watchdog probe
+
+Use `/healthz/deep` as the external watchdog's explicit `DEEP_PATH`. Each GET checks
+that migrations completed, performs a fresh PostgreSQL health check, and reads the
+serving metadata graph. An empty catalog is valid. A successful probe returns plain
+text `Ready` with status 200; an unavailable dependency, incomplete migration, or
+exhausted five-second budget returns `Not Ready` with status 503. Exception details
+stay in server logs. The probe is anonymous, independent of tenant selection, and
+accepts GET only.
+
+The origin disables output caching and sends `Cache-Control: no-store`. Configure
+CloudFront to disable caching for this path too, so a previous success cannot hide
+an outage. Keep the watchdog's narrow WAF probe exception and its per-stack secret
+header on the intended origin; never forward that secret through redirects. Use the
+existing shallow readiness route for frequent load-balancer checks. The deeper
+probe performs dependency work on every request.
+
+An origin test does not qualify the deployed watchdog. Before activation, the
+infrastructure owner must prove the uncached route through CloudFront, failure and
+recovery reporting, and the independent notification path on the Launch Stack.
 
 ## Which replica answered (`Honua-Instance`)
 
