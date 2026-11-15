@@ -11,6 +11,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
@@ -86,6 +87,6 @@ public sealed class OgcFeaturesTwoTaskLockTests
             ?? throw new InvalidOperationException("Feature lock migration is missing.");
         using var reader = new StreamReader(stream);
         await postgres.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync())
-            .Replace("$HonuaSchema$", new NpgsqlCommandBuilder().QuoteIdentifier(leaseSchema), StringComparison.Ordinal));
+            .Replace("$HonuaSchema$", JobStoreDatabase.QuoteIdentifier(leaseSchema), StringComparison.Ordinal));
     }
 }
