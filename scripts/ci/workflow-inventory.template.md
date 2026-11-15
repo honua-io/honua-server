@@ -1,5 +1,7 @@
 # CI Workflow Inventory
 
+Shared OGC capabilities XML tests run in a standalone metadata shard, leaving the WMS class/complement partition and its legacy budgets unchanged.
+
 The latest full-run capacity audit partitions eleven additional parents into 26
 children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
 Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,
@@ -172,9 +174,24 @@ Existing release cancellation policy is retained.
 ## Neutral automation helpers
 
 Derived Artifact Normalization (`Generate bounded normalization projections`,
-`Produce data-only normalization envelope`) retains `cancel-in-progress: false`
-and `queue: max`. Superseded normalization subjects skip production and consumer
-mutation. Review helpers instead cancel superseded events; their replacement
+`Produce data-only normalization envelope`) cancels superseded ready-PR runs
+per PR. Draft and title/body-only edits use isolated groups and cannot cancel
+eligible generation. The consumer has no workflow-level concurrency group.
+Trusted default-branch admission resolves the live PR and cancels only older
+producer generations for that PR; validation then uses a per-PR, per-attempt
+group. Observe mode validates envelopes and reports drift, and the trunk
+regeneration producer publishes generated documents. Delayed old completions
+cannot cancel current validation.
+
+GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so
+their workflow cannot declare repository-owned concurrency.
+`code-quality-supersession.yml` reconciles PR and managed-workflow start events
+using trusted default-branch code. It cancels only active managed Code Quality
+runs for the same PR whose SHA differs from the live PR head, rechecking that
+head before each cancellation. Current-head coverage, trunk scans, required
+checks and other PRs remain protected.
+
+Review helpers instead cancel superseded events; their replacement
 re-reads live review evidence and admission state. Closed/draft review subjects
 finish neutrally before publication. Missing admission prerequisites finish the
 attestation helper neutrally while the separate required `Review Gate` status
@@ -486,7 +503,8 @@ which is why both the run count and exact observed span are recorded.
 | `server-test-prebuild-evidence-ledger.yml` | Server Test Prebuild Evidence Ledger | daily `schedule`, `workflow_dispatch` | Audits retained prebuild parity receipts. |
 | `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of retained Review Gate observation receipts; replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness. Cannot change mode, status, labels, runs, train state, or merge state. |
 | `impact-routing-evidence-ledger.yml` | Impact Routing Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of attempt-bound PR Gate and native-image impact receipts; reconciles native decisions with successful exact-head Serving/GDAL image outcomes. |
-| `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Observe mode validates envelopes and reports drift without writing PR branches; the existing trunk regeneration producer publishes generated documents. |
+| `code-quality-supersession.yml` | Cancel superseded Code Quality | `pull_request_target`, managed `workflow_run` | Trusted default-branch controller cancels only older active managed C# Code Quality runs for the same verified PR; preserves current-head coverage. |
+| `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Trusted admission cancels only older producer generations for the same PR. Observe mode validates envelopes and reports drift without writing PR branches; the existing trunk regeneration producer publishes generated documents. |
 | `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
 
 ## Nightly and scheduled test lanes

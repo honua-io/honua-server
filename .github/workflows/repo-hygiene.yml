@@ -39,6 +39,31 @@ jobs:
           git show "$BASE_SHA:scripts/ci/check-evidence-paths.test.py" > "$policy_dir/check-evidence-paths.test.py"
           python3 "$policy_dir/check-evidence-paths.test.py"
           python3 "$policy_dir/check-evidence-paths.py" --base "$BASE_SHA" --head "$HEAD_SHA"
+  retired-cache-mentions:
+    name: Retired cache mentions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check added text
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          policy_dir="$(mktemp -d)"
+          trap 'rm -rf "$policy_dir"' EXIT
+          policy_ref="$BASE_SHA"
+          # Bootstrap the policy in its introducing PR; later PRs use the trusted base.
+          if ! git cat-file -e "$BASE_SHA:scripts/ci/check-retired-cache.py"; then
+            policy_ref="$HEAD_SHA"
+          fi
+          git show "$policy_ref:scripts/ci/check-retired-cache.py" > "$policy_dir/check-retired-cache.py"
+          git show "$policy_ref:scripts/ci/check-retired-cache.test.py" > "$policy_dir/check-retired-cache.test.py"
+          python3 "$policy_dir/check-retired-cache.test.py"
+          python3 "$policy_dir/check-retired-cache.py" --base "$BASE_SHA" --head "$HEAD_SHA"
   generated-file-ownership:
     name: Trunk-generated file ownership
     permissions:
@@ -83,7 +108,7 @@ jobs:
     name: repo-hygiene / Repository hygiene
     # A superseded run must cancel rather than run a failing aggregate.
     if: ${{ !cancelled() && !contains(needs.*.result, 'cancelled') }}
-    needs: [evidence-paths, generated-file-ownership, shared-hygiene]
+    needs: [evidence-paths, retired-cache-mentions, generated-file-ownership, shared-hygiene]
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     steps:
       - name: Use the job's own temp directory
@@ -97,6 +122,7 @@ jobs:
       - name: Require all hygiene checks
         env:
           EVIDENCE_RESULT: ${{ needs.evidence-paths.result }}
+          CACHE_RESULT: ${{ needs.retired-cache-mentions.result }}
           GENERATED_RESULT: ${{ needs.generated-file-ownership.result }}
           SHARED_RESULT: ${{ needs.shared-hygiene.result }}
-        run: test "$EVIDENCE_RESULT" = success && test "$GENERATED_RESULT" = success && test "$SHARED_RESULT" = success
+        run: test "$EVIDENCE_RESULT" = success && test "$CACHE_RESULT" = success && test "$GENERATED_RESULT" = success && test "$SHARED_RESULT" = success
