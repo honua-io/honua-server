@@ -57,6 +57,31 @@ jobs:
           else
             echo 'Migration policy rollout: trusted trunk checker is not installed yet.'
           fi
+  retired-cache-mentions:
+    name: Retired cache mentions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check added text
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          policy_dir="$(mktemp -d)"
+          trap 'rm -rf "$policy_dir"' EXIT
+          policy_ref="$BASE_SHA"
+          # Bootstrap the policy in its introducing PR; later PRs use the trusted base.
+          if ! git cat-file -e "$BASE_SHA:scripts/ci/check-retired-cache.py"; then
+            policy_ref="$HEAD_SHA"
+          fi
+          git show "$policy_ref:scripts/ci/check-retired-cache.py" > "$policy_dir/check-retired-cache.py"
+          git show "$policy_ref:scripts/ci/check-retired-cache.test.py" > "$policy_dir/check-retired-cache.test.py"
+          python3 "$policy_dir/check-retired-cache.test.py"
+          python3 "$policy_dir/check-retired-cache.py" --base "$BASE_SHA" --head "$HEAD_SHA"
   generated-file-ownership:
     name: Trunk-generated file ownership
     permissions:
@@ -87,19 +112,34 @@ jobs:
             git show "$policy_ref:scripts/ci/$script" > "$policy_dir/$script"
           done
           python3 "$policy_dir/check-generated-file-ownership.py" --base "$policy_ref" --head "$HEAD_SHA"
+  shard-identities:
+    name: Shard inventory identities
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Validate GitHub's merge tree so independent additions collide before landing.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require unique shard identities
+        run: |
+          python3 scripts/ci/check-shard-identities.test.py
+          python3 scripts/ci/check-shard-identities.py
   shared-hygiene:
     uses: honua-io/.github/.github/workflows/repo-hygiene.yml@7e93a67a13dc498cc4e5032f00cd9e93171afb95 # light runner switch
   repo-hygiene:
     name: repo-hygiene / Repository hygiene
     # A superseded run must cancel rather than run a failing aggregate.
     if: ${{ !cancelled() && !contains(needs.*.result, 'cancelled') }}
-    needs: [evidence-paths, migration-numbers, generated-file-ownership, shared-hygiene]
+    needs: [evidence-paths, migration-numbers, retired-cache-mentions, generated-file-ownership, shard-identities, shared-hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Require all hygiene checks
         env:
           EVIDENCE_RESULT: ${{ needs.evidence-paths.result }}
           MIGRATION_RESULT: ${{ needs.migration-numbers.result }}
+          CACHE_RESULT: ${{ needs.retired-cache-mentions.result }}
           GENERATED_RESULT: ${{ needs.generated-file-ownership.result }}
+          SHARDS_RESULT: ${{ needs.shard-identities.result }}
           SHARED_RESULT: ${{ needs.shared-hygiene.result }}
-        run: test "$EVIDENCE_RESULT" = success && test "$MIGRATION_RESULT" = success && test "$GENERATED_RESULT" = success && test "$SHARED_RESULT" = success
+        run: test "$EVIDENCE_RESULT" = success && test "$MIGRATION_RESULT" = success && test "$CACHE_RESULT" = success && test "$GENERATED_RESULT" = success && test "$SHARDS_RESULT" = success && test "$SHARED_RESULT" = success

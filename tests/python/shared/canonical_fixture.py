@@ -30,6 +30,13 @@ FIXTURE_MANIFEST_PATH = (
 SERVICE_ID = "test_service"
 COLLECTION_ID = "0"
 
+# Authored catalog metadata in the compatibility snapshot, inherited by services.
+CATALOG_TITLE = "CI compatibility seed"
+CATALOG_DESCRIPTION = "Authored metadata for the canonical client compatibility fixture."
+CONTACT_ORGANIZATION = "CI Compatibility Fixture"
+CONTACT_NAME = "Compatibility Fixture Maintainer"
+CONTACT_EMAIL = "fixture-maintainer@example.invalid"
+
 # Row counts in the seeded `features` table for layer 0.
 TOTAL_FEATURES = 10
 FEATURES_WITH_GEOMETRY = 9

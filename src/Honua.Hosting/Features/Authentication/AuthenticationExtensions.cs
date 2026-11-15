@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.MultiTenancy;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -186,6 +187,12 @@ public static class AuthenticationExtensions
 
     public static TBuilder RequireAdminAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminPolicy);
+
+    internal static TBuilder RequirePlatformAdminAuthorization<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(policy =>
+            policy.RequireAssertion(context => context.Resource is HttpContext httpContext &&
+                PlatformAdminAuthorization.IsAuthorized(context.User,
+                    httpContext.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value)));
 
     public static TBuilder RequireAdminCredentialManagementAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminCredentialManagementPolicy);

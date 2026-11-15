@@ -33,12 +33,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  runner-select:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    uses: ./.github/workflows/advisory-runner-select.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      hosted-runner: ubuntu-latest
+    secrets:
+      wake-role: ${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}
+
   analyze:
+    needs: runner-select
     name: Analyze C#
     if: >-
+      always() && !cancelled() &&
       (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
       (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]')
-    runs-on: ubuntu-latest
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '"ubuntu-latest"') || 'ubuntu-latest' }}
     # The scheduled manual-build scan remains the upper bound for this job.
     timeout-minutes: 90
     permissions:
@@ -53,7 +66,7 @@ jobs:
 
       # The scheduled instrumented build needs more disk than the PR no-build lane.
       - name: Free disk space
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' && runner.environment == 'github-hosted' }}
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false

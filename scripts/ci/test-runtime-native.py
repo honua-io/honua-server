@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 import re
 import shutil
@@ -35,10 +34,8 @@ class NativeRuntimeGateTests(unittest.TestCase):
 
     def verify(self):
         script = Path(__file__).resolve().parents[2] / 'docker/runtime/verify-native.sh'
-        command = ['sh', str(script), str(self.runtime), '/app']
-        if os.geteuid() != 0:
-            command = ['unshare', '-Ur', *command]
-        return subprocess.run(command, text=True, capture_output=True, timeout=15)
+        return subprocess.run(['sh', str(script), str(self.runtime), '/app'],
+                              text=True, capture_output=True, timeout=15)
 
     def host_only_dependency(self, target):
         host = self.base / 'host'

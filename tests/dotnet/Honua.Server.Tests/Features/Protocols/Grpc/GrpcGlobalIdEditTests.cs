@@ -121,7 +121,7 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
         var original = await _sut.ApplyEdits(request, CallContext("insert"));
         original.AddResults.Single().GlobalId.Should().NotBeEmpty();
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(ImmutableArray.Create("globalid")));
         var service = serviceFactory(original);
 
@@ -145,6 +145,27 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
         var add = new Proto.Feature();
         add.Attributes["n"] = new Proto.AttributeValue { DecimalValue = "0.10" };
         request.Adds.Add(add);
+
+        var act = async () => await _sut.ApplyEdits(request, CallContext("insert"));
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        AssertNothingRead();
+    }
+
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ExactValueSchemaMismatch_InLaterRow_RejectsEntireCallBeforeWriting(bool rollbackOnFailure)
+    {
+        UseLayer(ResourceWith(new MetadataV2Field { Name = "n", Type = MetadataV2FieldType.Decimal, Nullable = true }), capabilities: null);
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0, RollbackOnFailure = rollbackOnFailure };
+        var valid = new Proto.Feature();
+        valid.Attributes["n"] = new Proto.AttributeValue { DecimalValue = "12345678901234567890.1000" };
+        var wrongWireType = new Proto.Feature();
+        wrongWireType.Attributes["n"] = new Proto.AttributeValue { StringValue = "1.50" };
+        request.Adds.Add(valid);
+        request.Adds.Add(wrongWireType);
 
         var act = async () => await _sut.ApplyEdits(request, CallContext("insert"));
 
@@ -220,7 +241,7 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
     public async Task MaskedGlobalIdField_ExposesNoIdsAndRefusesSelectors()
     {
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(ImmutableArray.Create("GLOBALID")));
         _featureWriter.ApplyEditsAsync(default, default, default).ReturnsForAnyArgs(Task.FromResult(
             FeatureEditResult.Success(1, 0, 0, createResults: [EditOperationResult.Success(7, GlobalId)])));
@@ -240,7 +261,7 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
     public async Task MaskedGlobalIdField_IsAbsentFromQueryResults()
     {
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(ImmutableArray.Create("globalid")));
 
         var response = await _sut.QueryFeatures(
@@ -262,7 +283,7 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
         return context;
     }
 
-    private void UseLayer(MetadataV2Resource resource, IReadOnlyList<string>? capabilities)
+    private void UseLayer(MetadataV2Object resource, IReadOnlyList<string>? capabilities)
     {
         var triple = GrpcFeatureServiceTests.CreateTriple(GrpcFeatureServiceTests.CreateService("test"), resource);
         if (capabilities is not null)
@@ -274,22 +295,22 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
             .Returns(ResourceValidationResult.Success(triple));
     }
 
-    private static MetadataV2Resource GlobalIdResource()
+    private static MetadataV2Object GlobalIdResource()
         => ResourceWith(new MetadataV2Field { Name = "GlobalID", Type = MetadataV2FieldType.Uuid, Nullable = true });
 
-    private static MetadataV2Resource HiddenGlobalIdResource()
+    private static MetadataV2Object HiddenGlobalIdResource()
         => ResourceWith(new MetadataV2Field { Name = "GlobalID", Type = MetadataV2FieldType.Uuid, Nullable = true, Hidden = true });
 
-    private static MetadataV2Resource ResourceWith(MetadataV2Field globalIdField)
+    private static MetadataV2Object ResourceWith(MetadataV2Field globalIdField)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-test", Name = "test" },
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = MetadataV2SpatialReference.Wgs84
             },
-            Editing = new MetadataV2ResourceEditing { GlobalIdField = "GlobalID" },
+            Editing = new MetadataV2ObjectEditing { GlobalIdField = "GlobalID" },
             SchemaFields =
             [
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },

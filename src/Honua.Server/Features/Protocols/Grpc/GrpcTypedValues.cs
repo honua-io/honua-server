@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Grpc.Core;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -13,129 +12,31 @@ namespace Honua.Server.Features.Protocols.Grpc;
 // Lossless geospatial-grpc 1.2 attribute values: calendar dates, local times, offset
 // timestamps and exact decimals. Lexically invalid input throws ArgumentException, which
 // the edit path reports as INVALID_ARGUMENT before any write.
-internal static partial class GrpcTypedValues
+internal static class GrpcTypedValues
 {
     private const string DateFormat = "yyyy'-'MM'-'dd";
     private const string TimeFormat = "HH':'mm':'ss.FFFFFFF";
 
-    private static readonly string[] TimeFormats =
-    [
-        "HH':'mm':'ss",
-        "HH':'mm':'ss'.'f", "HH':'mm':'ss'.'ff", "HH':'mm':'ss'.'fff", "HH':'mm':'ss'.'ffff",
-        "HH':'mm':'ss'.'fffff", "HH':'mm':'ss'.'ffffff", "HH':'mm':'ss'.'fffffff",
-    ];
-
-    private static readonly TimeSpan MaxOffset = TimeSpan.FromHours(14);
-
-    [GeneratedRegex(@"^[0-9]{4}-[0-9]{2}-[0-9]{2}\z", RegexOptions.CultureInvariant)]
-    private static partial Regex DatePattern();
-
-    [GeneratedRegex(@"^[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,7})?\z", RegexOptions.CultureInvariant)]
-    private static partial Regex TimePattern();
-
-    [GeneratedRegex(
-        @"^(?<local>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,7})?)(?<zone>Z|(?<sign>[+-])(?<hours>[0-9]{2}):(?<minutes>[0-9]{2}))\z",
-        RegexOptions.CultureInvariant)]
-    private static partial Regex TimestampOffsetPattern();
-
-    [GeneratedRegex(@"^-?(0|[1-9][0-9]*)(\.[0-9]+)?\z", RegexOptions.CultureInvariant)]
-    private static partial Regex DecimalPattern();
-
-    // Parses a date_value (Gregorian YYYY-MM-DD, years 0001-9999).
-    public static DateOnly ParseDate(string value)
-    {
-        if (!DatePattern().IsMatch(value)
-            || !DateOnly.TryParseExact(value, DateFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
-        {
-            throw new ArgumentException($"date_value '{value}' is not a calendar date in YYYY-MM-DD form.");
-        }
-
-        return date;
-    }
-
-    // Parses a time_value (HH:mm:ss with 0-7 fractional digits, 00:00:00-23:59:59.9999999).
-    public static TimeOnly ParseTime(string value)
-    {
-        // TimeOnly parsing accepts 24:00:00; the wire range ends at 23:59:59.9999999.
-        if (!TimePattern().IsMatch(value)
-            || value.StartsWith("24", StringComparison.Ordinal)
-            || !TimeOnly.TryParseExact(value, TimeFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
-        {
-            throw new ArgumentException($"time_value '{value}' is not a local time in HH:mm:ss[.fffffff] form.");
-        }
-
-        return time;
-    }
-
-    // Parses a timestamp_offset_value (RFC 3339 with a required offset within ±14:00).
+    public static DateOnly ParseDate(string value) => ExactAttributeValues.ParseDate(value);
+    public static TimeOnly ParseTime(string value) => ExactAttributeValues.ParseTime(value);
     public static DateTimeOffset ParseTimestampOffset(string value)
+        => PreserveRangeFailure(() => ExactAttributeValues.ParseTimestampOffset(value));
+    public static decimal ParseDecimal(string value)
+        => PreserveRangeFailure(() => ExactAttributeValues.ParseDecimal(value));
+
+    private static T PreserveRangeFailure<T>(Func<T> parse)
     {
-        var match = TimestampOffsetPattern().Match(value);
-        if (!match.Success)
-        {
-            throw new ArgumentException($"timestamp_offset_value '{value}' is not an RFC 3339 timestamp with an offset.");
-        }
-
-        var offset = TimeSpan.Zero;
-        if (match.Groups["sign"].Success)
-        {
-            var hours = int.Parse(match.Groups["hours"].Value, CultureInfo.InvariantCulture);
-            var minutes = int.Parse(match.Groups["minutes"].Value, CultureInfo.InvariantCulture);
-            offset = new TimeSpan(hours, minutes, 0);
-            if (minutes > 59 || offset > MaxOffset)
-            {
-                throw new ArgumentException($"timestamp_offset_value '{value}' has an offset outside ±14:00.");
-            }
-
-            if (match.Groups["sign"].Value == "-")
-            {
-                offset = offset.Negate();
-            }
-        }
-
-        var local = match.Groups["local"].Value;
-        var date = ParseDate(local[..10]);
-        var time = ParseTime(local[11..]);
         try
         {
-            return new DateTimeOffset(date.ToDateTime(time, DateTimeKind.Unspecified), offset);
+            return parse();
         }
-        catch (ArgumentOutOfRangeException)
+        catch (ExactValueRangeException exception)
         {
-            throw new UnstorableValueException($"timestamp_offset_value '{value}' is outside the representable range.");
+            throw new UnstorableValueException(exception.Message);
         }
     }
 
-    // Parses a decimal_value exactly. Values the server cannot hold without rounding
-    // (more than 28-29 significant digits or out of range) are refused, never rounded.
-    public static decimal ParseDecimal(string value)
-    {
-        if (!DecimalPattern().IsMatch(value))
-        {
-            throw new ArgumentException($"decimal_value '{value}' is not an exact base-10 number.");
-        }
-
-        // Lexically valid but outside the decimal range: the server cannot hold it.
-        if (!decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
-                CultureInfo.InvariantCulture, out var number))
-        {
-            throw new UnstorableValueException($"decimal_value '{value}' is outside the supported decimal range.");
-        }
-
-        var exact = number.ToString(CultureInfo.InvariantCulture);
-        if (!string.Equals(exact, value, StringComparison.Ordinal)
-            && !string.Equals(exact, NormalizeNegativeZero(value), StringComparison.Ordinal))
-        {
-            throw new UnstorableValueException($"decimal_value '{value}' exceeds the supported decimal precision.");
-        }
-
-        return number;
-    }
-
-    // Read-side text for values without a dedicated wire case. Dates and times stay invariant
-    // ISO text on string_value because clients before geospatial-grpc 1.2 cannot read the
-    // date/time cases; the declared field type already says DATE or TIME. Metadata has no
-    // exact-decimal field type, so decimals keep going out as doubles.
+    // Legacy field types keep their existing wire representation.
     public static string ToInvariantText(object value) => value switch
     {
         DateOnly date => FormatDate(date),
@@ -150,37 +51,66 @@ internal static partial class GrpcTypedValues
     // Without trailing fractional zeros.
     public static string FormatTime(TimeOnly time) => time.ToString(TimeFormat, CultureInfo.InvariantCulture);
 
-    // Metadata has no offset-preserving timestamp or exact decimal type. Refuse these
-    // values before writes rather than coerce them to a UTC instant, binary float or text.
-    public static void EnsureStorable(MetadataV2Resource resource, FeatureEditBatch batch)
+    public static GrpcExactValue ExactDecimal(string value)
     {
-        var creates = batch.Creates.IsDefault ? ImmutableArray<Feature>.Empty : batch.Creates;
-        var updates = batch.Updates.IsDefault ? ImmutableArray<Feature>.Empty : batch.Updates;
-        foreach (var feature in creates.Concat(updates))
-        {
-            foreach (var (name, value) in feature.Attributes)
-            {
-                if (Unstorable(name, value) is { } reason)
-                {
-                    throw new RpcException(new Status(StatusCode.FailedPrecondition, reason));
-                }
-            }
-        }
+        _ = ParseDecimal(value);
+        return new(MetadataV2FieldType.Decimal, value);
     }
 
-    private static string? Unstorable(string name, object? value) => value switch
+    public static GrpcExactValue ExactTimestampOffset(string value)
     {
-        DateTimeOffset => $"Field '{name}' cannot preserve a timestamp offset; send datetime_value for a UTC instant.",
-        decimal => $"Field '{name}' cannot preserve decimal_value and its scale; exact decimal storage is unavailable.",
-        _ => null,
-    };
+        _ = ParseTimestampOffset(value);
+        return new(MetadataV2FieldType.TimestampOffset, value);
+    }
 
-    // decimal keeps "-0" only as "0"; scale and trailing zeros otherwise round-trip.
-    private static string NormalizeNegativeZero(string value)
-        => value.StartsWith('-') && value.AsSpan(1).TrimStart('0').TrimStart('.').TrimStart('0').IsEmpty
-            ? value[1..]
-            : value;
+    // Exact values use JSON strings in canonical storage; schema types supply their meaning.
+    // The wire discriminator must agree with the declared type before entering the writer.
+    public static FeatureEditBatch EnsureStorable(MetadataV2Object resource, FeatureEditBatch batch)
+        => batch with
+        {
+            Creates = NormalizeFeatures(resource, batch.Creates),
+            Updates = NormalizeFeatures(resource, batch.Updates),
+            Operations = batch.Operations.IsDefault ? [] : batch.Operations.Select(operation => operation with
+            {
+                Feature = operation.Feature is { } feature ? NormalizeFeature(resource, feature) : null
+            }).ToImmutableArray()
+        };
+
+    private static ImmutableArray<Feature> NormalizeFeatures(MetadataV2Object resource, ImmutableArray<Feature> features)
+        => features.IsDefault ? [] : features.Select(feature => NormalizeFeature(resource, feature)).ToImmutableArray();
+
+    private static Feature NormalizeFeature(MetadataV2Object resource, Feature feature)
+    {
+        var attributes = feature.Attributes.ToBuilder();
+        foreach (var (name, value) in feature.Attributes)
+        {
+            var field = resource.SchemaFields.FirstOrDefault(field => string.Equals(field.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (value is GrpcExactValue exact)
+            {
+                if (field?.Type != exact.Type)
+                {
+                    throw CannotPreserve(name);
+                }
+                attributes[name] = exact.Text;
+            }
+            else if (value is decimal or DateTimeOffset)
+            {
+                throw CannotPreserve(name);
+            }
+            else if (value is not null && field?.Type is MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset)
+            {
+                // Plain strings, numbers and legacy datetime values cannot substitute for an exact wire case.
+                throw CannotPreserve(name);
+            }
+        }
+        return feature with { Attributes = attributes.ToImmutable() };
+    }
+
+    private static RpcException CannotPreserve(string name)
+        => new(new Status(StatusCode.FailedPrecondition, $"Field '{name}' requires a matching exact value and storage type."));
 }
 
 // A lexically valid value the server cannot hold without loss: FAILED_PRECONDITION, not INVALID_ARGUMENT.
 internal sealed class UnstorableValueException(string message) : Exception(message);
+
+internal readonly record struct GrpcExactValue(MetadataV2FieldType Type, string Text);

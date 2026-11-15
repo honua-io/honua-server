@@ -4,6 +4,7 @@
 using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Realtime;
+using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -51,7 +52,10 @@ internal static class RealtimeServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddRealtimeEventLog(configuration);
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.TryAddSingleton<IRealtimeStreamLifecycle, RealtimeStreamLifecycle>();
         services.TryAddSingleton<RealtimeDispatcher>();
+        services.TryAddSingleton<IRealtimeWakeSignal>(provider => provider.GetRequiredService<RealtimeDispatcher>());
         services.TryAddSingleton<RealtimePresenceBatcher>();
 
         var crossNode = UsesPostgresProvider(configuration);
@@ -66,6 +70,9 @@ internal static class RealtimeServiceCollectionExtensions
                 : new InProcessRealtimeFanoutProvider(log, dispatcher, presence, leases);
         });
 
+        services.TryAddSingleton<IOptionalRealtimeFanout>(provider => new OptionalRealtimeFanout(
+            provider.GetService<NpgsqlDataSource>() is null ? null : provider.GetRequiredService<IRealtimeFanoutProvider>()));
+
         if (crossNode)
         {
             AddListener(services, configuration);
@@ -74,9 +81,26 @@ internal static class RealtimeServiceCollectionExtensions
         if (hostsDatabasePollingLoops)
         {
             AddTailService(services, configuration);
+            AddStreamLifecycleServices(services);
         }
 
         return services;
+    }
+
+    private static void AddStreamLifecycleServices(IServiceCollection services)
+    {
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeQueueUsageSampler>(
+            provider => new RealtimeQueueUsageSampler(
+                provider.GetService<NpgsqlDataSource>() is null ? null : provider.GetService<ILeaseStore>(),
+                token => provider.GetRequiredService<PostgresRealtimeEventLog>().ReadNotificationQueueUsageAsync(token),
+                provider.GetRequiredService<ILogger<RealtimeQueueUsageSampler>>())
+            {
+                Clock = provider.GetRequiredService<TimeProvider>()
+            }));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeDrainHostedService>(
+            provider => new RealtimeDrainHostedService(
+                provider.GetRequiredService<IRealtimeStreamLifecycle>(),
+                provider.GetService<IHostApplicationLifetime>())));
     }
 
     private static void AddTailService(IServiceCollection services, IConfiguration configuration)
@@ -91,7 +115,10 @@ internal static class RealtimeServiceCollectionExtensions
                     hasDatabase ? provider.GetRequiredService<RealtimePresenceBatcher>() : null,
                     hasDatabase && crossNode ? provider.GetRequiredService<RealtimeListener>() : null,
                     provider.GetRequiredService<IOptions<RealtimeOptions>>(),
-                    provider.GetRequiredService<ILogger<RealtimeTailBackgroundService>>());
+                    provider.GetRequiredService<ILogger<RealtimeTailBackgroundService>>())
+                {
+                    StreamLifecycle = provider.GetRequiredService<IRealtimeStreamLifecycle>()
+                };
             }));
     }
 
@@ -123,3 +150,5 @@ internal static class RealtimeServiceCollectionExtensions
         return RealtimeProviderNames.Is(configured, RealtimeProviderNames.Postgres);
     }
 }
+
+internal sealed record OptionalRealtimeFanout(IRealtimeFanoutProvider? Provider) : IOptionalRealtimeFanout;
