@@ -1173,17 +1173,16 @@ definition.
 
 ### ImageServer raw pixel export database lifetime
 
-`ImageServerRawPixelExportTests` holds an `IClassFixture<PostgresFixture>`
-reference, so the shared PostgreSQL infrastructure starts once per class and
-stays up across its integration cases instead of restarting for each one. Each
-case still creates its own `WebAppFixture` host and isolated schema, and seeds
-the raster under the schema-mutation lock. The pure LERC/BIP encoder unit tests
-live in `ImageServerPixelBlockEncoderTests`, which has no fixture, so running
-only unit tests never starts a database.
-All cases and assertions remain in the GeoServices ImageServer Raster Rendering
-and GeoServices ImageServer Rendering and Support shards on selected PR runs and
-twice-daily full trunk runs. This changes no runner count, required check name,
-required aggregate dependency, workflow, or shard definition.
+`ImageServerRawPixelExportTests` holds a class-scoped `WebAppFixture` reference,
+which retains both the default web host and shared PostgreSQL infrastructure
+across its integration cases. Each case still creates its own fixture, client
+and isolated schema, and seeds the raster under the schema-mutation lock. The
+pure LERC/BIP encoder unit tests live in `ImageServerPixelBlockEncoderTests`,
+which has no fixture, so running only unit tests never starts a database.
+All cases and assertions remain in the selected raster rendering shard and
+twice-daily full trunk runs. See the raw pixel host lifetime section below for
+paired measurements. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
 
 ### ImageServer mosaic integration database lifetime
 
@@ -1553,3 +1552,21 @@ interval fell from 446.067028 to 314.676740 seconds, saving 131.390288 seconds
 (2.19 test-run runner-minutes). Queue and build time are excluded. Full-shard
 job savings remain unmeasured: the shard also includes
 `OperatorBearerTokenServiceTests` and CI setup.
+
+### ImageServer raw pixel host lifetime
+
+`ImageServerRawPixelExportTests` retains the default shared web host through a
+class-scoped `WebAppFixture`. Each case still creates and disposes its own fixture,
+client and schema, resets the raster samples, and holds the schema-mutation lock
+through every request. This avoids rebuilding the default web host between cases
+without sharing case data or changing assertions.
+
+Paired full-class build-host runs passed the same 45 cases with no skips. VSTest
+execution fell from 230 to 20 seconds, saving 210 seconds (3.50 execution
+runner-minutes). The wider TRX start-to-finish interval fell from 235.864591 to
+33.210444 seconds, saving 202.654147 seconds (3.38 test-run runner-minutes).
+Each run used one test process; full CI shard job savings remain unmeasured.
+The selected PR shard and twice-daily full trunk runs retain all cases and their
+existing budgets.
+No workflow, shard selection, runner count, required check or aggregate dependency
+changes are made.
