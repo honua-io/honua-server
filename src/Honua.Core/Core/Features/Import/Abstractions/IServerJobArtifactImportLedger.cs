@@ -38,7 +38,7 @@ internal interface IServerJobArtifactImportLedger
         Func<IServerJobArtifactImportAttempt, CancellationToken, Task<ServerJobArtifactImportReceipt>> import,
         CancellationToken cancellationToken);
 
-    // Drops the server-owned table of one committed staged import and forgets its receipt.
+    // Drops the server-owned table of one committed staged import and spends its receipt.
     Task<StagedImportDiscardOutcome> DiscardStagedAsync(
         StagedImportDiscardRequest request,
         CancellationToken cancellationToken);

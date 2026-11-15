@@ -214,12 +214,26 @@ public sealed class ImportRequestTests
 
     [Trait("Tier", "Fast")]
     [Theory]
-    [InlineData(ImportLoadMode.Append, "Staged_0123456789abcdef01234567", true)]
-    [InlineData(ImportLoadMode.Upsert, "staged_0123456789abcdef01234567", true)]
-    [InlineData(ImportLoadMode.Replace, "staged_0123456789abcdef01234567", true)]
-    [InlineData(ImportLoadMode.CreateOnly, "staged_0123456789abcdef01234567", false)]
-    [InlineData(ImportLoadMode.Append, "staged_parcels", false)]
-    public void Validate_ServerDerivedStagedName_IsReservedForCreateOnly(ImportLoadMode mode, string table, bool refused)
+    [InlineData(ImportLoadMode.Append, "Staged_0123456789abcdef01234567")]
+    [InlineData(ImportLoadMode.Upsert, "staged_0123456789abcdef01234567")]
+    [InlineData(ImportLoadMode.Replace, "staged_0123456789abcdef01234567")]
+    public void Validate_ServerDerivedStagedName_IsReservedForCreateOnly(ImportLoadMode mode, string table)
+    {
+        Action act = () => ValidateStagedRequest(mode, table);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*reserved for server-owned staged imports*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(ImportLoadMode.CreateOnly, "staged_0123456789abcdef01234567")]
+    [InlineData(ImportLoadMode.Append, "staged_parcels")]
+    public void Validate_CreateOnlyOrOtherStagedNames_AreAllowed(ImportLoadMode mode, string table)
+    {
+        Action act = () => ValidateStagedRequest(mode, table);
+        act.Should().NotThrow();
+    }
+
+    private static void ValidateStagedRequest(ImportLoadMode mode, string table)
     {
         using var stream = new MemoryStream([1]);
         var request = new ImportRequest
@@ -232,15 +246,6 @@ public sealed class ImportRequestTests
             KeyColumns = mode == ImportLoadMode.Upsert ? ["id"] : [],
         };
 
-        Action act = () => request.Validate();
-
-        if (refused)
-        {
-            act.Should().Throw<InvalidOperationException>().WithMessage("*reserved for server-owned staged imports*");
-        }
-        else
-        {
-            act.Should().NotThrow();
-        }
+        request.Validate();
     }
 }

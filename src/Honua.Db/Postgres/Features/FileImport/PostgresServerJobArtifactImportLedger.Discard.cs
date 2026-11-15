@@ -21,7 +21,7 @@ internal sealed partial class PostgresServerJobArtifactImportLedger
         ArgumentNullException.ThrowIfNull(request);
         var scopeKey = ScopeKey(request.TenantId, request.ActorId, request.IntentId);
         return await WithScopeLockAsync(scopeKey,
-            connection => DiscardLockedAsync(connection, request, scopeKey, cancellationToken),
+            connection => DiscardLockedAsync(connection, request, cancellationToken),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -31,8 +31,9 @@ internal sealed partial class PostgresServerJobArtifactImportLedger
         => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("staged-import-discarded/v1\n" + scopeKey)));
 
     private async Task<StagedImportDiscardOutcome> DiscardLockedAsync(
-        NpgsqlConnection connection, StagedImportDiscardRequest request, string scopeKey, CancellationToken cancellationToken)
+        NpgsqlConnection connection, StagedImportDiscardRequest request, CancellationToken cancellationToken)
     {
+        var scopeKey = ScopeKey(request.TenantId, request.ActorId, request.IntentId);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var row = await ReadAsync(connection, scopeKey, cancellationToken).ConfigureAwait(false);
         // Only an unspent receipt naming the server-derived staging table qualifies. Callers cannot
@@ -48,27 +49,15 @@ internal sealed partial class PostgresServerJobArtifactImportLedger
         // Serialize with import and publication of this table before deciding it is unpublished.
         await ImportedDatasetSpatialMetadata.AcquireTransactionLockAsync(
             connection, transaction, request.Schema, physical, cancellationToken).ConfigureAwait(false);
-        if (await IsPublishedAsync(connection, transaction, (request.Schema, physical), cancellationToken).ConfigureAwait(false))
+        if (await IsPublishedAsync(transaction, (request.Schema, physical), cancellationToken).ConfigureAwait(false))
         {
             return StagedImportDiscardOutcome.Referenced;
         }
 
-        try
+        var refused = await TryDropOwnedAsync(transaction, (request.Schema, physical), cancellationToken).ConfigureAwait(false);
+        if (refused is { } outcome)
         {
-            if (await ImportTableOwnership.AssertOwnedStagedAsync(connection, request.Schema, physical, cancellationToken)
-                    .ConfigureAwait(false))
-            {
-                await DropAsync(connection, transaction, (request.Schema, physical), cancellationToken).ConfigureAwait(false);
-            }
-        }
-        catch (ImportTableOwnershipException)
-        {
-            // The table exists without the importer marker, so it is not ours to drop.
-            return StagedImportDiscardOutcome.NotOwned;
-        }
-        catch (PostgresException exception) when (exception.SqlState == DependentObjectsStillExist)
-        {
-            return StagedImportDiscardOutcome.Referenced;
+            return outcome;
         }
 
         await ImportedDatasetSpatialMetadata.DeleteTableFactsAsync(
@@ -86,27 +75,52 @@ internal sealed partial class PostgresServerJobArtifactImportLedger
         return StagedImportDiscardOutcome.Discarded;
     }
 
+    private static async Task<StagedImportDiscardOutcome?> TryDropOwnedAsync(
+        NpgsqlTransaction transaction, (string Schema, string Table) target, CancellationToken cancellationToken)
+    {
+        var connection = transaction.Connection!;
+        try
+        {
+            if (await ImportTableOwnership.AssertOwnedStagedAsync(connection, target.Schema, target.Table, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                await DropAsync(transaction, target, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (ImportTableOwnershipException)
+        {
+            // The table exists without the importer marker, so it is not ours to drop.
+            return StagedImportDiscardOutcome.NotOwned;
+        }
+        catch (PostgresException exception) when (exception.SqlState == DependentObjectsStillExist)
+        {
+            return StagedImportDiscardOutcome.Referenced;
+        }
+
+        return null;
+    }
+
     private async Task<bool> IsPublishedAsync(
-        NpgsqlConnection connection, NpgsqlTransaction transaction, (string Schema, string Table) target,
+        NpgsqlTransaction transaction, (string Schema, string Table) target,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(
             $"SELECT EXISTS (SELECT 1 FROM {_layersTable} WHERE table_schema = @schema AND table_name = @table)",
-            connection, transaction);
+            transaction.Connection!, transaction);
         command.Parameters.AddWithValue("schema", target.Schema);
         command.Parameters.AddWithValue("table", target.Table);
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
     }
 
     private static async Task DropAsync(
-        NpgsqlConnection connection, NpgsqlTransaction transaction, (string Schema, string Table) target,
+        NpgsqlTransaction transaction, (string Schema, string Table) target,
         CancellationToken cancellationToken)
     {
-        await using var format = new NpgsqlCommand("SELECT format('DROP TABLE %I.%I', @schema, @table)", connection, transaction);
+        await using var format = new NpgsqlCommand("SELECT format('DROP TABLE %I.%I', @schema, @table)", transaction.Connection!, transaction);
         format.Parameters.AddWithValue("schema", target.Schema);
         format.Parameters.AddWithValue("table", target.Table);
         var sql = (string)(await format.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
-        await using var drop = new NpgsqlCommand(sql, connection, transaction);
+        await using var drop = new NpgsqlCommand(sql, transaction.Connection!, transaction);
         await drop.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 }

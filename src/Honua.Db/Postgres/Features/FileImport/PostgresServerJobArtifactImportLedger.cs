@@ -55,7 +55,7 @@ internal sealed partial class PostgresServerJobArtifactImportLedger : IServerJob
     }
 
     // One import scope at a time: import and discard share the session advisory lock. On Lambda the
-    // connection is unpooled, so closing it ends the RDS Proxy-pinned session (honua-server#6765).
+    // connection is unpooled, so closing it ends the RDS Proxy-pinned session.
     private async Task<T> WithScopeLockAsync<T>(
         string scopeKey, Func<NpgsqlConnection, Task<T>> body, CancellationToken cancellationToken)
     {

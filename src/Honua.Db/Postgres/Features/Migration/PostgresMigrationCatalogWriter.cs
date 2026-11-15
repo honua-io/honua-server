@@ -144,6 +144,8 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         ArgumentException.ThrowIfNullOrWhiteSpace(request.TargetSchema);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.TargetTable);
 
+        ImportTableOwnership.RefuseReservedStagedTarget(request.TargetSchema, request.TargetTable);
+
         // Defense in depth: never interpolate identifiers that did not pass the
         // safe-identifier guard. Callers should already have validated, but
         // double-check here so the writer never composes hostile SQL.

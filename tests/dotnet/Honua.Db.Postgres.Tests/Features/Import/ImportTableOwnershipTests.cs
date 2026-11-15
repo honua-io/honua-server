@@ -14,27 +14,24 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed class ImportTableOwnershipTests(PostgresFixture fixture)
 {
     [Theory]
-    [InlineData("imported_staged_0123456789abcdef01234567", true)]
-    [InlineData("IMPORTED_STAGED_0123456789ABCDEF01234567", true)]
-    [InlineData("imported_staged_parcels", false)]
-    [InlineData("stage_0123456789abcdef0123456789abcdef__staging", false)]
-    public async Task AssertOwnedAsync_ServerDerivedStagedName_IsRefusedForOtherImporters(string table, bool refused)
+    [InlineData("imported_staged_0123456789abcdef01234567")]
+    [InlineData("IMPORTED_STAGED_0123456789ABCDEF01234567")]
+    public async Task AssertOwnedAsync_ServerDerivedStagedName_IsRefusedForOtherImporters(string table)
     {
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await Assert.ThrowsAsync<ImportTableOwnershipException>(() =>
+            ImportTableOwnership.AssertOwnedAsync(connection, "public", table, CancellationToken.None));
+        Assert.Throws<ImportTableOwnershipException>(() => ImportTableOwnership.RefuseReservedStagedTarget("public", table));
+    }
 
-        var check = () => ImportTableOwnership.AssertOwnedAsync(connection, "public", table, CancellationToken.None);
-        var sinkGuard = () => ImportTableOwnership.RefuseReservedStagedTarget("public", table);
-
-        if (refused)
-        {
-            await Assert.ThrowsAsync<ImportTableOwnershipException>(check);
-            Assert.Throws<ImportTableOwnershipException>(sinkGuard);
-        }
-        else
-        {
-            Assert.False(await check());
-            sinkGuard();
-        }
+    [Theory]
+    [InlineData("imported_staged_parcels")]
+    [InlineData("stage_0123456789abcdef0123456789abcdef__staging")]
+    public async Task AssertOwnedAsync_OtherStagedNames_AreAllowed(string table)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        Assert.False(await ImportTableOwnership.AssertOwnedAsync(connection, "public", table, CancellationToken.None));
+        ImportTableOwnership.RefuseReservedStagedTarget("public", table);
     }
 
     [Theory]

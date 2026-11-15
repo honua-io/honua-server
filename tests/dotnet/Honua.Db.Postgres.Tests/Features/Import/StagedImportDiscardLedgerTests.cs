@@ -3,10 +3,14 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Migration.Abstractions;
 using Honua.Db.Postgres.Features.FileImport;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Migration;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
@@ -20,11 +24,38 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
     private const string PhysicalTable = "imported_" + Table;
 
     [IntegrationTest]
+    public async Task FeatureCopy_MissingStagedTable_CannotReplaceTheReceiptsTarget()
+    {
+        await WithSchemaAsync(async (schema, ledger) =>
+        {
+            await SeedCommittedAsync(schema, new SeedTable(Table, PhysicalTable, ImportTableOwnership.Marker));
+            await ExecuteAsync($"DROP TABLE \"{schema}\".\"{PhysicalTable}\"; CREATE TABLE \"{schema}\".replacement (id integer); INSERT INTO \"{schema}\".replacement VALUES (42)");
+            var writer = new PostgresMigrationCatalogWriter(NullLogger<PostgresMigrationCatalogWriter>.Instance);
+            var copy = () => writer.CopyFeatureDataAsync(fixture.ConnectionString, new MigrationFeatureCopyRequest
+            {
+                SourceSchema = schema,
+                SourceTable = "replacement",
+                TargetSchema = schema,
+                TargetTable = PhysicalTable,
+            });
+
+            await copy.Should().ThrowAsync<ImportTableOwnershipException>();
+
+            (await ExistsAsync(schema, PhysicalTable)).Should().BeFalse();
+            (await ledger.DiscardStagedAsync(Request(schema), CancellationToken.None))
+                .Should().Be(StagedImportDiscardOutcome.Discarded);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var read = new NpgsqlCommand($"SELECT id FROM \"{schema}\".replacement", connection);
+            (await read.ExecuteScalarAsync()).Should().Be(42);
+        });
+    }
+
+    [IntegrationTest]
     public async Task DiscardStagedAsync_OwnedCommittedImport_DropsTableAndSpendsReceipt()
     {
         await WithSchemaAsync(async (schema, ledger) =>
         {
-            await SeedCommittedAsync(schema, Table, PhysicalTable, owned: true);
+            await SeedCommittedAsync(schema, new SeedTable(Table, PhysicalTable, ImportTableOwnership.Marker));
 
             var outcome = await ledger.DiscardStagedAsync(Request(schema), CancellationToken.None);
 
@@ -42,7 +73,7 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
     {
         await WithSchemaAsync(async (schema, ledger) =>
         {
-            await SeedCommittedAsync(schema, Table, PhysicalTable, owned: true);
+            await SeedCommittedAsync(schema, new SeedTable(Table, PhysicalTable, ImportTableOwnership.Marker));
             await ledger.DiscardStagedAsync(Request(schema), CancellationToken.None);
             var imported = false;
 
@@ -62,7 +93,7 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
     {
         await WithSchemaAsync(async (schema, ledger) =>
         {
-            await SeedCommittedAsync(schema, Table, PhysicalTable, owned: true);
+            await SeedCommittedAsync(schema, new SeedTable(Table, PhysicalTable, ImportTableOwnership.Marker));
             await ExecuteAsync($"DROP TABLE \"{schema}\".\"{PhysicalTable}\"");
 
             (await ledger.DiscardStagedAsync(Request(schema), CancellationToken.None))
@@ -77,7 +108,7 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
     {
         await WithSchemaAsync(async (schema, ledger) =>
         {
-            await SeedCommittedAsync(schema, Table, PhysicalTable, owned: true);
+            await SeedCommittedAsync(schema, new SeedTable(Table, PhysicalTable, ImportTableOwnership.Marker));
             await ExecuteAsync($"UPDATE \"{schema}\".job_artifact_import_receipt SET phase = 'reserved'");
 
             (await ledger.DiscardStagedAsync(Request(schema), CancellationToken.None))
@@ -91,7 +122,7 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
     {
         await WithSchemaAsync(async (schema, ledger) =>
         {
-            await SeedCommittedAsync(schema, Table, PhysicalTable, owned: true);
+            await SeedCommittedAsync(schema, new SeedTable(Table, PhysicalTable, ImportTableOwnership.Marker));
             await using var publisher = await fixture.DataSource.OpenConnectionAsync();
             await using var publication = await publisher.BeginTransactionAsync();
             await using (var hold = new NpgsqlCommand(
@@ -123,7 +154,7 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
     {
         await WithSchemaAsync(async (schema, ledger) =>
         {
-            await SeedCommittedAsync(schema, Table, PhysicalTable, owned: true, tenantId: "tenant-b");
+            await SeedCommittedAsync(schema, new SeedTable(Table, PhysicalTable, ImportTableOwnership.Marker), tenantId: "tenant-b");
 
             (await ledger.DiscardStagedAsync(Request(schema), CancellationToken.None))
                 .Should().Be(StagedImportDiscardOutcome.NotFound);
@@ -137,7 +168,7 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
     {
         await WithSchemaAsync(async (schema, ledger) =>
         {
-            await SeedCommittedAsync(schema, Table, PhysicalTable, owned: true);
+            await SeedCommittedAsync(schema, new SeedTable(Table, PhysicalTable, ImportTableOwnership.Marker));
             await ledger.DiscardStagedAsync(Request(schema), CancellationToken.None);
 
             var again = await ledger.DiscardStagedAsync(Request(schema), CancellationToken.None);
@@ -151,7 +182,7 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
     {
         await WithSchemaAsync(async (schema, ledger) =>
         {
-            await SeedCommittedAsync(schema, Table, PhysicalTable, owned: true);
+            await SeedCommittedAsync(schema, new SeedTable(Table, PhysicalTable, ImportTableOwnership.Marker));
             await ExecuteAsync($"INSERT INTO \"{schema}\".layers (table_schema, table_name) VALUES ('{schema}', '{PhysicalTable}')");
 
             var outcome = await ledger.DiscardStagedAsync(Request(schema), CancellationToken.None);
@@ -167,7 +198,7 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
     {
         await WithSchemaAsync(async (schema, ledger) =>
         {
-            await SeedCommittedAsync(schema, Table, PhysicalTable, owned: true);
+            await SeedCommittedAsync(schema, new SeedTable(Table, PhysicalTable, ImportTableOwnership.Marker));
             await ExecuteAsync($"CREATE VIEW \"{schema}\".depends AS SELECT id FROM \"{schema}\".\"{PhysicalTable}\"");
 
             var outcome = await ledger.DiscardStagedAsync(Request(schema), CancellationToken.None);
@@ -187,7 +218,7 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
         {
             var table = variant == "caller-named" ? "parcels" : Table;
             var physical = "imported_" + table;
-            await SeedCommittedAsync(schema, table, physical, owned: variant != "unmarked");
+            await SeedCommittedAsync(schema, new SeedTable(table, physical, variant == "unmarked" ? null : ImportTableOwnership.Marker));
 
             var outcome = await ledger.DiscardStagedAsync(Request(schema), CancellationToken.None);
 
@@ -204,7 +235,7 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
     {
         await WithSchemaAsync(async (schema, ledger) =>
         {
-            await SeedCommittedAsync(schema, Table, PhysicalTable, owned: true);
+            await SeedCommittedAsync(schema, new SeedTable(Table, PhysicalTable, ImportTableOwnership.Marker));
             var request = change == "requester"
                 ? Request(schema) with { ActorId = "actor-2" }
                 : Request(schema) with { IntentId = "intent-other" };
@@ -240,12 +271,14 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
         }
     }
 
-    private async Task SeedCommittedAsync(string schema, string table, string physical, bool owned, string tenantId = "tenant-a")
+    private sealed record SeedTable(string Logical, string Physical, string? Marker);
+
+    private async Task SeedCommittedAsync(string schema, SeedTable target, string tenantId = "tenant-a")
     {
-        await ExecuteAsync($"CREATE TABLE \"{schema}\".\"{physical}\" (id SERIAL PRIMARY KEY, properties JSONB)");
-        if (owned)
+        await ExecuteAsync($"CREATE TABLE \"{schema}\".\"{target.Physical}\" (id SERIAL PRIMARY KEY, properties JSONB)");
+        if (target.Marker is not null)
         {
-            await ExecuteAsync(ImportTableOwnership.MarkSql(schema, physical));
+            await ExecuteAsync(ImportTableOwnership.MarkSql(schema, target.Physical));
         }
 
         var scopeKey = ScopeKey(tenantId);
@@ -262,14 +295,14 @@ public sealed class StagedImportDiscardLedgerTests(PostgresFixture fixture)
         insert.Parameters.AddWithValue("tenant", tenantId);
         insert.Parameters.AddWithValue("fingerprint", new string('f', 64));
         insert.Parameters.AddWithValue("schema", schema);
-        insert.Parameters.AddWithValue("table", table);
-        insert.Parameters.AddWithValue("physical", physical);
+        insert.Parameters.AddWithValue("table", target.Logical);
+        insert.Parameters.AddWithValue("physical", target.Physical);
         insert.Parameters.AddWithValue("content", new string('c', 64));
         await insert.ExecuteNonQueryAsync();
         await ExecuteAsync($"""
             INSERT INTO "{schema}".imported_dataset_spatial_metadata
                 (schema_name, table_name, geometry_column, relation_oid, geometry_attnum, storage_srid)
-            VALUES ('{schema}', '{physical}', 'geometry', '"{schema}"."{physical}"'::regclass, 1, 4326)
+            VALUES ('{schema}', '{target.Physical}', 'geometry', '"{schema}"."{target.Physical}"'::regclass, 1, 4326)
             """);
     }
 

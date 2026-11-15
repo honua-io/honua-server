@@ -59,7 +59,7 @@ public sealed class StagedImportMcpIntegrationTests(RedisFixture redis)
             var physicalTable = handle.GetProperty("result").GetProperty("details").GetProperty("physicalTable").GetString()!;
             physicalTable.Should().Be("imported_" + stagingTable, "the import lands in the previewed server-owned table");
             (await RowCountAsync(fixture, schema, physicalTable)).Should().Be(1, handle.GetRawText());
-            await ProposeAndApproveDiscardAsync(fixture, agent, schema, physicalTable);
+            await ProposeAndApproveDiscardAsync(fixture, agent, (schema, physicalTable));
 
             using var admin = fixture.CreateAdminClient();
             using var reader = await ReaderClientAsync(fixture, admin);
@@ -98,15 +98,15 @@ public sealed class StagedImportMcpIntegrationTests(RedisFixture redis)
     }
 
     private static async Task ProposeAndApproveDiscardAsync(
-        WebAppFixture fixture, HttpClient agent, string schema, string physicalTable)
+        WebAppFixture fixture, HttpClient agent, (string Schema, string Table) target)
     {
         var discardId = await CallProposalAsync(agent, "honua_op_dataset_stage_discard",
-            new Dictionary<string, object?> { ["intentId"] = "intent-staged", ["schema"] = schema });
-        (await RowCountAsync(fixture, schema, physicalTable)).Should().Be(1, "a discard proposal must not drop");
+            new Dictionary<string, object?> { ["intentId"] = "intent-staged", ["schema"] = target.Schema });
+        (await RowCountAsync(fixture, target.Schema, target.Table)).Should().Be(1, "a discard proposal must not drop");
         var discarded = await HumanApprovedOperation.ApproveAndReadHandleAsync(fixture, discardId);
         discarded.GetProperty("result").GetProperty("details").GetProperty("outcome").GetString()
             .Should().Be("discarded", discarded.GetRawText());
-        (await RowCountAsync(fixture, schema, physicalTable)).Should().BeNull("the approved discard drops the staging table");
+        (await RowCountAsync(fixture, target.Schema, target.Table)).Should().BeNull("the approved discard drops the staging table");
     }
 
     private static async Task<(string ProposalId, string StagingTable)> PreviewAndProposeAsync(
