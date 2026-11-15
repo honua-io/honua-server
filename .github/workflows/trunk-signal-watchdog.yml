@@ -29,11 +29,11 @@ jobs:
           # Trunk ci.yml is mostly the twice-daily full run (~3 h), so the previous result is always
           # hours old while the next run works. Judge each running run's own age from its first job
           # with a runner (a run pending behind ci.yml concurrency has not started), and bound the
-          # last result's age by more than one twice-daily cadence.
+          # last result's age across the longest (18 h) overnight gap plus the 4 h run budget.
           MAX_HOURS_RUN_WITHOUT_RESULT: "4"
-          MAX_HOURS_WITHOUT_RESULT: "16"
+          MAX_HOURS_WITHOUT_RESULT: "22"
           MAX_MINUTES_QUEUED: "45"
-          MAX_HOURS_WITHOUT_SCHEDULE: "14"
+          MAX_HOURS_WITHOUT_SCHEDULE: "20"
           # Cancellation churn is judged on recent runs only: trunk CI is sparse, so the last ten
           # runs can span a day and old churn would otherwise keep the watchdog red long after it stopped.
           CANCELLATION_WINDOW_HOURS: "6"

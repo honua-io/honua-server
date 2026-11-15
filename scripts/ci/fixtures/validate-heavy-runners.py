@@ -156,7 +156,7 @@ SELECTED_RUNNER = (
     "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
     " && needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
 )
-PR_GATE_LIGHT_JOBS = {"format", "affected-shards-select", "affected-shards", "ci-router-validation", "required"}
+PR_GATE_LIGHT_JOBS = {"runner-select", "format", "affected-shards-select", "affected-shards", "ci-router-validation", "required"}
 LIGHT_RUNNER = (
     "${{ vars.HONUA_LIGHT_RUNNER"
     " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
@@ -207,7 +207,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, need
             (json.dumps(pool), True, False, "ubuntu-latest"),
         ]
         for name, selected, scenario in product(
-            ["format", "fast-tests"], ["honua-build", "ubuntu-latest", ""], scenarios,
+            ["runner-select", "format", "fast-tests"], ["honua-build", "ubuntu-latest", ""], scenarios,
         ):
             light, fork, draft, expected = scenario
             if name == "fast-tests":
@@ -239,7 +239,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, need
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], LIGHT_RUNNER)
 
-    def test_selection_and_every_other_job_stay_hosted(self):
+    def test_remaining_control_jobs_stay_hosted(self):
         for name in set(self.jobs) - PR_GATE_SELECTED_JOBS - PR_GATE_LIGHT_JOBS - {SHARD_JOBS["pr-gate.yml"][0]}:
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], "ubuntu-latest")
