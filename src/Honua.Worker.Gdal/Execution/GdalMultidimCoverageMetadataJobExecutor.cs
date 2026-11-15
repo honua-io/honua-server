@@ -635,8 +635,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
 
     private static bool IsUsableSubdatasetName(string name, string zarrPath)
         => name.Length is > 0 and <= 2048 &&
-           name.StartsWith("ZARR:", StringComparison.Ordinal) &&
-           name.Contains(zarrPath, StringComparison.Ordinal) &&
+           name.StartsWith($"ZARR:\"{zarrPath}\":", StringComparison.Ordinal) &&
            name.AsSpan().IndexOfAny('\r', '\n', '\0') < 0;
 
     private static HashSet<string> ReadMdimDataArrayNames(string mdimJson)

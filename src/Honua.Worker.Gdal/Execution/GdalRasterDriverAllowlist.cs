@@ -6,8 +6,8 @@ namespace Honua.Worker.Gdal.Execution;
 /// <summary>
 /// Positive GDAL driver restriction for raster tools that accept <c>-if</c>.
 /// Legacy <c>gdal_contour</c> does not accept <c>-if</c> (its synopsis is the
-/// classic executable, not <c>gdal raster contour</c>). Multidim <c>gdalinfo</c>
-/// on <c>/vsi</c>, <c>gdaldem</c>, <c>gdal_viewshed</c>, <c>gdal_polygonize.py</c>,
+/// classic executable, not <c>gdal raster contour</c>). <c>gdalinfo</c> on an
+/// executor-declared object-store path (<see cref="GdalRemoteInputScope"/>), <c>gdaldem</c>, <c>gdal_viewshed</c>, <c>gdal_polygonize.py</c>,
 /// <c>gdal_grid</c>, <c>ogr2ogr</c>, and Python calc scripts are also left
 /// unrestricted: those tools either do not accept <c>-if</c> or must open
 /// NetCDF/HDF5/Zarr/GRIB. Contour inputs are still admitted by the byte guard
@@ -30,7 +30,7 @@ internal static class GdalRasterDriverAllowlist
 
     /// <summary>
     /// Prefixes <c>-if &lt;driver&gt;</c> for <c>gdal_translate</c>, <c>gdalwarp</c>,
-    /// and non-VSI <c>gdalinfo</c>. <c>gdal_contour</c> and every other tool are
+    /// and <c>gdalinfo</c> unless an argument is an executor-declared object-store path. <c>gdal_contour</c> and every other tool are
     /// returned unchanged.
     /// </summary>
     public static IReadOnlyList<string> Prefix(
@@ -76,8 +76,9 @@ internal static class GdalRasterDriverAllowlist
             return false;
         }
 
-        // Only an executor-declared object-store input (multidim coverage reads)
-        // leaves gdalinfo unrestricted; a job value that merely contains "/vsi" does not.
+        // Only an executor-declared object-store input (a trusted COG read through
+        // GdalRemoteInputScope) leaves gdalinfo unrestricted; a job value that merely
+        // contains "/vsi" does not.
         return !GdalRemoteInputScope.Classify(arguments).Remote;
     }
 

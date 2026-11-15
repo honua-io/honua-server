@@ -420,6 +420,20 @@ public sealed class GdalUntrustedInputHardeningTests
     }
 
     [UnitTest]
+    public void RemoteInputScope_DerivedArgumentMustStartWithTheTrustedZarrRoot()
+    {
+        const string root = "/vsis3/bucket/cube.zarr";
+        const string embedded = "ZARR:\"/vsis3/other/cube.zarr\":/\"/vsis3/bucket/cube.zarr\"";
+
+        using var rootScope = GdalRemoteInputScope.Trust(root);
+        using (GdalRemoteInputScope.TrustDerived([embedded, root + "/../x"], root))
+        {
+            GdalRemoteInputScope.Classify(new[] { embedded }).Should().Be(GdalRemoteInputs.None);
+            GdalRemoteInputScope.Classify(new[] { root + "/../x" }).Should().Be(GdalRemoteInputs.None);
+        }
+    }
+
+    [UnitTest]
     public void RemoteInputScope_DerivedArgumentNeedsATrustedRoot()
     {
         const string root = "/vsis3/bucket/cube.zarr";

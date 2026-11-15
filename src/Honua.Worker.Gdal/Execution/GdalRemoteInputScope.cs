@@ -54,7 +54,7 @@ internal static class GdalRemoteInputScope
     /// Trusts arguments GDAL derived from an already trusted root (for example
     /// <c>ZARR:"/vsis3/…":/array</c> subdataset names) with the root's access. A
     /// root that is not trusted in the current scope trusts nothing, and an
-    /// argument that does not contain the root is ignored.
+    /// argument that does not start with <c>ZARR:"&lt;root&gt;":</c> is ignored.
     /// </summary>
     /// <param name="arguments">The exact derived arguments.</param>
     /// <param name="trustedRoot">The trusted path they were derived from.</param>
@@ -67,9 +67,10 @@ internal static class GdalRemoteInputScope
         if (previous is not null && previous.TryGetValue(trustedRoot, out var access))
         {
             var next = previous;
+            var derivedPrefix = $"ZARR:\"{trustedRoot}\":";
             foreach (var argument in arguments)
             {
-                if (!string.IsNullOrEmpty(argument) && argument.Contains(trustedRoot, StringComparison.Ordinal))
+                if (!string.IsNullOrEmpty(argument) && argument.StartsWith(derivedPrefix, StringComparison.Ordinal))
                 {
                     next = next.SetItem(argument, access);
                 }
