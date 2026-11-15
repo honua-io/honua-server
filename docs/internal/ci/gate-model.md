@@ -1075,8 +1075,10 @@ scratch file (or compare it with `--check`) instead of rewriting the tracked
 page. The page is trunk-published and may lag the workflow YAML; a rewrite left
 the PR Gate checkout dirty, and the later private-feed restore proof, which
 requires an unchanged tracked checkout, failed on any PR touching its inputs.
-Only `scripts/ci/regenerate-generated-files.sh` rewrites the page, and
-`generate-workflow-inventory.test.py` enforces that.
+Among the `scripts/ci/*.sh` entry points only `regenerate-generated-files.sh`
+rewrites the page, and `generate-workflow-inventory.test.py` enforces that. The
+doc-link steps in ci.yml (after the router validators) and Docs Link Gate
+regenerate it on purpose so links are checked against this head's projection.
 
 ## Server test fixture lifetimes
 

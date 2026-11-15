@@ -639,11 +639,13 @@ def main() -> None:
         "PR-controlled verification must not be documented as the admission authority",
     )
 
-    for policy_file in (AGENTS, GATE_MODEL, WORKFLOW_INVENTORY):
+    # The inventory may be a scratch projection; name the file an author edits.
+    for policy_file, label in ((AGENTS, AGENTS), (GATE_MODEL, GATE_MODEL),
+                               (WORKFLOW_INVENTORY, "scripts/ci/workflow-inventory.template.md")):
         policy = read_text(policy_file)
         if "`PR Gate` and `Review Gate`" not in policy:
             raise AssertionError(
-                f"{policy_file}: branch-protection contract must require PR Gate and Review Gate"
+                f"{label}: branch-protection contract must require PR Gate and Review Gate"
             )
     agents = read_text(AGENTS)
     if "pr-merge-train.yml" in agents:

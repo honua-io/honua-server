@@ -7,8 +7,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]
     branches: [trunk]
-    # The consumer is observe-only (founder 14 Nov: feature PRs never commit
-    # these projections), so a PR-time envelope for ordinary source changes adds
+    # The consumer is observe-only (feature PRs never commit these
+    # projections), so a PR-time envelope for ordinary source changes adds
     # no result: PR Gate's architecture job regenerates the same projections and
     # reports drift on every PR, and the nightly generated-files-on-trunk writer
     # and twice-daily full CI regenerate them on trunk. The envelope itself runs

@@ -119,6 +119,14 @@ class OptionalInputTests(unittest.TestCase):
         fast = workflow("pr-gate.yml")["jobs"]["fast-tests"]
         self.assertIn("architecture", fast["strategy"]["matrix"]["test-group"])
         self.assertNotIn("if", fast)
+        spec = importlib.util.spec_from_file_location(
+            "fast_selection", ROOT / "scripts/ci/compute-fast-test-selection.py")
+        selection = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(selection)
+        # Any non-empty closure keeps architecture, even one no group's roots reach.
+        no_roots = {group: set() for group in selection.GROUPS}
+        for closure in (None, ["ALL"], ["src/Honua.Server/Honua.Server.csproj"]):
+            self.assertIn("architecture", selection.select(closure, no_roots), closure)
 
     def test_github_globs_respect_directory_boundaries(self):
         self.assertTrue(path_matches("Directory.Build.props", "**/*.props"))
