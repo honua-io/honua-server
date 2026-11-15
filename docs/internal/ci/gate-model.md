@@ -518,10 +518,10 @@ wake/wait orchestration. Both sparse checkouts include the shared validator.
 ## PR Gate compute runner selection
 
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
-`server-test-producer` run. The selector itself and the four Format/analyzer matrix jobs use the
+`server-test-producer` run. The selector itself, Format and source Analyzers use the
 fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback.
-The four Fast/architecture matrix jobs always use `ubuntu-latest`, splitting
-these eight jobs evenly across the two pools when light routing is enabled.
+Both test-analyzer rows and the four Fast/architecture matrix jobs always use
+`ubuntu-latest`. Test analyzers stay hosted even during light-pool qualification.
 All eight remain independent of producer admission and heavy settings and keep
 their existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
 availability switch: keep it unset while the light pool is unhealthy; new jobs
@@ -548,8 +548,8 @@ A manual PR Gate dispatch on `trunk` can set the boolean `qualify_light` input
 (default `false`) to qualify the light pool while `HONUA_LIGHT_RUNNER` stays unset.
 Only `workflow_dispatch` on `refs/heads/trunk` honors this override. It pins the
 `honua-light` runner group and label for the six existing light jobs; it accepts
-no runner label input and leaves producer, heavy-shard and Fast/architecture
-routing unchanged. Other refs and events retain the normal variable and fork
+no runner label input. Both test-analyzer rows remain hosted; producer,
+heavy-shard and Fast/architecture routing stays unchanged. Other refs and events retain the normal variable and fork
 guards. Qualification is an operator-run health check; the input does not enable
 normal routing or change repository settings. Record ten consecutive green runs
 and their actual runner assignments before restoring the availability variable.
