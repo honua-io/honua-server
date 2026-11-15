@@ -63,7 +63,7 @@ The service document at `/odata`, EDM schema at `/odata/$metadata`, and catalog 
 
 - **LayerId filter is required** — use `/odata/Layers({layerId})/Features` as the source instead of selecting the unfiltered root **Features** entity.
 - **Connection refused** — check `http://localhost:8080/healthz/ready` and your server address. See [troubleshooting](../deploy/troubleshooting.md).
-- **401 Unauthorized** — use the deployment's credentials or the API-key `Headers` snippet above. A scoped feed for a layer the caller cannot read returns `401`.
+- **401 Unauthorized** — use the deployment's credentials or the API-key `Headers` snippet above. An anonymous request for a scoped feed returns `401`; a signed-in caller without read access to that layer gets `403`.
 - **No layers** — `/odata/Layers` lists only the layers the caller can read, so an anonymous request to a deployment that requires authentication returns an empty catalog, not `401`. Add credentials first; if the list is still empty, publish a layer and confirm its id in `/odata/Layers`.
 - **Geometry column unusable in Excel** — Excel has no spatial type; use `$select` to load only the attributes you need.
 - **Slow loads** — filter rows and select columns before loading large layers.

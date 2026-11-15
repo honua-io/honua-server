@@ -20,7 +20,7 @@ Honua exposes each published service as:
 
 1. Open a map in the desktop client.
 2. Add data from a path (for example **Map** ribbon, **Add Data → Data From Path**).
-3. Paste the FeatureServer layer URL, `http://localhost:8080/rest/services/{serviceId}/FeatureServer/{layerId}`, and add it. Layer ids are the ids in the service's `layers` list (`FeatureServer?f=json`), not zero-based positions; a layer published in Honua keeps its deployment-wide id, so the first one is usually `1`. The layer draws and appears in the table of contents.
+3. Paste the FeatureServer layer URL, `http://localhost:8080/rest/services/{serviceId}/FeatureServer/{layerId}`, and add it. Layer ids are the ids in the service's `layers` list (`FeatureServer?f=json`), not zero-based positions. Honua does not renumber layers per service, so read the id from that list rather than assuming `0` or `1`. The layer draws and appears in the table of contents.
 4. Repeat with the `MapServer` URL to add the server-rendered map service instead.
 5. To filter, set a definition query on the layer, such as `OBJECTID > 0`; Honua's `query` endpoint evaluates the expression server-side.
 
