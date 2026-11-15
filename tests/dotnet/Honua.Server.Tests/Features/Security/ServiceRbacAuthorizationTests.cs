@@ -1392,7 +1392,7 @@ public sealed class ODataServiceBoundaryTests
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Created);
 
-        var events = await store.QueryAsync(cursor: head, from: null, to: null, limit: 100);
+        var events = await store.QueryAsync(new FeatureChangeEventQuery(head, null, null, 100));
         events.Where(change => change.LayerId == ServiceRbacTestFixture.AlphaLayerId).Should().NotBeEmpty()
             .And.OnlyContain(change => change.ServiceId == ServiceRbacTestFixture.AlphaService);
     }
@@ -1433,7 +1433,7 @@ public sealed class ODataServiceBoundaryTests
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
 
-        var events = await store.QueryAsync(cursor: head, from: null, to: null, limit: 100);
+        var events = await store.QueryAsync(new FeatureChangeEventQuery(head, null, null, 100));
         events.Where(change => change.LayerId == ServiceRbacTestFixture.AlphaLayerId).Should().NotBeEmpty()
             .And.OnlyContain(change => change.ServiceId == ServiceRbacTestFixture.AlphaService);
     }
@@ -1500,7 +1500,7 @@ public sealed class OgcServiceBoundaryTests
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Created);
 
-        var events = await store.QueryAsync(cursor: head, from: null, to: null, limit: 100);
+        var events = await store.QueryAsync(new FeatureChangeEventQuery(head, null, null, 100));
         events.Where(change => change.LayerId == ServiceRbacTestFixture.AlphaLayerId).Should().NotBeEmpty()
             .And.OnlyContain(change => change.ServiceId == ServiceRbacTestFixture.AlphaService);
     }

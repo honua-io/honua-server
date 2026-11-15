@@ -32,7 +32,7 @@ internal static partial class FeatureStreamEndpoints
             .ConfigureAwait(false);
         while (!cancellationToken.IsCancellationRequested)
         {
-            var events = await eventStore.QueryAsync(cursor, null, null, batchSize, cancellationToken).ConfigureAwait(false);
+            var events = await eventStore.QueryAsync(new FeatureChangeEventQuery(cursor, null, null, batchSize), cancellationToken).ConfigureAwait(false);
             await EnsureWebSocketReplayableAfterAsync(new WebSocketReplayContext(
                 new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock), cursor, cancellationToken)
                 .ConfigureAwait(false);
@@ -167,7 +167,7 @@ internal static partial class FeatureStreamEndpoints
             .ConfigureAwait(false);
         while (!cancellationToken.IsCancellationRequested)
         {
-            var events = await eventStore.QueryAsync(cursor, null, null, batchSize, cancellationToken).ConfigureAwait(false);
+            var events = await eventStore.QueryAsync(new FeatureChangeEventQuery(cursor, null, null, batchSize), cancellationToken).ConfigureAwait(false);
             await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), cursor, cancellationToken)
                 .ConfigureAwait(false);
 
