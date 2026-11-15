@@ -282,7 +282,9 @@ action before source ownership evaluation and compilation.
 
 Outside `PR Gate`, `docs-link-gate.yml` keeps firing on `docs/**/*.md`, the
 data files its checkers read, and `README.md`: links, anchors, and the gate that rejects
-added raw HTTP shell examples. Review-first enforcement is unchanged, because an enforced attempt 1
+added raw HTTP shell examples. A PR head cut before the inventory generator
+existed validates the inventory it committed.
+Review-first enforcement is unchanged, because an enforced attempt 1
 fails at `Await exact-head review` before the classifier runs. Each docs-only
 job records `docs_only=true` as a step output and the summary line
 `PR Gate: docs-only diff, build and tests skipped (<reason>)`.
