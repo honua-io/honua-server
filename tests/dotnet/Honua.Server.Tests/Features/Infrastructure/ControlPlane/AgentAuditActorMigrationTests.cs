@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class AgentAuditActorMigrationTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
-    [Fact]
+    [UnitTest]
     public async Task AgentMigration_AddsAgentPrincipalWithoutChangingActorType()
     {
         var sql = await ReadMigrationAsync("168_AddAgentAuditActor.sql");
