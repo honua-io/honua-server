@@ -235,7 +235,7 @@ public sealed class StreamPermanentFilterTests
     {
         var predicates = new List<FilterExpression>();
         var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
-            Resource($"{fieldName} IS NULL", fieldType: MetadataV2FieldType.Integer, fieldName: fieldName),
+            Resource($"{fieldName} IS NULL", new MetadataV2Field { Name = fieldName, Type = MetadataV2FieldType.Integer }),
             Filters(), predicates);
 
         act.Should().Throw<InvalidOperationException>();
@@ -259,14 +259,19 @@ public sealed class StreamPermanentFilterTests
     private static MetadataV2Object Resource(
         string? expression,
         string? language = null,
-        MetadataV2FieldType fieldType = MetadataV2FieldType.String,
-        string fieldName = "classification")
+        MetadataV2FieldType fieldType = MetadataV2FieldType.String)
+        => Resource(expression, new MetadataV2Field { Name = "classification", Type = fieldType }, language);
+
+    private static MetadataV2Object Resource(
+        string? expression,
+        MetadataV2Field field,
+        string? language = null)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "roads", Name = "roads" },
             SchemaFields =
             [
-                new MetadataV2Field { Name = fieldName, Type = fieldType }
+                field
             ],
             PermanentFilter = expression is null
                 ? null
