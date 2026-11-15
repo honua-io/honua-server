@@ -30,7 +30,8 @@ Use Docker Compose v2, Python 3 and OpenSSL on a dedicated Docker host.
    Startup alone does not prove readiness. If startup fails, report a bounded,
    redacted diagnostic; do not dump configuration or secret files.
 
-Configure the identity provider before operating approval gates. A human approves
-in Console with a live interactive browser session (password or OIDC); the requester may approve their
-own proposal. API keys and agent tokens cannot approve. Installing this skill
+A default install approves in Console with a live interactive browser session (password or OIDC).
+Do not give the management admin password to an agent. The requester may approve their
+own proposal. API keys and agent tokens cannot approve. Configure an identity provider
+when operators approve with their own OIDC accounts. Installing this skill
 does not grant credentials or authorize a mutation.
