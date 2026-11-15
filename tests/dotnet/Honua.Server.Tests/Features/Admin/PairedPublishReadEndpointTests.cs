@@ -52,15 +52,22 @@ public sealed partial class PairedPublishEndpointTests
             {
                 await rows.CreatePolicyAsync(new RlsPolicy
                 {
-                    PolicyId = policyId, Role = "admin", Service = "*", Layer = resource.Metadata.Name,
-                    Attribute = IdentityField, ClaimType = "publication-test-missing-claim"
+                    PolicyId = policyId,
+                    Role = "admin",
+                    Service = "*",
+                    Layer = resource.Metadata.Name,
+                    Attribute = IdentityField,
+                    ClaimType = "publication-test-missing-claim"
                 });
             }
             else
             {
                 await fields.CreatePolicyAsync(new FieldMaskPolicy
                 {
-                    PolicyId = policyId, Role = "admin", Service = "*", Layer = resource.Metadata.Name,
+                    PolicyId = policyId,
+                    Role = "admin",
+                    Service = "*",
+                    Layer = resource.Metadata.Name,
                     Attribute = IdentityField
                 });
             }
