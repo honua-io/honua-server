@@ -384,10 +384,15 @@ public sealed partial class ProposalEndpointsTests : IAsyncLifetime
         _executor.ExecutionCount.Should().Be(1);
 
         var rejectedProposal = await SeedProposalAsync(requestedBy: "agent:other-proposer");
-        var reject = await client.PostAsJsonAsync(
+        using var keyReject = await client.PostAsJsonAsync(
             $"/api/v1/admin/proposals/{rejectedProposal.ProposalId}/reject",
             new { reason = "Not approved for release." });
-        reject.StatusCode.Should().Be(HttpStatusCode.OK);
+        keyReject.StatusCode.Should().Be(HttpStatusCode.Forbidden, "a key cannot decide a proposal, even to reject it");
+        (await _proposalStore.GetAsync(rejectedProposal.ProposalId))!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        using var reject = await human.Client.PostAsJsonAsync(
+            $"/api/v1/admin/proposals/{rejectedProposal.ProposalId}/reject",
+            new { reason = "Not approved for release." });
+        reject.StatusCode.Should().Be(HttpStatusCode.OK, await reject.Content.ReadAsStringAsync());
         (await _proposalStore.GetAsync(rejectedProposal.ProposalId))!.Status.Should().Be(OperationProposalStatus.Rejected);
         _executor.ExecutionCount.Should().Be(1, "rejecting a proposal must not execute it");
 
@@ -496,12 +501,13 @@ public sealed partial class ProposalEndpointsTests : IAsyncLifetime
     public async Task RejectProposal_WithReason_MarksRejected()
     {
         var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
 
-        var response = await _client.PostAsJsonAsync(
+        var response = await human.Client.PostAsJsonAsync(
             $"/api/v1/admin/proposals/{proposal.ProposalId}/reject",
             new { reason = "not safe right now" });
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("status").GetString().Should().Be("Rejected");
         document.RootElement.GetProperty("resolutionReason").GetString().Should().Be("not safe right now");

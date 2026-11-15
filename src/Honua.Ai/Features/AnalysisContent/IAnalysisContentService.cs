@@ -7,6 +7,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Ai.AnalysisContent;
 
+internal sealed record AnalysisContentVersionAccess(string ItemId, int Version, ClaimsPrincipal Principal);
+
 internal interface IAnalysisContentService
 {
     Task<AnalysisContentItemResult> CreateItemAsync(
@@ -23,8 +25,7 @@ internal interface IAnalysisContentService
         CancellationToken cancellationToken);
 
     Task<AnalysisContentEstimateResult> EstimateVersionAsync(
-        string itemId,
-        int version,
+        AnalysisContentVersionAccess access,
         CancellationToken cancellationToken);
 
     Task<AnalysisContentVersionResult> GetVersionAsync(
@@ -39,8 +40,7 @@ internal interface IAnalysisContentService
         CancellationToken cancellationToken);
 
     Task<SavedQueryPreviewResult> PreviewSavedQueryAsync(
-        string itemId,
-        int version,
+        AnalysisContentVersionAccess access,
         int? limit,
         CancellationToken cancellationToken);
 

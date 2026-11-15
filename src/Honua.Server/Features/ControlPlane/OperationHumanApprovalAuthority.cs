@@ -70,6 +70,20 @@ internal sealed partial class OperationHumanApprovalAuthority(
         };
     }
 
+    // A rejection only closes the proposal, so it needs no review capability, but it needs the same
+    // verified person in an interactive OIDC session as an approval.
+    public async Task VerifyRejectionAsync(OperationProposal proposal, HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+        ArgumentNullException.ThrowIfNull(context);
+        RefuseNonHumanTransport(context);
+        // No capability is issued, so the binding digest is not needed and unsealed proposals can be rejected.
+        var human = await LoadHumanAsync(context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName],
+            ProposalTarget(proposal, bindingDigest: string.Empty), context.RequestAborted).ConfigureAwait(false);
+        if (CanonicalSecurityActor.Resolve(context.User)?.ActorId != human.ActorId)
+            throw new HumanApprovalRequiredException();
+    }
+
     private async Task<HumanApprovalGrant> OpenCapabilityAsync(HumanApprovalTarget target, HttpContext context)
     {
         if (!ReferenceEquals(context, requestContext.HttpContext)
@@ -164,9 +178,12 @@ internal sealed partial class OperationHumanApprovalAuthority(
             ? null : string.IsNullOrEmpty(tenantId) ? null : tenantId;
     }
 
-    private static HumanApprovalTarget ProposalTarget(OperationProposal proposal) => new(
+    private static HumanApprovalTarget ProposalTarget(OperationProposal proposal) =>
+        ProposalTarget(proposal, ComputeBindingDigest(proposal));
+
+    private static HumanApprovalTarget ProposalTarget(OperationProposal proposal, string bindingDigest) => new(
         "operation-proposal", proposal.ProposalId, proposal.Version, proposal.TenantId,
-        ComputeBindingDigest(proposal), proposal.Evidence?.ExpiresAt,
+        bindingDigest, proposal.Evidence?.ExpiresAt,
         principal => OperationApprovalAuthorization.PermitsOperationScope(principal, proposal));
 
     public static void RefuseNonHumanTransport(HttpContext context)
