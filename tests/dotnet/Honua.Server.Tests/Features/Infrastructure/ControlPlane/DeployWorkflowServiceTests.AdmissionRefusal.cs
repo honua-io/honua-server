@@ -55,6 +55,8 @@ public sealed partial class DeployWorkflowServiceTests
         backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
         backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>())
             .Returns(new DeployPlan { IsReadyToSubmit = true });
+        backend.ObserveAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new DeployObservation { Status = WorkflowOperationStatus.Reconciling });
         backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
             .Returns<Task<DeploySubmissionResult>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
         var service = CreateService(store, backend);
@@ -174,6 +176,8 @@ public sealed partial class DeployWorkflowServiceTests
         backend.BackendName.Returns("honua-gitops-kubernetes");
         backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
         ((ICheckpointedDeployBackend)backend).RequiresCheckpoint(Arg.Any<WorkflowOperationRecord>()).Returns(true);
+        backend.ObserveAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new DeployObservation { Status = WorkflowOperationStatus.Reconciling });
         backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
             .Returns<Task<DeploySubmissionResult>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
         ((ICheckpointedDeployBackend)backend).EnsurePreparationAdmittedAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())

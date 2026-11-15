@@ -47,7 +47,16 @@ internal sealed partial class DeployWorkflowReconciler(
 
         if (operation.CurrentPhase == ICheckpointedDeployBackend.RampPhase)
         {
-            var step = await ((IDeployBackend)backend).StartAsync(operation, cancellationToken).ConfigureAwait(false);
+            DeploySubmissionResult step;
+            try
+            {
+                step = await ((IDeployBackend)backend).StartAsync(operation, cancellationToken).ConfigureAwait(false);
+            }
+            catch (DeployAdmissionBlockedException ex)
+            {
+                await MonitorAdmissionHeldRampAsync(operation, (IDeployBackend)backend, ex, cancellationToken).ConfigureAwait(false);
+                return;
+            }
             if (step.Status == WorkflowOperationStatus.Failed)
             {
                 var rollback = await ((IDeployBackend)backend).RollbackAsync(operation, cancellationToken).ConfigureAwait(false);
@@ -434,7 +443,8 @@ internal sealed partial class DeployWorkflowReconciler(
             // independent of the operation-wide warmup window and preserves single-step behavior
             // (the default) when no ramp is configured. A backend-recommended rollback bypasses
             // the hold so provider-detected failures still settle promptly.
-            if (!checkpointStaged && string.IsNullOrWhiteSpace(rollbackReason) && current.Deploy?.Protection == null)
+            if (!checkpointStaged && string.IsNullOrWhiteSpace(rollbackReason) && current.Deploy?.Protection == null &&
+                current.CurrentPhase != ICheckpointedDeployBackend.RampPhase)
             {
                 var rampBakeHold = GetCanaryRampBakeHold(current);
                 if (rampBakeHold != null)

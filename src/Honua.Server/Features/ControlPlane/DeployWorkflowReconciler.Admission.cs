@@ -8,6 +8,38 @@ namespace Honua.ControlPlane;
 
 internal sealed partial class DeployWorkflowReconciler
 {
+    private async Task MonitorAdmissionHeldRampAsync(
+        WorkflowOperationRecord operation,
+        IDeployBackend backend,
+        DeployAdmissionBlockedException refusal,
+        CancellationToken cancellationToken)
+    {
+        var observation = await backend.ObserveAsync(operation, cancellationToken).ConfigureAwait(false);
+        var observed = operation with
+        {
+            ObservedState = observation.ObservedRevision ?? operation.ObservedState,
+            ProviderOperationId = observation.ProviderOperationId ?? operation.ProviderOperationId
+        };
+        // The next step has not been applied, so its bake clock must stay stopped.
+        // Evaluate the currently exposed candidate without allowing forward promotion.
+        var monitored = await ApplyRollbackSignalsAsync(
+            operation, observed, backend, false, false,
+            observation.RollbackRecommended || observation.Status == WorkflowOperationStatus.Failed,
+            observation.Message, telemetrySignalEvaluator, cancellationToken).ConfigureAwait(false);
+        if (monitored.Status == operation.Status && monitored.Deploy?.Protection?.Phase != DeployProtectionPhase.Recovering)
+        {
+            monitored = monitored with
+            {
+                CurrentPhase = operation.CurrentPhase,
+                ErrorMessage = refusal.Message,
+                CompletedAt = null
+            };
+        }
+
+        await workflowStore.TrySetAsync(monitored with { UpdatedAt = DateTimeOffset.UtcNow },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task<WorkflowOperationRecord> ApplyPostActivationProtectionWindowAsync(
         WorkflowOperationRecord current,
         IDeployBackend backend,
