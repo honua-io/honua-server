@@ -533,7 +533,8 @@ Draft Format and admission/control jobs also use the fork-guarded light selector
 with `HONUA_LIGHT_RUNNER` unset they stay hosted. Runner select, the format/analyzer
 matrix, affected-shard selection, the affected-shard aggregate, CI router validation
 and the required aggregate each set `TMPDIR`, `TEMP` and `TMP` to that job's
-`RUNNER_TEMP` before any other step. Several self-hosted accounts share one host,
+`RUNNER_TEMP` before any other step. Verdict fixtures select the named verdict
+step so setup steps cannot replace the failure checks under test. Several self-hosted accounts share one host,
 and a fixed `/tmp` path collides across them. The existing
 even-index affected-shard split additionally requires independent version-1 heavy
 availability from the same current-instance heartbeat. An integer idle-heavy count
