@@ -14,7 +14,7 @@ internal static class StacItemIdentity
 
     internal readonly record struct StacItemIdSource(MetadataV2Field? Field, bool IsDeclaredIdentity);
 
-    internal static StacItemIdSource Resolve(MetadataV2Resource? resource)
+    internal static StacItemIdSource Resolve(MetadataV2Object? resource)
     {
         if (resource is null)
         {
@@ -43,7 +43,7 @@ internal static class StacItemIdentity
         return new StacItemIdSource(FindPrimaryKeyField(resource), false);
     }
 
-    internal static MetadataV2Field? FindSchemaField(MetadataV2Resource resource, string name)
+    internal static MetadataV2Field? FindSchemaField(MetadataV2Object resource, string name)
     {
         foreach (var field in resource.SchemaFields)
         {
@@ -62,7 +62,7 @@ internal static class StacItemIdentity
             or MetadataV2FieldType.Double
             or MetadataV2FieldType.Float;
 
-    private static MetadataV2Field? FindPrimaryKeyField(MetadataV2Resource resource)
+    private static MetadataV2Field? FindPrimaryKeyField(MetadataV2Object resource)
     {
         foreach (var field in resource.SchemaFields)
         {
@@ -109,7 +109,7 @@ internal static class StacItemIdentity
         return false;
     }
 
-    private static string? ReadExplicitIdField(MetadataV2Resource resource)
+    private static string? ReadExplicitIdField(MetadataV2Object resource)
     {
         if (resource.Extensions is null ||
             !resource.Extensions.TryGetValue("stac", out var stac) ||

@@ -118,7 +118,7 @@ def candidates(result: dict[str, Any]) -> set[str]:
 
 
 def unique_owned_prefix(config: dict[str, Any], shard: dict[str, Any]) -> str | None:
-    """A source/test directory prefix that ONLY this shard's `paths` claim.
+    """A source/test prefix claimed only by this shard.
 
     Shared prefixes (the Core validation pipeline, the TestKit harness) are
     deliberately mapped to several shards, so they prove nothing about a single
@@ -139,6 +139,20 @@ def unique_owned_prefix(config: dict[str, Any], shard: dict[str, Any]) -> str | 
             continue
         return prefix
     return None
+
+
+def family_owned_prefix(config: dict[str, Any], shard: dict[str, Any]) -> str | None:
+    """A source/test prefix claimed only by this shard's capacity family."""
+    siblings = {
+        other["name"] for other in config["shards"]
+        if other["name"].rsplit(" ", 1)[-1].isdecimal()
+        and shard["name"].rsplit(" ", 1)[-1].isdecimal()
+        and other["name"].rsplit(" ", 1)[0] == shard["name"].rsplit(" ", 1)[0]
+        and other.get("paths") == shard.get("paths")
+    } - {shard["name"]}
+    family_config = dict(config, shards=[other for other in config["shards"]
+                                         if other["name"] not in siblings])
+    return unique_owned_prefix(family_config, shard)
 
 
 def runnable_method_index(classes: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
@@ -168,7 +182,7 @@ def check_feature_namespace_selects_its_shard(
     """
     covered = 0
     for shard in config["shards"]:
-        prefix = unique_owned_prefix(config, shard)
+        prefix = family_owned_prefix(config, shard)
         if prefix is None:
             continue
         covered += 1
@@ -213,7 +227,9 @@ def check_temporal_source_survives_the_cap(config: dict[str, Any]) -> None:
         deferred = {entry["name"] for entry in result["deferred_to_trunk"]}
         if result["candidate_count"] <= len(result["shards"]):
             raise FixtureError("temporal probe must leave some candidates unselected")
-        if not set(owners) <= set(result["shards"]):
+        # The cap takes one child per family before later siblings. Every
+        # temporal child remains a candidate; at least one must execute.
+        if not set(owners) <= candidates(uncapped) or not set(owners) & set(result["shards"]):
             raise FixtureError(f"changed temporal source lost an executing owner: {result['shards']}")
         if catch_all & (candidates(result) | deferred):
             raise FixtureError(f"{catch_all!r} competes with {owners!r} for temporal source")
