@@ -649,9 +649,9 @@ public sealed class MigrationBatchOrchestratorTests
 
         public IDistributedProgressStore<GeoservicesImportProgress> ProgressStore => _progress;
 
-        public IDistributedProgressStore<GeoservicesImportRequest> RequestStore => _requests;
+        public FakeProgressStore<GeoservicesImportRequest> RequestStore => _requests;
 
-        public IReadOnlyList<string> Queue => _queue;
+        public List<string> Queue => _queue;
 
         public async Task SubmitAsync(GeoservicesImportRequest request, GeoservicesImportProgress initialProgress,
             CancellationToken cancellationToken = default)

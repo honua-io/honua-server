@@ -63,9 +63,9 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobO
             finalProgressTtl: ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
         var run = new ImportRun(jobId, request with { JobId = jobId }, progress, context, Stopwatch.StartNew(), licenseCancellation, jobCancellation.Token);
 
-        // The first claim cannot follow a commit, so it leaves a busy target to the importer's
-        // non-retryable lock failure instead of waiting on another job's writer.
-        var recovered = await RecoverAsync(run, earlierAttemptMayHaveCommitted: job.AttemptCount > 1).ConfigureAwait(false);
+        var recovered = job.AttemptCount > 1
+            ? await RecoverRetryAsync(run).ConfigureAwait(false)
+            : await RecoverFirstAttemptAsync(run).ConfigureAwait(false);
         return recovered ?? await ExecuteRunAsync(run).ConfigureAwait(false);
     }
 

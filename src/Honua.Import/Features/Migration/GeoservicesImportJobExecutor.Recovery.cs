@@ -27,38 +27,43 @@ internal sealed partial class GeoservicesImportJobExecutor
             ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
         var run = new ImportRun(job.OperationId, request with { JobId = job.OperationId }, progress,
             context, Stopwatch.StartNew(), licenseCancellation, recoveryCancellation.Token);
-        return await RecoverReceiptAsync(run, earlierAttemptMayHaveCommitted: true).ConfigureAwait(false);
+        return await RecoverReceiptAsync(run).ConfigureAwait(false);
     }
 
-    private async Task<JobExecutionResult?> RecoverAsync(ImportRun run, bool earlierAttemptMayHaveCommitted)
-    {
-        var recovered = await RecoverReceiptAsync(run, earlierAttemptMayHaveCommitted).ConfigureAwait(false);
-        if (recovered is not null)
-        {
-            return recovered;
-        }
+    // The first claim cannot follow a commit, so it leaves a busy target to the importer's
+    // non-retryable lock failure instead of waiting on another job's writer.
+    private async Task<JobExecutionResult?> RecoverFirstAttemptAsync(ImportRun run)
+        => await ReplayCommittedTerminalAsync(run).ConfigureAwait(false) ?? ReplayStoredTerminal(run);
 
+    private async Task<JobExecutionResult?> RecoverRetryAsync(ImportRun run)
+        => await RecoverReceiptAsync(run).ConfigureAwait(false) ?? ReplayStoredTerminal(run);
+
+    private static JobExecutionResult? ReplayStoredTerminal(ImportRun run)
+    {
         var stored = run.Progress.CurrentProgress;
         return stored is not null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status)
             ? ReplayTerminal(stored) : null;
     }
 
-    private async Task<JobExecutionResult?> RecoverReceiptAsync(ImportRun run, bool earlierAttemptMayHaveCommitted)
+    private async Task<JobExecutionResult?> RecoverReceiptAsync(ImportRun run)
+        => await ReplayCommittedTerminalAsync(run).ConfigureAwait(false)
+            ?? await RecoverEarlierCommitAsync(run).ConfigureAwait(false);
+
+    private async Task<JobExecutionResult?> ReplayCommittedTerminalAsync(ImportRun run)
     {
         var stored = await _jobManager.ProgressStore.GetProgressAsync(run.JobId, run.Token).ConfigureAwait(false);
         run.Progress.Seed(stored);
-        if (stored != null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status) &&
-            stored.DataCommitted)
-        {
-            await RecordCommitAsync(run).ConfigureAwait(false);
-            return ReplayTerminal(stored);
-        }
-
-        if (!earlierAttemptMayHaveCommitted)
+        if (stored == null || !GeoservicesImportJobManager.IsTerminalStatus(stored.Status) || !stored.DataCommitted)
         {
             return null;
         }
 
+        await RecordCommitAsync(run).ConfigureAwait(false);
+        return ReplayTerminal(stored);
+    }
+
+    private async Task<JobExecutionResult?> RecoverEarlierCommitAsync(ImportRun run)
+    {
         await using var scope = _scopeFactory.CreateAsyncScope();
         GeoservicesImportPlanning.RestoreTenant(scope.ServiceProvider, run.Request.Target);
         if (scope.ServiceProvider.GetRequiredService<IGeoservicesImportService>() is not IGeoservicesImportCommitRecovery recovery)

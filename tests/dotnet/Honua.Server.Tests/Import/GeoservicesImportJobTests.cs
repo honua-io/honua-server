@@ -17,7 +17,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Extensions;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NSubstitute;
@@ -117,7 +116,6 @@ public sealed class GeoservicesImportJobTests(DatabaseFixtureAdapter database)
     private static WebAppFixture CreateHost() => new WebAppFixture()
         .WithProductionJobSubstrate()
         .WithTestLicense(HonuaEdition.Enterprise)
-        .ConfigureWebHost(builder => builder.UseSetting("ConnectionStrings:redis", string.Empty))
         .ConfigureServices(ImportWorkerTestServices.RemoveHostedImportWorkers);
 
     private static void RemoveExecutionWorker(IServiceCollection services)

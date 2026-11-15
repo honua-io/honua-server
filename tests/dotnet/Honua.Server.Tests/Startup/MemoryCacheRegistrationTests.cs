@@ -12,13 +12,10 @@ namespace Honua.Server.Tests.Startup;
 
 public sealed class MemoryCacheRegistrationTests
 {
-    [Theory]
-    [InlineData(null)]
-    [InlineData("unreachable.invalid:6379,connectTimeout=1")]
-    [Trait("Tier", "Fast")]
-    public async Task ConfigureCaching_WithLegacyRedisConfiguration_ReadsAndRemovesLocalEntries(string? connectionString)
+    [UnitTest]
+    public async Task ConfigureCaching_ReadsAndRemovesLocalEntries()
     {
-        await using var provider = BuildProvider(connectionString);
+        await using var provider = BuildProvider();
         var cache = provider.GetRequiredService<IDistributedCache>();
 
         await cache.SetStringAsync("response", "cached response");
@@ -31,8 +28,8 @@ public sealed class MemoryCacheRegistrationTests
     [UnitTest]
     public async Task ConfigureCaching_WithSeparateHosts_KeepsEntriesLocalToEachHost()
     {
-        await using var firstHost = BuildProvider("unreachable.invalid:6379");
-        await using var secondHost = BuildProvider("unreachable.invalid:6379");
+        await using var firstHost = BuildProvider();
+        await using var secondHost = BuildProvider();
         var firstCache = firstHost.GetRequiredService<IDistributedCache>();
         var secondCache = secondHost.GetRequiredService<IDistributedCache>();
 
@@ -43,14 +40,9 @@ public sealed class MemoryCacheRegistrationTests
         (await firstCache.GetStringAsync("response")).Should().Be("first host");
     }
 
-    private static ServiceProvider BuildProvider(string? connectionString)
+    private static ServiceProvider BuildProvider()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ConnectionStrings:redis"] = connectionString
-            })
-            .Build();
+        var configuration = new ConfigurationBuilder().Build();
         var services = new ServiceCollection();
         services.AddLogging();
         InfrastructureCompositionRoot.ConfigureCaching(services, configuration);

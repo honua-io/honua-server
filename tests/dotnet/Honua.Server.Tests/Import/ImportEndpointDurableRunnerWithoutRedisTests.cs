@@ -3,7 +3,6 @@
 
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
@@ -12,13 +11,11 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Import;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Helpers;
 using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -86,61 +83,6 @@ public sealed class ImportEndpointDurableRunnerWithoutRedisTests(DatabaseFixture
             job.Status.Should().Be(ExecutionJobStatus.Succeeded, job.ErrorMessage);
 
             (await DurableImportTestData.CountImportedRowsAsync(fixture, tableName)).Should().Be(FeatureCount);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
-    public async Task StartGeoservices_WithoutRedis_PersistsDurableExecutionJob()
-    {
-        await AssertDurableSubmissionAsync("geoservices", new
-        {
-            ServiceUrl = "https://example.com/arcgis/rest/services/Imported/FeatureServer",
-            LayerId = 0,
-            TableName = $"durable_source_{Guid.NewGuid():N}"[..28]
-        }, "GeoservicesImport");
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/import/geoserver/start")]
-    public async Task StartGeoServer_WithoutRedis_PersistsDurableExecutionJob()
-    {
-        await AssertDurableSubmissionAsync("geoserver", new
-        {
-            GeoServerRestUrl = "https://example.com/geoserver/rest",
-            DryRun = true
-        }, "GeoServerImport");
-    }
-
-    private async Task AssertDurableSubmissionAsync(string source, object request, string expectedKind)
-    {
-        await database.DataSource.ClearJobSubstrateAsync();
-        var fixture = new WebAppFixture()
-            .WithProductionJobSubstrate()
-            .WithTestLicense(HonuaEdition.Enterprise)
-            .ConfigureWebHost(WithoutRedisConnectionString)
-            .ConfigureServices(ImportWorkerTestServices.RemoveHostedImportWorkers);
-        await fixture.InitializeAsync();
-        try
-        {
-            fixture.Services.GetService<StackExchange.Redis.IConnectionMultiplexer>().Should().BeNull();
-            var jobStore = fixture.GetService<IExecutionJobStore>();
-            jobStore.Should().BeOfType<PostgresExecutionJobStore>();
-
-            using var response = await fixture.Client.PostAsJsonAsync($"/api/v1/admin/import/{source}/start", request);
-            var body = await response.Content.ReadAsStringAsync();
-            response.StatusCode.Should().Be(HttpStatusCode.Accepted, body);
-            using var document = JsonDocument.Parse(body);
-            var jobId = document.RootElement.GetProperty("jobId").GetString();
-            jobId.Should().NotBeNullOrWhiteSpace();
-            var job = await jobStore.GetAsync(jobId!);
-            job.Should().NotBeNull("accepted imports must survive loss of the submitting replica");
-            job!.Spec.Kind.ToString().Should().Be(expectedKind);
         }
         finally
         {

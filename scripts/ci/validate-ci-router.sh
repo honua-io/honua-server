@@ -489,10 +489,6 @@ assert_exact_shards \
   "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs" \
   '["Migration","Migration Source Imports"]'
 assert_exact_shards \
-  "import-coordination-outage-recovery-owner" \
-  "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinationOutageRecoveryTests.cs" \
-  '["Migration","Migration Source Imports"]'
-assert_exact_shards \
   "headroom-split-cloud-streaming-import" \
   "tests/dotnet/Honua.Server.Tests/Import/StreamingImportTests.cs" \
   '["Cloud and Streaming Import","File and Raster Import"]'

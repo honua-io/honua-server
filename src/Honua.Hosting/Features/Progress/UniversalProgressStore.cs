@@ -109,10 +109,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
     public async Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
     {
-        if (write.ExecutionFence is not null)
-        {
-            throw new NotSupportedException("Execution-fenced progress requires durable job storage.");
-        }
+        ThrowIfExecutionFenced(write);
 
         var effectiveTtl = write.Ttl ?? TimeSpan.FromHours(24);
 
@@ -167,10 +164,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             throw new ArgumentException("A progress update cannot change the operation type.", nameof(write));
         }
 
-        if (write.ExecutionFence is not null)
-        {
-            throw new NotSupportedException("Execution-fenced progress requires durable job storage.");
-        }
+        ThrowIfExecutionFenced(write);
 
         var effectiveTtl = write.Ttl ?? TimeSpan.FromHours(24);
         if (AllowsLocalFallback)
@@ -220,6 +214,14 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
         current = await GetProgressAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
         return current is null ? ProgressCompareAndSetResult.NotFound : ProgressCompareAndSetResult.StatusMismatch(current);
+    }
+
+    private static void ThrowIfExecutionFenced(OperationProgressWrite write)
+    {
+        if (write.ExecutionFence is not null)
+        {
+            throw new NotSupportedException("Execution-fenced progress requires durable job storage.");
+        }
     }
 
     private async Task SetProgressUnguardedAsync(string operationId, IOperationProgress progress, TimeSpan effectiveTtl, CancellationToken cancellationToken)
