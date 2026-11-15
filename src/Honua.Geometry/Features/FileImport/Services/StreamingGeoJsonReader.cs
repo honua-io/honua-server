@@ -549,14 +549,26 @@ internal sealed partial class StreamingGeoJsonReader
 
         ValidateReservedAttributes(root, featureIndex, issues);
 
-        if (!root.TryGetProperty("geometry", out var geometryElement) ||
-            geometryElement.ValueKind == JsonValueKind.Null)
+        if (!root.TryGetProperty("geometry", out var geometryElement))
         {
             issues.Add(ImportValidationIssue.Create(
                 ImportValidationErrorCodes.GeometryMissing,
                 "GeoJSON feature is missing geometry.",
                 featureIndex,
                 "geometry"));
+            return issues;
+        }
+
+        if (geometryElement.ValueKind == JsonValueKind.Null)
+        {
+            issues.Add(new ImportValidationIssue
+            {
+                Code = ImportValidationErrorCodes.GeometryMissing,
+                Message = "GeoJSON feature has null geometry; its attributes will be imported without a location.",
+                FeatureIndex = featureIndex,
+                Field = "geometry",
+                Severity = ImportValidationSeverity.Warning
+            });
             return issues;
         }
 
