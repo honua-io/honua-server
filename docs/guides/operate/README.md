@@ -123,12 +123,14 @@ Every concern sits on an explicit rung:
 | L2 remediable | The finding can route a real operation through the gateway and approval lane. |
 | L3 autonomous | A policy explicitly allows AutoApply under guardrails, audit, lease/singleton execution, and a kill switch. |
 
-Current trunk has all four rungs for selected concerns. `ProposeOnly` remains the
-default. L3 requires a durable policy store, a per-rule `AutoApply` opt-in, an
-action marked auto-safe by both the finding and action catalogs, blast-radius and
-rate-window bounds, the global kill switch to be off, and a successful durable
-reservation. Every autonomous attempt still passes through the operation gateway
-and writes audit, outcome, notification, and convergence evidence.
+The default `Unattended` profile enables the Tier 1 allowlist, which is currently
+empty: no shipped actuator has proven automatic compensation. Findings can
+propose actions for human approval. L3 additionally requires a deterministic,
+idempotent, rate-limited action with automatic compensation, no data or security
+effect, bounded cost and scope, durable policy and budget reservation, and the
+global kill switch to be off. A saved `AutoApply` policy cannot loosen these
+action requirements. Autonomous attempts pass through the operation gateway and
+write audit, outcome, notification, and convergence evidence.
 
 Current rung by concern:
 
@@ -136,7 +138,7 @@ Current rung by concern:
 |---|---:|---|
 | Aggregate operating posture | L0 | `GET /api/v1/operate/status` gives one server verdict and drill-down sources. |
 | Ops health history and cluster aggregation | L0 | `GET /api/v1/admin/observability/ops-health/history` stores bounded rollups for reconnect gap-fill and trend views. |
-| Alert dispatch dead letters | L3 (opt-in) | The `alert-dispatch-backlog` rule can auto-apply `alerts.redrive_dead_letters`; integration proof covers convergence, durable audit/outcome evidence, and the kill switch stopping the next evaluation. The default remains L2/ProposeOnly. |
+| Alert dispatch dead letters | L2 | The `alert-dispatch-backlog` rule proposes `alerts.redrive_dead_letters` for human approval. Delivered notifications cannot be undone, so redrive is ineligible for Tier 1 even with a saved `AutoApply` policy. |
 | Alert channel pause/resume | L2 | Privacy-safe per-channel backlog health identifies a failing channel and offers a scoped `alerts.pause_channel` proposal. Pause remains approval-gated and non-auto-safe because it suppresses delivery; healthy channels continue dispatching. |
 | Database bounded-admission pressure | L2 where supported | The Postgres runtime-tunable admission gate can be lowered through a proposed `db.tune_bounded_admission` action when headroom exists. |
 | Deploy stuck in manual intervention | L2 when a prior revision is known | The finding can propose a rollback Deploy operation only when the previous revision is recorded. |
@@ -168,19 +170,19 @@ Read the live policy and track record before graduating a rule:
 
 > Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/observability/autonomy/policies/alert-dispatch-backlog`.
 
-The following example opts only the proven dead-letter rule into AutoApply,
-limits it to two actions per ten-minute window, and caps its blast radius. Policy
-updates require admin authorization and are audited.
+The following example keeps dead-letter redrive in `ProposeOnly`. Its bounds
+limit future eligible automatic actions; they do not bypass the human approval
+required for redrive. Policy updates require admin authorization and are audited.
 
 In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `PUT /api/v1/admin/observability/autonomy/policies/alert-dispatch-backlog` with this body:
 
 ```json
 {
-  "mode": "AutoApply",
+  "mode": "ProposeOnly",
   "maxAutoActionsPerWindow": 2,
   "windowSeconds": 600,
   "maxBlastRadius": 2,
-  "reason": "graduated after reviewed successful proposals"
+  "reason": "redrive requires human approval"
 }
 ```
 
@@ -312,12 +314,13 @@ OTLP, and the one-command monitoring bundle.
 ## Honest limits
 
 The operating model ships: persisted cluster health, realtime fan-out, the Console
-Operate views, MCP observability and platform tools, real operation executors and
-graduated autonomy. That does not make every operational concern autonomous:
+Operate views, MCP observability and platform tools, and real operation
+executors. Autonomous remediation remains a release gap:
 
-- The proven L3 path is bounded alert dead-letter redrive. Other rules stay
-  ProposeOnly until their deterministic signal, real auto-safe actuator,
-  rollback/convergence proof, and guardrails exist.
+- No current action qualifies for Tier 1. Dead-letter redrive requires human
+  approval because delivery cannot be compensated. A future Tier 1 action needs
+  proven automatic compensation, convergence, guardrails, and live release-gate
+  evidence before the server can claim autonomous recovery for that concern.
 - GP queue depth is diagnosable, but the server does not invent a generic scale
   action. Kubernetes HPA and cloud/serverless substrate scaling remain deployment
   concerns; HTTP serving does not claim scale-to-zero.

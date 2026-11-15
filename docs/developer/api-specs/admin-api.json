@@ -10671,7 +10671,7 @@
             "description": "Approval authority or durable control-plane storage is temporarily unavailable."
           },
           "422": {
-            "description": "The approved operation cannot be executed with the sealed evidence."
+            "description": "No operation executor is registered for the proposal's operation (problem code `operation-executor-unavailable`). The proposal is not approved and its state is unchanged."
           }
         },
         "security": [
@@ -14398,7 +14398,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "503": {
-            "description": "A large export was requested but the background export service, durable job storage, or cloud storage is not configured, or the export queue is full.",
+            "description": "A large export was requested but the background export service, durable job storage, or cloud storage is not configured, or five exports are already queued or running.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20204,7 +20204,7 @@
           "Tile Operations"
         ],
         "summary": "Start Tile Operation Job",
-        "description": "Queues a tile operation for asynchronous execution and returns 202 with the job id and status/cancel URLs. `operation` is required; `seed`/`warm` require `layerId` or `serviceId`; `archive` and `publish` require `layerId`; `bbox`, when supplied, must contain exactly four values `[minLon, minLat, maxLon, maxLat]` and `minZoom` must not exceed `maxZoom`. When a batch tile-cache backend is configured the job is submitted through the execution-job/batch path, otherwise through the in-process worker. Response property names are PascalCase.",
+        "description": "Queues a tile operation for asynchronous execution and returns 202 with the job id and status/cancel URLs. `operation` is required; `seed`/`warm` require `layerId` or `serviceId`; `archive` and `publish` require `layerId`; `bbox`, when supplied, must contain exactly four values `[minLon, minLat, maxLon, maxLat]` and `minZoom` must not exceed `maxZoom`. Every operation is submitted as a TileCache execution job, run once by whichever node claims it, on the configured batch backend or the `local` job worker. Response property names are PascalCase.",
         "operationId": "startTileOperationJob",
         "requestBody": {
           "required": true,
@@ -20235,6 +20235,16 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "This host has no system database job store, so no tile operation is accepted.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -25174,6 +25184,12 @@
             "nullable": true,
             "maxLength": 63,
             "description": "Existing published UUID column containing edit-stable global IDs. Does not enable editing."
+          },
+          "temporalColumn": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 63,
+            "description": "Published date or date-time column that marks the layer as history-capable for the temporal API."
           },
           "supportsAttachments": {
             "type": "boolean",
@@ -48444,7 +48460,7 @@
         "properties": {
           "operation": {
             "type": "string",
-            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`."
+            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `paired-publish`."
           },
           "serviceId": {
             "type": "string",
@@ -48493,7 +48509,18 @@
           "tileCompression": {
             "type": "string",
             "nullable": true,
-            "description": "`none` or `gzip`: tile payload compression for `archive` and `publish` PMTiles output, case-insensitive. Defaults to `none`, which writes the same bytes as earlier releases. Rejected for other operations."
+            "description": "`none` or `gzip`: tile payload compression for `archive`, `publish` and `paired-publish` PMTiles output, case-insensitive. Defaults to `none`, which writes the same bytes as earlier releases. Rejected for other operations."
+          },
+          "publicationId": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+            "description": "Required for `paired-publish`: the publication whose versions and current pointer the run writes."
+          },
+          "identityField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Required for `paired-publish`: a visible text field that identifies each feature in both the PMTiles and the GeoParquet artifact."
           },
           "generationId": {
             "type": "string",
@@ -48634,6 +48661,9 @@
           "PublishedArtifact": {
             "$ref": "#/components/schemas/TileOpsPublishedArtifact"
           },
+          "PublishedPublication": {
+            "$ref": "#/components/schemas/TileOpsPublishedPublication"
+          },
           "StartedAt": {
             "type": "string",
             "format": "date-time"
@@ -48666,6 +48696,31 @@
           "Duration": {
             "type": "string",
             "description": "Elapsed time serialized as a .NET TimeSpan string (for example `00:01:23.4560000`)."
+          }
+        }
+      },
+      "TileOpsPublishedPublication": {
+        "type": "object",
+        "nullable": true,
+        "description": "The version a completed `paired-publish` activated. Property names are PascalCase.",
+        "properties": {
+          "PublicationId": {
+            "type": "string"
+          },
+          "Version": {
+            "type": "string"
+          },
+          "CaptureId": {
+            "type": "string",
+            "description": "Embedded in both artifacts' metadata as `honua:captureId`."
+          },
+          "DescriptorKey": {
+            "type": "string",
+            "description": "Storage key of the version's publication descriptor (publication-descriptor v1)."
+          },
+          "PointerKey": {
+            "type": "string",
+            "description": "Storage key of the publication's current-version pointer."
           }
         }
       },

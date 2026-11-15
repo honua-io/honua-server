@@ -106,8 +106,8 @@ public sealed class TileCacheSeedCoverageTests
         int maxTiles = 500)
     {
         var rendered = new ConcurrentBag<(int Z, int X, int Y)>();
-        var stub = new TileOperationJobServicePublishTests.StubCloudStorage();
-        using var serviceProvider = TileOperationJobServicePublishTests.BuildScopeForSeed(
+        var stub = new TileCacheJobExecutorPublishTests.StubCloudStorage();
+        using var serviceProvider = TileCacheJobExecutorPublishTests.BuildScopeForSeed(
             stub,
             tileProvider => tileProvider.GetMvtTileAsync(
                     Arg.Any<int>(),
@@ -126,7 +126,7 @@ public sealed class TileCacheSeedCoverageTests
                     return Task.FromResult<byte[]?>(MvtTileBuilder.Canonical());
                 }));
 
-        var sut = TileOperationJobServicePublishTests.CreateSutForSeed(serviceProvider);
+        var sut = TileCacheJobExecutorPublishTests.CreateSutForSeed(serviceProvider);
         var jobId = await sut.StartAsync(new TileOperationStartRequest
         {
             Operation = "seed",

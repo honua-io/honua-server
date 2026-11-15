@@ -1638,7 +1638,7 @@
           "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/RoutingAsyncWebToolTests.cs",
           "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
           "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
-          "bodyDigest": "sha256:a6d5c3b3d08f5c6fc8ef096729b05836a123b65205105905073180122f6fab3d"
+          "bodyDigest": "sha256:040c9e451455c3141ed20eaf2810e33c4c0b88aa7d7ed3c4c36a19b401edc8e3"
         },
         {
           "path": "tests/dotnet/Honua.Server.Tests/Routing/RoutingPgRoutingQueuedJobTests.cs",
@@ -1657,7 +1657,7 @@
           "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/RoutingAsyncWebToolTests.cs",
           "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
           "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
-          "bodyDigest": "sha256:a6d5c3b3d08f5c6fc8ef096729b05836a123b65205105905073180122f6fab3d"
+          "bodyDigest": "sha256:040c9e451455c3141ed20eaf2810e33c4c0b88aa7d7ed3c4c36a19b401edc8e3"
         },
         {
           "path": "tests/dotnet/Honua.Server.Tests/Routing/RoutingPgRoutingQueuedJobTests.cs",
@@ -1676,7 +1676,7 @@
           "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/RoutingAsyncWebToolTests.cs",
           "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
           "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
-          "bodyDigest": "sha256:a6d5c3b3d08f5c6fc8ef096729b05836a123b65205105905073180122f6fab3d"
+          "bodyDigest": "sha256:040c9e451455c3141ed20eaf2810e33c4c0b88aa7d7ed3c4c36a19b401edc8e3"
         },
         {
           "path": "tests/dotnet/Honua.Server.Tests/Routing/RoutingPgRoutingQueuedJobTests.cs",

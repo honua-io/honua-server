@@ -85,14 +85,13 @@ public sealed class StacStorageLayerResolutionTests
             .Returns(TemporalExtentResult.Create(instant, instant));
 
         var collection = await StacMappingService.MapResourceToCollectionAsync(
-            snapshot.Index.ResourcesById["resource.parcels"],
-            snapshot.Index.PublicationsById["pub.parcels"],
-            snapshot.Index.ServicesById["service.stac"],
-            CollectionLayerIndex,
-            ParcelsStorageLayerId,
-            reader,
-            "https://example.test",
-            null,
+            new StacV2Lookups.ResolvedStacPublication(
+                snapshot.Index.PublicationsById["pub.parcels"],
+                snapshot.Index.ResourcesById["resource.parcels"],
+                snapshot.Index.ServicesById["service.stac"],
+                CollectionLayerIndex,
+                snapshot),
+            new StacMappingService.CollectionMappingContext(reader, "https://example.test", null),
             CancellationToken.None);
 
         collection.Id.Should().Be("3");
@@ -108,14 +107,13 @@ public sealed class StacStorageLayerResolutionTests
         var reader = Substitute.For<IFeatureReader>();
 
         var collection = await StacMappingService.MapResourceToCollectionAsync(
-            snapshot.Index.ResourcesById["resource.unbound"],
-            snapshot.Index.PublicationsById["pub.unbound"],
-            snapshot.Index.ServicesById["service.stac"],
-            CollectionLayerIndex,
-            storageLayerId: null,
-            reader,
-            "https://example.test",
-            null,
+            new StacV2Lookups.ResolvedStacPublication(
+                snapshot.Index.PublicationsById["pub.unbound"],
+                snapshot.Index.ResourcesById["resource.unbound"],
+                snapshot.Index.ServicesById["service.stac"],
+                CollectionLayerIndex,
+                snapshot),
+            new StacMappingService.CollectionMappingContext(reader, "https://example.test", null),
             CancellationToken.None);
 
         collection.Extent.Temporal.Interval.Single().Should().OnlyContain(value => value == null);
@@ -156,11 +154,11 @@ public sealed class StacStorageLayerResolutionTests
             "\"stac-storage\"",
             DateTimeOffset.UtcNow);
 
-    private static MetadataV2Resource FeatureResource(string id, string? storageBindingId)
+    private static MetadataV2Object FeatureResource(string id, string? storageBindingId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = storageBindingId is null ? [] : [storageBindingId],
             PrimaryStorageBindingId = storageBindingId,
@@ -181,14 +179,14 @@ public sealed class StacStorageLayerResolutionTests
     /// A STAC collection publication with no storage binding of its own, so the handle is
     /// resolved from its resource.
     /// </summary>
-    private static MetadataV2Publication Publication(string id, string resourceId)
+    private static MetadataV2Layer Publication(string id, string resourceId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             ResourceId = resourceId,
             ServiceId = "service.stac",
-            PublicationType = MetadataV2PublicationType.StacCollection,
+            PublicationType = MetadataV2LayerType.StacCollection,
             IsPrimary = true,
             LayerIndex = CollectionLayerIndex,
         };
