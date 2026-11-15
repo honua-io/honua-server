@@ -47,14 +47,14 @@
     <PackageVersion Include="Grpc.Net.Client" Version="2.80.0" />
     <PackageVersion Include="Grpc.Net.Client.Web" Version="2.80.0" />
     <!-- Published .NET admin SDK, consumed only by tests that drive server endpoints through the SDK
-         a customer installs (#4600 acceptance criterion 7). -->
+         a customer installs. -->
     <PackageVersion Include="Honua.Sdk.Admin" Version="1.7.0" />
-    <!-- Published .NET GeoServices SDK: the protocol client for ArcGIS source reads in the import path
-         (#4599). 1.10.4 is the published release pin with lossless source metadata and nullable/WKT fidelity. -->
+    <!-- Published .NET GeoServices SDK: the protocol client for ArcGIS source reads in the import path.
+         1.10.4 is the published release pin with lossless source metadata and nullable/WKT fidelity. -->
     <PackageVersion Include="Honua.Sdk.GeoServices" Version="1.10.4" />
     <PackageVersion Include="Mapsui" Version="5.0.2" />
     <!-- Transitive of NBomber.Contracts (tests) and Microsoft.AspNetCore.SignalR.StackExchangeRedis (server
-         admin realtime backplane, #2554); pinned directly to clear GHSA-hv8m-jj95-wg3x (NU1903). -->
+         admin realtime backplane); pinned directly to clear GHSA-hv8m-jj95-wg3x (NU1903). -->
     <PackageVersion Include="MessagePack" Version="2.5.307" />
     <!-- Transitive of AWSSDK.CloudWatch via AWSSDK.Extensions.CborProtocol; referenced directly by
          Honua.Aws to clear GHSA-vmv3-wvjp-wqpj (NU1902). -->
@@ -138,7 +138,7 @@
     <!-- Transitive of Testcontainers; pinned to clear GHSA-q939-rpr3-3284
          (NU1903, vulnerable <= 2025.1.0). -->
     <!-- Managed DEFLATE state/checksums let Zarr validate complete streams per request,
-         including truncated trailers, without process-wide runtime switches (#6718). -->
+         including truncated trailers, without process-wide runtime switches. -->
     <PackageVersion Include="SharpZipLib" Version="1.4.2" />
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
@@ -148,7 +148,7 @@
          in their consumers select the patched framework asset (CVE-2026-84008 / CVE-2026-70162). -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="11.0.0" />
     <!-- Test-only: independent XML-DSig reference implementation used to generate signed SAML
-         assertions in tests that validate the AOT-safe in-server verifier (#508). Not referenced
+         assertions in tests that validate the AOT-safe in-server verifier. Not referenced
          by any shipped project. -->
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="11.0.0" />
     <PackageVersion Include="Testcontainers" Version="4.11.0" />
@@ -160,7 +160,7 @@
     <PackageVersion Include="WireMock.Net" Version="2.2.0" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
     <!-- Fully-managed C# port of zstd (MIT): decodes ZSTD-compressed COG tiles without a
-         native libzstd, keeping the serving path AOT- and trim-safe (#2854). Already in the
+         native libzstd, keeping the serving path AOT- and trim-safe. Already in the
          graph transitively via Parquet.Net; pinned at the version that resolves today so
          making it a direct reference does not move Parquet's zstd. -->
     <PackageVersion Include="ZstdSharp.Port" Version="0.8.7" />
