@@ -584,8 +584,9 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
     // Returns the single EPSG projected CRS whose parameters, unit and datum match; none or several is no match.
     private async Task<int?> FindSridByProjectedParametersAsync(string wktContent, CancellationToken cancellationToken)
     {
+        // An unknown datum cannot be verified against a candidate, so it is never inferred.
         var source = ProjectedCrsSignature.TryCreate(wktContent);
-        if (source is null)
+        if (source?.Datum.EpsgCode is not { } datumCode)
             return null;
         try
         {
@@ -594,11 +595,10 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
                 SELECT srid, srtext
                 FROM spatial_ref_sys
                 WHERE auth_name = 'EPSG' AND srtext LIKE 'PROJCS[%' AND srtext LIKE ANY(@patterns)
-                  AND (@datum::text IS NULL OR position(@datum IN srtext) > 0)
+                  AND position(@datum IN srtext) > 0
                 LIMIT 20000", connection);
             command.Parameters.AddWithValue("@patterns", ProjectedCrsSignature.ProjectionPatterns(source.Projection.Family).ToArray());
-            command.Parameters.Add(new NpgsqlParameter<string?>("@datum",
-                source.Datum.EpsgCode is null ? null : $"AUTHORITY[\"EPSG\",\"{source.Datum.EpsgCode}\"]"));
+            command.Parameters.AddWithValue("@datum", $"AUTHORITY[\"EPSG\",\"{datumCode}\"]");
             var matches = new HashSet<int>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken) && matches.Count < 2)

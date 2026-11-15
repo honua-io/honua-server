@@ -143,6 +143,7 @@ internal sealed record CrsDatum(string? EpsgCode, (double SemiMajorAxis, double 
         ["D_ETRS_1989"] = "6258",
         ["D_RGF_1993"] = "6171",
         ["D_GDA_1994"] = "6283",
+        ["D_GDA2020"] = "1168",
         ["D_GDA_2020"] = "1168",
         ["D_Deutsches_Hauptdreiecksnetz"] = "6314",
         ["D_Amersfoort"] = "6289",
@@ -165,16 +166,15 @@ internal sealed record CrsDatum(string? EpsgCode, (double SemiMajorAxis, double 
         return new CrsDatum(code, (semiMajor.Value, inverseFlattening.Value), primeMeridian);
     }
 
-    // With both datum codes known they must agree; otherwise only the ellipsoid can be compared, and the caller
-    // must then insist on a single candidate.
+    // Both datum codes must be known and agree. Datums that share an ellipsoid differ by metres to hundreds of
+    // metres, so an unknown datum is never matched on its ellipsoid alone.
     public bool Matches(CrsDatum other)
     {
         ArgumentNullException.ThrowIfNull(other);
-        if (Math.Abs(PrimeMeridian - other.PrimeMeridian) > 1e-9)
-            return false;
-        if (EpsgCode is not null && other.EpsgCode is not null)
-            return EpsgCode == other.EpsgCode;
-        return Math.Abs(Ellipsoid.SemiMajorAxis - other.Ellipsoid.SemiMajorAxis) <= 1e-3
+        return EpsgCode is not null
+            && EpsgCode == other.EpsgCode
+            && Math.Abs(PrimeMeridian - other.PrimeMeridian) <= 1e-9
+            && Math.Abs(Ellipsoid.SemiMajorAxis - other.Ellipsoid.SemiMajorAxis) <= 1e-3
             && Math.Abs(Ellipsoid.InverseFlattening - other.Ellipsoid.InverseFlattening) <= 1e-6;
     }
 }

@@ -196,9 +196,9 @@ internal static class CsvFormatReader
             if (headers == null)
             {
                 headers = NormalizeHeaders(fields);
-                // Spreadsheets in most European locales write ';'-separated files with decimal-comma numbers.
-                // A comma inside a field is unambiguous only when the comma is not the delimiter.
-                mapping = BuildMapping(headers, options) with { DecimalComma = delimiter != ',' };
+                // Spreadsheets in most European locales write ';'-separated files with decimal-comma numbers. Tab and
+                // pipe files are as often written where ',' groups thousands, so only ';' files read a decimal comma.
+                mapping = BuildMapping(headers, options) with { DecimalComma = delimiter == ';' };
                 return null;
             }
 
@@ -532,8 +532,8 @@ internal static class CsvFormatReader
         return ParseCoordinate(longitudeValue, mapping) is null || ParseCoordinate(latitudeValue, mapping) is null;
     }
 
-    // Invariant numbers always; a decimal comma ("11,575490": one comma, digits on both sides, no point) only when
-    // the file's delimiter is not a comma.
+    // Invariant numbers always; a decimal comma ("11,575490": one comma, digits on both sides, no point) only in
+    // ';'-separated files.
     private static double? ParseCoordinate(string value, CsvColumnMapping mapping)
     {
         if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var invariant))
@@ -900,7 +900,7 @@ internal static class CsvFormatReader
         int? AddressIndex = null,
         bool ExplicitCoordinates = false)
     {
-        // Set when the file's delimiter is not a comma, so a comma inside a coordinate can only be a decimal comma.
+        // Set for ';'-separated files, where a comma inside a coordinate can only be a decimal comma.
         public bool DecimalComma { get; init; }
     }
 }

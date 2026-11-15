@@ -481,11 +481,16 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         result.Should().Be(expected);
     }
 
-    [Fact]
-    public async Task DetectFromPrjAsync_EsriProjectedWithNoEpsgEquivalent_ReturnsNull()
+    [Theory]
+    [InlineData(nameof(EsriProjectedPrj.NewYorkLongIslandInternationalFeet))]
+    [InlineData(nameof(EsriProjectedPrj.MgaZone55UnknownDatum))]
+    public async Task DetectFromPrjAsync_EsriProjectedWithNoVerifiableEpsgEquivalent_ReturnsNull(string fixture)
     {
-        // International feet on a CRS EPSG defines only in US survey feet: no candidate, so the import asks for the SRID.
-        var result = await _service!.DetectFromPrjAsync(EsriProjectedPrj.NewYorkLongIslandInternationalFeet);
+        // International feet on a CRS EPSG defines only in US survey feet has no candidate; an unrecognised datum
+        // with GDA94 MGA parameters must not be inferred as GDA94. Either way the import asks for the SRID.
+        var prj = (string)typeof(EsriProjectedPrj).GetField(fixture)!.GetValue(null)!;
+
+        var result = await _service!.DetectFromPrjAsync(prj);
 
         result.Should().BeNull();
     }

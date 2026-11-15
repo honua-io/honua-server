@@ -458,6 +458,7 @@ public sealed class CsvFormatReaderTests
     [InlineData("id,lon,lat\n1,\"11,5\",\"48,1\"")]
     [InlineData("id;lon;lat\n1;1.234,5;48,1")]
     [InlineData("id;lon;lat\n1;1,234,5;48,1")]
+    [InlineData("id\tx\ty\n1\t512,345\t678,901")]
     public async Task ReadStreamingAsync_AmbiguousCommaNumbers_AreNotReadAsCoordinates(string csv)
     {
         var (features, diagnostics) = await ReadAllAsync(csv);

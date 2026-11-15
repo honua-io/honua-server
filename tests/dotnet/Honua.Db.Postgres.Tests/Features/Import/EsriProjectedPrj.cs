@@ -40,6 +40,10 @@ internal static class EsriProjectedPrj
     public static readonly string MgaZone55 =
         new Crs("GDA_1994_MGA_Zone_55", Gda94, Metre).TransverseMercator("500000.0,10000000.0,147.0,0.9996,0.0");
 
+    public static readonly string MgaZone55UnknownDatum = new Crs(
+        "Local_MGA_Zone_55", Geographic("GCS_Local", "D_Local_Survey_1994", Grs80), Metre)
+        .TransverseMercator("500000.0,10000000.0,147.0,0.9996,0.0");
+
     public static readonly string AustralianAlbers =
         new Crs("GDA_1994_Australia_Albers", Gda94, Metre).Albers("0.0,0.0,132.0,-18.0,-36.0,0.0");
 

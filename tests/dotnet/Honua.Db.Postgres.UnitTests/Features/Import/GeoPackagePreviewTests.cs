@@ -196,6 +196,35 @@ public sealed class GeoPackagePreviewTests
     }
 
     [Fact]
+    public async Task ImportFileAsync_GeoPackageWithOverlongSourceLayer_IsRefusedWithoutEchoingIt()
+    {
+        // Fixed literal + GUID token; never rooted, so Path.Join cannot drop the temp-path segment.
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        try
+        {
+            CreateGeoPackage(filePath, includeSecondLayer: true);
+            await using var stream = File.OpenRead(filePath);
+
+            var result = await CreateService().ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "sample.gpkg",
+                TableName = "long_layer_gpkg",
+                TargetSrid = 4326,
+                SourceLayer = new string('x', 500),
+            });
+
+            result.Success.Should().BeFalse();
+            result.ErrorMessage.Should().StartWith("sourceLayer must be at most 128 characters.");
+            result.ErrorMessage.Should().NotContain(new string('x', 129));
+        }
+        finally
+        {
+            await DeleteGeoPackageAsync(filePath);
+        }
+    }
+
+    [Fact]
     public async Task ImportFileAsync_GeoPackageWithUnknownSourceLayer_NamesTheAvailableLayers()
     {
         // Fixed literal + GUID token; never rooted, so Path.Join cannot drop the temp-path segment.

@@ -147,12 +147,12 @@ and the published layer's primary identifier can be different fields.
 | Format | Extension | Notes |
 | --- | --- | --- |
 | GeoJSON | `.geojson`, `.json` | Assumed WGS 84 per the GeoJSON spec. |
-| Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf`/`.shx`/`.prj`; a raw `.shp` upload is rejected. CRS read from `.prj`, including ESRI-style projected definitions with no EPSG code (State Plane, national grids, Transverse Mercator, Lambert and Albers projections), which are matched to the EPSG CRS with the same projection parameters, unit and datum. |
+| Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf`/`.shx`/`.prj`; a raw `.shp` upload is rejected. CRS read from `.prj`, including ESRI-style projected definitions with no EPSG code (State Plane, national grids, Transverse Mercator, Lambert and Albers projections), which are matched to the EPSG CRS with the same projection parameters, unit and datum. A definition whose datum is not recognised is not matched; supply `sourceSrid`. |
 | GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. A GeoPackage with several feature layers needs `sourceLayer` set to one layer's table name; without it the import fails with a message listing the layers. |
 | GPX | `.gpx` | WGS 84 by definition. |
 | KML / KMZ | `.kml`, `.kmz` | WGS 84 by definition. |
 | WKT | `.wkt` | No embedded CRS; provide `sourceSrid` if not WGS 84. |
-| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. The delimiter (comma, semicolon, tab or pipe) is detected; in a file that is not comma-separated, decimal-comma coordinates such as `11,575490` are read as decimals. |
+| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. The delimiter (comma, semicolon, tab or pipe) is detected; in a semicolon-separated file, decimal-comma coordinates such as `11,575490` are read as decimals. |
 | FlatGeobuf | `.fgb` | Upload directly, no archive. CRS read from the header; if absent, `sourceSrid` is required or the import is rejected. |
 | FileGDB | `.gdb.zip` | Zip exactly one `.gdb` directory with its internal files intact (do not flatten). SRID detected from geodatabase metadata when present. One target table per request — per-layer selection is not exposed. Domains, relationship classes, subtypes, topology rules, and network datasets are detected but not imported; they surface in `warnings`. |
 | GeoParquet | `.parquet`, `.geoparquet` | GeoParquet 1.0.0/1.1.0 with one WKB geometry column and planar edges. Null-geometry rows retain their attributes. See the [input contract](#geoparquet-input-contract). |

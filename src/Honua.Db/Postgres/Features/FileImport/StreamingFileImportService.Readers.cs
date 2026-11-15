@@ -109,13 +109,19 @@ internal sealed partial class StreamingFileImportService
         }
     }
 
+    private const int MaxListedGeoPackageLayers = 20;
+    private const int MaxGeoPackageLayerNameLength = 128;
+
     // The named layer when sourceLayer is given; otherwise the only layer. The messages name the file's layers and
     // say how to choose one, because they are returned to the caller as the import error.
     private static GeoPackageLayerInfo ResolveGeoPackageImportLayer(IReadOnlyList<GeoPackageLayerInfo> layers, string? sourceLayer)
     {
         if (layers.Count == 0)
             throw new InvalidDataException("GeoPackage does not contain any feature layers.");
-        var layerNames = string.Join(", ", layers.Select(layer => layer.TableName));
+        var layerNames = string.Join(", ", layers.Take(MaxListedGeoPackageLayers).Select(layer => layer.TableName))
+            + (layers.Count > MaxListedGeoPackageLayers ? $" and {layers.Count - MaxListedGeoPackageLayers} more" : string.Empty);
+        if (sourceLayer is { Length: > MaxGeoPackageLayerNameLength })
+            throw new InvalidDataException($"sourceLayer must be at most {MaxGeoPackageLayerNameLength} characters. The GeoPackage's layers are: {layerNames}.");
         if (!string.IsNullOrWhiteSpace(sourceLayer))
         {
             return layers.FirstOrDefault(layer => string.Equals(layer.TableName, sourceLayer, StringComparison.OrdinalIgnoreCase))
