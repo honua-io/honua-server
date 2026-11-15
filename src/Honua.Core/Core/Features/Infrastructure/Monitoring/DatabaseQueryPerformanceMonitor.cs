@@ -10,11 +10,18 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 
 public interface IDatabaseQueryPerformanceMonitor
 {
-    DatabaseQueryPerformanceMonitor.QueryExecutionContext StartQueryExecution(string queryType, string correlationId);
+    IQueryExecutionContext StartQueryExecution(string queryType, string correlationId);
 
     QueryPerformanceStatistics GetStatistics();
 
     IReadOnlyList<SlowQueryRecord> GetRecentSlowQueries(int maxCount = 100);
+}
+
+public interface IQueryExecutionContext : IDisposable
+{
+    void Complete(bool success, long? rowCount = null, IDictionary<string, object>? additionalMetrics = null);
+
+    void RecordException(Exception exception);
 }
 
 public sealed class QueryPerformanceMonitoringOptions
@@ -87,7 +94,7 @@ public sealed record SlowQueryRecord
     public string? ExceptionMessage { get; init; }
 }
 
-public sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPerformanceMonitor, IDisposable
+internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPerformanceMonitor, IDisposable
 {
     private readonly ILogger<DatabaseQueryPerformanceMonitor> _logger;
     private readonly QueryPerformanceMonitoringOptions _options;
@@ -113,7 +120,7 @@ public sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPerf
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
 
-    public QueryExecutionContext StartQueryExecution(string queryType, string correlationId)
+    public IQueryExecutionContext StartQueryExecution(string queryType, string correlationId)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -309,7 +316,7 @@ public sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPerf
         public Exception? Exception { get; init; }
     }
 
-    public sealed class QueryExecutionContext : IDisposable
+    private sealed class QueryExecutionContext : IQueryExecutionContext
     {
         private readonly DatabaseQueryPerformanceMonitor _monitor;
         private readonly string _queryType;

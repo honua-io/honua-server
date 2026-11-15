@@ -580,7 +580,7 @@ internal sealed partial class DurableRestoreWorker(
     }
 
     internal sealed class CheckpointStarter(IWorkflowOperationStore store, DeployOperationExecutor deploy, DurableRestoreCompletionVerifier verifier, WorkflowOperationRecord record) : IPriorImageStarter
-{
+    {
         public async Task<bool> CheckpointRdsAsync(string phase, string instanceId, string? resourceId, int expectedSchema, CancellationToken cancellationToken)
         {
             var latest = await store.GetAsync(record.OperationId, cancellationToken).ConfigureAwait(false);
