@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-[Collection(PbfStreamingMemoryCollection.Name)]
+[Collection(PbfStreamingMemoryTestGroup.Name)]
 public sealed partial class PbfQueryFormatterTests
 {
     [Fact]
@@ -107,7 +107,7 @@ public sealed partial class PbfQueryFormatterTests
 
 // Process-wide heap measurements must not overlap allocations from other test collections.
 [CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class PbfStreamingMemoryCollection
+public sealed class PbfStreamingMemoryTestGroup
 {
     public const string Name = "PBF streaming memory";
 }
