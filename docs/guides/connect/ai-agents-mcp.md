@@ -240,7 +240,7 @@ Import a completed job artifact in two steps, without touching an existing table
    - the server-owned `stagingTable`.
 
    You cannot name the table. It is derived from your tenant, your identity and the `intentId`, and a request that supplies `table` is refused.
-2. `honua_op_dataset_stage_import` (`dataset.stage.import`) takes the same inputs plus `previewFingerprint`. The server previews the artifact again and refuses the call if anything changed since your preview. It then seals the binding into the request with a 30-minute approval window. Clients cannot supply the binding.
+2. `honua_op_dataset_stage_import` (`dataset.stage.import`) takes the same inputs plus `previewFingerprint`. The server previews the artifact again and refuses the call if anything changed since your preview. Each preview persists a unique, tenant- and requester-scoped identity with an `expiresAt` timestamp 30 minutes after preview creation. A proposal seals that original expiry into the request; proposing later or previewing the same source again cannot renew an older identity. Clients cannot supply the binding.
 
 For an agent the import files a proposal and returns `RequiresApproval`. Nothing is imported until a person approves it. On approval, the import:
 
