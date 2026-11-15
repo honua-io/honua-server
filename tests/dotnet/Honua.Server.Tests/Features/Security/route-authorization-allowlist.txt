@@ -44,6 +44,10 @@ anonymous GET /api/v{version:apiVersion}/open-data/stac/collections/{collectionI
 anonymous GET /api/v{version:apiVersion}/open-data/stac/collections/{collectionId}/items/{itemId}
 anonymous GET /api/v{version:apiVersion}/streaming/features
 anonymous GET /api/v{version:apiVersion}/streaming/features/capabilities
+# LiveStreamAuthorizationFilter requires and revalidates authentication; the jobs handler checks requester ownership.
+anonymous GET /api/v{version:apiVersion}/streaming/jobs
+# LiveStreamAuthorizationFilter requires and revalidates authentication; the layers handler evaluates canonical access policy.
+anonymous GET /api/v{version:apiVersion}/streaming/layers
 anonymous GET /arcgis
 anonymous GET /arcgisuris.xml
 anonymous GET /healthz/deep
