@@ -75,7 +75,8 @@ jobs:
       # Several self-hosted runners share one host and its /tmp. runner.temp is
       # unavailable in job env, so this step pins temp at the job directory
       # before later steps create NuGet, MSBuild or app files.
-      - name: Use the job's own temp directory
+      - &job-temp
+        name: Use the job's own temp directory
         timeout-minutes: 1
         run: |
           {
@@ -124,17 +125,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(github.event.pull_request.draft && '[{"check":"Format","format":"true","analyzer-build":"false","analyzer-partition":"all"}]' || '[{"check":"Format","format":"true","analyzer-build":"false","analyzer-partition":"all"},{"check":"Analyzers","format":"false","analyzer-build":"true","analyzer-partition":"source"},{"check":"Analyzers (tests)","format":"false","analyzer-build":"true","analyzer-partition":"tests","analyzer-test-partition":"other"},{"check":"Analyzers (server tests)","format":"false","analyzer-build":"true","analyzer-partition":"tests","analyzer-test-partition":"server"}]') }}
     steps:
-      # Several self-hosted runners share one host and its /tmp. runner.temp is
-      # unavailable in job env, so this step pins temp at the job directory
-      # before later steps create NuGet, MSBuild or app files.
-      - name: Use the job's own temp directory
-        timeout-minutes: 1
-        run: |
-          {
-            echo "TMPDIR=${RUNNER_TEMP}"
-            echo "TEMP=${RUNNER_TEMP}"
-            echo "TMP=${RUNNER_TEMP}"
-          } >> "${GITHUB_ENV}"
+      - *job-temp
       # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
       # independent path an admission failure too, otherwise a skipped-success
       # format job would never execute on enforced attempt 2.
@@ -719,17 +710,7 @@ jobs:
       receipt_matrix: ${{ steps.select.outputs.receipt_matrix }}
       deferred_to_trunk: ${{ steps.select.outputs.deferred_to_trunk }}
     steps:
-      # Several self-hosted runners share one host and its /tmp. runner.temp is
-      # unavailable in job env, so this step pins temp at the job directory
-      # before later steps create NuGet, MSBuild or app files.
-      - name: Use the job's own temp directory
-        timeout-minutes: 1
-        run: |
-          {
-            echo "TMPDIR=${RUNNER_TEMP}"
-            echo "TEMP=${RUNNER_TEMP}"
-            echo "TMP=${RUNNER_TEMP}"
-          } >> "${GITHUB_ENV}"
+      - *job-temp
       # Same shape as the `format` job's admission failure. `rerun-failed-jobs`
       # releases only jobs that FAILED attempt 1, so a job that quietly
       # succeeded by skipping its steps would never execute on the enforced
@@ -956,17 +937,7 @@ jobs:
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
-      # Several self-hosted runners share one host and its /tmp. runner.temp is
-      # unavailable in job env, so this step pins temp at the job directory
-      # before later steps create NuGet, MSBuild or app files.
-      - name: Use the job's own temp directory
-        timeout-minutes: 1
-        run: |
-          {
-            echo "TMPDIR=${RUNNER_TEMP}"
-            echo "TEMP=${RUNNER_TEMP}"
-            echo "TMP=${RUNNER_TEMP}"
-          } >> "${GITHUB_ENV}"
+      - *job-temp
       # The publisher lives in the workflow's commit. Without this checkout the
       # aggregate would have to keep the verdict inline, where a report-mode
       # exit 0 was indistinguishable from a test pass.
@@ -1026,17 +997,7 @@ jobs:
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
-      # Several self-hosted runners share one host and its /tmp. runner.temp is
-      # unavailable in job env, so this step pins temp at the job directory
-      # before later steps create NuGet, MSBuild or app files.
-      - name: Use the job's own temp directory
-        timeout-minutes: 1
-        run: |
-          {
-            echo "TMPDIR=${RUNNER_TEMP}"
-            echo "TEMP=${RUNNER_TEMP}"
-            echo "TMP=${RUNNER_TEMP}"
-          } >> "${GITHUB_ENV}"
+      - *job-temp
       - name: Await exact-head review
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
         run: |
@@ -1231,17 +1192,7 @@ jobs:
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
-      # Several self-hosted runners share one host and its /tmp. runner.temp is
-      # unavailable in job env, so this step pins temp at the job directory
-      # before later steps create NuGet, MSBuild or app files.
-      - name: Use the job's own temp directory
-        timeout-minutes: 1
-        run: |
-          {
-            echo "TMPDIR=${RUNNER_TEMP}"
-            echo "TEMP=${RUNNER_TEMP}"
-            echo "TMP=${RUNNER_TEMP}"
-          } >> "${GITHUB_ENV}"
+      - *job-temp
       - name: Require build, tests, format, CI router validation, and affected shards
         env:
           PR_IS_DRAFT: ${{ github.event.pull_request.draft }}
