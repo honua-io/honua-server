@@ -1,0 +1,641 @@
+{
+  "schemaVersion": 1,
+  "scope": "Source-linked semantic stage bindings, not runtime capability or live verification evidence. Empty surfaces are unrecorded bindings, not claims that the product lacks support.",
+  "stages": [
+    {
+      "okf": "/guides/workflows/analyze-features.md#select",
+      "verb": "evaluate_selection",
+      "objects": [
+        {"concept": "/concepts/domain/feature-set.md", "terms": ["Feature set"]},
+        {"concept": "/concepts/domain/layer.md", "terms": ["Layer"]},
+        {"concept": "/concepts/domain/query-view.md", "terms": ["Query view"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {
+          "bindings": [
+            {"verb": "evaluate_selection", "operation": "client.queryFeatures", "source": "docs/sdks/javascript/javascript-common-tasks.md"},
+            {"verb": "evaluate_selection", "operation": "source.query", "source": "docs/sdks/python/python-common-tasks.md"},
+            {"verb": "evaluate_selection", "operation": "fs.QueryAsync", "source": "docs/sdks/dotnet/dotnet-common-tasks.md"}
+          ]
+        },
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "evaluate_selection", "operation": "honua_query_features", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/analyze-features.md#analyze",
+      "verb": "derive_spatial_result",
+      "objects": [
+        {"concept": "/concepts/domain/artifact.md", "terms": ["Artifact"]},
+        {"concept": "/concepts/domain/crs.md", "terms": ["CRS and units"]},
+        {"concept": "/concepts/domain/feature-set.md", "terms": ["Feature set"]},
+        {"concept": "/concepts/domain/task.md", "terms": ["Operation"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "derive_spatial_result", "operation": "honua_validate_plan", "source": "docs/guides/connect/ai-agents-mcp.md"},
+            {"verb": "derive_spatial_result", "operation": "honua_execute_plan", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/cleanup-resources.md#inspect",
+      "verb": "inspect_cleanup_scope",
+      "objects": [
+        {"concept": "/concepts/domain/catalog.md", "terms": ["Catalog"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "inspect_cleanup_scope", "operation": "honua_list_layers", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/cleanup-resources.md#cleanup",
+      "verb": "remove_owned_resources",
+      "objects": [
+        {"concept": "/concepts/domain/catalog.md", "terms": ["Catalog"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/compose-map.md#compose",
+      "verb": "compose_drawing_layer",
+      "objects": [
+        {"concept": "/concepts/domain/layer.md", "terms": ["Layer"]},
+        {"concept": "/concepts/domain/map.md", "terms": ["Map"]},
+        {"concept": "/concepts/domain/style.md", "terms": ["Style"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "compose_drawing_layer", "operation": "honua_studio_add_layer", "source": "docs/studio/mcp-tools.md"},
+            {"verb": "compose_drawing_layer", "operation": "honua_studio_set_layer_style", "source": "docs/studio/mcp-tools.md"}
+          ]
+        },
+        "skill": {
+          "bindings": [
+            {"verb": "compose_drawing_layer", "operation": "honua-studio-maps", "source": "skills/honua-studio-maps/SKILL.md", "evidence": "honua_studio_add_layer"}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/compose-map.md#preview",
+      "verb": "validate_preview",
+      "objects": [
+        {"concept": "/concepts/domain/map.md", "terms": ["Map"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "validate_preview", "operation": "honua_studio_preview_draft", "source": "docs/studio/mcp-tools.md"},
+            {"verb": "validate_preview", "operation": "honua_studio_validate_draft", "source": "docs/studio/mcp-tools.md"}
+          ]
+        },
+        "skill": {
+          "bindings": [
+            {"verb": "validate_preview", "operation": "honua-studio-maps", "source": "skills/honua-studio-maps/SKILL.md", "evidence": "honua_studio_preview_draft"}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/connect-publish-data.md#inspect",
+      "verb": "inspect_source",
+      "objects": [
+        {"concept": "/concepts/domain/connection.md", "terms": ["Connection"]},
+        {"concept": "/concepts/domain/dataset.md", "terms": ["Dataset"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "inspect_source", "operation": "honua_admin_connections_test", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/connect-publish-data.md#publish",
+      "verb": "publish_layer",
+      "objects": [
+        {"concept": "/concepts/domain/connection.md", "terms": ["Connection"]},
+        {"concept": "/concepts/domain/dataset.md", "terms": ["Dataset"]},
+        {"concept": "/concepts/domain/layer.md", "terms": ["Layer"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "publish_layer", "operation": "honua_admin_layer_publish", "source": "docs/guides/connect/ai-agents-mcp.md"},
+            {"verb": "publish_layer", "operation": "honua_publish_service", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {
+          "bindings": [
+            {"verb": "publish_layer", "operation": "honua-services", "source": "skills/honua-services/SKILL.md", "evidence": "honua_publish_service"}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/connect-publish-data.md#expose",
+      "verb": "configure_service",
+      "objects": [
+        {"concept": "/concepts/domain/layer.md", "terms": ["Layer"]},
+        {"concept": "/concepts/domain/service.md", "terms": ["Service"]}
+      ],
+      "surfaces": {
+        "rest": {
+          "bindings": [
+            {"verb": "configure_service", "operation": "PUT /services/{serviceName}/protocols", "source": "docs/developer/api-specs/admin-api.json"}
+          ]
+        },
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/design-studio.md#inspect",
+      "verb": "inspect_design_context",
+      "objects": [
+        {"concept": "/concepts/domain/app.md", "terms": ["App"]},
+        {"concept": "/concepts/domain/studio-workspace.md", "terms": ["Studio editor"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "skill": {
+          "bindings": [
+            {"verb": "inspect_design_context", "operation": "honua-studio-maps", "source": "skills/honua-studio-maps/SKILL.md", "evidence": "honua_studio_get_draft"}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/design-studio.md#edit",
+      "verb": "apply_design_change",
+      "objects": [
+        {"concept": "/concepts/domain/studio-workspace.md", "terms": ["Studio editor"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "apply_design_change", "operation": "honua_studio_update_draft", "source": "docs/studio/mcp-tools.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/design-studio.md#preview",
+      "verb": "preview_current_design",
+      "objects": [
+        {"concept": "/concepts/domain/studio-workspace.md", "terms": ["Studio editor"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/discover-data.md#search",
+      "verb": "discover_resources",
+      "objects": [
+        {"concept": "/concepts/domain/catalog.md", "terms": ["Catalog"]},
+        {"concept": "/concepts/domain/layer.md", "terms": ["Layer"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {
+          "bindings": [
+            {"verb": "discover_resources", "operation": "honua layers", "source": "docs/guides/catalog/catalog-and-discovery.md"}
+          ]
+        },
+        "mcp": {
+          "bindings": [
+            {"verb": "discover_resources", "operation": "honua_list_layers", "source": "docs/guides/connect/ai-agents-mcp.md"},
+            {"verb": "discover_resources", "operation": "honua_ground_candidates", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {
+          "bindings": [
+            {"verb": "discover_resources", "operation": "honua-studio-maps", "source": "skills/honua-studio-maps/SKILL.md", "evidence": "honua_list_layers"}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/discover-data.md#inspect",
+      "verb": "inspect_candidate",
+      "objects": [
+        {"concept": "/concepts/domain/layer.md", "terms": ["Layer"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "inspect_candidate", "operation": "honua_describe_layer", "source": "docs/guides/connect/ai-agents-mcp.md"},
+            {"verb": "inspect_candidate", "operation": "honua_query_features", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {
+          "bindings": [
+            {"verb": "inspect_candidate", "operation": "honua-studio-maps", "source": "skills/honua-studio-maps/SKILL.md", "evidence": "honua_describe_layer"}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/govern-access.md#inspect",
+      "verb": "inspect_access",
+      "objects": [
+        {"concept": "/concepts/domain/identity.md", "terms": ["User"]},
+        {"concept": "/concepts/domain/permissions.md", "terms": ["Role", "Permissions"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "inspect_access", "operation": "honua_admin_api_key_effective_permissions", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/govern-access.md#configure",
+      "verb": "configure_access",
+      "objects": [
+        {"concept": "/concepts/domain/identity.md", "terms": ["User"]},
+        {"concept": "/concepts/domain/permissions.md", "terms": ["Role", "Permissions"]}
+      ],
+      "surfaces": {
+        "rest": {
+          "bindings": [
+            {"verb": "configure_access", "operation": "POST /api-keys/{id}/revoke", "source": "docs/developer/api-specs/admin-api.json"}
+          ]
+        },
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/import-data.md#inspect",
+      "verb": "validate_input",
+      "objects": [
+        {"concept": "/concepts/domain/crs.md", "terms": ["CRS and units"]},
+        {"concept": "/concepts/domain/dataset.md", "terms": ["Dataset"]}
+      ],
+      "surfaces": {
+        "rest": {
+          "bindings": [
+            {"verb": "validate_input", "operation": "POST /import/preview", "source": "docs/developer/api-specs/admin-api.json"}
+          ]
+        },
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/import-data.md#import",
+      "verb": "import_dataset",
+      "objects": [
+        {"concept": "/concepts/domain/dataset.md", "terms": ["Dataset"]},
+        {"concept": "/concepts/domain/storage.md", "terms": ["Storage"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "import_dataset", "operation": "honua_admin_import_upload_url", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/install-configure.md#inspect",
+      "verb": "inspect_target",
+      "objects": [
+        {"concept": "/concepts/domain/deployment.md", "terms": ["Deployment"]},
+        {"concept": "/concepts/domain/storage.md", "terms": ["Storage"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "inspect_target", "operation": "honua_list_capabilities", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {
+          "bindings": [
+            {"verb": "inspect_target", "operation": "honua-install", "source": "skills/honua-install/SKILL.md", "evidence": "Inspect `images.json`"}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/install-configure.md#configure",
+      "verb": "configure_deployment",
+      "objects": [
+        {"concept": "/concepts/domain/deployment.md", "terms": ["Deployment"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "skill": {
+          "bindings": [
+            {"verb": "configure_deployment", "operation": "honua-install", "source": "skills/honua-install/SKILL.md", "evidence": "python3 quickstart.py --init-only"}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/install-configure.md#verify",
+      "verb": "verify_persistence",
+      "objects": [
+        {"concept": "/concepts/domain/deployment.md", "terms": ["Deployment"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "verify_persistence", "operation": "honua_list_capabilities", "source": "docs/guides/connect/ai-agents-mcp.md"},
+            {"verb": "verify_persistence", "operation": "honua_ops_health", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/publish-share-map.md#inspect",
+      "verb": "validate_publication_intent",
+      "objects": [
+        {"concept": "/concepts/domain/content-version.md", "terms": ["Draft", "Version", "Released"]},
+        {"concept": "/concepts/domain/sharing.md", "terms": ["Sharing"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "validate_publication_intent", "operation": "honua_studio_get_version", "source": "docs/studio/mcp-tools.md"},
+            {"verb": "validate_publication_intent", "operation": "honua_validate_package", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {
+          "bindings": [
+            {"verb": "validate_publication_intent", "operation": "honua-studio-maps", "source": "skills/honua-studio-maps/SKILL.md", "evidence": "Share only the saved version and requested audience."}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/publish-share-map.md#submit",
+      "verb": "submit_publication",
+      "objects": [
+        {"concept": "/concepts/domain/content-version.md", "terms": ["Draft", "Version", "Released"]},
+        {"concept": "/concepts/domain/publication.md", "terms": ["Go live"]},
+        {"concept": "/concepts/domain/sharing.md", "terms": ["Sharing"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "submit_publication", "operation": "honua_studio_propose_publication", "source": "docs/studio/mcp-tools.md"}
+          ]
+        },
+        "skill": {
+          "bindings": [
+            {"verb": "submit_publication", "operation": "honua-studio-maps", "source": "skills/honua-studio-maps/SKILL.md", "evidence": "honua_studio_propose_publication"}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/publish-share-map.md#observe",
+      "verb": "observe_publication",
+      "objects": [
+        {"concept": "/concepts/domain/publication.md", "terms": ["Go live"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/publish-share-map.md#verify",
+      "verb": "verify_audience",
+      "objects": [
+        {"concept": "/concepts/domain/publication.md", "terms": ["Go live"]},
+        {"concept": "/concepts/domain/sharing.md", "terms": ["Sharing"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "skill": {
+          "bindings": [
+            {"verb": "verify_audience", "operation": "honua-studio-maps", "source": "skills/honua-studio-maps/SKILL.md", "evidence": "Verify the final published version and audience."}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/recover-job.md#observe",
+      "verb": "observe_job",
+      "objects": [
+        {"concept": "/concepts/domain/job.md", "terms": ["Job"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "observe_job", "operation": "honua_list_jobs", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/recover-job.md#recover",
+      "verb": "recover_execution",
+      "objects": [
+        {"concept": "/concepts/domain/job.md", "terms": ["Job"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "recover_execution", "operation": "honua_cancel_job", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/run-native-job.md#inspect",
+      "verb": "inspect_native_execution",
+      "objects": [
+        {"concept": "/concepts/domain/native-worker.md", "terms": ["Worker"]},
+        {"concept": "/concepts/domain/storage.md", "terms": ["Storage"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "inspect_native_execution", "operation": "honua_list_capabilities", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/run-native-job.md#execute",
+      "verb": "execute_native_conversion",
+      "objects": [
+        {"concept": "/concepts/domain/artifact.md", "terms": ["Artifact"]},
+        {"concept": "/concepts/domain/dataset.md", "terms": ["Dataset"]},
+        {"concept": "/concepts/domain/native-worker.md", "terms": ["Worker"]},
+        {"concept": "/concepts/domain/storage.md", "terms": ["Storage"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "execute_native_conversion", "operation": "honua_validate_plan", "source": "docs/guides/connect/ai-agents-mcp.md"},
+            {"verb": "execute_native_conversion", "operation": "honua_execute_plan", "source": "docs/guides/connect/ai-agents-mcp.md"}
+          ]
+        },
+        "skill": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."}
+      }
+    },
+    {
+      "okf": "/guides/workflows/save-resume-map.md#save",
+      "verb": "save_version",
+      "objects": [
+        {"concept": "/concepts/domain/content-version.md", "terms": ["Draft", "Version", "Released"]},
+        {"concept": "/concepts/domain/map.md", "terms": ["Map"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "save_version", "operation": "honua_studio_save_version", "source": "docs/studio/mcp-tools.md"}
+          ]
+        },
+        "skill": {
+          "bindings": [
+            {"verb": "save_version", "operation": "honua-studio-maps", "source": "skills/honua-studio-maps/SKILL.md", "evidence": "honua_studio_save_version"}
+          ]
+        }
+      }
+    },
+    {
+      "okf": "/guides/workflows/save-resume-map.md#resume",
+      "verb": "reopen_version",
+      "objects": [
+        {"concept": "/concepts/domain/content-version.md", "terms": ["Draft", "Version", "Released"]},
+        {"concept": "/concepts/domain/map.md", "terms": ["Map"]},
+        {"concept": "/concepts/domain/session.md", "terms": ["Session"]}
+      ],
+      "surfaces": {
+        "rest": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "sdk": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "cli": {"bindings": [], "gap": "No source-backed binding recorded for this stage; runtime support is not assessed."},
+        "mcp": {
+          "bindings": [
+            {"verb": "reopen_version", "operation": "honua_studio_get_version", "source": "docs/studio/mcp-tools.md"},
+            {"verb": "reopen_version", "operation": "honua_studio_reopen_version", "source": "docs/studio/mcp-tools.md"}
+          ]
+        },
+        "skill": {
+          "bindings": [
+            {"verb": "reopen_version", "operation": "honua-studio-maps", "source": "skills/honua-studio-maps/SKILL.md", "evidence": "honua_studio_reopen_version"}
+          ]
+        }
+      }
+    }
+  ]
+}

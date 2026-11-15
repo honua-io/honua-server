@@ -335,6 +335,11 @@ The curated prompts select the view that owns each stage. Dashboard authoring us
 
 Required-input descriptions identify caller-supplied values or their producer tools. Input-validation refusals include source guidance in both JSON channels; missing fields and invalid types also carry field paths.
 
+The configure view includes `honua_admin_connections_test` for a registered
+Connection, `honua_admin_api_key_effective_permissions` to inspect effective
+API-key access, and `honua_admin_import_upload_url` to import from a URL. Discover
+the installed schemas before calling them; workflow metadata grants no authority.
+
 Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `layerId` from `honua_list_layers`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
 
 Layer display and spatial configuration are available through the admin `full` catalog as

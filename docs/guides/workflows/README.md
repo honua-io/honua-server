@@ -33,3 +33,20 @@ Routine Studio design is the direct prompt/edit/preview/refine/undo loop. Data p
 - [Design a map application through prompt and preview](design-studio.md)
 
 A workflow page is not a release qualification receipt. Follow the source-linked implementation limits, including preview status and the distinction between the current Studio draft adapter and its Git-workspace design contract.
+
+## Stage map and vocabulary check
+
+The [machine-readable stage map](stage-map.v1.json) records one row for each
+workflow action: its semantic verb, canonical object names, OKF action reference,
+and source-linked REST, SDK, CLI, MCP and skill bindings. An operation keeps its
+exact callable spelling; its `verb` records which workflow action it implements.
+These mappings describe stages, not interchangeable signatures or complete
+implementations of every stage requirement.
+
+Run `python3 scripts/ci/check-workflow-stage-map.py --gaps` when changing a workflow
+or one of its recorded interfaces. The docs gate checks stage coverage, verbs,
+object names, referenced operations and skill evidence. A retired wire spelling
+needs an explicit `literalReason`; it does not change the canonical object name.
+Update the map with the workflow and the linked source. Empty bindings carry an
+explicit documentation gap, not a claim that the runtime lacks the capability.
+Runtime discovery and live verification remain necessary.

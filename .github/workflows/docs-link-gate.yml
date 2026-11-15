@@ -36,6 +36,7 @@ on:
       - 'docs/gis/data/capability-matrix.v1.json'
       - 'docs/okf/**'
       - 'docs/llms.txt'
+      - 'docs/guides/workflows/stage-map.v1.json'
       - 'docs/.gitbook.yaml'
       # Shipped config the anchor manifest sweeps for runtime docs URLs.
       - 'docs/guides/deploy/examples/**'
@@ -52,6 +53,8 @@ on:
       - 'scripts/ci/check-okf-bundle.test.py'
       - 'scripts/ci/okf_frontmatter.py'
       - 'scripts/ci/gis_workflow.py'
+      - 'scripts/ci/check-workflow-stage-map.py'
+      - 'scripts/ci/check-workflow-stage-map.test.py'
       - 'scripts/ci/generate-okf-graph.py'
       - 'scripts/ci/generate-okf-graph.test.py'
       - 'scripts/ci/okf-requirements.txt'
@@ -133,6 +136,11 @@ jobs:
       # outside by a recorded decision rather than by being un-navigable.
       - name: Check the OKF concept bundle
         run: python3 scripts/ci/check-okf-bundle.py --summary
+
+      - name: Check the workflow stage vocabulary and source bindings
+        run: |
+          python3 scripts/ci/check-workflow-stage-map.test.py
+          python3 scripts/ci/check-workflow-stage-map.py --gaps
 
       - name: Check the derived OKF agent graph
         run: |
