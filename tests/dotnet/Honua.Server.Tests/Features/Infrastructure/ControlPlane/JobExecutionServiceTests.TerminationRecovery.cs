@@ -37,8 +37,10 @@ public sealed partial class JobExecutionServiceTests
             new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
         var terminate = typeof(JobExecutionService).GetMethod("TerminateJobAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-        await (Task)terminate.Invoke(service,
-            [durable.OperationId, workerId, ExecutionJobStatus.Failed, reason, CancellationToken.None, true])!;
+        var terminationType = typeof(JobExecutionService).GetNestedType("JobTermination", BindingFlags.NonPublic)!;
+        var termination = Activator.CreateInstance(terminationType,
+            durable.OperationId, workerId, ExecutionJobStatus.Failed, reason)!;
+        await (Task)terminate.Invoke(service, [termination, CancellationToken.None])!;
 
         Assert.Equal(ExecutionJobStatus.Queued, durable.Status);
         Assert.Equal(1, durable.RetryPolicy!.MaxAttempts);

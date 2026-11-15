@@ -1038,7 +1038,15 @@ internal sealed partial class JobExecutionService(
     private async Task TerminateJobAsync(JobTermination termination, CancellationToken cancellationToken)
     {
         var job = await GetTerminableJobAsync(termination, cancellationToken).ConfigureAwait(false);
-        if (job is null || await TryRecoverTerminalOutcomeAsync(job, termination.WorkerId, cancellationToken).ConfigureAwait(false))
+        if (job is null)
+        {
+            return;
+        }
+
+        // A success admitted by GetTerminableJobAsync is owned by this worker and raced
+        // license expiry. Its outcome is already known; scrub it without another lookup.
+        if (job.Status != ExecutionJobStatus.Succeeded &&
+            await TryRecoverTerminalOutcomeAsync(job, termination.WorkerId, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
