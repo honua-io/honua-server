@@ -199,6 +199,36 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Equal("10.000", Assert.Single(filtered.Items).Attributes["amount"]);
     }
 
+    [Theory]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "2026-11-15T00:00:00.0000002Z", "2026-11-15T01:00:00.0000001+01:00")]
+    [InlineData(MetadataV2FieldType.Time, "12:00:00.0000002", "12:00:00.0000001")]
+    public async Task QueryAsync_ExactTemporalValues_PreservesSeventhDigitInComparisons(
+        MetadataV2FieldType type, string later, string earlier)
+    {
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields = [new MetadataV2Field { Name = "exact_time", Type = type }]
+        };
+        foreach (var text in new[] { later, earlier })
+        {
+            await _featureStore.CreateAsync(TestLayerId, Feature.Create(0, null,
+                new Dictionary<string, object?> { ["exact_time"] = text }.ToImmutableDictionary()));
+        }
+        var ordered = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery
+        {
+            OrderBy = [new OrderByClause("exact_time", true, type)]
+        });
+        Assert.Equal(new[] { earlier, later }, ordered.Items.Select(row => row.Attributes["exact_time"]));
+        var value = type == MetadataV2FieldType.TimestampOffset
+            ? (object)ExactAttributeValues.ParseTimestampOffset(earlier)
+            : ExactAttributeValues.ParseTime(earlier);
+        var filter = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new PropertyReference("exact_time"), BinaryOperator.Equal,
+                new Literal(value, type == MetadataV2FieldType.TimestampOffset ? LiteralType.DateTime : LiteralType.Text)), resource);
+        var matched = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery { SqlFilter = filter });
+        Assert.Equal(earlier, Assert.Single(matched.Items).Attributes["exact_time"]);
+    }
+
     private static byte[] CreatePointWkb(double x, double y)
     {
         var point = new Point(x, y);

@@ -33,7 +33,7 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void SRV_DB_017_TimePropertyUsesDirectTimeCast()
+    public void SRV_DB_017_TimePropertyUsesExactSeconds()
     {
         var translator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
 
@@ -41,7 +41,8 @@ public class PostgresSqlFilterTranslatorTests
             new BinaryExpression(new PropertyReference("event_time"), BinaryOperator.Equal,
                 new Literal(new TimeOnly(8, 0), LiteralType.Text)), _resource);
 
-        result.Sql.Should().Contain("::time = @p0");
+        result.Sql.Should().Contain("split_part(").And.Contain("::numeric) = @p0");
+        result.Parameters.Should().Equal(28800m);
         result.Sql.Should().NotContain("::timestamptz");
     }
 

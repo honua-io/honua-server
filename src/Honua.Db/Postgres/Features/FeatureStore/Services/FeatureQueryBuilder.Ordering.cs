@@ -191,11 +191,11 @@ internal sealed partial class FeatureQueryBuilder
             MetadataV2FieldType.Float => $"NULLIF({attributeValue}, '')::real",
             MetadataV2FieldType.Double => $"NULLIF({attributeValue}, '')::double precision",
             MetadataV2FieldType.Decimal => $"NULLIF({attributeValue}, '')::numeric",
-            MetadataV2FieldType.TimestampOffset => $"NULLIF({attributeValue}, '')::timestamptz",
+            MetadataV2FieldType.TimestampOffset => ExactTemporalSql.Timestamp($"NULLIF({attributeValue}, '')"),
             MetadataV2FieldType.Boolean => $"NULLIF({attributeValue}, '')::boolean",
             MetadataV2FieldType.DateTime => BuildEpochAwareOrderByCast(attributeValue, "timestamptz"),
             MetadataV2FieldType.Date => BuildEpochAwareOrderByCast(attributeValue, "date"),
-            MetadataV2FieldType.Time => $"NULLIF({attributeValue}, '')::time",
+            MetadataV2FieldType.Time => ExactTemporalSql.Time($"NULLIF({attributeValue}, '')"),
             MetadataV2FieldType.Uuid => $"NULLIF({attributeValue}, '')::uuid",
             MetadataV2FieldType.String => attributeValue,
             _ => attributeValue

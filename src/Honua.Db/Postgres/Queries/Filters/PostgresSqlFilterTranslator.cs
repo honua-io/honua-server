@@ -70,8 +70,8 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
 
     private string TranslateBinaryWithValues(BinaryExpression binary, FilterTranslationContext context)
     {
-        var left = TranslateExpression(binary.Left, context);
-        var right = TranslateExpression(binary.Right, context);
+        var left = TranslateExactOperand(binary.Left, binary.Right, context);
+        var right = TranslateExactOperand(binary.Right, binary.Left, context);
 
         var op = binary.Operator switch
         {
@@ -120,6 +120,34 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         }
 
         return $"{left} {op} {right}";
+    }
+
+    private string TranslateExactOperand(FilterExpression operand, FilterExpression other, FilterTranslationContext context)
+    {
+        if (_useJsonAttributes && other is PropertyReference property
+            && context.TryGetField(property.PropertyName)?.Type is { } type
+            && type is MetadataV2FieldType.TimestampOffset or MetadataV2FieldType.Time)
+        {
+            if (operand is ValueList list)
+            {
+                return $"({string.Join(", ", list.Values.Select(value => TranslateExactOperand(value, other, context)))})";
+            }
+            if (operand is Literal { Value: not null } literal)
+            {
+                var seconds = (type, literal.Value) switch
+                {
+                    (MetadataV2FieldType.TimestampOffset, DateTimeOffset timestamp) =>
+                        (timestamp.UtcTicks - DateTimeOffset.UnixEpoch.Ticks) / (decimal)TimeSpan.TicksPerSecond,
+                    (MetadataV2FieldType.TimestampOffset, string text) =>
+                        (ExactAttributeValues.ParseTimestampOffset(text).UtcTicks - DateTimeOffset.UnixEpoch.Ticks) / (decimal)TimeSpan.TicksPerSecond,
+                    (MetadataV2FieldType.Time, TimeOnly time) => time.Ticks / (decimal)TimeSpan.TicksPerSecond,
+                    (MetadataV2FieldType.Time, string text) => ExactAttributeValues.ParseTime(text).Ticks / (decimal)TimeSpan.TicksPerSecond,
+                    _ => throw new ArgumentException("Exact temporal comparisons require a matching temporal literal.")
+                };
+                return AddParameter(seconds);
+            }
+        }
+        return TranslateExpression(operand, context);
     }
 
     protected override string TranslateUnary(UnaryExpression unary, FilterTranslationContext context)
@@ -176,6 +204,14 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         var attributesColumn = QuoteIdentifier(_attributesColumn);
         var key = EscapeSqlLiteral(field.Name);
         var baseExpression = $"{attributesColumn} ->> '{key}'";
+        if (field.Type == MetadataV2FieldType.TimestampOffset)
+        {
+            return ExactTemporalSql.Timestamp($"NULLIF({baseExpression}, '')");
+        }
+        if (field.Type == MetadataV2FieldType.Time)
+        {
+            return ExactTemporalSql.Time($"NULLIF({baseExpression}, '')");
+        }
         var castType = GetJsonCastType(field.Type);
 
         if (castType == null)
