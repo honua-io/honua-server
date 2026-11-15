@@ -63,7 +63,7 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
         var binding = JsonSerializer.Deserialize(details.GetProperty("plannedStorageBinding").GetString()!,
             MetadataV2JsonContext.Default.MetadataV2StorageBinding)!;
         service.Metadata.Name.Should().Be(_serviceName);
-        resource.SchemaFields.Select(field => field.Name).Should().Equal("id", "name");
+        resource.SchemaFields.Select(field => field.Name).Should().Equal("id", "name", "geom");
         resource.StorageBindingIds.Should().Contain(binding.Metadata.Id);
         binding.ResourceId.Should().Be(resource.Metadata.Id);
         using var publications = JsonDocument.Parse(details.GetProperty("plannedPublications").GetString()!);
