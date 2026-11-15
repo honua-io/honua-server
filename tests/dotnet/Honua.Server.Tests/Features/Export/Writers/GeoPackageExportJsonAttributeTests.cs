@@ -7,13 +7,14 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Io.Export;
 using Honua.Io.Export.Writers;
+using Honua.TestKit.Attributes;
 using Microsoft.Data.Sqlite;
 
 namespace Honua.Server.Tests.Features.Export.Writers;
 
 public sealed class GeoPackageExportJsonAttributeTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("String", "\"alpha\"", "alpha", "text")]
     [InlineData("String", "\"\"", "", "text")]
     [InlineData("Integer", "42", 42L, "integer")]
