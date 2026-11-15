@@ -4,6 +4,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using Honua.Core.Features.Security;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -60,10 +61,12 @@ internal sealed class SpillableKeySet : IDisposable
 
     private void SpillInMemoryToDisk()
     {
-        // Second segment is a generated relative literal, so it can never be
-        // rooted and silently discard Path.GetTempPath().
-        _spillPath = Path.Join(Path.GetTempPath(), $"honua-dedup-{Guid.NewGuid():N}.keys");
-        _spillFile = new FileStream(_spillPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
+        _spillPath = PrivateTempFile.NewPath("honua-dedup-", ".keys");
+        _spillFile = new FileStream(_spillPath, PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
+        {
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.None
+        }));
 
         Span<byte> scratch = stackalloc byte[Digest.Size];
         foreach (var digest in _inMemory)

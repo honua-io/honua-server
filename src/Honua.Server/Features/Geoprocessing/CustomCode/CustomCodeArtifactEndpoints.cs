@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Infrastructure.Models;
@@ -177,9 +178,14 @@ internal static class CustomCodeArtifactEndpoints
 
         // Bound disk use before the cloud upload. Reservations stay charged on any failure,
         // so repeated interrupted requests cannot bypass the per-job byte and count caps.
-        await using var spool = new FileStream(Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
-            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024,
-            FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        await using var spool = new FileStream(PrivateTempFile.NewPath("honua-custom-upload-"),
+            PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
+            {
+                Access = FileAccess.ReadWrite,
+                Share = FileShare.None,
+                BufferSize = 64 * 1024,
+                Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+            }));
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = new byte[64 * 1024];
         long readTotal = 0;
@@ -354,12 +360,17 @@ internal static class CustomCodeArtifactEndpoints
         // Verify the stored content before returning any bytes. A changed bucket/account
         // under the same provider must not serve unrelated content with the original ETag.
         await using var cloudStream = stream;
-        var verified = new FileStream(Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
-            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024,
-            FileOptions.Asynchronous | FileOptions.DeleteOnClose);
-        var responseOwnsStream = false;
+        FileStream? verified = null;
         try
         {
+            verified = new FileStream(PrivateTempFile.NewPath("honua-custom-download-"),
+                PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
+                {
+                    Access = FileAccess.ReadWrite,
+                    Share = FileShare.None,
+                    BufferSize = 64 * 1024,
+                    Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+                }));
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             var buffer = new byte[64 * 1024];
             long total = 0;
@@ -390,12 +401,12 @@ internal static class CustomCodeArtifactEndpoints
             context.Response.Headers["X-Content-Type-Options"] = "nosniff";
             var result = Results.Stream(verified, "application/octet-stream", name,
                 entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue('"' + artifact.Sha256 + '"'));
-            responseOwnsStream = true;
+            verified = null; // The response owns the stream from this point.
             return result;
         }
         finally
         {
-            if (!responseOwnsStream)
+            if (verified is not null)
             {
                 await verified.DisposeAsync().ConfigureAwait(false);
             }

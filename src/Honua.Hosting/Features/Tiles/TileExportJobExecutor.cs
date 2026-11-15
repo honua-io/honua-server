@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Infrastructure.Tiles;
@@ -91,19 +92,19 @@ internal sealed partial class TileExportJobExecutor(
 
         var producer = matchingProducers[0];
 
-        // Safe Path.Combine: the second segment is a server-generated Guid-based file name,
-        // never caller input, so it can never be rooted.
-        var temporaryPath = Path.Join(Path.GetTempPath(), $"honua-tile-export-{Guid.NewGuid():N}.tmp");
+        var temporaryPath = PrivateTempFile.NewPath("honua-tile-export-", ".tmp");
         try
         {
             await context.ReportProgressAsync(0, "Generating tile package", cancellationToken).ConfigureAwait(false);
             await using var temporaryFile = new FileStream(
                 temporaryPath,
-                FileMode.CreateNew,
-                FileAccess.ReadWrite,
-                FileShare.None,
-                bufferSize: 64 * 1024,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
+                PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
+                {
+                    Access = FileAccess.ReadWrite,
+                    Share = FileShare.None,
+                    BufferSize = 64 * 1024,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                }));
             await using (var bounded = new BoundedWriteStream(temporaryFile, parsedPlan.MaxArtifactBytes, leaveOpen: true))
             {
                 await producer.ProduceAsync(parsedPlan, bounded, cancellationToken).ConfigureAwait(false);

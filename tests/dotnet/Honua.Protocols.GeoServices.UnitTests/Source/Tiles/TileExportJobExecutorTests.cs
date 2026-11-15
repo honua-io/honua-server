@@ -89,23 +89,27 @@ public sealed class TileExportJobExecutorTests
     {
         var plan = CreatePlan();
         var storage = Substitute.For<ICloudFileStorage>();
+        var scratchPaths = new List<string>();
+        var scratchModes = new List<UnixFileMode>();
         storage.GetMetadataAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(call => StoredFile(call.Arg<string>(), plan, DateTimeOffset.UtcNow.AddHours(2)));
         storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(call => UploadResult.CreateSuccess(StoredFile(
-                call.Arg<FileUploadRequest>().ObjectKeyOverride!, plan, DateTimeOffset.UtcNow.AddHours(2))));
+            .Returns(call =>
+            {
+                var request = call.Arg<FileUploadRequest>();
+                var scratch = request.Content.Should().BeOfType<FileStream>().Subject;
+                scratchPaths.Add(scratch.Name);
+                if (!OperatingSystem.IsWindows())
+                {
+                    scratchModes.Add(File.GetUnixFileMode(scratch.Name));
+                }
+                return UploadResult.CreateSuccess(StoredFile(
+                    request.ObjectKeyOverride!, plan, DateTimeOffset.UtcNow.AddHours(2)));
+            });
         var producer = Substitute.For<ITileExportPackageProducer>();
         producer.CanProduce(Arg.Any<TileExportJobPlan>()).Returns(true);
         producer.ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var scratch = call.Arg<Stream>().Should().BeOfType<FileStream>().Subject;
-                if (!OperatingSystem.IsWindows())
-                {
-                    File.GetUnixFileMode(scratch.Name).Should().Be(PrivateTempFile.OwnerReadWrite);
-                }
-                return scratch.WriteAsync(new byte[] { 1 }).AsTask();
-            });
+            .Returns(call => call.Arg<Stream>().WriteAsync(new byte[] { 1 }).AsTask());
         var fence = Substitute.For<ITileExportSourceFence>();
         fence.SourceKind.Returns(TileExportSourceKind.Map);
         fence.IsAvailableAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<CancellationToken>()).Returns(true);
@@ -125,6 +129,11 @@ public sealed class TileExportJobExecutorTests
 
         first.Status.Should().Be(ExecutionJobStatus.Succeeded);
         second.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        scratchPaths.Should().HaveCount(2).And.OnlyContain(path => !File.Exists(path));
+        if (!OperatingSystem.IsWindows())
+        {
+            scratchModes.Should().HaveCount(2).And.OnlyContain(mode => mode == PrivateTempFile.OwnerReadWrite);
+        }
         await producer.Received(2).ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
         await storage.DidNotReceiveWithAnyArgs().GetMetadataAsync(default!, default);
     }

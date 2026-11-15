@@ -11,6 +11,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Tiles.PMTiles;
@@ -883,15 +884,15 @@ internal sealed partial class TileOperationExecutionCore
         // Spill the archive to a self-deleting temp file rather than a MemoryStream: archive size
         // scales with bbox/zoom range and holding it on the managed heap for the upload duration is
         // an OOM/LOH pressure source. DeleteOnClose cleans up when the consumer disposes the stream.
-        // Path.Combine is safe here: the second segment is a fixed-prefix, GUID-suffixed
-        // relative literal generated locally, never an externally-supplied/rooted path.
         var archiveStream = new FileStream(
-            Path.Join(Path.GetTempPath(), $"honua-pmtiles-{Guid.NewGuid():N}.tmp"),
-            FileMode.CreateNew,
-            FileAccess.ReadWrite,
-            FileShare.None,
-            bufferSize: 81920,
-            FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+            PrivateTempFile.NewPath("honua-pmtiles-", ".tmp"),
+            PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
+            {
+                Access = FileAccess.ReadWrite,
+                Share = FileShare.None,
+                BufferSize = 81920,
+                Options = FileOptions.DeleteOnClose | FileOptions.Asynchronous
+            }));
         try
         {
             var archiveSize = await writer.WriteAsync(archiveStream, metadata, cancellationToken).ConfigureAwait(false);

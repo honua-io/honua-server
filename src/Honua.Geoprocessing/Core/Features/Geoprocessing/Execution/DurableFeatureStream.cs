@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Honua.Infrastructure.Security;
 using NetTopologySuite.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -142,8 +143,14 @@ internal sealed record DurableFeatureStream
 
         await using var source = await store.OpenReadAsync(descriptor.ObjectKey, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The shared feature stream is unavailable.");
-        await using var verified = new FileStream(Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
-            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 65536, FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        await using var verified = new FileStream(PrivateTempFile.NewPath("honua-feature-stream-"),
+            PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
+            {
+                Access = FileAccess.ReadWrite,
+                Share = FileShare.None,
+                BufferSize = 65536,
+                Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+            }));
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = new byte[65536];
         long total = 0;

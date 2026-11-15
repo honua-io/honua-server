@@ -21,7 +21,8 @@ public sealed partial class DurableFeatureStreamTests
         {
             (await rows.MoveNextAsync()).Should().BeTrue();
             var scratch = rows.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
-                .Select(field => field.GetValue(rows)).OfType<FileStream>().Should().ContainSingle().Subject;
+                .Select(field => field.GetValue(rows)).OfType<FileStream>()
+                .Where(stream => stream.CanWrite).Should().ContainSingle().Subject;
             path = scratch.Name;
             if (!OperatingSystem.IsWindows())
             {

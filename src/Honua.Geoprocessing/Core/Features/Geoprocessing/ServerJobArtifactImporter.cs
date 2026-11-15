@@ -10,6 +10,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Security;
 using Honua.Geoprocessing.Execution;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -265,11 +266,13 @@ internal static class ServerJobArtifactImporter
 
         var stream = new FileStream(
             CreateScratchPath(Path.GetTempPath(), "honua-job-artifact-" + Guid.NewGuid().ToString("N")),
-            FileMode.CreateNew,
-            FileAccess.ReadWrite,
-            FileShare.None,
-            65536,
-            FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+            PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
+            {
+                Access = FileAccess.ReadWrite,
+                Share = FileShare.None,
+                BufferSize = 65536,
+                Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+            }));
         try
         {
             var summary = await GeoprocessingImportArtifactWriter.WriteAsync(
