@@ -180,10 +180,10 @@ echo "[OK] missing-digest manifest blocks candidate.image"
 
 echo
 echo "Validating: malformed digests cannot pass candidate image evidence"
-printf -v newline_digest 'sha256:%s\n' "$(printf 'a%.0s' {1..64})"
 for digest in "pending" "sha256:abc" "sha256:$(printf '%064d' 0)0" \
   "sha256:$(printf 'g%.0s' {1..64})" "sha512:$(printf '%064d' 0)" \
-  "$newline_digest"; do
+  "sha256:$(printf 'a%.0s' {1..64})"'
+'; do
   "$GEN" "${COMMON_ARGS[@]}" --image-tag "rc-honua-test-rc-deadbee" \
     --image-digest "$digest" --output "$WORKDIR/manifest-invalid-image.json" >/dev/null
   jq -e '.candidate.image.evidenceState == "blocked" and (.candidate.image.blockers | length > 0)' \
