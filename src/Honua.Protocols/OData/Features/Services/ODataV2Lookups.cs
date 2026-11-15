@@ -133,7 +133,7 @@ internal static class ODataV2Lookups
             .ToHashSet(StringComparer.Ordinal);
     }
 
-    private static async Task<MetadataV2GraphSnapshot> GetSnapshotAsync(
+    public static async Task<MetadataV2GraphSnapshot> GetSnapshotAsync(
         HttpContext context,
         CancellationToken cancellationToken)
     {

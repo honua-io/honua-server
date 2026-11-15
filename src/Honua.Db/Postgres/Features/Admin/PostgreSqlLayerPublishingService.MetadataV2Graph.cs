@@ -46,7 +46,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
 {
     internal const int MetadataGraphConflictAttempts = 4;
 
-    private static async Task<T> RetryMetadataGraphConflictAsync<T>(Func<Task<T>> mutation)
+    private enum MetadataGraphConflictPolicy { Retry, Reject }
+
+    private static async Task<T> RetryMetadataGraphConflictAsync<T>(
+        Func<Task<T>> mutation, MetadataGraphConflictPolicy conflictPolicy = MetadataGraphConflictPolicy.Retry)
     {
         var attempt = 1;
         while (true)
@@ -54,6 +57,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             try
             {
                 return await mutation().ConfigureAwait(false);
+            }
+            catch (MetadataV2GraphConcurrencyException) when (conflictPolicy == MetadataGraphConflictPolicy.Reject)
+            {
+                // A bootstrap and its first persisted snapshot can share a revision number.
+                // A pinned preview must never be rebound to a different write base on retry.
+                throw new LayerPublishingException(
+                    LayerPublishingErrorKind.Conflict,
+                    "Publication metadata changed after preview. Create a new preview before publishing.");
             }
             catch (MetadataV2GraphConcurrencyException) when (attempt < MetadataGraphConflictAttempts)
             {
@@ -112,7 +123,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             capabilities,
             publicationScope,
             requireExistingScopedService,
-            cancellationToken));
+            cancellationToken), request.ExpectedMetadataRevision is not null
+                ? MetadataGraphConflictPolicy.Reject : MetadataGraphConflictPolicy.Retry);
 
     private async Task<MetadataV2GraphMutation> UpsertPublishedLayerMetadataV2CoreAsync(
         string serviceName,
@@ -132,13 +144,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
         CancellationToken cancellationToken)
     {
         var (graph, expectedEtag) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
-        if (expectedEtag is null && request.ImportTarget is not null)
+        if (expectedEtag is null && (request.ImportTarget is not null || request.ExpectedMetadataRevision is not null))
         {
-            // A planned import must retain seeded services when it introduces the first folder.
+            // Planned imports retain seeded services; pinned first publications also need
+            // the synthesized bootstrap ETag so SaveAsync checks it under the store lock.
             var bootstrap = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             graph = bootstrap.Graph;
             expectedEtag = bootstrap.Etag;
         }
+        ValidatePublicationRevision(graph, expectedEtag, request);
         // Recheck the exact persisted write base. A concurrent graph change is then protected
         // by its ETag; a rejected scope leaves the SQL layer transaction uncommitted.
         ValidatePublicationScope(graph, serviceName, publicationScope, requireExistingScopedService);
