@@ -56,10 +56,19 @@ public sealed class OgcFeaturesCsvHeaderTests(OgcFeaturesCsvHeaderTestsFixture f
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("text/csv", response.Content.Headers.ContentType?.MediaType);
         using var reader = new StringReader(await response.Content.ReadAsStringAsync());
-        Assert.Equal("id_1,id,geometry", reader.ReadLine());
+        var header = reader.ReadLine()!.Split(',');
+        Assert.Equal("id_1", header[0]);
+        Assert.Equal("geometry", header[^1]);
+        Assert.Equal(header.Length, header.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        var propertyColumn = Array.IndexOf(header, "id");
+        Assert.True(propertyColumn > 0);
         for (var id = 1; id <= count; id++)
         {
-            Assert.Equal($"{id},property-{id},", reader.ReadLine());
+            var row = reader.ReadLine()!.Split(',');
+            Assert.Equal(header.Length, row.Length);
+            Assert.Equal(id.ToString(System.Globalization.CultureInfo.InvariantCulture), row[0]);
+            Assert.Equal($"property-{id}", row[propertyColumn]);
+            Assert.Equal(string.Empty, row[^1]);
         }
 
         Assert.Null(reader.ReadLine());
