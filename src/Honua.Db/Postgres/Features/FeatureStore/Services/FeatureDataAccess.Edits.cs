@@ -1089,11 +1089,7 @@ internal sealed partial class FeatureDataAccess
             FeatureEditBatch editBatch,
             CancellationToken cancellationToken = default)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_completed)
-            {
-                throw new InvalidOperationException("The feature writer transaction has already completed.");
-            }
+            EnsureActive();
 
             return _owner.ApplyEditsWithinTransactionAsync(
                 layerId,
@@ -1103,14 +1099,53 @@ internal sealed partial class FeatureDataAccess
                 cancellationToken);
         }
 
+        // Serializable can fail for unrelated scopes; only snapshot conflicts on the same receipt
+        // may be classified as an existing winner by the shared receipt writer.
+        public bool SupportsDurableReceipts =>
+            _transaction.IsolationLevel is IsolationLevel.ReadCommitted or IsolationLevel.RepeatableRead;
+
         public async Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            FeatureWriterTransactionReceipt receipt,
             CancellationToken cancellationToken = default)
+        {
+            EnsureActive();
+            if (!SupportsDurableReceipts)
+            {
+                throw new NotSupportedException("Durable transaction receipts require read committed or repeatable read isolation.");
+            }
+
+            PostgresGrpcApplyEditsReceipt.ValidatePayload(receipt.Scope, receipt.Payload);
+            if (receipt.ExpiresAt <= DateTimeOffset.UtcNow)
+            {
+                throw new ArgumentException("The transaction receipt must expire in the future.", nameof(receipt));
+            }
+
+            var inserted = await PostgresGrpcApplyEditsReceipt.TryWriteAsync(
+                _connection, _transaction, _owner._grpcEditReceiptTable,
+                receipt.Scope, receipt.Payload, receipt.ExpiresAt.ToUniversalTime(),
+                _owner._queryTimeoutSeconds, cancellationToken).ConfigureAwait(false);
+            if (!inserted)
+            {
+                await RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                return FeatureWriterTransactionCommitOutcome.SupersededByExistingReceipt;
+            }
+
+            return await CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        private void EnsureActive()
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_completed)
             {
                 throw new InvalidOperationException("The feature writer transaction has already completed.");
             }
+        }
+
+        public async Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            CancellationToken cancellationToken = default)
+        {
+            EnsureActive();
 
             try
             {
