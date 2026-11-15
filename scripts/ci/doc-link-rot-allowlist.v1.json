@@ -4,11 +4,11 @@
   "issue": "https://github.com/honua-io/honua-server/issues/3592",
   "inventoriedOn": "2026-08-28",
   "totals": {
-    "entries": 9,
+    "entries": 8,
     "missingFiles": 0,
-    "brokenAnchors": 9,
+    "brokenAnchors": 8,
     "byArea": {
-      "docs/internal": 7,
+      "docs/internal": 6,
       "docs/developer": 1,
       "docs/gis": 1,
       "docs/guides": 0
@@ -54,11 +54,6 @@
       "source": "docs/internal/features/README.md",
       "target": "../../guides/secure/authentication.md#authentication",
       "reason": "Points at the page's H1-derived slug, which GitHub does not emit for the title heading of that page."
-    },
-    {
-      "source": "docs/internal/spikes/point-cloud-reality-capture-ingest.md",
-      "target": "../../guides/publish/publish-3d-scenes.md#mime-types",
-      "reason": "Heading dropped when publish-3d-scenes.md was rewritten."
     }
   ]
 }
