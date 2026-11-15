@@ -29,6 +29,8 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         "https://stac-extensions.github.io/projection/v1.1.0/schema.json"
     ];
 
+    private static readonly string[] ContactProvidersWithoutHostRoles = ["Catalog contact", "Rights owner"];
+
     private readonly WebAppFixture _fixture = new();
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
@@ -470,9 +472,10 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var providers = json.RootElement.GetProperty("providers").EnumerateArray().ToArray();
-        foreach (var provider in new[] { "Catalog contact", "Rights owner" }.Select(name =>
-                     providers.Should().ContainSingle(provider => provider.GetProperty("name").GetString() == name).Which))
+        foreach (var name in ContactProvidersWithoutHostRoles)
         {
+            var provider = providers.Should().ContainSingle(candidate =>
+                candidate.GetProperty("name").GetString() == name).Which;
             var hasRoles = provider.TryGetProperty("roles", out var roles) && roles.ValueKind != JsonValueKind.Null;
             hasRoles.Should().BeFalse("these contact roles do not identify a STAC storage host");
         }
