@@ -57,8 +57,8 @@ Evidence JSON shape (all arrays optional):
     "blockers": [ { "repo": "...", "number": 1, "url": "...", "reason": "..." } ],
     "waiver": { "approvedBy": "...", "reason": "..." }            # optional
   }
-A conclusion of success/passed/green/ok -> evidenceState "passed"; anything else
--> "blocked". A signal with no conclusion but a non-empty blockers[] -> "blocked".
+A conclusion of success/passed/green/ok with no blockers -> evidenceState "passed".
+Any non-empty blockers[] or other conclusion -> "blocked".
 EOF
   exit 2
 }
@@ -119,8 +119,8 @@ manifest="$(
     # Map a CI conclusion to an evidenceState.
     def state_from($conclusion; $blockers):
       ($conclusion // "" | ascii_downcase) as $c |
-      if   ($c | IN("success","passed","green","ok")) then "passed"
-      elif ($c == "" and (($blockers // []) | length) == 0) then "blocked"
+      if   (($blockers // []) | length) > 0 then "blocked"
+      elif ($c | IN("success","passed","green","ok")) then "passed"
       else "blocked" end;
 
     # Normalize one signal entry into a manifest gate/lane record.
