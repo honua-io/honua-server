@@ -31,7 +31,7 @@ public sealed partial class TemporalHistorySliceEndpointsTests
 
     [IntegrationTest]
     [Endpoint(TimelineEndpoint)]
-    public async Task Timeline_CommitBetweenPages_PreservesOriginalBoundary()
+    public async Task Timeline_CommitBetweenPages_PreservesDecimalCursorAndCapturesEachPageBoundary()
     {
         _changeTracker.CurrentGeneration = 5;
         SetTimelineRevisions(2, 4);
@@ -39,7 +39,7 @@ public sealed partial class TemporalHistorySliceEndpointsTests
         firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var first = (await ReadJsonAsync(firstResponse)).RootElement;
         var cursor = first.GetProperty("nextCursor").GetString();
-        cursor.Should().NotBeNullOrEmpty();
+        cursor.Should().Be("2");
 
         _changeTracker.CurrentGeneration = 8;
         SetTimelineRevisions(2, 4, 6, 8);
@@ -47,15 +47,15 @@ public sealed partial class TemporalHistorySliceEndpointsTests
 
         secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var second = (await ReadJsonAsync(secondResponse)).RootElement;
-        second.GetProperty("currentGeneration").GetInt64().Should().Be(5);
+        second.GetProperty("currentGeneration").GetInt64().Should().Be(8);
         second.GetProperty("revisions").EnumerateArray()
             .Select(row => row.GetProperty("generation").GetInt64()).Should().Equal(4);
-        second.TryGetProperty("nextCursor", out _).Should().BeFalse();
+        second.GetProperty("nextCursor").GetString().Should().Be("4");
     }
 
     [IntegrationTest]
     [Endpoint(TimelineEndpoint)]
-    public async Task Timeline_LegacyCursor_CapturesCurrentBoundary()
+    public async Task Timeline_DecimalCursor_CapturesCurrentBoundary()
     {
         _changeTracker.CurrentGeneration = 5;
         SetTimelineRevisions(2, 4, 6);
@@ -86,12 +86,9 @@ public sealed partial class TemporalHistorySliceEndpointsTests
     }
 
     [IntegrationTheory]
-    [InlineData("v1:2:6")]
-    [InlineData("v1:6:5")]
-    [InlineData("v1:-1:5")]
-    [InlineData("v1:2:-1")]
-    [InlineData("v1:2:5:7")]
-    [InlineData("v2:2:5")]
+    [InlineData("-1")]
+    [InlineData("1:2")]
+    [InlineData("v1:2:5")]
     [InlineData("not-a-cursor")]
     [Endpoint(TimelineEndpoint)]
     public async Task Timeline_InvalidCursor_ReturnsBadRequest(string cursor)

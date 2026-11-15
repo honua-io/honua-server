@@ -139,7 +139,7 @@ public sealed partial class TemporalHistoryService
 
         var currentGeneration = await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
         var limit = NormalizeLimit(request.Limit);
-        var (afterGeneration, throughGeneration) = DecodeGenerationCursor(request.Cursor, currentGeneration);
+        var afterGeneration = DecodeGenerationCursor(request.Cursor);
 
         var rows = await _historyStore
             .GetFeatureRevisionsAsync(new TemporalFeatureRevisionQuery
@@ -147,7 +147,7 @@ public sealed partial class TemporalHistoryService
                 StorageLayerId = storageLayerId,
                 ObjectId = request.ObjectId,
                 AfterGeneration = afterGeneration,
-                ThroughGeneration = throughGeneration,
+                ThroughGeneration = currentGeneration,
                 Limit = limit + 1
             }, cancellationToken)
             .ConfigureAwait(false);
@@ -166,14 +166,14 @@ public sealed partial class TemporalHistoryService
         }
 
         var nextCursor = hasMore && pageRows.Count > 0
-            ? EncodeGenerationCursor(pageRows[^1].Generation, throughGeneration)
+            ? EncodeGenerationCursor(pageRows[^1].Generation)
             : null;
 
         return new TemporalTimeline(
             ServiceId: serviceId,
             LayerId: layerId,
             ObjectId: request.ObjectId,
-            CurrentGeneration: throughGeneration,
+            CurrentGeneration: currentGeneration,
             Revisions: revisions.ToImmutable(),
             NextCursor: nextCursor);
     }
@@ -502,32 +502,23 @@ public sealed partial class TemporalHistoryService
     private static string EncodeObjectIdCursor(long objectId)
         => objectId.ToString(CultureInfo.InvariantCulture);
 
-    private static (long After, long Through) DecodeGenerationCursor(string? cursor, long currentGeneration)
+    private static long DecodeGenerationCursor(string? cursor)
     {
         if (string.IsNullOrWhiteSpace(cursor))
         {
-            return (0L, currentGeneration);
+            return 0L;
         }
 
-        if (long.TryParse(cursor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var legacy) && legacy >= 0)
-        {
-            return (legacy, currentGeneration);
-        }
-
-        var parts = cursor.Split(':');
-        if (parts.Length != 3 || parts[0] != "v1" ||
-            !long.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var after) ||
-            !long.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var through) ||
-            after > through || through > currentGeneration)
+        if (!long.TryParse(cursor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) || value < 0)
         {
             throw new TemporalValidationException("Invalid page cursor.");
         }
 
-        return (after, through);
+        return value;
     }
 
-    private static string EncodeGenerationCursor(long generation, long throughGeneration)
-        => FormattableString.Invariant($"v1:{generation}:{throughGeneration}");
+    private static string EncodeGenerationCursor(long generation)
+        => generation.ToString(CultureInfo.InvariantCulture);
 
     private sealed record ObjectChangeGroup(
         long ObjectId,
