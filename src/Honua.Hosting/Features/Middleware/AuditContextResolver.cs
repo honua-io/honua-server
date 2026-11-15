@@ -86,7 +86,7 @@ internal static class AuditContextResolver
             return null;
         }
 
-        var actor = ResolveActor(context, out var actorType);
+        var (actor, actorType) = ResolveCanonicalActor(context);
         return actorType == AuditActorType.Anonymous ? null : actor;
     }
 
