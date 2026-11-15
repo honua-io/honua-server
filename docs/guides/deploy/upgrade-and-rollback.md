@@ -260,6 +260,10 @@ accepted unauthenticated STA ingestion must explicitly set
 `SensorThings__AllowAnonymousWritesDangerously=true`; use that only behind a
 trusted ingress or disposable test boundary.
 
+SensorThings read routes (`GET /sta/v1.1/**`) now require a signed-in caller by
+default. Deployments that publish sensing data to anonymous clients must set
+`SensorThings__AllowAnonymousReads=true`.
+
 ## Steps
 
 1. Preflight against the running instance. The deploy API reports database compatibility, migration state, and coordinated-deploy readiness.

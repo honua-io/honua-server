@@ -65,7 +65,7 @@ internal static partial class SensorThingsEndpoints
         ConfigureNavigation(endpoints.MapGet("/sta/v1.1/HistoricalLocations({id:long})/Locations", HandleCoreRead), "HistoricalLocationsLocations");
         ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Observations({id:long})/FeatureOfInterest", HandleCoreRead), "ObservationsFeatureOfInterest");
         ConfigureNavigation(endpoints.MapGet("/sta/v1.1/FeaturesOfInterest({id:long})/Observations", HandleCoreRead), "FeaturesOfInterestObservations");
-        endpoints.MapGet("/sta/v1.1/{**resourcePath}", HandleCoreRead).WithTags("SensorThings");
+        endpoints.MapGet("/sta/v1.1/{**resourcePath}", HandleCoreRead).WithTags("SensorThings").Produces(401).Produces(403);
         var writes = endpoints.MapMethods("/sta/v1.1/{**resourcePath}", ["POST", "PATCH", "DELETE", "PUT"], HandleCoreWrite).WithTags("SensorThings");
         if (endpoints.ServiceProvider.GetRequiredService<IConfiguration>().GetValue<bool>(SensorThingsOptions.AllowAnonymousWritesDangerouslyPath)) writes.AllowAnonymous();
         else writes.RequireAdminAuthorization();
@@ -192,6 +192,11 @@ internal static partial class SensorThingsEndpoints
         [FromServices] ISensorThingsEntityStore store,
         [FromServices] StaFilterTranslator translator)
     {
+        if (RequireReadAccess(context) is { } denied)
+        {
+            return denied;
+        }
+
         try
         {
             EnsureNavigationDepth(context.Request.Path.Value ?? string.Empty);

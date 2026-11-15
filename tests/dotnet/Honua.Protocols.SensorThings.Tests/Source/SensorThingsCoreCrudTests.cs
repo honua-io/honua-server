@@ -21,6 +21,7 @@ public sealed class SensorThingsCoreCrudTests : IAsyncLifetime
     {
         builder.UseSetting("HONUA_DEV_AUTH", "false");
         builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        builder.UseSetting("SensorThings:AllowAnonymousReads", "true");
     });
     public async Task InitializeAsync()
     {

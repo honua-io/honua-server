@@ -10,4 +10,6 @@ internal static class SensorThingsOptions
     public const string ExperimentalFeatureFlagPath = "Capabilities:Experimental:serve.sensorthings:Enabled";
 
     public const string AllowAnonymousWritesDangerouslyPath = SectionName + ":AllowAnonymousWritesDangerously";
+
+    public const string AllowAnonymousReadsPath = SectionName + ":AllowAnonymousReads";
 }

@@ -522,6 +522,16 @@ For a true per-application client identity (rather than reusing a human API key)
 
 A legacy Basic compatibility mode (`HONUA_ENABLE_BASIC_AUTH_COMPAT=true`, with `HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH=true` enforced in production) maps the Basic password to the admin API key; use it only during migrations.
 
+### SensorThings reads (Preview)
+
+`GET /sta/v1.1` and every entity read under it require a signed-in caller. Sensing
+entities carry no access policy of their own, so the rule is the one observation
+streams use: an authenticated caller inside its resolved tenant. Anonymous requests
+receive `401`, and scoped API keys receive `403` because no grant names sensing
+data. A deployment that publishes its sensing data openly sets
+`SensorThings__AllowAnonymousReads=true`; that setting does not open writes or the
+observation stream.
+
 ### SensorThings observation streams (Preview)
 
 `GET /sta/v1.1/ObservationsStream` requires authentication before either an SSE
