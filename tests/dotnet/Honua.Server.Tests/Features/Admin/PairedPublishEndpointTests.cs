@@ -9,9 +9,12 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Publishing.Descriptors;
 using Honua.Core.Features.Tiles.PMTiles;
 using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Server.Features.Admin.TileOperations;
+using Honua.Infrastructure.Progress;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -20,6 +23,7 @@ using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Schema;
 
@@ -104,6 +108,59 @@ public sealed class PairedPublishEndpointTests(DatabaseFixtureAdapter database) 
         second.CaptureId.Should().NotBe(first.CaptureId);
         (await ReadJsonAsync<PublicationPointer>(second.PointerKey)).Version.Should().Be(second.Version);
         (await Storage.ExistsAsync(first.DescriptorKey)).Should().BeTrue("a switched-out version stays readable for rollback");
+    }
+
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PairedPublish_ReplayedOperation_DoesNotCaptureOrActivateAnotherVersion(bool pointerMoved)
+    {
+        var (status, json) = await RunAsync(IdentityField);
+        using var completed = json!;
+        status.Should().Be(OperationStatus.Completed);
+        var original = completed.RootElement.Deserialize<TileOperationProgress>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        var current = pointerMoved ? await PublishAsync(IdentityField) : original.PublishedPublication!;
+        var request = new TileOperationStartRequest
+        {
+            Operation = "paired-publish", ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId, PublicationId = _publicationId,
+            IdentityField = IdentityField, TileMatrixSetId = "WebMercatorQuad", MinZoom = 0, MaxZoom = 2, MaxTiles = 50
+        };
+        using var scope = _fixture.Services.CreateScope();
+        using var systemRead = JobSecurityScope.BeginSystem();
+        var core = ActivatorUtilities.CreateInstance<TileOperationExecutionCore>(scope.ServiceProvider, NullLogger.Instance, 100);
+
+        var replayed = await core.ExecuteAsync(original with
+        {
+            Status = OperationStatus.Queued, PublishedPublication = null, CompletedAt = null
+        }, request, scope.ServiceProvider, CancellationToken.None);
+
+        replayed.Status.Should().Be(pointerMoved ? OperationStatus.Failed : OperationStatus.Completed);
+        if (!pointerMoved)
+        {
+            replayed.PublishedPublication.Should().Be(original.PublishedPublication);
+        }
+        (await ReadJsonAsync<PublicationPointer>(current.PointerKey)).Version.Should().Be(current.Version);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    public async Task BeginOperation_OverlappingAttempts_ReservesOnlyOneArtifactVersion()
+    {
+        var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
+        var store = PairedPublicationStore.Create(Storage, options, _publicationId);
+        var run = new PairedPublicationRun(_publicationId, "first", "capture-first", DateTimeOffset.UtcNow);
+        var operationId = Guid.NewGuid().ToString("N");
+
+        var results = await Task.WhenAll(
+            store.BeginOperationAsync(operationId, run, CancellationToken.None),
+            store.BeginOperationAsync(operationId, run with { Version = "second" }, CancellationToken.None));
+
+        results.Count(result => result is null).Should().Be(1);
+        var reserved = results.Single(result => result is not null)!;
+        var recovered = await store.BeginOperationAsync(operationId, run with { Version = "third" }, CancellationToken.None);
+        recovered.Should().Be(reserved);
     }
 
     [IntegrationTest]
