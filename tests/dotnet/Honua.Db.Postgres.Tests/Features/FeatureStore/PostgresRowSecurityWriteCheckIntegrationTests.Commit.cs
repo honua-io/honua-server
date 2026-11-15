@@ -9,13 +9,13 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 public sealed partial class PostgresRowSecurityWriteCheckIntegrationTests
 {
     [IntegrationTheory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task ApplyEdits_ReplicaRowCommitFailure_PreservesCommitUncertainty(bool ordered, bool terminateConnection)
+    [InlineData(false, false, "RAISE EXCEPTION 'commit-failure' USING ERRCODE = '23514';")]
+    [InlineData(false, true, "PERFORM pg_terminate_backend(pg_backend_pid());")]
+    [InlineData(true, false, "RAISE EXCEPTION 'commit-failure' USING ERRCODE = '23514';")]
+    [InlineData(true, true, "PERFORM pg_terminate_backend(pg_backend_pid());")]
+    public async Task ApplyEdits_ReplicaRowCommitFailure_PreservesCommitUncertainty(bool ordered, bool expectedUnknownOutcome, string failureSql)
     {
-        await InstallDeferredCommitFailureAsync(terminateConnection);
+        await InstallDeferredCommitFailureAsync(failureSql);
         using var origin = ReplicaUploadOriginScope.Begin("commit-outcome-test");
         var feature = Row(0, "north", "commit-failure");
         var batch = ordered
@@ -26,21 +26,18 @@ public sealed partial class PostgresRowSecurityWriteCheckIntegrationTests
 
         var operation = result.CreateResults.Should().ContainSingle().Subject;
         operation.IsSuccess.Should().BeFalse();
-        operation.IsCommitOutcomeUnknown.Should().Be(terminateConnection,
+        operation.IsCommitOutcomeUnknown.Should().Be(expectedUnknownOutcome,
             "a terminal response during COMMIT cannot establish whether the edit committed");
         operation.ErrorMessage.Should().NotContain("commit-failure");
         (await CountRowsAsync("north")).Should().Be(1);
     }
 
-    private Task InstallDeferredCommitFailureAsync(bool terminateConnection)
+    private Task InstallDeferredCommitFailureAsync(string failureSql)
     {
-        var failure = terminateConnection
-            ? "PERFORM pg_terminate_backend(pg_backend_pid());"
-            : "RAISE EXCEPTION 'commit-failure' USING ERRCODE = '23514';";
         return fixture.ExecuteAsync($$"""
             CREATE FUNCTION "{{_schema}}".reject_commit() RETURNS trigger LANGUAGE plpgsql AS $body$
             BEGIN
-                {{failure}}
+                {{failureSql}}
                 RETURN NEW;
             END;
             $body$;
