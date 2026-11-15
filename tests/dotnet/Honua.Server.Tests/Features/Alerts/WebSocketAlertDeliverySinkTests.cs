@@ -31,6 +31,27 @@ public sealed class WebSocketAlertDeliverySinkTests
     }
 
     [UnitTest]
+    public async Task Construction_DoesNotResolveTheRealtimeLog_AndUnavailableLogIsRetryable()
+    {
+        // The dispatcher builds every sink at host start, including hosts without PostgreSQL,
+        // so the sink must not resolve the realtime log until it delivers.
+        var resolutions = 0;
+        var sink = new WebSocketAlertDeliverySink(new Lazy<RealtimeAlertNotificationBroadcaster>(() =>
+        {
+            resolutions++;
+            throw new InvalidOperationException("No service for type 'Npgsql.NpgsqlDataSource' has been registered.");
+        }));
+
+        Assert.Equal(0, resolutions);
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.WebSocket), AlertTestFixtures.CreateAlertEvent());
+
+        Assert.Equal(1, resolutions);
+        Assert.False(result.Succeeded);
+        Assert.True(result.Retryable);
+    }
+
+    [UnitTest]
     public async Task DeliverAsync_CallerCancellation_Propagates()
     {
         using var cancellation = new CancellationTokenSource();
