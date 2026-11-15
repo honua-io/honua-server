@@ -39,9 +39,10 @@ fi
 # binary, not this wrapper function.
 source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 
-# Validate the projection of this head without requiring feature PRs to commit it.
+# Validate the projection of this head without requiring feature PRs to commit
+# it, and without rewriting the tracked page: drift is reported, not written.
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.py
+  "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.py --check
 fi
 
 # shellcheck source=scripts/ci/lib/router-fixtures.sh

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from pathlib import Path
 
@@ -21,7 +22,10 @@ PREBUILD_OBSERVE = WORKFLOW_DIR / "server-test-prebuild-observe.yml"
 PREBUILD_PARITY = WORKFLOW_DIR / "server-test-prebuild-parity.yml"
 AGENTS = ROOT / "AGENTS.md"
 GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
-WORKFLOW_INVENTORY = ROOT / "docs/internal/ci/workflow-inventory.md"
+# validate-review-first-dispatch.sh projects this head's inventory into a scratch
+# file; the tracked page is trunk-published and may lag the workflow YAML.
+WORKFLOW_INVENTORY = Path(os.environ.get("HONUA_WORKFLOW_INVENTORY")
+                          or ROOT / "docs/internal/ci/workflow-inventory.md")
 # Jobs that queue superseded review events: resolver and attestation; the bridge.
 QUEUED_REVIEW_GATE_JOBS = 2
 QUEUED_REVIEW_BRIDGE_JOBS = 1
