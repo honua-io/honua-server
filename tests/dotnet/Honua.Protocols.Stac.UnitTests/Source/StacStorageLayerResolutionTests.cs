@@ -85,14 +85,13 @@ public sealed class StacStorageLayerResolutionTests
             .Returns(TemporalExtentResult.Create(instant, instant));
 
         var collection = await StacMappingService.MapResourceToCollectionAsync(
-            snapshot.Index.ResourcesById["resource.parcels"],
-            snapshot.Index.PublicationsById["pub.parcels"],
-            snapshot.Index.ServicesById["service.stac"],
-            CollectionLayerIndex,
-            ParcelsStorageLayerId,
-            reader,
-            "https://example.test",
-            null,
+            new StacV2Lookups.ResolvedStacPublication(
+                snapshot.Index.PublicationsById["pub.parcels"],
+                snapshot.Index.ResourcesById["resource.parcels"],
+                snapshot.Index.ServicesById["service.stac"],
+                CollectionLayerIndex,
+                snapshot),
+            new StacMappingService.CollectionMappingContext(reader, "https://example.test", null),
             CancellationToken.None);
 
         collection.Id.Should().Be("3");
@@ -108,14 +107,13 @@ public sealed class StacStorageLayerResolutionTests
         var reader = Substitute.For<IFeatureReader>();
 
         var collection = await StacMappingService.MapResourceToCollectionAsync(
-            snapshot.Index.ResourcesById["resource.unbound"],
-            snapshot.Index.PublicationsById["pub.unbound"],
-            snapshot.Index.ServicesById["service.stac"],
-            CollectionLayerIndex,
-            storageLayerId: null,
-            reader,
-            "https://example.test",
-            null,
+            new StacV2Lookups.ResolvedStacPublication(
+                snapshot.Index.PublicationsById["pub.unbound"],
+                snapshot.Index.ResourcesById["resource.unbound"],
+                snapshot.Index.ServicesById["service.stac"],
+                CollectionLayerIndex,
+                snapshot),
+            new StacMappingService.CollectionMappingContext(reader, "https://example.test", null),
             CancellationToken.None);
 
         collection.Extent.Temporal.Interval.Single().Should().OnlyContain(value => value == null);
