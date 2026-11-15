@@ -131,7 +131,8 @@ internal sealed partial class HonuaFeatureService
             // The managed pair-page capability joins one provider's managed table. Other storage
             // paths must supply their own bounded implementation rather than fall back to that table.
             store = ReferenceEquals(left.Provider, right.Provider) && left.Connection is null && right.Connection is null &&
-                left.StorageMapping.SupportsManagedWrites && right.StorageMapping.SupportsManagedWrites
+                await UsesManagedRelationAsync(left, cancellationToken).ConfigureAwait(false) &&
+                await UsesManagedRelationAsync(right, cancellationToken).ConfigureAwait(false)
                 ? left.Provider.Reader as IRelationshipStore : null;
         }
         if (store?.SupportsRelatedPages != true)
@@ -139,6 +140,18 @@ internal sealed partial class HonuaFeatureService
             throw new RpcException(new Status(StatusCode.FailedPrecondition, "The provider does not support bounded relationship pages."));
         }
         return store;
+    }
+
+    private static async Task<bool> UsesManagedRelationAsync(FeatureProviderBinding binding,
+        CancellationToken cancellationToken)
+    {
+        if (binding.Provider is not IBindableFeatureDataProvider bindable)
+        {
+            return false;
+        }
+        var reader = bindable.CreateReaderForBinding(binding);
+        return reader is IManagedFeatureWriteSupport managed &&
+            await managed.SupportsManagedWritesAsync(binding.StorageLayerId, cancellationToken).ConfigureAwait(false);
     }
 
     private sealed record RelatedReadPlan
