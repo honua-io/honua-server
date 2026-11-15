@@ -296,8 +296,8 @@ public sealed class OperationsToolsetTests
             descriptor.ImplementationFactory != null).Should().Be(
                 AdminConnectImportOperationCatalog.Definitions.Count +
                 AdminApiOperationCatalog.Definitions.Count +
-                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 14 + 4,
-                "Lanes A and B are idempotent, Lane D composes on each call, and the four legacy adapters and fourteen typed actuators and four AI admission controls remain unique");
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 15 + 4,
+                "Lanes A and B are idempotent, Lane D composes on each call, and the four legacy adapters and fifteen typed actuators and four AI admission controls remain unique");
     }
 
     [UnitTest]
@@ -322,7 +322,7 @@ public sealed class OperationsToolsetTests
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
             .Should().Be(
-                AdminOperateOperationCatalog.Definitions.Count + 4 + 14 + 4,
+                AdminOperateOperationCatalog.Definitions.Count + 4 + 15 + 4,
                 "each admin operation, legacy operation class, and typed actuator gets one deferred projection");
 
         // Idempotence across repeated composition, previously TryAddEnumerable's job.
@@ -331,7 +331,7 @@ public sealed class OperationsToolsetTests
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
             .Should().Be(
-                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 14 + 4,
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 15 + 4,
                 "re-registration must not duplicate the legacy adapters even though admin executors are added again");
     }
 
