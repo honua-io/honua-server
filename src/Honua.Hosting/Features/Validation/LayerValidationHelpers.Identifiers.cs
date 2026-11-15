@@ -66,7 +66,7 @@ internal static partial class LayerValidationHelpers
                 ?? StandardErrorHelpers.CreateNotFound(context, $"Storage layer {storageLayerId} not found."));
     }
 
-    private static IResult? ChallengeTenantHiddenPublication(HttpContext context, MetadataV2Publication? publication)
+    private static IResult? ChallengeTenantHiddenPublication(HttpContext context, MetadataV2Layer? publication)
         => context.User.Identity?.IsAuthenticated != true && publication is not null
             ? AccessPolicyHelpers.CreateAccessDeniedResult(context, AccessDecision.RequiresAuth())
             : null;

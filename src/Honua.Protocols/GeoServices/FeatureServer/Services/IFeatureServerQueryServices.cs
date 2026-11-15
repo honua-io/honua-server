@@ -24,7 +24,7 @@ internal interface IFeatureServerQueryServices
 
     ValueTask<(object Response, string ContentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string format,
         bool returnGeometry,
         int? outputSrid,
