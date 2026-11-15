@@ -104,10 +104,13 @@ public sealed class ObservationStreamProviderTests
     public async Task Dispose_WhenOneSubscriptionFails_StillReleasesEverySession()
     {
         var provider = Substitute.For<IRealtimeFanoutProvider>();
+        // Ownership transfers to the manager; disposal deliberately throws in this test.
+#pragma warning disable CA2000
         var failing = new FailingSubscription();
+#pragma warning restore CA2000
         var healthy = Substitute.For<IRealtimeSubscription>();
         provider.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(failing, healthy);
-        var manager = new ObservationStreamSessionManager(
+        await using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider);
         manager.TryCreateSession(new("SSE", null, new("tenant-a", null)) { PrincipalId = "alice" }, out _);
         manager.TryCreateSession(new("SSE", null, new("tenant-b", null)) { PrincipalId = "bob" }, out _);
