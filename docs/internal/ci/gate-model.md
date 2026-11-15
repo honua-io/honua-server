@@ -1215,39 +1215,42 @@ definition.
 
 ### ImageServer raw pixel export database lifetime
 
-`ImageServerRawPixelExportTests` holds an `IClassFixture<PostgresFixture>`
-reference, so the shared PostgreSQL infrastructure starts once per class and
-stays up across its integration cases instead of restarting for each one. Each
-case still creates its own `WebAppFixture` host and isolated schema, and seeds
-the raster under the schema-mutation lock. The pure LERC/BIP encoder unit tests
-live in `ImageServerPixelBlockEncoderTests`, which has no fixture, so running
-only unit tests never starts a database.
-All cases and assertions remain in the GeoServices ImageServer Raster Rendering
-and GeoServices ImageServer Rendering and Support shards on selected PR runs and
-twice-daily full trunk runs. This changes no runner count, required check name,
-required aggregate dependency, workflow, or shard definition.
+`ImageServerRawPixelExportTests` holds a class-scoped `WebAppFixture` reference,
+which retains both the default web host and shared PostgreSQL infrastructure
+across its integration cases. Each case still creates its own fixture, client
+and isolated schema, and seeds the raster under the schema-mutation lock. The
+pure LERC/BIP encoder unit tests live in `ImageServerPixelBlockEncoderTests`,
+which has no fixture, so running only unit tests never starts a database.
+All cases and assertions remain in the selected raster rendering shard and
+twice-daily full trunk runs. See the raw pixel host lifetime section below for
+paired measurements. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
 
 ### ImageServer mosaic integration database lifetime
 
-`ImageServerMosaicIntegrationTests` takes a class-scoped `PostgresFixture`,
-which holds a reference to the shared, reference-counted PostgreSQL/PostGIS
-infrastructure from the first case to the last instead of letting it be torn
-down and rebuilt between cases. Each case still builds a fresh `WebAppFixture`
-host with its own isolated application schema, raster seed and license
-entitlement configuration.
-All cases and assertions remain in the GeoServices ImageServer Raster Rendering
+`ImageServerMosaicIntegrationTests` retains the default web host and PostgreSQL
+infrastructure through a class-scoped `WebAppFixture`. Each case still creates
+and disposes its own fixture and isolated application schema, and seeds its
+raster under the schema-mutation lock. Cases that configure license entitlements
+continue to build private hosts. The existing warm raster query performance
+assertion and all response assertions remain unchanged.
+All cases and assertions remain in the GeoServices ImageServer Raster Rendering 2
 shard on selected PR runs and twice-daily full trunk runs. This changes no
 runner count, required check name, required aggregate dependency, workflow, or
 shard definition.
 
+Paired build-host runs passed the same 20 cases with no failures or skips.
+VSTest execution fell from 115 to 46 seconds (69 seconds, or 1.15 execution
+runner-minutes saved). The fixture-inclusive TRX interval fell from 133.049096
+to 73.394077 seconds (59.655019 seconds saved). Both runs used one test
+process; complete CI shard/job savings remain unmeasured.
+
 ### GPServer endpoint application lifetime
 
-`GPServerEndpointTests` holds a `PostgresFixture` class fixture, so the
-reference-counted PostgreSQL infrastructure starts once and stays alive until
-the last case in the class has run. The default `WebAppFixture` application
-starts only in cases that use the shared client, fixture or job store, and is
-disposed only if it was started. Every case still builds its own hosts, isolated
-schemas, in-memory job store and service replacements.
+`GPServerEndpointTests` shares one default application, isolated schema and
+in-memory execution-job store across its default-host cases through a class
+fixture; see the GPServer default application lifetime section below. Cases
+that replace services or configuration still build their own hosts.
 All cases and assertions remain in the GeoServices GPServer Endpoints shard on
 selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
@@ -1396,14 +1399,38 @@ or shard definition.
 
 ### Secure connection default application lifetime
 
-`SecureConnectionEndpointsTests` starts its default application lazily: only
-cases that call `InitializeDefaultApplicationAsync()` start it, and only those
-cases dispose it. Cases that build a custom host no longer pay for an unused
-default application.
+`SecureConnectionEndpointsTests` starts its default application lazily, once per
+class, on the first case that uses it, and disposes it once after the class.
+Each case creates and disposes its own client. Cases that build a custom host
+never start the default application; see the secure connection endpoint test
+host reuse section below.
 All cases and assertions remain in the Server Features Admin Platform and
 Connections shard on selected PR runs and twice-daily full trunk runs. This
 changes no runner count, required check name, required aggregate dependency,
 workflow, or shard definition.
+
+### PrintingTools endpoint application lifetime
+
+`PrintingToolsEndpointTests` keeps one default application for the class. Each
+case creates its own admin client, as the per-case application did. Jobs are
+addressed by generated id. The incomplete-job result assertion still accepts
+either a completed parameter object or the GeoServices 400 error. No
+assertion, test selection, runner count, required check name, required
+aggregate dependency, workflow, or shard definition changes. The class stays in Server Features Spec Printing and Static
+Maps 3 on selected PR runs and twice-daily full trunk runs.
+
+A paired build-host run passed the same 22 cases with zero skips, one process
+each. VSTest case time was 1 minute 41 seconds before and 2 seconds after,
+because the one application start is now class-fixture time. Fixture-inclusive
+TRX duration fell from 110.869 to 24.444 seconds, saving
+86.424 seconds (1.44 test-run runner-minutes). Compilation, admission and
+copyback are excluded.
+
+The whole Spec Printing and Static Maps 3 filter ran as a paired build-host run
+with one process each. Both passed the same 142 cases with zero skips and an
+identical case and outcome list. VSTest reported 4 minutes 29 seconds before and
+2 minutes 7 seconds after. TRX wall time fell from 281.6 to 152.9 seconds,
+saving 128.7 seconds (2.15 runner-minutes) per shard run.
 
 ### Feature stream snapshot and conformance application lifetime
 
@@ -1579,3 +1606,83 @@ needed to verify it.
 After the existing scoped restore, each test analyzer job evaluates `IsTestProject` after SDK and NuGet imports and builds those test roots. All multi-targeted roots remain selected conservatively because test ownership can depend on the inner target framework. Forward project references still compile; the independent source analyzer job retains all source roots and source diagnostics. An empty evaluated root set skips compilation explicitly. Restore scope, diagnostic policy, required job names and job dependencies are unchanged. Standalone single-targeted source roots no longer compile merely because they are solution members.
 
 Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
+
+### GPServer default application lifetime
+
+`GPServerEndpointTests` shares one seeded application through a class fixture.
+The sequential default-host cases clear their in-memory job store before use,
+so job listings and persisted-plan checks retain per-case state. Cases that
+replace authorization, metadata or geoprocessing services own separate hosts.
+All assertions and method filters remain unchanged; the GPServer/NAServer
+shards still run on selected PRs and full trunk runs.
+
+Paired build-host class runs passed the same 71/71 cases. VSTest reported
+342 seconds before and 132 seconds after (210 seconds saved). The wider TRX
+start-to-finish interval fell from 349.64 to 145.88 seconds, saving 203.76 seconds
+(3.40 test-run runner-minutes). Each used one test process with the same filter.
+No runner, workflow, required check, aggregate dependency or shard definition
+changes. These are class timings; a full-shard elapsed saving remains unmeasured.
+
+### Admin authentication default application lifetime
+
+`AdminAuthEndpointsTests` starts its per-case default application on the first
+request for its default client. The 32 discovered methods (49 cases) that create separately
+configured OIDC or client-certificate applications avoid an unused default
+application. All 47 discovered test methods (64 cases) retain per-case fixture isolation and
+their existing assertions.
+The Server Features Admin Authentication and Credentials shard still runs these
+cases on selected PR runs and twice-daily full trunk runs. No required check,
+aggregate dependency, runner count, workflow or shard definition changes.
+
+Paired Release build-host runs passed the identical 64 cases with one test
+process each. VSTest reported execution fell from 437 to 306 seconds, saving
+131 seconds (2.18 execution runner-minutes). The wider TRX start-to-finish
+interval fell from 446.067028 to 314.676740 seconds, saving 131.390288 seconds
+(2.19 test-run runner-minutes). Queue and build time are excluded. Full-shard
+job savings remain unmeasured: the shard also includes
+`OperatorBearerTokenServiceTests` and CI setup.
+
+### ImageServer raw pixel host lifetime
+
+`ImageServerRawPixelExportTests` retains the default shared web host through a
+class-scoped `WebAppFixture`. Each case still creates and disposes its own fixture,
+client and schema, resets the raster samples, and holds the schema-mutation lock
+through every request. This avoids rebuilding the default web host between cases
+without sharing case data or changing assertions.
+
+Paired full-class build-host runs passed the same 45 cases with no skips. VSTest
+execution fell from 230 to 20 seconds, saving 210 seconds (3.50 execution
+runner-minutes). The wider TRX start-to-finish interval fell from 235.864591 to
+33.210444 seconds, saving 202.654147 seconds (3.38 test-run runner-minutes).
+Each run used one test process; full CI shard job savings remain unmeasured.
+The selected PR shard and twice-daily full trunk runs retain all cases and their
+existing budgets.
+No workflow, shard selection, runner count, required check or aggregate dependency
+changes are made.
+
+### Secure connection endpoint test host reuse
+
+`SecureConnectionEndpointsTests` lazily starts one class-owned application for
+its unchanged default admin authentication and database seed. Each case keeps
+its own authenticated client and uses unique connection names and IDs. Cases
+with substituted registries, connection drivers, audit logs, encryption failures
+or host-allowlist settings retain their private application hosts. No host is
+started when a shard selects only those custom cases. Assertions, test selection,
+parallelism and required checks remain unchanged.
+
+A paired build-host run passed the exact same 56 cases with zero skips in
+306 seconds before and 181 seconds after: 125 seconds (2.08 runner-minutes)
+saved with one test process in each run. TRX test-run duration fell from
+317.974 to 193.183 seconds. The 21 default-host case bodies took 103.834 versus
+8.437 seconds; the 35 private-host case bodies took 193.064 versus 172.680
+seconds. Ambient variation affects both groups, so the complete duration change
+is an observation rather than an attribution to fixture reuse alone. These are
+class execution measurements, excluding compilation, admission and copyback.
+
+A separate pair using the complete existing Platform and Connections shard
+filter passed identical 91-case/class/method/outcome multisets with zero skips.
+Its one-process test execution fell from 458 to 363 seconds, saving 95 seconds
+(1.58 runner-minutes); fixture-inclusive TRX duration fell from 470.055 to
+376.298 seconds. The other three classes are unchanged. This overlaps the
+class measurement and is not added to it. Complete CI-job setup and build
+duration remain unmeasured.
