@@ -111,8 +111,11 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         }
     }
 
-    [IntegrationTest]
-    public async Task SaveAsync_ExistingDuplicateGlobalIds_LeavesCurrentRevisionUnchanged()
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData(".")]
+    [InlineData(".\t.\r\n")]
+    public async Task SaveAsync_ExistingDuplicateGlobalIds_LeavesCurrentRevisionUnchanged(string locatorSuffix)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("global_id_activation");
         try
@@ -125,6 +128,13 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
             var declared = GlobalIdGraph(schema);
+            declared = declared with { StorageBindings = [declared.StorageBindings[0] with
+            {
+                Locator = $"{schema}.features{locatorSuffix}"
+            }] };
+            var mapping = FeatureStorageMapping.FromMetadata(declared.Resources[0], declared.StorageBindings[0]);
+            mapping.SchemaName.Should().Be(schema);
+            mapping.TableName.Should().Be("features");
             var undeclared = declared with { Resources = [declared.Resources[0] with { Editing = null }] };
             var original = await store.SaveAsync(undeclared, expectedEtag: null);
             command.CommandText = $$"""
@@ -345,9 +355,11 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
     }
 
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SaveAsync_SourceBackedGlobalIds_DoesNotConstrainUnrelatedManagedRows(bool externalConnection)
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(false, "\ttrue\r\n")]
+    [InlineData(false, "\u00a0true\u2003")]
+    public async Task SaveAsync_SourceBackedGlobalIds_DoesNotConstrainUnrelatedManagedRows(bool externalConnection, string? sourceBackedText)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("global_id_source");
         var sourceSchema = await fixture.CreateIsolatedSchemaAsync("global_id_external");
@@ -369,7 +381,9 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                     ConnectionId = externalConnection ? "conn" : null,
                     Options = new Dictionary<string, JsonElement>
                     {
-                        ["sourceBacked"] = JsonSerializer.SerializeToElement(true),
+                        ["sourceBacked"] = sourceBackedText is null
+                            ? JsonSerializer.SerializeToElement(true)
+                            : JsonSerializer.SerializeToElement(sourceBackedText),
                         ["schemaName"] = JsonSerializer.SerializeToElement(externalConnection ? schema : sourceSchema),
                         ["tableName"] = JsonSerializer.SerializeToElement("features"),
                         ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
@@ -377,6 +391,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                     }
                 }]
             };
+            FeatureStorageMapping.FromMetadata(graph.Resources[0], graph.StorageBindings[0]).IsSourceBacked.Should().BeTrue();
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
 
