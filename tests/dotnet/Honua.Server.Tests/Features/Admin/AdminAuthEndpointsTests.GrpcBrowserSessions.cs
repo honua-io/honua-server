@@ -149,11 +149,22 @@ public sealed partial class AdminAuthEndpointsTests
     {
         await SignInGrpcBrowserAsync();
         await SetCsrfHeaderAsync(_client);
-        var issuance = await GenerateTokenAsync(_client, "test-admin-key");
+        _client.DefaultRequestHeaders.Referrer = new Uri("https://localhost/");
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["username"] = "admin",
+            ["password"] = "test-admin-key",
+            ["client"] = "referer",
+            ["referer"] = "https://localhost/",
+            ["f"] = "json",
+        });
+        using var issuance = await _client.PostAsync("/sharing/rest/generateToken", content);
+        issuance.StatusCode.Should().Be(HttpStatusCode.OK);
         _client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
-        using var token = System.Text.Json.JsonDocument.Parse(issuance);
+        using var token = System.Text.Json.JsonDocument.Parse(await issuance.Content.ReadAsStringAsync());
+        token.RootElement.TryGetProperty("token", out var bearer).Should().BeTrue();
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer", token.RootElement.GetProperty("token").GetString());
+            "Bearer", bearer.GetString());
 
         using var response = await PostEmptyGrpcWebAsync();
 
