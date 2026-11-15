@@ -406,10 +406,7 @@ internal static class CustomCodeArtifactEndpoints
         }
         finally
         {
-            if (verified is not null)
-            {
-                await verified.DisposeAsync().ConfigureAwait(false);
-            }
+            verified?.Dispose();
         }
     }
 
