@@ -20,7 +20,7 @@ public sealed class ObservationStreamSessionManagerDisposeTests
         await using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider);
         Assert.Throws<InvalidOperationException>(() => manager.TryCreateSession(
-            new("SSE", null, new("tenant-a", null), "alice", null), out _));
+            new("SSE", null, new("tenant-a", null)) { PrincipalId = "alice" }, out _));
         Assert.Equal(0, manager.SessionCount);
     }
 }

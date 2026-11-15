@@ -104,8 +104,11 @@ internal static class ObservationStreamEndpoints
         var (session, rejectedBy) = await sessionManager.CreateSessionAsync(new ObservationStreamRequest(
             isWebSocket ? "WebSocket" : "SSE",
             datastreamId,
-            scope,
-            CanonicalSecurityActor.Resolve(context.User)?.ActorId, after),
+            scope)
+        {
+            PrincipalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId,
+            After = after
+        },
             context.RequestAborted).ConfigureAwait(false);
         if (session is null)
         {

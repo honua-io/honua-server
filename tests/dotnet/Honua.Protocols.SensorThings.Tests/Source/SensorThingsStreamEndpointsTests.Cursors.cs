@@ -47,11 +47,11 @@ public sealed partial class SensorThingsStreamEndpointsTests
     }
 
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData("query")]
+    [InlineData("header")]
     [Operation(Operations.Streaming)]
     [Endpoint("GET /sta/v1.1/ObservationsStream")]
-    public async Task ObservationsStream_Resume_ReplaysCommittedBatchAfterCursor(bool useHeader)
+    public async Task ObservationsStream_Resume_ReplaysCommittedBatchAfterCursor(string cursorSource)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var firstConnection = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
@@ -76,10 +76,10 @@ public sealed partial class SensorThingsStreamEndpointsTests
             new { result = 28 }, timeout.Token);
         second.StatusCode.Should().Be(HttpStatusCode.Created);
         var path = "/sta/v1.1/ObservationsStream?datastreamId=1";
-        if (!useHeader) path += "&cursor=" + Uri.EscapeDataString(cursor);
+        if (cursorSource == "query") path += "&cursor=" + Uri.EscapeDataString(cursor);
         using var resumeRequest = new HttpRequestMessage(HttpMethod.Get, path);
         resumeRequest.Headers.Accept.ParseAdd("text/event-stream");
-        if (useHeader) resumeRequest.Headers.Add("Last-Event-ID", cursor);
+        if (cursorSource == "header") resumeRequest.Headers.Add("Last-Event-ID", cursor);
         using var resumed = await client.SendAsync(resumeRequest, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
         resumed.StatusCode.Should().Be(HttpStatusCode.OK);
         await using var resumedStream = await resumed.Content.ReadAsStreamAsync(timeout.Token);

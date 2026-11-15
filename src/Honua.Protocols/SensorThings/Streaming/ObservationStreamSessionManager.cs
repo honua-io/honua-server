@@ -12,7 +12,11 @@ using Microsoft.Extensions.Logging;
 namespace Honua.Protocols.SensorThings.Streaming;
 
 internal sealed record ObservationStreamRequest(
-    string Transport, long? DatastreamId, ObservationStreamScope Scope, string? PrincipalId, long? After);
+    string Transport, long? DatastreamId, ObservationStreamScope Scope)
+{
+    public string? PrincipalId { get; init; }
+    public long? After { get; init; }
+}
 
 internal sealed class ObservationStreamSessionManager : IAsyncDisposable
 {
@@ -107,7 +111,7 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
             var token = cts.Token;
             var state = new ObservationStreamSessionState();
             var writer = new DeliveryWriter(channel.Writer,
-                () => DisconnectSlowConsumer(new(id, request.DatastreamId, state, cts)));
+                () => DisconnectSlowConsumer(new(id, state, cts) { DatastreamId = request.DatastreamId }));
             var subscription = _provider.Subscribe(new RealtimeSubscriptionRequest(
                 RealtimeFamily.Observations,
                 request.DatastreamId is { } datastream ? [datastream.ToString(CultureInfo.InvariantCulture)] : [],
@@ -128,7 +132,10 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
     }
 
     private sealed record SlowConsumerState(
-        Guid Id, long? DatastreamId, ObservationStreamSessionState State, CancellationTokenSource Cancellation);
+        Guid Id, ObservationStreamSessionState State, CancellationTokenSource Cancellation)
+    {
+        public long? DatastreamId { get; init; }
+    }
 
     private void DisconnectSlowConsumer(SlowConsumerState consumer)
     {

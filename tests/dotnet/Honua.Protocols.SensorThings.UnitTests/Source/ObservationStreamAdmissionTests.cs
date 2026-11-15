@@ -39,7 +39,7 @@ public sealed class ObservationStreamAdmissionTests
         ObservationStreamScope scope,
         string? principal,
         out ObservationStreamAdmissionLimit rejectedBy) =>
-        manager.TryCreateSession(new("SSE", null, scope, principal, null), out rejectedBy);
+        manager.TryCreateSession(new("SSE", null, scope) { PrincipalId = principal }, out rejectedBy);
 
     [UnitTest]
     public async Task TryCreateSession_EachCapRefusesExactlyAtItsLimit_AndNamesTheCapHit()

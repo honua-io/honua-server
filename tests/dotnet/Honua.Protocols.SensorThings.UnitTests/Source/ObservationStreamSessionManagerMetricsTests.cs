@@ -34,7 +34,7 @@ public sealed class ObservationStreamSessionManagerMetricsTests
         await using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider,
             new ObservationStreamOptions { MaxBufferPerConnection = 1 });
-        var session = manager.TryCreateSession(new("SSE", 7, new("a", null), "alice", null), out _)!;
+        var session = manager.TryCreateSession(new("SSE", 7, new("a", null)) { PrincipalId = "alice" }, out _)!;
         Assert.True(request!.Writer.TryWrite(RealtimeDelivery.Heartbeat.Instance));
         Assert.False(request.Writer.TryWrite(RealtimeDelivery.Heartbeat.Instance));
         Assert.False(request.Writer.TryWrite(RealtimeDelivery.Heartbeat.Instance));

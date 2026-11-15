@@ -23,7 +23,7 @@ public sealed class ObservationStreamProviderTests
         await using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider);
         await using var session = manager.TryCreateSession(new ObservationStreamRequest(
-            "SSE", 7, new("tenant-a", null), "alice", 42), out _);
+            "SSE", 7, new("tenant-a", null)) { PrincipalId = "alice", After = 42 }, out _);
 
         Assert.NotNull(session);
         Assert.NotNull(request);
@@ -46,7 +46,7 @@ public sealed class ObservationStreamProviderTests
         var provider = new DelayedWindowProvider(window.Task);
         await using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider);
-        var opening = manager.CreateSessionAsync(new(transport, 7, new("a", null), "alice", null),
+        var opening = manager.CreateSessionAsync(new(transport, 7, new("a", null)) { PrincipalId = "alice" },
             CancellationToken.None).AsTask();
         Assert.False(opening.IsCompleted);
         Assert.Null(provider.Subscribed);
@@ -69,7 +69,7 @@ public sealed class ObservationStreamProviderTests
         await using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider,
             new ObservationStreamOptions { MaxBufferPerConnection = 1 });
-        await using var session = manager.TryCreateSession(new("SSE", 7, new("a", null), "alice", 0), out _)!;
+        await using var session = manager.TryCreateSession(new("SSE", 7, new("a", null)) { PrincipalId = "alice", After = 0 }, out _)!;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var first = new RealtimeDelivery.Event(Event("a", null));
         var second = new RealtimeDelivery.Event(Event("a", null) with { Sequence = 44 });
@@ -93,7 +93,7 @@ public sealed class ObservationStreamProviderTests
         await using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider);
         var session = manager.TryCreateSession(new ObservationStreamRequest(
-            "SSE", null, new("tenant-a", null), "alice", null), out _)!;
+            "SSE", null, new("tenant-a", null)) { PrincipalId = "alice" }, out _)!;
         await session.DisposeAsync();
         await session.DisposeAsync();
         Assert.Equal(0, manager.SessionCount);
@@ -109,8 +109,8 @@ public sealed class ObservationStreamProviderTests
         provider.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(failing, healthy);
         var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance, provider);
-        manager.TryCreateSession(new("SSE", null, new("tenant-a", null), "alice", null), out _);
-        manager.TryCreateSession(new("SSE", null, new("tenant-b", null), "bob", null), out _);
+        manager.TryCreateSession(new("SSE", null, new("tenant-a", null)) { PrincipalId = "alice" }, out _);
+        manager.TryCreateSession(new("SSE", null, new("tenant-b", null)) { PrincipalId = "bob" }, out _);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => manager.DisposeAsync().AsTask());
 
@@ -151,7 +151,7 @@ public sealed class ObservationStreamProviderTests
 
         public void Enqueue(RealtimeEventDraft draft) => throw new NotSupportedException();
 
-        public ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(string scopeKey, long after, long through, CancellationToken cancellationToken)
+        ValueTask<IReadOnlyList<RealtimeEvent>> IRealtimeFanoutProvider.ReadPresencePageAsync(string scopeKey, long after, long through, CancellationToken cancellationToken)
             => throw new NotSupportedException();
 
         public ValueTask<IRealtimeStreamLease?> TryAcquireMcpStreamAsync(string sessionId, CancellationToken cancellationToken)
