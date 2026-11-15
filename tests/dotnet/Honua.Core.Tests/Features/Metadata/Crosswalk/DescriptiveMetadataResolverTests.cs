@@ -22,6 +22,60 @@ public sealed class DescriptiveMetadataResolverTests
         ContactPoint = new MetadataV2ContactPoint { Name = "Parks desk", Email = "parks@example.org" },
     };
 
+    [UnitTheory]
+    [InlineData("  Rivers 🌊\t\r\n")]
+    [InlineData("\r\nMultiline\r\ntext  ")]
+    [Operation(Operations.Metadata)]
+    public void Resolve_DescriptionWithSurroundingWhitespace_PreservesText(string description)
+    {
+        var metadata = new MetadataV2ObjectMetadata { Id = "item", Name = "item", Description = description };
+        var graph = CrosswalkFixtures.Graph(resource: metadata, service: metadata) with { Metadata = metadata };
+
+        DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0]))
+            .Description.Should().Be(description);
+        DescriptiveMetadataResolver.ForService(graph, graph.Services[0]).Description.Should().Be(description);
+        DescriptiveMetadataResolver.ForCapabilities(graph, graph.Services[0]).Description.Should().Be(description);
+        DescriptiveMetadataResolver.ForCatalog(graph).Description.Should().Be(description);
+    }
+
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" \t\r\n")]
+    [Operation(Operations.Metadata)]
+    public void ForDataset_BlankLayerDescription_FallsBackToVerbatimDatasetText(string? description)
+    {
+        const string datasetDescription = "  Dataset description\t\r\n";
+        var graph = CrosswalkFixtures.Graph(resource: new MetadataV2ObjectMetadata
+        {
+            Id = "dataset",
+            Name = "dataset",
+            Description = datasetDescription,
+        });
+        var layer = new MetadataV2Layer
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "layer", Description = description },
+        };
+
+        DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0], layer))
+            .Description.Should().Be(datasetDescription);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ForDataset_LayerDescription_OverridesDatasetVerbatim()
+    {
+        var graph = CrosswalkFixtures.Graph(resource: CrosswalkFixtures.FullDataset);
+        const string description = "  Layer description\t\r\n";
+        var layer = new MetadataV2Layer
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "layer", Description = description },
+        };
+
+        DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0], layer))
+            .Description.Should().Be(description);
+    }
+
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void ForDataset_GovernanceUnsetOnDatasetAndService_FallsBackToFolder()

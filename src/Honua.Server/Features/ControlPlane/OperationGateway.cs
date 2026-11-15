@@ -267,7 +267,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
         {
             await OperationApprovalDenialRecorder.RecordAsync(
-                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.CurrentAuthority, cancellationToken)
+                _scopeFactory,
+                new() { Proposal = proposal, Actor = approvedBy, Reason = OperationApprovalDenialReason.CurrentAuthority, Decision = OperationApprovalDecision.Approve },
+                cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -289,7 +291,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
         {
             await OperationApprovalDenialRecorder.RecordAsync(
-                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.EvidenceInvalid, cancellationToken)
+                _scopeFactory,
+                new() { Proposal = proposal, Actor = approvedBy, Reason = OperationApprovalDenialReason.EvidenceInvalid, Decision = OperationApprovalDecision.Approve },
+                cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -1077,8 +1081,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
         catch (InvalidOperationException exception) when (exception is not ServiceUnavailableException)
         {
-            await OperationApprovalDenialRecorder.RecordAsync(_scopeFactory, proposal, approval.ApprovedBy,
-                OperationApprovalDenialReason.HumanSessionRequired, cancellationToken).ConfigureAwait(false);
+            await OperationApprovalDenialRecorder.RecordAsync(_scopeFactory,
+                new() { Proposal = proposal, Actor = approval.ApprovedBy, Reason = OperationApprovalDenialReason.HumanSessionRequired, Decision = OperationApprovalDecision.Approve },
+                cancellationToken).ConfigureAwait(false);
             throw;
         }
     }

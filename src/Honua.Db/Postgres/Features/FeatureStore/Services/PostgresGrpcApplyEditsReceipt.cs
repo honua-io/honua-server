@@ -16,6 +16,19 @@ internal static class PostgresGrpcApplyEditsReceipt
     internal const int MaxReceiptBytes = 16 * 1024 * 1024;
     internal const int ExpiredDeleteBatchSize = 32;
 
+    internal static void ValidatePayload(string scope, ReadOnlyMemory<byte> payload)
+    {
+        if (string.IsNullOrWhiteSpace(scope) || scope.Length > MaxScopeLength)
+        {
+            throw new ArgumentException($"Idempotency receipt scope must be 1 to {MaxScopeLength} characters.", nameof(scope));
+        }
+
+        if (payload.Length == 0 || payload.Length > MaxReceiptBytes)
+        {
+            throw new ArgumentException($"Idempotency receipt payload must be between 1 byte and {MaxReceiptBytes} bytes.", nameof(payload));
+        }
+    }
+
     internal static string InsertSql(string qualifiedTable) =>
         $"""
         INSERT INTO {qualifiedTable} AS existing (scope_key, receipt, expires_at)
