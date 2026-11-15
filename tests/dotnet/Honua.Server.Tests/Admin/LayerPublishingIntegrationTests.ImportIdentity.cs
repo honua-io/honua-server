@@ -117,7 +117,8 @@ public sealed partial class LayerPublishingIntegrationTests
         using var rest = JsonDocument.Parse(await ReadFeatureServerAsync("id=1", "id ASC"));
         var attributes = rest.RootElement.GetProperty("features").EnumerateArray()
             .Should().ContainSingle().Subject.GetProperty("attributes");
-        attributes.GetProperty("properties").GetProperty("business").GetString().Should().Be("value");
+        using var userProperties = JsonDocument.Parse(attributes.GetProperty("properties").GetString()!);
+        userProperties.RootElement.GetProperty("business").GetString().Should().Be("value");
         attributes.TryGetProperty("created_at", out _).Should().BeTrue();
     }
 
@@ -135,9 +136,11 @@ public sealed partial class LayerPublishingIntegrationTests
         using var fileContent = new StringContent(source);
         using var tableNameContent = new StringContent($"attributes_{Guid.NewGuid():N}");
         using var targetSridContent = new StringContent("4326");
+        using var sourceSridContent = new StringContent("4326");
         upload.Add(fileContent, "File", fileName);
         upload.Add(tableNameContent, "TableName");
         upload.Add(targetSridContent, "TargetSrid");
+        upload.Add(sourceSridContent, "SourceSrid");
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", upload);
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
