@@ -130,7 +130,7 @@ NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory
 
 4. **New checks default to nightly** unless explicitly justified as PR-blocking. Justification requires: deterministic behavior, sub-5-minute runtime, and author-actionable failure messages.
 
-   **Named PR checks — `PR Gate`, `Review Gate`, and Repository hygiene.** Together, `PR Gate` and `Review Gate` remain the required PR lane on `trunk`: unprivileged verification and trusted exact-head admission. Verification uses an affected-scope managed build producer, selected shard consumers, and independent Fast/architecture, format and CI-router jobs. The producer retains the server boot/migration smoke. Fast, architecture and governance verification remain required on PRs and build independently alongside the producer. Native GDAL/PDAL execution proofs and import/export fidelity run in `ci.yml`, whose aggregate requires the runtime-proof job whenever the managed build is selected. `Review Gate` adds no build runner. Repository hygiene publishes `repo-hygiene / Repository hygiene` through the SHA-pinned shared workflow. The execution-evidence job materializes its checker and tests from the trusted base commit, so older heads need no checker files and PR changes cannot replace the policy. It checks the explicit base/head diff; both this job and shared hygiene must succeed. Shared hygiene deterministically judges added paths against trusted-base policy, has a five-minute job timeout, and reports author-actionable path violations. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
+   **Named PR checks — `PR Gate`, `Review Gate`, and Repository hygiene.** Together, `PR Gate` and `Review Gate` remain the required PR lane on `trunk`: unprivileged verification and trusted exact-head admission. Verification uses an affected-scope managed build producer, selected shard consumers, and independent Fast/architecture, format and CI-router jobs. The producer retains the server boot/migration smoke. Fast, architecture and governance verification remain required on PRs and build independently alongside the producer. Native GDAL/PDAL execution proofs and import/export fidelity run in `ci.yml`, whose aggregate requires the runtime-proof job whenever the managed build is selected. `Review Gate` adds no build runner. Repository hygiene publishes `repo-hygiene / Repository hygiene` through the SHA-pinned shared workflow. The execution-evidence job materializes its checker and tests from the trusted base commit, so older heads need no checker files and PR changes cannot replace the policy. It checks the explicit base/head diff; both this job and shared hygiene must succeed. Shared hygiene deterministically judges added paths against trusted-base policy, has a five-minute job timeout, and reports author-actionable path violations. Shard identity validation checks the PR merge tree, rejecting duplicate names globally and duplicate filters within a test project (including grouped-project overlap). Disjoint test projects may share a namespace filter. This deterministic check has a five-minute timeout and feeds the existing required hygiene aggregate, so concurrent additions fail before landing without adding a required check name. Any further PR-blocking check still owes the sub-5-minute justification above and should first be considered inside an existing required workflow.
 
 5. **AOT verification is full-CI only until trim debt is retired.** The `AOT Build Verification` job in `ci.yml` runs in the full scheduled/manual integration lane or on PRs explicitly labeled `ci/full`, not on routine PRs or merge-to-trunk pushes, because its current failures are not consistently fast or author-actionable within the default PR lane.
 
@@ -538,6 +538,16 @@ host and read its heartbeat, nothing else) and runs
 - Any failure selects `ubuntu-latest`. Every selection step is
   `continue-on-error`, so the job cannot fail and skip the required producer,
   which carries no job condition.
+
+A manual PR Gate dispatch on `trunk` can set the boolean `qualify_light` input
+(default `false`) to qualify the light pool while `HONUA_LIGHT_RUNNER` stays unset.
+Only `workflow_dispatch` on `refs/heads/trunk` honors this override. It pins the
+`honua-light` runner group and label for the six existing light jobs; it accepts
+no runner label input and leaves producer, heavy-shard and Fast/architecture
+routing unchanged. Other refs and events retain the normal variable and fork
+guards. Qualification is an operator-run health check; the input does not enable
+normal routing or change repository settings. Record ten consecutive green runs
+and their actual runner assignments before restoring the availability variable.
 
 Draft Format and admission/control jobs also use the fork-guarded light selector;
 with `HONUA_LIGHT_RUNNER` unset they stay hosted. Runner select, the format/analyzer
