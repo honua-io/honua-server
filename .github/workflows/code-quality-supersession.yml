@@ -1,0 +1,38 @@
+name: Cancel superseded Code Quality
+
+on:
+  pull_request_target:
+    branches: [trunk]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_run:
+    workflows: ["CodeQL", "Code Quality: PR #*"]
+    types: [requested, in_progress]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  cancel-superseded:
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.workflow_run.path == 'dynamic/github-code-quality/codeql' &&
+       startsWith(github.event.workflow_run.head_branch, 'refs/pull/'))
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    concurrency:
+      group: code-quality-supersession-${{ github.event.pull_request.number && format('refs/pull/{0}/head', github.event.pull_request.number) || github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout trusted default-branch helper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Cancel only older Code Quality runs for this PR
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const {cancelSuperseded} = require('./scripts/ci/cancel-superseded-code-quality.js');
+            await cancelSuperseded({github, context, core});

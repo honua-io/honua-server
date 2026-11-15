@@ -335,7 +335,17 @@ The curated prompts select the view that owns each stage. Dashboard authoring us
 
 Required-input descriptions identify caller-supplied values or their producer tools. Input-validation refusals include source guidance in both JSON channels; missing fields and invalid types also carry field paths.
 
+The `configure` inspection stage exposes import formats and limits, file and URL previews, and connection-table validation through the canonical admin operations. These tools require admin authorization and do not import or edit feature data. For `honua_admin_import_preview`, supply base64-encoded `file` content and `fileName` with its format extension. URL preview requires `sourceUrl`. Table validation requires a connection `id` from `honua_admin_connections_list` and `schema` / `table` from `honua_admin_connection_tables_list`.
+
 Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `layerId` from `honua_list_layers`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
+
+Layer display and spatial configuration are available through the admin `full` catalog as
+`honua_admin_layer_display_get`, `honua_admin_layer_display_set`,
+`honua_admin_layer_spatial_get`, and `honua_admin_layer_spatial_set`.
+Use the storage layer ID from connection-layer discovery. Read the current configuration
+before proposing a change. Set calls preserve omitted fields and require human approval;
+spatial clear flags explicitly remove stored CRS metadata. These tools use the canonical
+Admin API validation. They do not yet offer revision-bound dry-run previews or guarded undo.
 
 A view is **discovery, not authority**:
 

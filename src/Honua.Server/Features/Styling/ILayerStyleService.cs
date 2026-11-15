@@ -10,17 +10,17 @@ namespace Honua.Server.Features.Styling;
 internal interface ILayerStyleService
 {
     Task<LayerStyleSnapshot?> GetStyleAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         CancellationToken cancellationToken = default);
 
     Task<JsonElement?> GetDrawingInfoAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         CancellationToken cancellationToken = default);
 
     Task<LayerStyleUpdateResult> UpdateStyleAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         JsonElement? mapLibreStyle,
         JsonElement? drawingInfo,

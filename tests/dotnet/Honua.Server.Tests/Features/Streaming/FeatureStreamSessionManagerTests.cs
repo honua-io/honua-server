@@ -651,7 +651,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         const string serviceName = "mutable-stream";
         const int storageLayerId = 41;
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("res-mutable-stream", "Mutable Stream", MetadataV2ResourceType.FeatureDataset)
+            .AddResource("res-mutable-stream", "Mutable Stream", MetadataV2ObjectType.FeatureDataset)
             .AddStorageBinding(
                 "binding-mutable-stream",
                 "res-mutable-stream",
@@ -699,7 +699,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         const int storageLayerId = 43;
         var activeGraph = new TestMetadataV2GraphBuilder()
             .WithRevision(8)
-            .AddResource("res-versioned-stream", "Versioned Stream", MetadataV2ResourceType.FeatureDataset)
+            .AddResource("res-versioned-stream", "Versioned Stream", MetadataV2ObjectType.FeatureDataset)
             .AddStorageBinding(
                 "binding-versioned-stream",
                 "res-versioned-stream",
@@ -743,7 +743,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         const string shadowedIdentity = "Roads";
         const int storageLayerId = 45;
         var activeGraph = new TestMetadataV2GraphBuilder()
-            .AddResource("res-shadowed-stream", "Shadowed Stream", MetadataV2ResourceType.FeatureDataset)
+            .AddResource("res-shadowed-stream", "Shadowed Stream", MetadataV2ObjectType.FeatureDataset)
             .AddStorageBinding(
                 "binding-shadowed-stream",
                 "res-shadowed-stream",
@@ -874,7 +874,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         const int storageLayerId = 44;
         var activeGraph = new TestMetadataV2GraphBuilder()
             .WithRevision(8)
-            .AddResource("res-cancel-refresh", "Cancel Refresh", MetadataV2ResourceType.FeatureDataset)
+            .AddResource("res-cancel-refresh", "Cancel Refresh", MetadataV2ObjectType.FeatureDataset)
             .AddStorageBinding(
                 "binding-cancel-refresh",
                 "res-cancel-refresh",

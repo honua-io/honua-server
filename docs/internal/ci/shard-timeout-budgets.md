@@ -1387,6 +1387,8 @@ logs cannot predict either child's final wall time. Actual complete child TRX an
 remain necessary; the split alone does not establish qualification or close a capacity incident.
 The retained source/timing description is [the WMS fixture](../../../eng/ci/fixtures/shard-capacity/wms.json).
 
+`CapabilitiesMetadataXmlTests` lives in the parent `Ogc.Classic` namespace and exercises WMS, WFS and WMTS capabilities XML. It is claimed by `OGC Classic Capabilities Metadata` instead of being folded into a protocol complement. The WMS and WMTS partitions stay exact. Its dispatch rank 6.0 is an estimate until the next complete full trunk run.
+
 
 ## October 2026 Core attachments capacity split (6451)
 

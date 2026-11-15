@@ -280,8 +280,8 @@ internal sealed class ServicePublishExecutor
         // A later current-graph read could attribute another publisher's revision to this job.
         if (_notifications is { } notifications)
         {
-            TryNotify(() => { notifications.BroadcastResourcesListChanged(); });
-            TryNotify(() => { notifications.BroadcastToolsListChanged(); });
+            await TryNotifyAsync(() => notifications.BroadcastResourcesListChanged()).ConfigureAwait(false);
+            await TryNotifyAsync(() => notifications.BroadcastToolsListChanged()).ConfigureAwait(false);
         }
         var now = _clock.GetUtcNow();
         var (identity, promotionReadback) = await ResolvePublishedLayerReadbackAsync(
@@ -469,11 +469,11 @@ internal sealed class ServicePublishExecutor
         Unavailable,
     }
 
-    private static void TryNotify(Action notify)
+    private static async Task TryNotifyAsync(Func<ValueTask<int>> notify)
     {
         try
         {
-            notify();
+            await notify().ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -529,7 +529,7 @@ internal sealed class ServicePublishExecutor
         // Reconstruct only from the committed graph, including after a restart.
         var publications = snapshot.Graph.Publications
             .Where(publication =>
-                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
                 publication.LayerIndex is >= 0 &&
                 snapshot.ResolveResource(publication) is not null &&
                 snapshot.ResolveStorageBinding(publication) is { } binding &&
