@@ -160,13 +160,13 @@ workflow:
 
 Start with the [agent-led Docker journey](../../get-started/with-ai.md#agent-prerequisite-check) for a first local evaluation. Inspect facts from the machine before asking about missing user choices.
 
-Choose the serving target and the lifecycle the work needs. [Deployment](../../concepts/domain/deployment.md) separates the HTTP host from job execution; [storage](../../concepts/domain/storage.md) separates source data, catalog state, jobs, and artifacts.
+Choose the Environment and the lifecycle the work needs. [Deployment](../../concepts/domain/deployment.md) separates the HTTP host from job execution; [storage](../../concepts/domain/storage.md) separates source data, catalog state, jobs, and artifacts.
 
 For a first installation, the agent uses the authorized host's deployment tools
 and a documented [quickstart](../../get-started/quickstart.md) or cloud install
 path. There is no running Honua MCP endpoint to call yet. The inspection action's
 MCP binding applies to an existing deployment only; discover runtime capabilities
-after a new server starts. A published layer is not a prerequisite to connect an
+after a new server starts. A Layer is not a prerequisite to connect an
 agent or register the first service.
 
 Inspect the pinned artifact and dependency requirements before provisioning. ECS and EKS serve containers; Lambda has a target-specific artifact and request lifecycle. Batch can execute jobs for a serving host, but is not the map endpoint. Record what is actually configured rather than inferring capability from a cloud product name.
