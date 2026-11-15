@@ -24,14 +24,14 @@ public sealed class StacSearchContractTests
     [Fact]
     public void CanonicalFields_AreAcceptedByFieldsAndSort()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer },
                 new MetadataV2Field { Name = "acq_time", Type = MetadataV2FieldType.DateTime }
             ],
-            Temporal = new MetadataV2ResourceTemporal { StartTimeField = "acq_time" }
+            Temporal = new MetadataV2ObjectTemporal { StartTimeField = "acq_time" }
         };
 
         var fields = new StacFieldsExtension
@@ -59,7 +59,7 @@ public sealed class StacSearchContractTests
     [Fact]
     public void IncludeMode_RequiredId_DoesNotDisablePhysicalFieldProjection()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -83,7 +83,7 @@ public sealed class StacSearchContractTests
     [Fact]
     public void DatetimeSort_WithoutTemporalField_UsesResourcePrimaryId()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [

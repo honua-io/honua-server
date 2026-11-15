@@ -93,10 +93,10 @@ public sealed class FeatureLayerCopyPublicationTenantTests
         }, "test", DateTimeOffset.UtcNow);
     }
 
-    private static MetadataV2Resource CreateResource() => new()
+    private static MetadataV2Object CreateResource() => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "shared" },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         PrimaryStorageBindingId = "binding-allowed",
         StorageBindingIds = ["binding-allowed", "binding-hidden"],
         SchemaFields =
@@ -104,7 +104,7 @@ public sealed class FeatureLayerCopyPublicationTenantTests
             new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },
             new MetadataV2Field { Name = "geometry", Type = MetadataV2FieldType.Geometry }
         ],
-        Spatial = new MetadataV2ResourceSpatial { SpatialReference = MetadataV2SpatialReference.Wgs84, PrimaryGeometryField = "geometry" }
+        Spatial = new MetadataV2ObjectSpatial { SpatialReference = MetadataV2SpatialReference.Wgs84, PrimaryGeometryField = "geometry" }
     };
 
     private static MetadataV2StorageBinding CreateBinding(string suffix, int storageLayerId) => new()
@@ -116,13 +116,13 @@ public sealed class FeatureLayerCopyPublicationTenantTests
         Locator = "public." + suffix
     };
 
-    private static MetadataV2Publication CreatePublication(string suffix, string tenant) => new()
+    private static MetadataV2Layer CreatePublication(string suffix, string tenant) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "publication-" + suffix, Tenant = tenant },
         ResourceId = "resource",
         ServiceId = "service",
         StorageBindingId = "binding-" + suffix,
         LayerIndex = suffix == "allowed" ? 1 : 999,
-        PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+        PublicationType = MetadataV2LayerType.EsriFeatureLayer
     };
 }
