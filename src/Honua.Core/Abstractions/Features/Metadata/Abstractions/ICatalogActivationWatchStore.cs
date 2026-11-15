@@ -22,9 +22,20 @@ public interface ICatalogActivationWatchStore
 
     Task<IReadOnlyList<CatalogActivationWatch>> ReadRecentRollbacksAsync(CancellationToken cancellationToken = default);
 
-    Task<bool> TryRollbackAsync(CatalogRollbackRequest request, CancellationToken cancellationToken = default);
+    Task<CatalogRollbackOutcome> TryRollbackAsync(CatalogRollbackRequest request, CancellationToken cancellationToken = default);
 
     Task ExpireAsync(long activationId, CancellationToken cancellationToken = default);
 
     Task CompletePurgeAsync(long activationId, CancellationToken cancellationToken = default);
+}
+
+public enum CatalogRollbackOutcome
+{
+    // The activation was superseded, expired, already handled or fenced by another write.
+    NotApplicable,
+
+    RolledBack,
+
+    // Restoring the earlier document would change access settings; the watch ends and an operator decides.
+    RefusedAccessChange,
 }

@@ -44,4 +44,45 @@ public sealed class CatalogAccessSettingsTests
         var added = Public.Replace("\"name\":\"two\"}}", "\"name\":\"two\"}},{\"metadata\":{\"id\":\"c\"},\"accessPolicy\":{\"allowAnonymous\":true}}", StringComparison.Ordinal);
         CatalogAccessSettings.Match(Public, added).Should().BeFalse();
     }
+
+    // One case per guarded setting, on a resource and on a service, so the guarded list cannot silently shrink.
+    [UnitTheory]
+    [InlineData("accessPolicy")]
+    [InlineData("permanentFilter")]
+    [InlineData("permissions")]
+    [InlineData("policies")]
+    [InlineData("policyIds")]
+    [InlineData("ownerEditPolicy")]
+    [InlineData("publication")]
+    [InlineData("publications")]
+    [InlineData("publicationIds")]
+    [InlineData("roles")]
+    [InlineData("role")]
+    [InlineData("tenant")]
+    [InlineData("hidden")]
+    [InlineData("defaultVisibility")]
+    [InlineData("restrictive")]
+    [InlineData("status")]
+    [InlineData("lifecycle")]
+    [InlineData("editing")]
+    [InlineData("editable")]
+    [InlineData("canModify")]
+    [InlineData("capabilities")]
+    [InlineData("declaredOperations")]
+    [InlineData("protocols")]
+    [InlineData("enabledProtocols")]
+    [InlineData("enabled")]
+    [InlineData("isEnabled")]
+    [InlineData("queryable")]
+    [InlineData("deleted")]
+    [InlineData("retired")]
+    public void Match_ChangeToGuardedSetting_DoesNotMatch(string key)
+    {
+        foreach (var container in new[] { "resources", "services" })
+        {
+            var before = $"{{\"{container}\":[{{\"id\":\"x\",\"{key}\":1}}]}}";
+            var after = $"{{\"{container}\":[{{\"id\":\"x\",\"{key}\":2}}]}}";
+            CatalogAccessSettings.Match(before, after).Should().BeFalse("{0} on {1} guards access", key, container);
+        }
+    }
 }

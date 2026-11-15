@@ -51,7 +51,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
         return watches;
     }
 
-    public async Task<bool> TryRollbackAsync(CatalogRollbackRequest request, CancellationToken cancellationToken = default)
+    public async Task<CatalogRollbackOutcome> TryRollbackAsync(CatalogRollbackRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Reason);
@@ -62,7 +62,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
         var documents = await ReadRollbackDocumentsAsync(transaction, request.ActivationId, cancellationToken).ConfigureAwait(false);
         if (documents is null)
         {
-            return false;
+            return CatalogRollbackOutcome.NotApplicable;
         }
 
         var (priorDocument, currentDocument) = documents.Value;
@@ -72,8 +72,8 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
             // Restoring the earlier document would change who may access a resource; that is never
             // decided from serving telemetry. The watch ends and the activation stays as published.
             await ExpireWatchAsync(transaction, request.ActivationId, cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return false;
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            return CatalogRollbackOutcome.RefusedAccessChange;
         }
 
         var graph = JsonSerializer.Deserialize(priorDocument, MetadataV2JsonContext.Default.MetadataV2Graph)
@@ -90,7 +90,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
             _cachedCurrent = null;
             _cacheInvalidator?.Invalidate(_environment);
         }
-        return true;
+        return CatalogRollbackOutcome.RolledBack;
     }
 
     public Task ExpireAsync(long activationId, CancellationToken cancellationToken = default) =>

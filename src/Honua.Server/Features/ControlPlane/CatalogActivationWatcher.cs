@@ -95,7 +95,18 @@ internal sealed partial class CatalogActivationWatcher(
         var seconds = scoped.GetService<IOptions<TracingOptions>>()?.Value.ServingLatencyWindowSeconds ?? 300;
         var evidence = new CatalogActivationEvidence(watch.ActivatedAt, TimeSpan.FromSeconds(seconds > 0 ? seconds : 300));
         var reason = CatalogActivationErrorWatch.Evaluate(evidence, now, rows);
-        if (reason is not null && await store.TryRollbackAsync(new(watch.Id, reason), cancellationToken).ConfigureAwait(false))
+        if (reason is null)
+        {
+            return;
+        }
+
+        var outcome = await store.TryRollbackAsync(new(watch.Id, reason), cancellationToken).ConfigureAwait(false);
+        if (outcome == CatalogRollbackOutcome.RefusedAccessChange)
+        {
+            Log.RollbackRefused(logger, watch.Id, reason);
+        }
+
+        if (outcome == CatalogRollbackOutcome.RolledBack)
         {
             Log.RolledBack(logger, watch.Id, reason);
             var pending = await store.ReadPendingAsync(cancellationToken).ConfigureAwait(false);
@@ -160,6 +171,10 @@ internal sealed partial class CatalogActivationWatcher(
         [LoggerMessage(EventId = 10331, Level = LogLevel.Warning,
             Message = "Catalog activation watch could not complete; durable pending work will be retried.")]
         public static partial void WatchUnavailable(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 10333, Level = LogLevel.Error,
+            Message = "Catalog activation {ActivationId} regressed ({Reason}) but changed access settings, so it was not rolled back automatically; review it.")]
+        public static partial void RollbackRefused(ILogger logger, long activationId, string reason);
 
         [LoggerMessage(EventId = 10332, Level = LogLevel.Warning,
             Message = "CDN purge for rolled-back catalog activation {ActivationId} failed; retrying after {Backoff}.")]

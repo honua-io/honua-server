@@ -67,11 +67,24 @@ public sealed class CatalogActivationWatcherTests
     {
         _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { Watch() });
         _health.ReadLatencyAsync(default, default, default, default).ReturnsForAnyArgs(new[] { Row(-2, 0), Row(6, 40), Row(7, 40) });
-        _store.TryRollbackAsync(default!, default).ReturnsForAnyArgs(false);
+        _store.TryRollbackAsync(default!, default).ReturnsForAnyArgs(CatalogRollbackOutcome.NotApplicable);
         using var watcher = Watcher();
         await watcher.RunOnceAsync(default);
         await _store.Received(1).TryRollbackAsync(Arg.Is<CatalogRollbackRequest>(request => request.ActivationId == 1), Arg.Any<CancellationToken>());
         await _cdn.DidNotReceiveWithAnyArgs().InvalidateAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task RunOnceAsync_RegressionOnActivationThatChangedAccess_IsNotRolledBackOrPurged()
+    {
+        _store.ReadPendingAsync(default).ReturnsForAnyArgs(new[] { Watch() });
+        _health.ReadLatencyAsync(default, default, default, default).ReturnsForAnyArgs(new[] { Row(-2, 0), Row(6, 40), Row(7, 40) });
+        _store.TryRollbackAsync(default!, default).ReturnsForAnyArgs(CatalogRollbackOutcome.RefusedAccessChange);
+        using var watcher = Watcher();
+        await watcher.RunOnceAsync(default);
+        await _store.Received(1).TryRollbackAsync(Arg.Any<CatalogRollbackRequest>(), Arg.Any<CancellationToken>());
+        await _cdn.DidNotReceiveWithAnyArgs().InvalidateAsync(default!, default);
+        await _store.DidNotReceiveWithAnyArgs().CompletePurgeAsync(default, default);
     }
 
     [UnitTest]
@@ -81,7 +94,7 @@ public sealed class CatalogActivationWatcherTests
             new[] { Watch() }, new[] { Watch() with { RollbackRevision = 3, ChangeId = "catalog-watch-1" } });
         _health.ReadLatencyAsync(default, default, default, default)
             .ReturnsForAnyArgs(new[] { Row(-2, 0), Row(6, 40), Row(7, 40) });
-        _store.TryRollbackAsync(default!, default).ReturnsForAnyArgs(true);
+        _store.TryRollbackAsync(default!, default).ReturnsForAnyArgs(CatalogRollbackOutcome.RolledBack);
         _cdn.InvalidateAsync(default!, default).ReturnsForAnyArgs(new CdnInvalidationResult(CdnInvalidationOutcome.Submitted));
         using var watcher = Watcher();
         await watcher.RunOnceAsync(default);

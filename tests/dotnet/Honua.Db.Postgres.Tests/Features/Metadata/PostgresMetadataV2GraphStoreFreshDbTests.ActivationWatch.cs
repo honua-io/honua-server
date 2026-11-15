@@ -26,7 +26,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         var results = await Task.WhenAll(
             first.TryRollbackAsync(new(watch.Id, "Serving errors increased")),
             second.TryRollbackAsync(new(watch.Id, "Serving errors increased")));
-        results.Count(value => value).Should().Be(1);
+        results.Count(value => value == CatalogRollbackOutcome.RolledBack).Should().Be(1);
         var restored = await second.GetCurrentAsync();
         restored.Revision.Should().BeGreaterThan(candidate.Revision);
         restored.Graph.Resources.Single().Metadata.Name.Should().Be("original");
@@ -43,7 +43,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         var restricted = await store.SaveAsync(WatchGraph("layer", allowAnonymous: false), open.Etag);
         var watch = (await store.ReadPendingAsync()).Single();
 
-        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().BeFalse();
+        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().Be(CatalogRollbackOutcome.RefusedAccessChange);
 
         (await store.GetCurrentAsync()).Etag.Should().Be(restricted.Etag);
         (await store.ReadPendingAsync()).Should().BeEmpty("the watch ends instead of being retried");
@@ -59,7 +59,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         var candidate = await first.SaveAsync(WatchGraph("candidate"), original.Etag);
         var oldWatch = (await first.ReadPendingAsync()).Single();
         var newer = await second.SaveAsync(WatchGraph("newer"), candidate.Etag);
-        (await first.TryRollbackAsync(new(oldWatch.Id, "Serving errors increased"))).Should().BeFalse();
+        (await first.TryRollbackAsync(new(oldWatch.Id, "Serving errors increased"))).Should().Be(CatalogRollbackOutcome.NotApplicable);
         (await first.GetCurrentAsync()).Etag.Should().Be(newer.Etag);
     });
 
@@ -70,7 +70,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         var original = await store.SaveAsync(WatchGraph("original"), null);
         await store.SaveAsync(WatchGraph("candidate"), original.Etag);
         var watch = (await store.ReadPendingAsync()).Single();
-        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().BeTrue();
+        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().Be(CatalogRollbackOutcome.RolledBack);
         var restarted = WatchStore(schema);
         (await restarted.ReadPendingAsync()).Should().ContainSingle().Which.RollbackRevision.Should().NotBeNull();
         await restarted.CompletePurgeAsync(watch.Id);
@@ -85,7 +85,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         var original = await store.SaveAsync(WatchGraph("original"), null);
         await store.SaveAsync(WatchGraph("candidate"), original.Etag);
         var watch = (await store.ReadPendingAsync()).Single();
-        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().BeTrue();
+        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().Be(CatalogRollbackOutcome.RolledBack);
         await using (var connection = await fixture.DataSource.OpenConnectionAsync())
         await using (var command = new NpgsqlCommand($"""
             UPDATE "{schema}".catalog_activation_watches
@@ -112,11 +112,11 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         var other = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, schema),
             "Other", FixtureBypassDatabaseSchemaGuard.Instance, schema);
         (await other.ReadPendingAsync()).Should().BeEmpty();
-        (await other.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().BeFalse();
+        (await other.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().Be(CatalogRollbackOutcome.NotApplicable);
         await other.ExpireAsync(watch.Id);
         (await store.ReadPendingAsync()).Should().ContainSingle();
         await store.ExpireAsync(watch.Id);
-        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().BeFalse();
+        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().Be(CatalogRollbackOutcome.NotApplicable);
         (await store.GetCurrentAsync()).Etag.Should().Be(candidate.Etag);
     });
 
@@ -138,7 +138,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             await command.ExecuteNonQueryAsync();
         }
 
-        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().BeFalse();
+        (await store.TryRollbackAsync(new(watch.Id, "Serving errors increased"))).Should().Be(CatalogRollbackOutcome.NotApplicable);
         (await store.GetCurrentAsync()).Etag.Should().Be(candidate.Etag);
         (await store.ReadPendingAsync()).Should().ContainSingle().Which.RollbackRevision.Should().BeNull();
     });

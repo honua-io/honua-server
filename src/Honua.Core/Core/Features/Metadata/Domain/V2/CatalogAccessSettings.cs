@@ -16,7 +16,9 @@ public static class CatalogAccessSettings
     {
         "accessPolicy", "permanentFilter", "permissions", "policies", "policyIds", "ownerEditPolicy",
         "publication", "publications", "publicationIds", "roles", "role", "tenant", "hidden",
-        "defaultVisibility", "restrictive",
+        "defaultVisibility", "restrictive", "status", "lifecycle", "editing", "editable", "canModify",
+        "capabilities", "declaredOperations", "protocols", "enabledProtocols", "enabled", "isEnabled",
+        "queryable", "deleted", "retired",
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     public static bool Match(string firstDocument, string secondDocument)
