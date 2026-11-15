@@ -37,6 +37,36 @@ public sealed partial class ImportTypedColumnTests
         (await reader.ReadAsync()).Should().BeFalse();
     }
 
+    [IntegrationTheory]
+    [InlineData("source_id", "42", "source_id_2")]
+    [InlineData("SOURCE_ID", "initial", "source_id_2")]
+    [InlineData("id", "initial", "source_id")]
+    [Operation(Operations.Import)]
+    public async Task ImportFileAsync_AppendIdentityToExistingAlias_PreservesExactText(string firstColumn, string firstValue, string alias)
+    {
+        var imported = await ImportAsync("csv_numeric_alias", "first.csv",
+            Encoding.UTF8.GetBytes($"{firstColumn},lon,lat\n{firstValue},-157,21"));
+        var provider = new TestConnectionProvider(fixture.DataSource, imported.Schema);
+        var service = new StreamingFileImportService(provider,
+            new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+            new FileFormatDetectionService(NullLogger<FileFormatDetectionService>.Instance),
+            new NoopPerformanceMonitor(), NullLogger<StreamingFileImportService>.Instance,
+            schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(imported.Schema));
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("id,lon,lat\n001,-156,21\n1,-155,21\nexternal-a,-154,21"));
+        var result = await service.ImportFileAsync(new ImportRequest
+        {
+            FileStream = stream, FileName = "identity.csv", TableName = "csv_numeric_alias",
+            TargetSchema = imported.Schema, SourceSrid = 4326, TargetSrid = 4326, LoadMode = ImportLoadMode.Append
+        });
+        result.Success.Should().BeTrue(result.ErrorMessage);
+        result.TypedColumns.Should().Contain(column => column.Name == alias && column.PostgresType == "text");
+        result.Warnings.Should().Contain(warning => warning.Contains($"available as '{alias}'", StringComparison.Ordinal));
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT array_agg(\"{alias}\" ORDER BY id) FROM \"{imported.Schema}\".\"{imported.Table}\" WHERE id > 1";
+        (await command.ExecuteScalarAsync()).Should().BeEquivalentTo(new[] { "001", "1", "external-a" });
+    }
+
     [IntegrationTest]
     [Operation(Operations.Import)]
     public async Task ImportFileAsync_AppendIdentityToFullTable_ReportsJsonPreservationWithoutClaimingColumn()
