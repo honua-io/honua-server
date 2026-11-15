@@ -8,7 +8,9 @@ resource: "honua://capability/editing.featureserver-edits"
 
 Insert, update, and delete features over HTTP using whichever protocol your client already speaks: GeoServices FeatureServer, OGC API Features, or OData v4.
 
-**Prerequisites:** A running Honua server with a writable PostgreSQL-backed layer (DuckDB, SQL Server, and Oracle providers are read-only) and a JavaScript project with `@arcgis/core` installed. If the layer's access policy restricts writes, configure the ArcGIS Maps SDK with a credential carrying a write grant — see [Control access](../secure/access-control.md).
+**Prerequisites:** A running Honua server with an editable PostgreSQL-backed layer (DuckDB, SQL Server, and Oracle providers are read-only) and a JavaScript project with `@arcgis/core` installed. If the layer's access policy restricts writes, configure the ArcGIS Maps SDK with a credential carrying a write grant — see [Control access](../secure/access-control.md).
+
+A layer published with the default settings is read-only (`capabilities` `Query`). To accept edits, publish it into the managed feature store with `"storageMode": "managed"` and the edit capabilities, for example `"capabilities": ["Query", "Create", "Update", "Delete"]`; see [editable layers](../../reference/admin-api/connections-and-layers.md#editable-layers). The layer metadata's `capabilities` then lists `Create`, `Update` and `Delete`, and the managed store assigns the object ids.
 
 All three protocols write to the same store and emit the same change events, so pick one per client and mix freely. The worked example uses the ArcGIS Maps SDK for JavaScript, which Honua works with, against FeatureServer; the [equivalence table](#do-the-same-with-ogc-api-features-or-odata) maps each operation to the other two protocols.
 
@@ -106,6 +108,7 @@ Open `http://localhost:8080/rest/services/parks/FeatureServer/1/query?where=name
 | Symptom | Fix |
 |---|---|
 | `401` / `403` on a write | The layer or service access policy blocks anonymous writes. Authenticate with an admin API key, a role listed in `allowedWriteRoles`, or a role holding an `insert`/`update`/`delete` grant — see [Control access](../secure/access-control.md). |
+| `Create edits are not enabled` (also `Update`/`Delete`): FeatureServer error 400, OGC API Features and OData `405` | The layer was published without edit capabilities. Republish it with `storageMode` `managed` and the edit capabilities; see [editable layers](../../reference/admin-api/connections-and-layers.md#editable-layers). |
 | `404` for the service or layer | Check the service name and layer id with `honua services` and `honua layers <service-id>`. The layer must be published and bound to a storage layer. |
 | Edits rejected on DuckDB / SQL Server / Oracle layers | Those providers are read-only in the current release. Move writable layers to the PostgreSQL provider. |
 | Geometry rejected | Vertex count and payload size are capped by `Limits__Geometry__*`; oversized or invalid geometries return a validation error naming the limit. |
