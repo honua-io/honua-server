@@ -12,7 +12,7 @@ namespace Honua.Server.Features.Admin;
 
 internal static class OpsIncidentEndpoints
 {
-    public static void MapOpsIncidentEndpoints(this RouteGroupBuilder group)
+    public static void MapOpsIncidentEndpoints(this IEndpointRouteBuilder group)
     {
         group.MapGet("/incidents/{incidentId:guid}", HandleGetIncident)
             .WithDisplayName("Get Persisted Ops Incident Context")
