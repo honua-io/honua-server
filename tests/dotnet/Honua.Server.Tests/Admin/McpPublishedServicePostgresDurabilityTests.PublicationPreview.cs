@@ -17,6 +17,7 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
     [Endpoint("POST /mcp")]
     public async Task PublicationPreview_ReportsTheSourceAndMetadataBase_WithoutPublishing()
     {
+        var startedAt = DateTimeOffset.UtcNow;
         var revision = await ReadPersistedRevisionAsync();
         var sourceRows = await CountSourceRowsAsync(_firstTable);
         var sourceHash = await ReadPreviewSourceHashAsync();
@@ -36,6 +37,9 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
         details.GetProperty("metadataRevision").GetString().Should().Be(
             revision.ToString(System.Globalization.CultureInfo.InvariantCulture));
         details.GetProperty("metadataEtag").GetString().Should().NotBeNullOrWhiteSpace();
+        details.GetProperty("previewReference").GetString().Should().NotBeNullOrWhiteSpace();
+        DateTimeOffset.Parse(details.GetProperty("expiresAt").GetString()!,
+            System.Globalization.CultureInfo.InvariantCulture).Should().BeAfter(startedAt);
         (await PublishedLayerCountAsync(_firstTable)).Should().Be(0);
         (await ReadPersistedRevisionAsync()).Should().Be(revision);
         (await CountSourceRowsAsync(_firstTable)).Should().Be(sourceRows);
