@@ -23,11 +23,32 @@ internal sealed class OpsAlarmIncidentCollector(
             return;
         }
 
+        var observation = await observations.AppendAsync(CreateObservation(root, externalEvent), cancellationToken)
+            .ConfigureAwait(false);
+
+        // Replays use the immutable observation returned by the store, including after a partial write.
+        await episodes.ObserveAsync(new OpsIncidentEpisodeSignal
+        {
+            AuthorityScope = observation.AuthorityScope,
+            FindingId = observation.FindingId,
+            ObservationId = observation.ObservationId,
+            ObservedAt = observation.ObservedAt,
+            State = observation.State switch
+            {
+                OpsIncidentObservationState.Active => OpsIncidentEpisodeState.Active,
+                OpsIncidentObservationState.Recovered => OpsIncidentEpisodeState.Recovered,
+                _ => OpsIncidentEpisodeState.Unknown
+            }
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static OpsIncidentObservation CreateObservation(JsonElement root, OpsExternalEvent externalEvent)
+    {
         var alarmArn = AlarmResource(root);
         var detail = root.GetProperty("detail");
         var state = detail.TryGetProperty("state", out var stateElement)
             ? Text(stateElement, "value") : null;
-        var observation = await observations.AppendAsync(new OpsIncidentObservation
+        return new OpsIncidentObservation
         {
             AuthorityScope = "platform",
             SourceId = "aws.cloudwatch",
@@ -45,22 +66,7 @@ internal sealed class OpsAlarmIncidentCollector(
                 ["externalEventId"] = externalEvent.Id,
                 ["alarmArn"] = alarmArn
             }.ToJsonString()
-        }, cancellationToken).ConfigureAwait(false);
-
-        // Replays use the immutable observation returned by the store, including after a partial write.
-        await episodes.ObserveAsync(new OpsIncidentEpisodeSignal
-        {
-            AuthorityScope = observation.AuthorityScope,
-            FindingId = observation.FindingId,
-            ObservationId = observation.ObservationId,
-            ObservedAt = observation.ObservedAt,
-            State = observation.State switch
-            {
-                OpsIncidentObservationState.Active => OpsIncidentEpisodeState.Active,
-                OpsIncidentObservationState.Recovered => OpsIncidentEpisodeState.Recovered,
-                _ => OpsIncidentEpisodeState.Unknown
-            }
-        }, cancellationToken).ConfigureAwait(false);
+        };
     }
 
     private static string AlarmResource(JsonElement root)

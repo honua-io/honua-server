@@ -75,7 +75,7 @@ internal sealed class PostgresOpsIncidentObservationStore : IOpsIncidentObservat
         {
             observations.RemoveAt(observations.Count - 1);
         }
-        return new OpsIncidentObservationPage(observations, truncated);
+        return new OpsIncidentObservationPage(observations) { Truncated = truncated };
     }
 
     private static OpsIncidentObservation ReadObservation(NpgsqlDataReader reader) => new()
