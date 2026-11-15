@@ -188,6 +188,15 @@ def source_runs(since):
     return sorted(found.values(), key=lambda run: (timestamp(run['updated_at']), run['id']))
 
 
+def same_completed_attempt(run):
+    """Recheck after listing artifacts: a new attempt can start mid-sweep."""
+    current = api(f'actions/runs/{run["id"]}')
+    return (trusted(current, SOURCES) and current['status'] == 'completed'
+            and current['conclusion'] in {'success', 'failure'}
+            and current['run_attempt'] == run['run_attempt']
+            and current['updated_at'] == run['updated_at'])
+
+
 def sweep(checkpoint):
     started = datetime.now(timezone.utc) - timedelta(minutes=5)
     cursor = load_cursor()
@@ -210,12 +219,7 @@ def sweep(checkpoint):
             continue
         inspected += 1
         artifacts = inventory(f'actions/runs/{run["id"]}/artifacts', 'artifacts')
-        # Recheck after listing artifacts: a new attempt can start mid-sweep.
-        current = api(f'actions/runs/{run["id"]}')
-        if (not trusted(current, SOURCES) or current['status'] != 'completed'
-                or current['conclusion'] not in {'success', 'failure'}
-                or current['run_attempt'] != run['run_attempt']
-                or current['updated_at'] != run['updated_at']):
+        if not same_completed_attempt(run):
             deferred.append(timestamp(run['updated_at']))
             continue
         recorded[identity] = run['updated_at']
