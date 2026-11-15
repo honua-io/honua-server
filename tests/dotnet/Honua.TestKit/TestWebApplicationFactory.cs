@@ -77,6 +77,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
         builder.UseEnvironment(environmentName);
+        TestHostHttpClientLifetime.Apply(builder);
         builder.ConfigureServices((context, services) =>
         {
             services.AddScoped<IDatabaseHealthChecker, Honua.TestKit.Infrastructure.MockHealthyDatabaseChecker>();
