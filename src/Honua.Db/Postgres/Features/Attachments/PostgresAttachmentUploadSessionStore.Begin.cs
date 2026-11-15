@@ -39,14 +39,14 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
             """);
         BindScope(command, request);
         command.Parameters.AddWithValue("session", Guid.NewGuid());
-        command.Parameters.AddWithValue("publishedLayer", NpgsqlDbType.Integer, (object?)request.PublishedLayerId ?? DBNull.Value);
+        command.Parameters.AddWithValue("publishedLayer", NpgsqlDbType.Integer, request.PublishedLayerId is { } publishedLayerId ? publishedLayerId : (object)DBNull.Value);
         command.Parameters.AddWithValue("requestDigest", digest);
         command.Parameters.AddWithValue("filename", request.Filename);
         command.Parameters.AddWithValue("contentType", request.ContentType);
         command.Parameters.AddWithValue("keywords", request.Keywords);
         command.Parameters.AddWithValue("size", request.ExpectedSize);
         command.Parameters.AddWithValue("contentDigest", request.Sha256);
-        command.Parameters.AddWithValue("replace", NpgsqlDbType.Bigint, (object?)request.ReplaceAttachmentId ?? DBNull.Value);
+        command.Parameters.AddWithValue("replace", NpgsqlDbType.Bigint, request.ReplaceAttachmentId is { } replaceAttachmentId ? replaceAttachmentId : (object)DBNull.Value);
         command.Parameters.AddWithValue("chunkLimit", request.MaxChunkBytes);
         command.Parameters.AddWithValue("lifetime", request.Lifetime);
         await command.ExecuteNonQueryAsync(database.CancellationToken).ConfigureAwait(false);
