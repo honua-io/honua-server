@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
+using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.MultiTenancy;
@@ -49,6 +50,8 @@ public sealed class PlatformAdminAuthorityEndpointTests : IAsyncLifetime
                 services.AddSingleton(_keys);
                 services.RemoveAll<IWorkflowOperationStore>();
                 services.AddSingleton(_workflows);
+                services.RemoveAll<MetadataReleaseControlService>();
+                services.AddSingleton<MetadataReleaseControlService>();
                 services.Configure<TenantContextOptions>(options => options.Enabled = true);
                 services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PlatformAdminTestAuthentication>(
                     PlatformAdminTestAuthentication.SchemeName, _ => { });
