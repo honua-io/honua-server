@@ -270,6 +270,9 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
     public async Task SaveAsync_GlobalIdLayer_WithSeparateFeatureSchema_EnforcesIdentity(int optionCase)
     {
         var metadataSchema = await fixture.CreateIsolatedSchemaAsync("global_id_metadata");
@@ -291,8 +294,8 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                 var options = new Dictionary<string, JsonElement>
                 {
                     [optionCase == 2 ? "SchemaName" : "schemaName"] = JsonSerializer.SerializeToElement(
-                        optionCase switch { 1 => featureSchema, 3 => string.Empty, _ => "unrelated" }),
-                    [optionCase == 2 ? "TableName" : "tableName"] = JsonSerializer.SerializeToElement("features")
+                        optionCase switch { 1 => featureSchema, 3 => string.Empty, 4 => "\t", 5 => $"\t{featureSchema}\r\n", 6 => "\u00a0\u2003", _ => "unrelated" }),
+                    [optionCase == 2 ? "TableName" : "tableName"] = JsonSerializer.SerializeToElement(optionCase == 5 ? "\tfeatures\n" : "features")
                 };
                 if (optionCase == 3)
                 {
@@ -308,8 +311,8 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                 };
             }
             var mapping = FeatureStorageMapping.FromMetadata(graph.Resources[0], graph.StorageBindings[0]);
-            mapping.SchemaName.Should().Be(optionCase == 3 ? string.Empty : featureSchema);
-            mapping.TableName.Should().Be("features");
+            mapping.SchemaName?.Trim().Should().Be(optionCase is 3 or 4 or 6 ? string.Empty : featureSchema);
+            mapping.TableName.Trim().Should().Be("features");
             await store.SaveAsync(graph, expectedEtag: null);
 
             var duplicate = async () => await fixture.ExecuteAsync($$"""

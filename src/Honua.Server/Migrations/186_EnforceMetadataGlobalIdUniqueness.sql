@@ -6,6 +6,8 @@ RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
     identity record;
     index_name text;
+    identifier_whitespace constant text := U&'\0009\000A\000B\000C\000D\0020\0085\00A0\1680'
+        || U&'\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000';
 BEGIN
     -- Serialize activation across environments before reading the committed active graphs.
     PERFORM pg_advisory_xact_lock(hashtextextended('$HonuaSchema$:global-ids', 0));
@@ -38,17 +40,18 @@ BEGIN
             FROM normalized_bindings
         ), binding_names AS (
             SELECT *,
-                CASE WHEN btrim(COALESCE(explicit_table, '')) = ''
-                    THEN trim(both '"' FROM btrim(locator_parts[array_length(locator_parts, 1)]))
-                    ELSE explicit_table END AS table_name,
-                COALESCE(explicit_schema,
-                    CASE WHEN btrim(COALESCE(explicit_table, '')) = ''
+                CASE WHEN btrim(COALESCE(explicit_table, ''), identifier_whitespace) = ''
+                    THEN trim(both '"' FROM btrim(locator_parts[array_length(locator_parts, 1)], identifier_whitespace))
+                    ELSE btrim(explicit_table, identifier_whitespace) END AS table_name,
+                btrim(COALESCE(explicit_schema,
+                    CASE WHEN btrim(COALESCE(explicit_table, ''), identifier_whitespace) = ''
                         AND array_length(locator_parts, 1) > 1
-                        THEN trim(both '"' FROM btrim(locator_parts[array_length(locator_parts, 1) - 1])) END) AS schema_name,
+                        THEN trim(both '"' FROM btrim(locator_parts[array_length(locator_parts, 1) - 1], identifier_whitespace)) END),
+                    identifier_whitespace) AS schema_name,
                 lower(btrim(COALESCE(options->>'sourcebacked', 'false'))) = 'true' AS source_backed
             FROM explicit_names
         ), resolved_bindings AS (
-            SELECT *, to_regclass(CASE WHEN btrim(COALESCE(schema_name, '')) = '' THEN format('%I', table_name)
+            SELECT *, to_regclass(CASE WHEN COALESCE(schema_name, '') = '' THEN format('%I', table_name)
                 ELSE format('%I.%I', schema_name, table_name) END) AS feature_table
             FROM binding_names WHERE table_name = 'features'
         ), managed_bindings AS (
