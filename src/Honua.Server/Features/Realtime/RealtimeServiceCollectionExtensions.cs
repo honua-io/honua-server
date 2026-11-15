@@ -68,6 +68,9 @@ internal static class RealtimeServiceCollectionExtensions
                 : new InProcessRealtimeFanoutProvider(log, dispatcher, presence, leases);
         });
 
+        services.TryAddSingleton<IOptionalRealtimeFanout>(provider => new OptionalRealtimeFanout(
+            provider.GetService<NpgsqlDataSource>() is null ? null : provider.GetRequiredService<IRealtimeFanoutProvider>()));
+
         if (crossNode)
         {
             AddListener(services, configuration);
@@ -145,3 +148,5 @@ internal static class RealtimeServiceCollectionExtensions
         return RealtimeProviderNames.Is(configured, RealtimeProviderNames.Postgres);
     }
 }
+
+internal sealed record OptionalRealtimeFanout(IRealtimeFanoutProvider? Provider) : IOptionalRealtimeFanout;

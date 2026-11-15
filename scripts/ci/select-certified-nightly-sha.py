@@ -36,15 +36,13 @@ sha in the newest `--limit` trunk commits qualifies.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
-import subprocess
 import sys
-import time
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
+import gh_api
 from trailing_selection import AFFECTED_RUN_TITLE_PREFIX
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -117,21 +115,7 @@ def certification_lanes(workflow_text: str) -> list[str]:
 
 def gh_json(path: str) -> object:
     """`gh api <path>` with backoff on transient failures; a persistent refusal raises."""
-    env = dict(os.environ, NO_COLOR="1", GH_FORCE_TTY="0")
-    delays = (10, 30, 60, 120)
-    for attempt in range(len(delays) + 1):
-        result = subprocess.run(["gh", "api", path], capture_output=True, text=True, env=env)
-        if result.returncode == 0:
-            try:
-                return json.loads(result.stdout)
-            except json.JSONDecodeError as exc:
-                raise SelectionError(f"gh api {path} returned non-JSON ({exc})") from exc
-        detail = " ".join((result.stderr or "").split())
-        if attempt == len(delays) or "HTTP 404" in detail or "HTTP 422" in detail:
-            raise SelectionError(f"gh api {path} failed: {detail}")
-        print(f"::warning::gh api {path} failed ({detail}); retrying in {delays[attempt]}s", file=sys.stderr)
-        time.sleep(delays[attempt])
-    raise AssertionError("unreachable")
+    return gh_api.get_json(path, SelectionError)
 
 
 class GitHub:
@@ -142,28 +126,7 @@ class GitHub:
         self.fetch = fetch
 
     def pages(self, path: str, key: str | None = None) -> Iterator[dict]:
-        separator = "&" if "?" in path else "?"
-        page, seen, total = 1, 0, None
-        while True:
-            result = self.fetch(f"{path}{separator}per_page=100&page={page}")
-            if key:
-                if not isinstance(result, dict) or not isinstance(result.get(key), list):
-                    raise SelectionError(f"{path} page {page} has no {key} list")
-                rows, count = result[key], result.get("total_count")
-                if total is not None and count != total:
-                    raise SelectionError(f"{path} total_count moved from {total} to {count} while paging")
-                total = count
-            else:
-                rows = result
-                if not isinstance(rows, list):
-                    raise SelectionError(f"{path} page {page} is not a list")
-            seen += len(rows)
-            yield from rows
-            if len(rows) < 100:
-                break
-            page += 1
-        if isinstance(total, int) and seen != total:
-            raise SelectionError(f"{path} returned {seen} of {total} {key}; refusing a truncated listing")
+        return gh_api.Listing(self.fetch, SelectionError).pages(path, key)
 
     def trunk(self, branch: str, limit: int) -> Iterator[str]:
         for index, row in enumerate(self.pages(f"repos/{self.repository}/commits?sha={branch}")):
