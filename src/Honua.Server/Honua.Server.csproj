@@ -17,7 +17,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Suppress trim warnings from Serilog and endpoint mapping for AOT compatibility -->
     <!-- Suppress analyzer warnings that are not critical for compilation -->
-    <!-- Temporarily allow CS1591 while establishing warnings-as-errors framework -->
+    <!-- CS1591 stays suppressed: the repository does not write XML doc comments (AGENTS.md). -->
     <!-- CA1305/CA1310 (locale-sensitive ToString/StartsWith/EndsWith) are NOT suppressed: every call site uses
          CultureInfo.InvariantCulture for numeric/format and StringComparison.Ordinal for comparisons so the build
          stays green with InvariantGlobalization=false. -->
