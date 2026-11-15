@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import re
 import subprocess
 import tarfile
 import tempfile
@@ -159,16 +160,48 @@ class AssertionTests(unittest.TestCase):
         self.assertNotIn("private", json.dumps(error.diagnostic))
 
     def test_local_image_build_fallback_is_not_reported_as_a_registry_failure(self):
-        fallback = ("Error response from daemon: pull access denied for honua-postgis-proj-grids, "
-                    "repository does not exist or may require 'docker login'\n[+] Building 4.1s (9/9)\n"
-                    "dependency failed to start: container private-db is unhealthy")
-        self.assertEqual(["container-unhealthy", "dependency-failed"], proof.failure_signals(fallback))
-        registry = ("Error response from daemon: pull access denied for ghcr.io/honua-io/private, "
-                    "repository does not exist\n[+] Building 4.1s")
-        self.assertEqual(["image-pull-denied", "docker-daemon-error"], proof.failure_signals(registry))
-        without_build = "pull access denied for honua-postgis-proj-grids, repository does not exist"
-        self.assertEqual(["image-pull-denied"], proof.failure_signals(without_build))
-        self.assertEqual((True, False), (proof.local_build_started(fallback), proof.local_build_started(without_build)))
+        denied = "Error response from daemon: pull access denied for {}, repository does not exist\n"
+        building = "[+] Building 4.1s (9/9)\n"
+        fallback = denied.format("honua-postgis-proj-grids") + building + "container private-db is unhealthy"
+        self.assertEqual(["container-unhealthy"], proof.failure_signals(fallback))
+        # Docker shortens official Hub images to a bare name; a real denial must still count.
+        for output in (denied.format("redis") + building, denied.format("ghcr.io/honua-io/private") + building,
+                       building + denied.format("honua-postgis-proj-grids"),
+                       denied.format("honua-postgis-proj-grids") + " Image honua-postgis-proj-grids Rebuilding"):
+            with self.subTest(output=output):
+                self.assertEqual(["image-pull-denied", "docker-daemon-error"], proof.failure_signals(output))
+        self.assertEqual((True, False), (proof.local_build_started(fallback),
+                                         proof.local_build_started("Image x Rebuilding")))
+
+    def test_locally_built_images_match_the_packaged_compose_files(self):
+        source = (proof.ROOT / "docs/get-started/quickstart.md").read_text()
+        compose = re.search(r"<!-- docs-validation:install.compose mode=run -->\s*```yaml\n(.*?)\n```", source, re.S)
+        texts = [compose.group(1)] + [(proof.ROOT / "docs/get-started" / name).read_text()
+                                      for name in ("compose.executor.yaml", "compose.console.yaml")]
+        built = set()
+        for text in texts:
+            lines = text.splitlines()
+            for index, line in enumerate(lines):
+                if line.strip().startswith("build:"):
+                    indent = len(line) - len(line.lstrip())
+                    for previous in reversed(lines[:index]):
+                        if len(previous) - len(previous.lstrip()) < indent:
+                            break
+                        image = re.match(r"\s*image:\s*(\S+)", previous)
+                        if image:
+                            built.add(image.group(1).split(":")[0])
+        self.assertEqual(set(proof.LOCALLY_BUILT_IMAGES), built)
+
+    def test_non_list_or_non_object_service_rows_are_withheld(self):
+        withheld = dict.fromkeys(("service", "state", "health", "exitCode"), "withheld")
+        with tempfile.TemporaryDirectory() as directory:
+            installation = proof.Installation(Path(directory))
+            with patch.object(installation, "compose", return_value='[null, "private", {"Service": "honua"}]'):
+                self.assertEqual([withheld, withheld, dict(withheld, service="honua")], installation.service_states())
+            with patch.object(installation, "compose", return_value="null"):
+                self.assertEqual([withheld], installation.service_states())
+            with patch.object(installation, "compose", return_value="not json"), self.assertRaises(ValueError):
+                installation.service_states()
 
     def test_compose_version_is_reported_only_when_it_looks_like_a_version(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -226,23 +259,50 @@ class LifecycleTests(unittest.TestCase):
                 patch.object(proof, "check_empty"):
             return proof.main()
 
-    def test_failed_start_records_states_or_says_they_are_unavailable(self):
-        failure = proof.CommandFailure(["python3", "quickstart.py"], subprocess.CompletedProcess([], 1, "", ""))
-        for read, expected in ((Mock(return_value="2.40.3"), "2.40.3"),
-                               (Mock(side_effect=RuntimeError("private")), "unavailable")):
-            with self.subTest(expected=expected):
-                installation = Mock(service_states=read, compose_version=read)
+    def test_failed_start_or_health_read_records_version_and_states(self):
+        for command in (["python3", "quickstart.py"], ["docker", "compose", "ps"]):
+            with self.subTest(command=command):
+                failure = proof.CommandFailure(command, subprocess.CompletedProcess([], 1, "", ""))
+                installation = Mock()
+                installation.compose_version.return_value = "2.40.3"
+                installation.service_states.return_value = [{"service": "honua"}]
                 self.assertEqual(1, self.execute([installation], [failure]))
                 receipt = json.loads(self.receipt.read_text())
-                self.assertEqual((expected, expected), (receipt["serviceStates"], receipt["composeVersion"]))
-                self.assertNotIn("private", self.receipt.read_text())
+                self.assertEqual("2.40.3", receipt["composeVersion"])
+                self.assertEqual([{"service": "honua"}], receipt["serviceStates"])
                 installation.down.assert_called_once()
 
-    def test_other_failures_do_not_query_service_state(self):
+    def test_unreadable_state_is_reported_unavailable_and_teardown_still_runs(self):
+        failure = proof.CommandFailure(["python3", "quickstart.py"], subprocess.CompletedProcess([], 1, "", ""))
         installation = Mock()
-        self.assertEqual(1, self.execute([installation], RuntimeError("private failure")))
-        installation.service_states.assert_not_called()
-        self.assertNotIn("serviceStates", json.loads(self.receipt.read_text()))
+        installation.compose_version.side_effect = subprocess.TimeoutExpired(["docker"], 60)
+        installation.service_states.side_effect = ValueError("private")
+        self.assertEqual(1, self.execute([installation], [failure]))
+        receipt = json.loads(self.receipt.read_text())
+        self.assertEqual(("unavailable", "unavailable"), (receipt["composeVersion"], receipt["serviceStates"]))
+        self.assertEqual(failure.diagnostic, receipt["commandFailure"])
+        self.assertNotIn("private", self.receipt.read_text())
+        installation.down.assert_called_once()
+
+    def test_unexpected_state_error_cannot_skip_teardown(self):
+        failure = proof.CommandFailure(["python3", "quickstart.py"], subprocess.CompletedProcess([], 1, "", ""))
+        installation = Mock()
+        installation.compose_version.side_effect = AttributeError("unexpected")
+        with self.assertRaises(AttributeError):
+            self.execute([installation], [failure])
+        installation.down.assert_called_once()
+
+    def test_other_failures_do_not_query_service_state(self):
+        configuration = proof.CommandFailure(["docker", "compose", "config"], subprocess.CompletedProcess([], 1, "", ""))
+        for outcome in (RuntimeError("private failure"), configuration):
+            with self.subTest(outcome=type(outcome).__name__):
+                installation = Mock()
+                self.assertEqual(1, self.execute([installation], [outcome]))
+                installation.service_states.assert_not_called()
+                installation.compose_version.assert_not_called()
+                receipt = json.loads(self.receipt.read_text())
+                self.assertNotIn("serviceStates", receipt)
+                self.assertNotIn("composeVersion", receipt)
 
     def test_failed_install_still_tears_down_and_never_reports_success(self):
         installation = Mock()

@@ -131,8 +131,13 @@ FAILURE_SIGNALS = {
 }
 
 
-# Compose prints this for a locally built image (no registry path) and then builds it.
-LOCAL_BUILD_PULL_FALLBACK = re.compile(r"pull access denied for [^/\s,]+,")
+# Images the package builds locally (services with build:). Compose tries to pull
+# them first, prints "pull access denied", then builds; test_shipped_quickstart
+# keeps this list equal to the packaged compose files.
+LOCALLY_BUILT_IMAGES = ("honua-postgis-proj-grids",)
+LOCAL_BUILD_PULL_FALLBACK = re.compile(
+    r"pull access denied for (?:" + "|".join(map(re.escape, LOCALLY_BUILT_IMAGES)) + r"),")
+STATE_READ_TIMEOUT = 60
 STATE_FIELDS = {"Service": "service", "State": "state", "Health": "health", "ExitCode": "exitCode"}
 SAFE_STATE = re.compile(r"[A-Za-z0-9_.-]{0,64}")
 MAX_SERVICE_STATES = 32
@@ -143,19 +148,22 @@ COMPOSE_VERSION = re.compile(r"v?[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.+-]{0,32}")
 
 
 def local_build_started(output: str) -> bool:
-    return any("building" in line for line in output.lower().splitlines())
+    return any(re.search(r"\bbuilding\b", line) for line in output.lower().splitlines())
 
 
 def failure_signals(output: str) -> list[str]:
     lines = output.lower().splitlines()
-    if local_build_started(output):
-        lines = [line for line in lines if not LOCAL_BUILD_PULL_FALLBACK.search(line)]
-    text = "\n".join(lines)
+    # A locally built image's denial is the expected fallback only when a build follows it.
+    kept = [line for index, line in enumerate(lines)
+            if not (LOCAL_BUILD_PULL_FALLBACK.search(line) and local_build_started("\n".join(lines[index + 1:])))]
+    text = "\n".join(kept)
     return [label for label, marker in FAILURE_SIGNALS.items() if marker in text]
 
 
 def safe_state(row: dict) -> dict:
     """Keep integer exit codes and short identifier-like strings; withhold anything else."""
+    if not isinstance(row, dict):
+        return dict.fromkeys(STATE_FIELDS.values(), "withheld")
     state = {}
     for source, target in STATE_FIELDS.items():
         value = row.get(source)
@@ -202,8 +210,8 @@ class Installation:
             raise CommandFailure(command, result)
         return result.stdout
 
-    def compose(self, *arguments: str) -> str:
-        return self.run(["docker", "compose", *arguments])
+    def compose(self, *arguments: str, timeout: int = 600) -> str:
+        return self.run(["docker", "compose", *arguments], timeout)
 
     def credentials(self) -> dict[str, str]:
         credentials = {path.name: path.read_text().strip() for path in (self.directory / "secrets").iterdir()
@@ -224,12 +232,12 @@ class Installation:
         return len(observed)
 
     def compose_version(self) -> str:
-        version = self.compose("version", "--short").strip()
+        version = self.compose("version", "--short", timeout=STATE_READ_TIMEOUT).strip()
         return version if COMPOSE_VERSION.fullmatch(version) else "withheld"
 
     def service_states(self) -> list[dict]:
         """Per-service state after a failed start: no logs, environment or configuration."""
-        rows = compose_rows(self.compose("ps", "--all", "--format", "json"))
+        rows = compose_rows(self.compose("ps", "--all", "--format", "json", timeout=STATE_READ_TIMEOUT))
         return [safe_state(row) for row in rows[:MAX_SERVICE_STATES]]
 
     def publish(self, blocks: dict[str, str]) -> None:
@@ -329,13 +337,15 @@ class CustomerJourney:
                     raise ValueError("Installed serving image does not match the selected candidate source")
                 installed = {"credentials": installation.credentials(), "result": result, "version": lock["version"]}
             except BaseException as error:
-                if isinstance(error, CommandFailure) and error.diagnostic["operation"] in STATE_OPERATIONS:
-                    self.record_states(installation)
-                # Preserve the original cause if teardown fails as well.
                 try:
-                    installation.down()
-                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
-                    self.receipt["cleanupFailed"] = True
+                    if isinstance(error, CommandFailure) and error.diagnostic["operation"] in STATE_OPERATIONS:
+                        self.record_states(installation)
+                finally:
+                    # Preserve the original cause if teardown fails as well.
+                    try:
+                        installation.down()
+                    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                        self.receipt["cleanupFailed"] = True
                 raise
             else:
                 installation.down()

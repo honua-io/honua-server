@@ -711,12 +711,14 @@ and their cleanup pass. A prospective PR receipt cannot qualify a shipped archiv
 release verification needs a recorded pass from the published candidate.
 
 Command output stays withheld; a failed command reports its operation, exit
-code and fixed signal labels. Compose prints `pull access denied` for a locally
-built image (a name with no registry path, such as the PostGIS datum-grid image)
-before building it, so that line counts only when no local build started;
-`localBuildStarted` says which. When initialization or the health read fails,
-the receipt also records the Compose version and each service's name, state,
-health and exit code, keeping only short identifier-like values.
+code and fixed signal labels. Compose prints `pull access denied` for an image
+the package builds locally (`LOCALLY_BUILT_IMAGES`: the PostGIS datum-grid image)
+before building it, so that line does not count when a build line follows it;
+denials of any other image, including official Docker Hub images Docker names
+without a path, still count. `localBuildStarted` says whether a build started.
+When initialization or the health read fails, the receipt also records the
+Compose version and each service's name, state, health and exit code (60-second
+reads, only short identifier-like values), and teardown still runs.
 
 ### Check registration
 
