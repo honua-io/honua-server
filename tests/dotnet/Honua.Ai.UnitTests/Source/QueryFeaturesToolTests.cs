@@ -332,6 +332,45 @@ public sealed class QueryFeaturesToolTests
         }
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_FeaturePage_DoesNotDescribeItselfAsCountOnly()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var wide = new string('x', 1200);
+        reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryResult<Feature>
+            {
+                TotalCount = 3,
+                Items =
+                [
+                    new Feature
+                    {
+                        Id = 7,
+                        Geometry = null,
+                        Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", wide)
+                    }
+                ]
+            });
+
+        var response = await DispatchAsync(reader, QueryFeaturesTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":0,"returnGeometry":false}""");
+
+        response.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("returnedCount").GetInt32().Should().Be(1);
+        structured.GetProperty("count").GetInt64().Should().Be(3);
+        structured.GetProperty("features").GetArrayLength().Should().Be(1);
+        var summary = result.GetProperty("content")[0].GetProperty("text").GetString();
+        summary.Should().Contain("Returned 1 feature");
+        summary.Should().NotContain("count only");
+        summary.Should().Contain(ServiceId);
+    }
+
     private static QueryResult<Feature> FeatureWithHiddenValue()
         => new()
         {

@@ -198,7 +198,10 @@ internal sealed class QueryFeaturesTool : IMcpTool
 
     private static string SummarizeQueryResult(McpQueryFeaturesOutput output)
     {
-        if (output.Count is { } count)
+        // Count is the total match count on a feature page as well as the
+        // cardinality-only result. The count-only sentence applies only when
+        // no feature page was built.
+        if (output.Count is { } count && output.GeoJson is null)
         {
             var countSummary = string.Format(
                 CultureInfo.InvariantCulture,
