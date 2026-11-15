@@ -423,8 +423,9 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     public async Task ProviderFailure_FailsDurablyWithoutPartialResults()
     {
         // Two live hosts on the same job tables would claim each other's jobs, so this host gets job tables of its own.
-        // Only the job store, queue and log store move there: everything else in the system schema (shared
-        // configuration, security tokens, idempotency) stays put, because the isolated schema holds only the job tables.
+        // The job store (and the lease store built on it), queue and log store move there; everything else
+        // (shared configuration, security tokens, idempotency) stays in the system schema, because the
+        // isolated schema holds only the job tables.
         await using var isolatedJobs = await PostgresJobSubstrateHarness.CreateAsync(_database, nameof(RoutingPgRoutingQueuedJobTests));
         await using var host = CreateHost(new MissingTableNetworkDatasetResolver(), _routing)
             .ConfigureServices(services =>
