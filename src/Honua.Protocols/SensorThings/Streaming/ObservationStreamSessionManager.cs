@@ -100,28 +100,31 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
             SingleReader = true,
             SingleWriter = false
         });
-        var cts = new CancellationTokenSource();
-        var token = cts.Token;
-        var state = new ObservationStreamSessionState();
-        var writer = new DeliveryWriter(channel.Writer,
-            () => DisconnectSlowConsumer(new(id, request.DatastreamId, state, cts)));
+        CancellationTokenSource? pendingCancellation = new();
         try
         {
+            var cts = pendingCancellation;
+            var token = cts.Token;
+            var state = new ObservationStreamSessionState();
+            var writer = new DeliveryWriter(channel.Writer,
+                () => DisconnectSlowConsumer(new(id, request.DatastreamId, state, cts)));
             var subscription = _provider.Subscribe(new RealtimeSubscriptionRequest(
                 RealtimeFamily.Observations,
                 request.DatastreamId is { } datastream ? [datastream.ToString(CultureInfo.InvariantCulture)] : [],
                 request.After, writer, value => MatchesScope(value, request.Scope)));
             _sessions[id] = new(subscription, channel.Writer, cts, principal, state);
+            pendingCancellation = null; // The registered session now owns cancellation cleanup.
+            ObservationStreamLog.SessionCreated(_logger, id, request.Transport, request.DatastreamId);
+            return new ObservationStreamSession(id, channel.Reader, this, state, token);
         }
-        catch
+        finally
         {
-            ReleaseSlot(principal);
-            cts.Dispose();
-            throw;
+            if (pendingCancellation is not null)
+            {
+                ReleaseSlot(principal);
+                pendingCancellation.Dispose();
+            }
         }
-
-        ObservationStreamLog.SessionCreated(_logger, id, request.Transport, request.DatastreamId);
-        return new ObservationStreamSession(id, channel.Reader, this, state, token);
     }
 
     private sealed record SlowConsumerState(
@@ -219,15 +222,17 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
 
         entry.State.TrySet(ObservationStreamDisconnectReason.ClientClosed);
         ReleaseSlot(entry.Principal);
-        try
+        using (entry.Cts)
         {
-            await entry.Cts.CancelAsync().ConfigureAwait(false);
-            await entry.Subscription.DisposeAsync().ConfigureAwait(false);
-        }
-        finally
-        {
-            entry.Writer.TryComplete();
-            entry.Cts.Dispose();
+            try
+            {
+                await entry.Cts.CancelAsync().ConfigureAwait(false);
+                await entry.Subscription.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                entry.Writer.TryComplete();
+            }
         }
     }
 
