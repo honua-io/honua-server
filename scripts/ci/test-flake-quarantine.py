@@ -247,8 +247,7 @@ class RunnerTests(unittest.TestCase):
 
     def assert_timeout_cleanup(self, foreground, descendant_setup='pass', before_fork=''):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            fake = root / 'dotnet'
+            fake = Path(directory) / 'dotnet'
             fake.write_text('#!/usr/bin/env python3\n'
                             'import os, pathlib, signal, time\n'
                             'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
