@@ -372,7 +372,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     // Replaces the resource published at layerIndex. Delegates to
     // Mixins.WebAppFixtureMetadataV2GraphMutationMixin.
-    public Task UpdateV2ResourceAsync(int layerIndex, Func<MetadataV2Resource, MetadataV2Resource> mutate)
+    public Task UpdateV2ResourceAsync(int layerIndex, Func<MetadataV2Object, MetadataV2Object> mutate)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceAsync(this, layerIndex, mutate);
 
     /// <summary>
