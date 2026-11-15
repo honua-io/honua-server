@@ -16,14 +16,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin.Routing;
 
-/// <summary>
-/// Integration tests for the durable shadow-topology rebuild admin endpoints (#2718) and
-/// the fencing/reconciler behavior (#2720). Covers submission fencing (dirty-only,
-/// stale-row-version rejection), end-to-end shadow-topology build (driving the registered
-/// <see cref="IJobExecutor"/> directly, bypassing the hosted worker loop for a fast,
-/// deterministic test), fencing-token rejection of a stale writer, and reconciler
-/// adoption of an expired lease.
-/// </summary>
+// Durable shadow-topology rebuild admin endpoints and their fencing and reconciler behaviour:
+// submission fencing (dirty-only, stale row version), an end-to-end shadow-topology build that
+// drives the registered job executor directly instead of the hosted worker loop, fencing-token
+// rejection of a stale writer, and reconciler handling of an expired lease.
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]

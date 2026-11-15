@@ -105,11 +105,8 @@ public class NetworkTopologyPromotionAdminEndpointsTests
         Attributes = new Dictionary<string, string?> { ["cost"] = "1.5" },
     };
 
-    /// <summary>
-    /// Drives a dataset's first draft generation through allocate -&gt; add one edge -&gt;
-    /// submit rebuild -&gt; execute the registered executor directly (bypassing the
-    /// hosted worker loop) so it reaches <c>ready</c>, ready for promotion.
-    /// </summary>
+    // Drives a dataset's first draft generation through allocate, add one edge, submit rebuild
+    // and the registered executor (not the hosted worker loop) until it is ready for promotion.
     private async Task<long> BuildReadyGenerationAsync(string datasetId)
     {
         var allocateResponse = await _client.PostAsync($"/api/v1/admin/network-datasets/{datasetId}/generations", content: null);
