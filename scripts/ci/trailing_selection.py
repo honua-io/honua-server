@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Identify affected trunk runs and reserve heavy-pool capacity for PR Gate.
+"""Identify affected trunk runs and cap their heavy-runner use beside PR Gate.
 
 Admission bounds the job count before fanout. Full runs retain their normal
 width; optional affected runs use at most two heavy shard runners.

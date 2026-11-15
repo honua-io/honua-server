@@ -12,11 +12,12 @@ namespace Honua.Ai.StudioAiProxy.Adapters;
 internal sealed class AnthropicAssistantTurn
 {
     private readonly List<ContentBlock> _blocks = [];
-    private readonly Dictionary<int, ContentBlock> _openBlocks = [];
+    private readonly Dictionary<int, ContentBlock> _blocksByIndex = [];
     private int _characters;
 
     internal bool CaptureLimitExceeded { get; private set; }
 
+    // The caller passes only frames its stream validator accepted, so every delta targets an open block.
     internal void Capture(AnthropicStreamFrame frame, string payload)
     {
         if (CaptureLimitExceeded) return;
@@ -24,21 +25,21 @@ internal sealed class AnthropicAssistantTurn
         {
             CaptureLimitExceeded = true;
             _blocks.Clear();
-            _openBlocks.Clear();
+            _blocksByIndex.Clear();
             return;
         }
         _characters += payload.Length;
         using var document = JsonDocument.Parse(payload);
         var root = document.RootElement;
-        if (frame.Type == "content_block_start" && frame.ContentBlock is not null && frame.Index is { } startIndex)
+        if (frame.Type == "content_block_start" && frame.Index is { } startIndex)
         {
             var block = new ContentBlock(root.GetProperty("content_block").Clone());
             _blocks.Add(block);
-            _openBlocks[startIndex] = block;
+            _blocksByIndex[startIndex] = block;
         }
-        else if (frame.Type == "content_block_delta" && frame.Index is { } deltaIndex
-            && _openBlocks.TryGetValue(deltaIndex, out var block))
+        else if (frame.Type == "content_block_delta" && frame.Index is { } deltaIndex)
         {
+            var block = _blocksByIndex[deltaIndex];
             var field = frame.Delta?.Type switch
             {
                 "thinking_delta" => "thinking",
@@ -51,8 +52,6 @@ internal sealed class AnthropicAssistantTurn
                 && value.ValueKind == JsonValueKind.String)
                 block.Append(field, value.GetString()!);
         }
-        else if (frame.Type == "content_block_stop" && frame.Index is { } stopIndex)
-            _openBlocks.Remove(stopIndex);
     }
 
     internal JsonElement Content()

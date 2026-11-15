@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Exercise fanout bounds, safe deferral and PR priority isolation."""
+"""Exercise fanout bounds, safe deferral and coexistence with PR Gate."""
 
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -15,18 +16,28 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts/ci"))
 import affected_admission as admission
-import pr_gate_priority as priority
 
 
 class AdmissionTests(unittest.TestCase):
     def test_total_job_boundary_includes_side_jobs(self):
         for count, allowed in ((0, True), (7, True), (8, False), (139, False)):
-            result, _ = admission.decision({"shards": list(range(count)), "run_all": False}, pr_busy=False)
+            result, _ = admission.decision({"shards": list(range(count)), "run_all": False})
             self.assertEqual(result, allowed, count)
 
-    def test_full_routing_and_pr_backlog_defer_even_a_small_selection(self):
-        for full, busy in ((True, False), (False, True), (True, True)):
-            self.assertFalse(admission.decision({"shards": [], "run_all": full}, busy)[0])
+    def test_full_routing_defers_even_a_small_selection(self):
+        self.assertFalse(admission.decision({"shards": [], "run_all": True})[0])
+
+    def test_active_pr_gate_does_not_defer_a_bounded_selection(self):
+        routed = json.dumps({"shards": [1, 2], "run_all": False})
+
+        def run(command, **_):
+            if command[0] == "gh":
+                return json.dumps({"workflow_runs": [{"id": 1, "status": "in_progress"}]})
+            return "src/changed.cs\n" if command[0] == "git" else routed
+
+        with patch.object(admission.subprocess, "check_output", side_effect=run) as check_output:
+            self.assertTrue(admission.admission("base", "head")[0])
+        self.assertNotIn("gh", [call.args[0][0] for call in check_output.call_args_list])
 
     def test_unknown_baseline_does_not_dispatch_full_ci(self):
         with patch.object(admission, "selection") as select:
@@ -34,24 +45,13 @@ class AdmissionTests(unittest.TestCase):
             select.assert_not_called()
 
     def test_router_or_history_outage_defers_instead_of_escalating(self):
-        for target in ("selection", "active_pr_gate"):
-            with patch.object(admission, "selection", return_value={"shards": [], "run_all": False}), \
-                    patch.object(admission, "active_pr_gate", return_value=False), \
-                    patch.object(admission, target, side_effect=subprocess.CalledProcessError(1, "probe")):
-                self.assertFalse(admission.admission("base", "head")[0])
+        with patch.object(admission, "selection", side_effect=subprocess.CalledProcessError(1, "probe")):
+            self.assertFalse(admission.admission("base", "head")[0])
 
     def test_unknown_descriptor_defers(self):
         for descriptor in ({"shards": [], "run_all": "false"}, {"shards": "bad", "run_all": False}, {"shards": []}):
-            with patch.object(admission, "selection", return_value=descriptor), \
-                    patch.object(admission, "active_pr_gate", return_value=False):
+            with patch.object(admission, "selection", return_value=descriptor):
                 self.assertFalse(admission.admission("base", "head")[0])
-
-    def test_active_pr_gate_in_each_api_status_blocks_admission(self):
-        for active in admission.ACTIVE_STATUSES:
-            with patch.object(admission, "gh_api", side_effect=lambda endpoint: {
-                    "workflow_runs": [{"id": 1}] if f"status={active}&" in endpoint else []}), \
-                    patch.dict("os.environ", GITHUB_REPOSITORY="honua-io/honua-server"):
-                self.assertTrue(admission.active_pr_gate(), active)
 
     def test_recomputed_matrix_rejects_router_fallback_before_outputs(self):
         job = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]["targeted-shards"]
@@ -99,25 +99,27 @@ class AdmissionTests(unittest.TestCase):
             self.assertIn("inputs.full_ci", jobs[name]["if"])
 
 
-class PriorityTests(unittest.TestCase):
-    def test_only_same_repository_trunk_affected_dispatch_is_preemptible(self):
-        run = {"head_branch": "trunk", "event": "workflow_dispatch",
-               "head_repository": {"full_name": "honua-io/honua-server"},
-               "display_title": "CI affected abc..def"}
-        self.assertTrue(priority.preemptible(run, "honua-io/honua-server"))
-        for change in ({"head_branch": "feature"}, {"event": "schedule"},
-                       {"display_title": "CI full retry"}, {"display_title": "CI "},
-                       {"head_repository": {"full_name": "fork/server"}}, {"head_repository": None}):
-            self.assertFalse(priority.preemptible({**run, **change}, "honua-io/honua-server"), change)
+CANCELLATION = re.compile(r"gh run cancel|actions/runs/\S*/(force-)?cancel|cancelWorkflowRun|supersede_trailing_runs\.cancel\b"
+                          r"|from supersede_trailing_runs import[^\n]*\bcancel\b|from supersede_trailing_runs import \([^)]*\bcancel\b")
+# Only these may cancel trunk CI: a full run cancels selective runs it covers, a
+# selective run cancels itself, and the native-image check lists the pattern as forbidden.
+ALLOWED_CANCELLERS = {"supersede_trailing_runs.py", "resolve-trailing-base.py", "native-image-impact.py"}
 
-    def test_priority_workflow_checks_out_only_trusted_trunk_code(self):
-        workflow = yaml.load((ROOT / ".github/workflows/pr-gate-priority.yml").read_text(), Loader=yaml.BaseLoader)
-        self.assertEqual(workflow["on"]["workflow_run"], {
-            "workflows": ["PR Gate"], "types": ["requested", "in_progress"]})
-        job = workflow["jobs"]["reserve"]
-        self.assertEqual(job["permissions"], {"actions": "write", "contents": "read"})
-        self.assertEqual(job["steps"][0]["with"]["ref"], "trunk")
-        self.assertEqual(job["steps"][0]["with"]["persist-credentials"], "false")
+
+class CoexistenceTests(unittest.TestCase):
+    def test_only_covering_or_own_runs_cancel_trunk_ci(self):
+        sources = [*(path for pattern in ("*.yml", "*.yaml") for path in (ROOT / ".github").rglob(pattern)),
+                   *(path for pattern in ("*.py", "*.sh", "*.mjs") for path in (ROOT / "scripts/ci").rglob(pattern)
+                     if "fixtures" not in path.parts)]
+        cancellers = {path.name for path in sources if CANCELLATION.search(path.read_text())}
+        self.assertEqual(cancellers, ALLOWED_CANCELLERS)
+
+    def test_cancellation_scan_detects_each_preemption_form(self):
+        for text in ("gh run cancel 1", "actions/runs/{id}/cancel", "actions/runs/{id}/force-cancel",
+                     "supersede_trailing_runs.cancel(run)",
+                     "from supersede_trailing_runs import active_trunk_runs, cancel",
+                     "from supersede_trailing_runs import (\n    active_trunk_runs,\n    cancel,\n)"):
+            self.assertRegex(text, CANCELLATION)
 
 
 if __name__ == "__main__":
