@@ -176,7 +176,7 @@ public sealed partial class OperationGatewayStateMachineTests
     }
 
     [UnitTheory]
-    [InlineData("agent", true, "canonical-agent")]
+    [InlineData("agent", true, "test:subject:-:canonical-agent")]
     [InlineData("admin", true, null)]
     [InlineData("agent", false, null)]
     [Operation(Operations.TestInfrastructure)]

@@ -1704,7 +1704,11 @@ internal sealed partial class OperationGateway : IOperationGateway
         await using var scope = _scopeFactory.CreateAsyncScope();
         var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog>();
         var actor = request.RequestedBy ?? request.RequestedByAgent ?? AuditEvent.AnonymousActor;
-        var actorType = actor == AuditEvent.AnonymousActor ? AuditActorType.Anonymous : AuditActorType.UserId;
+        var actorType = request.RequestedBy is null && request.RequestedByAgent is not null
+            ? AuditActorType.System
+            : request.RequestedBy is null
+                ? AuditActorType.Anonymous
+                : AuditActorType.UserId;
         await auditLog.RecordAsync(
             new AuditEvent
             {

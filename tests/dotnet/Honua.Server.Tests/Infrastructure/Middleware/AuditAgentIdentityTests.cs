@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Infrastructure.Middleware;
 
 public sealed class AuditAgentIdentityTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("ApiKey", "role", "scheme:issuer:stable-subject")]
     [InlineData("Bearer", "role", "scheme:issuer:stable-subject")]
     [InlineData("ApiKey", "grant", "scheme:issuer:stable-subject")]
@@ -54,7 +54,7 @@ public sealed class AuditAgentIdentityTests
         Assert.Equal(AuditContextResolver.ResolveCanonicalActor(context).Actor, AuditContextResolver.ResolveAgent(context));
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("ApiKey", "api_key_id", "6f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f")]
     [InlineData("Bearer", "sub", "stable-subject")]
     public void ResolveAgent_BeforeTenantResolution_UsesCanonicalIdentity(string scheme, string claimType, string subject)
@@ -68,7 +68,7 @@ public sealed class AuditAgentIdentityTests
         Assert.Equal(CanonicalSecurityActor.Resolve(context.User)!.ActorId, AuditContextResolver.ResolveAgent(context));
     }
 
-    [Fact]
+    [UnitTest]
     public void ResolveActor_UnauthenticatedAgentRole_RemainsAnonymous()
     {
         var context = new DefaultHttpContext

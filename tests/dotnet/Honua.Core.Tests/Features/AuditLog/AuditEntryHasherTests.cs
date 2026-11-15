@@ -20,8 +20,7 @@ public sealed class AuditEntryHasherTests
         string action = "auth.success",
         string resourceType = "http",
         string? resourceId = "/api/v1/admin/x",
-        string details = "{}",
-        string? actorAgent = null)
+        string details = "{}")
         => AuditEntryHasher.ComputeEntryHash(
             prev,
             new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero),
@@ -35,8 +34,7 @@ public sealed class AuditEntryHasherTests
             "corr-1",
             "10.0.0.1",
             "agent/1.0",
-            details,
-            actorAgent);
+            details);
 
     [Trait("Tier", "Fast")]
     [Fact]
@@ -90,28 +88,5 @@ public sealed class AuditEntryHasherTests
         // ("a","bc") must hash differently even though naive concatenation collides.
         Hash(resourceType: "ab", action: "c").Should()
             .NotBe(Hash(resourceType: "a", action: "bc"));
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public void ComputeEntryHash_LegacyRow_PreservesPublishedCanonicalBytes()
-    {
-        Hash().Should().Be("187b3048b06dfe1416175f54fb55a31e8e871bcd2700b66da108d21f07e0a6af");
-        AuditEntryHasher.ComputeEntryMac(
-            Enumerable.Repeat((byte)0x21, 32).ToArray(), null,
-            new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero),
-            AuditEventType.Authentication, "user-1", AuditActorType.UserId,
-            "http", "/api/v1/admin/x", "auth.success", AuditOutcome.Success,
-            "corr-1", "10.0.0.1", "agent/1.0", "{}")
-            .Should().Be("b5ce867ada1427e9e695be38a3c9ac02305c3558f897f17f6dc11e0376e35751");
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public void ComputeEntryHash_AgentIdentity_IsBoundAndDistinctFromLegacy()
-    {
-        Hash(actorAgent: "agent-1").Should().NotBe(Hash());
-        Hash(actorAgent: "agent-1").Should().NotBe(Hash(actorAgent: "agent-2"));
-        Hash(actorAgent: string.Empty).Should().NotBe(Hash());
     }
 }

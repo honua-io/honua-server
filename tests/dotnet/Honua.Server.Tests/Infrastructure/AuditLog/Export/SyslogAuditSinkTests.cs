@@ -54,7 +54,7 @@ public sealed class SyslogAuditSinkTests
         line.Should().StartWith("<108>1 ");
     }
 
-    [Fact]
+    [Honua.TestKit.Attributes.UnitTest]
     public async Task SendAsync_AgentIdentity_IsPreservedAndEscapedInCef()
     {
         var transport = new CapturingTransport();
