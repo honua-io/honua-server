@@ -8,27 +8,23 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Server.Features.Admin.Routing;
-using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin.Routing;
 
-/// <summary>
-/// Integration tests for the durable shadow-topology rebuild admin endpoints (#2718) and
-/// the fencing/reconciler behavior (#2720). Covers submission fencing (dirty-only,
-/// stale-row-version rejection), end-to-end shadow-topology build (driving the registered
-/// <see cref="IJobExecutor"/> directly, bypassing the Redis-gated worker loop for a fast,
-/// deterministic test), fencing-token rejection of a stale writer, and reconciler
-/// adoption of an expired lease.
-/// </summary>
-[Collection("Redis")]
+// Durable shadow-topology rebuild admin endpoints and their fencing and reconciler behaviour:
+// submission fencing (dirty-only, stale row version), an end-to-end shadow-topology build that
+// drives the registered job executor directly instead of the hosted worker loop, fencing-token
+// rejection of a stale writer, and reconciler handling of an expired lease.
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
-public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
+public class NetworkTopologyRebuildAdminEndpointsTests
+    : IClassFixture<NetworkTopologyRebuildAdminEndpointsTests.SharedApplication>, IAsyncLifetime
 {
     private const string AdminPassword = "netrebuild-admin-key";
 
@@ -41,31 +37,24 @@ public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
-    public NetworkTopologyRebuildAdminEndpointsTests(RedisFixture redis)
+    public NetworkTopologyRebuildAdminEndpointsTests(SharedApplication application)
     {
-        // Rebuild submission creates a durable ExecutionJobRecord via the shared job
-        // infrastructure (#2718), which the production composition root only wires
-        // (AddJobOrchestration/AddJobWorker) when a Redis connection and a Redis-cache
-        // license entitlement are present — mirrors GpJobWorkerCompositionRootTests.
-        _fixture = new WebAppFixture().WithProductionJobSubstrate()
-            .UseSeed("tests/seed/server.yaml")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
-                builder.UseSetting("Licensing:DevGrantEdition", "Pro");
-            });
+        _fixture = application.Fixture;
     }
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        return Task.CompletedTask;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
+    }
+
+    public sealed class SharedApplication() : NetworkJobApplication(AdminPassword);
 
     private static string NewId(string suffix) =>
         $"ntr-{suffix}-{Guid.NewGuid():N}".Substring(0, 24).ToLowerInvariant();
@@ -249,7 +238,7 @@ public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
         var submission = await submitResponse.Content.ReadFromJsonAsync<NetworkTopologyRebuildSubmissionDto>(_jsonOptions);
         Assert.NotNull(submission);
 
-        // Drive the registered executor directly rather than depending on the Redis-gated
+        // Drive the registered executor directly rather than depending on the hosted
         // background worker loop, for a fast and deterministic test (mirrors how
         // ConsoleJobEndpointsTests exercises services directly).
         var jobStore = _fixture.Services.GetRequiredService<IExecutionJobStore>();
