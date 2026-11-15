@@ -227,7 +227,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         }
     }
 
-    private static void AddFragmentParameters(NpgsqlCommand command, SqlFragment? fragment)
+    private static void AddFragmentParameters(System.Data.Common.DbCommand command, SqlFragment? fragment)
     {
         if (fragment is null)
         {
