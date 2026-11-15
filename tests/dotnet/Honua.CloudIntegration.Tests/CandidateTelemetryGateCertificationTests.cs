@@ -44,7 +44,7 @@ namespace Honua.CloudIntegration.Tests;
 // migrated system database for the control plane's durable workflow store) and both image references.
 // Every test [SkippableFact]-skips when any of them is missing.
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CandidateCertification)]
-public sealed class CandidateTelemetryGateCertificationTests
+public sealed partial class CandidateTelemetryGateCertificationTests
     : IClassFixture<LocalSubstrateDockerFixture>, IClassFixture<LocalSubstratePostgresFixture>
 {
     private const string CandidateImageEnvVar = "HONUA_CANDIDATE_IMAGE";
@@ -125,6 +125,7 @@ public sealed class CandidateTelemetryGateCertificationTests
 
         var recovered = await env.ReconcileUntilAsync(operationId, op => IsTerminal(op.Status), SettleBudget);
         var frontDoor = await env.GetThroughFrontDoorAsync("/healthz/ready");
+        await env.AssertPreviousFeatureQueryAsync();
         var result = await traffic.StopAsync();
         await env.WriteReceiptAsync("candidate-error-regression-rollback", recovered, faultInjectedAt, breachEvidence, result);
 
@@ -157,6 +158,7 @@ public sealed class CandidateTelemetryGateCertificationTests
 
         var recovered = await env.ReconcileUntilAsync(operationId, op => IsTerminal(op.Status), SettleBudget);
         var frontDoor = await env.GetThroughFrontDoorAsync("/healthz/ready");
+        await env.AssertPreviousFeatureQueryAsync();
         var result = await traffic.StopAsync();
         await env.WriteReceiptAsync("telemetry-outage-rollback", recovered, faultInjectedAt, GateEvidence.Unavailable, result);
 
@@ -194,6 +196,7 @@ public sealed class CandidateTelemetryGateCertificationTests
         env.Timeline.Should().Contain(
             entry => entry.Phase != null && entry.Phase.Contains("never passed the backend health gate within the 90-second exposure deadline", StringComparison.Ordinal));
         env.ActiveProxyDestination().Should().Be(env.ActiveDestination);
+        await env.AssertPreviousFeatureQueryAsync();
         result.Failures.Should().Be(0, "the previous revision served the front door throughout");
     }
 
@@ -269,7 +272,7 @@ public sealed class CandidateTelemetryGateCertificationTests
         TrafficResult FrontDoorTraffic,
         IReadOnlyList<TimelineEntry> Timeline);
 
-    private sealed class CandidateGateEnvironment : IAsyncDisposable
+    private sealed partial class CandidateGateEnvironment : IAsyncDisposable
     {
         internal const double SampleFloor = 20;
         internal const double ErrorRateThreshold = 0.05;
@@ -461,6 +464,12 @@ public sealed class CandidateTelemetryGateCertificationTests
                 (await WaitForStatusAsync(ReplicaUrl(ports.Active, "/healthz/ready"), 200, TimeSpan.FromMinutes(3)))
                     .Should().BeTrue("the previous revision must be serving before the candidate is rolled over it");
 
+                await SeedPreviousFeatureAsync(previousPostgres.Name);
+                // Reload the catalog after seeding so the query uses the published image's compilation.
+                await Docker.RunCheckedAsync(["restart", $"{containerPrefix}-{ports.Active.ToString(CultureInfo.InvariantCulture)}"]);
+                (await WaitForStatusAsync(ReplicaUrl(ports.Active, "/healthz/ready"), 200, TimeSpan.FromMinutes(3)))
+                    .Should().BeTrue("the seeded previous revision must be ready");
+
                 var options = new SelfHostedDeployOptions
                 {
                     Enabled = true,
@@ -525,12 +534,15 @@ public sealed class CandidateTelemetryGateCertificationTests
 
         public async Task<string> CreateDeployAsync(string? candidatePostgresHost = null, int exposureDeadlineSeconds = 300)
         {
+            await AssertPreviousFeatureQueryAsync();
             var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [SelfHostedDeployParameterKeys.Image] = _lane.Candidate.Reference,
                 [SelfHostedDeployParameterKeys.ActivePort] = _activePort.ToString(CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.StandbyPort] = _standbyPort.ToString(CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.ContainerPort] = ReplicaContainerPort.ToString(CultureInfo.InvariantCulture),
+                [RollbackDataPlaneCompletion.FunctionalQueryPathParameterKey] = FunctionalQueryPath,
+                [RollbackDataPlaneCompletion.LocalFunctionalQueryExpectedContainsParameterKey] = PreviousFeatureMarker,
                 ["telemetry.connection"] = TelemetryConnectionId,
                 ["telemetry.prometheus.job"] = PrometheusJob,
                 ["telemetry.warmup_seconds"] = "20",
@@ -595,6 +607,7 @@ public sealed class CandidateTelemetryGateCertificationTests
                 await Task.Delay(TimeSpan.FromSeconds(1));
             }
 
+            await WriteReplicaDiagnosticsAsync();
             throw new TimeoutException(
                 $"Deploy operation '{operationId}' did not reach the expected state within {timeout}. " +
                 $"Last status: {last?.Status.ToString() ?? "(missing)"} ({last?.CurrentPhase}).");
