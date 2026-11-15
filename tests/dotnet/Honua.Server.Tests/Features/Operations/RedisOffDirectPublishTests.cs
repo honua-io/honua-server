@@ -433,7 +433,7 @@ public sealed class RedisOffDirectPublishTests
 
     private static TestMetadataV2GraphProvider StyleGraph()
         => new TestMetadataV2GraphBuilder()
-            .AddResource("res-parcels", "Parcels Dataset", spatial: new MetadataV2ResourceSpatial
+            .AddResource("res-parcels", "Parcels Dataset", spatial: new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Polygon,
                 SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },

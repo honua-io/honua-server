@@ -173,6 +173,57 @@ public sealed class OpsNotificationServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task TryNotify_WithoutDeliverableChannel_DoesNotConsumeOutboxIdentity()
+    {
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var sut = Create(outbox, out _, out var breaker, enabled: true, channels: ["webhook"], circuitThreshold: 1);
+        breaker.RecordDeadLetter(AlertChannelType.Webhook, DateTimeOffset.UtcNow);
+
+        (await sut.TryNotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None)).Should().BeFalse();
+
+        await outbox.DidNotReceive().CommitEvaluationAsync(
+            Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(), Arg.Any<IReadOnlyList<AlertOutboxEntry>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task TryNotify_AcceptedOrPreviouslyAcceptedIdentity_ReturnsTrue()
+    {
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var sut = Create(outbox, out _, out _, enabled: true, channels: ["webhook"]);
+        (await sut.TryNotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None)).Should().BeTrue();
+        outbox.CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create(false));
+        (await sut.TryNotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None)).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task TryNotify_DisabledOrBelowThreshold_ReturnsFalseWithoutPersisting()
+    {
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var disabled = Create(outbox, out _, out _, enabled: false, channels: ["webhook"]);
+        var filtered = Create(outbox, out _, out _, enabled: true, channels: ["webhook"], minSeverity: AlertSeverity.Critical);
+        (await disabled.TryNotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None)).Should().BeFalse();
+        (await filtered.TryNotifyAsync(Notification(AlertSeverity.Warning), CancellationToken.None)).Should().BeFalse();
+        await outbox.DidNotReceive().CommitEvaluationAsync(
+            Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(), Arg.Any<IReadOnlyList<AlertOutboxEntry>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task TryNotify_OutboxUnavailable_PropagatesFailureForDurableRetry()
+    {
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var sut = Create(outbox, out _, out _, enabled: true, channels: ["webhook"]);
+        outbox.CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ImmutableArray<bool>>(new InvalidOperationException("outbox unavailable")));
+        var act = async () => await sut.TryNotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
     private static OpsNotification Notification(AlertSeverity severity)
         => new()
         {

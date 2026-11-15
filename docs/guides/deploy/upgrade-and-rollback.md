@@ -63,7 +63,7 @@ need editing. Keep existing hashes and script names immutable. A new pin does no
 extend the frozen reader baseline or exempt a script from contract checks. Hashes
 are uppercase SHA-256 over UTF-8 SQL with LF line endings.
 From rc.2, a migration carrying `honua:reader-incompatible` or classified as
-contracting fails CI unless its exact name and hash match the release boundary.
+contract by the reader fails CI unless its exact name and hash match the release boundary.
 Every migration numbered above that boundary (server 145, raster 008) must declare `expand` and be accepted
 by the rc.2 reader. A compatibility-review annotation cannot waive these rules.
 Redesign incompatible changes as additive migrations with compatible application
@@ -75,6 +75,16 @@ truncation. Historical scripts that acquire a contract classification under thes
 broader checks use their exact frozen name and hash as the review record; their SQL
 is never rewritten to add annotations. They still require contract-apply approval
 when pending against a nonempty migration journal. Fresh installs remain unaffected.
+
+Reader compatibility and contract-apply approval are separate checks. The reader
+recognizes one reviewed removal of eight optional feature indexes, pinned by its
+normalized SQL hash and the numbered `RemoveUnusedFeatureIndexes.sql` basename.
+Its canonical SQL is `eng/schema/remove-unused-feature-indexes.sql`; this resource
+does not run as a migration. The removal remains contract-classified for upgrade
+approval, while a reader containing this review can verify its forward declaration.
+Other names or changed SQL remain refused. Deploy the prepared reader before
+introducing the separate removal migration, then prove rollback with that reader's
+published image. Readers predating this review still refuse the removal.
 
 The release promise journey must retain the GP operation ID before each update
 or rollback, wait for that same job afterward, and verify the decoded output and

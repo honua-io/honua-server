@@ -68,6 +68,22 @@ public sealed class DatabaseMigrationSafetyTests
     }
 
     [Theory]
+    [InlineData("", true)]
+    [InlineData("\nDROP TABLE honua.features;", false)]
+    [InlineData("\n-- changed", false)]
+    public void ExpandOnlyGate_ReviewedIndexRemoval_RequiresExactSql(string suffix, bool accepted)
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        const string name = "src/Honua.Server/Migrations/999_RemoveUnusedFeatureIndexes.sql";
+        var sql = File.ReadAllText(Path.Join(root, "eng", "schema", "remove-unused-feature-indexes.sql")) + suffix;
+        var scripts = new Dictionary<string, string> { [name] = sql };
+        var pins = new MigrationPins(new(), new() { [name] = MigrationHash(sql) });
+
+        MigrationSafetyClassifier.Classify(name, sql).IsBreaking.Should().BeTrue();
+        RollingUpgradeViolations(scripts, pins).Any().Should().Be(!accepted);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void ExpandOnlyGate_ChangedOrDeletedBaselineMigration_IsRejected(bool deleted)
@@ -301,7 +317,8 @@ public sealed class DatabaseMigrationSafetyTests
             }
             var incompatible = Regex.IsMatch(sql, @"^[ \t]*--[ \t]*honua:reader-incompatible\b",
                 RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
-            var contracting = MigrationSafetyClassifier.Classify(name, sql).IsBreaking;
+            var contracting = MigrationSafetyClassifier.Classify(name, sql).IsBreaking
+                && MigrationReaderCompatibility.Declare(name, sql).Classification != MigrationReaderCompatibilityClassification.Expand;
             if ((incompatible || (contracting && !baseline.ContainsKey(name))) &&
                 (!boundary.TryGetValue(Path.GetFileName(name), out var boundaryHash) || boundaryHash != MigrationHash(sql)))
             {

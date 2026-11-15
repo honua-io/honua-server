@@ -99,7 +99,8 @@ class GeneratedGraphFreshness(unittest.TestCase):
                 for name in ('generate-feature-catalog.sh', 'generate-admin-operation-parity-exports.sh',
                              'generate-mcp-tool-roster.sh', 'generate-geoservices-parity.sh'):
                     (ci / name).write_text('exit 0\n')
-                for name in ('verify-admin-operation-parity.py', 'generate-capability-matrix.py'):
+                for name in ('verify-admin-operation-parity.py', 'generate-capability-matrix.py',
+                             'generate-workflow-inventory.py'):
                     (ci / name).write_text('pass\n')
                 (ci / 'generate-capability-concepts.py').write_text(
                     'from pathlib import Path\n'
