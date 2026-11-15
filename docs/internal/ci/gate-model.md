@@ -1118,16 +1118,25 @@ aggregate dependency, workflow, or shard definition.
 
 ### Feature stream default application lifetime
 
-FeatureStreamEndpointsTests creates the shared default application per case but
-starts it lazily: only cases that call `StartDefaultApplicationAsync()` start
-it, and only those cases dispose it. Cases that need a custom configuration
-build, start and dispose their own application inside the case, so they no
-longer pay for a default application they never use. Each case still gets its
-own isolated event store, sessions and credentials.
-All cases and assertions remain in the Server Features Streaming Transports and
-Server Features Streaming Endpoints 1, 2, and 4 shards on selected PR runs and
-twice-daily full trunk runs. This changes no runner count, required check name,
-required aggregate dependency, workflow, or shard definition.
+`FeatureStreamEndpointsTests` shares one seeded Pro application through its
+class fixture. Sequential default-host cases clear sessions and create a fresh admin
+client. The production PostgreSQL event log and its monotonic generations remain
+intact, as they do across separate application lifetimes. Cases that replace licensing,
+metadata or other configuration still build and dispose their own application.
+The shared host uses a one-hour heartbeat interval to avoid unsolicited frames
+between cases; scheduled-heartbeat cases retain their separate configured hosts.
+Credential expiry settings and every assertion are unchanged.
+
+Paired build-host runs of the complete class passed all 126 cases: 802 seconds
+before and 632 seconds after the shared-host change, saving 170 seconds
+(2.83 runner-minutes) with one
+test process in each run. These historical measurements precede the PostgreSQL
+event-log migration and are not timings of the current implementation. The final
+head retains the production database store and is validated in the PR Gate. Full-shard
+elapsed savings have not yet been measured.
+All cases remain in the selected streaming shards and twice-daily full trunk
+runs. This changes no runner count, required check name, required aggregate
+dependency, workflow or shard definition.
 
 ### FeatureServer RBAC denial fixture lifetime
 

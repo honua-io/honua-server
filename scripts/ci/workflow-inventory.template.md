@@ -332,8 +332,8 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 | `routing-utility-contract.yml` | Routing Utility Contract | `pull_request` (base `trunk`, GPServer/NAServer discovery and test paths) | Runs the provider-level routing descriptor, catalog collision/access guards, and existing routing utility, metadata, anonymous, SOAP and FindRoutes contracts in the GeoServices component assembly. Requires every new source method and every selected result to execute and pass; retains TRX proof. |
 | `featureserver-relationship-contract.yml` | FeatureServer Relationship Contract | `pull_request` (base `trunk`, relationship projection/test/workflow paths) | Runs service and layer relationship HTTP regressions in the actual GeoServices assembly using the existing .NET setup and pinned PostGIS fixture. Requires every source-derived case to execute and pass, including reciprocal directional names, identity collisions, and authorization visibility; retains TRX proof. |
 | `gp-customcode-runtime.yml` | GP Custom Code Runtime | path-filtered `pull_request`, `workflow_dispatch` | Executes Python and .NET standalone custom-code harness regression suites, including real loopback broker uploads; retains JUnit/TRX evidence. No live cloud qualification is implied. |
-| `gp-scoped-key-contract.yml` | GP Scoped Key Contract | `pull_request` (base `trunk`, GP execution/authentication/test paths) | Runs shared job authorization and terminal regressions plus GP REST/SOAP endpoint and durable-runtime tests in their actual assemblies with PostGIS and Redis fixtures. Requires every new source-derived scoped key case to execute and pass; retains TRX proof. |
-| `ai-admission-contract.yml` | AI Admission Contract | `pull_request` (base `trunk`, AI admission/reporting/control and relevant project/fixture paths), `workflow_dispatch` | Bounded feature evidence on one Docker-capable runner: sequential Release tests for Server reporting and canonical admission controls/toolset, Core reporting, accepted Studio prompt budgets, Studio certification endpoints, and PostgreSQL admission scopes/lifecycle. Requires positive execution of every named class, at least two prompt-budget, three certification endpoint and sixteen PostgreSQL cases, and zero failures/skips; retains raw TRX and tested commit identity. Redis backend/coordinator cases remain in Hosting Components. Adds no required context, routing-cap increase or installed/rollback qualification. |
+| `gp-scoped-key-contract.yml` | GP Scoped Key Contract | `pull_request` (base `trunk`, GP execution/authentication/test paths) | Runs shared job authorization and terminal regressions plus GP REST/SOAP endpoint and durable-runtime tests in their actual assemblies with PostGIS and cache fixtures. Requires every new source-derived scoped key case to execute and pass; retains TRX proof. |
+| `ai-admission-contract.yml` | AI Admission Contract | `pull_request` (base `trunk`, AI admission/reporting/control and relevant project/fixture paths), `workflow_dispatch` | Bounded feature evidence on one Docker-capable runner: sequential Release tests for Server reporting and canonical admission controls/toolset, Core reporting, accepted Studio prompt budgets, Studio certification endpoints, and PostgreSQL admission scopes/lifecycle. Requires positive execution of every named class, at least two prompt-budget, three certification endpoint and sixteen PostgreSQL cases, and zero failures/skips; retains raw TRX and tested commit identity. Distributed-cache backend/coordinator cases remain in Hosting Components. Adds no required context, routing-cap increase or installed/rollback qualification. |
 | `portal-group-discovery-contract.yml` | Portal Group Discovery Contract | `pull_request` (base `trunk`, Portal read/store/test paths) | Runs actual Portal user/group HTTP integration and existing sharing/read regressions with PostGIS. Requires each new source-derived paging and denial case to execute and pass; controlled test-store state is not native production content evidence. |
 
 | Workflow file | Name | Triggers | Notes |
@@ -1036,6 +1036,28 @@ See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference
 The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
 
 Quarantine publication scans retained CI/PR Gate histories twice hourly and on trusted default-branch manual dispatch, rather than once per completion, to amortize API discovery without dropping rerun evidence.
+
+### Feature stream default application lifetime
+
+`FeatureStreamEndpointsTests` shares one seeded Pro application through its
+class fixture. Sequential default-host cases clear sessions and create a fresh admin
+client. The production PostgreSQL event log and its monotonic generations remain
+intact, as they do across separate application lifetimes. Cases that replace licensing,
+metadata or other configuration still build and dispose their own application.
+The shared host uses a one-hour heartbeat interval to avoid unsolicited frames
+between cases; scheduled-heartbeat cases retain their separate configured hosts.
+Credential expiry settings and every assertion are unchanged.
+
+Paired build-host runs of the complete class passed all 126 cases: 802 seconds
+before and 632 seconds after the shared-host change, saving 170 seconds
+(2.83 runner-minutes) with one
+test process in each run. These historical measurements precede the PostgreSQL
+event-log migration and are not timings of the current implementation. The final
+head retains the production database store and is validated in the PR Gate. Full-shard
+elapsed savings have not yet been measured.
+All cases remain in the selected streaming shards and twice-daily full trunk
+runs. This changes no runner count, required check name, required aggregate
+dependency, workflow or shard definition.
 
 ### Advisory heavy compute admission
 
