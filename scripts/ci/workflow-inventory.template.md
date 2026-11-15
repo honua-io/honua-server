@@ -1,5 +1,7 @@
 # CI Workflow Inventory
 
+Shared OGC capabilities XML tests run in a standalone metadata shard, leaving the WMS class/complement partition and its legacy budgets unchanged.
+
 The latest full-run capacity audit partitions eleven additional parents into 26
 children: Scene I3S Resources, OData Advanced and Filters, MCP and Sessions,
 Admin Authorization, Admin Release Control, Collaboration Mobile and Identity,

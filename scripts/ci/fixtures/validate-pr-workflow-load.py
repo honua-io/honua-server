@@ -166,7 +166,7 @@ class PullRequestLoadTests(unittest.TestCase):
         if "server-test-producer" in jobs:
             dependencies.add("server-test-producer")
         self.assertEqual(set(required["needs"]), dependencies)
-        verdict = next(step for step in required["steps"] if "run" in step)
+        verdict = next(step for step in required["steps"] if step.get("name") == "Require build, tests, format, CI router validation, and affected shards")
 
         def run_verdict(results, event_environment):
             environment = dict(os.environ, **event_environment)
