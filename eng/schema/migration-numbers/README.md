@@ -17,12 +17,6 @@ deletions and renames of existing hash pins against trusted trunk, including pai
 SQL-and-pin edits. Pins added only on newer trunk do not force stale branches to
 refresh.
 
-## Atomic policy cutover
-
-This change removes the old shared hash manifest while installing the number guard.
-Existing migration PRs that modify that manifest must resolve its deletion before
-merging and adopt individual pins and number claims. An audit on 14 November 2026
-found one open migration PR without a manifest edit: #7692 adds
-`168_AddAgentAuditActor.sql`. Its number is reserved here so a newly admitted PR
-cannot reuse it while that older PR retains its successful checks. The reservation
-is immutable like every other claim; it does not certify the migration's hash.
+Number 168 in `src/Honua.Server/Migrations` is reserved for
+`168_AddAgentAuditActor.sql`. That claim is immutable, like every other claim,
+and it does not certify the migration's hash. Do not reuse 168.

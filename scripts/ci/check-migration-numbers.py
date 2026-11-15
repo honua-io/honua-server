@@ -33,10 +33,25 @@ def changed_existing_pins(ancestor, head, trunk):
     return sorted(path for path in changed if path and path in inherited | candidate)
 
 
+def reserved_numbers(trunk):
+    """Claim files reserve a number even when the SQL has not landed yet."""
+    root = "eng/schema/migration-numbers"
+    result = {}
+    for path in git_paths("ls-tree", "-r", "--name-only", "-z", trunk, "--", root):
+        item = PurePosixPath(path)
+        if not re.fullmatch(r"\d+\.txt", item.name):
+            continue
+        directory = str(item.relative_to(root).parent)
+        result.setdefault((directory, int(item.stem)), []).append(path)
+    return result
+
+
 def check(base, head, trunk):
     ancestor = subprocess.check_output(["git", "merge-base", base, head], text=True).strip()
     additions = numbered(git_paths("diff", "--no-renames", "--diff-filter=A", "--name-only", "-z", ancestor, head, "--", *DIRECTORIES))
     existing = numbered(git_paths("ls-tree", "-r", "--name-only", "-z", trunk, "--", *DIRECTORIES))
+    for key, paths in reserved_numbers(trunk).items():
+        existing.setdefault(key, []).extend(paths)
     failures = []
     changed_pins = changed_existing_pins(ancestor, head, trunk)
     if changed_pins:

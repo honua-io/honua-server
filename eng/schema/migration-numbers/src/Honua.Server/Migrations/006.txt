@@ -1,1 +1,0 @@
-src/Honua.Server/Migrations/006_CreateSecureConnectionRegistry.sql
