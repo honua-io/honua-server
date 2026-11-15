@@ -87,8 +87,8 @@ public sealed class GrpcEditorTrackingIntegrationTests : IAsyncLifetime
         Text(inserted, "created_user").Should().NotBe(Forged).And.Be(Text(inserted, "last_edited_user"));
         DateOnly.ParseExact(Text(inserted, "created_date")![..10], "yyyy-MM-dd", CultureInfo.InvariantCulture)
             .Should().BeOnOrAfter(DateOnly.FromDateTime(before.UtcDateTime));
-        var insertedAt = inserted.Attributes["last_edited_date"].DatetimeValue;
-        insertedAt.Should().BeGreaterThanOrEqualTo(before.ToUnixTimeMilliseconds());
+        var insertedAt = Instant(inserted, "last_edited_date");
+        insertedAt.Should().BeOnOrAfter(before.AddMilliseconds(-1));
 
         var updateRequest = new Proto.ApplyEditsRequest { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId };
         updateRequest.Updates.Add(ForgedFeature(added.ObjectId, name: "renamed"));
@@ -99,7 +99,7 @@ public sealed class GrpcEditorTrackingIntegrationTests : IAsyncLifetime
         Text(updated, "created_user").Should().Be(Text(inserted, "created_user"));
         Text(updated, "created_date").Should().Be(Text(inserted, "created_date"));
         Text(updated, "last_edited_user").Should().NotBe(Forged);
-        updated.Attributes["last_edited_date"].DatetimeValue.Should().BeGreaterThanOrEqualTo(insertedAt);
+        Instant(updated, "last_edited_date").Should().BeOnOrAfter(insertedAt);
     }
 
     private static Proto.Feature ForgedFeature(long id, string name)
@@ -124,6 +124,21 @@ public sealed class GrpcEditorTrackingIntegrationTests : IAsyncLifetime
             ReturnGeometry = false
         };
         return (await _client!.QueryFeaturesAsync(request, _headers)).Features.Should().ContainSingle().Subject;
+    }
+
+    // A timestamp attribute in whichever form the store returns it: epoch milliseconds or ISO text.
+    private static DateTimeOffset Instant(Proto.Feature feature, string name)
+    {
+        feature.Attributes.Should().ContainKey(name);
+        var value = feature.Attributes[name];
+        return value.ValueCase switch
+        {
+            Proto.AttributeValue.ValueOneofCase.DatetimeValue => DateTimeOffset.FromUnixTimeMilliseconds(value.DatetimeValue),
+            Proto.AttributeValue.ValueOneofCase.Int64Value => DateTimeOffset.FromUnixTimeMilliseconds(value.Int64Value),
+            Proto.AttributeValue.ValueOneofCase.StringValue => DateTimeOffset.Parse(
+                value.StringValue, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal),
+            _ => throw new InvalidOperationException($"'{name}' was returned as {value.ValueCase}."),
+        };
     }
 
     // Null when the attribute is absent or null, so anonymous fixture callers compare cleanly.
