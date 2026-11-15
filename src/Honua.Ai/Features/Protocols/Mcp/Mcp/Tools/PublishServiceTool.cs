@@ -35,7 +35,7 @@ internal sealed class PublishServiceTool : IMcpTool
     {
         Name = ToolName,
         Title = "Publish service",
-        Description = "Publish a table as a hosted layer/service via service.publish and its operator-approval gate. "
+        Description = "Publish a table as a Layer in a Service via service.publish and its operator-approval gate. "
             + "Handle: Completed = service URI, layer id, metadata revision; "
             + "RequiresApproval = approval lane to wait on; Queued = durable job id.",
         InputSchema = McpToolSchemas.PublishServiceArgumentSchema,

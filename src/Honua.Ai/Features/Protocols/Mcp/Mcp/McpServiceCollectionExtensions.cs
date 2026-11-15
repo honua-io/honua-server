@@ -178,7 +178,7 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishServiceTool>());
 
         // honua_publish_result (#2482): promotes a completed analysis job's
-        // materialized artifact into a hosted layer. It resolves the job result
+        // materialized artifact into a Layer. It resolves the job result
         // package through IGeoprocessingJobService (composed before this method,
         // like every other job-backed tool) and routes the promotion through the
         // same canonical IOperationInvoker (service.publish) as PublishServiceTool.
