@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Schema;
@@ -52,8 +53,25 @@ public sealed partial class PublishedOperationToolTests
             new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System), [executor],
             new AllowAllPolicyDecisionPoint(), TimeProvider.System, bridge);
         var tool = new PublishedOperationTool(operation, "catalog", NullLogger.Instance);
-        var result = await tool.InvokeAsync(Context(dispatcher, authorization: ProposalAuthorization(), roles: ["admin"]),
-            Args("""{"name":"Survey","id":"folder","serviceName":"test","folderId":null,"If-Match":"etag","approvedProposalId":"forged","approvedPlanHash":"forged"}"""), default);
+        var http = Context(dispatcher, authorization: ProposalAuthorization(), roles: ["admin"]);
+        var forged = () => tool.InvokeAsync(http,
+            Args("""{"id":"folder","If-Match":"etag","approvedProposalId":"forged","approvedPlanHash":"forged"}"""), default);
+        await forged.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingValidationException>();
+        bridge.Calls.Should().Be(0);
+
+        // Send only the inputs this operation advertises (plus the routing serviceName).
+        var advertised = tool.Describe().InputSchema.GetProperty("properties");
+        var candidate = JsonNode.Parse("""{"name":"Survey","id":"folder","serviceName":"test","folderId":null,"If-Match":"etag"}""")!.AsObject();
+        var supplied = new JsonObject();
+        foreach (var (key, value) in candidate)
+        {
+            if (key == "serviceName" || advertised.TryGetProperty(key, out _))
+            {
+                supplied[key] = value?.DeepClone();
+            }
+        }
+
+        var result = await tool.InvokeAsync(http, Args(supplied.ToJsonString()), default);
         result.IsError.Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("RequiresApproval");
         bridge.Calls.Should().Be(1);

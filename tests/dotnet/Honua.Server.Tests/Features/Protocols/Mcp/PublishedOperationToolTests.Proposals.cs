@@ -34,7 +34,14 @@ public sealed partial class PublishedOperationToolTests
         var authorization = ProposalAuthorization();
         var http = Context(dispatcher, authorization: authorization, roles: ["admin"]);
         http.Request.Headers["Idempotency-Key"] = "fixture-6662";
-        var args = operationId.EndsWith("create", StringComparison.Ordinal) ? Args("""{"name":"synthetic","approvedProposalId":"forged","approvedPlanHash":"forged","principalId":"forged-actor"}""") : Args("""{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","approvedProposalId":"forged"}""");
+        var create = operationId.EndsWith("create", StringComparison.Ordinal);
+        var forged = create
+            ? Args("""{"name":"synthetic","approvedProposalId":"forged","approvedPlanHash":"forged","principalId":"forged-actor"}""")
+            : Args("""{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","approvedProposalId":"forged"}""");
+        // Forged approval evidence is not part of the input schema, so it is refused outright.
+        await ((Func<Task>)(() => tool.InvokeAsync(http, forged, default))).Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingValidationException>();
+        bridge.Calls.Should().Be(0);
+        var args = create ? Args("""{"name":"synthetic"}""") : Args("""{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}""");
         var result = await tool.InvokeAsync(http, args, default);
         result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("RequiresApproval");
         bridge.Context!.PrincipalId.Should().NotBeNullOrWhiteSpace().And.NotBe("forged-actor");
@@ -44,7 +51,7 @@ public sealed partial class PublishedOperationToolTests
         var retry = await tool.InvokeAsync(http, args, default);
         retry.StructuredContent!.Value.GetProperty("proposalId").GetString().Should().Be("proposal-6662");
         bridge.Calls.Should().Be(1); executor.SubmitCount.Should().Be(0);
-        var changed = await tool.InvokeAsync(http, Args("""{"name":"changed","id":"different"}"""), default);
+        var changed = await tool.InvokeAsync(http, create ? Args("""{"name":"changed"}""") : Args("""{"id":"ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee"}"""), default);
         changed.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Failed");
         bridge.Calls.Should().Be(1); executor.SubmitCount.Should().Be(0);
     }
