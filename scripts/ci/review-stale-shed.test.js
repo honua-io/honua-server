@@ -217,8 +217,9 @@ test('review helpers queue superseded events per PR and skip draft payloads', ()
   // reconcile to the live head.
   assert.match(gate, /group: review-resolve-pr-\$\{\{[^\n]*\n\s*cancel-in-progress: false\n\s*queue: max/);
   assert.match(bridge, /group: review-event-bridge-pr-\$\{\{[^\n]*\n(\s*#[^\n]*\n)*\s*cancel-in-progress: false\n\s*queue: max/);
-  assert.match(gate, /group: review-gate-\$\{\{ needs\.resolve\.outputs\.pr \}\}[^\n]*[\s\S]*?\n\s*cancel-in-progress: false\n\s*queue: max/);
-  assert.doesNotMatch(gate + bridge, /cancel-in-progress: (true|\$\{\{)/);
+  assert.match(gate, /group: review-gate-\$\{\{ needs\.resolve\.outputs\.pr \}\}\n(\s*#[^\n]*\n)*\s*cancel-in-progress: false\n\s*queue: max/);
+  const cancellation = [...(gate + bridge).matchAll(/^\s*cancel-in-progress:\s*(.*?)\s*$/gm)];
+  assert.deepEqual(cancellation.map(match => match[1]), ['false', 'false', 'false']);
   assert.match(gate, /!github\.event\.pull_request \|\| !github\.event\.pull_request\.draft/);
   assert.match(bridge, /if: .*&& !github\.event\.pull_request\.draft/);
   // CodeQL already implements the same admission policy, including ready events.

@@ -101,12 +101,18 @@ jobs:
       # head cut before the inventory generator existed lacks it. That
       # head's committed inventory is then the one it ships and is validated as
       # it is, instead of failing on a missing script the PR never touched.
+      # A head that left trunk after the generator existed must still carry it.
       - name: Regenerate trunk-owned documentation for validation
         run: |
           inventory=scripts/ci/generate-workflow-inventory.py
           if [[ -f "${inventory}" ]]; then
             python3 "${inventory}"
           else
+            fork_point=$(git merge-base HEAD origin/trunk)
+            if git cat-file -e "${fork_point}:${inventory}" 2>/dev/null; then
+              echo "::error::${inventory} existed where this head left trunk; a head must not remove it."
+              exit 1
+            fi
             echo "::notice::${inventory} is not on this PR head; validating its committed inventory."
           fi
           python3 scripts/ci/generate-capability-concepts.py

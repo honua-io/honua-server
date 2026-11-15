@@ -90,6 +90,14 @@ def validate_aggregate_review_status(required_job: str, revalidation_condition: 
 
 
 
+def require_queued_helpers(source: str, label: str, jobs: int) -> None:
+    """Every concurrency block of a review helper must queue, whatever the YAML spelling."""
+    cancellation = re.findall(r"^\s*cancel-in-progress:\s*(.*?)\s*$", source, re.MULTILINE)
+    queues = re.findall(r"^\s*queue:\s*(.*?)\s*$", source, re.MULTILINE)
+    if cancellation != ["false"] * jobs or queues != ["max"] * jobs:
+        raise AssertionError(f"{label} helpers must queue every superseded event, never cancel it red")
+
+
 def main() -> None:
     pr_gate = read_text(PR_GATE)
     review_gate = read_text(REVIEW_GATE)
@@ -235,12 +243,8 @@ def main() -> None:
     )
     # Superseded review helpers queue instead of cancelling: a cancelled run is a
     # red mark on the PR page. Every queued run re-reads live review state.
-    for source, label in [(review_gate, "review gate"), (review_bridge, "review bridge")]:
-        if "cancel-in-progress: true" in source or "cancel-in-progress: ${{" in source:
-            raise AssertionError(f"{label} helpers must queue superseded events, not cancel them red")
-    if (review_gate.count("queue: max") != QUEUED_REVIEW_GATE_JOBS
-            or review_bridge.count("queue: max") != QUEUED_REVIEW_BRIDGE_JOBS):
-        raise AssertionError("review resolver, attestation and bridge must queue every superseded event")
+    require_queued_helpers(review_gate, "review gate", QUEUED_REVIEW_GATE_JOBS)
+    require_queued_helpers(review_bridge, "review bridge", QUEUED_REVIEW_BRIDGE_JOBS)
     require(
         review_gate,
         "group: review-gate-${{ needs.resolve.outputs.pr }}",

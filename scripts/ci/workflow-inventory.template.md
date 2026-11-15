@@ -194,9 +194,14 @@ Auto-merge keeps `cancel-in-progress: false` and `queue: max` so live eligibilit
 is applied in event order. Review helpers (resolver, attestation, bridge) queue superseded events
 with `cancel-in-progress: false` and `queue: max`, because a cancelled
 helper run is a red mark on the PR page. Each queued run re-reads live
-review evidence and admission state; a draft head fails final review
-revalidation. Closed/draft review subjects finish neutrally before
-publication. Missing admission prerequisites finish the
+review evidence and admission state. A run that starts on a closed or draft
+subject finishes neutrally before publication. One red path remains: an
+attestation already in flight when the pull request turns draft or its head
+moves fails final revalidation, where it used to be cancelled. A burst of
+events is no longer collapsed: each runs its resolver and attestation in
+turn, seconds each; up to 100 wait per pull request, later arrivals are
+cancelled, and a waiting run still re-reads live state after them.
+Missing admission prerequisites finish the
 attestation helper neutrally while the separate required `Review Gate` status
 remains failing for blocking reviews. Skipping a draft publishes no success;
 `ready_for_review` re-enters trusted attestation on the current head. API and
@@ -283,7 +288,8 @@ action before source ownership evaluation and compilation.
 Outside `PR Gate`, `docs-link-gate.yml` keeps firing on `docs/**/*.md`, the
 data files its checkers read, and `README.md`: links, anchors, and the gate that rejects
 added raw HTTP shell examples. A PR head cut before the inventory generator
-existed validates the inventory it committed.
+existed validates the inventory it committed; a head that left trunk after
+the generator existed and lacks it fails.
 Review-first enforcement is unchanged, because an enforced attempt 1
 fails at `Await exact-head review` before the classifier runs. Each docs-only
 job records `docs_only=true` as a step output and the summary line

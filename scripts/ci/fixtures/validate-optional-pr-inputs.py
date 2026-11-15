@@ -18,6 +18,41 @@ def workflow(name):
     return yaml.load((ROOT / ".github/workflows" / name).read_text(), Loader=yaml.BaseLoader)
 
 
+INVENTORY = "generate-workflow-inventory.py"
+CONCEPTS = "generate-capability-concepts.py"
+
+
+def write_generator(work, name, body=None):
+    (work / "scripts/ci").mkdir(parents=True, exist_ok=True)
+    (work / "scripts/ci" / name).write_text(
+        body or f"from pathlib import Path\nPath('{name}.ran').write_text('')\n")
+
+
+def git(work, *arguments):
+    subprocess.run(["git", "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
+                    "-c", "commit.gpgsign=false", *arguments],
+                   cwd=work, check=True, capture_output=True)
+
+
+def checkout_with_fork_point(work, generators):
+    """Create a head checkout whose origin/trunk fork point carries the named generators."""
+    git(work, "init", "-q")
+    for name in generators:
+        write_generator(work, name)
+    git(work, "add", "-A")
+    git(work, "commit", "-q", "-m", "fork point")
+    git(work, "update-ref", "refs/remotes/origin/trunk", "HEAD")
+
+
+def regenerate(work):
+    """Run the Docs Link Gate regeneration step exactly as the workflow declares it."""
+    steps = workflow("docs-link-gate.yml")["jobs"]["check"]["steps"]
+    script = next(step["run"] for step in steps
+                  if step.get("name") == "Regenerate trunk-owned documentation for validation")
+    return subprocess.run(["bash", "-e", "-c", script], cwd=work,
+                          capture_output=True, text=True, check=False)
+
+
 def admitted(name, path):
     patterns = workflow(name)["on"]["pull_request"]["paths"]
     return any(path_matches(path, pattern) for pattern in patterns)
@@ -60,37 +95,43 @@ class OptionalInputTests(unittest.TestCase):
         self.assertTrue(path_matches("src/Build.props", "**/*.props"))
         self.assertFalse(path_matches("src/Nested.sln", "*.sln"))
 
-    def test_docs_regeneration_tolerates_heads_without_the_inventory_generator(self):
-        steps = workflow("docs-link-gate.yml")["jobs"]["check"]["steps"]
-        script = next(step["run"] for step in steps
-                      if step.get("name") == "Regenerate trunk-owned documentation for validation")
-
-        def run(work):
-            return subprocess.run(["bash", "-e", "-c", script], cwd=work,
-                                  capture_output=True, text=True, check=False)
-
-        def generator(work, name, body=None):
-            (work / "scripts/ci" / name).write_text(
-                body or f"from pathlib import Path\nPath('{name}.ran').write_text('')\n")
-
+    def test_docs_regeneration_tolerates_heads_cut_before_the_inventory_generator(self):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
-            (work / "scripts/ci").mkdir(parents=True)
-            generator(work, "generate-capability-concepts.py")
-            missing = run(work)
+            checkout_with_fork_point(work, [CONCEPTS])
+            missing = regenerate(work)
             self.assertEqual(missing.returncode, 0, missing.stderr)
             self.assertIn("::notice::", missing.stdout)
-            self.assertTrue((work / "generate-capability-concepts.py.ran").exists())
-            generator(work, "generate-workflow-inventory.py")
-            present = run(work)
+            self.assertTrue((work / f"{CONCEPTS}.ran").exists())
+            write_generator(work, INVENTORY)
+            present = regenerate(work)
             self.assertEqual(present.returncode, 0, present.stderr)
             self.assertNotIn("::notice::", present.stdout)
-            self.assertTrue((work / "generate-workflow-inventory.py.ran").exists())
-            generator(work, "generate-workflow-inventory.py", "raise SystemExit(3)\n")
-            self.assertNotEqual(run(work).returncode, 0, "a present inventory generator that fails must fail")
-            generator(work, "generate-workflow-inventory.py")
-            (work / "scripts/ci/generate-capability-concepts.py").unlink()
-            self.assertNotEqual(run(work).returncode, 0, "the capability concepts generator stays mandatory")
+            self.assertTrue((work / f"{INVENTORY}.ran").exists())
+            write_generator(work, INVENTORY, "raise SystemExit(3)\n")
+            self.assertNotEqual(regenerate(work).returncode, 0, "a present inventory generator that fails must fail")
+            write_generator(work, INVENTORY)
+            (work / "scripts/ci" / CONCEPTS).unlink()
+            self.assertNotEqual(regenerate(work).returncode, 0, "the capability concepts generator stays mandatory")
+
+    def test_docs_regeneration_rejects_a_head_that_removes_the_inventory_generator(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            checkout_with_fork_point(work, [CONCEPTS, INVENTORY])
+            (work / "scripts/ci" / INVENTORY).unlink()
+            removed = regenerate(work)
+            self.assertNotEqual(removed.returncode, 0)
+            self.assertIn("::error::", removed.stdout)
+            self.assertFalse((work / f"{CONCEPTS}.ran").exists())
+
+    def test_docs_regeneration_fails_closed_without_a_trunk_fork_point(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            checkout_with_fork_point(work, [CONCEPTS])
+            git(work, "update-ref", "-d", "refs/remotes/origin/trunk")
+            unknown = regenerate(work)
+            self.assertNotEqual(unknown.returncode, 0)
+            self.assertNotIn("::notice::", unknown.stdout)
 
     def test_runtime_links_still_gate_affected_and_full_trunk_runs(self):
         name = "docs-link-gate.yml"
