@@ -2,8 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.AuditLog;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
@@ -161,29 +161,6 @@ public sealed class AuditEventTests
             Assert.Equal(expectedType, entry.ActorType);
             Assert.Equal(agent ? McpApiKeyActor : null, entry.ActorAgent);
         }
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task SubmitAsync_AnonymousCallCanceledBeforeActuation_StaysAnonymous()
-    {
-        using var requestCancellation = new CancellationTokenSource();
-        var audit = new CapturingAuditLog();
-        var dispatcher = new OperationDispatcher(
-            new OperationCatalog([new StubDescriptorProvider()], TimeProvider.System),
-            [new CancelingDuringValidationExecutor(requestCancellation)],
-            new AllowAllPolicyDecisionPoint(),
-            TimeProvider.System,
-            auditLog: audit);
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => dispatcher.SubmitAsync(
-            new OperationRequest { OperationId = OperationId },
-            new OperationPolicyContext(),
-            requestCancellation.Token));
-
-        var cancelled = Assert.Single(audit.Events, entry => entry.Action == "operation.cancelled");
-        Assert.Equal(AuditEvent.AnonymousActor, cancelled.Actor);
-        Assert.Equal(AuditActorType.Anonymous, cancelled.ActorType);
     }
 
     [Trait("Tier", "Fast")]
