@@ -1023,3 +1023,7 @@ analysis admission use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with
 revision supporting that selector. Each local shell job establishes `TMPDIR`,
 `TEMP` and `TMP` from `RUNNER_TEMP` before checkout. Clearing the variable affects
 new jobs; it does not migrate queued or running jobs.
+
+OpenAPI Contract Governance includes `scripts/ci/lib/python-resolve.sh` in its
+PR paths because `validate-openapi-contracts.sh` sources that helper. This adds
+no jobs for unrelated changes and retains the existing non-draft admission.
