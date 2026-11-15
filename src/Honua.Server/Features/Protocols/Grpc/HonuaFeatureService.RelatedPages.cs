@@ -103,7 +103,8 @@ internal sealed partial class HonuaFeatureService
             };
             var query = plan.Query;
             output.Features.Add(WithGlobalId(GrpcConversionHelpers.ToProtoFeature(projected, query.ReturnGeometry,
-                query.GeometryLimits, plan.Related.ObjectIdFieldName, query.AttributeHiddenFields), feature, query.GlobalIdField));
+                query.GeometryLimits, plan.Related.ObjectIdFieldName, query.AttributeHiddenFields,
+                plan.Related.AttributeFields), feature, query.GlobalIdField));
         }
         return output;
     }

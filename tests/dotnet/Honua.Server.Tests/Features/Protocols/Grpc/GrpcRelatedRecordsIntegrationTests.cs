@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 [Collection("Database")]
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.Query)]
-public sealed class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
+public sealed partial class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Community)
         .OverrideConfiguration(new Dictionary<string, string?>
