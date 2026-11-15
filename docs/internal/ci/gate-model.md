@@ -633,10 +633,9 @@ These workflows run on schedule and can be dispatched manually:
 
 `Review Gate` goes green only on exact-head review evidence from a bot identity
 distinct from the PR author. `scripts/ci/review-gate-evidence.js` owns that
-identity set and is the single source of truth: it exports `ATTESTING_LOGINS`,
-`scripts/ci/merge-train/select.sh` reads it via `--print-logins`, and the
-`.github/workflows/claude-review.yml` lane reads its body template through
-`scripts/ci/claude-review-body.js`. Nothing else may restate a login or a
+identity set and is the single source of truth: it exports `ATTESTING_LOGINS`
+(printable via `--print-logins`) and each identity's clean-comment template.
+Nothing else may restate a login or a
 marker — including this document, which describes the registry rather than
 duplicating it.
 
@@ -661,71 +660,12 @@ only when GitHub additionally types the author as a `Bot`. That is why every
 `reviewerFor(login, typename)` takes two arguments. Dropping `__typename` from
 the query silently disables the Claude identity.
 
-### The Claude lane
+### The Claude lane (retired)
 
-`.github/workflows/claude-review.yml` produces the `claude` half.
-
-**It never runs from the pull request it reviews.** It triggers on `workflow_run`
-(completed `PR Gate`) and on `issue_comment`, both of which execute the
-default-branch copy, so the workflow, the prompt and the `AGENTS.md` the reviewer
-follows all come from trunk. A `pull_request` trigger would hand a candidate its
-own reviewer definition plus the secrets and `id-token: write` — enough to attest
-to itself and to exfiltrate the credentials. `review-gate.yml` uses
-`pull_request_target` + `github.workflow_sha` for the same reason. The PR is
-resolved through `scripts/ci/trusted-pr-workflow-run.js`, which binds the PR and
-its exact head to the immutable GitHub-managed check association and fails closed
-once the PR has moved. The PR tree is checked out into `pr/` as data, with its
-`CLAUDE.md` / `AGENTS.md` / `.claude` / `.github` deleted first so a candidate
-cannot smuggle reviewer instructions through a nested memory file. The diff is
-still untrusted text; the tool allowlist is the control that contains it.
-
-**It cannot merge, push, or edit a workflow.** The action authenticates as the
-Claude GitHub App, whose org installation carries write scopes, so the reviewer
-gets read-only analysis tools plus exactly two append-only publishing tools
-(`gh pr comment` and inline review comments) — no `gh api`, no general Bash, no
-git. `validate-single-merge-authority.sh` cannot see runtime API calls, so this
-allowlist is the control, and `scripts/ci/claude-review-lane.test.js` asserts it.
-The workflow's own `GITHUB_TOKEN` stays read-only.
-
-Both reviewer invocations admit only `dependabot[bot]`, `github-actions[bot]`,
-and `honua-io-bot` as automation actors. Bot-triggered runs still pass the same
-trusted default-branch and exact-head resolver; the fallback uses the same actor
-allowlist as the primary review.
-
-**It only ever posts comments — never a review verdict.** A
-`CHANGES_REQUESTED` is identity-scoped and is cleared only by a *newer positive
-from the same identity*; an optional reviewer that later stops running (secret
-revoked, App uninstalled, API outage) would leave such a PR blocked permanently,
-with no operator override short of editing the evaluator on trunk. So:
-
-- no blocking findings → one comment carrying the generated clean body, which
-  attests through the clean-comment path;
-- blocking findings → inline review comments only. Those become review threads
-  and hold the gate red through `unresolvedCount` until a human resolves them.
-
-Note the honest limitation, which the lane shares with Codex: `unresolvedCount`
-is **head-scoped** — a thread is counted only while its comment sits on the
-current head, so findings threads drop out of the gate's view on the next push
-and the new head is judged on its own evidence.
-
-A `@claude review` comment re-runs the lane; it is gated on a human commenter
-with `OWNER`/`MEMBER`/`COLLABORATOR` association, because the action hard-fails
-its own permission check otherwise and would turn a courtesy trigger into a red
-check. Re-review is suppressed only by an existing clean attestation *for the
-same head*, so a prior findings run never blocks a re-request.
-
-**Enabling the lane (repository owner only).** Add **one** repository secret:
-
-- `CLAUDE_CODE_OAUTH_TOKEN` — run `claude setup-token` locally and paste the
-  token (subscription billing); or
-- `ANTHROPIC_API_KEY` — an API key from console.anthropic.com (usage billing).
-
-Until one exists the job exits 0 with a `::notice::` naming the secrets; it never
-fails a PR. The `claude` GitHub App must stay installed on the org with
-`pull_requests: write`. The lane is **not** merge-blocking itself and publishes
-no check context — it only feeds evidence to `Review Gate` — but it does
-consume one runner per PR-Gate completion, which is why it is documented here
-rather than treated as a silent addition (rule 4).
+`.github/workflows/claude-review.yml` was disabled after the 11-11 review-path
+ruling and deleted in simplify A4 (2026-11-15) with its helpers. The registry
+still grades a review the Claude GitHub App posts, so the identity rules above
+stay; nothing in this repository requests one any more.
 
 ## Adding New Checks
 

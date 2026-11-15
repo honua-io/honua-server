@@ -383,17 +383,9 @@ class PullRequestLoadTests(unittest.TestCase):
     def test_trusted_observers_keep_current_draft_refusal(self):
         observer = workflow("server-test-prebuild-observe.yml")
         parity = workflow("server-test-prebuild-parity.yml")
-        claude = workflow("claude-review.yml")
         self.assertIn("if (resolved.pullRequest.draft)", job_scripts(observer["jobs"]["plan"]))
         self.assertIn("if (pr.draft)", job_scripts(parity["jobs"]["plan"]))
-        self.assertIn("if (pr.draft)", job_scripts(claude["jobs"]["resolve"]))
         self.assertEqual(observer["jobs"]["producer"]["concurrency"]["cancel-in-progress"], "true")
-        review = claude["jobs"]["review"]["concurrency"]
-        self.assertEqual(review["cancel-in-progress"], "false")
-        self.assertEqual(review["group"], "claude-review-${{ needs.resolve.outputs.pr }}-${{ needs.resolve.outputs.head }}")
-        admission = claude["jobs"]["resolve"]["concurrency"]
-        self.assertEqual(admission["cancel-in-progress"], "true")
-        self.assertIn("github.event.issue.number", admission["group"])
 
     def test_new_concurrency_preserves_independent_non_pr_runs(self):
         names = ("availability-evidence-contract.yml", "capacity-evidence-contract.yml",
