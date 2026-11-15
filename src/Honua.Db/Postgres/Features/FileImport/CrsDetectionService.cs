@@ -102,17 +102,17 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
     /// computed from the datum + zone + hemisphere. Datum realizations (e.g. <c>NAD_1983_HARN</c>,
     /// <c>NAD_1983_2011</c>, <c>NAD_1983_CSRS</c>) are deliberately NOT matched here: their zone
     /// arithmetic differs from plain NAD83 (26900+zone), so mapping <c>NAD_1983_HARN_UTM_Zone_17N</c>
-    /// through this branch would silently pick the wrong datum. Realization names fall through to
-    /// the spatial_ref_sys WKT match (or an explicit source SRID) instead (#2743).
+    /// through this branch would silently pick the wrong datum. Realization names resolve from
+    /// <see cref="EsriProjectedCrsNames"/> when the name is unambiguous (#2743).
     /// </summary>
     private static readonly Regex _esriUtmNameRegex = new(
         @"^(?<datum>WGS_1984|NAD_1983|ETRS_1989|ETRS89)_UTM_Zone_(?<zone>\d{1,2})(?<hemi>[NS])$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>
-    /// Small, deliberately-limited table of common ESRI projected-CRS names to EPSG codes for
-    /// files that carry no authority node. Full PROJ WKT parsing is a non-goal (#2743); UTM
-    /// families are handled by <see cref="_esriUtmNameRegex"/> instead of enumerating them here.
+    /// Explicit ESRI projected names whose EPSG code is not the name's authority and is not a
+    /// UTM zone formula. Every other ESRI projected name is resolved from
+    /// <see cref="EsriProjectedCrsNames"/>. Full PROJ WKT parsing is a non-goal (#2743).
     /// </summary>
     private static readonly FrozenDictionary<string, int> _esriProjectedNameCodes =
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
@@ -214,8 +214,8 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         else if (TryMatchEsriProjectedName(cleanedContent, out var esriEpsg)
                  && await ValidateSridAsync(esriEpsg, cancellationToken))
         {
-            // 3. Common ESRI projected .prj files carry no authority node; match the projected
-            //    CRS name (Web Mercator, UTM families) to an EPSG code.
+            // 3. ESRI projected .prj files often carry no authority node. Match the projected
+            //    CRS name: explicit table, UTM zone formula, then the ESRI name table.
             return esriEpsg;
         }
 
@@ -224,11 +224,11 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
     }
 
     /// <summary>
-    /// Attempts to map a common ESRI projected-CRS WKT name to its EPSG code without full PROJ
-    /// parsing. Handles a small explicit table (Web Mercator, World Mercator) and the WGS 84 /
-    /// NAD83 / ETRS89 UTM zone families. Returns <see langword="false"/> when the name is not a
-    /// recognized ESRI projected name, in which case detection falls through to the
-    /// spatial_ref_sys WKT match (or the caller must supply an explicit source SRID).
+    /// Attempts to map an ESRI projected-CRS WKT name to its EPSG code without full PROJ
+    /// parsing. Order: a small explicit table (Web Mercator, World Mercator), the WGS 84 /
+    /// NAD83 / ETRS89 UTM zone families, then <see cref="EsriProjectedCrsNames"/>.
+    /// Returns <see langword="false"/> when the name is absent or ambiguous, in which case
+    /// detection falls through to the spatial_ref_sys WKT match.
     /// </summary>
     private static bool TryMatchEsriProjectedName(string wktContent, out int epsg)
     {
@@ -243,6 +243,25 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         if (_esriProjectedNameCodes.TryGetValue(name, out epsg))
             return true;
 
+        if (TryComputeEsriUtmCode(name, out epsg))
+            return true;
+
+        // State Plane, national grids and other ESRI names have no zone formula.
+        if (EsriProjectedCrsNames.TryGet(name, out epsg))
+            return true;
+
+        epsg = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// Computes an EPSG code from an ESRI UTM projected name (datum + zone + hemisphere).
+    /// Returns <see langword="false"/> for non-UTM names and for datum realizations whose
+    /// zone arithmetic is not the plain WGS 84 / NAD83 / ETRS89 series (#2743).
+    /// </summary>
+    private static bool TryComputeEsriUtmCode(string name, out int epsg)
+    {
+        epsg = 0;
         var utm = _esriUtmNameRegex.Match(name);
         if (!utm.Success)
             return false;
@@ -275,7 +294,6 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             return true;
         }
 
-        epsg = 0;
         return false;
     }
 

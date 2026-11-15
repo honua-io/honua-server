@@ -62,6 +62,8 @@
          Honua.Server migrations. Keeping this numbered root embedded prevents Docker/test
          provisioning from becoming an unjournaled second schema authority. -->
     <EmbeddedResource Include="Migrations\*.sql" />
+    <EmbeddedResource Include="Features\FileImport\EsriProjectedCrsNames.txt"
+                      LogicalName="Honua.Db.Postgres.Features.FileImport.EsriProjectedCrsNames.txt" />
   </ItemGroup>
 
   <ItemGroup>
