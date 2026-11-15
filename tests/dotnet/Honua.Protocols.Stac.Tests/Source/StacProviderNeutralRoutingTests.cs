@@ -263,7 +263,7 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         var filter = Uri.EscapeDataString($"properties.name LIKE '{pattern}'");
 
         var response = await _fixture.Client.GetAsync(
-            $"/stac/search?collections={WebAppFixture.TestLayerId}&ids={FilterMatchId}&filter-lang=cql2-text&filter={filter}");
+            $"/stac/search?collections={WebAppFixture.TestLayerId}&ids={FilterMatchId},{FilterNonMatchId}&filter-lang=cql2-text&filter={filter}");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
