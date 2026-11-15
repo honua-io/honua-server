@@ -300,15 +300,16 @@ internal static partial class SceneEndpoints
 
             activity?.SetTag(SceneTelemetry.ResultSizeTag, manifest.SizeBytes);
 
+            var etag = await ConfigurationResponseETag.ForResponseAsync(context, manifest.ETag).ConfigureAwait(false);
             SetDynamicSceneCacheHeaders(
                 context,
-                manifest.ETag,
+                etag,
                 cacheOptions.Value.SceneTilesetMetadata,
                 isProtected,
                 scene.CachePolicy);
 
             var ifNoneMatch = context.Request.Headers[HeaderNames.IfNoneMatch].ToString();
-            if (!string.IsNullOrEmpty(ifNoneMatch) && IfNoneMatchMatches(ifNoneMatch, manifest.ETag))
+            if (!string.IsNullOrEmpty(ifNoneMatch) && IfNoneMatchMatches(ifNoneMatch, etag))
             {
                 return Results.StatusCode(StatusCodes.Status304NotModified);
             }
@@ -472,7 +473,8 @@ internal static partial class SceneEndpoints
             return MapResolutionError(context, scene, resolvedAssetPath, error, activity, logger);
         }
 
-        var etag = ComputeETag(resolved.File);
+        var etag = await ConfigurationResponseETag.ForResponseAsync(context, ComputeETag(resolved.File))
+            .ConfigureAwait(false);
         SetCacheHeaders(context, etag, resolved.File, cacheMaxAge, isProtected, scene.CachePolicy, tokenTransport);
 
         var ifNoneMatch = context.Request.Headers[HeaderNames.IfNoneMatch].ToString();
@@ -494,7 +496,7 @@ internal static partial class SceneEndpoints
             resolved.File.FullName,
             resolved.ContentType,
             lastModified: resolved.File.LastWriteTimeUtc,
-            entityTag: null,
+            entityTag: EntityTagHeaderValue.Parse(etag),
             enableRangeProcessing: true);
     }
 

@@ -115,24 +115,6 @@ internal static class ImportExportTileOperationsRegistration
         services.TryAddEnumerable(
             Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<IJobTerminalCallback, ExportJobTerminalCallback>());
 
-        // Resumable generated tile-cache seed/warm generation checkpoint store (#2661). Durable
-        // cross-request resume state must not live only on a serving pod's memory. The in-memory
-        // store is the default so stores-less dev/test profiles still resolve the dependency; when
-        // a Redis multiplexer is present it is overridden with the durable cross-node store so a
-        // fix-forward retry resumes the generation instead of restarting the whole grid. The Redis
-        // binding is registered first so the TryAdd fallback below does not replace it.
-        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
-        {
-            services.AddSingleton<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>(sp =>
-                new RedisTileCacheGenerationCheckpointStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>(),
-                    sp.GetRequiredService<ILogger<RedisTileCacheGenerationCheckpointStore>>()));
-        }
-
-        services.AddSingleton<Honua.Core.Features.Tiles.InMemoryTileCacheGenerationCheckpointStore>();
-        services.TryAddSingleton<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>(sp =>
-            sp.GetRequiredService<Honua.Core.Features.Tiles.InMemoryTileCacheGenerationCheckpointStore>());
-
         // Tile operations run as TileCache execution jobs: the record and its queue position are
         // rows in the system database, so an accepted operation runs once on whichever node claims it.
         services.Configure<TileCacheBatchOptions>(
