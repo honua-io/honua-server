@@ -154,7 +154,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         Resources = [new()
         {
             Metadata = new() { Id = "resource", Name = name },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             AccessPolicy = allowAnonymous is { } anonymous ? new AccessPolicy { AllowAnonymous = anonymous } : null,
         }],
     };

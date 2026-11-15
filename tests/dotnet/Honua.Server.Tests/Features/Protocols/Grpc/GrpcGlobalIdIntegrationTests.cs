@@ -35,7 +35,7 @@ public sealed class GrpcGlobalIdIntegrationTests : IAsyncLifetime
         await _fixture.InitializeAsync();
         await _fixture.UpdateV2ResourceAsync(WebAppFixture.TestLayerId, resource => resource with
         {
-            Editing = (resource.Editing ?? new MetadataV2ResourceEditing()) with { GlobalIdField = GlobalIdField },
+            Editing = (resource.Editing ?? new MetadataV2ObjectEditing()) with { GlobalIdField = GlobalIdField },
             SchemaFields = [.. resource.SchemaFields, new MetadataV2Field { Name = GlobalIdField, Type = MetadataV2FieldType.Uuid, Nullable = true }],
         });
         _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
