@@ -32,14 +32,14 @@ public sealed record MetadataV2Relationship : ExtensibleJsonRecord, IJsonOnDeser
     public string RelatedResourceId
     {
         get => _relatedObjectId.Value ?? string.Empty;
-        init => _relatedObjectId = _relatedObjectId.WithLegacy(value, _readingJson);
+        set => _relatedObjectId = _relatedObjectId.WithLegacy(value, _readingJson);
     }
 
     [JsonPropertyName("relatedObjectId")]
     public string RelatedObjectId
     {
         get => RelatedResourceId;
-        init => _relatedObjectId = _relatedObjectId.WithCanonical(value, _readingJson);
+        set => _relatedObjectId = _relatedObjectId.WithCanonical(value, _readingJson);
     }
 
     [JsonPropertyName("role")]

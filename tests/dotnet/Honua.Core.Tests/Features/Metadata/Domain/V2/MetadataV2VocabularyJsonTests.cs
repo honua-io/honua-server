@@ -11,6 +11,28 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
 public sealed class MetadataV2VocabularyJsonTests
 {
+    [UnitTest]
+    public void Read_LegacyOnlyGraph_AbsentCanonicalAliasesDoNotEraseValues()
+    {
+        var graph = Read("""
+            {"resources":[{"metadata":{"id":"current"},"type":"map",
+              "styleResourceIds":["style"],"relationships":[{"relatedResourceId":"related"}]}],
+             "publications":[{"resourceId":"current","publicationType":"future-layer"}],
+             "storageBindings":[{"resourceId":"current"}],
+             "services":[{"publicationIds":["layer"]}]}
+            """);
+
+        graph.Objects.Single().Metadata.Id.Should().Be("current");
+        graph.Objects.Single().Type.Should().Be(MetadataV2ObjectType.Map);
+        graph.Objects.Single().StyleObjectIds.Should().Equal("style");
+        graph.Objects.Single().Relationships.Single().RelatedObjectId.Should().Be("related");
+        graph.Layers.Single().ObjectId.Should().Be("current");
+        graph.StorageBindings.Single().ObjectId.Should().Be("current");
+        graph.Services.Single().LayerIds.Should().Equal("layer");
+        var saved = JsonNode.Parse(JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph))!;
+        saved["layers"]![0]!["layerType"]!.GetValue<string>().Should().Be("future-layer");
+    }
+
     [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
