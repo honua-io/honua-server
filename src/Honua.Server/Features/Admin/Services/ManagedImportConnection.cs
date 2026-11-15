@@ -248,34 +248,76 @@ internal static partial class ManagedImportConnection
         return fallback is null || fallback.ConnectionId == Id ? FallbackName : null;
     }
 
-    // The running data source is resolved once at startup. Reading configuration again can
-    // follow a reload to a different database than the one imports already use.
+    // The running data source is resolved once at startup. A later configuration reload must
+    // not move the imported-data row to another database. Configuration supplies a password
+    // only when it names that same database and the running string has none.
     private static async Task<string?> ResolveServerConnectionStringAsync(
         IServiceProvider services,
         IConfiguration configuration,
         CancellationToken cancellationToken)
     {
-        var running = services.GetService<NpgsqlDataSource>()?.ConnectionString;
-        if (!string.IsNullOrWhiteSpace(running))
-        {
-            try
-            {
-                var builder = new NpgsqlConnectionStringBuilder(running);
-                if (!string.IsNullOrWhiteSpace(builder.Password))
-                {
-                    return running;
-                }
-            }
-            catch (ArgumentException)
-            {
-                // A data source string that cannot be read falls through to configuration.
-            }
-        }
-
-        return await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
+        var running = RunningConnection(services);
+        var configured = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
             configuration,
             services.GetService<IConnectionSecretResolver>(),
             cancellationToken).ConfigureAwait(false);
+        if (running is null)
+        {
+            return configured;
+        }
+
+        if (HasPassword(running) || !SameDatabase(running, configured))
+        {
+            return running;
+        }
+
+        return configured;
+    }
+
+    private static string? RunningConnection(IServiceProvider services)
+    {
+        var running = services.GetService<NpgsqlDataSource>()?.ConnectionString;
+        if (string.IsNullOrWhiteSpace(running))
+        {
+            return null;
+        }
+
+        try
+        {
+            var builder = new NpgsqlConnectionStringBuilder(running);
+            return string.IsNullOrWhiteSpace(builder.Host) ? null : running;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static bool HasPassword(string connectionString)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        return !string.IsNullOrWhiteSpace(builder.Password);
+    }
+
+    private static bool SameDatabase(string running, string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return false;
+        }
+
+        try
+        {
+            var left = new NpgsqlConnectionStringBuilder(running);
+            var right = new NpgsqlConnectionStringBuilder(configured);
+            return string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
+                && left.Port == right.Port
+                && string.Equals(left.Database, right.Database, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     private static async Task<bool> RepresentsServerAsync(EnsureWork work, string name)

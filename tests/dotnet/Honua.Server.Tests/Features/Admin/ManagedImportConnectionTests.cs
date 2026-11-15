@@ -149,6 +149,50 @@ public sealed class ManagedImportConnectionTests
     }
 
     [UnitTest]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The service provider disposes the registered data source.")]
+    public async Task PasswordlessRunningDatabaseWinsOverAReloadedConfiguration()
+    {
+        var encryption = new RememberingEncryption();
+        var running = "Host=db.running;Port=5432;Database=honua;Username=honua_app;SSL Mode=Disable";
+        var reloaded = ConnectionString.Replace("db.internal", "db.reloaded", StringComparison.Ordinal);
+#pragma warning disable CA2000 // The service provider disposes the registered data source.
+        var dataSource = Npgsql.NpgsqlDataSource.Create(running);
+#pragma warning restore CA2000
+        using var services = Services(encryption, reloaded, dataSource);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        var connection = Assert.Single(await services.GetRequiredService<ISecureConnectionRegistry>().GetActiveConnectionsAsync());
+        Assert.Equal("db.running", connection.Host);
+        Assert.Contains("db.running", encryption.Stored, StringComparison.Ordinal);
+        Assert.DoesNotContain("db.reloaded", encryption.Stored, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The service provider disposes the registered data source.")]
+    public async Task PasswordlessRunningDatabaseKeepsTheConfiguredPasswordForThatDatabase()
+    {
+        var encryption = new RememberingEncryption();
+        var running = "Host=db.internal;Port=5432;Database=honua;Username=honua_app;SSL Mode=Disable";
+#pragma warning disable CA2000 // The service provider disposes the registered data source.
+        var dataSource = Npgsql.NpgsqlDataSource.Create(running);
+#pragma warning restore CA2000
+        using var services = Services(encryption, ConnectionString, dataSource);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        var connection = Assert.Single(await services.GetRequiredService<ISecureConnectionRegistry>().GetActiveConnectionsAsync());
+        Assert.Equal("db.internal", connection.Host);
+        Assert.Contains(Password, encryption.Stored, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
     public async Task EncryptionFailureLeavesTheListUnchanged()
     {
         var registry = new InMemorySecureConnectionRegistry();
