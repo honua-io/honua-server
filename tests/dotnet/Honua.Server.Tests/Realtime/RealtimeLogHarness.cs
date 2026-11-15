@@ -62,12 +62,20 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
 
     public async Task<ControlPlaneStorage> CreateControlPlaneStorageAsync()
     {
-        const string resource = "Honua.Server.Migrations.148_CreateControlPlaneState.sql";
-        await using var stream = typeof(PostgresRealtimeEventLog).Assembly.GetManifestResourceStream(resource)
-            ?? throw new InvalidOperationException($"Embedded migration '{resource}' was not found.");
-        using var reader = new StreamReader(stream);
-        await _fixture.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync())
-            .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
+        // Proposal updates join operation_proposal_batches (migration 174) in the same statement as the proposal row.
+        foreach (var resource in new[]
+        {
+            "Honua.Server.Migrations.148_CreateControlPlaneState.sql",
+            "Honua.Server.Migrations.174_CreateOperationProposalBatches.sql",
+        })
+        {
+            await using var stream = typeof(PostgresRealtimeEventLog).Assembly.GetManifestResourceStream(resource)
+                ?? throw new InvalidOperationException($"Embedded migration '{resource}' was not found.");
+            using var reader = new StreamReader(stream);
+            await _fixture.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync())
+                .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
+        }
+
         return new ControlPlaneStorage(_jobs.Database, new PostgresLeaseStore(_jobs.JobStore));
     }
 
