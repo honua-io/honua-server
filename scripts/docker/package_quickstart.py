@@ -35,7 +35,7 @@ README = (
     'The executor runs as uid 1002, targets only this project and serving service, and is '
     'the only process with Docker socket access. Docker socket access grants host control; '
     'use a dedicated local Docker host. No Docker socket is mounted in either HTTP server. '
-    'Retain backups, manager database, and Redis volumes for recovery and audit.\n\n'
+    'Retain backups and the manager database volume for recovery and audit.\n\n'
     'Images in images.json are immutable digests from one candidate build. '
     'For an upgrade, set HONUA_RELEASE_IMAGE, HONUA_RELEASE_WORKER_IMAGE and HONUA_RELEASE_VERSION '
     'in .env from the new release lock. Pull the new serving image before approving. '

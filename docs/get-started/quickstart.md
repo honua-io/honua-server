@@ -10,7 +10,7 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 
 See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
 
-The customer Compose package runs Honua beside PostGIS and Redis, plus a stable
+The customer Compose package runs Honua beside PostGIS, plus a stable
 management service and a separate Compose executor. The executor only executes
 approved proposals after one authorized human reviews the exact plan in a verified
 interactive session. The requester may approve their own proposal.
@@ -48,7 +48,10 @@ is a Compose variable and `docker compose config` never prints one. Restart with
 serving-image override. An install from an earlier package kept its secrets in
 `.env`: extract the new package's files over it and run `python3 quickstart.py`
 once. It moves each secret into its file unchanged and removes it from `.env`.
-Keep `secrets/`, `.env` and the manager's durable Postgres and Redis volumes.
+Keep `secrets/`, `.env` and the manager's durable Postgres volume.
+Packages before rc.2 also ran a cache service. After upgrading such an install, run
+`python3 quickstart.py` and then `docker compose up -d --remove-orphans` once to remove
+its container; its volumes hold nothing the new release reads and can be deleted.
 
 The serving API is at `http://localhost:18080`; the stable management API and MCP
 are at `http://localhost:18082`. Its bootstrap credential is the private
@@ -217,7 +220,7 @@ the installed grids offline:
 x-load-secrets: &load-secrets ["/app/honua-entrypoint"]
 services:
   keyring-init:
-    image: redis:7.4-alpine@sha256:a58a2b51fdb121a55861f2586cbde33f174c0f33d5a277b182d52dce45ed9cd4
+    image: alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
     user: "0:0"
     entrypoint: ["sh", "-c"]
     # The servers run as gid 1001. Secret files stay yours; only their group changes.
@@ -242,7 +245,6 @@ services:
       PUBLIC_BASE_URL: "http://localhost:${HONUA_HTTP_PORT}"
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua;Username=honua"
       HONUA_DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
-      ConnectionStrings__Redis: redis:6379
       HONUA_SECRET_FILE__HONUA_ADMIN_PASSWORD: /run/secrets/honua_admin_password
       HONUA_SECRET_FILE__AuditLog__ChainVerification__Key: /run/secrets/honua_audit_chain_key
       HONUA_SECRET_FILE__Security__ConnectionEncryption__MasterKey: /run/secrets/honua_master_key
@@ -257,8 +259,6 @@ services:
       keyring-init:
         condition: service_completed_successfully
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     restart: unless-stopped
     read_only: true
@@ -293,20 +293,8 @@ services:
       timeout: 5s
       retries: 30
     restart: unless-stopped
-  redis:
-    image: redis:7.4-alpine
-    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
-    volumes:
-      - redis:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    restart: unless-stopped
 volumes:
   postgres:
-  redis:
   storage:
 secrets:
   postgres_password:
@@ -377,7 +365,7 @@ New-AuditKey | Set-Content secrets/honua_audit_chain_key -Encoding Ascii -NoNewl
 
 </details>
 
-Both ports bind to loopback only; PostgreSQL and Redis are reachable only on the
+Both ports bind to loopback only; PostgreSQL is reachable only on the
 project's own network. Change `HONUA_HTTP_PORT` if `18080` is taken, and set
 `HONUA_GRPC_PORT` if `18081` is.
 
@@ -422,7 +410,7 @@ docker compose up -d --wait --wait-timeout 180
 checks liveness; also open `http://localhost:18080/healthz/ready` (using your
 selected port) and wait for `Ready`. The authenticated publish/query below then
 verifies the data path. If startup times out,
-`docker compose logs honua postgres redis` says why.
+`docker compose logs honua postgres` says why.
 
 The admin API is not anonymous: it needs the admin password in `secrets/honua_admin_password`,
 which the next step reads for you.
@@ -581,7 +569,7 @@ a backup.
 
 - **`port is already allocated`** — change `HONUA_HTTP_PORT` or `HONUA_GRPC_PORT`
   in `.env` and run `docker compose up -d` again.
-- **Readiness times out** — `docker compose logs honua postgres redis`. Do not
+- **Readiness times out** — `docker compose logs honua postgres`. Do not
   switch to the Development environment or disable preflight to get past a
   startup failure; it is telling you something.
 - **`KeyRingCertificatePath` is required** — the key-ring PKCS#12 from step 2 is

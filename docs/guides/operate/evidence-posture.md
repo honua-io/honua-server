@@ -86,11 +86,8 @@ Set `ControlPlane:ComposeExecutor:VersionProbeApiKey` to the serving bootstrap
 credential; the packaged quickstart supplies it locally. This credential is used
 only for readback and is never included in the observation response.
 
-For a supported installation without Redis, set
-`ControlPlane:ComposeExecutor:RedisService` to an empty value on the executor (and
-keep the manager's matching executor options consistent). Only configured managed
-services are observed and eligible for restart. The standard quickstart includes
-Redis and keeps its observation enabled.
+The executor observes the serving service and its PostgreSQL service; only those
+configured managed services are eligible for restart.
 
 Health, findings, and release-status requests share an in-flight Compose observation.
 A request after that collection completes obtains fresh readback. Serving readiness

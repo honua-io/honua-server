@@ -26,9 +26,9 @@ class QuickstartTests(unittest.TestCase):
 
             self.assertEqual('900', services['honua']['environment'].get('LayerPublishing__MaterializationTimeoutSeconds'))
 
-    def test_issue_5419_no_redis_keeps_storage_initialization_dependency(self):
-        override = (ROOT / "docker/compose/docker-compose.no-redis.yml").read_text()
-        depends_on = override.split("depends_on: !override", 1)[1].split("environment:", 1)[0]
+    def test_server_waits_for_storage_initialization(self):
+        compose = (ROOT / "docker-compose.yml").read_text()
+        depends_on = compose.split("\n  honua:\n", 1)[1].split("depends_on:", 1)[1].split("healthcheck:", 1)[0]
 
         self.assertIn("storage-init:", depends_on)
         self.assertIn("condition: service_completed_successfully", depends_on)
