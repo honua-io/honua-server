@@ -228,19 +228,35 @@ public sealed class PostgresGenerationFenceProtocolTests(PostgresFixture fixture
         {
             var schema = await database.CreateIsolatedSchemaAsync("generation_fence");
             var scope = new FenceScope(database, schema);
-            await using var connection = await scope.OpenAsync();
-            await ExecuteAsync(connection, """
-                CREATE SEQUENCE generations CACHE 1 NO CYCLE;
-                CREATE TABLE changes (generation bigint PRIMARY KEY);
-                """);
-            return scope;
+            try
+            {
+                await using var connection = await scope.OpenAsync();
+                await ExecuteAsync(connection, """
+                    CREATE SEQUENCE generations CACHE 1 NO CYCLE;
+                    CREATE TABLE changes (generation bigint PRIMARY KEY);
+                    """);
+                return scope;
+            }
+            catch
+            {
+                await scope.DisposeAsync();
+                throw;
+            }
         }
 
         public async Task<NpgsqlConnection> OpenAsync()
         {
             var connection = await database.DataSource.OpenConnectionAsync();
-            await ExecuteAsync(connection, $"SET search_path TO \"{schema}\"");
-            return connection;
+            try
+            {
+                await ExecuteAsync(connection, $"SET search_path TO \"{schema}\"");
+                return connection;
+            }
+            catch
+            {
+                await connection.DisposeAsync();
+                throw;
+            }
         }
 
         public async ValueTask DisposeAsync() => await database.DropSchemaAsync(schema);
