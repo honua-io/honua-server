@@ -107,9 +107,9 @@ class PullRequestLoadTests(unittest.TestCase):
         producer = workflow("normalize-derived-artifacts.yml")
         group = producer["concurrency"]["group"]
 
-        def admission(action, *, draft=False, base_from=None, number=7639):
+        def admission(action, *, draft=False, base_from=None, number=7639, head="head-b"):
             event = {"event_name": "pull_request", "event": {
-                "action": action, "pull_request": {"number": number, "draft": draft},
+                "action": action, "pull_request": {"number": number, "draft": draft, "head": {"sha": head}},
                 "changes": {"base": {"ref": {"from": base_from}}},
             }}
             return re.sub(r"\$\{\{.*?\}\}", lambda match: str(evaluate(match[0], event)), group)
@@ -122,6 +122,9 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertEqual(admission("edited", base_from="old-base"), ready)
         self.assertEqual(admission("synchronize"), ready)
         self.assertNotEqual(admission("synchronize", number=7640), ready)
+        # A delayed event for A must not cancel B and then shed as stale.
+        for action in ("opened", "reopened", "synchronize", "ready_for_review", "edited"):
+            self.assertNotEqual(admission(action, head="head-a", base_from="old-base"), ready, action)
 
     def test_stale_draft_events_cannot_cancel_ready_gate(self):
         gate = workflow("pr-gate.yml")
