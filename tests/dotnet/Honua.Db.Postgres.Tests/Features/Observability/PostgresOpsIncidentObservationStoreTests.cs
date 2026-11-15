@@ -158,7 +158,7 @@ public sealed class PostgresOpsIncidentObservationStoreTests(PostgresFixture fix
 
     private async Task ApplyMigrationAsync(string schema)
     {
-        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "169_CreateOpsIncidentObservations.sql"));
+        var sql = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "169_CreateOpsIncidentObservations.sql"));
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
