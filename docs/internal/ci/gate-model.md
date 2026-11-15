@@ -771,9 +771,10 @@ complete passing retry evidence, retained alongside the first attempt. Ambiguous
 names in selected failed methods (including passing siblings), or anywhere in the retry,
 are rejected so a passing sibling cannot conceal a missing failure. Duplicate display names
 in unrelated passing methods remain untouched in the merged results. Infrastructure and
-execution failures remain blocking. Tests retain the supervisor’s process group so shared deadlines clean up the full tree.
-Cancellation signals the test’s descendants, including those that leave the inherited
-process group, and escalates to SIGKILL after at most half a second. Required check names and minimum-execution checks remain
+execution failures remain blocking. Each test command runs in a dedicated process group.
+Cancellation signals that group and its snapshotted descendants, including those that leave
+the group, and escalates to SIGKILL after at most half a second. Group escalation also reaches
+children forked after the snapshot. Required check names and minimum-execution checks remain
 unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
 25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean
 gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
