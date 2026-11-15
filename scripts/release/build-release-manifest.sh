@@ -26,7 +26,7 @@ Candidate identity (image is what makes candidate.image.evidenceState pass):
   --ref-source <label>     Optional source label (branch/tag) for the ref
   --image-repository <r>   e.g. ghcr.io/honua-io/honua-server
   --image-tag <tag>        Immutable RC tag (e.g. rc-honua-2026-06-preview-<sha>)
-  --image-digest <sha256>  Immutable image digest (sha256:...)
+  --image-digest <sha256>  Immutable image digest (sha256: + 64 lowercase hex digits)
 
 Other:
   --observed-at <iso8601>  Timestamp recorded in the manifest (default: env OBSERVED_AT, else error)
@@ -175,7 +175,7 @@ manifest="$(
         blockers: $blockers
       };
 
-    ($imageDigest != "" and $imageTag != "") as $imageReady |
+    (($imageDigest | test("\\Asha256:[0-9a-f]{64}\\z")) and $imageTag != "") as $imageReady |
 
     {
       "$schema": "https://honua.io/schemas/release-train-manifest.v1.json",
@@ -194,7 +194,7 @@ manifest="$(
           blockers: (if $imageReady then [] else
             [ { repo: "honua-io/honua-devops", number: 41,
                 url: "https://github.com/honua-io/honua-devops/issues/41",
-                reason: "Release-candidate image tag and digest are not yet published." } ] end)
+                reason: "Release-candidate image requires a published tag and valid sha256 digest." } ] end)
         }
       },
       sdkCompatibilityManifest: ($ev.meta.sdkCompatibilityManifest // "docs/developer/sdk-compatibility-versions.json"),

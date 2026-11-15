@@ -142,6 +142,20 @@ jq -e '.candidate.image.evidenceState == "blocked" and (.candidate.image.blocker
   || { echo "[ERROR] missing-digest manifest should block candidate.image with #41" >&2; exit 1; }
 echo "[OK] missing-digest manifest blocks candidate.image"
 
+
+echo
+echo "Validating: malformed digests cannot pass candidate image evidence"
+for digest in "pending" "sha256:abc" "sha256:$(printf '%064d' 0)0" \
+  "sha256:$(printf 'g%.0s' {1..64})" "sha512:$(printf '%064d' 0)" \
+  "sha256:$(printf 'a%.0s' {1..64})"$'\n'; do
+  "$GEN" "${COMMON_ARGS[@]}" --image-tag "rc-honua-test-rc-deadbee" \
+    --image-digest "$digest" --output "$WORKDIR/manifest-invalid-image.json" >/dev/null
+  jq -e '.candidate.image.evidenceState == "blocked" and (.candidate.image.blockers | length > 0)' \
+    "$WORKDIR/manifest-invalid-image.json" >/dev/null \
+    || { echo "[ERROR] malformed digest passed candidate image evidence: $digest" >&2; exit 1; }
+done
+echo "[OK] malformed digests block candidate image evidence"
+
 echo
 echo "Validating: output is deterministic for identical inputs"
 "$GEN" "${COMMON_ARGS[@]}" \
