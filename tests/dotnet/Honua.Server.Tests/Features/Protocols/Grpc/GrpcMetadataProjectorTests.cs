@@ -39,6 +39,26 @@ public sealed class GrpcMetadataProjectorTests
         field.Domain.CodedValues.Values.Single().Name.Should().Be("Main");
     }
 
+    [UnitTheory]
+    [InlineData("{\"enabled\":true}")]
+    [InlineData("[1,\"two\",null]")]
+    public void Field_JsonDefault_PreservesStructuredValueInDescriptorAndTemplate(string json)
+    {
+        var definition = new MetadataV2Field
+        {
+            Name = "settings",
+            Type = MetadataV2FieldType.Json,
+            Editable = true,
+            DefaultValue = Json(json)
+        };
+
+        var field = GrpcMetadataProjector.Field(definition);
+        var template = GrpcMetadataProjector.Template("Default", [definition]);
+
+        field.DefaultValue.StringValue.Should().Be(json);
+        template.DefaultAttributes["settings"].StringValue.Should().Be(json);
+    }
+
     [UnitTest]
     public void Domain_Range_PreservesBoundsAndPolicies()
     {

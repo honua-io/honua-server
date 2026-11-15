@@ -36,7 +36,8 @@ internal static class GrpcMetadataProjector
         JsonValueKind.Number when value.TryGetInt32(out var integer) => new() { Int32Value = integer },
         JsonValueKind.Number when value.TryGetInt64(out var integer) => new() { Int64Value = integer },
         JsonValueKind.Number => new() { DoubleValue = value.GetDouble() },
-        _ => throw new InvalidOperationException("Native attribute defaults and domain codes must be scalar JSON values.")
+        JsonValueKind.Object or JsonValueKind.Array => new() { StringValue = value.GetRawText() },
+        _ => throw new InvalidOperationException("Native attribute defaults and domain codes must be defined JSON values.")
     };
 
     internal static Proto.FieldDomain Domain(MetadataV2FieldDomain domain)

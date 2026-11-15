@@ -216,9 +216,10 @@ internal sealed partial class HonuaFeatureService
         {
             return result;
         }
-        result.Create = await AllowsAsync(AuthorizationOperation.Insert).ConfigureAwait(false);
-        result.Update = await AllowsAsync(AuthorizationOperation.Update).ConfigureAwait(false);
-        result.Delete = await AllowsAsync(AuthorizationOperation.Delete).ConfigureAwait(false);
+        var edits = await MetadataProviderEditsAsync(layer, context).ConfigureAwait(false);
+        result.Create = edits.SupportsCreate && await AllowsAsync(AuthorizationOperation.Insert).ConfigureAwait(false);
+        result.Update = edits.SupportsUpdate && await AllowsAsync(AuthorizationOperation.Update).ConfigureAwait(false);
+        result.Delete = edits.SupportsDelete && await AllowsAsync(AuthorizationOperation.Delete).ConfigureAwait(false);
         return result;
 
         async Task<bool> AllowsAsync(AuthorizationOperation operation)

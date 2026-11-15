@@ -40,7 +40,25 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         AssertNoRead();
     }
 
-    private static MetadataV2ServiceLayerTriple DestinationRelationshipTriple()
+    [UnitTheory]
+    [InlineData("origin", Geospatial.V1.RelationshipRole.Origin)]
+    [InlineData("esriRelRoleOrigin", Geospatial.V1.RelationshipRole.Origin)]
+    [InlineData("destination", Geospatial.V1.RelationshipRole.Destination)]
+    [InlineData("esriRelRoleDestination", Geospatial.V1.RelationshipRole.Destination)]
+    [Endpoint("POST /geospatial.v1.FeatureService/DescribeLayer")]
+    public async Task DescribeLayer_NormalizesImportedRelationshipRoles(string role, Geospatial.V1.RelationshipRole expected)
+    {
+        _resourceValidator.ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(DestinationRelationshipTriple(role)));
+        using var context = CreateCallContext();
+
+        var response = await _sut.DescribeLayer(new() { ServiceId = "test", LayerId = 0 }, context);
+
+        response.Layer.Relationships.Should().ContainSingle().Which.Role.Should().Be(expected);
+        AssertNoRead();
+    }
+
+    private static MetadataV2ServiceLayerTriple DestinationRelationshipTriple(string role = "destination")
     {
         var triple = CreateTriple();
         var parent = _resource with { Metadata = _resource.Metadata with { Id = "parent" } };
@@ -49,7 +67,7 @@ public sealed partial class GrpcMaskedFieldPredicateTests
             SchemaFields = [.. _resource.SchemaFields, new() { Name = "parent_id", Type = MetadataV2FieldType.Integer }],
             Relationships = [new()
             {
-                Id = "7", Name = "parent", RelatedResourceId = parent.Metadata.Id, Role = "destination",
+                Id = "7", Name = "parent", RelatedResourceId = parent.Metadata.Id, Role = role,
                 OriginField = "parent_id", DestinationField = "objectid"
             }]
         };

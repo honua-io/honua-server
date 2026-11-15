@@ -92,6 +92,7 @@ internal static class LayerPublishRequestMapper
             Srid = request.Srid,
             PrimaryKey = request.PrimaryKey,
             GlobalIdField = request.GlobalIdField,
+            TemporalColumn = request.TemporalColumn,
             SupportsAttachments = request.SupportsAttachments,
             Fields = request.Fields ?? Array.Empty<string>(),
             FieldDomains = request.FieldDomains is { } fieldDomains
@@ -133,6 +134,7 @@ internal static class LayerPublishRequestMapper
             Srid = request.Srid,
             PrimaryKey = request.PrimaryKey,
             GlobalIdField = request.GlobalIdField,
+            TemporalColumn = request.TemporalColumn,
             SupportsAttachments = request.SupportsAttachments,
             Fields = request.Fields ?? Array.Empty<string>(),
             FieldDomains = request.FieldDomains,
