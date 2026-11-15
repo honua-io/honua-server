@@ -19,7 +19,7 @@ public sealed class GeoJsonPreviewValidationTests : IAsyncLifetime
     private const string StubUrl = "https://s3.amazonaws.com/sample-bucket/invalid.geojson";
     private const string MalformedGeoJson = "{not-json";
     private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureServices(services => services.AddSingleton<IHttpClientFactory>(new MalformedGeoJsonClientFactory()));
+        .ConfigureServices(services => services.AddSingleton<IHttpClientFactory>(_ => new MalformedGeoJsonClientFactory()));
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
