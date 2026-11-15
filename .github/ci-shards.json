@@ -2955,6 +2955,7 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.CapabilitiesMetadataXmlTests",
       "paths": [
         "src/Honua.Core/Core/Features/Metadata/Domain/V2/",
+        "src/Honua.Protocols/OgcClassic/Wms/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesMetadataXmlTests.cs"
       ]
     },
@@ -2975,6 +2976,7 @@
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/OgcClassic/Wmts/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesMetadataXmlTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
       ]
     },
@@ -2990,11 +2992,12 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "_comment": "Selects the exact complement of OgcClassicWmtsTests within the parent namespace, including future WMTS classes.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.",
+      "_comment": "Selects the exact complement of OgcClassicWmtsTests within the parent namespace, including future WMTS classes, plus CapabilitiesMetadataXmlTests. That class exercises GetCapabilities XML for more than one classic protocol and sits outside the Wms and Wmts namespace partitions.",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.)|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.CapabilitiesMetadataXmlTests",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/OgcClassic/Wmts/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesMetadataXmlTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
       ]
     },
