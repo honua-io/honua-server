@@ -160,7 +160,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Equal(offsetText, wire.Attributes["signed"].TimestampOffsetValue);
 
         var updated = await _featureStore.UpdateAsync(TestLayerId, stored);
-        Assert.True(updated);
+        Assert.Equal(stored.Id, updated.Id);
         var projected = await _featureStore.QueryAsync(TestLayerId,
             new FeatureQuery { ObjectIds = [created.Id], OutFields = ["amount"] });
         var projectedFeature = Assert.Single(projected.Items);
