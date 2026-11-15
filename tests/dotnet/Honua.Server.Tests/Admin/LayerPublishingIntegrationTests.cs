@@ -254,15 +254,17 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             """;
 
         using var upload = new MultipartFormDataContent();
-        var file = new StringContent(geoJson, Encoding.UTF8, "application/geo+json");
+        using var file = new StringContent(geoJson, Encoding.UTF8, "application/geo+json");
         file.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
             Name = "File",
             FileName = "quickstart-points.geojson"
         };
         upload.Add(file);
-        upload.Add(new StringContent(logicalTableName), "TableName");
-        upload.Add(new StringContent("4326"), "TargetSrid");
+        using var tableName = new StringContent(logicalTableName);
+        using var targetSrid = new StringContent("4326");
+        upload.Add(tableName, "TableName");
+        upload.Add(targetSrid, "TargetSrid");
 
         var uploadResponse = await _client.PostAsync("/api/v1/admin/import/upload", upload);
         var uploadPayload = await uploadResponse.Content.ReadAsStringAsync();
@@ -1768,13 +1770,9 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         (await GetManagedStoreRowCountAsync(_layerId.Value)).Should().Be(2);
     }
 
-    /// <summary>
-    /// Re-registers the test's secure connection against the server's own feature database
-    /// schema. A deployment's publish connection reaches the database the server writes (its
-    /// managed <c>features</c> table resolves identically); this fixture isolates the server
-    /// in a per-test schema, so the connection must name that schema the same way
-    /// <see cref="PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile"/> does.
-    /// </summary>
+    // Re-register the fixture connection against the server's feature database.
+    // Its managed features table lives in the isolated per-test schema, which
+    // the connection must name explicitly.
     private async Task UseServerFeatureStoreConnectionAsync()
     {
         await DeleteSecureConnectionAsync();
