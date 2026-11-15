@@ -58,8 +58,11 @@ internal sealed class OpsSelfCheckSource(
         }
         var configuration = new OidcProviderConfiguration
         {
-            Name = provider.DisplayName, ProviderType = provider.Type, Authority = provider.Authority,
-            ClientId = provider.ClientId ?? string.Empty, Enabled = provider.Enabled
+            Name = provider.DisplayName,
+            ProviderType = provider.Type,
+            Authority = provider.Authority,
+            ClientId = provider.ClientId ?? string.Empty,
+            Enabled = provider.Enabled
         };
         var result = await OidcProviderDiscoveryProbe.TestAsync(configuration, clients, cancellationToken).ConfigureAwait(false);
         return result.IsReachable;

@@ -60,7 +60,10 @@ public sealed class OpsSelfCheckSourceTests
         using var factory = new FakeClients(body);
         var provider = new OidcProviderConfiguration
         {
-            Name = "Test", ProviderType = "Generic", Authority = "https://8.8.8.8", ClientId = "client"
+            Name = "Test",
+            ProviderType = "Generic",
+            Authority = "https://8.8.8.8",
+            ClientId = "client"
         };
         var admin = await OidcProviderDiscoveryProbe.TestAsync(provider, factory, default);
         var scheduled = Assert.Single(await Create(factory, [Provider(provider.Authority)]).ReadIdentityProvidersAsync(default));
@@ -75,7 +78,10 @@ public sealed class OpsSelfCheckSourceTests
         using var factory = new FakeClients(new string(' ', OpsSelfCheckSource.MaximumResponseBytes + 1));
         var provider = new OidcProviderConfiguration
         {
-            Name = "Test", ProviderType = "Generic", Authority = "https://8.8.8.8", ClientId = "client"
+            Name = "Test",
+            ProviderType = "Generic",
+            Authority = "https://8.8.8.8",
+            ClientId = "client"
         };
         Assert.False((await OidcProviderDiscoveryProbe.TestAsync(provider, factory, default)).IsReachable);
         Assert.False(Assert.Single(await Create(factory, [Provider(provider.Authority)]).ReadIdentityProvidersAsync(default)).IsReachable);
@@ -90,7 +96,10 @@ public sealed class OpsSelfCheckSourceTests
         using var factory = new FakeClients("{}");
         var provider = new OidcProviderConfiguration
         {
-            Name = "Test", ProviderType = "Generic", Authority = "https://8.8.8.8", ClientId = "client"
+            Name = "Test",
+            ProviderType = "Generic",
+            Authority = "https://8.8.8.8",
+            ClientId = "client"
         };
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             OidcProviderDiscoveryProbe.TestAsync(provider, factory, cancellation.Token));
