@@ -52,7 +52,7 @@ public sealed class GrpcMaskedFieldPredicateTests
     private readonly ISqlFilterTranslator _sqlFilterTranslator = Substitute.For<ISqlFilterTranslator>();
     private readonly HonuaFeatureService _sut;
 
-    private static readonly MetadataV2Resource _resource = CreateResource();
+    private static readonly MetadataV2Object _resource = CreateResource();
     private static readonly MetadataV2Service _service = CreateService();
 
     public GrpcMaskedFieldPredicateTests()
@@ -84,11 +84,11 @@ public sealed class GrpcMaskedFieldPredicateTests
             .Returns(ResourceValidationResult.Success(CreateTriple()));
 
         _fieldMaskSource
-            .ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create(MaskedField));
 
         _sqlFilterTranslator
-            .Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+            .Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Object>())
             .Returns(new SqlFragment("TRUE", []));
 
         _featureReader
@@ -263,7 +263,7 @@ public sealed class GrpcMaskedFieldPredicateTests
         return context;
     }
 
-    private static MetadataV2Resource CreateResource()
+    private static MetadataV2Object CreateResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -271,7 +271,7 @@ public sealed class GrpcMaskedFieldPredicateTests
                 Id = "resource-masked",
                 Name = "masked"
             },
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = MetadataV2SpatialReference.Wgs84
@@ -317,7 +317,7 @@ public sealed class GrpcMaskedFieldPredicateTests
     private static MetadataV2ServiceLayerTriple CreateTriple()
         => new(
             _service,
-            new MetadataV2Publication
+            new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -326,7 +326,7 @@ public sealed class GrpcMaskedFieldPredicateTests
                 },
                 ServiceId = _service.Metadata.Id,
                 ResourceId = _resource.Metadata.Id,
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = "0",
                     IsNumeric = true

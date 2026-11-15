@@ -30,10 +30,10 @@ public sealed class FeatureServerReplicaDownloadContractTests
     [UnitTest]
     public void ReplicaGeometryQuery_SpatialLayer_RequestsZMFromStorageInTheAdvertisedCrs()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "parcels" },
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Polygon,
                 SpatialReference = new MetadataV2SpatialReference { Srid = 2193 },
@@ -53,10 +53,10 @@ public sealed class FeatureServerReplicaDownloadContractTests
     [UnitTest]
     public void ReplicaGeometryQuery_AttributeOnlyTable_RequestsNoReprojectionAndCarriesNoSpatialReference()
     {
-        var table = new MetadataV2Resource
+        var table = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "inspections" },
-            Type = MetadataV2ResourceType.Table
+            Type = MetadataV2ObjectType.Table
         };
 
         FeatureServerEndpoints.ReplicaGeometryQuery(new FeatureQuery(), table).OutputSrid.Should().BeNull();

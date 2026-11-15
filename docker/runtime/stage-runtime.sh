@@ -43,8 +43,7 @@ mkdir -p "$additions/tmp/honua/cache" "$additions/tmp/honua/temp" \
     "$additions/tmp/honua/honua-import-staging" \
     "$additions/tmp/honua/honua-geoprocessing-outputs" \
     "$additions/tmp/honua/honua-shapefile" "$additions/tmp/honua/honua-geopackage" \
-    "$additions/tmp/honua/honua-kmz" "$additions/tmp/honua/honua-filegdb" \
-    "$additions/tmp/honua/honua-ogc-coverage-import"
+    "$additions/tmp/honua/honua-kmz" "$additions/tmp/honua/honua-filegdb"
 # Existing Compose volumes retain their versioned mount points.
 mkdir -p "$additions/tmp/honua-logs" "$additions/tmp/honua-cache" \
     "$additions/tmp/dotnet-diagnostics" "$additions/tmp/honua-temp" \

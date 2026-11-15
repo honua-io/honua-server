@@ -6,13 +6,13 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 // A hidden field is omitted from every public read path, and a mask is a separate check.
 public static class MetadataV2FieldVisibilityExtensions
 {
-    public static IEnumerable<MetadataV2Field> VisibleSchemaFields(this MetadataV2Resource resource)
+    public static IEnumerable<MetadataV2Field> VisibleSchemaFields(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.SchemaFields.Where(static field => !field.Hidden);
     }
 
-    public static MetadataV2Field? FindVisibleSchemaField(this MetadataV2Resource resource, string? fieldName)
+    public static MetadataV2Field? FindVisibleSchemaField(this MetadataV2Object resource, string? fieldName)
     {
         ArgumentNullException.ThrowIfNull(resource);
         if (string.IsNullOrWhiteSpace(fieldName))
@@ -24,7 +24,7 @@ public static class MetadataV2FieldVisibilityExtensions
             !field.Hidden && string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
     }
 
-    public static IReadOnlySet<string> HiddenSchemaFieldNames(this MetadataV2Resource resource)
+    public static IReadOnlySet<string> HiddenSchemaFieldNames(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.SchemaFields
@@ -33,14 +33,14 @@ public static class MetadataV2FieldVisibilityExtensions
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    public static bool IsHiddenSchemaField(this MetadataV2Resource resource, string? fieldName)
+    public static bool IsHiddenSchemaField(this MetadataV2Object resource, string? fieldName)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return !string.IsNullOrWhiteSpace(fieldName) && resource.SchemaFields.Any(field =>
             field.Hidden && string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
     }
 
-    public static MetadataV2Resource WithoutHiddenSchemaFields(this MetadataV2Resource resource)
+    public static MetadataV2Object WithoutHiddenSchemaFields(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.SchemaFields.Any(static field => field.Hidden)

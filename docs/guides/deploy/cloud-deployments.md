@@ -49,35 +49,35 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 The database and observability tiers are separate modules: `aws-data` / `azure-data`
 for the managed PostGIS, and `observability-stack`.
 
-Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The unsuffixed release and trunk tags are the canonical native-AOT production artifact. The `-aot` generic tags remain compatibility aliases to the same image. JIT images are explicitly suffixed `-jit` and are development/conformance/debugging aids, not supported production serving artifacts.
+Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The rc.2 default is the chiseled JIT image with PostGIS as its only database store. Unsuffixed generic release and nightly tags select that image. Native AOT is a separate, optional `-aot` variant; its promotion requires suite and live-journey parity evidence. Use the matching JIT `-full` variant for additional database stores. See [choose the serving image](choose-serving-image.md) for availability, store inventory, and upgrade checks.
 
-Cloud-targeted production tags remain explicit: `*-ecs-aot`, `*-lambda-aot`, and `*-functions-aot`; their shorter `*-ecs`, `*-lambda`, and `*-functions` compatibility aliases resolve to those same verified AOT images. Their JIT debugging counterparts end in `-jit` (`*-ecs-jit`, `*-lambda-jit`, `*-functions-jit`) so a production tag can never resolve to JIT.
+Cloud-targeted tags select their runtime explicitly: `*-ecs-jit` and `*-ecs-jit-full` are JIT variants, while `*-ecs-aot`, `*-lambda-aot`, and `*-functions-aot` select Native AOT. The shorter `*-ecs`, `*-lambda`, and `*-functions` compatibility aliases still resolve to the corresponding AOT images; they do not follow the generic default. A published tag does not change the platform support tier in the table above.
 
-The serving-image boundary is strict: the native-AOT web images contain no GDAL/OGR CLI, native GDAL/PROJ/GEOS libraries, or .NET GDAL bindings. PostGIS may use its own database-side GDAL support, and native raster/ETL jobs may use the independently built `honua-worker-etl` image; neither dependency is copied into the web container.
+The Native-AOT serving-image boundary excludes GDAL/OGR CLI, native GDAL/PROJ/GEOS libraries, and .NET GDAL bindings from the AOT web images. PostGIS may use its own database-side GDAL support, and native raster/ETL jobs may use the independently built `honua-worker-etl` image; neither dependency is copied into the web container.
 
 ### Which tag to pull
 
-On the generic web image (Docker Hub + GHCR), tags have distinct contracts. Pick by whether you want the latest *release* or the latest *trunk* build:
+These are the generic web image publication contracts (Docker Hub + GHCR). Confirm that the selected variant has actually been published for your revision, then pin its digest:
 
 | Tag | Means | Moves when | Published by |
 |---|---|---|---|
-| `latest` / `latest-aot` | Latest stable native-AOT **release** (`-aot` is an alias) | A `v*` release tag is cut | `deploy.yml` |
-| `vX.Y.Z` / `vX.Y.Z-aot` | A specific native-AOT release (`-aot` is an alias) | Never (immutable) | `deploy.yml` |
+| `latest` | Most recently promoted PostGIS JIT image | A stable release or manual default-branch deployment publishes | `deploy.yml` |
+| `vX.Y.Z` | A specific PostGIS JIT release | Never (immutable) | `deploy.yml` |
+| `latest-full`, `vX.Y.Z-full` | Corresponding JIT image with additional stores | `latest-full`: stable release or manual default-branch deployment; versioned tag: immutable | `deploy.yml` |
+| `latest-aot`, `vX.Y.Z-aot` | Corresponding optional Native-AOT image | `latest-aot`: stable release or manual default-branch deployment; versioned tag: immutable | `deploy.yml` |
+| `trunk`, `trunk-jit` | Latest certified PostGIS JIT trunk image | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `nightly`, `nightly-YYYYMMDD`, `nightly-<sha7>` | PostGIS JIT moving, dated, and revision-specific nightly images | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `trunk-jit-full`, `nightly-jit-full`, `nightly-jit-<sha7>-full` | Corresponding JIT nightly with additional stores | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `trunk-aot`, `nightly-aot`, `nightly-aot-<sha7>` | Corresponding optional Native-AOT nightly | A certified nightly candidate is published | `nightly-container-build.yml` |
 
-| `trunk` / `trunk-aot` | Latest native-AOT **trunk** build (`-aot` is an alias) | Every nightly build | `nightly-container-build.yml` |
-| `nightly`, `nightly-YYYYMMDD`, `nightly-<sha>` | Native-AOT trunk build with moving, dated, and SHA-pinned variants | Every nightly build | `nightly-container-build.yml` |
-| `latest-jit`, `vX.Y.Z-jit`, `trunk-jit`, `nightly-jit*` | Non-production JIT compatibility/debug image | Corresponding release or nightly build | `deploy.yml` / `nightly-container-build.yml` |
+The getting-started pages use the 2026.1 release channel
+`ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA), which only release
+promotion moves. The exact digest is in the release's `customer-install-manifest.json`
+(`server.image`). Do not infer that a new variant exists from an older tag.
 
-> **No `v*` release tag has been cut yet**, so no `vX.Y.Z` image exists and `latest` has
-> never moved. Until the first release, pin a digest or a dated `nightly-YYYYMMDD`
-> tag — both are immutable. The getting-started pages use the 2026.1 release channel
-> `ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA), which only release
-> promotion moves. The exact digest is in the release's `customer-install-manifest.json`
-> (`server.image`).
-
-- **Production / demos**: pull `latest` (or a pinned `vX.Y.Z`). Both are native AOT. `latest` deliberately tracks the latest *release*, not trunk, so it never silently advances to an unreleased build.
-- **Trunk-following consumers** (certification harnesses, "test against current trunk" CI, bleeding-edge previews): pull `trunk`. It is the documented native-AOT moving tag for the head of the default branch. Do **not** reach for `latest` expecting trunk — it can lag a release cycle behind.
-- **Compatibility debugging only**: use an explicitly suffixed `-jit` tag. Do not promote that image into production.
+- **Production / demos**: use the release's install manifest and supported platform variant. The mutable `latest` tags can include manual default-branch deployments; select the release image and pin its digest for deployment and rollback.
+- **Trunk-following consumers**: use `trunk` for the default JIT image, or the explicit full/AOT nightly variant required by your workload. Nightlies follow a [certified candidate](../operate/nightly-images.md), rather than every trunk commit.
+- **Additional database stores**: select the matching JIT full image and check the installed store inventory before restoring traffic. File-format imports alone do not require the full image.
 
 ## Pattern by team size
 

@@ -384,9 +384,9 @@ public sealed class WfsLegacyGeometryMetadataTests
                 fields.Add(new() { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = true });
             }
 
-            builder.AddResource(name, name, MetadataV2ResourceType.FeatureDataset,
+            builder.AddResource(name, name, MetadataV2ObjectType.FeatureDataset,
                     accessPolicy: new AccessPolicy { AllowAnonymous = true }, fields: [.. fields],
-                    spatial: new MetadataV2ResourceSpatial
+                    spatial: new MetadataV2ObjectSpatial
                     {
                         SpatialReference = MetadataV2SpatialReference.Wgs84,
                         GeometryType = type,
@@ -401,7 +401,7 @@ public sealed class WfsLegacyGeometryMetadataTests
                 .AddPublication(name, "legacy-geometry-service", name,
                     layerIndex: layerId,
                     storageBindingId: $"binding-{name}", serviceLocalId: name,
-                    publicationType: MetadataV2PublicationType.WfsFeatureType);
+                    publicationType: MetadataV2LayerType.WfsFeatureType);
         }
 
         return new TestMetadataV2GraphProvider(builder.Build());

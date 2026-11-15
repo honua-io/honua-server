@@ -16,6 +16,7 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
     private readonly FrozenDictionary<(int From, int To), DatumTransformationSelection> _byPair;
     private readonly FrozenDictionary<(int From, int To), AreaCandidate[]> _byArea;
     private readonly FrozenDictionary<int, DatumTransformationSelection> _byWkid;
+    private readonly FrozenDictionary<string, DatumTransformationSelection> _byName;
 
     public GeoServicesDatumTransformationCatalog()
     {
@@ -24,10 +25,12 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
         var byPair = new Dictionary<(int, int), DatumTransformationSelection>();
         var byArea = new Dictionary<(int, int), List<AreaCandidate>>();
         var byWkid = new Dictionary<int, DatumTransformationSelection>();
+        var byName = new Dictionary<string, DatumTransformationSelection>(StringComparer.Ordinal);
 
         foreach (var entry in table)
         {
             var forward = ToSelection(entry, forward: true);
+            byName.Add(entry.Name, forward);
 
             // The first entry listed for a pair is its Esri default; later entries for the
             // same pair are area alternatives, chosen only when an envelope picks exactly one.
@@ -57,6 +60,7 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
             pair => pair.Key,
             pair => pair.Value.ToArray());
         _byWkid = byWkid.ToFrozenDictionary();
+        _byName = byName.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
     public bool TryGetForEnvelope(
@@ -177,6 +181,27 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
         return false;
     }
 
+    public DatumTransformationSelection? FindByName(string name, int fromSrid, int toSrid)
+        => Orient(_byName.GetValueOrDefault(name), (fromSrid, toSrid));
+
+    private static DatumTransformationSelection? Orient(
+        DatumTransformationSelection? found, (int From, int To) pair)
+    {
+        if (found is null || found.FromSrid == pair.From && found.ToSrid == pair.To)
+        {
+            return found;
+        }
+
+        return found.FromSrid == pair.To && found.ToSrid == pair.From
+            ? found with
+            {
+                FromSrid = pair.From,
+                ToSrid = pair.To,
+                TransformForward = !found.TransformForward
+            }
+            : null;
+    }
+
     private static DatumTransformationSelection ToSelection(DatumTransformationEntry entry, bool forward)
         => new()
         {
@@ -186,6 +211,7 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
             ToSrid = forward ? entry.ToSrid : entry.FromSrid,
             EpsgOperationCode = entry.EpsgOperationCode,
             ProjPipeline = entry.ProjPipeline,
+            RequiresCoordinateEpoch = entry.RequiresCoordinateEpoch,
             TransformForward = forward,
             RequiredGrids = entry.RequiredGrids ?? []
         };
@@ -241,6 +267,8 @@ internal sealed record DatumTransformationEntry
     public int? EpsgOperationCode { get; init; }
 
     public string? ProjPipeline { get; init; }
+
+    public bool RequiresCoordinateEpoch { get; init; }
 
     public IReadOnlyList<string>? RequiredGrids { get; init; }
 }

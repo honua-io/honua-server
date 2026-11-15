@@ -13,7 +13,7 @@ namespace Honua.Db.Postgres.Tests.Queries.Filters;
 public class PostgresSqlFilterTranslatorTests
 {
     private readonly PostgresSqlFilterTranslator _translator = new();
-    private readonly MetadataV2Resource _resource;
+    private readonly MetadataV2Object _resource;
 
     public PostgresSqlFilterTranslatorTests()
     {
@@ -1193,7 +1193,7 @@ public class PostgresSqlFilterTranslatorTests
         sql.Should().NotContain("ST_Transform(ST_GeomFromWKB(@p0, @p1), " + targetLiteral + ")");
     }
 
-    private static MetadataV2Resource CreateResource(MetadataV2SpatialReference? spatialReference = null)
+    private static MetadataV2Object CreateResource(MetadataV2SpatialReference? spatialReference = null)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -1202,8 +1202,8 @@ public class PostgresSqlFilterTranslatorTests
                 Name = "TestLayer",
                 Description = "Test layer for SQL translation",
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = spatialReference ?? MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
