@@ -1096,6 +1096,13 @@ jobs:
           --configuration Release --no-build --no-restore
           --logger "trx;LogFileName=source-architecture-tests.trx" --results-directory ./artifacts/test-results
 
+      # Honua.Ai.Tests runs the strict McpToolRosterDriftTests here, and the
+      # committed roster is trunk-generated, so project it like the server family.
+      - name: Regenerate the MCP roster projection for protocol tests
+        if: matrix.family == 'protocols'
+        timeout-minutes: 10
+        run: bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release --no-build --no-restore
+
       - name: Prepare foundation Testcontainers images
         if: matrix.family != 'core'
         timeout-minutes: 12
