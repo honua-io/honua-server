@@ -74,7 +74,7 @@ public sealed class FileMetadataV2GraphProviderTests
         {
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.dangling", Name = "dangling" },
                     ResourceId = "resource.does-not-exist",
@@ -124,8 +124,8 @@ public sealed class FileMetadataV2GraphProviderTests
         var graph = SampleGraph();
         var dataset = graph.Resources[0] with
         {
-            Spatial = new MetadataV2ResourceSpatial { PrimaryGeometryField = "shape" },
-            Temporal = new MetadataV2ResourceTemporal { StartTimeField = "start", EndTimeField = "end" },
+            Spatial = new MetadataV2ObjectSpatial { PrimaryGeometryField = "shape" },
+            Temporal = new MetadataV2ObjectTemporal { StartTimeField = "start", EndTimeField = "end" },
             SchemaFields = [new() { Name = "shape" }, new() { Name = "start" }, new() { Name = "end" }]
         };
         var node = JsonSerializer.SerializeToNode(graph with { Resources = [dataset] },
@@ -170,10 +170,10 @@ public sealed class FileMetadataV2GraphProviderTests
             GeneratedAt = DateTimeOffset.Parse("2026-05-20T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     StorageBindingIds = ["storage.parcels.postgis"],
 
                 }
@@ -200,13 +200,13 @@ public sealed class FileMetadataV2GraphProviderTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels.features", Name = "parcels" },
                     ResourceId = "resource.parcels",
                     ServiceId = "service.features",
                     StorageBindingId = "storage.parcels.postgis",
-                    PublicationType = MetadataV2PublicationType.OgcCollection,
+                    PublicationType = MetadataV2LayerType.OgcCollection,
                 }
             ],
         };

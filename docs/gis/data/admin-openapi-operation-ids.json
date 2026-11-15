@@ -33,6 +33,12 @@
   ],
   "operations": [
     {
+      "operationId": "SearchCoordinateSystemsV1",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/coordinate-systems"
+    },
+    {
       "operationId": "acknowledgeObservabilityAlert",
       "catalogOperationId": null,
       "method": "POST",
@@ -592,7 +598,7 @@
     },
     {
       "operationId": "getAdminLayerDisplay",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.layer.display.get",
       "method": "GET",
       "path": "/metadata/layers/{storageLayerId}/display"
     },
@@ -628,7 +634,7 @@
     },
     {
       "operationId": "getAdminLayerSpatial",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.layer.spatial.get",
       "method": "GET",
       "path": "/metadata/layers/{storageLayerId}/spatial"
     },
@@ -2164,7 +2170,7 @@
     },
     {
       "operationId": "setAdminLayerDisplay",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.layer.display.set",
       "method": "PUT",
       "path": "/metadata/layers/{storageLayerId}/display"
     },
@@ -2194,7 +2200,7 @@
     },
     {
       "operationId": "setAdminLayerSpatial",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.layer.spatial.set",
       "method": "PUT",
       "path": "/metadata/layers/{storageLayerId}/spatial"
     },

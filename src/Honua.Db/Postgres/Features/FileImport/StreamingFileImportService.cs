@@ -158,7 +158,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
             if (_datumTransformationCatalog.HasAreaOfUse(sourceSrid, targetSrid))
             {
-                // The envelope is in no catalog area, or it meets more than one.
+                // No region contains the envelope, or matching regions have equal priority.
                 // Do not fall back to the CONUS NAD27 grid.
                 return null;
             }
@@ -510,10 +510,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             }
 
             var targetSrid = request.TargetSrid ?? sourceSrid.Value;
-            request = request with { TargetSrid = targetSrid };
 
             if (coordinateEpoch.HasValue &&
-                (!detectedSrid.HasValue || sourceSrid.Value != request.TargetSrid ||
+                (!detectedSrid.HasValue || sourceSrid.Value != targetSrid ||
                  sourceSrid.Value != detectedSrid.Value))
             {
                 return ImportResult.CreateFailure(request.TableName, format.Value,
@@ -607,7 +606,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             string physicalTableName;
             bool replacementBlocked;
             IReadOnlyList<ImportTypedColumn> typedColumns;
-            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked, typedColumns) = await ImportStreamingAsync(
+            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked, typedColumns, targetSrid) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
@@ -689,6 +688,13 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     : [.. preflightWarnings, .. rowIssues],
                 TypedColumns = typedColumns
             };
+            return result;
+        }
+        catch (ImportSridValidationException ex)
+        {
+            errorMessage = ex.Message;
+            result = ImportResult.CreateFailure(request.TableName, format ?? SupportedFileFormat.GeoJson,
+                errorMessage, stopwatch.Elapsed, warnings, ex.Issues[0].Code, ex.Issues);
             return result;
         }
         catch (CsvImportOptionsException ex)

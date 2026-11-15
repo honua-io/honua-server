@@ -78,6 +78,7 @@ using Honua.Server.Features.Studio;
 using Honua.PackageReview;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Operations.Status;
+using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Features.Streaming.Conformance;
 using Honua.Server.Features.WorkflowPackages;
@@ -108,10 +109,8 @@ using Microsoft.AspNetCore.Server.Kestrel.Https;
 // In the Development environment ASP.NET Core loads the static-web-assets runtime manifest
 // implicitly, inside WebApplication.CreateBuilder, and eagerly opens every content root it
 // declares as a PhysicalFileProvider — which throws DirectoryNotFoundException for a root that
-// is not materialized on disk. That aborts host construction before any application code (or
-// any test assertion) runs. The explicit hosted-Blazor loader below is already hardened against
-// this, but it never runs in Development, so the guard has to happen here, ahead of the builder
-// (honua-server#2904).
+// is not materialized on disk. That aborts host construction before any application code runs,
+// so the missing roots are created here, ahead of the builder.
 StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -242,8 +241,6 @@ builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
 builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
     services => services.GetRequiredService<Honua.ControlPlane.OperationHumanApprovalAuthority>());
 
-// Enable Aspire integrations only when Aspire configuration is present.
-var useAspire = builder.Configuration.GetSection("Aspire").Exists();
 var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
@@ -267,47 +264,26 @@ var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastr
     requiresDurableDistributedEvents);
 ConnectionMultiplexer? connectedRedis = null;
 
-if (useAspire)
+var tracingSection = builder.Configuration.GetSection(TracingOptions.SectionName);
+var tracingEnabled = tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled));
+if (tracingSection.Exists() || tracingEnabled)
 {
-    // Add Aspire service defaults (OTel, health, resilience)
-    builder.AddServiceDefaults();
+    builder.AddTelemetryDefaults();
+}
 
-    // Add Npgsql with connection from Aspire
-    builder.AddNpgsqlDataSource("DefaultConnection");
-
-    // Add Redis if configured, otherwise fallback to in-memory cache
-    if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
+// Add Redis if configured, otherwise fallback to in-memory cache
+if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
+{
+    var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
+    builder.Services.AddStackExchangeRedisCache(options =>
     {
-        builder.AddRedisDistributedCache("redis");
-    }
-    else
-    {
-        builder.Services.AddDistributedMemoryCache();
-    }
+        options.Configuration = redisCacheConnectionString;
+        options.InstanceName = cacheKeyPrefix;
+    });
 }
 else
 {
-    var tracingSection = builder.Configuration.GetSection(TracingOptions.SectionName);
-    var tracingEnabled = tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled));
-    if (tracingSection.Exists() || tracingEnabled)
-    {
-        builder.AddTelemetryDefaults();
-    }
-
-    // Add Redis if configured, otherwise fallback to in-memory cache
-    if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
-    {
-        var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
-        builder.Services.AddStackExchangeRedisCache(options =>
-        {
-            options.Configuration = redisCacheConnectionString;
-            options.InstanceName = cacheKeyPrefix;
-        });
-    }
-    else
-    {
-        builder.Services.AddDistributedMemoryCache();
-    }
+    builder.Services.AddDistributedMemoryCache();
 }
 
 if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
@@ -619,6 +595,11 @@ if (hostHasSystemDatabase)
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
         .GetValue<Honua.ControlPlane.ControlPlaneTriggerMode>("TriggerMode", Honua.ControlPlane.ControlPlaneTriggerMode.Poll);
 
+    builder.Services.AddScoped<Honua.Infrastructure.Monitoring.OpsNotificationReminderRunner>();
+    builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler>(
+        static provider => provider.GetRequiredService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>());
+
     if (!isTestEnvironment)
     {
         // All reconcile families are mode-selected (Phase 1: execution jobs; Phase 2: deploy +
@@ -649,6 +630,11 @@ if (hostHasSystemDatabase)
             // route auto-safe remediation findings back through the operation gateway. It is
             // only hosted with the Redis-backed operation gateway; no-Redis hosts stay inert.
             builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
+            if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
+            {
+                builder.Services.AddHostedService(static provider =>
+                    provider.GetRequiredService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>());
+            }
         }
     }
 
@@ -745,6 +731,14 @@ builder.Services.AddAwsImportObjectStore();
 Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
     builder.Services, builder.Configuration);
 builder.Services.AddHostedService<Honua.ControlPlane.ReleaseChangeCdnInvalidation>();
+Honua.Cloud.Aws.Features.Monitoring.AwsOpsWatchdogServiceCollectionExtensions.AddAwsOpsWatchdogKillSwitch(
+    builder.Services, builder.Configuration);
+if (systemDatabaseConfigured && builder.Services.Any(service =>
+    service.ServiceType == typeof(Honua.Core.Features.Observability.Abstractions.IOpsWatchdogKillSwitch)))
+{
+    builder.Services.AddScoped<Honua.Infrastructure.Monitoring.OpsAutonomySettingsWriter>();
+    builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsWatchdogStartupReconciliation>();
+}
 #endif
 
 // Configure file upload security limits
@@ -1132,6 +1126,13 @@ builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
 //      (Startup/FeatureEventsAndStreamingRegistration.cs)
 builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration, requiresDurableDistributedEvents);
 // ---- End extracted block
+
+// ---- Cross-node realtime: event log and fan-out provider (ADR-0085)
+//      (Features/Realtime/RealtimeServiceCollectionExtensions.cs)
+builder.Services.AddRealtimeFanout(
+    builder.Configuration,
+    Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration));
+// ---- End block
 builder.Services.AddCollaborationSessionTransport();
 
 // v1 manifest drift webhook dispatcher removed in #1035 cutover.
@@ -1699,6 +1700,9 @@ app.UseWhen(
     });
 #endif
 
+// Runs after every credential type is hydrated and before tenant and schema resolution.
+app.UseMiddleware<AnonymousPressureAdmissionMiddleware>();
+
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
 // before any downstream feature handler reads ITenantContext (#1144).
@@ -2084,12 +2088,6 @@ if (offlineSyncEnabled)
     app.MapFieldCollectionSyncEndpoints();
 }
 app.MapTileOperationsEndpoints();
-
-// Map health endpoints for Aspire dashboard (only when Aspire is enabled)
-if (useAspire)
-{
-    app.MapDefaultEndpoints();
-}
 
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();
