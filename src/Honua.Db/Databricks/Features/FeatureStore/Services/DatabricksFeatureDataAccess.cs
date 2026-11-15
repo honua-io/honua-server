@@ -9,6 +9,16 @@ using Honua.Db.Databricks.Features.Infrastructure;
 
 namespace Honua.Db.Databricks.Features.FeatureStore.Services;
 
+/// <summary>
+/// Translates Databricks SQL Statement Execution result sets into the canonical
+/// feature-store domain types (features, counts, extents, object-id lists).
+/// </summary>
+/// <remarks>
+/// "Data access" here means submitting the SQL built by
+/// <see cref="DatabricksFeatureQueryBuilder"/> to the Statement Execution API through
+/// <see cref="IDatabricksStatementClient"/> and decoding the JSON rows. Geometry arrives
+/// as a WKB hex string and is decoded to the byte array carried by <see cref="Feature.Geometry"/>.
+/// </remarks>
 internal interface IDatabricksFeatureDataAccess
 {
     /// <summary>Executes a SELECT statement and projects the rows into features.</summary>
@@ -43,9 +53,9 @@ internal interface IDatabricksFeatureDataAccess
 /// </summary>
 internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
 {
-    private readonly DatabricksStatementClient _client;
+    private readonly IDatabricksStatementClient _client;
 
-    public DatabricksFeatureDataAccess(DatabricksStatementClient client)
+    public DatabricksFeatureDataAccess(IDatabricksStatementClient client)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
     }
