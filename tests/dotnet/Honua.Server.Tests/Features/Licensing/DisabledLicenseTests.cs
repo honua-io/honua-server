@@ -59,9 +59,6 @@ public sealed class DisabledLicenseTests
         Assert.Null(snapshot.ExpiresAt);
         Assert.All(FeatureCatalog.All, feature => Assert.True(snapshot.HasEntitlement(feature.Key)));
         Assert.Empty(resolver.ReceivedCalls());
-        var environment = Substitute.For<IHostEnvironment>();
-        environment.EnvironmentName.Returns(Environments.Production);
-        Assert.True(await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(configuration, environment));
     }
 
     [Theory]

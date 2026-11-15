@@ -124,7 +124,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
 
             Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Healthy", databaseStopwatch.Elapsed.TotalMilliseconds);
 
-            // A configured Redis dependency must answer a live probe, even when cache fallback is available.
+            // The cache must answer a live probe.
             if (_cacheHealthChecker != null)
             {
                 currentCheckName = "Cache";
@@ -163,7 +163,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                         ReadinessReasonCodes.FeatureChangeEventStorageUnavailable);
                 }
 
-                // In-memory single-node mode (no Redis configured) is healthy-but-degraded,
+                // In-memory single-node mode is healthy-but-degraded,
                 // mirroring the cache fallback check above; it must not fail readiness (#1618).
                 Log.HealthCheckExecuted(
                     _logger,

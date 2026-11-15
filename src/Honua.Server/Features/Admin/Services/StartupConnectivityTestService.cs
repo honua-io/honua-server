@@ -56,7 +56,7 @@ internal sealed class StartupConnectivityTestService
             // Test external service URLs
             await TestExternalServicesAsync(result, cancellationToken);
 
-            // Test cache connectivity (Redis)
+            // Test cache connectivity
             await TestCacheConnectivityAsync(result, cancellationToken);
 
             // Test cloud storage connectivity
@@ -310,9 +310,9 @@ internal sealed class StartupConnectivityTestService
     {
         var test = new ConnectivityTest
         {
-            Name = "Cache (Redis)",
+            Name = "Cache",
             Category = "Cache",
-            Description = "Test Redis cache connectivity"
+            Description = "Test cache connectivity"
         };
 
         try
