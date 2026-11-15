@@ -136,6 +136,16 @@ public sealed class GrpcReceiptOperationEvidenceTests(DatabaseFixtureAdapter dat
     [InlineData("{\"version\":2,\"payloadSha256\":\"$hash\",\"creates\":[],\"updates\":[],\"deletes\":[]}")]
     [InlineData("{\"version\":1,\"payloadSha256\":\"wrong\",\"creates\":[],\"updates\":[],\"deletes\":[]}")]
     [InlineData("{\"version\":1,\"payloadSha256\":\"$hash\",\"creates\":[{}],\"updates\":[],\"deletes\":[]}")]
+    [InlineData("[]")]
+    [InlineData("{\"version\":\"1\",\"payloadSha256\":\"$hash\",\"creates\":[],\"updates\":[],\"deletes\":[]}")]
+    [InlineData("{\"version\":1,\"payloadSha256\":\"$hash\",\"creates\":null,\"updates\":[],\"deletes\":[]}")]
+    [InlineData("{\"version\":1,\"payloadSha256\":\"$hash\",\"creates\":[[{\"generation\":0,\"layer_id\":91001,\"objectid\":10,\"public_objectid\":null,\"version_id\":null,\"operation\":1}]],\"updates\":[],\"deletes\":[]}")]
+    [InlineData("{\"version\":1,\"payloadSha256\":\"$hash\",\"creates\":[[{\"generation\":\"1\",\"layer_id\":91001,\"objectid\":10,\"public_objectid\":null,\"version_id\":null,\"operation\":1}]],\"updates\":[],\"deletes\":[]}")]
+    [InlineData("{\"version\":1,\"payloadSha256\":\"$hash\",\"creates\":[[{\"generation\":1,\"layer_id\":null,\"objectid\":10,\"public_objectid\":null,\"version_id\":null,\"operation\":1}]],\"updates\":[],\"deletes\":[]}")]
+    [InlineData("{\"version\":1,\"payloadSha256\":\"$hash\",\"creates\":[[{\"generation\":1,\"layer_id\":91001,\"objectid\":9223372036854775808,\"public_objectid\":null,\"version_id\":null,\"operation\":1}]],\"updates\":[],\"deletes\":[]}")]
+    [InlineData("{\"version\":1,\"payloadSha256\":\"$hash\",\"creates\":[[{\"generation\":1,\"layer_id\":91001,\"objectid\":10,\"public_objectid\":\"10\",\"version_id\":null,\"operation\":1}]],\"updates\":[],\"deletes\":[]}")]
+    [InlineData("{\"version\":1,\"payloadSha256\":\"$hash\",\"creates\":[[{\"generation\":1,\"layer_id\":91001,\"objectid\":10,\"public_objectid\":null,\"version_id\":\"invalid\",\"operation\":1}]],\"updates\":[],\"deletes\":[]}")]
+    [InlineData("{\"version\":1,\"payloadSha256\":\"$hash\",\"creates\":[[{\"generation\":1,\"layer_id\":91001,\"objectid\":10,\"public_objectid\":null,\"version_id\":null,\"operation\":9}]],\"updates\":[],\"deletes\":[]}")]
     public async Task TryReadWithEvidenceAsync_UnusableSidecar_PreservesPayloadWithUnavailableEvidence(string json)
     {
         await SeedEvidenceAsync();
