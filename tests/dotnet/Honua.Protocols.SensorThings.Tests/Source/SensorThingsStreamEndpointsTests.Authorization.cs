@@ -48,10 +48,12 @@ public sealed partial class SensorThingsStreamEndpointsTests
         var ct = timeout.Token;
         var issuer = _fixture.GetService<IPortalTokenIssuer>();
         const string referer = "https://observation-proof.example/";
+        // The expiring credential must outlive connect, publish and the first observation
+        // (about 3 seconds in CI, measured by the revocation variants) and then expire.
         async Task<PortalTokenIssuance> IssueAsync(bool longLived = false) => await issuer.IssueAsync(
             new PortalTokenIssueRequest("sta-proof", "STA proof", "tenant-a", ["reader"],
                 PortalTokenClientType.Referer, referer,
-                DateTimeOffset.UtcNow.AddSeconds(expire && !longLived ? 45 : 120)), ct);
+                DateTimeOffset.UtcNow.AddSeconds(expire && !longLived ? 20 : 120)), ct);
         PortalTokenIssuance credential;
         string Path(string token) => $"/sta/v1.1/ObservationsStream?datastreamId=1&token={token}";
         using var tenantA = _fixture.CreateAdminClient();
