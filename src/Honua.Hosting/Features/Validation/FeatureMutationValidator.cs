@@ -702,6 +702,7 @@ internal static class MetadataV2AttributeValidation
             }
             catch (Exception exception) when (exception is ArgumentException or ExactValueRangeException)
             {
+                // Invalid bounds are ignored, matching unsupported range metadata below.
             }
         }
         value = default;
