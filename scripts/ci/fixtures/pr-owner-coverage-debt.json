@@ -60,7 +60,6 @@
     "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/PublishedOperationToolTests.Proposals.cs",
     "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/PublishedOperationToolTests.cs",
     "tests/dotnet/Honua.Server.Tests/Import/IdempotentUrlImportEndpointTests.cs",
-    "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinatorRecoveryTests.cs",
     "tests/fixtures/plugins/"
   ]
 }
