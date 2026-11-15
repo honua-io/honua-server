@@ -35,37 +35,66 @@ def api(path):
     return PUBLISHER.api(f'repos/{os.environ["GITHUB_REPOSITORY"]}/{path}')
 
 
-def inventory(path, key):
-    found = {}
-    page = 1
-    total = None
+class Inventory:
+    def __init__(self, path, key):
+        self.path = path
+        self.key = key
+        self.found = {}
+        self.page = 1
+        self.total = None
 
-    def read(number):
-        response = api(f'{path}{"&" if "?" in path else "?"}per_page={PAGE_SIZE}&page={number}')
+    def read(self, number):
+        separator = '&' if '?' in self.path else '?'
+        response = api(f'{self.path}{separator}per_page={PAGE_SIZE}&page={number}')
         if response['total_count'] > MAX_PAGES * PAGE_SIZE:
             raise ValueError('Artifact inventory exceeds bounded sweep capacity; checkpoint unchanged')
         return response
 
-    with ThreadPoolExecutor(max_workers=INVENTORY_WORKERS) as executor:
-        while page <= MAX_PAGES:
-            remaining = max(1, ((total or 0) + PAGE_SIZE - 1) // PAGE_SIZE - page + 1)
-            stop = min(page + INVENTORY_WORKERS, page + remaining, MAX_PAGES + 1)
-            responses = list(executor.map(read, range(page, stop)))
-            for response in responses:
-                if total is None:
-                    total = response['total_count']
-                elif total != response['total_count']:
-                    raise ValueError('Artifact inventory changed during discovery; checkpoint unchanged')
-                batch = response[key]
-                found.update((item['id'], item) for item in batch)
-                if len(batch) < PAGE_SIZE:
-                    if len(found) != total:
-                        raise ValueError('Artifact inventory is incomplete; checkpoint unchanged')
-                    print(f'Inventoried {path}: {len(found)} unique entries through page {page}', flush=True)
-                    return list(found.values())
-                page += 1
-            print(f'Inventoried {path}: {len(found)} unique entries through page {page - 1}', flush=True)
+    def accept(self, response):
+        if self.total is None:
+            self.total = response['total_count']
+        elif self.total != response['total_count']:
+            raise ValueError('Artifact inventory changed during discovery; checkpoint unchanged')
+        batch = response[self.key]
+        self.found.update((item['id'], item) for item in batch)
+        return batch
+
+    def collect(self, responses):
+        for response in responses:
+            batch = self.accept(response)
+            if len(batch) < PAGE_SIZE:
+                return self.finish()
+            self.page += 1
+        self.report(self.page - 1)
+        return None
+
+    def finish(self):
+        if len(self.found) != self.total:
+            raise ValueError('Artifact inventory is incomplete; checkpoint unchanged')
+        self.report(self.page)
+        return list(self.found.values())
+
+    def report(self, page):
+        print(f'Inventoried {self.path}: {len(self.found)} unique entries through page {page}', flush=True)
+
+    def pages(self):
+        remaining = max(1, ((self.total or 0) + PAGE_SIZE - 1) // PAGE_SIZE - self.page + 1)
+        stop = min(self.page + INVENTORY_WORKERS, self.page + remaining, MAX_PAGES + 1)
+        return range(self.page, stop)
+
+
+def discover_inventory(executor, discovery):
+    while discovery.page <= MAX_PAGES:
+        responses = list(executor.map(discovery.read, discovery.pages()))
+        found = discovery.collect(responses)
+        if found is not None:
+            return found
     raise ValueError('Artifact inventory exceeded bounded pagination; checkpoint unchanged')
+
+
+def inventory(path, key):
+    with ThreadPoolExecutor(max_workers=INVENTORY_WORKERS) as executor:
+        return discover_inventory(executor, Inventory(path, key))
 
 
 def download(artifact, destination):
