@@ -269,6 +269,7 @@ public sealed class ConfigurationETagTests
             builder.Services.AddResponseCompression(options => options.Providers.Add<GzipCompressionProvider>());
             var source = ConfigureServices(builder, generation, outputCache);
             var app = builder.Build();
+            app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
             app.UseResponseCompression();
             if (outputCache == OutputCacheRegistration.Enabled)
             {
