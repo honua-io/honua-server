@@ -278,6 +278,8 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 | `FeatureChangeEvents__Webhook__Url` / `FeatureChangeEvents__Webhook__Secret` | — | Webhook target URL and HMAC signing secret. |
 | `FeatureChangeEvents__Webhook__MaxAttempts` | `5` | Delivery attempts per event (exponential backoff). |
 
+Outbound clients using DNS-validated direct connections, including feature-change webhooks, URL imports, migration sources and external-service discovery, ignore system HTTP proxy settings. Permit direct egress to their configured destinations.
+
 Application-level rate limiting is opt-in (`RateLimiting__Enabled=true`, off by default) and supplements edge enforcement; enforce rate limits at your edge proxy, load balancer, or WAF. Its counters are per node: a limit of N admits up to N requests per window on each replica.
 
 ## Admission and pooling

@@ -217,6 +217,9 @@ var requiresDurableDistributedEvents = !builder.Environment.IsDevelopment() && !
 await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
     builder.Configuration,
     builder.Environment.IsProduction());
+// Responses do not name the web server implementation.
+builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(
+    options => options.AddServerHeader = false);
 var clientCertificateMode = builder.Configuration.GetValue<ClientCertificateAuthenticationMode>(
     "Authentication:ClientCertificates:Mode");
 if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
