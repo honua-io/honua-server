@@ -3,14 +3,10 @@
 
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -30,13 +26,6 @@ public sealed class FeatureStreamProHost : IAsyncLifetime
         // the short scheduled interval build their own host.
         Fixture = new WebAppFixture()
             .ReplaceService<ILicenseEntitlementService>(_license)
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IFeatureChangeEventStore>();
-                services.AddSingleton<IFeatureChangeEventStore>(provider =>
-                    new ResettableFeatureChangeEventStore(
-                        provider.GetRequiredService<IOptions<FeatureChangeEventOptions>>()));
-            })
             .ConfigureWebHost(builder => builder.UseSetting(
                 "FeatureStreaming:HeartbeatInterval",
                 "01:00:00"));
@@ -46,8 +35,9 @@ public sealed class FeatureStreamProHost : IAsyncLifetime
 
     public Task DisposeAsync() => Fixture.DisposeAsync();
 
-    // Sessions and the in-memory event log are singletons on this host. Clear them
-    // so each case still observes an empty stream, the same as a fresh host.
+    // Sessions belong to this application and must not leak between sequential cases.
+    // The production PostgreSQL event log survives a host restart too: keep its rows
+    // and monotonic generations, including the realtime relay's durable position.
     public void ResetBetweenTests()
     {
         var sessions = Fixture.GetService<FeatureStreamSessionManager>();
@@ -55,49 +45,5 @@ public sealed class FeatureStreamProHost : IAsyncLifetime
         {
             sessions.RemoveSession(session.SessionId, FeatureStreamDisconnectReason.ClientClosed);
         }
-
-        if (Fixture.GetService<IFeatureChangeEventStore>() is not ResettableFeatureChangeEventStore store)
-        {
-            throw new InvalidOperationException(
-                "The shared streaming host requires the in-memory feature-change event store.");
-        }
-
-        store.Reset();
-    }
-
-    private sealed class ResettableFeatureChangeEventStore(IOptions<FeatureChangeEventOptions> options)
-        : IFeatureChangeEventStore, IFeatureChangeEventStoreHealth, IDisposable
-    {
-        private InMemoryFeatureChangeEventStore _store = new(options);
-
-        private InMemoryFeatureChangeEventStore Current => Volatile.Read(ref _store);
-
-        public bool CanPersistEvents => Current.CanPersistEvents;
-
-        public bool IsUsingInMemoryFallback => Current.IsUsingInMemoryFallback;
-
-        public void Reset() => Interlocked.Exchange(
-            ref _store, new InMemoryFeatureChangeEventStore(options)).Dispose();
-
-        public Task<FeatureChangeEvent> AppendAsync(
-            FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-            => Current.AppendAsync(request, cancellationToken);
-
-        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
-            => Current.GetCurrentCursorAsync(cancellationToken);
-
-        public Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
-            => Current.GetOldestRetainedCursorAsync(cancellationToken);
-
-        public Task<FeatureChangeRetentionWindow> GetRetentionWindowAsync(
-            CancellationToken cancellationToken = default)
-            => Current.GetRetentionWindowAsync(cancellationToken);
-
-        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-            long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
-            CancellationToken cancellationToken = default)
-            => Current.QueryAsync(cursor, from, to, limit, cancellationToken);
-
-        public void Dispose() => Current.Dispose();
     }
 }

@@ -62,7 +62,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
             return Task.CompletedTask;
         }
 
-        // The host is already up. Drop sessions and events left by the previous case.
+        // The host is already up. Drop sessions left by the previous case.
         _host.ResetBetweenTests();
         _defaultApplicationStarted = true;
         _client = _fixture.CreateAdminClient();
