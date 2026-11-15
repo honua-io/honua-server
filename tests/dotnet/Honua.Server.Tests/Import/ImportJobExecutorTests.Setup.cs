@@ -19,8 +19,8 @@ public sealed partial class ImportJobExecutorTests
     private static (IExecutionJobStore Jobs, GeoservicesImportJobManager Manager, GeoservicesImportJobExecutor Executor)
         CreateGeoservicesExecutor(ServiceProvider provider, ILicenseOperationPolicy? policy = null)
     {
-        var progress = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
         var jobs = ImportExecutionTestJobs.Create();
+        var progress = new ImportExecutionTestProgressStore(jobs);
         var manager = new GeoservicesImportJobManager(
             progress, NullLogger<GeoservicesImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
         var executor = new GeoservicesImportJobExecutor(provider.GetRequiredService<IServiceScopeFactory>(),
@@ -31,8 +31,8 @@ public sealed partial class ImportJobExecutorTests
     private static (IExecutionJobStore Jobs, GeoServerImportJobManager Manager, GeoServerImportJobExecutor Executor)
         CreateGeoServerExecutor(ServiceProvider provider, ILicenseOperationPolicy? policy = null)
     {
-        var progress = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
         var jobs = ImportExecutionTestJobs.Create();
+        var progress = new ImportExecutionTestProgressStore(jobs);
         var manager = new GeoServerImportJobManager(
             progress, NullLogger<GeoServerImportJobManager>.Instance, jobs, Substitute.For<IJobQueue>());
         var executor = new GeoServerImportJobExecutor(new ConfigurationBuilder().Build(), new TestHostEnvironment(),
