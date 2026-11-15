@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.ControlPlane;
 using Microsoft.AspNetCore.Http;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
@@ -50,7 +51,39 @@ public sealed partial class OperationGatewayStateMachineTests
 
         Assert.Equal(OperationGatewayOutcome.ProposalCreated, result.Outcome);
         Assert.Contains(audit.Events, item => item.Action == "operation.proposed"
-            && item.Actor == "canonical-agent" && item.ActorType == AuditActorType.Agent);
+            && item.Actor == "canonical-agent" && item.ActorType == AuditActorType.UserId
+            && item.ActorAgent == "canonical-agent");
+    }
+
+    [UnitTheory]
+    [InlineData("agent", true, "canonical-agent")]
+    [InlineData("admin", true, null)]
+    [InlineData("agent", false, null)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ApprovalDeniedAudit_BindsOnlyAuthenticatedAgentIdentity(
+        string role, bool authenticated, string? expectedAgent)
+    {
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity([
+                new Claim(ClaimTypes.NameIdentifier, "canonical-agent"),
+                new Claim(ClaimTypes.Role, role)], authenticated ? "test" : null))
+        };
+        var audit = new RecordingAuditLog();
+        using var services = new ServiceCollection()
+            .AddSingleton<IAuditLog>(audit)
+            .AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = context })
+            .BuildServiceProvider();
+        var proposal = CreateProposal("agent-denied-approval", OperationClass.Deploy,
+            OperationProposalStatus.AwaitingApproval);
+
+        await OperationApprovalDenialRecorder.RecordAsync(services.GetRequiredService<IServiceScopeFactory>(),
+            proposal, "canonical-agent", OperationApprovalDenialReason.HumanSessionRequired, CancellationToken.None);
+
+        var record = Assert.Single(audit.Events);
+        Assert.Equal("operation.approval_denied", record.Action);
+        Assert.Equal(AuditOutcome.Denied, record.Outcome);
+        Assert.Equal(expectedAgent, record.ActorAgent);
     }
 
     [UnitTest]
@@ -72,9 +105,11 @@ public sealed partial class OperationGatewayStateMachineTests
         await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, ApprovedBy("human-approver"));
 
         Assert.True(executor.Entered.Task.IsCompleted);
-        Assert.Contains(audit.Events, item => item.Action == "operation.completed"
-            && item.Actor == "canonical-agent" && item.ActorType == AuditActorType.Agent);
+        Assert.Contains(audit.Events, item => item.Action == "operation.submitted"
+            && item.Actor == "canonical-agent" && item.ActorType == AuditActorType.UserId
+            && item.ActorAgent == "canonical-agent");
         Assert.Contains(audit.Events, item => item.Action == "operation.approved"
-            && item.Actor == "human-approver" && item.ActorType == AuditActorType.UserId);
+            && item.Actor == "human-approver" && item.ActorType == AuditActorType.UserId
+            && item.ActorAgent == null);
     }
 }

@@ -67,6 +67,7 @@ internal sealed class PostgresAuditLog : IAuditLog
         // is built over exactly what is persisted; the verifier replays the same
         // stored values, so the two hashes must agree.
         var actor = Truncate(auditEvent.Actor, MaxActorLength);
+        var actorAgent = auditEvent.ActorAgent is null ? null : Truncate(auditEvent.ActorAgent, MaxActorLength);
         var resourceType = Truncate(auditEvent.ResourceType, MaxResourceTypeLength);
         var resourceId = auditEvent.ResourceId is null ? null : Truncate(auditEvent.ResourceId, MaxResourceIdLength);
         var action = Truncate(auditEvent.Action, MaxActionLength);
@@ -83,12 +84,12 @@ internal sealed class PostgresAuditLog : IAuditLog
                 timestamp, event_type, actor, actor_type,
                 resource_type, resource_id, action, outcome,
                 correlation_id, remote_ip, user_agent, details,
-                prev_hash, entry_hash
+                prev_hash, entry_hash, actor_agent
             ) VALUES (
                 @timestamp, @event_type, @actor, @actor_type,
                 @resource_type, @resource_id, @action, @outcome,
                 @correlation_id, @remote_ip, @user_agent, @details,
-                @prev_hash, @entry_hash
+                @prev_hash, @entry_hash, @actor_agent
             )
             RETURNING audit_id
             """;
@@ -144,7 +145,8 @@ internal sealed class PostgresAuditLog : IAuditLog
                     correlationId,
                     remoteIp,
                     userAgent,
-                    details)
+                    details,
+                    actorAgent)
                 : AuditEntryHasher.ComputeEntryHash(
                     previousHash,
                     auditEvent.Timestamp,
@@ -158,13 +160,15 @@ internal sealed class PostgresAuditLog : IAuditLog
                     correlationId,
                     remoteIp,
                     userAgent,
-                    details);
+                    details,
+                    actorAgent);
 
             await using (var command = new NpgsqlCommand(sql, connection, transaction))
             {
                 command.Parameters.AddWithValue("@timestamp", auditEvent.Timestamp.UtcDateTime);
                 command.Parameters.AddWithValue("@event_type", auditEvent.EventType.ToString());
                 command.Parameters.AddWithValue("@actor", actor);
+                command.Parameters.AddWithValue("@actor_agent", NpgsqlTypes.NpgsqlDbType.Varchar, (object?)actorAgent ?? DBNull.Value);
                 command.Parameters.AddWithValue("@actor_type", auditEvent.ActorType.ToString());
                 command.Parameters.AddWithValue("@resource_type", resourceType);
                 command.Parameters.AddWithValue("@resource_id", (object?)resourceId ?? DBNull.Value);

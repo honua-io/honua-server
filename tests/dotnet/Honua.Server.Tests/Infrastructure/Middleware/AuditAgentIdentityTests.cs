@@ -43,7 +43,8 @@ public sealed class AuditAgentIdentityTests
         var actor = AuditContextResolver.ResolveActor(context, out var actorType);
 
         Assert.Equal(expectedActor, actor);
-        Assert.Equal(AuditActorType.Agent, actorType);
+        Assert.Equal(scheme == "ApiKey" ? AuditActorType.ApiKey : AuditActorType.UserId, actorType);
+        Assert.Equal(expectedActor, AuditContextResolver.ResolveAgent(context));
     }
 
     [Fact]
@@ -58,5 +59,6 @@ public sealed class AuditAgentIdentityTests
 
         Assert.Equal(AuditEvent.AnonymousActor, actor);
         Assert.Equal(AuditActorType.Anonymous, actorType);
+        Assert.Null(AuditContextResolver.ResolveAgent(context));
     }
 }

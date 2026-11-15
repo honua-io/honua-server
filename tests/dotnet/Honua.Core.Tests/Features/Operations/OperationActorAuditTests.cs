@@ -22,7 +22,7 @@ public sealed class OperationActorAuditTests
     [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false, AuditActorType.UserId)]
-    [InlineData(true, AuditActorType.Agent)]
+    [InlineData(true, AuditActorType.UserId)]
     public async Task SubmitAsync_AuthenticatedCallCanceledBeforeActuation_AuditsTheCallerNotAnonymous(
         bool agent, AuditActorType expectedType)
     {
@@ -48,6 +48,7 @@ public sealed class OperationActorAuditTests
             Assert.Equal(McpApiKeyActor, entry.Actor);
             Assert.NotEqual(AuditEvent.AnonymousActor, entry.Actor);
             Assert.Equal(expectedType, entry.ActorType);
+            Assert.Equal(agent ? McpApiKeyActor : null, entry.ActorAgent);
         }
     }
 
@@ -90,7 +91,8 @@ public sealed class OperationActorAuditTests
         var denied = Assert.Single(audit.Events);
         Assert.Equal("operation.denied", denied.Action);
         Assert.Equal(McpApiKeyActor, denied.Actor);
-        Assert.Equal(AuditActorType.Agent, denied.ActorType);
+        Assert.Equal(AuditActorType.UserId, denied.ActorType);
+        Assert.Equal(McpApiKeyActor, denied.ActorAgent);
         Assert.NotNull(result.AuditId);
     }
 

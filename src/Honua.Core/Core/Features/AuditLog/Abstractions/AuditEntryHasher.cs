@@ -26,7 +26,8 @@ public static class AuditEntryHasher
         string correlationId,
         string? remoteIp,
         string? userAgent,
-        string details)
+        string details,
+        string? actorAgent = null)
     {
         var bytes = Encoding.UTF8.GetBytes(Canonicalize(
             previousHash,
@@ -41,7 +42,8 @@ public static class AuditEntryHasher
             correlationId,
             remoteIp,
             userAgent,
-            details));
+            details,
+            actorAgent));
         return Convert.ToHexStringLower(SHA256.HashData(bytes));
     }
 
@@ -59,7 +61,8 @@ public static class AuditEntryHasher
         string correlationId,
         string? remoteIp,
         string? userAgent,
-        string details)
+        string details,
+        string? actorAgent = null)
     {
         if (chainKey.Length < AuditChainKeyMaterial.MinimumLength)
         {
@@ -79,7 +82,8 @@ public static class AuditEntryHasher
             correlationId,
             remoteIp,
             userAgent,
-            details));
+            details,
+            actorAgent));
         return Convert.ToHexStringLower(HMACSHA256.HashData(chainKey, bytes));
     }
 
@@ -96,7 +100,8 @@ public static class AuditEntryHasher
         string correlationId,
         string? remoteIp,
         string? userAgent,
-        string details)
+        string details,
+        string? actorAgent = null)
     {
         var builder = new StringBuilder(256);
 
@@ -120,6 +125,13 @@ public static class AuditEntryHasher
         AppendField(builder, remoteIp);
         AppendField(builder, userAgent);
         AppendField(builder, details ?? string.Empty);
+        // Keep legacy canonical bytes unchanged when no agent identity was recorded.
+        // Length-prefixed extension fields bind the agent without ambiguity.
+        if (actorAgent is not null)
+        {
+            AppendField(builder, "actor-agent:v1");
+            AppendField(builder, actorAgent);
+        }
         return builder.ToString();
     }
 

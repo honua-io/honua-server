@@ -195,6 +195,7 @@ internal sealed class AuditingFeatureWriter(
                 EventType = AuditEventType.DataDelete,
                 Actor = actor,
                 ActorType = actorType,
+                ActorAgent = context is null ? null : AuditContextResolver.ResolveAgent(context),
                 ResourceType = "feature",
                 ResourceId = layerId.ToString(CultureInfo.InvariantCulture),
                 Action = action,

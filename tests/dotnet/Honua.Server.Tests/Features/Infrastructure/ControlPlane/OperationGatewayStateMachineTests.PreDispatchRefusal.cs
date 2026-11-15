@@ -44,6 +44,30 @@ public sealed partial class OperationGatewayStateMachineTests
         Assert.Equal(scenario.Proposal.ProposalId, handle.ProposalId);
     }
 
+    [UnitTheory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ApplyApprovedProposal_PostAuditCredentialCancellation_TerminatesBothRecordsWithoutActuating(int cancellationAt)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var scenario = new PostAuditRefusalScenario(refusalAt: cancellationAt, cancellation: cancellation);
+        Assert.True(await scenario.Instances.TryCreateAsync(scenario.Accepted));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scenario.Gateway.ApplyApprovedProposalAsync(
+            scenario.Proposal.ProposalId,
+            new OperationProposalApprovalContext { ApprovedBy = "human-approver", TenantId = string.Empty },
+            cancellation.Token));
+
+        var persisted = await scenario.Proposals.GetAsync(scenario.Proposal.ProposalId);
+        Assert.Equal(OperationProposalStatus.Cancelled, persisted!.Status);
+        Assert.False(scenario.Executor.Entered.Task.IsCompleted);
+        Assert.Equal(cancellationAt, scenario.AuthorityChecks);
+        var handle = await scenario.Instances.GetAsync(scenario.Accepted.OperationInstanceId);
+        Assert.Equal(OperationHandleStatus.Cancelled, handle!.Status);
+        Assert.Equal(persisted.ResolutionReason, handle.Reason);
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task ApplyApprovedProposal_PostAuditCanonicalWriteFails_ProposalRemainsFailedWithoutActuating()
@@ -81,7 +105,8 @@ public sealed partial class OperationGatewayStateMachineTests
         public OperationGateway Gateway { get; }
         public int AuthorityChecks { get; private set; }
 
-        public PostAuditRefusalScenario(IOperationInstanceStore? instances = null, int refusalAt = 2)
+        public PostAuditRefusalScenario(IOperationInstanceStore? instances = null, int refusalAt = 2,
+            CancellationTokenSource? cancellation = null)
         {
             Proposal = CreateProposal("p-post-audit-refusal", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval)
                 with
@@ -92,7 +117,12 @@ public sealed partial class OperationGatewayStateMachineTests
             Executor.Completion.SetResult("execution-id");
             var keys = Substitute.For<IAdminApiKeyStore>();
             keys.GetAsync(_keyId, Arg.Any<CancellationToken>()).Returns(_ =>
-                Task.FromResult(++AuthorityChecks < refusalAt ? CurrentKey() : null));
+            {
+                if (++AuthorityChecks < refusalAt) return Task.FromResult<AdminApiKeyRecord?>(CurrentKey());
+                if (cancellation is null) return Task.FromResult<AdminApiKeyRecord?>(null);
+                cancellation.Cancel();
+                throw new OperationCanceledException(cancellation.Token);
+            });
             Gateway = CanonicalOperationGatewayTestComposition.Build(Proposals, Substitute.For<IGuardrailLadder>(), [Executor],
                 configure: services =>
                 {

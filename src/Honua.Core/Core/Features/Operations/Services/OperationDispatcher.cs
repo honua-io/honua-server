@@ -138,7 +138,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
                     ? "Operation exceeds the caller's OAuth scope authority."
                     : "Approved replay operation exceeds the sealed OAuth scope authority.",
             };
-            if (OperationAuditActor.ResolveType(context) == AuditActorType.Agent)
+            if (OperationAuditActor.ResolveAgent(context) is not null)
             {
                 var auditId = await WriteAuditAsync(scopeDenied, context, "operation.denied",
                     AuditOutcome.Denied, cancellationToken).ConfigureAwait(false);
@@ -404,7 +404,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
                     EvidenceRefs = OperationEnvelopeFactory.PreserveRequestBinding(envelope, decided.EvidenceRefs),
                 };
                 if (projected.Status == OperationHandleStatus.Denied &&
-                    OperationAuditActor.ResolveType(invocationContext) == AuditActorType.Agent)
+                    OperationAuditActor.ResolveAgent(invocationContext) is not null)
                 {
                     var denialId = await WriteAuditAsync(projected, invocationContext, "operation.denied",
                         AuditOutcome.Denied, cancellationToken).ConfigureAwait(false);
@@ -799,6 +799,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
             EventType = AuditEventType.AdminAction,
             Actor = context.PrincipalId ?? AuditEvent.AnonymousActor,
             ActorType = OperationAuditActor.ResolveType(context),
+            ActorAgent = OperationAuditActor.ResolveAgent(context),
             ResourceType = "operation_instance",
             ResourceId = envelope.OperationInstanceId,
             Action = action,

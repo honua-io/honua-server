@@ -13,5 +13,7 @@ public enum AuditActorType
 
     System = 3,
 
+    // Reserved API value. Persist agent identity in AuditEvent.ActorAgent while
+    // ActorType retains the credential kind supported by existing database readers.
     Agent = 4,
 }

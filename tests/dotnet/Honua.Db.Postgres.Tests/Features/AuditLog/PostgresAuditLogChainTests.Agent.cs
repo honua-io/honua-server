@@ -42,6 +42,48 @@ public sealed partial class PostgresAuditLogChainTests
         }
     }
 
+    [IntegrationTest]
+    public async Task AgentIdentity_MixedLegacyChain_BindsStoredIdentityAndFiltersExports()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(AgentIdentity_MixedLegacyChain_BindsStoredIdentityAndFiltersExports));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            await KeyedSink(schema).RecordAsync(Event("legacy", "auth.success"));
+            var agentEvent = Event("agent", "auth.success") with
+            {
+                ActorAgent = "agent-1",
+                ActorType = AuditActorType.ApiKey,
+            };
+            var receipt = await KeyedSink(schema).RecordAsync(agentEvent);
+            receipt.Should().NotBeNull();
+            await KeyedSink(schema).RecordAsync(agentEvent with { ActorAgent = "agent-2", CorrelationId = "other" });
+
+            var page = await new PostgresAuditLogReader(Provider(schema), schema)
+                .ListAsync(new AuditLogFilter { ActorAgent = "agent-1" });
+            page.Items.Should().ContainSingle().Which.ActorType.Should().Be(AuditActorType.ApiKey);
+            var exported = await CollectAsync(new PostgresAuditLogExporter(Provider(schema), schema)
+                .ExportAsync(new AuditExportFilter { ActorAgent = "agent-1" }));
+            exported.Should().ContainSingle().Which.ActorAgent.Should().Be("agent-1");
+            var verified = await KeyedVerifier(schema).VerifyAsync();
+            verified.Verified.Should().BeTrue();
+            verified.RowsChecked.Should().Be(3);
+
+            await ExecuteAsync(schema, $"""
+                DROP RULE audit_log_no_update ON "{schema}".audit_log;
+                UPDATE "{schema}".audit_log SET actor_agent = 'forged' WHERE actor_agent = 'agent-1';
+                CREATE RULE audit_log_no_update AS ON UPDATE TO "{schema}".audit_log DO INSTEAD NOTHING;
+                """);
+            var tampered = await KeyedVerifier(schema).VerifyAsync();
+            tampered.Verified.Should().BeFalse();
+            tampered.FirstBrokenAuditId.Should().Be(long.Parse(receipt!, System.Globalization.CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private (OperationDispatcher, IOperationExecutor, OperationDescriptor) AgentDispatcher(string schema)
     {
         var catalog = Substitute.For<IOperationCatalog>();
@@ -63,17 +105,17 @@ public sealed partial class PostgresAuditLogChainTests
     private async Task AssertAgentChainAsync(string schema, string actor, IReadOnlyList<OperationHandle> handles)
     {
         var reader = new PostgresAuditLogReader(Provider(schema), schema);
-        var page = await reader.ListAsync(new AuditLogFilter { Actor = actor, ActorTypes = [AuditActorType.Agent] });
+        var page = await reader.ListAsync(new AuditLogFilter { Actor = actor, ActorAgent = actor, ActorTypes = [AuditActorType.UserId] });
         page.Items.Should().HaveCount(5);
-        page.Items.Should().OnlyContain(row => row.Actor == actor && row.ActorType == AuditActorType.Agent);
+        page.Items.Should().OnlyContain(row => row.Actor == actor && row.ActorType == AuditActorType.UserId && row.ActorAgent == actor);
         page.Items.Where(row => row.Action == "operation.accepted").Select(row => row.ResourceId)
             .Should().BeEquivalentTo(new[] { handles[0].OperationInstanceId, handles[1].OperationInstanceId });
         page.Items.Should().ContainSingle(row => row.Action == "operation.completed" && row.ResourceId == handles[0].OperationInstanceId);
         page.Items.Should().ContainSingle(row => row.Action == "operation.denied" && row.ResourceId == handles[2].OperationInstanceId);
         page.Items.Should().ContainSingle(row => row.Action == "operation.denied" && row.ResourceId == handles[1].OperationInstanceId
             && row.Outcome == AuditOutcome.Denied);
-        var exported = await CollectAsync(new PostgresAuditLogExporter(Provider(schema), schema).ExportAsync(new AuditExportFilter()));
-        exported.Should().HaveCount(page.Items.Count).And.OnlyContain(row => row.Actor == actor && row.ActorType == AuditActorType.Agent);
+        var exported = await CollectAsync(new PostgresAuditLogExporter(Provider(schema), schema).ExportAsync(new AuditExportFilter { ActorAgent = actor }));
+        exported.Should().HaveCount(page.Items.Count).And.OnlyContain(row => row.Actor == actor && row.ActorType == AuditActorType.UserId && row.ActorAgent == actor);
         var report = await KeyedVerifier(schema).VerifyAsync();
         report.Verified.Should().BeTrue();
         report.RowsChecked.Should().Be(page.Items.Count);

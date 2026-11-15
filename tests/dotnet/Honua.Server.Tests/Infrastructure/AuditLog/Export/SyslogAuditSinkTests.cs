@@ -55,6 +55,22 @@ public sealed class SyslogAuditSinkTests
     }
 
     [Fact]
+    public async Task SendAsync_AgentIdentity_IsPreservedAndEscapedInCef()
+    {
+        var transport = new CapturingTransport();
+        var sink = new SyslogAuditSink(Options(), transport);
+        var evt = SampleEvent() with { ActorAgent = "agent=7" };
+
+        var result = await sink.SendAsync(new[] { evt }, CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        var line = transport.LastMessage.Should().ContainSingle().Subject;
+        line.Should().Contain("cs4Label=actorAgent");
+        line.Should().Contain(@"cs4=agent\=7");
+        line.Should().Contain("suser=user-7");
+    }
+
+    [Fact]
     public async Task SendAsync_SocketFailure_ReturnsRetryable()
     {
         var transport = new ThrowingTransport(new SocketException());

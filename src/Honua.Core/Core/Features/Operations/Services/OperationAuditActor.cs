@@ -12,5 +12,8 @@ internal static class OperationAuditActor
     internal static AuditActorType ResolveType(OperationPolicyContext context)
         => context.PrincipalId is null
             ? AuditActorType.Anonymous
-            : AgentApprovalRule.IsAgent(context.Roles) ? AuditActorType.Agent : AuditActorType.UserId;
+            : AuditActorType.UserId;
+
+    internal static string? ResolveAgent(OperationPolicyContext context)
+        => AgentApprovalRule.IsAgent(context.Roles) ? context.PrincipalId : null;
 }

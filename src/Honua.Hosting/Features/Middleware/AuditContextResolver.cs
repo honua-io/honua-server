@@ -31,7 +31,7 @@ internal static class AuditContextResolver
                 CanonicalSecurityActor.CanonicalActorClaim);
             if (!string.IsNullOrWhiteSpace(canonicalActor))
             {
-                actorType = AgentPrincipal.IsAgent(principal) ? AuditActorType.Agent : string.Equals(
+                actorType = string.Equals(
                     identity.AuthenticationType,
                     Honua.Infrastructure.Authentication.AuthenticationExtensions.ApiKeyScheme,
                     StringComparison.OrdinalIgnoreCase)
@@ -46,7 +46,7 @@ internal static class AuditContextResolver
             var apiKeyId = principal.FindFirst("api_key_id")?.Value;
             if (!string.IsNullOrWhiteSpace(apiKeyId))
             {
-                actorType = AgentPrincipal.IsAgent(principal) ? AuditActorType.Agent : AuditActorType.ApiKey;
+                actorType = AuditActorType.ApiKey;
                 return apiKeyId;
             }
 
@@ -69,13 +69,25 @@ internal static class AuditContextResolver
             }
             if (!string.IsNullOrWhiteSpace(userId))
             {
-                actorType = AgentPrincipal.IsAgent(principal) ? AuditActorType.Agent : AuditActorType.UserId;
+                actorType = AuditActorType.UserId;
                 return userId;
             }
         }
 
         actorType = AuditActorType.Anonymous;
         return AuditEvent.AnonymousActor;
+    }
+
+    public static string? ResolveAgent(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (context.User.Identity?.IsAuthenticated != true || !AgentPrincipal.IsAgent(context.User))
+        {
+            return null;
+        }
+
+        var actor = ResolveActor(context, out var actorType);
+        return actorType == AuditActorType.Anonymous ? null : actor;
     }
 
     public static void MarkAuthorizationFailureAudited(HttpContext context)

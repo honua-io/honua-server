@@ -195,6 +195,7 @@ public sealed class PostgresAuditLogReaderTests(PostgresFixture fixture)
                 event_type       VARCHAR(32)  NOT NULL,
                 actor            VARCHAR(256) NOT NULL,
                 actor_type       VARCHAR(32)  NOT NULL,
+                actor_agent      VARCHAR(256),
                 resource_type    VARCHAR(64)  NOT NULL,
                 resource_id      VARCHAR(256),
                 action           VARCHAR(128) NOT NULL,

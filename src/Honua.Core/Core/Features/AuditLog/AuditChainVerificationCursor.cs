@@ -21,6 +21,9 @@ internal readonly struct AuditChainLink
 
     public AuditActorType ActorType { get; init; }
 
+    // Agent identity is independent of the credential type stored in ActorType.
+    public string? ActorAgent { get; init; }
+
     public string ResourceType { get; init; } = string.Empty;
 
     public string? ResourceId { get; init; }
@@ -264,7 +267,8 @@ internal sealed class AuditChainVerificationCursor
             link.CorrelationId,
             link.RemoteIp,
             link.UserAgent,
-            link.Details);
+            link.Details,
+            link.ActorAgent);
 
     private static string Legacy(string? previousHash, in AuditChainLink link)
         => AuditEntryHasher.ComputeEntryHash(
@@ -280,7 +284,8 @@ internal sealed class AuditChainVerificationCursor
             link.CorrelationId,
             link.RemoteIp,
             link.UserAgent,
-            link.Details);
+            link.Details,
+            link.ActorAgent);
 
     private static bool HashesMatch(string computed, string stored)
         => string.Equals(computed, stored, StringComparison.Ordinal);
