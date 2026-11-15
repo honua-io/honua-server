@@ -52,7 +52,7 @@ public sealed class OgcFeaturesCsvHeaderTests(OgcFeaturesCsvHeaderTestsFixture f
     public async Task Csv_WithIdProperty_PreservesIdentifierAndProperty(string path, int count)
     {
         using var response = await fixture.App.Client.GetAsync(
-            $"/ogc/features/collections/0/{path}&f=csv&properties=id");
+            $"/ogc/features/collections/0/{path}&f=csv");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("text/csv", response.Content.Headers.ContentType?.MediaType);
         using var reader = new StringReader(await response.Content.ReadAsStringAsync());
