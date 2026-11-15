@@ -21,14 +21,16 @@ public sealed class IncidentInvestigationMigrationTests(PostgresFixture fixture)
         {
             await InsertReferencesAsync(schema, (4, 7));
             await ApplyMigrationAsync(schema, Migration);
-            await InsertReferencesAsync(schema, (5, 8));
+            await InsertIncidentReferencesAsync(schema, (5, 8));
             await ApplyMigrationAsync(schema, Migration);
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var read = new NpgsqlCommand($"""
                 SELECT (SELECT array_agg(resource_kind ORDER BY resource_kind)
-                    FROM "{schema}".investigation_links),
+                    FROM (SELECT resource_kind FROM "{schema}".investigation_links
+                        UNION ALL SELECT resource_kind FROM "{schema}".investigation_incident_links) links),
                     (SELECT array_agg(event_kind ORDER BY event_kind)
-                    FROM "{schema}".investigation_pins)
+                    FROM (SELECT event_kind FROM "{schema}".investigation_pins
+                        UNION ALL SELECT event_kind FROM "{schema}".investigation_incident_pins) pins)
                 """, connection);
             await using var reader = await read.ExecuteReaderAsync();
             (await reader.ReadAsync()).Should().BeTrue();
@@ -48,18 +50,45 @@ public sealed class IncidentInvestigationMigrationTests(PostgresFixture fixture)
         });
     }
 
+    [IntegrationTest]
+    public async Task Migration_RetainsLegacyChecksAndSharesIdentifiersAcrossTables()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            await ApplyMigrationAsync(schema, Migration);
+            await InsertReferencesAsync(schema, (4, 7));
+            await InsertIncidentReferencesAsync(schema, (5, 8));
+            var exception = await Assert.ThrowsAsync<PostgresException>(
+                () => InsertReferencesAsync(schema, (5, 8)));
+            exception.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var read = new NpgsqlCommand($"""
+                SELECT (SELECT COUNT(DISTINCT link_id) FROM (
+                    SELECT link_id FROM "{schema}".investigation_links UNION ALL
+                    SELECT link_id FROM "{schema}".investigation_incident_links) links),
+                    (SELECT COUNT(DISTINCT pin_id) FROM (
+                    SELECT pin_id FROM "{schema}".investigation_pins UNION ALL
+                    SELECT pin_id FROM "{schema}".investigation_incident_pins) pins)
+                """, connection);
+            await using var reader = await read.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt64(0).Should().Be(2);
+            reader.GetInt64(1).Should().Be(2);
+        });
+    }
+
     [IntegrationTheory]
-    [InlineData(0, 1)]
-    [InlineData(6, 1)]
-    [InlineData(1, 0)]
-    [InlineData(1, 9)]
+    [InlineData(4, 8)]
+    [InlineData(6, 8)]
+    [InlineData(5, 7)]
+    [InlineData(5, 9)]
     public async Task Migration_RejectsUndefinedReferenceKinds(int linkKind, int pinKind)
     {
         await WithSchemaAsync(async schema =>
         {
             await ApplyMigrationAsync(schema, Migration);
             var exception = await Assert.ThrowsAsync<PostgresException>(
-                () => InsertReferencesAsync(schema, (linkKind, pinKind)));
+                () => InsertIncidentReferencesAsync(schema, (linkKind, pinKind)));
             exception.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
         });
     }
@@ -69,6 +98,16 @@ public sealed class IncidentInvestigationMigrationTests(PostgresFixture fixture)
             (investigation_id, resource_kind, resource_id, created_by)
             VALUES ('inv_test', {kinds.Link}, 'incident:platform:stable-episode', 'operator');
         INSERT INTO $HonuaSchema$.investigation_pins
+            (investigation_id, event_kind, event_ref, occurred_at, created_by)
+            VALUES ('inv_test', {kinds.Pin}, 'incident:platform:stable-episode:7',
+                '2026-11-14T00:00:00Z', 'operator');
+        """);
+
+    private Task InsertIncidentReferencesAsync(string schema, (int Link, int Pin) kinds) => ExecuteAsync(schema, $"""
+        INSERT INTO $HonuaSchema$.investigation_incident_links
+            (investigation_id, resource_kind, resource_id, created_by)
+            VALUES ('inv_test', {kinds.Link}, 'incident:platform:stable-episode', 'operator');
+        INSERT INTO $HonuaSchema$.investigation_incident_pins
             (investigation_id, event_kind, event_ref, occurred_at, created_by)
             VALUES ('inv_test', {kinds.Pin}, 'incident:platform:stable-episode:7',
                 '2026-11-14T00:00:00Z', 'operator');
@@ -97,13 +136,16 @@ public sealed class IncidentInvestigationMigrationTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
-    public async Task Migration_HasExplicitCompatibilityReviewForTheProductionSafetyGate()
+    public async Task Migration_IsExpandOnlyAndAcceptedByTheReaderSafetyGate()
     {
         var sql = await ReadMigrationAsync(Migration);
         var classification = MigrationSafetyClassifier.Classify(Migration, sql);
 
-        classification.Classification.Should().Be(MigrationSafetyClassification.ContractAnnotated);
-        classification.BreakingRules.Should().Contain("drop-other-object");
+        classification.Classification.Should().Be(MigrationSafetyClassification.Expand);
+        classification.BreakingRules.Should().BeEmpty();
+        var declaration = MigrationReaderCompatibility.Declare(Migration, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Expand);
+        MigrationReaderCompatibility.Verify(declaration, Migration, 192).Accepted.Should().BeTrue();
     }
 
     private async Task ApplyMigrationAsync(string schema, string migration)
