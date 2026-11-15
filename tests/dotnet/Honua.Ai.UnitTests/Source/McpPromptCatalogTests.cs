@@ -86,6 +86,24 @@ public sealed class McpPromptCatalogTests
     }
 
     [UnitTest]
+    public void Get_ArgumentValueContainingAnotherPlaceholder_StaysLiteral()
+    {
+        var result = McpPromptCatalog.Get("site_selection_analysis", new Dictionary<string, string>
+        {
+            ["objective"] = "LITERAL_{criteria}_END",
+            ["studyArea"] = "AREA_{objective}_END",
+            ["criteria"] = "near arterial roads",
+        });
+
+        var text = result.Messages[0].Content.Text;
+        text.Should().Contain("LITERAL_{criteria}_END");
+        text.Should().Contain("AREA_{objective}_END");
+        text.Should().Contain("near arterial roads");
+        text.Should().NotContain("LITERAL_near arterial roads_END");
+        text.Should().NotContain("AREA_LITERAL_");
+    }
+
+    [UnitTest]
     public void Get_OmittedOptionalArgument_RendersANeutralPlaceholderNotTheRawToken()
     {
         // criteria is optional on site_selection_analysis.
