@@ -7,6 +7,7 @@ using Honua.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -21,8 +22,15 @@ public sealed class FeatureStreamProHost : IAsyncLifetime
 
     public FeatureStreamProHost()
     {
+        // A fresh host starts its heartbeat clock with the case. This host lives for the
+        // class, so the default 30s tick can land in the next frame a case reads as status.
+        // Cases that assert a heartbeat call BroadcastHeartbeat themselves. Cases that need
+        // the short scheduled interval build their own host.
         Fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(_license);
+            .ReplaceService<ILicenseEntitlementService>(_license)
+            .ConfigureWebHost(builder => builder.UseSetting(
+                "FeatureStreaming:HeartbeatInterval",
+                "01:00:00"));
     }
 
     public Task InitializeAsync() => Fixture.InitializeAsync();
