@@ -148,7 +148,7 @@ and the published layer's primary identifier can be different fields.
 | --- | --- | --- |
 | GeoJSON | `.geojson`, `.json` | Assumed WGS 84 per the GeoJSON spec. |
 | Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf`/`.shx`/`.prj`; a raw `.shp` upload is rejected. CRS read from `.prj`. |
-| GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. |
+| GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. Import requires exactly one feature layer. Preview lists source layer names in `availableLayers`; export or split a multi-layer package into single-layer packages before importing. Source-layer selection is not exposed. |
 | GPX | `.gpx` | WGS 84 by definition. |
 | KML / KMZ | `.kml`, `.kmz` | WGS 84 by definition. |
 | WKT | `.wkt` | No embedded CRS; provide `sourceSrid` if not WGS 84. |

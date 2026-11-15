@@ -109,18 +109,22 @@ internal sealed partial class StreamingFileImportService
 
     private static GeoPackageLayerInfo ResolveSingleGeoPackageImportLayer(IReadOnlyList<GeoPackageLayerInfo> layers)
     {
-        if (layers.Count == 0)
+        var validationError = GetGeoPackageImportLayerValidationError(layers);
+        if (validationError is not null)
         {
-            throw new InvalidDataException("GeoPackage does not contain any feature layers.");
-        }
-
-        if (layers.Count > 1)
-        {
-            throw new InvalidDataException(BuildMultiLayerGeoPackageImportMessage(layers));
+            throw new InvalidDataException(validationError);
         }
 
         return layers[0];
     }
+
+    private static string? GetGeoPackageImportLayerValidationError(IReadOnlyList<GeoPackageLayerInfo> layers) =>
+        layers.Count switch
+        {
+            0 => "GeoPackage does not contain any feature layers.",
+            1 => null,
+            _ => BuildMultiLayerGeoPackageImportMessage(layers)
+        };
 
     private static string BuildMultiLayerGeoPackageImportMessage(IReadOnlyList<GeoPackageLayerInfo> layers)
     {

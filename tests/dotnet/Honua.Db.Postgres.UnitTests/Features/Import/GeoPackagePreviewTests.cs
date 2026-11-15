@@ -8,6 +8,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.TestKit.Infrastructure;
+using Microsoft.Data.Sqlite;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
@@ -162,8 +163,12 @@ public sealed class GeoPackagePreviewTests
         }
     }
 
-    [Fact]
-    public async Task ImportFileAsync_GeoPackageWithMultipleLayers_FailsWithClearLayerMessage()
+    [Theory]
+    [InlineData(0, "GeoPackage does not contain any feature layers.")]
+    [InlineData(2, "GeoPackage contains multiple feature layers (sample_layer, second_layer). Import requires a single-layer GeoPackage; preview AvailableLayers lists the source layers to export or split before import.")]
+    public async Task ImportFileAsync_GeoPackageWithUnsupportedLayerCount_FailsWithClearLayerMessage(
+        int featureLayerCount,
+        string expectedMessage)
     {
         // The second segment is a fixed literal prefix plus a GUID-derived token and can never be
         // rooted, so Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
@@ -172,6 +177,14 @@ public sealed class GeoPackagePreviewTests
         try
         {
             CreateGeoPackage(filePath, includeSecondLayer: true);
+            if (featureLayerCount == 0)
+            {
+                using var connection = new SqliteConnection($"Data Source={filePath};Pooling=False");
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = "DELETE FROM gpkg_contents;";
+                command.ExecuteNonQuery();
+            }
 
             await using var stream = File.OpenRead(filePath);
             var service = CreateService();
@@ -186,7 +199,7 @@ public sealed class GeoPackagePreviewTests
             });
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Be("Invalid GeoPackage import request.");
+            result.ErrorMessage.Should().Be(expectedMessage);
         }
         finally
         {

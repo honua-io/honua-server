@@ -325,14 +325,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             {
                 geoPackageScratch = await PrepareGeoPackageScratchAsync(fileStream, cancellationToken);
                 var layers = await GetGeoPackageLayersAsync(geoPackageScratch.FilePath, cancellationToken);
-                GeoPackageLayerInfo layer;
-                try
+                errorMessage = GetGeoPackageImportLayerValidationError(layers);
+                if (errorMessage is not null)
                 {
-                    layer = ResolveSingleGeoPackageImportLayer(layers);
-                }
-                catch (InvalidDataException)
-                {
-                    errorMessage = "Invalid GeoPackage import request.";
                     result = ImportResult.CreateFailure(
                         request.TableName,
                         format.Value,
@@ -342,7 +337,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     return result;
                 }
 
-                detectedSrid = layer.Srid;
+                detectedSrid = layers[0].Srid;
 
                 if (shouldDisposeStream)
                 {
