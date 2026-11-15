@@ -272,6 +272,10 @@ public readonly record struct EditOperationResult
     [JsonIgnore]
     public Feature? PreconditionFailureFeature { get; init; }
 
+    // Default means unavailable; an empty array means capture confirmed no emitted changes.
+    [JsonIgnore]
+    public ImmutableArray<FeatureOperationEvidence> OperationEvidence { get; init; }
+
     // Callers must keep the idempotency reservation while the commit outcome is unknown, because the database may have committed.
     public bool IsCommitOutcomeUnknown { get; init; }
 
