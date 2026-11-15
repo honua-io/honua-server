@@ -729,6 +729,40 @@ rather than treated as a silent addition (rule 4).
 
 ## Adding New Checks
 
+### Archived quickstart customer journey
+
+`shipped-quickstart.yml` runs nightly and on package-related PRs. Nightly/manual
+runs consume the newest available official candidate archive and its source-bound
+customer document. PRs package their exact source revision with that candidate's
+immutable image lock and a successful official Console trunk artifact. Their
+receipts identify this as a prospective PR package, not a shipped artifact.
+The nightly producer includes the static Console bundle, checksum and producing
+Console workflow/run/source identity inside the customer archive. Cross-repository
+artifact access uses a Console-scoped bot token with only Actions read permission.
+The separate installation job replaces the disposable hosted runner's Docker
+daemon with an empty data directory. It compiles no server code and never prunes
+a shared developer host.
+
+Assertions cover both documented profiles, completed initialization services,
+healthy runtime services, secret-free rendered Compose configuration, documented
+sample publication/query, HTTPS password sign-in to Console, an authenticated
+embedded Studio session, idempotent initializer/credential preservation, removal
+of all containers and volumes, and fresh credentials on a second installation.
+Passwords travel to the browser through a generated secret file; reports, traces,
+screenshots and videos are disabled, and browser output is withheld on failure.
+Missing Console package files or immutable release pins fail. The external installed
+proof is an explicit package-path PR exception to the ordinary five-minute
+PR guidance below; offline controls run separately. This workflow does not dispatch
+full CI or change required contexts.
+
+Receipts have scope `archived-customer-journey`, distinguish `candidate` from
+`prospective-pr`, and retain official publication run and archive digests.
+`customerJourneyComplete` becomes true only after both complete installations
+and their cleanup pass. A prospective PR receipt cannot qualify a shipped archive;
+release verification needs a recorded pass from the published candidate.
+
+### Check registration
+
 Before adding a new workflow or check:
 
 1. **Identify the tier.** Default to nightly unless the check meets PR-lane criteria.

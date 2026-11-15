@@ -106,20 +106,20 @@ workflow:
         -
           name: "request"
           concept: "/concepts/domain/publication.md"
-          description: "Publication result with exact version and operation identities; Published for an authorized admin or AwaitingApproval for another caller."
-      effect: "execute"
+          description: "Publication proposal with exact version, operation and proposal identities; AwaitingApproval until a person approves it in Console."
+      effect: "propose"
       effectTarget: "catalog_configuration"
       preconditions:
         - "The current saved version and hash match the intended publication; the caller is authorized for the requested route and visibility."
       authorization:
-        - "The server decides whether this caller may publish directly or submit a proposal requiring a separate principal."
+        - "Every MCP caller is an agent, administrators included, so the call files a proposal that a person approves in Console."
       idempotency: "Track the existing publication operation or proposal after a timeout; reconcile state before resubmission."
       checks:
         - "The result binds the selected version/hash and intended audience."
-        - "Published is confirmed from the completed result and server-issued share URL; AwaitingApproval remains pending."
-        - "Do not request or fabricate a second approver for an already completed admin publication."
+        - "AwaitingApproval remains pending; Published is confirmed only after a person approves and the server issues the share URL."
+        - "Do not approve the proposal from the agent or with another credential."
       recovery:
-        - "Follow a pending proposal through its documented status/cancellation contract; inspect a direct publication through its returned operation and route."
+        - "Follow the pending proposal to its decision; only a person in Console can approve or reject it."
       rollback:
         snapshot: "Record the prior published version, route, audience, and current saved version before submission."
         revisionGuard: "Re-read publication state; preserve changes made after this operation."
@@ -190,19 +190,12 @@ workflow:
 Routine [Map](compose-map.md) stays in the direct edit-and-preview loop. This workflow is the separate transition that makes a saved version available through a serving route.
 
 Identify the current saved version, hash, route, audience, and data dependencies.
-The same `honua_studio_propose_publication` tool has two server outcomes:
-
-- An authorized admin publishes in that call. A completed result reports
-  `Published`, `humanConfirmationRequired: false`, and the server-issued share URL.
-- A non-admin receives `AwaitingApproval`, a proposal handle, and no share URL.
-  A separate authorized principal must approve before activation.
-
-The structured submission action is therefore `execute`, not `propose`: it can
-change the published pointer immediately. Follow the actual response rather than
-inferring effects from the tool name or treating a browser fixture as the entire
-server contract. A pending result stops short of the workflow's successful output.
-The current browser Preview models the proposal branch; verify client support
-before choosing it for an admin direct-publication journey.
+Every MCP caller is an agent, administrators included, so
+`honua_studio_propose_publication` always returns `AwaitingApproval`,
+`humanConfirmationRequired: true`, a proposal handle, and no share URL. The
+published pointer moves only after a person approves the proposal in Console;
+see [Approve agent changes](../secure/approve-agent-changes.md). A pending result
+stops short of the workflow's successful output.
 
 See [Studio MCP tools](../../studio/mcp-tools.md) for this operation's contract.
 Publication policy does not add approval to every creative edit or every other
