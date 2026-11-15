@@ -563,11 +563,13 @@ internal sealed partial class StreamingGeoJsonReader
 
         ValidateReservedAttributes(root, featureIndex, issues);
 
-        if (!TryGetLocatedGeometry(root, featureIndex, issues, out var geometryElement))
+        var locatedGeometry = GetLocatedGeometry(root, featureIndex, issues);
+        if (locatedGeometry == null)
         {
             return issues;
         }
 
+        var geometryElement = locatedGeometry.Value;
         if (geometryElement.ValueKind != JsonValueKind.Object)
         {
             issues.Add(ImportValidationIssue.Create(
@@ -649,17 +651,17 @@ internal sealed partial class StreamingGeoJsonReader
         return issues;
     }
 
-    private static bool TryGetLocatedGeometry(JsonElement root, int featureIndex,
-        List<ImportValidationIssue> issues, out JsonElement geometryElement)
+    private static JsonElement? GetLocatedGeometry(JsonElement root, int featureIndex,
+        List<ImportValidationIssue> issues)
     {
-        if (!root.TryGetProperty("geometry", out geometryElement))
+        if (!root.TryGetProperty("geometry", out var geometryElement))
         {
             issues.Add(ImportValidationIssue.Create(
                 ImportValidationErrorCodes.GeometryMissing,
                 "GeoJSON feature is missing geometry.",
                 featureIndex,
                 "geometry"));
-            return false;
+            return null;
         }
 
         if (geometryElement.ValueKind == JsonValueKind.Null)
@@ -672,10 +674,10 @@ internal sealed partial class StreamingGeoJsonReader
                 Field = "geometry",
                 Severity = ImportValidationSeverity.Warning
             });
-            return false;
+            return null;
         }
 
-        return true;
+        return geometryElement;
     }
 
     private static void ValidateReservedAttributes(
