@@ -36,6 +36,11 @@ public interface IChangeTracker
     /// <returns>Current generation number, or 0 if the sequence has not been used</returns>
     Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken = default);
 
+    // True when any committed change, including one that later nets out, touched the layer after
+    // the generation. The default counts a change to any layer, so it can only over-report.
+    async Task<bool> HasLayerChangedSinceAsync(long sinceGeneration, int layerId, CancellationToken cancellationToken = default)
+        => await GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false) > sinceGeneration;
+
     /// <summary>
     /// Gets collapsed changes since a given generation for the specified layers.
     /// Multiple changes to the same feature are collapsed into a single net operation:

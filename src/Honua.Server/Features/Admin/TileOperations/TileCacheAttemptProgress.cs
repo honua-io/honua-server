@@ -42,6 +42,16 @@ internal sealed class TileCacheAttemptProgress(
         }
     }
 
+    // Only after a durable committed-effect receipt: cancellation cannot revoke the
+    // completed sink, while CAS still protects a successor attempt's progress.
+    public async Task WriteCommittedAsync(TileOperationProgress progress)
+    {
+        if (!await TryWriteAsync(progress, CancellationToken.None).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("A successor attempt owns tile progress.");
+        }
+    }
+
     private async Task<bool> TryWriteAsync(TileOperationProgress progress, CancellationToken cancellationToken)
     {
         var result = await progressStore.TryReplaceProgressAsync(
