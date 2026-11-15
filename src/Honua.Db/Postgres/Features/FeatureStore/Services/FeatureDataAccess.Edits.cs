@@ -2455,7 +2455,7 @@ internal sealed partial class FeatureDataAccess
             await SetReplicaUploadOriginAsync(connection, rowTransaction, origin, cancellationToken).ConfigureAwait(false);
         }
         var result = await mutateAndAppendOutbox(connection, (NpgsqlTransaction)rowTransaction, cancellationToken).ConfigureAwait(false);
-        await rowTransaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        await CommitEditTransactionAsync(rowTransaction, cancellationToken).ConfigureAwait(false);
         return result;
     }
 
