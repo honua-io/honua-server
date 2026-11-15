@@ -209,11 +209,15 @@ public readonly record struct FeatureEditResult
             UpdatedCount = 0,
             DeletedCount = 0,
             CreatedIds = ImmutableArray<long>.Empty,
-            CreateResults = createResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : createResults,
-            UpdateResults = updateResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : updateResults,
-            DeleteResults = deleteResults.IsDefault ? ImmutableArray<EditOperationResult>.Empty : deleteResults,
+            CreateResults = DiscardOperationEvidence(createResults),
+            UpdateResults = DiscardOperationEvidence(updateResults),
+            DeleteResults = DiscardOperationEvidence(deleteResults),
             WasRolledBack = false
         };
+
+    private static ImmutableArray<EditOperationResult> DiscardOperationEvidence(ImmutableArray<EditOperationResult> results)
+        => results.IsDefaultOrEmpty ? ImmutableArray<EditOperationResult>.Empty
+            : results.Select(result => result with { OperationEvidence = default }).ToImmutableArray();
 
     public bool IsSuccess => !WasRolledBack && !HasErrors;
 
@@ -242,7 +246,7 @@ public readonly record struct FeatureEditResult
             }
             else
             {
-                builder.Add(result);
+                builder.Add(result with { OperationEvidence = default });
             }
         }
 
