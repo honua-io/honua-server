@@ -27,7 +27,7 @@ README = (
     'Serving API: http://localhost:18080. Management API and MCP: http://localhost:18082. '
     'Use the management admin password in `secrets/honua_manager_admin_password` to create '
     'proposer API keys on the management API. A person reviews and approves each proposal '
-    'in Console with a live interactive OIDC session; the human requester may approve their own proposal. '
+    'in Console with a live interactive browser session (password or OIDC); the human requester may approve their own proposal. '
     'API keys and agent tokens cannot approve. Configure the identity provider before operating approval gates. '
     'Only approved proposals execute.\n\n'
     'The executor runs as uid 1002, targets only this project and serving service, and is '

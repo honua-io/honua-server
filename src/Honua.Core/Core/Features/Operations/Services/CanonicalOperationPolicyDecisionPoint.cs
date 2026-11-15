@@ -117,7 +117,8 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
     {
         if (_resolveInitiation is null) return false;
         var initiation = await _resolveInitiation(cancellationToken).ConfigureAwait(false);
-        return initiation is (OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc);
+        return initiation is (OperationInitiationKind.Human,
+            OperationInitiationChannel.InteractiveOidc or OperationInitiationChannel.InteractivePassword);
     }
 
     private static bool IsDefaultPrivateDraftApproval(

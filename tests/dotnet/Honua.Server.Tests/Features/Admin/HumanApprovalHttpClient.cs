@@ -102,25 +102,56 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
                 state,
             });
             token.StatusCode.Should().Be(HttpStatusCode.NoContent);
-            using var sessionResponse = await client.GetAsync("/api/v1/admin/auth/session");
-            sessionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
-            session!.IsAuthenticated.Should().BeTrue();
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(session.Claims.Select(
-                claim => new Claim(claim.Type, claim.Value)), OidcAuthenticationExtensions.AdminSessionScheme));
-            var actor = CanonicalSecurityActor.Resolve(principal);
-            actor.Should().NotBeNull();
-            using var csrfResponse = await client.GetAsync("/api/v1/admin/auth/csrf");
-            csrfResponse.EnsureSuccessStatusCode();
-            using var csrf = JsonDocument.Parse(await csrfResponse.Content.ReadAsStringAsync());
-            client.DefaultRequestHeaders.Add("X-Honua-CSRF", csrf.RootElement.GetProperty("requestToken").GetString());
-            return new HumanApprovalHttpClient(client, actor!.ActorId);
+            return await ReadAuthenticatedSessionAsync(client);
         }
         catch
         {
             client.Dispose();
             throw;
         }
+    }
+
+    public static async Task<HumanApprovalHttpClient> AuthenticateWithPasswordAsync(
+        WebAppFixture fixture, string password)
+    {
+        var client = CreateHttpsClient(fixture);
+        try
+        {
+            client.BaseAddress = client.BaseAddress?.Scheme == Uri.UriSchemeHttps
+                ? client.BaseAddress : new Uri("https://localhost");
+            await RefreshCsrfAsync(client);
+            using var response = await client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password });
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            return await ReadAuthenticatedSessionAsync(client);
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
+    }
+
+    private static async Task<HumanApprovalHttpClient> ReadAuthenticatedSessionAsync(HttpClient client)
+    {
+        using var sessionResponse = await client.GetAsync("/api/v1/admin/auth/session");
+        sessionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+        session!.IsAuthenticated.Should().BeTrue();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(session.Claims.Select(
+            claim => new Claim(claim.Type, claim.Value)), OidcAuthenticationExtensions.AdminSessionScheme));
+        var actor = CanonicalSecurityActor.Resolve(principal);
+        actor.Should().NotBeNull();
+        await RefreshCsrfAsync(client);
+        return new HumanApprovalHttpClient(client, actor!.ActorId);
+    }
+
+    private static async Task RefreshCsrfAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync("/api/v1/admin/auth/csrf");
+        response.EnsureSuccessStatusCode();
+        using var csrf = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
+        client.DefaultRequestHeaders.Add("X-Honua-CSRF", csrf.RootElement.GetProperty("requestToken").GetString());
     }
 
     public async Task<OperationHumanApprovalReview> OpenReviewAsync(string proposalId)

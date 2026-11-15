@@ -26,7 +26,7 @@ for current deployment limitations.
 Honua MCP control-plane proposal tools do not approve their own proposals. Studio publication binds an exact saved version and hash. For an authorized
 admin, its MCP tool can publish directly without creating a proposal. For a
 non-admin, it returns a proposal resource to follow. A pending proposal requires
-one authorized human decision through a live interactive OIDC session in Console;
+one authorized human decision through a live interactive browser session (password or OIDC) in Console;
 that human may be the requester. An API key, ordinary bearer, MCP transport or
 client confirmation cannot supply that decision. Direct publication and approval
 of an existing proposal are different paths.[^contract]

@@ -73,7 +73,7 @@ for the request fields and artifact selections.
 
 ## Human approval of pending operations
 
-Approval now requires one authorized person in a live interactive OIDC session.
+Approval now requires one authorized person in a live interactive browser session (password or OIDC).
 The requester may approve their own proposal. An API key, ordinary bearer or
 agent token cannot approve, even when it has an admin or approve grant. Move
 approval clients to the private human review flow described in
