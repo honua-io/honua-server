@@ -11,8 +11,8 @@ and authorize resume through the installed operation policy. A replacement deplo
 a different budget authority and must not be used to reset accounting.
 
 The former `AiExecutionAdmission:Backend` selector is retired. Remove it from configuration.
-Legacy `auto` and `postgres` settings remain accepted; an explicit `redis` or invalid setting
-prevents startup. Migrating a Redis-backed deployment requires an explicit operator plan for its
+Legacy `auto` and `postgres` settings remain accepted; any other setting prevents startup.
+Migrating a deployment from the retired cache backend requires an explicit operator plan for its
 outstanding invocations and charged history; starting an empty PostgreSQL ledger does not transfer
 those obligations or establish a safe budget reset.
 

@@ -32,8 +32,8 @@ public sealed class AiExecutionAdmissionRegistrationTests
     }
 
     [UnitTheory]
-    [InlineData("redis")]
-    [InlineData("REDIS")]
+    [InlineData("memory")]
+    [InlineData("MEMORY")]
     [InlineData("unknown")]
     [InlineData("")]
     public void AddAiExecutionAdmission_RetiredOrInvalidAuthority_RejectsConfiguration(string backend)

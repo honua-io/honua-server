@@ -21,7 +21,7 @@ PostgreSQL is the sole admission authority and requires schema migration 140. Th
 identity is a process snapshot; restart replicas to change it consistently. Runtime failure never
 selects another authority or a memory fallback. The former `Backend` option is retired: remove it
 from deployment configuration. Legacy `auto` and `postgres` values are accepted during migration;
-`redis` and other values prevent startup rather than silently switching budget authorities.
+any other value prevents startup rather than silently switching budget authorities.
 See the [PostgreSQL admission authority note](../../internal/contributor/ai-admission-postgres.md).
 Keep the deployment identity and ledger stable across upgrades: choosing a new identity creates a
 separate budget authority. Credential readiness (`Configured`) does not establish admission or

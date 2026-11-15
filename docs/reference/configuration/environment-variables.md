@@ -454,8 +454,8 @@ Enabled remote AI transfers require exact operator approval rules. See [AI model
 Model calls require `AiExecutionAdmission__DeploymentId` (empty by default).
 PostgreSQL is the sole admission authority. Remove the retired
 `AiExecutionAdmission__Backend` selector; legacy `auto` and `postgres` values remain
-accepted, while `redis` and invalid values prevent startup. Preserve the deployment
-identity and ledger; switching from Redis requires an explicit migration plan for
-outstanding invocations and charged history.
+accepted, while any other value prevents startup. Preserve the deployment
+identity and ledger; switching from the retired cache backend requires an
+explicit migration plan for outstanding invocations and charged history.
 See [AI invocation admission](ai-execution-admission.md) for policy fields,
 typed initialize/update/stop/resume controls and migration. Missing authority denies model calls.
