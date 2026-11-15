@@ -25,10 +25,11 @@ internal sealed class StagedImportPreviewExecutor(IServiceProvider services) : I
         var principal = await StagedImportOperation.AuthorizedPrincipalAsync(services, cancellationToken).ConfigureAwait(false);
         var preview = await ServerJobArtifactImporter.PreviewAsync(command,
             StagedImportOperation.ImportContext(services, principal), cancellationToken).ConfigureAwait(false);
+        var binding = await StagedImportPreviewBinding.CreateAsync(services, context, preview, cancellationToken).ConfigureAwait(false);
         return StagedImportHandles.Completed(services, context, new StagedImportResult(OperationId, "Previewed staged dataset import.",
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                [StagedImportOperation.PreviewFingerprintParameter] = ServerJobArtifactImporter.PreviewBindingFingerprint(preview),
+                [StagedImportOperation.PreviewFingerprintParameter] = binding.Identity,
                 ["schema"] = command.Schema,
                 ["stagingTable"] = command.Table,
                 ["contentSha256"] = preview.ContentSha256,
@@ -36,6 +37,7 @@ internal sealed class StagedImportPreviewExecutor(IServiceProvider services) : I
                 ["sourceSrid"] = preview.SourceSrid.ToString(CultureInfo.InvariantCulture),
                 ["targetSrid"] = command.TargetSrid.ToString(CultureInfo.InvariantCulture),
                 ["crsState"] = preview.CrsState,
+                ["expiresAt"] = binding.Pin.ExpiresAt.ToString("O", CultureInfo.InvariantCulture),
                 ["approvalWindowMinutes"] = StagedImportOperation.ApprovalWindow.TotalMinutes.ToString(CultureInfo.InvariantCulture),
             }));
     }
@@ -66,20 +68,19 @@ internal sealed class StagedImportExecutor(IServiceProvider services) : IOperati
         }
 
         var principal = await StagedImportOperation.AuthorizedPrincipalAsync(services, cancellationToken).ConfigureAwait(false);
+        var identity = StagedImportOperation.Required(request, StagedImportOperation.PreviewFingerprintParameter);
+        var pin = await StagedImportPreviewBinding.ReadAsync(services, context, identity, cancellationToken).ConfigureAwait(false);
         var preview = await ServerJobArtifactImporter.PreviewAsync(command,
             StagedImportOperation.ImportContext(services, principal), cancellationToken).ConfigureAwait(false);
-        var expected = StagedImportOperation.Required(request, StagedImportOperation.PreviewFingerprintParameter);
-        if (!string.Equals(expected, ServerJobArtifactImporter.PreviewBindingFingerprint(preview), StringComparison.Ordinal))
+        if (!string.Equals(ServerJobArtifactImporter.PreviewBindingFingerprint(pin.Preview),
+            ServerJobArtifactImporter.PreviewBindingFingerprint(preview), StringComparison.Ordinal))
         {
             throw new GeoprocessingPreconditionFailedException(
                 "The source changed since it was previewed; preview it again before proposing the import.");
         }
 
-        var expiresAt = services.GetService<TimeProvider>() is { } time
-            ? time.GetUtcNow() + StagedImportOperation.ApprovalWindow
-            : DateTimeOffset.UtcNow + StagedImportOperation.ApprovalWindow;
         var parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal);
-        foreach (var (key, value) in new StagedImportPin(preview, expiresAt).Parameters())
+        foreach (var (key, value) in pin.Parameters())
         {
             parameters[key] = value;
         }

@@ -80,7 +80,7 @@ internal static partial class ServerJobArtifactImporter
     private static string ImportFingerprint(ServerJobArtifactImportCommand command)
         => command.StagePreview is not { } preview ? Fingerprint(command) : PreviewBindingFingerprint(preview);
 
-    // Binds the command scope and the verified content; an agent presents it when proposing the import.
+    // Binds the command scope and verified content inside the durable preview and import receipt.
     internal static string PreviewBindingFingerprint(ServerJobArtifactStagePreview preview)
         => HashFingerprint(string.Join("\n",
             "create-only/v1", preview.CommandFingerprint, preview.ContentSha256,
