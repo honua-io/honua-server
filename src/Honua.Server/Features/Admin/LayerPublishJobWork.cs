@@ -90,6 +90,8 @@ internal static partial class LayerPublishJobWork
             publishRequest = LayerPublishRequestMapper.CreateDomain(
                 payload.Request, payload.ConnectionId, payload.TenantId);
             publishRequest.ConnectionEndpointFingerprint = payload.ConnectionEndpointFingerprint;
+            publishRequest.ExpectedMetadataRevision = payload.ExpectedMetadataRevision;
+            publishRequest.ExpectedMetadataEtag = payload.ExpectedMetadataEtag;
             if (payload.ConnectionEndpointFingerprint is not null)
             {
                 var source = payload.CommittedSinkPublication

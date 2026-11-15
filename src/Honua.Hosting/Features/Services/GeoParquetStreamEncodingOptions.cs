@@ -17,4 +17,5 @@ public sealed record GeoParquetStreamEncodingOptions
     public string[]? OutFields { get; init; }
     public ILogger? Logger { get; init; }
     public GeoParquetLimits? EncodingLimits { get; init; }
+    public IReadOnlyDictionary<string, string>? FileMetadata { get; init; }
 }
