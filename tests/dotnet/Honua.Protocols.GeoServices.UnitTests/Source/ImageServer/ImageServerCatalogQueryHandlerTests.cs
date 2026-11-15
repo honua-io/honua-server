@@ -18,7 +18,6 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Primitives;
 using NSubstitute;
@@ -29,7 +28,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerCatalogQueryHandlerTests
 {
-    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
+    private readonly TestMetadataV2GraphProvider _graphProvider = ImageServerTestFixtures.BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly ImageServerCatalogQueryHandler _handler;
 
@@ -48,7 +47,7 @@ public class ImageServerCatalogQueryHandlerTests
         // set and attribute output is byte-for-byte the pre-#2159 behavior.
         var fieldMaskSource = Substitute.For<IFieldMaskSource>();
         fieldMaskSource
-            .ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray<string>.Empty);
 
         return new ImageServerCatalogQueryHandler(
@@ -244,7 +243,7 @@ public class ImageServerCatalogQueryHandlerTests
                 AggregateExtent = null
             });
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("nAmE", "acquisitionDATE"));
         var handler = new ImageServerCatalogQueryHandler(_graphProvider, reader, masks,
             NullLogger<ImageServerCatalogQueryHandler>.Instance);
@@ -271,7 +270,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var fieldMaskSource = Substitute.For<IFieldMaskSource>();
         fieldMaskSource
-            .ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(maskedFields.ToImmutableArray());
 
         return new ImageServerCatalogQueryHandler(
@@ -1159,29 +1158,7 @@ public class ImageServerCatalogQueryHandlerTests
         => new(StringComparer.OrdinalIgnoreCase);
 
     private static DefaultHttpContext CreateImageServerContext()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
-
-        var context = new DefaultHttpContext();
-        context.RequestServices = services.BuildServiceProvider();
-        context.Request.Path = "/rest/services/1/ImageServer/query";
-        context.Response.Body = new MemoryStream();
-        return context;
-    }
-
-    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
-        => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
-            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication(
-                $"publication-{layerIndex}",
-                $"service-{layerIndex}",
-                $"resource-{layerIndex}",
-                layerIndex: layerIndex,
-                serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
-            .BuildProvider();
+        => ImageServerTestFixtures.CreateContext("/rest/services/1/ImageServer/query");
 
     private static RasterInfo CreateRaster(
         long id,

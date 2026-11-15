@@ -6,7 +6,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 namespace Honua.Core.Features.AutoDocs.Domain;
 
 public sealed record MetadataDocumentRequest(
-    MetadataV2Resource Resource,
+    MetadataV2Object Resource,
     string ServiceName,
     string? OrganizationName = null,
     string? ContactEmail = null,

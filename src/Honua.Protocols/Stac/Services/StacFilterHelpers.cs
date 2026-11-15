@@ -192,7 +192,7 @@ internal static class StacFilterHelpers
     public static bool IsValidDatetimeSyntax(string datetime)
         => ParseDatetimeWithField(datetime, "_syntax_check_") is not null;
 
-    public static TemporalFilter? ParseDatetime(string datetime, MetadataV2Resource resource)
+    public static TemporalFilter? ParseDatetime(string datetime, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var timeField = ResolveTemporalField(resource, out var endTimeField);
@@ -205,7 +205,7 @@ internal static class StacFilterHelpers
         return ParseDatetimeWithField(datetime, timeField, endTimeField);
     }
 
-    internal static string? ResolveTemporalField(MetadataV2Resource resource, out string? endTimeField)
+    internal static string? ResolveTemporalField(MetadataV2Object resource, out string? endTimeField)
     {
         endTimeField = null;
 

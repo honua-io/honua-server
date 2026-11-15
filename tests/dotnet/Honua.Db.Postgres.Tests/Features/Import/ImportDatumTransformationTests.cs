@@ -26,7 +26,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// imports with no curated default keep PROJ's default (2-argument) behavior.
 /// </summary>
 [Collection("Database")]
-public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
+public sealed partial class ImportDatumTransformationTests(PostgresFixture fixture)
 {
     // honua.insert_import_feature now ships both the legacy 6-argument overload and the
     // 7-argument datum-pipeline overload (migration 053). The fixture does not run
@@ -40,7 +40,7 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
             EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
             EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, table_name);
             EXECUTE format(
-                'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+                'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
                 schema_name, table_name, target_srid);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
         END;
@@ -56,7 +56,7 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
         BEGIN
             EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
             EXECUTE format(
-                'CREATE TABLE IF NOT EXISTS %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+                'CREATE TABLE IF NOT EXISTS %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
                 schema_name, table_name, target_srid);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
         END;

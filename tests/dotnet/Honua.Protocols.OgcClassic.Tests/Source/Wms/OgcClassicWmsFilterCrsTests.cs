@@ -48,7 +48,7 @@ public sealed class OgcClassicWmsFilterCrsTests : IAsyncLifetime
         await _fixture.InitializeAsync();
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            spatial: new MetadataV2ResourceSpatial
+            spatial: new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
                 StorageCrs = MetadataV2SpatialReference.WebMercator,

@@ -92,6 +92,7 @@ internal static class ConfiguredWebApplicationFactory
             // infrastructure composition root unless it opts in (#4640). Callers may still
             // override this in their own configure delegate.
             builder.UseEnvironment(_environmentName);
+            Infrastructure.TestHostHttpClientLifetime.Apply(builder);
             _configure(builder);
         }
 

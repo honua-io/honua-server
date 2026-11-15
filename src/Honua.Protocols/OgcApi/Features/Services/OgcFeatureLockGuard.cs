@@ -37,7 +37,7 @@ internal static class OgcFeatureLockGuard
     public static async Task<IResult?> RejectIfLockedAsync(
         HttpContext context,
         MetadataV2Service? service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int layerId,
         long objectId,
         string operation,
@@ -71,7 +71,7 @@ internal static class OgcFeatureLockGuard
     public static async Task<string?> DescribeConflictAsync(
         HttpContext context,
         MetadataV2Service? service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int layerId,
         long objectId,
         string operation,
