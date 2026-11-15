@@ -168,7 +168,7 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     {
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            temporal: new MetadataV2ResourceTemporal { StartTimeField = "timestamp" },
+            temporal: new MetadataV2ObjectTemporal { StartTimeField = "timestamp" },
             stacExtension: JsonSerializer.SerializeToElement(new
             {
                 license = "CC-BY-4.0",
@@ -605,7 +605,7 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     {
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            spatial: new MetadataV2ResourceSpatial
+            spatial: new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
                 StorageCrs = MetadataV2SpatialReference.WebMercator,

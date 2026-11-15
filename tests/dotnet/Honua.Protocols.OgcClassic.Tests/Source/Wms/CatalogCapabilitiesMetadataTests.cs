@@ -88,7 +88,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
             Title = "Survey roads",
             Links = [new MetadataV2Link { Rel = "describedby", Href = "https://example.com/catalog/roads", Type = "application/xml" }]
         });
-        _fixture.UpdateV2ResourceMetadata(1, spatial: new MetadataV2ResourceSpatial
+        _fixture.UpdateV2ResourceMetadata(1, spatial: new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             GeometryType = MetadataV2GeometryType.Point,

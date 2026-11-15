@@ -77,7 +77,7 @@ public sealed class PublishedMetadataProjection(
     }
 
     public static string? PublicationUrl(
-        PublishedMetadataRequest request, MetadataV2Service service, MetadataV2Publication publication)
+        PublishedMetadataRequest request, MetadataV2Service service, MetadataV2Layer publication)
     {
         var serviceUrl = ServiceUrl(request, service);
         if (publication.LayerIndex is { } index && service.PrimaryProtocol is { } protocol
@@ -127,8 +127,8 @@ public sealed record PublishedMetadataRequest(MetadataV2GraphSnapshot Snapshot, 
 public sealed record PublishedMetadataService
 {
     public required MetadataV2Service Service { get; init; }
-    public required IReadOnlyList<MetadataV2Publication> Publications { get; init; }
+    public required IReadOnlyList<MetadataV2Layer> Publications { get; init; }
     public required string Access { get; init; }
-    public MetadataV2Resource? FirstResource { get; init; }
+    public MetadataV2Object? FirstResource { get; init; }
     public string? Url { get; init; }
 }

@@ -229,7 +229,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
 
     private async Task SeedWms111DimensionsAndContactAsync()
     {
-        // V2 cutover: capabilities reads the layer display name off MetadataV2Resource.
+        // V2 cutover: capabilities reads the layer display name off MetadataV2Object.
         // Update the V2 graph so the cite:Autos dimension branch fires.
         _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
         _fixture.MutateV2ResourceObjectMetadata(WebAppFixture.TestLayerId, metadata => metadata with
@@ -291,12 +291,12 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetCapabilities_ServiceExtentInWebMercator_ReprojectsGeographicBounds()
     {
-        // V2 cutover: capabilities reads its bbox off MetadataV2Resource.Spatial.Bbox
+        // V2 cutover: capabilities reads its bbox off MetadataV2Object.Spatial.Bbox
         // (V2 has no service-level extent). Set Web Mercator bounds on the layer the
         // test service publishes so the OgcExtentTransformer reproject branch fires.
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            spatial: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+            spatial: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectSpatial
             {
                 SpatialReference = Honua.Core.Features.Metadata.Domain.V2.MetadataV2SpatialReference.WebMercator,
                 Bbox = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2Bbox

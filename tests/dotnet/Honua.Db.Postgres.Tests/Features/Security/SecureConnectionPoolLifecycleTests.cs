@@ -156,10 +156,10 @@ public partial class SecureConnectionRegistryTests
         PostgresSecureConnectionRegistry registry, string connectionId)
     {
         var service = new MetadataV2Service { Metadata = new() { Id = "svc", Name = "svc" } };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new() { Id = "res", Name = "res" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding"],
             SchemaFields = [new() { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] }]
         };
@@ -172,7 +172,7 @@ public partial class SecureConnectionRegistryTests
             Locator = "public.proof",
             StorageLayerId = 1
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new() { Id = "pub", Name = "pub" },
             ServiceId = "svc",

@@ -258,7 +258,7 @@ The tables below are the original gap analysis; where they disagree with the cod
 | KML | `<TimeStamp>` or `<TimeSpan>` |
 | NetCDF | CF time variable with `units`, `calendar`, `time_origin` |
 
-**Verdict**: ⚠️ Covered for the common case. Gaps: **TimeReference** (timezone hint for Esri/CF compliance), **multi-interval extents** (STAC + OGC API Features both support; we have single-interval), **HasLiveData** (Esri flag for streaming time-aware data). Add to `MetadataV2ResourceTemporal` as optional fields.
+**Verdict**: ⚠️ Covered for the common case. Gaps: **TimeReference** (timezone hint for Esri/CF compliance), **multi-interval extents** (STAC + OGC API Features both support; we have single-interval), **HasLiveData** (Esri flag for streaming time-aware data). Add to `MetadataV2ObjectTemporal` as optional fields.
 
 ---
 
@@ -563,7 +563,7 @@ The tables below are the original gap analysis; where they disagree with the cod
 
 **Verdict**: ⚠️ Partial. For services that publish to MBTiles/PMTiles, we'd want explicit min/max zoom + tile matrix set per publication. Either:
 - Derive from `Display.MinScale/MaxScale` + a standard scale-to-zoom conversion (clean but lossy on non-standard tile schemes).
-- Add `Publication.Tiling: MetadataV2PublicationTiling` for tile-specific publications.
+- Add `Publication.Tiling: MetadataV2LayerTiling` for tile-specific publications.
 
 Recommend the latter only when a real consumer needs the non-standard tile scheme support.
 
@@ -614,7 +614,7 @@ Recommend the latter only when a real consumer needs the non-standard tile schem
 | `mlm` (machine-learning model) | `Extensions["stac"]["mlm"]` |
 | `web-map-links` | `Extensions["stac"]["web-map-links"]` |
 
-**Verdict**: ⚠️ STAC extensions are intentionally an open vocabulary on a fast-moving spec. Keeping these in `Extensions["stac"][<ext>]` is the right call — typing each STAC extension would chase a moving target. Document the convention in `MetadataV2Resource.Extensions` doc-comment.
+**Verdict**: ⚠️ STAC extensions are intentionally an open vocabulary on a fast-moving spec. Keeping these in `Extensions["stac"][<ext>]` is the right call — typing each STAC extension would chase a moving target. Document the convention in `MetadataV2Object.Extensions` doc-comment.
 
 ---
 

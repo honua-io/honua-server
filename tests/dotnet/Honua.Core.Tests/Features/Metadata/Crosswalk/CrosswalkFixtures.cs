@@ -31,16 +31,16 @@ internal static class CrosswalkFixtures
             ],
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = resource ?? new MetadataV2ObjectMetadata { Id = "dataset.trails", Name = "trails" },
-                    Spatial = new MetadataV2ResourceSpatial
+                    Spatial = new MetadataV2ObjectSpatial
                     {
                         SpatialReference = MetadataV2SpatialReference.Wgs84,
                         Bbox = new MetadataV2Bbox { West = -123.5, South = 45.1, East = -122.25, North = 46 },
                         SupportedCrs = [new MetadataV2SpatialReference { Srid = 26910 }],
                     },
-                    Temporal = new MetadataV2ResourceTemporal
+                    Temporal = new MetadataV2ObjectTemporal
                     {
                         Extent = new MetadataV2TimeRange { Start = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero) },
                     },

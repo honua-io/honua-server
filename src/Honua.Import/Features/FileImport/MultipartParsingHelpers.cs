@@ -17,6 +17,7 @@ using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
+using Honua.Core.Features.Security;
 
 namespace Honua.Import.FileImport;
 
@@ -133,15 +134,11 @@ internal static class MultipartParsingHelpers
         CancellationToken cancellationToken)
     {
         var totalBytes = 0L;
-        Directory.CreateDirectory(Path.GetDirectoryName(tempFilePath)!);
-        await using var targetStream = new FileStream(tempFilePath, new FileStreamOptions
-        {
-            Mode = FileMode.CreateNew,
-            Access = FileAccess.Write,
-            Share = FileShare.None,
-            BufferSize = 64 * 1024,
-            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-        });
+        PrivateTempFile.CreateDirectory(Path.GetDirectoryName(tempFilePath)!);
+        await using var targetStream = PrivateTempFile.Create(
+            tempFilePath,
+            FileOptions.Asynchronous | FileOptions.SequentialScan,
+            bufferSize: 64 * 1024);
 
         var buffer = new byte[64 * 1024];
         while (true)

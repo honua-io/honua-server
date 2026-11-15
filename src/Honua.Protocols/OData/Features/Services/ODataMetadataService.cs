@@ -48,7 +48,7 @@ internal sealed partial class ODataMetadataService
         "Performance",
         "CA1822:Mark members as static",
         Justification = "Kept as an instance method to preserve the service API shape.")]
-    public string GenerateMetadataDocumentV2(IEnumerable<MetadataV2Resource> resources, DescriptiveMetadata catalog)
+    public string GenerateMetadataDocumentV2(IEnumerable<MetadataV2Object> resources, DescriptiveMetadata catalog)
     {
         ArgumentNullException.ThrowIfNull(resources);
         ArgumentNullException.ThrowIfNull(catalog);
@@ -136,7 +136,7 @@ internal sealed partial class ODataMetadataService
             """;
     }
 
-    private static string GenerateODataMetadataV2(MetadataV2Resource[] resources, DescriptiveMetadata catalog)
+    private static string GenerateODataMetadataV2(MetadataV2Object[] resources, DescriptiveMetadata catalog)
     {
         var sb = new StringBuilder();
         sb.AppendLine("""<?xml version="1.0" encoding="utf-8"?>""");
@@ -247,7 +247,7 @@ internal sealed partial class ODataMetadataService
     private static string Attribute(string value) => System.Security.SecurityElement.Escape(value);
 
     private static (string GeometryEdmType, string SridAttribute) ResolveGeometryEdmTypeV2(
-        MetadataV2Resource[] resources)
+        MetadataV2Object[] resources)
     {
         if (resources.Length == 0)
         {
@@ -271,7 +271,7 @@ internal sealed partial class ODataMetadataService
         return ("Edm.Geometry", " SRID=\"variable\"");
     }
 
-    private static string[] CollectRelationshipNamesV2(MetadataV2Resource[] resources)
+    private static string[] CollectRelationshipNamesV2(MetadataV2Object[] resources)
     {
         var relationships = resources
             .SelectMany(r => r.Relationships)

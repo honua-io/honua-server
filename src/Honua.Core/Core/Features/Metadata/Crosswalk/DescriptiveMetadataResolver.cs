@@ -15,7 +15,7 @@ public static class DescriptiveMetadataResolver
     private const int Wgs84Srid = 4326;
 
     public sealed record DatasetContext(
-        MetadataV2Resource Resource, MetadataV2Service? Service, MetadataV2Publication? Layer = null);
+        MetadataV2Object Resource, MetadataV2Service? Service, MetadataV2Layer? Layer = null);
 
     private sealed record DescriptionSource(
         DescribedItemKind Kind, MetadataV2ObjectMetadata[] Own, MetadataV2ObjectMetadata Governance);
@@ -78,7 +78,7 @@ public static class DescriptiveMetadataResolver
 
     // The dataset's governance after service, folder and environment fallbacks, for emitters that project the
     // metadata record directly.
-    public static MetadataV2ObjectMetadata GovernanceFor(MetadataV2Graph graph, MetadataV2Resource resource, MetadataV2Service? service)
+    public static MetadataV2ObjectMetadata GovernanceFor(MetadataV2Graph graph, MetadataV2Object resource, MetadataV2Service? service)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(resource);
@@ -150,7 +150,7 @@ public static class DescriptiveMetadataResolver
             : [];
     }
 
-    private static string[] SupportedCrs(MetadataV2Resource resource)
+    private static string[] SupportedCrs(MetadataV2Object resource)
     {
         var spatial = resource.Spatial;
         IEnumerable<MetadataV2SpatialReference?> references = spatial is null

@@ -17,13 +17,13 @@ public sealed class StacTemporalMappingTests
     [Fact]
     public void StringTimestamp_IsNotPresentedAsAResolvedAcquisitionDate()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.String }]
         };
         var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("timestamp", "2024-01-01T00:00:00Z"));
 
-        var item = StacMappingService.MapFeatureToItem(feature, resource, new MetadataV2Publication(), 0, "https://example.test");
+        var item = StacMappingService.MapFeatureToItem(feature, resource, new MetadataV2Layer(), 0, "https://example.test");
 
         item.Properties.Should().NotBeNull();
         item.Properties!["honua:datetime_source"].Should().Be("unknown");
@@ -33,7 +33,7 @@ public sealed class StacTemporalMappingTests
     [Fact]
     public async Task TypedFallback_UsesSamePhysicalFieldForMappingFilterAndExtent()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new MetadataV2Field { Name = "TIMESTAMP", Type = MetadataV2FieldType.DateTime }]
         };
@@ -43,9 +43,9 @@ public sealed class StacTemporalMappingTests
         reader.GetTemporalExtentAsync(0, "TIMESTAMP", Arg.Any<TemporalPropertyType>(), Arg.Any<CancellationToken>())
             .Returns(TemporalExtentResult.Create(instant, instant));
 
-        var item = StacMappingService.MapFeatureToItem(feature, resource, new MetadataV2Publication(), 0, "https://example.test");
+        var item = StacMappingService.MapFeatureToItem(feature, resource, new MetadataV2Layer(), 0, "https://example.test");
         var filter = StacFilterHelpers.ParseDatetime("2024-01-01T00:00:00Z", resource);
-        var publication = new MetadataV2Publication { LayerIndex = 0 };
+        var publication = new MetadataV2Layer { LayerIndex = 0 };
         var service = new MetadataV2Service();
         var snapshot = new MetadataV2GraphSnapshot(
             new MetadataV2Graph(),

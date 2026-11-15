@@ -20,6 +20,8 @@ AUDIT_KEYS = ('HONUA_AUDIT_CHAIN_KEY', 'HONUA_MANAGER_AUDIT_CHAIN_KEY')
 ALL_SECRET_KEYS = SECRET_KEYS + AUDIT_KEYS
 IMMUTABLE = re.compile(r'(?:[a-z0-9./:_-]+@)?sha256:[a-f0-9]{64}')
 COMPOSE_FILES = ('compose.yaml', 'compose.executor.yaml', 'compose.console.yaml')
+# Present until a recreated Console edge serves the current settings and certificate.
+CONSOLE_RELOAD_MARKER = '.console-reload-pending'
 
 
 def secret_path(directory, key):
@@ -107,10 +109,23 @@ def update_environment(path, updates, removed=()):
     path.chmod(0o640)
 
 
-def console_profile_settings(lock, values):
-    image = lock.get('console', '')
-    if not isinstance(image, str) or not IMMUTABLE.fullmatch(image):
-        raise ValueError('The package must include an immutable Console image from its release lock')
+def console_web_image(directory, lock):
+    image = lock.get('consoleWeb', '')
+    bundle = lock.get('consoleBundle')
+    if (not isinstance(image, str) or not IMMUTABLE.fullmatch(image) or not isinstance(bundle, dict)
+            or not (directory / 'console/index.html').is_file() or not (directory / 'console.nginx.conf').is_file()):
+        raise ValueError('The package must include the released Console bundle and an immutable Console web image')
+    return image
+
+
+def console_image_settings(directory, lock, values):
+    """The Console pins this package supplies; a restart after an upgrade picks them up."""
+    settings = dict(HONUA_CONSOLE_WEB_IMAGE=console_web_image(directory, lock),
+                    HONUA_CONSOLE_PORT=values.get('HONUA_CONSOLE_PORT', '18083'))
+    return {key: value for key, value in settings.items() if values.get(key) != value}
+
+
+def console_profile_settings(directory, lock, values):
     separator = values.get('COMPOSE_PATH_SEPARATOR', ':')
     files = [name for name in values['COMPOSE_FILE'].split(separator) if name != 'compose.console.yaml']
     managed_image = 'compose.executor.image.yaml'
@@ -118,9 +133,140 @@ def console_profile_settings(lock, values):
     profiles = [name for name in values.get('COMPOSE_PROFILES', '').split(',') if name]
     if 'console' not in profiles:
         profiles.append('console')
-    settings = dict(COMPOSE_FILE=separator.join(files), COMPOSE_PROFILES=','.join(profiles),
-                    HONUA_CONSOLE_IMAGE=image, HONUA_CONSOLE_PORT=values.get('HONUA_CONSOLE_PORT', '18083'))
-    return {key: value for key, value in settings.items() if values.get(key) != value}
+    settings = dict(COMPOSE_FILE=separator.join(files), COMPOSE_PROFILES=','.join(profiles))
+    settings = {key: value for key, value in settings.items() if values.get(key) != value}
+    return dict(settings, **console_image_settings(directory, lock, values))
+
+
+def console_configuration(values):
+    """Public Console settings (console.config.json). Credentials never belong here."""
+    mode = values.get('HONUA_CONSOLE_AUTH_MODE', 'builtin')
+    auth = dict(mode=mode, authority=None, clientId=None, scopes=[])
+    if mode == 'oidc':
+        authority = values.get('HONUA_CONSOLE_OIDC_AUTHORITY', '')
+        client_id = values.get('HONUA_CONSOLE_OIDC_CLIENT_ID', '')
+        if not re.fullmatch(r'https://[^\s/?#@]+(/[^\s?#]*)?', authority) or not client_id.strip():
+            raise ValueError('OIDC Console sign-in needs HONUA_CONSOLE_OIDC_AUTHORITY (https) and HONUA_CONSOLE_OIDC_CLIENT_ID')
+        auth.update(authority=authority, clientId=client_id, scopes=['openid'])
+    elif mode != 'builtin':
+        raise ValueError('HONUA_CONSOLE_AUTH_MODE must be builtin or oidc')
+    return dict(apiBaseUrl='/', auth=auth, v4Enabled=values.get('HONUA_CONSOLE_V4', 'true') != 'false')
+
+
+def write_console_files(directory, values, openssl):
+    """Writes Console's public settings and local certificate.
+
+    A changed file the running edge has not loaded leaves CONSOLE_RELOAD_MARKER behind; main()
+    recreates the edge and removes it, so a failed start keeps the restart pending."""
+    # The web server (uid 101) reads these through bind mounts; none holds a credential.
+    # Extraction applies the customer's umask, so set the bundle's modes here.
+    (directory / 'console.nginx.conf').chmod(0o644)
+    bundle = directory / 'console'
+    for path in [bundle, *bundle.rglob('*')]:
+        if not path.is_symlink():
+            path.chmod(0o755 if path.is_dir() else 0o644)
+    write_console_config(directory, console_configuration(values))
+    write_console_certificate(directory, openssl)
+
+
+def write_console_config(directory, configuration):
+    config = directory / 'console.config.json'
+    previous = config.read_text() if config.exists() else None
+    text = json.dumps(configuration, indent=2) + '\n'
+    if previous == text:
+        return
+    if previous is not None:
+        (directory / CONSOLE_RELOAD_MARKER).touch()
+    pending = config.with_name('.console.config.json.pending')
+    pending.write_text(text)
+    pending.chmod(0o644)
+    os.replace(pending, config)
+
+
+def write_console_certificate(directory, openssl):
+    certificate = directory / 'secrets/console_tls_certificate'
+    key = directory / 'secrets/console_tls_key'
+    if certificate.exists() and key.exists():
+        if console_certificate_current(certificate):
+            return
+        (directory / CONSOLE_RELOAD_MARKER).touch()
+    pending_key, pending_certificate = key.with_name('.console_tls_key.pending'), certificate.with_name('.console_tls_certificate.pending')
+    try:
+        # A local, self-signed certificate for https://localhost only; nothing leaves this host.
+        openssl('req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes',
+                '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1',
+                '-addext', 'basicConstraints=critical,CA:FALSE', '-addext', 'keyUsage=critical,digitalSignature',
+                '-addext', 'extendedKeyUsage=serverAuth', '-days', '397',
+                '-keyout', str(pending_key), '-out', str(pending_certificate))
+        pending_key.chmod(0o640)
+        pending_certificate.chmod(0o644)
+        os.replace(pending_key, key)
+        os.replace(pending_certificate, certificate)
+    finally:
+        pending_key.unlink(missing_ok=True)
+        pending_certificate.unlink(missing_ok=True)
+
+
+MINIMUM_OPENSSL_MAJOR = 3
+
+
+def require_openssl_3():
+    result = subprocess.run(['openssl', 'version'], capture_output=True, text=True)
+    match = re.match(r'OpenSSL (\d+)\.', result.stdout)
+    if result.returncode or not match or int(match.group(1)) < MINIMUM_OPENSSL_MAJOR:
+        raise RuntimeError('Console needs OpenSSL 3 or later')
+
+
+def console_certificate_current(certificate):
+    """Valid for another 30 days and an end-entity certificate (earlier ones lacked CA:FALSE)."""
+    result = subprocess.run(['openssl', 'x509', '-in', str(certificate), '-noout', '-checkend', str(30 * 86400),
+                             '-ext', 'basicConstraints'], capture_output=True, text=True)
+    return result.returncode == 0 and 'CA:FALSE' in result.stdout
+
+
+def console_changes(directory, profiles, values):
+    """The .env additions and removals for Console. Reads and validates only; writes nothing."""
+    enabled = 'console' in profiles or 'console' in values.get('COMPOSE_PROFILES', '').split(',')
+    if not enabled:
+        return False, {}, ()
+    lock = json.loads((directory / 'images.json').read_text())
+    if 'console' in profiles:
+        additions = console_profile_settings(directory, lock, values)
+    else:
+        # A saved profile keeps the customer's file order; only the package's pins change.
+        additions = console_image_settings(directory, lock, values)
+    console_configuration({**values, **additions})
+    require_openssl_3()
+    # HONUA_CONSOLE_IMAGE pinned the retired server-hosted Console; the overlay reads the web image.
+    retired = ('HONUA_CONSOLE_IMAGE',) if 'HONUA_CONSOLE_IMAGE' in values else ()
+    return True, additions, retired
+
+
+def openssl_runner(environment):
+    def openssl(*args):
+        result = subprocess.run(['openssl', *args], env=environment, capture_output=True)
+        if result.returncode:
+            raise RuntimeError('OpenSSL could not create a local certificate')
+    return openssl
+
+
+def ensure_keyring(directory, openssl):
+    pfx = directory / 'secrets/keyring.pfx'
+    if pfx.exists():
+        return
+    pem, crt = directory / 'secrets/keyring.pem', directory / 'secrets/keyring.crt'
+    pending_pfx = directory / 'secrets/keyring.pfx.pending'
+    try:
+        openssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=honua-quickstart',
+                '-keyout', str(pem), '-out', str(crt), '-days', '3650')
+        openssl('pkcs12', '-export', '-inkey', str(pem), '-in', str(crt),
+                '-out', str(pending_pfx), '-passout', 'env:HONUA_KEYRING_PASSWORD')
+        pending_pfx.chmod(0o600)
+        os.replace(pending_pfx, pfx)
+    finally:
+        pem.unlink(missing_ok=True)
+        crt.unlink(missing_ok=True)
+        pending_pfx.unlink(missing_ok=True)
 
 
 def initialize(directory, profiles=()):
@@ -147,7 +293,7 @@ def initialize(directory, profiles=()):
         'HONUA_COMPOSE_CUSTOMER_PROBE': 'http://honua:8080/healthz/ready',
     }
     for key in ('HONUA_IMAGE', 'HONUA_EXECUTOR_IMAGE', 'HONUA_RELEASE_IMAGE',
-                'HONUA_RELEASE_WORKER_IMAGE', 'HONUA_PRIOR_IMAGE', 'HONUA_CONSOLE_IMAGE'):
+                'HONUA_RELEASE_WORKER_IMAGE', 'HONUA_PRIOR_IMAGE', 'HONUA_CONSOLE_WEB_IMAGE'):
         if key in values and not IMMUTABLE.fullmatch(values[key]):
             raise ValueError(f'{key} must be an immutable sha256 reference')
     if any(char in str(directory) for char in '\n\r$#\'"'):
@@ -175,10 +321,15 @@ def initialize(directory, profiles=()):
                 raise ValueError(f'{name} still reads secrets from .env; extract the new package files first')
 
     additions = {key: value for key, value in defaults.items() if key not in values}
-    if 'console' in profiles:
-        additions.update(console_profile_settings(lock, dict(defaults, **values)))
+    console_enabled, console_additions, retired = console_changes(directory, profiles, dict(defaults, **values))
+    additions.update(console_additions)
     values.update(additions)
-    update_environment(env_file, additions)
+    for key in retired:
+        values.pop(key)
+    update_environment(env_file, additions, retired)
+    if not console_enabled:
+        # A restart left pending for a Console that is now off must not start it again.
+        (directory / CONSOLE_RELOAD_MARKER).unlink(missing_ok=True)
     # Only this install directory and its private group are writable by the executor.
     directory.chmod(0o770)
     env_file.chmod(0o640)
@@ -204,26 +355,10 @@ def initialize(directory, profiles=()):
     if not image_override.exists():
         image_override.write_text('services:\n  honua:\n    image: ' + values['HONUA_IMAGE'] + '\n')
         image_override.chmod(0o640)
-    pfx = directory / 'secrets/keyring.pfx'
-    if not pfx.exists():
-        child_env = dict(os.environ, HONUA_KEYRING_PASSWORD=resolved['HONUA_KEYRING_PASSWORD'])
-        def openssl(*args):
-            result = subprocess.run(['openssl', *args], env=child_env, capture_output=True)
-            if result.returncode:
-                raise RuntimeError('OpenSSL could not create the local key-ring certificate')
-        pem, crt = directory / 'secrets/keyring.pem', directory / 'secrets/keyring.crt'
-        pending_pfx = directory / 'secrets/keyring.pfx.pending'
-        try:
-            openssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=honua-quickstart',
-                    '-keyout', str(pem), '-out', str(crt), '-days', '3650')
-            openssl('pkcs12', '-export', '-inkey', str(pem), '-in', str(crt),
-                    '-out', str(pending_pfx), '-passout', 'env:HONUA_KEYRING_PASSWORD')
-            pending_pfx.chmod(0o600)
-            os.replace(pending_pfx, pfx)
-        finally:
-            pem.unlink(missing_ok=True)
-            crt.unlink(missing_ok=True)
-            pending_pfx.unlink(missing_ok=True)
+    openssl = openssl_runner(dict(os.environ, HONUA_KEYRING_PASSWORD=resolved['HONUA_KEYRING_PASSWORD']))
+    ensure_keyring(directory, openssl)
+    if console_enabled:
+        write_console_files(directory, values, openssl)
     return values
 
 
@@ -238,12 +373,23 @@ def main():
         if args.init_only:
             return 0
         # Secrets stay in their files; never hand them to Compose as environment.
-        env = {key: value for key, value in os.environ.items() if key not in ALL_SECRET_KEYS}
-        return subprocess.call(['docker', 'compose', 'up', '-d', '--wait', '--wait-timeout', '180'],
-                               cwd=args.directory, env=dict(env, **values))
-    except (OSError, ValueError, RuntimeError, KeyError):
+        env = dict({key: value for key, value in os.environ.items() if key not in ALL_SECRET_KEYS}, **values)
+        result = subprocess.call(['docker', 'compose', 'up', '-d', '--wait', '--wait-timeout', '180'],
+                                 cwd=args.directory, env=env)
+        marker = Path(args.directory) / CONSOLE_RELOAD_MARKER
+        if result == 0 and marker.exists():
+            # Single-file mounts keep the replaced file's old inode; a new container sees the new one.
+            result = subprocess.call(['docker', 'compose', 'up', '-d', '--wait', '--wait-timeout', '180',
+                                      '--force-recreate', '--no-deps', 'console'], cwd=args.directory, env=env)
+            if result == 0:
+                marker.unlink()
+        return result
+    except (OSError, ValueError, RuntimeError, KeyError) as error:
         print('Quickstart initialization failed; check the image lock, Docker socket, OpenSSL and private install directory.',
               file=sys.stderr)
+        # These messages name settings and tools only, never a secret value.
+        if isinstance(error, RuntimeError):
+            print(str(error), file=sys.stderr)
         return 1
 
 

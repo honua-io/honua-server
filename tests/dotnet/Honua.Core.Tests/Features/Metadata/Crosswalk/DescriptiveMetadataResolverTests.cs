@@ -110,7 +110,7 @@ public sealed class DescriptiveMetadataResolverTests
     public void ForDataset_LayerOverridesTitle_KeepsDatasetKeywords()
     {
         var graph = CrosswalkFixtures.Graph(resource: CrosswalkFixtures.FullDataset);
-        var layer = new MetadataV2Publication { Metadata = new MetadataV2ObjectMetadata { Id = "layer.trails", Name = "trails", Title = "Trails (public)" } };
+        var layer = new MetadataV2Layer { Metadata = new MetadataV2ObjectMetadata { Id = "layer.trails", Name = "trails", Title = "Trails (public)" } };
 
         var record = DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0], layer));
 

@@ -14,7 +14,7 @@ internal static class StacResourceExtensions
     private const string StacExtensionKey = "stac";
 
     public static MetadataV2ObjectMetadata WithStacServiceGovernanceFallbacks(
-        this MetadataV2Resource resource,
+        this MetadataV2Object resource,
         MetadataV2ObjectMetadata serviceMetadata)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -36,7 +36,7 @@ internal static class StacResourceExtensions
     }
 
     public static string ResolveLicense(
-        this MetadataV2Resource resource,
+        this MetadataV2Object resource,
         MetadataV2ObjectMetadata? fallbackMetadata = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -79,20 +79,20 @@ internal static class StacResourceExtensions
         return LayerSourceGovernance.IsSpdxLicenseIdentifier(license);
     }
 
-    public static ImmutableArray<string>? ResolveKeywords(this MetadataV2Resource resource)
+    public static ImmutableArray<string>? ResolveKeywords(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var keywords = DescriptiveMetadataResolver.NormalizedTerms(resource.Metadata.Keywords);
         return keywords.Count == 0 ? null : [.. keywords];
     }
 
-    public static ImmutableArray<string>? ResolveDeclaredExtensions(this MetadataV2Resource resource)
+    public static ImmutableArray<string>? ResolveDeclaredExtensions(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return ReadStringArray(resource, "extensions");
     }
 
-    private static string? ReadString(MetadataV2Resource resource, string propertyName)
+    private static string? ReadString(MetadataV2Object resource, string propertyName)
     {
         if (!TryGetStacObject(resource, out var stac))
         {
@@ -106,7 +106,7 @@ internal static class StacResourceExtensions
         return value.GetString();
     }
 
-    private static ImmutableArray<string>? ReadStringArray(MetadataV2Resource resource, string propertyName)
+    private static ImmutableArray<string>? ReadStringArray(MetadataV2Object resource, string propertyName)
     {
         if (!TryGetStacObject(resource, out var stac))
         {
@@ -143,7 +143,7 @@ internal static class StacResourceExtensions
             .ToImmutableArray();
     }
 
-    private static bool TryGetStacObject(MetadataV2Resource resource, out JsonElement stac)
+    private static bool TryGetStacObject(MetadataV2Object resource, out JsonElement stac)
     {
         if (resource.Extensions is not null &&
             resource.Extensions.TryGetValue(StacExtensionKey, out var element) &&

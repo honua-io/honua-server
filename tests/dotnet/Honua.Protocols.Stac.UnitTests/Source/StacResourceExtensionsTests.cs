@@ -17,7 +17,7 @@ public sealed class StacResourceExtensionsTests
     [UnitTest]
     public void ResolveKeywords_DatasetKeywordsDeclared_PrefersNormalizedDatasetKeywords()
     {
-        var dataset = new MetadataV2Resource
+        var dataset = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -36,7 +36,7 @@ public sealed class StacResourceExtensionsTests
     [UnitTest]
     public void ResolveKeywords_DatasetKeywordsEmpty_DoesNotResurrectExtensionOrLabelKeywords()
     {
-        var dataset = new MetadataV2Resource
+        var dataset = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -54,25 +54,25 @@ public sealed class StacResourceExtensionsTests
             .ResolveKeywords().Should().BeNull();
         (dataset with { Metadata = dataset.Metadata with { Keywords = [] } })
             .ResolveKeywords().Should().BeNull();
-        new MetadataV2Resource().ResolveKeywords().Should().BeNull();
+        new MetadataV2Object().ResolveKeywords().Should().BeNull();
     }
 
     [UnitTest]
     public void ResolveLicense_PrefersEveryResourceDeclarationBeforeServiceFallback()
     {
         var stacExtension = JsonElement.Parse("""{ "license": "CC0-1.0" }""");
-        var extensionResource = new MetadataV2Resource
+        var extensionResource = new MetadataV2Object
         {
             Extensions = new Dictionary<string, JsonElement> { ["stac"] = stacExtension },
         };
-        var linkResource = new MetadataV2Resource
+        var linkResource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
                 Links = [new MetadataV2Link { Rel = "license", Href = "https://example.test/license" }],
             },
         };
-        var undeclaredResource = new MetadataV2Resource();
+        var undeclaredResource = new MetadataV2Object();
         var serviceMetadata = new MetadataV2ObjectMetadata
         {
             License = "MIT",

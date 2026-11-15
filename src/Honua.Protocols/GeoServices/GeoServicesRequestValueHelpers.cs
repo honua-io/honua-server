@@ -61,6 +61,7 @@ internal static class GeoServicesRequestValueHelpers
             "gdbVersion",
             "quantizationParameters",
             "datumTransformation",
+            "coordinateEpoch",
             // Standard Esri layer-query parameters that ArcGIS clients (ArcGIS Pro,
             // ArcGIS API for Python) send by default. Accepted so those clients can
             // query Honua; unsupported ones are ignored rather than rejected (#1276).

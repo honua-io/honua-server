@@ -65,7 +65,7 @@ internal static class ServiceDataEditorAuthorization
 
     public static async Task<IResult?> RequireResourceDataEditorAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service = null,
         CancellationToken cancellationToken = default)
     {
@@ -74,7 +74,7 @@ internal static class ServiceDataEditorAuthorization
 
     public static async Task<IResult?> RequireResourceDataEditorAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
@@ -84,7 +84,7 @@ internal static class ServiceDataEditorAuthorization
 
     private static async Task<IResult?> RequireResourceDataEditorCoreAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         AuthorizationOperation? specificOperation,
         CancellationToken cancellationToken)
@@ -96,7 +96,7 @@ internal static class ServiceDataEditorAuthorization
 
     internal static async Task<AccessDecision> EvaluateResourceDataEditorAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         AuthorizationOperation? specificOperation,
         CancellationToken cancellationToken)

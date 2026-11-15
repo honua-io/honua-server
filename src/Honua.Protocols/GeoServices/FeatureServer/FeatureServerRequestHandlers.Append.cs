@@ -85,13 +85,13 @@ internal static partial class FeatureServerEndpoints
         return null;
     }
 
-    internal static bool IsAppendMatchField(MetadataV2Resource resource, string fieldName)
+    internal static bool IsAppendMatchField(MetadataV2Object resource, string fieldName)
         => resource.SchemaFields.Any(field => field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
 
     internal static Task<(Dictionary<string, long>? Matches, string? Error)> LoadAppendUpsertMatchesAsync(
         IFeatureReader featureReader,
         IFilterExpressionService filterService,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IReadOnlyList<GeoServicesFeature> features,
         string matchingField,
@@ -110,7 +110,7 @@ internal static partial class FeatureServerEndpoints
     internal static async Task<(Dictionary<string, long>? Matches, string? Error)> LoadAppendUpsertMatchesAsync(
         IFeatureReader featureReader,
         IFilterExpressionService filterService,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IReadOnlyList<GeoServicesFeature> features,
         string matchingField,
