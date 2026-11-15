@@ -112,6 +112,34 @@ public sealed partial class BranchVersioningIntegrationTests
         replay.Value.Evidence!.Creates[0].Should().Equal(first.Result.CreateResults[0].OperationEvidence);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEditsAsync_DurableOperationReceiptEvidenceFailure_RollsBackFeatureAndReceipt()
+    {
+        await using var failure = _fixture.DataSource.CreateCommand($"""
+            CREATE FUNCTION {_schema}.reject_operation_evidence() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'Receipt evidence rejected'; END; $$;
+            CREATE TRIGGER reject_operation_evidence BEFORE UPDATE OF operation_evidence
+            ON {_schema}.grpc_apply_edits_receipt FOR EACH ROW
+            EXECUTE FUNCTION {_schema}.reject_operation_evidence();
+            """);
+        await failure.ExecuteNonQueryAsync();
+        var store = CreateFeatureStore();
+        var receipt = BuildEvidenceReceipt("evidence-failure");
+        using var capture = FeatureOperationEvidenceScope.Begin();
+
+        var application = await store.ApplyEditsAsync(PointsLayerId,
+            FeatureEditBatch.Create(creates: [BuildFeature("uncommitted", 1, 1)]), receipt, CancellationToken.None);
+
+        application.ReceiptDurable.Should().BeFalse();
+        application.Result.WasRolledBack.Should().BeTrue();
+        application.Result.CreateResults.Should().OnlyContain(result => result.OperationEvidence.IsDefault);
+        await using var count = _fixture.DataSource.CreateCommand($"SELECT count(*) FROM {_schema}.features");
+        (await count.ExecuteScalarAsync()).Should().Be(0L);
+        IFeatureEditIdempotencyReceipts receipts = new PostgresFeatureEditIdempotencyReceipts(_fixture.DataSource, _schema);
+        (await receipts.TryReadAsync(receipt.Scope)).Should().BeNull();
+    }
+
     private static FeatureEditIdempotencyReceipt BuildEvidenceReceipt(string scope) => new()
     {
         Scope = scope,
