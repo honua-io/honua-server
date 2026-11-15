@@ -136,6 +136,8 @@ internal sealed partial class RealtimeDispatcher(
         var delivered = 0;
         var dispatched = GetDispatchStart(family, head);
         var currentHead = head;
+        RecordPosition(family, head, dispatched);
+        RealtimeMetrics.DispatchLagEvents.Record(Math.Max(0, head - dispatched), new KeyValuePair<string, object?>("family", family));
         while (dispatched < currentHead)
         {
             var batch = await log.ReadAfterAsync(new(family, dispatched, options.Value.ReadBatchSize), cancellationToken)
@@ -157,17 +159,33 @@ internal sealed partial class RealtimeDispatcher(
                 }
             }
 
+            RealtimeMetrics.DispatchLagSeconds.Record(
+                Math.Max(0, (DateTimeOffset.UtcNow - batch[0].CreatedAt).TotalSeconds),
+                new KeyValuePair<string, object?>("family", family));
             DeliverBatch(batch, subscribers, currentHead);
 
             delivered += batch.Count;
             dispatched = batch[^1].Sequence;
         }
 
+        CompleteDispatch(family, currentHead, dispatched);
+        return delivered;
+    }
+
+    private void CompleteDispatch(string family, long currentHead, long dispatched)
+    {
         lock (_gate)
         {
             _dispatched[family] = Math.Max(_dispatched.GetValueOrDefault(family), dispatched);
         }
-        return delivered;
+        RecordPosition(family, currentHead, dispatched);
+    }
+
+    private static void RecordPosition(string family, long head, long dispatched)
+    {
+        var tag = new KeyValuePair<string, object?>("family", family);
+        RealtimeMetrics.LogHead.Record(head, tag);
+        RealtimeMetrics.DispatchPosition.Record(dispatched, tag);
     }
 
     private long GetDispatchStart(string family, long head)
