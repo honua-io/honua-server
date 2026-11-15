@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Grpc.Core;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Proto = Geospatial.V1;
 
@@ -18,29 +19,62 @@ internal static class GrpcMetadataProjector
         };
         if (field.DefaultValue is { } value)
         {
-            result.DefaultValue = Value(value);
+            result.DefaultValue = Value(value, field.Type);
         }
         if (field.Domain is { } domain)
         {
-            result.Domain = Domain(domain);
+            result.Domain = Domain(domain, field.Type);
         }
         return result;
     }
 
-    internal static Proto.AttributeValue Value(JsonElement value) => value.ValueKind switch
+    internal static Proto.AttributeValue Value(JsonElement value, MetadataV2FieldType? fieldType = null)
     {
-        JsonValueKind.Null => new() { NullValue = Proto.NullValue.NullValue },
-        JsonValueKind.String => new() { StringValue = value.GetString()! },
-        JsonValueKind.True => new() { BoolValue = true },
-        JsonValueKind.False => new() { BoolValue = false },
-        JsonValueKind.Number when value.TryGetInt32(out var integer) => new() { Int32Value = integer },
-        JsonValueKind.Number when value.TryGetInt64(out var integer) => new() { Int64Value = integer },
-        JsonValueKind.Number => new() { DoubleValue = value.GetDouble() },
-        JsonValueKind.Object or JsonValueKind.Array => new() { StringValue = value.GetRawText() },
-        _ => throw new InvalidOperationException("Native attribute defaults and domain codes must be defined JSON values.")
-    };
+        if (value.ValueKind != JsonValueKind.Null &&
+            fieldType is MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset)
+        {
+            return ExactValue(value, fieldType.Value);
+        }
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null => new() { NullValue = Proto.NullValue.NullValue },
+            JsonValueKind.String => new() { StringValue = value.GetString()! },
+            JsonValueKind.True => new() { BoolValue = true },
+            JsonValueKind.False => new() { BoolValue = false },
+            JsonValueKind.Number when value.TryGetInt32(out var integer) => new() { Int32Value = integer },
+            JsonValueKind.Number when value.TryGetInt64(out var integer) => new() { Int64Value = integer },
+            JsonValueKind.Number => new() { DoubleValue = value.GetDouble() },
+            JsonValueKind.Object or JsonValueKind.Array => new() { StringValue = value.GetRawText() },
+            _ => throw new InvalidOperationException("Native attribute defaults and domain codes must be defined JSON values.")
+        };
+    }
 
-    internal static Proto.FieldDomain Domain(MetadataV2FieldDomain domain)
+    private static Proto.AttributeValue ExactValue(JsonElement value, MetadataV2FieldType fieldType)
+    {
+        try
+        {
+            var text = value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString()!,
+                JsonValueKind.Number when fieldType == MetadataV2FieldType.Decimal => value.GetRawText(),
+                _ => throw new ArgumentException("Exact metadata values must match their declared type.")
+            };
+            if (fieldType == MetadataV2FieldType.Decimal)
+            {
+                _ = ExactAttributeValues.ParseDecimal(text);
+                return new() { DecimalValue = text };
+            }
+            _ = ExactAttributeValues.ParseTimestampOffset(text);
+            return new() { TimestampOffsetValue = text };
+        }
+        catch (Exception exception) when (exception is ArgumentException or ExactValueRangeException)
+        {
+            throw new RpcException(new Status(StatusCode.FailedPrecondition,
+                "Exact metadata value does not match its declared type."));
+        }
+    }
+
+    internal static Proto.FieldDomain Domain(MetadataV2FieldDomain domain, MetadataV2FieldType? fieldType = null)
     {
         var result = new Proto.FieldDomain
         {
@@ -50,7 +84,7 @@ internal static class GrpcMetadataProjector
         };
         if (domain.Type.Equals("range", StringComparison.OrdinalIgnoreCase) && domain.Range is { Count: 2 } range)
         {
-            result.Range = new() { Minimum = Value(range[0]), Maximum = Value(range[1]) };
+            result.Range = new() { Minimum = Value(range[0], fieldType), Maximum = Value(range[1], fieldType) };
         }
         else if (domain.Type.Equals("codedValue", StringComparison.OrdinalIgnoreCase) ||
                  domain.Type.Equals("codedValues", StringComparison.OrdinalIgnoreCase))
@@ -58,7 +92,7 @@ internal static class GrpcMetadataProjector
             result.CodedValues = new();
             result.CodedValues.Values.AddRange(domain.CodedValues.Select(value => new Proto.DomainCodedValue
             {
-                Code = Value(value.Code),
+                Code = Value(value.Code, fieldType),
                 Name = value.Name
             }));
         }
@@ -99,7 +133,7 @@ internal static class GrpcMetadataProjector
             var entry = new Proto.SubtypeFieldOverride();
             if (fieldOverride.DefaultValue is { } value)
             {
-                entry.DefaultValue = Value(value);
+                entry.DefaultValue = Value(value, field.Type);
                 if (field.Editable)
                 {
                     template.DefaultAttributes[canonicalName] = entry.DefaultValue.Clone();
@@ -107,7 +141,7 @@ internal static class GrpcMetadataProjector
             }
             if (fieldOverride.Domain is { } domain)
             {
-                entry.Domain = Domain(domain);
+                entry.Domain = Domain(domain, field.Type);
             }
             projected.FieldOverrides[canonicalName] = entry;
         }
@@ -118,7 +152,7 @@ internal static class GrpcMetadataProjector
         var template = new Proto.FeatureTemplate { Name = name };
         foreach (var field in fields.Where(field => field.Editable && field.DefaultValue.HasValue))
         {
-            template.DefaultAttributes[field.Name] = Value(field.DefaultValue!.Value);
+            template.DefaultAttributes[field.Name] = Value(field.DefaultValue!.Value, field.Type);
         }
         return template;
     }
