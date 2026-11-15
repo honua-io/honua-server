@@ -16,13 +16,13 @@ Legacy policies count invocation attempts and active reservations only; they are
 | Environment variable | Default | Meaning |
 | --- | --- | --- |
 | `AiExecutionAdmission__DeploymentId` | empty | Stable identity shared by all replicas; required for model calls, maximum 128 characters. |
-| `AiExecutionAdmission__Backend` | `auto` | `auto`, `postgres` or `redis`; selects one authoritative backend. |
+| `AiExecutionAdmission__Backend` | `auto` | `auto` or `postgres`; both select the PostgreSQL admission authority. Any other value denies model calls. |
 
-Auto selects a registered PostgreSQL admission store first, otherwise a configured shared Redis
-connection. Selection and the deployment identity are process snapshots. Restart replicas to change
+The system database is the only admission authority. A host without the PostgreSQL admission
+store, or configured with any other backend value (including the retired `redis`), denies model
+calls. Selection and the deployment identity are process snapshots. Restart replicas to change
 these options consistently. Runtime failure never selects another authority or a memory fallback.
-PostgreSQL requires schema migration 140. Redis requires the strict durability settings and recovery
-procedure in the [Redis admission authority note](../../internal/contributor/ai-admission-redis.md).
+PostgreSQL requires schema migration 140.
 Keep the deployment identity and ledger stable across upgrades: choosing a new identity creates a
 separate budget authority. Credential readiness (`Configured`) does not establish admission or
 disclosure approval.
@@ -44,7 +44,6 @@ control cannot mutate a replacement generation. Initialize and policy-update req
 Other controls cannot change policy. The expected-state tuple is `expectedGeneration`,
 `expectedRevision`, `expectedEpoch`; supply all three or let preparation capture the current state.
 Missing state is never initialized or resumed by application startup, a request, or reconnect.
-Redis initialization also requires a 3,630-second bootstrap quarantine before authorized resume.
 OperatorGate metadata follows the installed operation policy; a full administrator may be authorized
 directly, so it does not imply a separate human approval for every invocation.
 
@@ -108,7 +107,7 @@ This section describes the supported source contract. It is not an installed qua
 
 An admission policy without `financial`, or with `financial: null`, retains attempt/concurrency enforcement only. Those limits do not establish token or monetary budgets. Adding an explicit valid `financial` object activates mandatory token and fixed-integer monetary accounting for the configured deployment.
 
-The supported financial path is Reporting narrative generation with the PostgreSQL admission authority and the narrow `openai-basic-text-v1` billing contract. Redis rejects financial initialization/policy updates. Once financial mode is active, Studio chat and imagery invocation admission deny because their financial adapters are not implemented. Reporting denial uses its existing deterministic fallback. No monetary-safe support is established for DevOps agents, other providers or other billable dimensions.
+The supported financial path is Reporting narrative generation with the PostgreSQL admission authority and the narrow `openai-basic-text-v1` billing contract. Once financial mode is active, Studio chat and imagery invocation admission deny because their financial adapters are not implemented. Reporting denial uses its existing deterministic fallback. No monetary-safe support is established for DevOps agents, other providers or other billable dimensions.
 
 Before activation, confirm the inventory of every model-sending replica and that each runs admission-aware code. Database fences protect ledger-using legacy writers; they cannot account for or stop an executable that never consults admission. This sender-inventory prerequisite is not installed mixed-version qualification.
 

@@ -60,7 +60,7 @@ internal sealed record AdminApiKeyRecord(
     string? CreatedBy,
     // Optional request restrictions (null = unrestricted). Omitted from JSON when null so a
     // record without restrictions serializes byte-for-byte as it did before they existed:
-    // the Redis store's conditional usage write compares those bytes.
+    // stored rows written before restrictions existed keep their exact shape.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedReferrers = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedIpRanges = null);
 
