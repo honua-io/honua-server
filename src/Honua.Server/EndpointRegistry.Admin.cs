@@ -9,7 +9,7 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> AdminEndpoints =>
     [
-        // Admin live SSE (#7346). Mapped from AdminRealtimeContract.LivePath.
+        // Admin live SSE. Mapped from AdminRealtimeContract.LivePath.
         new("GET", "/api/v1/admin/live"),
 
         new("GET", "/api/v1/admin/folders"),
