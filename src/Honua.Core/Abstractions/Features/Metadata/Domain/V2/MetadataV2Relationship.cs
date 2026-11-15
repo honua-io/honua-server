@@ -7,8 +7,18 @@ using Honua.Core.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public sealed record MetadataV2Relationship : ExtensibleJsonRecord
+public sealed record MetadataV2Relationship : ExtensibleJsonRecord, IJsonOnDeserializing, IJsonOnDeserialized
 {
+    private MetadataV2JsonAlias<string> _relatedObjectId;
+    private bool _readingJson;
+
+    void IJsonOnDeserializing.OnDeserializing() => _readingJson = true;
+    void IJsonOnDeserialized.OnDeserialized()
+    {
+        _readingJson = false;
+        _relatedObjectId = _relatedObjectId.CompleteRead();
+    }
+
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
 
@@ -19,7 +29,18 @@ public sealed record MetadataV2Relationship : ExtensibleJsonRecord
     public string? Description { get; init; }
 
     [JsonPropertyName("relatedResourceId")]
-    public string RelatedResourceId { get; init; } = string.Empty;
+    public string RelatedResourceId
+    {
+        get => _relatedObjectId.Value ?? string.Empty;
+        init => _relatedObjectId = _relatedObjectId.WithLegacy(value, _readingJson);
+    }
+
+    [JsonPropertyName("relatedObjectId")]
+    public string RelatedObjectId
+    {
+        get => RelatedResourceId;
+        init => _relatedObjectId = _relatedObjectId.WithCanonical(value, _readingJson);
+    }
 
     [JsonPropertyName("role")]
     public string Role { get; init; } = string.Empty;

@@ -27497,7 +27497,7 @@
             "$ref": "#/components/schemas/RasterMosaicResponse"
           },
           "editing": {
-            "$ref": "#/components/schemas/MetadataV2ResourceEditing"
+            "$ref": "#/components/schemas/MetadataV2ObjectEditing"
           }
         }
       },
@@ -50107,6 +50107,15 @@
         }
       },
       "MetadataV2ResourceEditing": {
+        "deprecated": true,
+        "description": "Compatibility schema for rc.2 generated clients; use MetadataV2ObjectEditing.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MetadataV2ObjectEditing"
+          }
+        ]
+      },
+      "MetadataV2ObjectEditing": {
         "type": "object",
         "nullable": true,
         "properties": {
