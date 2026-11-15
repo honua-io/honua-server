@@ -357,8 +357,8 @@ internal static class StudioPublishedSourceProjection
     private sealed record SourceCandidate(
         string Id,
         MetadataV2Service Service,
-        MetadataV2Publication Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Layer Publication,
+        MetadataV2Object Resource,
         int LayerId,
         string? BindingId,
         string? BindingProtocol);
