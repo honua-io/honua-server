@@ -61,7 +61,7 @@ internal sealed partial class HonuaFeatureService
         EditCall call,
         FeatureEditBatch batch)
     {
-        GrpcTypedValues.EnsureStorable(call.Layer.Resource, batch);
+        batch = GrpcTypedValues.EnsureStorable(call.Layer.Resource, batch);
         var services = call.Context.GetHttpContext().RequestServices;
         var field = await VisibleGlobalIdFieldAsync(call.Layer, services, call.Context.CancellationToken).ConfigureAwait(false);
         return AssignInsertGlobalIds(new GlobalIdEdit(call.Request, call.Layer, services) { Field = field }, batch);
