@@ -191,12 +191,17 @@ public sealed class SceneOpenUsdManifestEndpointTests
             first.StatusCode.Should().Be(HttpStatusCode.OK);
             first.Headers.ETag.Should().NotBeNull();
 
-            // Only JSON is in the production compression set; the USDA stage keeps its strong validator.
+            // model/vnd.usda is not in the production compression set, so the USDA stage keeps its strong validator.
             var compressed = coding == "gzip" && asset == "tileset.json";
             first.Headers.ETag!.IsWeak.Should().Be(compressed);
             if (!compressed)
             {
                 first.Content.Headers.ContentEncoding.Should().BeEmpty();
+            }
+            else if (method == "GET")
+            {
+                // A weak coded validator without the coding would mean compression stopped while the tag stayed coded.
+                first.Content.Headers.ContentEncoding.Should().Contain("gzip");
             }
 
             using var request = new HttpRequestMessage(new HttpMethod(method), path);

@@ -424,6 +424,7 @@ internal static class OutputCachingRegistration
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
                 policy.AddPolicy<TileOutcomeOutputCachePolicy>();
+                policy.AddPolicy<IdentityCodingOutputCachePolicy>();
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 // `where` for attribute filtering; `time` for the temporal-animation
@@ -439,6 +440,7 @@ internal static class OutputCachingRegistration
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
                 policy.AddPolicy<TileOutcomeOutputCachePolicy>();
+                policy.AddPolicy<IdentityCodingOutputCachePolicy>();
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 policy.SetVaryByQuery("where", "resolution");
@@ -465,6 +467,7 @@ internal static class OutputCachingRegistration
             // Terrain-RGB finite grid tile caching policy
             options.AddPolicy("TerrainTile", policy =>
             {
+                policy.AddPolicy<IdentityCodingOutputCachePolicy>();
                 policy.Expire(ttl.TerrainTile);
                 policy.SetVaryByRouteValue("datasetId", "z", "x", "y");
                 policy.Tag("terrain", "tiles");
@@ -586,13 +589,18 @@ internal static class OutputCachingRegistration
     private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");
 
-    // Keys on the negotiated coding, not the raw header, so equivalent Accept-Encoding strings share an entry
-    // and arbitrary client values cannot multiply entries. Mirrors the coding ConfigurationResponseETag uses.
+    internal const string ContentCodingKey = "content-coding";
+    internal const string IdentityCoding = "identity";
+
+    // Keys on the negotiated coding, not the raw header, so equivalent Accept-Encoding strings share an entry and
+    // arbitrary client values cannot multiply entries. It uses the same negotiation as ConfigurationResponseETag but,
+    // unlike the validator, cannot see the response type: a non-compressible response is stored once per coding unless
+    // its route adds IdentityCodingOutputCachePolicy, as the binary tile routes do.
     internal static KeyValuePair<string, string> ResolveContentCodingOutputCacheKey(HttpContext context)
-        => new("content-coding", context.Request.Headers.AcceptEncoding.Count == 0
-            ? "identity"
+        => new(ContentCodingKey, context.Request.Headers.AcceptEncoding.Count == 0
+            ? IdentityCoding
             : context.RequestServices.GetService<IResponseCompressionProvider>()?.GetCompressionProvider(context)?.EncodingName
-              ?? "identity");
+              ?? IdentityCoding);
 
     // The license fingerprint is part of the cache key so edition-filtered metadata is not shared across editions.
     internal static KeyValuePair<string, string> ResolveLicenseOutputCacheKey(HttpContext context)

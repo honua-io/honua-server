@@ -261,7 +261,8 @@ public sealed class ConfigurationETagTests
     }
 
     [Theory]
-    [InlineData("gzip, deflate, br", "br, gzip")]
+    [InlineData("br;q=1, gzip;q=0.8", "gzip;q=0.5, br")]
+    [InlineData("gzip, deflate", "deflate;q=0.9, gzip")]
     [InlineData("identity", "x-unsupported-coding")]
     public async Task WarmedOutputCache_EquivalentAcceptEncoding_SharesEntry(string firstCoding, string secondCoding)
     {
@@ -276,6 +277,22 @@ public sealed class ConfigurationETagTests
         using var hit = await server.Client.SendAsync(hitRequest);
         hit.Headers.GetValues(OutputCacheStatus.HeaderName).Single().Should().Contain("hit;");
         hit.Headers.ETag.Should().Be(warm.Headers.ETag);
+    }
+
+    [Theory]
+    [InlineData("/text")]
+    [InlineData("/range")]
+    public async Task SharedResponse_CodedValidator_KeepsEveryClassVaryHeader(string path)
+    {
+        await using var server = await TestServer.StartAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.AcceptEncoding.ParseAdd("gzip");
+        using var response = await server.Client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        response.Headers.CacheControl!.Public.Should().BeTrue();
+        response.Headers.Vary.Should().Contain(new[] { "Accept", "Accept-Encoding", "Accept-Language", "Origin" });
+        response.Headers.Vary.Select(static header => header.ToUpperInvariant()).Should().OnlyHaveUniqueItems();
     }
 
     private enum OutputCacheRegistration
@@ -302,7 +319,11 @@ public sealed class ConfigurationETagTests
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
             builder.Services.AddETags();
-            builder.Services.AddResponseCompression(options => options.Providers.Add<GzipCompressionProvider>());
+            builder.Services.AddResponseCompression(options =>
+            {
+                options.Providers.Add<GzipCompressionProvider>();
+                options.Providers.Add<BrotliCompressionProvider>();
+            });
             var source = ConfigureServices(builder, generation, outputCache);
             var app = builder.Build();
             app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
