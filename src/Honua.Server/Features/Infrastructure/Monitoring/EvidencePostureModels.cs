@@ -148,6 +148,7 @@ public static class EvidencePostureVocabulary
 
         public const string FindingsDatabasePressure = "honua_ops_findings.database_pressure";
         public const string FindingsBatchBackends = "honua_ops_findings.batch_backends";
+        public const string FindingsCatalogRollbacks = "honua_ops_findings.catalog_rollbacks";
         public const string AlertEvents = "honua_alert_events";
         public const string OperateEvents = "honua_operate_events";
         public const string PlatformReleaseStatus = "honua_platform_release_status";

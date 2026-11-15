@@ -1351,7 +1351,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.CapabilitiesMetadataXmlTests",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/OgcClassic/Wmts/",

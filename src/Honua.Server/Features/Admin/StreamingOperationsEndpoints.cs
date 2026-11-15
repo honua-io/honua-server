@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net.WebSockets;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Abstractions;
@@ -73,8 +74,8 @@ internal static class StreamingOperationsEndpoints
             StreamingOperationsJsonContext.Default.ApiResponseSubscriberListResponse);
     }
 
-    private static async Task<IResult> HandleAlertStream(
-        [FromServices] IAlertNotificationBroadcaster broadcaster,
+    internal static async Task<IResult> HandleAlertStream(
+        [FromServices] Honua.Alerts.RealtimeAlertNotificationBroadcaster broadcaster,
         HttpContext context)
     {
         if (!context.WebSockets.IsWebSocketRequest)
@@ -85,10 +86,16 @@ internal static class StreamingOperationsEndpoints
                 "WebSocket upgrade required.");
         }
 
+        if (!TryParseAlertCursor(context.Request.Query["cursor"].ToString(), out var after))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context,
+                StatusCodes.Status400BadRequest, "Expected cursor=alerts:<sequence>.");
+        }
+
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
         using var sendLock = new SemaphoreSlim(1, 1);
-        using var subscription = broadcaster.Subscribe(
-            async (alertEvent, cancellationToken) =>
+        using var subscription = await broadcaster.SubscribeAsync(
+            async (alertEvent, position, cancellationToken) =>
             {
                 if (webSocket.State != WebSocketState.Open)
                 {
@@ -106,10 +113,8 @@ internal static class StreamingOperationsEndpoints
                         return;
                     }
 
-                    var payload = JsonSerializer.SerializeToUtf8Bytes(
-                        alertEvent,
-                        StreamingOperationsJsonContext.Default.AlertEventEnvelope);
-                    await webSocket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+                    await webSocket.SendAsync(SerializeAlertFrame(alertEvent, position),
+                        WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -131,18 +136,19 @@ internal static class StreamingOperationsEndpoints
                     }
                 }
             },
-            new SubscriptionOptions(context.Request.Query["clientLabel"].ToString()));
+            new SubscriptionOptions(context.Request.Query["clientLabel"].ToString(), after), context.RequestAborted).ConfigureAwait(false);
 
         var buffer = new byte[1];
+        Task<WebSocketReceiveResult>? pendingReceive = null;
         try
         {
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                context.RequestAborted,
-                subscription.DisconnectToken);
-
-            while (webSocket.State == WebSocketState.Open && !linkedCts.Token.IsCancellationRequested)
+            while (webSocket.State == WebSocketState.Open && !subscription.DisconnectToken.IsCancellationRequested)
             {
-                var result = await webSocket.ReceiveAsync(buffer, linkedCts.Token).ConfigureAwait(false);
+                // Cancel the wait on a server reset without aborting the socket, so
+                // the recovery frame can still be sent before the close handshake.
+                pendingReceive = webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), context.RequestAborted);
+                var result = await pendingReceive.WaitAsync(subscription.DisconnectToken).ConfigureAwait(false);
+                pendingReceive = null;
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
                     break;
@@ -155,29 +161,107 @@ internal static class StreamingOperationsEndpoints
         }
         finally
         {
-            if (webSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
-            {
-                try
-                {
-                    await webSocket.CloseAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        subscription.DisconnectToken.IsCancellationRequested
-                            ? "Subscription disconnected."
-                            : "Stream closed.",
-                        CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (WebSocketException)
-                {
-                    // Best-effort close; the remote peer may have already reset the connection.
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Best-effort close; the socket may already have been disposed concurrently.
-                }
-            }
+            await CloseAlertStreamAsync(webSocket, pendingReceive, subscription, context.RequestAborted).ConfigureAwait(false);
         }
 
         return Results.Empty;
+    }
+
+    private static async Task CloseAlertStreamAsync(WebSocket socket, Task<WebSocketReceiveResult>? pendingReceive,
+        RealtimeAlertNotificationBroadcaster.Subscription subscription, CancellationToken requestAborted)
+    {
+        using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
+        shutdown.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+            {
+                await SendResetAsync(socket, subscription.Reset, shutdown.Token).ConfigureAwait(false);
+                await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure,
+                    subscription.DisconnectToken.IsCancellationRequested ? "Subscription disconnected." : "Stream closed.", shutdown.Token).ConfigureAwait(false);
+                var buffer = new byte[1];
+                while (socket.State == WebSocketState.CloseSent)
+                {
+                    pendingReceive ??= socket.ReceiveAsync(new ArraySegment<byte>(buffer), shutdown.Token);
+                    await pendingReceive.WaitAsync(shutdown.Token).ConfigureAwait(false);
+                    pendingReceive = null;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is WebSocketException or ObjectDisposedException or OperationCanceledException)
+        {
+            // A missing close acknowledgment must not retain the request indefinitely.
+            socket.Abort();
+        }
+        finally
+        {
+            if (pendingReceive is not null)
+            {
+                socket.Abort();
+                try
+                {
+                    await pendingReceive.ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is WebSocketException or ObjectDisposedException or OperationCanceledException)
+                {
+                    // Observe the receive canceled by the shutdown deadline or request abort.
+                }
+            }
+        }
+    }
+
+    private static async Task SendResetAsync(WebSocket socket,
+        Honua.Core.Features.Realtime.RealtimeDelivery.Reset? reset, CancellationToken cancellationToken)
+    {
+        if (reset is null)
+        {
+            return;
+        }
+        using var payload = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(payload))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "reset");
+            writer.WriteString("reason", reset.Reason);
+            writer.WriteNumber("head", reset.Head);
+            writer.WriteEndObject();
+        }
+        await socket.SendAsync(payload.ToArray(), WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool TryParseAlertCursor(string cursor, out long? after)
+    {
+        after = null;
+        if (string.IsNullOrEmpty(cursor))
+        {
+            return true;
+        }
+        if (!cursor.StartsWith("alerts:", StringComparison.Ordinal) ||
+            !long.TryParse(cursor.AsSpan(7), NumberStyles.None, CultureInfo.InvariantCulture, out var sequence))
+        {
+            return false;
+        }
+        after = sequence;
+        return true;
+    }
+
+    private static byte[] SerializeAlertFrame(Honua.Core.Features.Alerts.Domain.AlertEventEnvelope alertEvent,
+        Honua.Core.Features.Realtime.RealtimePosition position)
+    {
+        using var payload = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(payload))
+        {
+            writer.WriteStartObject();
+            var envelope = JsonSerializer.SerializeToElement(alertEvent,
+                StreamingOperationsJsonContext.Default.AlertEventEnvelope);
+            foreach (var property in envelope.EnumerateObject())
+            {
+                property.WriteTo(writer);
+            }
+            writer.WriteString("cursor", position.ToString());
+            writer.WriteEndObject();
+        }
+        return payload.ToArray();
     }
 
     private static IResult HandleDisconnectSubscriber(

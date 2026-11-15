@@ -3,6 +3,7 @@
 
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Migration.Watermark;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Microsoft.Extensions.Configuration;
@@ -29,6 +30,7 @@ internal static class OrchestrationServiceCollectionExtensions
 
         services.TryAddSingleton<PostgresWorkflowDefinitionStore>();
         services.TryAddSingleton<IWorkflowDefinitionStore>(sp => sp.GetRequiredService<PostgresWorkflowDefinitionStore>());
+        services.TryAddSingleton(typeof(PollWakeSignal<>));
         services.TryAddSingleton<PostgresWorkflowRunStore>();
         services.TryAddSingleton<IWorkflowRunStore>(sp => sp.GetRequiredService<PostgresWorkflowRunStore>());
 
