@@ -104,9 +104,11 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
             SingleReader = true,
             SingleWriter = false
         });
-        CancellationTokenSource? pendingCancellation = new();
+        CancellationTokenSource? pendingCancellation = null;
+        var registered = false;
         try
         {
+            pendingCancellation = new();
             var cts = pendingCancellation;
             var token = cts.Token;
             var state = new ObservationStreamSessionState();
@@ -117,17 +119,19 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
                 request.DatastreamId is { } datastream ? [datastream.ToString(CultureInfo.InvariantCulture)] : [],
                 request.After, writer, value => MatchesScope(value, request.Scope)));
             _sessions[id] = new(subscription, channel.Writer, cts, principal, state);
+            registered = true;
             pendingCancellation = null; // The registered session now owns cancellation cleanup.
             ObservationStreamLog.SessionCreated(_logger, id, request.Transport, request.DatastreamId);
             return new ObservationStreamSession(id, channel.Reader, this, state, token);
         }
         finally
         {
-            if (pendingCancellation is not null)
+            if (!registered)
             {
                 ReleaseSlot(principal);
-                pendingCancellation.Dispose();
             }
+
+            pendingCancellation?.Dispose();
         }
     }
 
