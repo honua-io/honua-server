@@ -249,7 +249,7 @@ public sealed class LayerPublishJobTests
         return restarted!;
     }
 
-    private static Task AssertPreviewPinsAsync(ILayerPublishingService publisher) =>
+    private static Task<PublishedLayerSummary> AssertPreviewPinsAsync(ILayerPublishingService publisher) =>
         publisher.Received(1).PublishLayerAsync(Arg.Any<string>(),
             Arg.Is<LayerPublishRequest>(request => request.ExpectedSourceFingerprint == "preview-source"
                 && request.ExpectedMetadataRevision == 7 && request.ExpectedMetadataEtag == "etag-7"),
