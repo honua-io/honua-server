@@ -12,7 +12,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 from flake_quarantine import exclude_filter, load_snapshot, merge_retry, read_cases
-from shard_processes import descendant_pids
+from shard_processes import descendant_pids, kill_descendants
 
 
 def terminate_test(child, signum):
@@ -28,9 +28,7 @@ def terminate_test(child, signum):
             os.kill(pid, signum)
     with suppress(subprocess.TimeoutExpired):
         child.wait(timeout=0.5)
-    for pid in descendants:
-        with suppress(ProcessLookupError):
-            os.kill(pid, signal.SIGKILL)
+    kill_descendants(*descendants)
 
 
 def call_test(command):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Quarantine expiry and retry completeness must fail closed."""
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, suppress
 from datetime import datetime, timedelta, timezone
 import importlib.util
 import io
@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
@@ -33,6 +34,15 @@ def module(name, filename):
 
 runner = module('retry', 'retry-failed-shard-tests.py')
 publisher = module('publisher', 'quarantine-issues.py')
+
+
+def process_alive(pid):
+    """A killed orphan may linger as a zombie until its new parent reaps it."""
+    stat = Path('/proc') / str(pid) / 'stat'
+    try:
+        return stat.read_text().split(') ', 1)[1].split()[0] != 'Z'
+    except (FileNotFoundError, ProcessLookupError):
+        return False
 
 
 def entry(index=0):
@@ -250,6 +260,39 @@ class RunnerTests(unittest.TestCase):
 
     def test_timeout_cleans_up_descendant_outside_inherited_group(self):
         self.assert_timeout_cleanup(foreground=False, descendant_setup='os.setsid()')
+
+    def test_cleanup_kills_a_child_forked_after_the_first_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            late = Path(directory) / 'late.pid'
+            # The child forks a detached grandchild from its TERM handler, i.e. after the
+            # supervisor's pre-TERM snapshot; killing only that snapshot orphans the grandchild.
+            source = ('import os, pathlib, signal, sys, time\n'
+                      'def spawn(*_):\n'
+                      '    if os.fork() == 0:\n'
+                      '        os.setsid()\n'
+                      '        pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\n'
+                      '        time.sleep(30)\n'
+                      '        os._exit(0)\n'
+                      'signal.signal(signal.SIGTERM, spawn)\n'
+                      'print("ready", flush=True)\n'
+                      'while True:\n'
+                      '    time.sleep(1)\n')
+            with subprocess.Popen([sys.executable, '-c', source, str(late)], stdout=subprocess.PIPE) as child:
+                try:
+                    self.assertEqual(b'ready\n', child.stdout.readline())
+                    runner.terminate_test(child, signal.SIGTERM)
+                    self.assertTrue(late.exists(), 'TERM handler did not fork before cleanup')
+                    pid = int(late.read_text())
+                    for _ in range(50):
+                        if not process_alive(pid):
+                            break
+                        time.sleep(0.1)
+                    self.assertFalse(process_alive(pid), f'grandchild {pid} survived cleanup')
+                finally:
+                    if late.exists():
+                        with suppress(ProcessLookupError):
+                            os.kill(int(late.read_text()), signal.SIGKILL)
+                    child.kill()
 
     def assert_timeout_cleanup(self, foreground, descendant_setup='pass'):
         with tempfile.TemporaryDirectory() as directory:

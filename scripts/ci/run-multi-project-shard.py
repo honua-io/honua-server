@@ -11,7 +11,7 @@ import time
 import xml.etree.ElementTree as ET
 
 from shard_projects import shard_projects
-from shard_processes import descendant_pids
+from shard_processes import kill_descendants
 
 SCRIPT = Path(__file__).resolve().parent
 TIMEOUT_EXIT_CODE = 124
@@ -46,13 +46,10 @@ def terminate_tree(process):
         subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
                        check=False, capture_output=True)
     else:
-        # Snapshot before killing the supervisor: detached children get reparented.
-        descendants = descendant_pids(process.pid)
+        # Freeze the tree before killing the supervisor: detached children get reparented.
+        kill_descendants(process.pid)
         with suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
-        for pid in descendants:
-            with suppress(ProcessLookupError):
-                os.kill(pid, signal.SIGKILL)
     process.wait()
 
 

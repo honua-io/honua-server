@@ -835,7 +835,9 @@ are rejected so a passing sibling cannot conceal a missing failure. Duplicate di
 in unrelated passing methods remain untouched in the merged results. Infrastructure and
 execution failures remain blocking. Tests retain the supervisor’s process group so shared deadlines clean up the full tree.
 Cancellation signals the test’s descendants, including those that leave the inherited
-process group, and escalates to SIGKILL after at most half a second. Required check names and minimum-execution checks remain
+process group, and escalates to SIGKILL after at most half a second. The SIGKILL step
+stops the tree (SIGSTOP) until a fresh process listing finds no new descendant, so a child
+forked after the first snapshot is killed instead of orphaned. Required check names and minimum-execution checks remain
 unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
 25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean
 gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
