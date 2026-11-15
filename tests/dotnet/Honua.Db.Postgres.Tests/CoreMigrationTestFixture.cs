@@ -28,7 +28,7 @@ internal static class CoreMigrationTestFixture
         ApplyAsync(
             fixture,
             schema,
-            "src", "Honua.Server", "Migrations", "186_EnforceMetadataGlobalIdUniqueness.sql");
+            "src", "Honua.Server", "Migrations", "198_EnforceMetadataGlobalIdUniqueness.sql");
 
     public static Task ApplyRasterLayerStatisticsAsync(PostgresFixture fixture, string schema) =>
         ApplyAsync(
