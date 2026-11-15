@@ -20777,7 +20777,6 @@
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProposalEvidenceSecurityJourneyTests.FullProposalEvidenceJourney_EmitsExactDenominator_WithZeroSkippedScenarios",
         "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_McpNotification_SuppressesJsonRpcResponseWithoutHandlerSideEffects",
         "Honua.Server.Tests.Features.OperationsToolset.OperatorJourneyMcpIntegrationTests.AdminKey_ConfiguresThroughMcp_AndNonAdminCreatesNoRow",
-        "Honua.Server.Tests.Features.OperationsToolset.StagedImportMcpIntegrationTests.AgentProposal_ImportsOnlyAfterHumanApproval_AndNonAdminIsRefused",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpAuthenticationGuidanceTests.ResourcesRead_AnonymousKnownOrUnknownUri_ReturnsSameCredentialGuidance",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpAuthenticationGuidanceTests.ToolsCall_AnonymousKnownOrUnknownTool_ReturnsSameCredentialGuidance",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpAuthenticationGuidanceTests.ToolsList_AnonymousFullExport_ReturnsPermissionDenied",

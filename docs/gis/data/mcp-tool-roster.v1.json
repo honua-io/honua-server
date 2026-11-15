@@ -156,8 +156,6 @@
     "honua_delete_folder",
     "honua_list_folders",
     "honua_move_service",
-    "honua_op_dataset_stage_import",
-    "honua_op_dataset_stage_preview",
     "honua_update_folder"
   ],
   "requiresDurableControlPlane": [
@@ -235,8 +233,6 @@
       "honua_list_folders",
       "honua_list_jobs",
       "honua_list_layers",
-      "honua_op_dataset_stage_import",
-      "honua_op_dataset_stage_preview",
       "honua_publish_result",
       "honua_publish_service",
       "honua_query_features",
