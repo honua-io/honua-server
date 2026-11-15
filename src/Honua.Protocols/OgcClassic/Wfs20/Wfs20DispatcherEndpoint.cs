@@ -1542,7 +1542,7 @@ internal static class Wfs20DispatcherEndpoint
             return;
         }
 
-        writer.WriteElementString(localName, Wfs20Utilities.OwsNamespace, value);
+        writer.WriteElementString(localName, Wfs20Utilities.OwsNamespace, OgcClassicRequestHelpers.SanitizeXmlText(value));
     }
 
     private static void WriteServiceIdentification(XmlWriter writer, ServiceIdentification? identification)
@@ -1757,10 +1757,10 @@ internal static class Wfs20DispatcherEndpoint
         {
             writer.WriteStartElement(string.Empty, "FeatureType", Wfs20Utilities.WfsNamespace);
             writer.WriteElementString(string.Empty, "Name", Wfs20Utilities.WfsNamespace, featureType.Name);
-            writer.WriteElementString(string.Empty, "Title", Wfs20Utilities.WfsNamespace, featureType.Title);
+            writer.WriteElementString(string.Empty, "Title", Wfs20Utilities.WfsNamespace, OgcClassicRequestHelpers.SanitizeXmlText(featureType.Title));
             if (featureType.Abstract is not null)
             {
-                writer.WriteElementString(string.Empty, "Abstract", Wfs20Utilities.WfsNamespace, featureType.Abstract);
+                writer.WriteElementString(string.Empty, "Abstract", Wfs20Utilities.WfsNamespace, OgcClassicRequestHelpers.SanitizeXmlText(featureType.Abstract));
             }
 
             if (featureType.Keywords is { Length: > 0 })

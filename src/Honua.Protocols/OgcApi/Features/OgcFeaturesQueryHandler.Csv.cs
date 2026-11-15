@@ -19,7 +19,7 @@ namespace Honua.Protocols.Ogc.Api.Features;
 internal sealed partial class OgcFeaturesQueryHandler
 {
     private sealed record CsvStreamQuery(
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         int LayerId,
         FeatureQuery Query)
     {

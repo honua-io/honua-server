@@ -986,7 +986,7 @@ public partial class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
             .AddStorageBinding("binding-test-lines", "res-test-lines", "lines", storageLayerId: LinesLayerId)
             .BuildProvider();
 
-    private static MetadataV2ResourceSpatial Spatial(MetadataV2GeometryType geometryType)
+    private static MetadataV2ObjectSpatial Spatial(MetadataV2GeometryType geometryType)
         => new()
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,
