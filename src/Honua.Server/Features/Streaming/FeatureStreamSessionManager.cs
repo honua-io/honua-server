@@ -444,8 +444,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         var delivered = 0;
-        IReadOnlyDictionary<string, JsonElement>? parsedProperties = null;
-        bool propertiesParsed = false;
+        var parse = new BroadcastParse();
         foreach (var (id, entry) in _sessions)
         {
             if (entry.Cts.IsCancellationRequested)
@@ -463,64 +462,67 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 continue;
             }
 
-            var matches = entry.GetMatchingSubscriptions(
-                message.Envelope,
-                message.GeometryEnvelope,
-                message.PropertiesJson,
-                ref parsedProperties,
-                ref propertiesParsed);
-            if (matches.Length == 0)
-            {
-                // A change the session does not want needs no store read either, unless only a
-                // possibly stale routability snapshot turned it away.
-                if (entry.AnyRejectedByRoutability(message.Envelope))
-                {
-                    entry.RequireStoreRead(message.Envelope.Cursor);
-                }
-                else
-                {
-                    entry.MarkConsidered(message.Envelope.Cursor);
-                }
+            delivered += OfferChange(id, entry, message, parse);
+        }
 
-                continue;
-            }
+        return delivered;
+    }
 
-            // Dedup is claimed at send time (writer task and per-subscription
-            // replay), not here. Claiming the (event, subscription) slot before
-            // queueing would mark events delivered that the bounded channel
-            // later drops as pre-drain overflow — and replay would then skip
-            // them too, losing the event entirely. Queue speculatively; the
-            // writer/replay path with the atomic test-and-set decides who
-            // actually sends. The generation observed at match time travels
-            // with the frame so the writer can reject queued frames whose
-            // subscription was unsubscribed or replaced before drain.
-            var matchIndex = 0;
-            var allQueued = true;
-            while (matchIndex < matches.Length)
-            {
-                var match = matches[matchIndex];
-                var subscriptionMessage = message with
-                {
-                    Envelope = (match.Envelope ?? message.Envelope) with { SubscriptionId = match.SubscriptionId },
-                    SubscriptionGeneration = match.Generation
-                };
-                var queued = TryQueueMessage(id, entry, subscriptionMessage);
-                delivered += queued ? 1 : 0;
-                allQueued &= queued;
-                matchIndex++;
-            }
+    private sealed class BroadcastParse
+    {
+        public IReadOnlyDictionary<string, JsonElement>? Properties;
+        public bool Parsed;
+    }
 
-            // Only a queued change counts as offered. One dropped while the session stays open
-            // (before drain, or within drain grace) is in the store only, so the session must
-            // read the store through it however much is offered live afterwards.
-            if (allQueued)
-            {
-                entry.MarkConsidered(message.Envelope.Cursor);
-            }
-            else
+    private int OfferChange(string sessionId, SessionEntry entry, FeatureStreamMessage message, BroadcastParse parse)
+    {
+        var parsedProperties = parse.Properties;
+        var propertiesParsed = parse.Parsed;
+        var matches = entry.GetMatchingSubscriptions(
+            message.Envelope,
+            message.GeometryEnvelope,
+            message.PropertiesJson,
+            ref parsedProperties,
+            ref propertiesParsed);
+        parse.Properties = parsedProperties;
+        parse.Parsed = propertiesParsed;
+        if (matches.Length == 0)
+        {
+            if (entry.AnyRejectedByRoutability(message.Envelope))
             {
                 entry.RequireStoreRead(message.Envelope.Cursor);
             }
+            else
+            {
+                entry.MarkConsidered(message.Envelope.Cursor);
+            }
+
+            return 0;
+        }
+
+        // Queue speculatively. Send-time dedup decides who delivers; claiming the slot here
+        // would hide events the bounded channel later drops.
+        var delivered = 0;
+        var allQueued = true;
+        foreach (var match in matches)
+        {
+            var subscriptionMessage = message with
+            {
+                Envelope = (match.Envelope ?? message.Envelope) with { SubscriptionId = match.SubscriptionId },
+                SubscriptionGeneration = match.Generation
+            };
+            var queued = TryQueueMessage(sessionId, entry, subscriptionMessage);
+            delivered += queued ? 1 : 0;
+            allQueued &= queued;
+        }
+
+        if (allQueued)
+        {
+            entry.MarkConsidered(message.Envelope.Cursor);
+        }
+        else
+        {
+            entry.RequireStoreRead(message.Envelope.Cursor);
         }
 
         return delivered;

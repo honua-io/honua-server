@@ -1563,9 +1563,9 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             => Task.FromResult(oldestRetained);
 
         public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-            long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
+            FeatureChangeEventQuery query,
             CancellationToken cancellationToken = default)
-            => inner.QueryAsync(cursor, from, to, limit, cancellationToken);
+            => inner.QueryAsync(query, cancellationToken);
     }
 
     /// <summary>
@@ -1587,7 +1587,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             => Task.FromResult(FeatureChangeRetentionWindow.KnownEmpty(currentCursor));
 
         public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-            long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
+            FeatureChangeEventQuery query,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
     }

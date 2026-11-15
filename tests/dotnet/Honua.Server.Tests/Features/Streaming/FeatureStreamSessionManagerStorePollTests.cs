@@ -10,10 +10,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// The periodic store read of an SSE session is skipped only while the task's relay has offered
-/// that session everything it has broadcast; every other case still reads the store.
-/// </summary>
+// The periodic store read of an SSE session is skipped only while the task's relay has offered
+// that session everything it has broadcast; every other case still reads the store.
 public sealed class FeatureStreamSessionManagerStorePollTests : IDisposable
 {
     private const int Buffer = 8;

@@ -360,18 +360,15 @@ public sealed class FeatureChangeWebhookDispatcherTests
             => Task.FromResult(events.Length == 0 ? 0L : events.Max(featureEvent => featureEvent.Cursor));
 
         public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-            long? cursor,
-            DateTimeOffset? from,
-            DateTimeOffset? to,
-            int limit,
+            FeatureChangeEventQuery query,
             CancellationToken cancellationToken = default)
         {
-            var after = cursor ?? 0;
+            var after = query.Cursor ?? 0;
             _queriedCursors.Enqueue(after);
             return Task.FromResult<IReadOnlyList<FeatureChangeEvent>>(
                 events.Where(featureEvent => featureEvent.Cursor > after)
                     .OrderBy(featureEvent => featureEvent.Cursor)
-                    .Take(limit)
+                    .Take(query.Limit)
                     .ToArray());
         }
     }

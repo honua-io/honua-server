@@ -23,9 +23,15 @@ public sealed class FeatureDatabaseChangeIdentityTests
         var filter = new StreamSubscriptionFilter(resolvedServiceId: serviceId, routabilityGuard: guard);
         var delta = new FeatureStreamEnvelope
         {
-            EventId = "sql-edit", Cursor = 42, Timestamp = DateTimeOffset.UtcNow,
-            ServiceId = string.Empty, LayerId = 17, ObjectId = 3,
-            Operation = operation, Protocol = "database", RequestId = string.Empty
+            EventId = "sql-edit",
+            Cursor = 42,
+            Timestamp = DateTimeOffset.UtcNow,
+            ServiceId = string.Empty,
+            LayerId = 17,
+            ObjectId = 3,
+            Operation = operation,
+            Protocol = "database",
+            RequestId = string.Empty
         };
         Assert.True(filter.Matches(delta, null, null));
         var baseline = FeatureStreamEndpoints.ResolveStreamLayer(snapshot, service: null, 17)!;

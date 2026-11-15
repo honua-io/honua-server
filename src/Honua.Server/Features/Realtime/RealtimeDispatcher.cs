@@ -7,6 +7,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Realtime;
 
+internal readonly record struct RealtimeReadAfter(
+    string Family,
+    long After,
+    IReadOnlyCollection<string>? ScopeKeys,
+    int Limit);
+
 // Follows the realtime log for this task and hands each new event to this task's subscriptions
 // (specification section 6.1). One probe reads every family's head; every family with
 // subscriptions and a head ahead of its dispatched position is read in batches, in order.
@@ -34,14 +40,11 @@ internal sealed partial class RealtimeDispatcher(
     public bool IsContiguous(string family) => !_sources.ContainsKey(family);
 
     public Task<IReadOnlyList<RealtimeEvent>> ReadAfterAsync(
-        string family,
-        long after,
-        IReadOnlyCollection<string>? scopeKeys,
-        int limit,
+        RealtimeReadAfter request,
         CancellationToken cancellationToken)
-        => _sources.TryGetValue(family, out var source)
-            ? source.ReadAfterAsync(after, scopeKeys, limit, cancellationToken)
-            : log.ReadAfterAsync(new(family, after, limit, scopeKeys), cancellationToken);
+        => _sources.TryGetValue(request.Family, out var source)
+            ? source.ReadAfterAsync(request.After, request.ScopeKeys, request.Limit, cancellationToken)
+            : log.ReadAfterAsync(new(request.Family, request.After, request.Limit, request.ScopeKeys), cancellationToken);
 
     public Task<RealtimeLogWindow> ReadWindowAsync(string family, CancellationToken cancellationToken)
         => _sources.TryGetValue(family, out var source)
@@ -159,7 +162,7 @@ internal sealed partial class RealtimeDispatcher(
         var currentHead = head;
         while (dispatched < currentHead)
         {
-            var batch = await ReadAfterAsync(family, dispatched, null, options.Value.ReadBatchSize, cancellationToken)
+            var batch = await ReadAfterAsync(new(family, dispatched, null, options.Value.ReadBatchSize), cancellationToken)
                 .ConfigureAwait(false);
             var subscribers = GetSubscribers(family);
 

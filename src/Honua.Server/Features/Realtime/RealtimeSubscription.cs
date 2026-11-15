@@ -189,7 +189,8 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
         while (true)
         {
             var before = position;
-            var page = await _dispatcher.ReadAfterAsync(family, position, _scopes, options.ReplayBatchSize, cancellationToken)
+            var page = await _dispatcher.ReadAfterAsync(
+                new(family, position, _scopes, options.ReplayBatchSize), cancellationToken)
                 .ConfigureAwait(false);
 
             var current = await ReadRetentionGapAsync(page, before, cancellationToken).ConfigureAwait(false);

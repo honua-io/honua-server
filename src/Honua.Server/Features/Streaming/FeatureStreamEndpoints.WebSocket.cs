@@ -49,8 +49,8 @@ internal static partial class FeatureStreamEndpoints
         // generation when claiming send-time deliveries through the session manager.
         long defaultSubscriptionGeneration = sessionManager.GetDefaultSubscriptionGeneration(session.SessionId);
 
-        await AnnounceWebSocketConnectionAsync(webSocket, session, requested, initialLiveCursor, context.RequestAborted)
-            .ConfigureAwait(false);
+        await AnnounceWebSocketConnectionAsync(
+            new(webSocket, session, requested, initialLiveCursor), context.RequestAborted).ConfigureAwait(false);
 
         if (announceInitialSubscription)
         {
@@ -101,27 +101,11 @@ internal static partial class FeatureStreamEndpoints
         {
             try
             {
-                if (cursor.HasValue)
+                if (cursor.HasValue && !await AdmitExpiredWebSocketCursorAsync(
+                    new(webSocket, session, eventStore, subscriptionFilter, FeatureStreamSessionManager.DefaultSubscriptionId),
+                    linkedCts.Token).ConfigureAwait(false))
                 {
-                    await SendWebSocketJsonAsync(
-                        webSocket,
-                        session.WriteLock,
-                        JsonSerializer.SerializeToUtf8Bytes(
-                            new FeatureStreamResetFrame
-                            {
-                                Reason = RealtimeResetReasons.Retention,
-                                Head = FeatureStreamCursor.Format(await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false))
-                            },
-                            FeatureStreamJsonContext.Default.FeatureStreamResetFrame),
-                        linkedCts.Token).ConfigureAwait(false);
-                    var snapshotScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, subscriptionFilter);
-                    if (snapshotScopeError is not null)
-                    {
-                        await TrySendWebSocketTerminalErrorAsync(webSocket, session.WriteLock, session.SessionId,
-                            FeatureStreamSessionManager.DefaultSubscriptionId,
-                            snapshotScopeError, linkedCts.Token).ConfigureAwait(false);
-                        return;
-                    }
+                    return;
                 }
 
                 var snapshotResult = await EmitSnapshotAsync(
@@ -839,65 +823,20 @@ internal static partial class FeatureStreamEndpoints
         // (watermark already past the event). Dedup at send time handles any overlap
         // when the broadcast did see the sub. With-cursor subscribes do not need this:
         // their post-unpause-sweep advances the watermark to the last delivered cursor.
-        var requested = control.Cursor.ValueKind switch
+        var plan = await PrepareWebSocketReplayAsync(
+            new(deps, webSocket, session, filter, mode, subscriptionId, control.Cursor),
+            cancellationToken).ConfigureAwait(false);
+        if (plan is null)
         {
-            JsonValueKind.Undefined or JsonValueKind.Null => FeatureStreamCursor.None,
-            JsonValueKind.String => FeatureStreamCursor.Parse(control.Cursor.GetString(), lastEventId: null),
-            JsonValueKind.Number => FeatureStreamCursor.Parse(control.Cursor.GetRawText(), lastEventId: null),
-            _ => new FeatureStreamCursor(FeatureStreamCursorKind.Invalid, 0)
-        };
-        if (requested.Kind == FeatureStreamCursorKind.Invalid)
-        {
-            await SendWebSocketErrorAsync(webSocket, session.WriteLock, "invalid-cursor",
-                "cursor must be a features:<generation> position.", subscriptionId, cancellationToken).ConfigureAwait(false);
             return;
         }
 
+        var requested = plan.Value.Requested;
         var replayCursor = requested.Position;
-
-        // Snapshot-then-delta decision runs before the subscription is registered so the
-        // add can be paused for the whole baseline-plus-catch-up window.
-        string? snapshotReason = null;
-        if (replayCursor.HasValue || IsSnapshotMode(mode))
-        {
-            try
-            {
-                snapshotReason = replayCursor.HasValue
-                    ? await ResolveResnapshotReasonAsync(deps.EventStore, replayCursor.Value, cancellationToken).ConfigureAwait(false)
-                    : FeatureStreamSnapshotReasons.Initial;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-        }
-
-        if (snapshotReason is not null && replayCursor.HasValue)
-        {
-            var recoveryScopeError = ValidateSnapshotScope(FeatureStreamSubscriptionMode.Snapshot, filter);
-            if (recoveryScopeError is not null)
-            {
-                await SendWebSocketErrorAsync(webSocket, session.WriteLock, "invalid-subscription",
-                    recoveryScopeError, subscriptionId, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-        }
-
+        var snapshotReason = plan.Value.SnapshotReason;
         var emitSnapshot = snapshotReason is not null;
         var pauseForReplay = replayCursor.HasValue || emitSnapshot;
-
-        long preAddCursor = 0;
-        if (!pauseForReplay || requested.Kind == FeatureStreamCursorKind.Epoch)
-        {
-            try
-            {
-                preAddCursor = await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-        }
+        var preAddCursor = plan.Value.PreAddCursor;
 
         // Pause the subscription before replay so the live channel writer cannot
         // queue events that the per-subscription replay path is about to deliver
@@ -942,12 +881,9 @@ internal static partial class FeatureStreamEndpoints
 
         if (requested.Kind == FeatureStreamCursorKind.Epoch)
         {
-            await SendWebSocketJsonAsync(webSocket, session.WriteLock,
-                JsonSerializer.SerializeToUtf8Bytes(new FeatureStreamResetFrame
-                {
-                    Reason = RealtimeResetReasons.CursorEpoch,
-                    Head = FeatureStreamCursor.Format(preAddCursor)
-                }, FeatureStreamJsonContext.Default.FeatureStreamResetFrame), cancellationToken).ConfigureAwait(false);
+            await SendWebSocketResetAsync(
+                new(webSocket, session.WriteLock, RealtimeResetReasons.CursorEpoch, preAddCursor),
+                cancellationToken).ConfigureAwait(false);
         }
 
         // Emit the baseline while paused, then resume delta delivery from the baseline
@@ -958,12 +894,10 @@ internal static partial class FeatureStreamEndpoints
             {
                 if (replayCursor.HasValue)
                 {
-                    await SendWebSocketJsonAsync(webSocket, session.WriteLock,
-                        JsonSerializer.SerializeToUtf8Bytes(new FeatureStreamResetFrame
-                        {
-                            Reason = RealtimeResetReasons.Retention,
-                            Head = FeatureStreamCursor.Format(await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false))
-                        }, FeatureStreamJsonContext.Default.FeatureStreamResetFrame), cancellationToken).ConfigureAwait(false);
+                    var head = await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
+                    await SendWebSocketResetAsync(
+                        new(webSocket, session.WriteLock, RealtimeResetReasons.Retention, head),
+                        cancellationToken).ConfigureAwait(false);
                 }
 
                 var snapshotResult = await EmitSnapshotAsync(
@@ -1633,37 +1567,4 @@ internal static partial class FeatureStreamEndpoints
         }
     }
 
-    private static async Task AnnounceWebSocketConnectionAsync(
-        WebSocket webSocket,
-        FeatureStreamSession session,
-        FeatureStreamCursor requested,
-        long initialLiveCursor,
-        CancellationToken cancellationToken)
-    {
-        await SendWebSocketStatusAsync(
-            webSocket,
-            session.WriteLock,
-            new FeatureStreamStatusFrame
-            {
-                Status = "connected",
-                Message = "Feature stream connected.",
-                SessionId = session.SessionId
-            },
-            cancellationToken).ConfigureAwait(false);
-
-        if (requested.Kind == FeatureStreamCursorKind.Epoch)
-        {
-            await SendWebSocketJsonAsync(
-                webSocket,
-                session.WriteLock,
-                JsonSerializer.SerializeToUtf8Bytes(
-                    new FeatureStreamResetFrame
-                    {
-                        Reason = RealtimeResetReasons.CursorEpoch,
-                        Head = FeatureStreamCursor.Format(initialLiveCursor)
-                    },
-                    FeatureStreamJsonContext.Default.FeatureStreamResetFrame),
-                cancellationToken).ConfigureAwait(false);
-        }
-    }
 }

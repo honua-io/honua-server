@@ -35,6 +35,61 @@ internal static partial class FeatureStreamEndpoints
             cancellationToken).ConfigureAwait(false);
     }
 
+    private readonly record struct SseHandshake(
+        HttpContext Context,
+        FeatureStreamSession Session,
+        IStreamSubscriptionFilter? Filter,
+        FeatureStreamCursor Requested,
+        long InitialLiveCursor);
+
+    // False when the client left while the opening frames were being written.
+    private static async Task<bool> WriteSseHandshakeAsync(SseHandshake handshake, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await WriteSseEventAsync(
+                handshake.Context.Response,
+                "status",
+                new FeatureStreamStatusFrame
+                {
+                    Status = "connected",
+                    Message = "Feature stream connected.",
+                    SessionId = handshake.Session.SessionId
+                },
+                FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
+                null,
+                cancellationToken).ConfigureAwait(false);
+
+            if (handshake.Requested.Kind == FeatureStreamCursorKind.Epoch)
+            {
+                await WriteSseResetAsync(
+                    handshake.Context.Response,
+                    new FeatureStreamResetFrame
+                    {
+                        Reason = RealtimeResetReasons.CursorEpoch,
+                        Head = FeatureStreamCursor.Format(handshake.InitialLiveCursor)
+                    },
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            await AnnounceSseSubscriptionAsync(handshake.Context, handshake.Session, handshake.Filter).ConfigureAwait(false);
+            await handshake.Context.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
     private static Task WriteSseResetAsync(HttpResponse response, FeatureStreamResetFrame reset, CancellationToken cancellationToken)
         => WriteSseEventAsync(
             response,
@@ -105,42 +160,11 @@ internal static partial class FeatureStreamEndpoints
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers.CacheControl = "no-cache";
 
-        try
+        if (!await WriteSseHandshakeAsync(
+            new(context, session, subscriptionFilter, requested, initialLiveCursor),
+            context.RequestAborted).ConfigureAwait(false))
         {
-            await WriteSseEventAsync(
-                context.Response,
-                "status",
-                new FeatureStreamStatusFrame
-                {
-                    Status = "connected",
-                    Message = "Feature stream connected.",
-                    SessionId = session.SessionId
-                },
-                FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
-                null,
-                context.RequestAborted).ConfigureAwait(false);
-
-            if (requested.Kind == FeatureStreamCursorKind.Epoch)
-            {
-                await WriteSseResetAsync(context.Response, new FeatureStreamResetFrame { Reason = RealtimeResetReasons.CursorEpoch, Head = FeatureStreamCursor.Format(initialLiveCursor) }, context.RequestAborted)
-                    .ConfigureAwait(false);
-            }
-
-            await AnnounceSseSubscriptionAsync(context, session, subscriptionFilter).ConfigureAwait(false);
-
-            await context.Response.Body.FlushAsync(context.RequestAborted).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
-        {
-            return; // Client disconnected during handshake.
-        }
-        catch (IOException)
-        {
-            return; // Client disconnected during handshake.
-        }
-        catch (ObjectDisposedException)
-        {
-            return; // Client disconnected during handshake.
+            return;
         }
 
         if (subscriptionFilter is not null)

@@ -25,10 +25,9 @@ internal sealed class PostgresFeatureChangeEventStore(PostgresFeatureChangeLog l
     }
 
     public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-        long? cursor,
-        DateTimeOffset? from,
-        DateTimeOffset? to,
-        int limit,
+        FeatureChangeEventQuery query,
         CancellationToken cancellationToken = default)
-        => log.ReadAsync(new FeatureChangeLogQuery(cursor ?? 0, from, to, LayerIds: null, limit), cancellationToken);
+        => log.ReadAsync(
+            new FeatureChangeLogQuery(query.Cursor ?? 0, query.From, query.To, LayerIds: null, query.Limit),
+            cancellationToken);
 }

@@ -162,7 +162,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
             return false;
         }
 
-        var pending = await _store.QueryAsync(cursor, null, null, BatchSize, cancellationToken).ConfigureAwait(false);
+        var pending = await _store.QueryAsync(new(cursor, null, null, BatchSize), cancellationToken).ConfigureAwait(false);
         foreach (var featureEvent in pending)
         {
             cancellationToken.ThrowIfCancellationRequested();

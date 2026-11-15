@@ -39,6 +39,9 @@ internal readonly record struct FeatureChangeRetentionWindow(
     }
 }
 
+// One feature-change read: events after a cursor, optionally inside a change-time range.
+internal readonly record struct FeatureChangeEventQuery(long? Cursor, DateTimeOffset? From, DateTimeOffset? To, int Limit);
+
 // Feature changes in commit order. Cursors are change-log generations: increasing, with gaps.
 internal interface IFeatureChangeEventStore
 {
@@ -65,10 +68,7 @@ internal interface IFeatureChangeEventStore
     }
 
     Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-        long? cursor,
-        DateTimeOffset? from,
-        DateTimeOffset? to,
-        int limit,
+        FeatureChangeEventQuery query,
         CancellationToken cancellationToken = default);
 }
 

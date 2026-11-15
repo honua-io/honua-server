@@ -83,18 +83,15 @@ internal sealed class FakeFeatureChangeEventStore(int maxRetained = int.MaxValue
     }
 
     public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-        long? cursor,
-        DateTimeOffset? from,
-        DateTimeOffset? to,
-        int limit,
+        FeatureChangeEventQuery query,
         CancellationToken cancellationToken = default)
     {
         lock (_gate)
         {
             IReadOnlyList<FeatureChangeEvent> matches = _events
-                .Where(e => e.Cursor > (cursor ?? 0))
-                .Where(e => (from is null || e.Timestamp >= from) && (to is null || e.Timestamp <= to))
-                .Take(limit)
+                .Where(e => e.Cursor > (query.Cursor ?? 0))
+                .Where(e => (query.From is null || e.Timestamp >= query.From) && (query.To is null || e.Timestamp <= query.To))
+                .Take(query.Limit)
                 .ToArray();
             QueryCompleted?.Invoke();
             return Task.FromResult(matches);

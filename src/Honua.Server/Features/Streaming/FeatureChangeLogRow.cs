@@ -100,18 +100,18 @@ internal sealed record FeatureChangeLogRow(
 
         using var previous = PreAttributesJson is null || Operation == "insert" ? null : JsonDocument.Parse(PreAttributesJson);
         var changed = new Dictionary<string, object?>(StringComparer.Ordinal);
-        foreach (var attribute in committed.RootElement.EnumerateObject())
+        foreach (var attribute in committed.RootElement.EnumerateObject().Where(AttributeChanged))
         {
-            if (previous is null
-                || previous.RootElement.ValueKind != JsonValueKind.Object
-                || !previous.RootElement.TryGetProperty(attribute.Name, out var before)
-                || !JsonElement.DeepEquals(before, attribute.Value))
-            {
-                changed[attribute.Name] = attribute.Value.Clone();
-            }
+            changed[attribute.Name] = attribute.Value.Clone();
         }
 
         return changed;
+
+        bool AttributeChanged(JsonProperty attribute) =>
+            previous is null
+            || previous.RootElement.ValueKind != JsonValueKind.Object
+            || !previous.RootElement.TryGetProperty(attribute.Name, out var before)
+            || !JsonElement.DeepEquals(before, attribute.Value);
     }
 
     private static string? NullableString(NpgsqlDataReader reader, int ordinal)
