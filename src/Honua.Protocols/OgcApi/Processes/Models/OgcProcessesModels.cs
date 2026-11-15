@@ -402,14 +402,14 @@ public sealed record OgcProcessError
 
     /// <summary>
     /// Identifier of the infrastructure dependency that was not composed (RFC 7807 extension
-    /// member), for example <c>redis</c>. Omitted when not set.
+    /// member), for example <c>system-database</c>. Omitted when not set.
     /// </summary>
     [JsonPropertyName("missingDependency")]
     public string? MissingDependency { get; init; }
 
     /// <summary>
     /// Identifier of the entitlement whose absence composed the capability out (RFC 7807
-    /// extension member), for example <c>caching.redis</c>. Present instead of
+    /// extension member), for example <c>ai.agent-operations</c>. Present instead of
     /// <c>missingDependency</c> when the dependency is deployed but not licensed.
     /// </summary>
     [JsonPropertyName("missingEntitlement")]

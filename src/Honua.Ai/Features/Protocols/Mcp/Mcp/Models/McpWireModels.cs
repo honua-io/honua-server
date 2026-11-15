@@ -112,7 +112,7 @@ internal sealed class McpErrorData
 
     /// <summary>
     /// Identifier of the infrastructure dependency that was not composed (for example
-    /// <c>redis</c>) when the error is a capability-unavailable refusal (honua-release#202).
+    /// <c>system-database</c>) when the error is a capability-unavailable refusal (honua-release#202).
     /// Lets an agent distinguish "this server cannot do this until an operator changes the
     /// install" from a transient outage worth retrying.
     /// </summary>
@@ -128,7 +128,7 @@ internal sealed class McpErrorData
 
     /// <summary>
     /// Identifier of the entitlement whose absence composed the capability out (for example
-    /// <c>caching.redis</c>). Present instead of <see cref="MissingDependency"/> when the
+    /// <c>ai.agent-operations</c>). Present instead of <see cref="MissingDependency"/> when the
     /// dependency is deployed but not licensed, so an agent reports the right fix.
     /// </summary>
     [JsonPropertyName("missingEntitlement")]

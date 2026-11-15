@@ -12,7 +12,7 @@
 
     <!--
       GP Devkit dev tool (#2123). Packaged as a local dotnet tool (`honua gp`) for
-      a sub-second, Redis-free geoprocessing dev loop. It is DELIBERATELY kept out
+      a sub-second, offline geoprocessing dev loop. It is DELIBERATELY kept out
       of the AOT-published server surface: nothing in Honua.Server references this
       project, so the AOT publish (which targets only Honua.Server's transitive
       ProjectReferences) never pulls it in. The tool itself is NOT AOT-published.
@@ -32,8 +32,8 @@
     <!--
       Reuses the SAME managed IProcessExecutor set the serving host registers
       (via the internal AddGeoprocessing seam) plus the native GDAL executors
-      (via the Redis-free AddGdalProcessExecutors seam), so `gp run` drives the
-      real executor code path with no Redis/queue/job-store/control-plane.
+      (via the AddGdalProcessExecutors seam), so `gp run` drives the
+      real executor code path with no queue/job-store/control-plane.
     -->
     <ProjectReference Include="..\Core\Honua.Geoprocessing.csproj" />
     <ProjectReference Include="..\..\Honua.Worker.Gdal\Honua.Worker.Gdal.csproj" />

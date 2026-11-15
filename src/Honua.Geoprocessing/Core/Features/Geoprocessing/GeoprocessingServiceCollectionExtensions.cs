@@ -245,7 +245,7 @@ internal static class GeoprocessingServiceCollectionExtensions
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 
         // Headless single-process runner (GP Devkit, #2123): invokes one managed
-        // IProcessExecutor directly with no Redis/queue/job-store, reusing the same
+        // IProcessExecutor directly with no queue/job-store, reusing the same
         // executor instances registered above. Consumed by the dev `honua gp` CLI.
         services.TryAddSingleton(sp =>
             new GeoprocessingLocalRunner(sp.GetServices<IProcessExecutor>()));

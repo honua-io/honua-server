@@ -309,7 +309,7 @@ internal static class McpToolOutputSchemas
             "handleId": { "type": "string" },
             "durable": {
               "type": "boolean",
-              "description": "Present and false when the operation instance record was not durably persisted (a direct publish on a server started without Redis). The ids and audit receipts are real; the handle cannot be polled afterwards."
+              "description": "Present and false when the operation instance record was not durably persisted (a direct publish on a server started without the PostgreSQL system database). The ids and audit receipts are real; the handle cannot be polled afterwards."
             },
             "proposalId": { "type": ["string", "null"] },
             "correlationId": { "type": "string" },
@@ -903,7 +903,7 @@ internal static class McpToolOutputSchemas
             "handleId": { "type": "string", "minLength": 1 },
             "durable": {
               "type": "boolean",
-              "description": "Present and false when the operation instance record was not durably persisted (a direct style.apply-preset on a server started without Redis). The ids and audit receipts are real; the handle cannot be polled afterwards."
+              "description": "Present and false when the operation instance record was not durably persisted (a direct style.apply-preset on a server started without the PostgreSQL system database). The ids and audit receipts are real; the handle cannot be polled afterwards."
             },
             "correlationId": { "type": "string", "minLength": 1 },
             "auditId": { "type": ["string", "null"], "description": "Durable audit identity of the style.apply-preset operation." },

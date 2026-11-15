@@ -53,9 +53,6 @@
          extensions used by AnalysisContent and Spec grounding endpoints.
          Mirrors the Server csproj's existing reference. -->
     <PackageReference Include="Asp.Versioning.Http" />
-    <!-- StackExchange.Redis is required by InMemoryAnalysisContentStore and
-         by GroundingService for distributed-cache helpers. -->
-    <PackageReference Include="StackExchange.Redis" />
     <!-- AWS Bedrock (Claude) SDK for the Studio AI proxy's "bedrock" provider kind. The
          BedrockChatClientAdapter (Features/StudioAiProxy/Adapters/Bedrock) wraps the Converse
          API as a Microsoft.Extensions.AI IChatClient so the proxy can stream from cloud AI.

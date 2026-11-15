@@ -83,7 +83,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
 
     /// <summary>
     /// Bootstrap constructor for callers that must resolve a secret-backed connection string before the
-    /// DI container exists — e.g. Program.cs's Redis <c>ConnectionMultiplexer</c> wiring, which runs
+    /// DI container exists — e.g. <c>BootstrapSecretResolver</c>, which runs
     /// ahead of <c>WebApplicationBuilder.Build()</c> and therefore has no <see cref="IHttpClientFactory"/>
     /// to pull the named resilient clients from (honua-server#3011). Callers own the supplied
     /// <see cref="HttpClient"/> instances and are responsible for disposing them.

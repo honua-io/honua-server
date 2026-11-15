@@ -82,7 +82,7 @@ internal sealed partial class PostgresWorkspaceStore
         await CheckArtifactQuotaAsync(connection, transaction, owner, artifact, existing, quota, cancellationToken).ConfigureAwait(false);
         // Keep the storage gate through durable acceptance: an accepted old writer
         // cannot wait outside the gate then overwrite a newer attempt's output.
-        // Redis acceptance and the PostgreSQL commit are not a distributed transaction;
+        // Reference publication and the artifact commit are not one transaction;
         // stable operation/output identities permit recovery after a commit failure.
         if (publishReference is not null && !await publishReference(cancellationToken).ConfigureAwait(false))
         {

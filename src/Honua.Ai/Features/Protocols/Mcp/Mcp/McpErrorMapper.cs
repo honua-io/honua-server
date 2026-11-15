@@ -145,7 +145,7 @@ internal static class McpErrorMapper
         },
 
         // honua-release#202: when the refusal names a dependency the install never composed
-        // (Redis is optional; PostGIS is not), carry the machine-readable receipt and mark it
+        // (for example the PostgreSQL system database), carry the machine-readable receipt and mark it
         // NOT retryable — retrying cannot help until an operator changes the deployment.
         CapabilityUnavailableException capabilityEx => new McpJsonRpcError
         {

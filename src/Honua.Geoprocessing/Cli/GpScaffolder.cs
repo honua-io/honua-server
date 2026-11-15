@@ -467,7 +467,7 @@ Add this to `{registrationFile}`:
 4. Test it:   `honua gp test {fixtureId}`
 5. Plan it:   `honua gp plan {processId}`   (validates the typed param schema)
 
-No Redis, no job store, no control plane — the whole loop runs offline.
+No job store, no queue, no control plane — the whole loop runs offline.
 ";
     }
 

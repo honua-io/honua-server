@@ -7,8 +7,8 @@ using Honua.Geoprocessing.LocalRunner;
 namespace Honua.Geoprocessing.Testing;
 
 /// <summary>
-/// The golden-file GP test runner (GP Devkit P6, issue #2127). It wraps the headless,
-/// Redis-free <see cref="GeoprocessingLocalRunner"/> (#2123): it runs a fixture's process
+/// The golden-file GP test runner (GP Devkit P6, issue #2127). It wraps the headless
+/// <see cref="GeoprocessingLocalRunner"/> (#2123): it runs a fixture's process
 /// against its inputs in-process, decodes the single published artifact, and compares it to
 /// the fixture's golden file with the right tolerance-aware comparator — geometry-coordinate
 /// diff (NTS) for vector outputs, numeric/structural diff for raster/scalar outputs.
@@ -17,7 +17,7 @@ namespace Honua.Geoprocessing.Testing;
 /// This is the rung of the GP lifecycle that makes every process FIRST-CLASS UNIT-TESTABLE
 /// — a guarantee Esri geoprocessing fundamentally lacks. The same runner backs both the
 /// xUnit assertion helper (<see cref="GpGoldenAssert"/>) and the <c>honua gp test</c> CLI
-/// verb, and it runs fully offline with no Redis, job store, or control plane.
+/// verb, and it runs fully offline with no job store, queue, or control plane.
 /// </para>
 /// </summary>
 public sealed class GpProcessTestRunner

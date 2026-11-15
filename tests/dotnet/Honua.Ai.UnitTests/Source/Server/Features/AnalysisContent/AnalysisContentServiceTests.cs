@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -30,7 +31,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.AnalysisContent;
 
@@ -287,14 +287,14 @@ public sealed class AnalysisContentServiceTests
     [Operation(Operations.JobStatus)]
     public async Task GetJobLogsAsync_WhenLogStoreUnavailable_ThrowsStoreUnavailable()
     {
-        // A Redis-backed log store outage must surface as the documented retryable 503
+        // A transient PostgreSQL log store outage must surface as the documented retryable 503
         // (AnalysisContentStoreUnavailableException), not a generic 500.
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.GetJobAsync("job-logs", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(CreateFailedJob("job-logs", "validation failed"));
         var logStore = Substitute.For<IExecutionLogStore>();
         logStore.TailAsync("job-logs", Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Throws(new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable"));
+            .Throws(new FakeDbException(isTransient: true));
         var sut = CreateService(jobService: jobService, logStores: [logStore]);
 
         await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
@@ -325,10 +325,25 @@ public sealed class AnalysisContentServiceTests
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.GetJobAsync("job-failure", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
-            .Throws(new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable"));
+            .Throws(new FakeDbException(isTransient: true));
         var sut = CreateService(jobService: jobService);
 
         await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
+            () => sut.GetJobFailureAsync("job-failure", Principal(), CancellationToken.None));
+    }
+
+    [UnitTest]
+    [Operation(Operations.JobStatus)]
+    public async Task GetJobFailureAsync_WhenJobStoreRaisesNonTransientDbError_Propagates()
+    {
+        // A non-transient database error is a defect, not an outage: it must not be
+        // reported to the caller as a retryable 503.
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.GetJobAsync("job-failure", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Throws(new FakeDbException(isTransient: false));
+        var sut = CreateService(jobService: jobService);
+
+        await Assert.ThrowsAsync<FakeDbException>(
             () => sut.GetJobFailureAsync("job-failure", Principal(), CancellationToken.None));
     }
 
@@ -957,5 +972,10 @@ public sealed class AnalysisContentServiceTests
                 ContentHash = $"hash-{version}",
                 CreatedAt = DateTimeOffset.UtcNow
             };
+    }
+
+    private sealed class FakeDbException(bool isTransient) : DbException("database unavailable")
+    {
+        public override bool IsTransient { get; } = isTransient;
     }
 }

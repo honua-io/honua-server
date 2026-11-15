@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data.Common;
 using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -23,7 +24,6 @@ using Honua.Core.Features.NlQuery.Services;
 using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
 using Honua.Geoprocessing;
-using StackExchange.Redis;
 
 namespace Honua.Ai.AnalysisContent;
 
@@ -790,7 +790,9 @@ internal sealed partial class AnalysisContentService(
                 "The analysis job or log store is currently unavailable.",
                 ex);
         }
-        catch (RedisException ex)
+        // The job and log stores are PostgreSQL; a transient connection failure is the same
+        // retryable outage. Non-transient database errors are defects and propagate unchanged.
+        catch (DbException ex) when (ex.IsTransient)
         {
             throw new AnalysisContentStoreUnavailableException(
                 "The analysis job or log store is currently unavailable.",

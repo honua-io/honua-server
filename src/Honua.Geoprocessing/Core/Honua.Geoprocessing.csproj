@@ -64,7 +64,7 @@
          executors (geometry.buffer / geometry.clip) through the public test SDK. -->
     <InternalsVisibleTo Include="Honua.Geoprocessing.Testing.Tests" />
     <!-- GP Devkit dev CLI (#2123): consumes the internal AddGeoprocessing
-         registration to resolve the managed IProcessExecutor set Redis-free.
+         registration to resolve the managed IProcessExecutor set without a job store.
          Grant matches the CLI's AssemblyName (honua-gp), not its project name. -->
     <InternalsVisibleTo Include="honua-gp" />
     <!-- Cross-project honesty check (#2253): the GDAL worker test asserts every

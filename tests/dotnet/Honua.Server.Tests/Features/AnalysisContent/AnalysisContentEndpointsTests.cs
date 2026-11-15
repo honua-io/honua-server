@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
@@ -21,7 +22,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.AnalysisContent;
 
@@ -753,7 +753,7 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             TailReadCount++;
             if (FailWithStoreOutage)
             {
-                throw new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable");
+                throw new TransientDbException();
             }
 
             var entries = _entries.TryGetValue(operationId, out var found) ? found : [];
@@ -792,5 +792,10 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             TimeSpan ttl,
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+    }
+
+    private sealed class TransientDbException() : DbException("database unavailable")
+    {
+        public override bool IsTransient => true;
     }
 }

@@ -1611,7 +1611,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         // proposal/gateway surface (ADR-0064, #2814): when it is available and the
         // submission is not custom code it persists an AwaitingApproval proposal so the
         // plan is resumable via honua://proposals/{id}, then throws carrying the proposal
-        // id; otherwise (custom code, or no gateway on lightweight/Redis-free hosts) it
+        // id; otherwise (custom code, or no gateway on lightweight hosts) it
         // hard-fails without a proposal id. This call always throws.
         await _dispatcher.CreateApprovalProposalOrThrowAsync(
                 policyRef,

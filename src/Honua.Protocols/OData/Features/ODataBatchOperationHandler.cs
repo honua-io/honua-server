@@ -90,13 +90,13 @@ internal sealed partial class ODataBatchOperationHandler(
             var response = await handler.ProcessBatchAsync(context, batchRequest, baseUrl, effectiveToken);
 
             // Handle cache invalidation and event publishing for successful mutation responses.
-            // These are best-effort post-commit side effects; failures (e.g. Redis outage) must
+            // These are best-effort post-commit side effects; failures (e.g. a cache or event-store outage) must
             // not turn a fully-committed batch into a 500 response for the client.
             try
             {
                 await InvalidateCacheForBatchAsync(context, batchRequest, response, CancellationToken.None);
             }
-            // Intentional broad catch: best-effort post-commit cache invalidation; a Redis
+            // Intentional broad catch: best-effort post-commit cache invalidation; a
             // failure here must not turn an already-committed batch into a 500 for the client.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {

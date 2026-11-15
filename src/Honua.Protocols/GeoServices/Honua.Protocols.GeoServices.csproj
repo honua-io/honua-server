@@ -12,7 +12,7 @@
       Honua.Protocols.GeoServices per the modularization Phase 1 plan — the
       final protocol family to extract. Its Infrastructure dependencies live in Honua.Hosting
       (Authentication/Caching/Helpers/Models/Parsing/Rendering/Validation/GeoJson/Licensing/
-      Raster/Redis-base) or Honua.Core; the GeoServices-coupled geometry-converter +
+      Raster) or Honua.Core; the GeoServices-coupled geometry-converter +
       spatial-reference base were relocated into this assembly's Geometry/ folder (cycle
       resolution). GPServer adapts the canonical geoprocessing runtime, so it references
       Honua.Geoprocessing. It may not reference Honua.Server.
