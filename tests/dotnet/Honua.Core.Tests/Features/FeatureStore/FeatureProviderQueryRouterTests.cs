@@ -48,7 +48,8 @@ public sealed partial class FeatureProviderQueryRouterTests
         var router = CreateRouter(connectionId, DataProviderNames.DuckDb, provider);
         var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
 
-        using var parent = new Activity(nameof(FeatureProviderQueryRouterTests)).Start();
+        using var parent = new Activity(nameof(FeatureProviderQueryRouterTests));
+        parent.Start();
         var activities = new ConcurrentBag<Activity>();
         using var listener = new ActivityListener
         {
@@ -95,7 +96,8 @@ public sealed partial class FeatureProviderQueryRouterTests
         var router = CreateRouter(connectionId, DataProviderNames.DuckDb, provider);
         var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
 
-        using var parent = new Activity(nameof(FeatureProviderQueryRouterTests)).Start();
+        using var parent = new Activity(nameof(FeatureProviderQueryRouterTests));
+        parent.Start();
         var activities = new ConcurrentBag<Activity>();
         using var listener = new ActivityListener
         {
