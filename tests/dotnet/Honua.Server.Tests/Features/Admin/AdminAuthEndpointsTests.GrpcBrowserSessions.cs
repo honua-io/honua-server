@@ -79,7 +79,7 @@ public sealed partial class AdminAuthEndpointsTests
     public async Task GrpcWeb_SessionCookieWithCsrf_ReachesService()
     {
         await SignInGrpcBrowserAsync();
-        await SetCsrfHeaderAsync(_client);
+        await BrowserCsrf.SetHeaderAsync(_client);
 
         using var response = await PostEmptyGrpcWebAsync();
 
@@ -109,7 +109,7 @@ public sealed partial class AdminAuthEndpointsTests
     public async Task GrpcWeb_SessionCookieWithCrossSiteCsrf_ReturnsPermissionDeniedMetadata()
     {
         await SignInGrpcBrowserAsync();
-        await SetCsrfHeaderAsync(_client);
+        await BrowserCsrf.SetHeaderAsync(_client);
         _client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "cross-site");
 
         using var response = await PostEmptyGrpcWebAsync();
@@ -128,7 +128,7 @@ public sealed partial class AdminAuthEndpointsTests
         await fixture.InitializeAsync();
         using var browser = fixture.CreateClient();
         await SignInGrpcBrowserAsync(browser);
-        await SetCsrfHeaderAsync(browser);
+        await BrowserCsrf.SetHeaderAsync(browser);
         using var issuance = await browser.PostAsync("/api/v1/admin/auth/bearer", null);
         issuance.StatusCode.Should().Be(HttpStatusCode.OK);
         var token = await issuance.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminOperatorBearerResponse);
@@ -150,7 +150,7 @@ public sealed partial class AdminAuthEndpointsTests
     public async Task GrpcWeb_ExplicitPortalBearerWithSessionCookie_ReachesServiceWithoutCsrf()
     {
         await SignInGrpcBrowserAsync();
-        await SetCsrfHeaderAsync(_client);
+        await BrowserCsrf.SetHeaderAsync(_client);
         _client.DefaultRequestHeaders.Referrer = new Uri("https://localhost/");
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -201,7 +201,7 @@ public sealed partial class AdminAuthEndpointsTests
     private static async Task SignInGrpcBrowserAsync(HttpClient browser)
     {
         browser.BaseAddress = new Uri("https://localhost");
-        await SetCsrfHeaderAsync(browser);
+        await BrowserCsrf.SetHeaderAsync(browser);
         using var response = await browser.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         browser.DefaultRequestHeaders.Remove("X-Honua-CSRF");
