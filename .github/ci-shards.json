@@ -144,7 +144,8 @@
       "prefix": "src/Honua.Protocols/Ogc.Shared/Common/WmtsTileMatrixFormatting.cs",
       "reason": "shared_wmts_tile_matrix_formatting",
       "shards": [
-        "OGC Classic WMTS",
+        "OGC Classic WMTS 1",
+        "OGC Classic WMTS 2",
         "OGC API Tiles Coverages and Processes",
         "GeoServices ImageServer"
       ]
@@ -2508,19 +2509,39 @@
       ]
     },
     {
-      "name": "OGC Classic WMTS",
-      "shard_name": "OGC Classic WMTS",
-      "dispatch_rank": 17.3,
-      "artifact_suffix": "ogc-classic-wmts",
-      "log_name": "server-tests-ogc-classic-wmts",
+      "name": "OGC Classic WMTS 1",
+      "shard_name": "OGC Classic WMTS 1",
+      "dispatch_rank": 12.8,
+      "artifact_suffix": "ogc-classic-wmts-1",
+      "log_name": "server-tests-ogc-classic-wmts-1",
       "timeout_minutes": 30,
       "test_timeout_minutes": 20,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "_comment": "ADR-0037 finer-sharding: carved from OGC Classic Maps. Selects the Wmts namespace (OgcClassicWmtsTests is the heaviest class in the original Maps shard).",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts",
+      "_comment": "Selects OgcClassicWmtsTests; the companion WMTS shard selects every other class in the parent namespace.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.",
+      "paths": [
+        "src/Honua.Core/Core/Features/Validation/",
+        "src/Honua.Protocols/OgcClassic/Wmts/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
+      ]
+    },
+    {
+      "name": "OGC Classic WMTS 2",
+      "shard_name": "OGC Classic WMTS 2",
+      "dispatch_rank": 9.6,
+      "artifact_suffix": "ogc-classic-wmts-2",
+      "log_name": "server-tests-ogc-classic-wmts-2",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
+      "_comment": "Selects the exact complement of OgcClassicWmtsTests within the parent namespace, including future WMTS classes.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/OgcClassic/Wmts/",
