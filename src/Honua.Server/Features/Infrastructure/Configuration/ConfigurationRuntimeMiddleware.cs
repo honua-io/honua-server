@@ -9,8 +9,12 @@ internal static partial class ConfigurationRuntimeMiddleware
 {
     public static IApplicationBuilder UseSharedConfiguration(this IApplicationBuilder app)
     {
-        if (app.ApplicationServices.GetService<NpgsqlDataSource>() is null) { return app; }
-        var refresh = app.ApplicationServices.GetRequiredService<ConfigurationRuntimeRefresh>();
+        if (!app.ApplicationServices.GetRequiredService<IServiceProviderIsService>()
+            .IsService(typeof(NpgsqlDataSource)))
+        {
+            return app;
+        }
+
         var logger = app.ApplicationServices.GetRequiredService<ILogger<ConfigurationRuntimeRefresh>>();
         return app.Use(async (context, next) =>
         {
@@ -21,6 +25,7 @@ internal static partial class ConfigurationRuntimeMiddleware
             }
             try
             {
+                var refresh = context.RequestServices.GetRequiredService<ConfigurationRuntimeRefresh>();
                 context.Items[RequestConfigurationGeneration.ContextKey] =
                     await refresh.RefreshAsync(context.RequestAborted).ConfigureAwait(false);
             }
@@ -33,6 +38,7 @@ internal static partial class ConfigurationRuntimeMiddleware
             await next(context).ConfigureAwait(false);
         });
     }
+
     [LoggerMessage(Level = LogLevel.Error, Message = "Shared authentication configuration could not be refreshed.")]
     private static partial void RefreshFailed(ILogger logger, Exception exception);
 }

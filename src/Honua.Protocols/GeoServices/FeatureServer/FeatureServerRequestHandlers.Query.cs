@@ -504,7 +504,8 @@ internal static partial class FeatureServerEndpoints
             SqlFormat = GetValueString(values, "sqlFormat"),
             GdbVersion = GetValueString(values, "gdbVersion"),
             QuantizationParameters = GetValueString(values, "quantizationParameters"),
-            DatumTransformation = GetValueString(values, "datumTransformation")
+            DatumTransformation = GetValueString(values, "datumTransformation"),
+            CoordinateEpoch = GetValueString(values, "coordinateEpoch")
         };
 
         return true;

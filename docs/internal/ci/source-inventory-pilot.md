@@ -73,16 +73,14 @@ new uniquely owned output directory. It never overwrites caller evidence.
 
 ## Focused local validation
 
-Use the shared Flow admission wrapper locally; never bypass an active reservation.
-Only the CI tool itself is built:
+In a lane, use the `dotnet` build-host shim; never build on the lane host or
+bypass an active reservation. Only the CI tool itself is built:
 
 ```bash
-PATH=/home/mike/honua-io/honua-flow-work/tools/lane-bin:/home/mike/.dotnet:$PATH \
-NUGET_PACKAGES=/home/mike/.local/share/honua-supervisor/cache/nuget \
 dotnet build eng/ci/Honua.Ci.SourceInventory/Honua.Ci.SourceInventory.csproj \
   --configuration Release -p:TreatWarningsAsErrors=true -p:UseSharedCompilation=false
 
-dotnet eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll self-test
+dotnet "eng/ci/Honua.Ci.SourceInventory/bin/Release/$(scripts/ci/honua-target-framework.sh)/Honua.Ci.SourceInventory.dll" self-test
 python3 scripts/ci/source-inventory-pilot/test_run.py
 ```
 
@@ -131,13 +129,13 @@ build reference projects solely to manufacture pilot parity.
     --configuration Release -p:TreatWarningsAsErrors=true -p:UseSharedCompilation=false
 - name: Validate inventory fixture semantics
   run: |
-    dotnet eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll self-test
+    dotnet "eng/ci/Honua.Ci.SourceInventory/bin/Release/$(scripts/ci/honua-target-framework.sh)/Honua.Ci.SourceInventory.dll" self-test
     python3 scripts/ci/source-inventory-pilot/test_run.py
 - name: Observe semantic inventory parity (not an admission replacement)
   continue-on-error: true
   run: >-
     timeout 15m python3 scripts/ci/source-inventory-pilot/run.py
-    --tool eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll
+    --tool "eng/ci/Honua.Ci.SourceInventory/bin/Release/$(scripts/ci/honua-target-framework.sh)/Honua.Ci.SourceInventory.dll"
 - name: Retain semantic inventory qualification evidence
   if: always()
   uses: actions/upload-artifact@v7

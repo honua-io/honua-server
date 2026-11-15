@@ -21,7 +21,7 @@ namespace Honua.Protocols.Ogc.Api.Features.Services;
 /// <summary>
 /// Provides response formatting and content negotiation services for OGC Features.
 /// </summary>
-internal static class OgcResponseFormatter
+internal static partial class OgcResponseFormatter
 {
     private const int StreamingFlushInterval = 32;
     private const string Wfs20SchemaUrl = "http://schemas.opengis.net/wfs/2.0/wfs.xsd";
@@ -941,25 +941,12 @@ internal static class OgcResponseFormatter
     {
         var builder = new StringBuilder();
 
-        // Header
-        var headers = new List<string> { "id" };
-        headers.AddRange(fieldNames);
-        headers.Add("geometry");
-        builder.AppendLine(string.Join(",", headers.Select(EscapeCsvField)));
+        builder.AppendLine(BuildCsvHeader(fieldNames));
 
         // Data rows
         foreach (var feature in features)
         {
-            var row = new List<string?> { feature.Id?.ToString() };
-            row.AddRange(fieldNames.Select(fieldName =>
-                feature.Properties?.TryGetValue(fieldName, out var fieldValue) == true
-                    ? fieldValue?.ToString()
-                    : null));
-
-            var geometryValue = BuildCsvGeometryValue(feature.Geometry);
-            row.Add(geometryValue);
-
-            builder.AppendLine(string.Join(",", row.Select(EscapeCsvField)));
+            builder.AppendLine(BuildCsvRow(feature, fieldNames));
         }
 
         return builder.ToString();
