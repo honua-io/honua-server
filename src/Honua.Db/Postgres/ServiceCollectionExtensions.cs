@@ -1036,8 +1036,7 @@ internal static class ServiceCollectionExtensions
         // path is Postgres-backed (reads the tile catalog populated by the importer).
         services.AddSingleton<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageReader,
             Honua.Core.Features.TileCachePackage.Services.GeoServicesTileCachePackageReader>();
-        services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageImportService,
-            Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
+        services.AddScoped<Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.IImportedTileCacheReader,
             Honua.Db.Postgres.Features.TileCachePackage.PostgresImportedTileCacheReader>();
 

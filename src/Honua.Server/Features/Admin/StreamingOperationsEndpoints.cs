@@ -47,7 +47,7 @@ internal static class StreamingOperationsEndpoints
     }
 
     private static IResult HandleListSubscribers(
-        [FromServices] IStreamingSubscriptionManager subscriptionManager,
+        [FromServices] RealtimeAlertNotificationBroadcaster subscriptionManager,
         ILogger<StreamingOperationsEndpointsLog> logger)
     {
         var subscriptions = subscriptionManager.GetSubscriptions();
@@ -267,7 +267,7 @@ internal static class StreamingOperationsEndpoints
 
     private static IResult HandleDisconnectSubscriber(
         Guid subscriberId,
-        [FromServices] IStreamingSubscriptionManager subscriptionManager,
+        [FromServices] RealtimeAlertNotificationBroadcaster subscriptionManager,
         HttpContext context,
         ILogger<StreamingOperationsEndpointsLog> logger)
     {

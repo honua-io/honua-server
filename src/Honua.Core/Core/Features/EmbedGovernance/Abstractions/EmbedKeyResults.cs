@@ -5,9 +5,6 @@ using Honua.Core.Features.EmbedGovernance.Domain;
 
 namespace Honua.Core.Features.EmbedGovernance.Abstractions;
 
-public interface IEmbedAnalyticsStore
-{
-    Task IngestAsync(EmbedAnalyticsEvent analyticsEvent, CancellationToken cancellationToken);
+public sealed record EmbedKeyCreateResult(EmbedKeyRecord Record, string Key);
 
-    Task<EmbedUsageReport> QueryAsync(EmbedUsageQuery query, CancellationToken cancellationToken);
-}
+public sealed record EmbedKeyValidationResult(EmbedKeyRecord Record);
