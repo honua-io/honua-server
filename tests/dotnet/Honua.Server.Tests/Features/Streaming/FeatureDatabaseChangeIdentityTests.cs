@@ -42,8 +42,35 @@ public sealed class FeatureDatabaseChangeIdentityTests
         Assert.Equal(operation, projected.Operation);
     }
 
+    [UnitTest]
+    public async Task LayerServiceIndex_PreservesPrimaryPublicationAndStorageIdPrecedence()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("first", "First")
+            .AddStorageBinding("first-storage", "first", "test.first", storageLayerId: 17)
+            .AddResource("second", "Second")
+            .AddStorageBinding("second-storage", "second", "test.second", storageLayerId: 0)
+            .AddService("alpha", "Alpha")
+            .AddService("zulu", "Zulu")
+            .AddPublication("first-secondary", "alpha", "first", layerIndex: 0, storageBindingId: "first-storage")
+            .AddPublication("first-primary", "zulu", "first", layerIndex: 0, storageBindingId: "first-storage", isPrimary: true)
+            .AddPublication("second-publication", "alpha", "second", layerIndex: 2, storageBindingId: "second-storage")
+            .Build();
+        var snapshot = await new TestMetadataV2GraphProvider(graph).GetCurrentAsync();
+        var serviceIds = FeatureStreamEndpoints.ResolveStreamLayerServiceIds(snapshot);
+
+        foreach (var layerId in new[] { 17, 0, 2 })
+        {
+            Assert.Equal(FeatureStreamEndpoints.ResolveStreamLayer(snapshot, service: null, layerId)!.Service!.Metadata.Id,
+                serviceIds[layerId]);
+        }
+
+        Assert.Equal("zulu", serviceIds[17]);
+        Assert.Equal("alpha", serviceIds[0]);
+    }
+
     private static MetadataV2Graph CreateGraph() => new TestMetadataV2GraphBuilder()
-        .AddResource("places-data", "Places", MetadataV2ResourceType.FeatureDataset)
+        .AddResource("places-data", "Places")
         .AddStorageBinding("places-storage", "places-data", "test.layers.places", storageLayerId: 17)
         .AddService("places", "Places")
         .AddPublication("places-publication", "places", "places-data", layerIndex: 0,

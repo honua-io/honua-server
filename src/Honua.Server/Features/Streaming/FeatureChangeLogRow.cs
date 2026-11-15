@@ -9,42 +9,47 @@ namespace Honua.Server.Features.Streaming;
 
 // One honua.feature_changes row joined to its outbox row, in the column order
 // PostgresFeatureChangeLog selects. A change with no outbox row was made directly in the database.
-internal sealed record FeatureChangeLogRow(
-    long Generation,
-    int LayerId,
-    long ObjectId,
-    short OperationCode,
-    DateTimeOffset ChangedAt,
-    FeatureChangeLogAttribution Attribution,
-    string? PreAttributesJson,
-    string? CommittedAttributesJson,
-    byte[]? Geometry,
-    bool UpdateChangedGeometry)
+internal sealed record FeatureChangeLogRow
 {
+    public required long Generation { get; init; }
+    public required int LayerId { get; init; }
+    public required long ObjectId { get; init; }
+    public required short OperationCode { get; init; }
+    public required DateTimeOffset ChangedAt { get; init; }
+    public required FeatureChangeLogAttribution Attribution { get; init; }
+    public required string? PreAttributesJson { get; init; }
+    public required string? CommittedAttributesJson { get; init; }
+    public required byte[]? Geometry { get; init; }
+    public required bool UpdateChangedGeometry { get; init; }
+
     private const short InsertCode = 1;
     private const short UpdateCode = 2;
 
     public static FeatureChangeLogRow Read(NpgsqlDataReader reader)
-        => new(
-            reader.GetInt64(0),
-            reader.GetInt32(1),
-            reader.GetInt64(2),
-            reader.GetInt16(3),
-            reader.GetFieldValue<DateTimeOffset>(4),
-            new FeatureChangeLogAttribution(
-                NullableString(reader, 5),
-                NullableString(reader, 6),
-                NullableString(reader, 7),
-                NullableString(reader, 8),
-                NullableString(reader, 9),
-                NullableString(reader, 10),
-                NullableString(reader, 11),
-                NullableString(reader, 12),
-                NullableString(reader, 13)),
-            NullableString(reader, 14),
-            NullableString(reader, 15),
-            reader.IsDBNull(16) ? null : reader.GetFieldValue<byte[]>(16),
-            !reader.IsDBNull(17) && reader.GetBoolean(17));
+        => new()
+        {
+            Generation = reader.GetInt64(0),
+            LayerId = reader.GetInt32(1),
+            ObjectId = reader.GetInt64(2),
+            OperationCode = reader.GetInt16(3),
+            ChangedAt = reader.GetFieldValue<DateTimeOffset>(4),
+            Attribution = new FeatureChangeLogAttribution
+            {
+                EventId = NullableString(reader, 5),
+                OperationInstanceId = NullableString(reader, 6),
+                CorrelationId = NullableString(reader, 7),
+                AuditId = NullableString(reader, 8),
+                ProposalId = NullableString(reader, 9),
+                SourceId = NullableString(reader, 10),
+                ServiceId = NullableString(reader, 11),
+                Protocol = NullableString(reader, 12),
+                RequestId = NullableString(reader, 13)
+            },
+            PreAttributesJson = NullableString(reader, 14),
+            CommittedAttributesJson = NullableString(reader, 15),
+            Geometry = reader.IsDBNull(16) ? null : reader.GetFieldValue<byte[]>(16),
+            UpdateChangedGeometry = !reader.IsDBNull(17) && reader.GetBoolean(17)
+        };
 
     public string Operation => OperationCode switch
     {
@@ -120,13 +125,15 @@ internal sealed record FeatureChangeLogRow(
 
 // Who made a change and through what: the change row's ids and its outbox row's service, protocol
 // and request. Every value is null for a change made directly in the database.
-internal sealed record FeatureChangeLogAttribution(
-    string? EventId,
-    string? OperationInstanceId,
-    string? CorrelationId,
-    string? AuditId,
-    string? ProposalId,
-    string? SourceId,
-    string? ServiceId,
-    string? Protocol,
-    string? RequestId);
+internal sealed record FeatureChangeLogAttribution
+{
+    public string? EventId { get; init; }
+    public string? OperationInstanceId { get; init; }
+    public string? CorrelationId { get; init; }
+    public string? AuditId { get; init; }
+    public string? ProposalId { get; init; }
+    public string? SourceId { get; init; }
+    public string? ServiceId { get; init; }
+    public string? Protocol { get; init; }
+    public string? RequestId { get; init; }
+}

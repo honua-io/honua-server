@@ -56,6 +56,7 @@ internal sealed class FeatureStreamRoutabilityGuard
         var nameRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var nameRouteServiceIds = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         var routedLayers = new Dictionary<int, string>();
+        var layerServiceIds = FeatureStreamEndpoints.ResolveStreamLayerServiceIds(snapshot);
         foreach (var service in snapshot.Graph.Services)
         {
             foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
@@ -75,8 +76,7 @@ internal sealed class FeatureStreamRoutabilityGuard
                 }
 
                 exactRoutes.Add(RouteKey(service.Metadata.Id, layerId.Value));
-                routedLayers[layerId.Value] = FeatureStreamEndpoints.ResolveStreamLayer(snapshot, service: null, layerId.Value)
-                    ?.Service?.Metadata.Id ?? string.Empty;
+                routedLayers[layerId.Value] = layerServiceIds.GetValueOrDefault(layerId.Value, string.Empty);
                 var nameRoute = RouteKey(service.Metadata.Name, layerId.Value);
                 nameRoutes.Add(nameRoute);
                 if (!nameRouteServiceIds.TryGetValue(nameRoute, out var serviceIds))

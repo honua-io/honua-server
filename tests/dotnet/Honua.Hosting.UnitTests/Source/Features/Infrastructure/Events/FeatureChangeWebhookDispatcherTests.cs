@@ -38,8 +38,8 @@ public sealed class FeatureChangeWebhookDispatcherTests
     public async Task DeliverWithRetryAsync_WhenWebhookUrlIsUnsafe_DoesNotSendRequest()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var handler = new CountingHandler();
-        using var httpClient = new HttpClient(handler);
+        using var handler = new CountingHandler();
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
         httpClientFactory.CreateClient("feature-change-webhook").Returns(httpClient);
 
         using var dispatcher = CreateDispatcher(new DispatcherStores(), httpClientFactory, "https://localhost/webhook");
@@ -87,7 +87,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
     [Operation(Operations.TestInfrastructure)]
     public void CreatePinnedDnsHttpMessageHandler_UsesSocketsHandlerWithPinnedConnectCallback()
     {
-        var handler = WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler();
+        using var handler = WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler();
 
         var socketsHandler = Assert.IsType<SocketsHttpHandler>(handler);
         Assert.False(socketsHandler.AllowAutoRedirect);
@@ -99,8 +99,8 @@ public sealed class FeatureChangeWebhookDispatcherTests
     public async Task ExecuteAsync_OnFirstStart_InitialisesCursorToHeadAndDeliversNothingOlder()
     {
         var stores = new DispatcherStores(new ListFeatureChangeEventStore(CreateEvent(1), CreateEvent(3)));
-        var handler = new CountingHandler();
-        using var httpClient = new HttpClient(handler);
+        using var handler = new CountingHandler();
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
         using var dispatcher = CreateDispatcher(stores, CreateHttpClientFactory(httpClient));
 
         using var cts = new CancellationTokenSource();
@@ -124,8 +124,8 @@ public sealed class FeatureChangeWebhookDispatcherTests
     {
         var stores = new DispatcherStores(new ListFeatureChangeEventStore(CreateEvent(2), CreateEvent(5), CreateEvent(9)));
         stores.Cursors.Seed(CursorName, 2);
-        var handler = new CountingHandler();
-        using var httpClient = new HttpClient(handler);
+        using var handler = new CountingHandler();
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
         using var dispatcher = CreateDispatcher(stores, CreateHttpClientFactory(httpClient));
 
         using var cts = new CancellationTokenSource();
@@ -150,8 +150,8 @@ public sealed class FeatureChangeWebhookDispatcherTests
         var stores = new DispatcherStores(new ListFeatureChangeEventStore(CreateEvent(1)), leases);
         stores.Cursors.Seed(CursorName, 0);
         leases.HoldForOtherOwner(CursorName);
-        var handler = new CountingHandler();
-        using var httpClient = new HttpClient(handler);
+        using var handler = new CountingHandler();
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
         using var dispatcher = CreateDispatcher(stores, CreateHttpClientFactory(httpClient));
 
         using var cts = new CancellationTokenSource();
@@ -177,8 +177,8 @@ public sealed class FeatureChangeWebhookDispatcherTests
         var leases = new InMemoryLeaseStore();
         var stores = new DispatcherStores(new ListFeatureChangeEventStore(CreateEvent(1)), leases);
         stores.Cursors.Seed(CursorName, 0);
-        var handler = new CancellationAwareHandler();
-        using var httpClient = new HttpClient(handler);
+        using var handler = new CancellationAwareHandler();
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
         using var dispatcher = CreateDispatcher(stores, CreateHttpClientFactory(httpClient));
 
         using var cts = new CancellationTokenSource();

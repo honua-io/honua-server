@@ -1,8 +1,6 @@
 -- Copyright (c) Honua Geo Inc. All rights reserved.
 -- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
--- honua:compatibility-review reason=Recreates only the new notification trigger in this transaction; existing feature-change capture and old-node read/write contracts remain unchanged.
-
 -- Feature-change streams read honua.feature_changes directly (ADR-0085, specification
 -- realtime-cross-node-rc3 sections 2, 3 and 9). The log row is written in the edit transaction, so
 -- an edit made through any task, or directly in SQL, reaches every task's subscribers.
@@ -19,8 +17,7 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trigger_notify_feature_changes ON $HonuaSchema$.feature_changes;
-CREATE TRIGGER trigger_notify_feature_changes
+CREATE OR REPLACE TRIGGER trigger_notify_feature_changes
     AFTER INSERT ON $HonuaSchema$.feature_changes
     FOR EACH STATEMENT EXECUTE FUNCTION $HonuaSchema$.notify_feature_changes();
 
