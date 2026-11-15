@@ -26,7 +26,7 @@ public interface ILayerSelectionFilterTranslator
     /// <returns>The translated selection, or a caller-facing error when a selector is invalid.</returns>
     Task<LayerSelectionTranslation> TranslateAsync(
         LayerSelectionFilter selection,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken = default);
 }
 

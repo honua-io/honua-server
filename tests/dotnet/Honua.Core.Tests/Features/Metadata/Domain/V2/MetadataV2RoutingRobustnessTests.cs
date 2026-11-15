@@ -354,11 +354,11 @@ public sealed class MetadataV2RoutingRobustnessTests
             },
             "resources" => original with
             {
-                Resources = [original.Resources.Single() with { Type = (MetadataV2ResourceType)undefinedKind }]
+                Resources = [original.Resources.Single() with { Type = (MetadataV2ObjectType)undefinedKind }]
             },
             "publications" => original with
             {
-                Publications = [original.Publications.Single() with { PublicationType = (MetadataV2PublicationType)undefinedKind }]
+                Publications = [original.Publications.Single() with { PublicationType = (MetadataV2LayerType)undefinedKind }]
             },
             "storageBindings" => original with
             {

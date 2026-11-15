@@ -156,11 +156,11 @@ public sealed class StacStorageLayerResolutionTests
             "\"stac-storage\"",
             DateTimeOffset.UtcNow);
 
-    private static MetadataV2Resource FeatureResource(string id, string? storageBindingId)
+    private static MetadataV2Object FeatureResource(string id, string? storageBindingId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = storageBindingId is null ? [] : [storageBindingId],
             PrimaryStorageBindingId = storageBindingId,
@@ -181,14 +181,14 @@ public sealed class StacStorageLayerResolutionTests
     /// A STAC collection publication with no storage binding of its own, so the handle is
     /// resolved from its resource.
     /// </summary>
-    private static MetadataV2Publication Publication(string id, string resourceId)
+    private static MetadataV2Layer Publication(string id, string resourceId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             ResourceId = resourceId,
             ServiceId = "service.stac",
-            PublicationType = MetadataV2PublicationType.StacCollection,
+            PublicationType = MetadataV2LayerType.StacCollection,
             IsPrimary = true,
             LayerIndex = CollectionLayerIndex,
         };

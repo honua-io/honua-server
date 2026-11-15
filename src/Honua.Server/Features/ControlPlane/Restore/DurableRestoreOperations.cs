@@ -145,13 +145,11 @@ internal sealed partial class DurableRestoreWorker(
             }
             var proposal = string.IsNullOrWhiteSpace(record.Audit.ProposalId)
                 ? null : await proposals.GetAsync(record.Audit.ProposalId, lostLease.Token).ConfigureAwait(false);
-            if (context.Phase is "awaiting-local-deploy" or "awaiting-rds" or "awaiting-compatible-deploy" or "awaiting-deploy")
+            if (context.Phase is "awaiting-local-deploy" or "awaiting-rds" or "awaiting-compatible-deploy" or "awaiting-deploy"
+                && (proposal is null || !MatchesResumedApproval(proposal, record)))
             {
-                if (proposal is null || !MatchesResumedApproval(proposal, record))
-                {
-                    await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
-                    return;
-                }
+                await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
+                return;
             }
             if (context.Phase == "awaiting-local-deploy")
             {

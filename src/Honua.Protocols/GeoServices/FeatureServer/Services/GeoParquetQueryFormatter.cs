@@ -16,7 +16,7 @@ internal static class GeoParquetQueryFormatter
 {
     public static (byte[] response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -28,7 +28,7 @@ internal static class GeoParquetQueryFormatter
     {
         ArgumentNullException.ThrowIfNull(resource);
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
-        return GeoParquetFeatureWriter.FormatAsGeoParquet(
+        var (response, contentType) = GeoParquetFeatureWriter.FormatAsGeoParquet(
             result,
             resource,
             objectIdFieldName,
@@ -40,9 +40,10 @@ internal static class GeoParquetQueryFormatter
             outFields,
             logger,
             encodingLimits);
+        return (response.ToArray(), contentType);
     }
 
-    internal static List<MetadataV2Field> ResolveSelectedFields(MetadataV2Resource resource, string[]? outFields)
+    internal static List<MetadataV2Field> ResolveSelectedFields(MetadataV2Object resource, string[]? outFields)
     {
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         return GeoParquetFeatureWriter.ResolveSelectedFields(resource, objectIdFieldName, outFields);
@@ -56,7 +57,7 @@ internal static class GeoParquetQueryFormatter
 
     internal static List<(string name, IArrowType type)> DetectRuntimeFields(
         ImmutableArray<Feature> features,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
         => GeoParquetFeatureWriter.DetectRuntimeFields(features, resource);
 
     internal static object? GetAttributeValue(Feature feature, string fieldName)

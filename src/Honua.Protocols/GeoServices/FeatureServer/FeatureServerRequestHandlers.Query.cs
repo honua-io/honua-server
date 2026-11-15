@@ -322,8 +322,8 @@ internal static partial class FeatureServerEndpoints
 
     private static int ResolveServiceQueryLayerId(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
-        MetadataV2Resource resource)
+        MetadataV2Layer publication,
+        MetadataV2Object resource)
         => publication.LayerIndex
            ?? snapshot.ResolveStorageLayerId(publication)
            ?? snapshot.ResolveStorageLayerId(resource)
@@ -504,7 +504,8 @@ internal static partial class FeatureServerEndpoints
             SqlFormat = GetValueString(values, "sqlFormat"),
             GdbVersion = GetValueString(values, "gdbVersion"),
             QuantizationParameters = GetValueString(values, "quantizationParameters"),
-            DatumTransformation = GetValueString(values, "datumTransformation")
+            DatumTransformation = GetValueString(values, "datumTransformation"),
+            CoordinateEpoch = GetValueString(values, "coordinateEpoch")
         };
 
         return true;

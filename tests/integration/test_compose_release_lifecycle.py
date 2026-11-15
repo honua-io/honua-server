@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts/docker'))
 from package_quickstart import package
 from compose_quickstart import ALL_SECRET_KEYS, initialize, read_secret
+from compose_readiness_diagnostics import format_diagnostics
 from lifecycle_human_approval import HumanApprovalClient
 from lifecycle_identity_provider import IdentityProvider, prepare_identity_files
 
@@ -172,25 +173,11 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         except AssertionError as error:
             # Only report service state; do not print container environments or logs.
             states = dc("ps", "--all", "--format", "json", check=False)
-            try:
-                services = [json.loads(line) for line in states.splitlines() if line.strip()]
-                summary = [{name: service.get(name) for name in ("Service", "State", "Health", "ExitCode")}
-                           for service in services]
-            except (ValueError, TypeError):
-                summary = []
             # Emit bounded diagnostic lines with every generated secret removed.
             logs = run(compose + ["logs", "--no-color", "--tail", "80", "compose-manager"],
                        env=env, cwd=project_dir, check=False)
-            for secret in (key, postgres, keyring, manager_master):
-                logs = logs.replace(secret, "[redacted]")
-            diagnostic = []
-            for line in logs.splitlines():
-                if re.search(r"exception|critical|fail|error", line, re.I):
-                    # Avoid printing values from connection strings or unknown generated credentials.
-                    line = re.sub(r"(?i)(password|token|secret|key)=([^;\s]+)", r"\1=[redacted]", line)
-                    line = re.sub(r"[A-Za-z0-9+/=_-]{32,}", "[redacted]", line)
-                    diagnostic.append(line[:300])
-            raise AssertionError(f"Compose startup failed; service states: {summary}; manager diagnostics: {diagnostic[-8:]}") from error
+            detail = format_diagnostics(states, logs, (key, postgres, keyring, manager_master))
+            raise AssertionError(f"Compose startup failed; manager diagnostics: {detail}") from error
         assert image_id() == prior_id and schema() == 140
         # Inspecting the running install must never reveal a credential.
         rendered = dc("config") + dc("config", "--environment")

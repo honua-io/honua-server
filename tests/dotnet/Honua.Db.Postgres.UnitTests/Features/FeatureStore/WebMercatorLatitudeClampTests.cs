@@ -137,10 +137,10 @@ public sealed class WebMercatorLatitudeClampTests
     private static string Build(string format, FeatureQuery query)
     {
         var builder = CreateQueryBuilder();
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "Layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields = [],
         };
 
