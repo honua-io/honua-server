@@ -1,11 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.Mobile.FieldCollection;
-
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Mobile.FieldCollection;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Domain;
 using Honua.Infrastructure.Authentication;

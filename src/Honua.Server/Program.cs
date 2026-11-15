@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-
 using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.DataProtection;
@@ -917,8 +916,7 @@ if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment
     Honua.Infrastructure.Redis.RedisThawProbeExtensions.AddRedisThawProbe(builder.Services);
 }
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
-// evaluation, rate accounting, and redacted analytics ingestion. In-memory
-// defaults; durable providers can replace these via TryAdd later.
+// evaluation, rate accounting, and redacted analytics ingestion. In-memory stores.
 builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore>(sp =>
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore(sp.GetService<TimeProvider>()));
 builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore>(
@@ -1117,8 +1115,7 @@ if (offlineSyncEnabled)
             sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
             sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
 #endif
-    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Services.ReplicaSyncService,
-        Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
 }
 
 // ---- Extracted: import/export job managers, migration evidence, tile operations

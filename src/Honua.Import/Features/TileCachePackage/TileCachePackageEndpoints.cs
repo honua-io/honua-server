@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.TileCachePackage.Services;
-
 using System.Text.Json.Serialization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.TileCachePackage.Abstractions;
@@ -12,6 +10,7 @@ using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Security;
+using Honua.Core.Features.TileCachePackage.Services;
 
 namespace Honua.Import.TileCachePackage;
 

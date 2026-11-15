@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Ai.StudioAiProxy.Domain;
-using Honua.Core.Features.Security.Admission;
 
 namespace Honua.Ai.StudioAiProxy.Abstractions;
 

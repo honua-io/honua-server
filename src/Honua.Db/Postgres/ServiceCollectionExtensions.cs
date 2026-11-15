@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-
 using System.Globalization;
 using System.Net.Http;
 using Honua.Core.Configuration;
@@ -1037,8 +1036,7 @@ internal static class ServiceCollectionExtensions
         // path is Postgres-backed (reads the tile catalog populated by the importer).
         services.AddSingleton<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageReader,
             Honua.Core.Features.TileCachePackage.Services.GeoServicesTileCachePackageReader>();
-        services.AddScoped<Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService,
-            Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
+        services.AddScoped<Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.IImportedTileCacheReader,
             Honua.Db.Postgres.Features.TileCachePackage.PostgresImportedTileCacheReader>();
 
