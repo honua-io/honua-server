@@ -1474,3 +1474,9 @@ read-only Actions, Contents and Pull requests permissions, and its existing
 installation-token and compare-and-swap mutation controls.
 
 Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
+
+Docs Link Gate can run a newer workflow against an older PR head. When that head
+predates both the workflow-inventory generator and its template, it validates the
+existing documentation with the complete link and concept suite. A partial
+inventory generator/template pair or a failing generator remains an error. This
+compatibility path adds no jobs and preserves all documentation assertions.

@@ -94,7 +94,17 @@ jobs:
 
       - name: Regenerate trunk-owned documentation for validation
         run: |
-          python3 scripts/ci/generate-workflow-inventory.py
+          inventory=scripts/ci/generate-workflow-inventory.py
+          template=scripts/ci/workflow-inventory.template.md
+          if [[ -e "$inventory" || -e "$template" ]]; then
+            if [[ ! -f "$inventory" || ! -f "$template" ]]; then
+              echo "Workflow inventory generator and template must both exist." >&2
+              exit 1
+            fi
+            python3 "$inventory"
+          else
+            echo "Legacy PR head predates inventory generation; validate its existing documentation."
+          fi
           python3 scripts/ci/generate-capability-concepts.py
 
       # The checker's own tests run first and are self-contained (synthetic docs
