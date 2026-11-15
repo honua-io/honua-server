@@ -63,6 +63,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  runner-select:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    uses: ./.github/workflows/advisory-runner-select.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      hosted-runner: ubuntu-latest
+    secrets:
+      wake-role: ${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}
+
   # Impact detection is its own job so the three variant builds can fan out in
   # parallel below. It is the only leg that needs full history for the
   # base..head diff; the build legs take a shallow checkout of the context.
@@ -164,9 +175,9 @@ jobs:
 
   build-and-verify:
     name: Build and verify ${{ matrix.description }}
-    needs: detect
-    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.detect.outputs.selected != '[]') }}
-    runs-on: ubuntu-latest
+    needs: [detect, runner-select]
+    if: ${{ always() && !cancelled() && needs.detect.result == 'success' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.detect.outputs.selected != '[]') }}
+    runs-on: ${{ fromJSON(needs.runner-select.outputs.runner || '"ubuntu-latest"') }}
     # Still 180, even though a leg now builds ONE variant instead of three in
     # series. A cold native-AOT build of a single variant has been observed not
     # to fit in 90 minutes (nightly-container-build's build-lambda-aot carries
@@ -291,8 +302,6 @@ jobs:
         run: |
           set -euo pipefail
           OWNED_SERVER=scripts/ci/owned-server.py
-          SERVER_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_BOUNDARY_SMOKE_PORT --ci-default 8080)"
-          SERVER_URL="http://127.0.0.1:$SERVER_PORT"
           NETWORK="honua-boundary-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           POSTGRES="$NETWORK-postgres"
           CONTAINER=""
@@ -316,9 +325,10 @@ jobs:
             docker logs "$POSTGRES"
             exit 1
           fi
+          SERVER_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_BOUNDARY_HTTP_PORT --ci-default 0)"
           CONTAINER="$(docker run -d \
             --network "$NETWORK" \
-            -p "127.0.0.1:$SERVER_PORT:8080" \
+            -p "127.0.0.1:${SERVER_PORT}:8080" \
             -e ASPNETCORE_ENVIRONMENT=Development \
             -e HONUA_ADMIN_PASSWORD=ci-admin-password \
             -e Security__ConnectionEncryption__MasterKey=0123456789abcdef0123456789abcdef \
@@ -327,6 +337,7 @@ jobs:
             -e Kestrel__Endpoints__Http__Url=http://+:8080 \
             -e Kestrel__Endpoints__Grpc__Url=http://+:8081 \
             '${{ matrix.tag }}')"
+          SERVER_URL="http://127.0.0.1:${SERVER_PORT}"
           if ! python3 "$OWNED_SERVER" wait --container "$CONTAINER" --container-port 8080 --url "$SERVER_URL/healthz/ready" --timeout 180; then
             docker logs "$CONTAINER" || true
             exit 1
