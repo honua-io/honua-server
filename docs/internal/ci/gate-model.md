@@ -1485,6 +1485,8 @@ Reusable workflow pins must include the shared selector support. Each local
 shell job exports `TMPDIR`, `TEMP` and `TMP` from `RUNNER_TEMP` before checkout.
 The variable remains an operator availability switch for newly admitted jobs.
 
+CodeQL duplicate cancellation requires completed successful analysis evidence,
+so its native concurrency cannot race a retry that retains an older run ID.
 Analysis admission runs trusted trunk code for the repository CodeQL workflow
 and GitHub-managed Code Quality only. It cancels obsolete PR heads and active
 same-head duplicates while retaining a replacement active run or completed

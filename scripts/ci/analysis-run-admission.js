@@ -15,7 +15,10 @@ function shouldCancel(run, peers, pull) {
   if (pull.draft && run.path === CODEQL_PATH) return true;
   return peers.some(peer => peer.id !== run.id && peer.path === run.path &&
     prNumber(peer) === prNumber(run) && peer.head_sha === run.head_sha &&
-    (peer.evidenceComplete || (peer.id > run.id && ACTIVE.includes(peer.status))));
+    // Native CodeQL concurrency may already be cancelling an active peer when
+    // an older run ID is retried; only completed evidence can replace that retry.
+    (peer.evidenceComplete || (run.path !== CODEQL_PATH &&
+      peer.id > run.id && ACTIVE.includes(peer.status))));
 }
 
 async function completedEvidence(client, run) {

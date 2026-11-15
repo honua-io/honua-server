@@ -13,9 +13,11 @@ test('retains the only analysis and retries after failure or a draft skip', () =
   }
 });
 
-test('completed analysis and newer active same-head runs supersede duplicates', () => {
+test('CodeQL needs completed evidence; managed analysis coalesces newer active duplicates', () => {
   assert.equal(shouldCancel(base, [{ ...base, id: 9, evidenceComplete: true }], pull), true);
-  assert.equal(shouldCancel(base, [{ ...base, id: 11 }], pull), true);
+  assert.equal(shouldCancel(base, [{ ...base, id: 11 }], pull), false);
+  const managed = { ...base, path: 'dynamic/github-code-quality/codeql' };
+  assert.equal(shouldCancel(managed, [{ ...managed, id: 11 }], pull), true);
   assert.equal(shouldCancel(base, [{ ...base, id: 9 }], pull), false);
 });
 
@@ -67,8 +69,9 @@ test('a failed or cancelled replacement discovered after listing cannot cancel t
 });
 
 test('the current replacement cancels an older duplicate without cancelling itself', async () => {
-  const { client, cancelled } = harness([base, { ...base, id: 11 }]);
-  await reconcile(client, base, quiet);
+  const managed = { ...base, path: 'dynamic/github-code-quality/codeql' };
+  const { client, cancelled } = harness([managed, { ...managed, id: 11 }]);
+  await reconcile(client, managed, quiet);
   assert.deepEqual(cancelled, [10]);
 });
 
@@ -101,5 +104,14 @@ test('trunk and scheduled runs do not query or cancel PR analysis', async () => 
   const { client, cancelled } = harness([trunk]);
   client.runs = async () => { throw new Error('Unexpected PR lookup'); };
   await reconcile(client, trunk, quiet);
+  assert.deepEqual(cancelled, []);
+});
+
+// A retry keeps its old ID while native concurrency asynchronously cancels B.
+test('CodeQL retry survives an active newer-ID run already being cancelled natively', async () => {
+  const retry = { ...base, id: 10, run_attempt: 2, status: 'queued' };
+  const cancelling = { ...base, id: 11, run_attempt: 1 };
+  const { client, cancelled } = harness([retry, cancelling]);
+  await reconcile(client, retry, quiet);
   assert.deepEqual(cancelled, []);
 });
