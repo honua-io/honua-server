@@ -148,19 +148,18 @@ than overloaded on `PUT`:
   only want to change a subset of fields must use `PATCH`.
 - **`PATCH` merges.** Only `title`, `description`, `tags`, `labels`, and
   `visibility` are patchable. Other fields require `PUT`. `PATCH` does not
-  increment `generation`. The in-memory baseline store applies the patch
-  through a `TryUpdate` compare-and-swap loop, so a `PATCH` racing a
-  concurrent `PUT` cannot silently revert the `PUT`'s generation or
-  `PUT`-only fields — the patch re-reads the latest snapshot before
-  committing.
+  increment `generation`. Both stores apply the patch as a compare-and-swap
+  on the latest stored item (a revision check in PostgreSQL, `TryUpdate` in
+  memory), so a `PATCH` racing a concurrent `PUT` cannot silently revert the
+  `PUT`'s generation or `PUT`-only fields.
 - **Optimistic concurrency on `PUT`** compares the supplied `generation`
   against the stored value with **exact-match** semantics. A request whose
   `generation` is older *or* newer than the stored value is rejected with
   `409 Conflict` (`ApiResponse<object>`, `success: false`, message
-  `"Stale generation; refresh and retry."`). The in-memory baseline store
-  swaps via `ConcurrentDictionary.TryUpdate`, so two concurrent writers
-  reading the same generation cannot both succeed — the loser must refresh
-  and retry. Omit `generation` to bypass the check (last-write-wins).
+  `"Stale generation; refresh and retry."`). The write is a compare-and-swap
+  in both stores, so two concurrent writers reading the same generation
+  cannot both succeed, on one task or on two — the loser must refresh and
+  retry. Omit `generation` to bypass the check (last-write-wins).
 - **Identity and audit fields** (`id`, `createdAt`, `createdById`) are stamped
   by the server and ignored if sent on update; `updatedAt` and `updatedById`
   are stamped from the request principal. On create, `ownerId` is honoured
@@ -474,13 +473,21 @@ open-data API adds `ConsoleOpenDataPage`, `ConsoleOpenDataEligibilityResponse`,
 (`DcatCatalog`), STAC projection (`StacProjectionCatalog`/`Collection`/`Item`),
 and Schema.org (`SchemaOrgDataset`) shapes. No frontend-specific DTO forks.
 
+## Persistence
+
+On a host with a system database, authored content, share state, open-data
+pages, STAC publication state and embed keys are configuration documents in
+PostgreSQL under the shared configuration generation (ADR-0086), so every task
+serves the same state and it survives a restart. A public link keeps only the
+SHA-256 of its token. Embed tokens are short-lived and kept with the other
+expiring security tokens; embed-key request counts and last use are in
+`embed_key_usage`. The session bootstrap reports `persistence.mode = "postgres"`
+there. A host without a system database keeps this state in the memory of its
+single task, reports `"in-memory"`, and refuses to start when its task count or
+autoscaling ceiling is above one.
+
 ## Known follow-ons
 
-- **Persistent store (#1163)** — `IConsoleContentStore` is currently backed by
-  the baseline in-memory store registered in `Program.cs`; `IConsoleShareStore`
-  is also in-memory for #1215. A Postgres-backed implementation, schema
-  migration, and snapshot test live in the follow-on. Persistent Share tokens
-  must store SHA-256 token hashes rather than plaintext token values.
 - **Release lifecycle (#1164, #1165)** — operation lifecycle, compatibility
   prevalidation, rollback workflow APIs.
 - **OGC alignment** — sidecar shapes for `service` map onto Metadata v2

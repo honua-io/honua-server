@@ -148,9 +148,8 @@ Release evidence:
   `administer`) map onto the existing policy action set in
   `IConsoleActionEvaluator`; mappings and visibility rules are test-covered by
   `ConsoleActionEvaluatorTests`.
-- `IConsoleContentStore` is satisfied at baseline by an in-memory store;
-  persistent backing is tracked under #1163 and is not required to gate this
-  baseline.
+- `IConsoleContentStore` is backed by PostgreSQL on a host with a system
+  database and by an in-memory store on a single task without one.
 
 ## GitOps Release Prevalidation (#1164)
 

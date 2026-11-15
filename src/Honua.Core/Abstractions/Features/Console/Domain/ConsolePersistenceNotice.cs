@@ -9,6 +9,8 @@ public sealed record ConsolePersistenceNotice
 {
     public const string InMemoryMode = "in-memory";
 
+    public const string PostgresMode = "postgres";
+
     [JsonPropertyName("mode")]
     public required string Mode { get; init; }
 
@@ -23,5 +25,12 @@ public sealed record ConsolePersistenceNotice
         Mode = InMemoryMode,
         Durable = false,
         SharedAcrossReplicas = false,
+    };
+
+    public static ConsolePersistenceNotice Postgres { get; } = new()
+    {
+        Mode = PostgresMode,
+        Durable = true,
+        SharedAcrossReplicas = true,
     };
 }

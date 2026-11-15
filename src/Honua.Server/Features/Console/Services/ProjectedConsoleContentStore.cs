@@ -7,14 +7,14 @@ using Honua.Core.Features.Console.Domain;
 namespace Honua.Server.Features.Console.Services;
 
 internal sealed class ProjectedConsoleContentStore(
-    InMemoryConsoleContentStore authoredContent,
+    IAuthoredConsoleContent authoredContent,
     PublishedConsoleContent publishedContent) : IConsoleContentStore
 {
     public async Task<ConsoleContentListResult> ListAsync(ConsoleContentQuery query, CancellationToken cancellationToken = default)
     {
         var published = await publishedContent.ReadAsync(cancellationToken).ConfigureAwait(false);
-        var items = published.Items.Values.Concat(authoredContent.SnapshotItems()
-            .Where(item => !published.OwnedIds.Contains(item.Id)));
+        var authored = await authoredContent.SnapshotItemsAsync(cancellationToken).ConfigureAwait(false);
+        var items = published.Items.Values.Concat(authored.Where(item => !published.OwnedIds.Contains(item.Id)));
         return ConsoleContentSelection.Page(items, query);
     }
 

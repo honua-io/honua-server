@@ -43,7 +43,8 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-            });
+            })
+            .UseProcessLocalConsoleState();
     }
 
     public async Task InitializeAsync()

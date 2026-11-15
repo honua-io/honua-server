@@ -79,6 +79,32 @@ internal sealed partial class PostgresConfigurationDocuments(
             };
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 
+    // One document by key, for writers that must not load and decrypt the whole collection to change one entry.
+    public Task<ConfigurationDocument<T>?> FindAsync<T>(ConfigurationCollection<T> collection, string key, CancellationToken cancellationToken)
+        => database.ExecuteAsync<ConfigurationDocument<T>?>(async (connection, _, token) =>
+        {
+            await using var command = new NpgsqlCommand(
+                $"SELECT revision, payload FROM {_documents} WHERE kind = @kind AND key = @key", connection);
+            command.Parameters.AddWithValue("kind", collection.Kind);
+            command.Parameters.AddWithValue("key", key);
+            await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
+            if (!await reader.ReadAsync(token).ConfigureAwait(false))
+            {
+                return null;
+            }
+            try
+            {
+                var value = JsonSerializer.Deserialize(Protector(collection.Kind).Unprotect(reader.GetFieldValue<byte[]>(1)), collection.Type)
+                    ?? throw new JsonException("Configuration document is empty.");
+                return new(key, reader.GetInt64(0), value);
+            }
+            catch (Exception exception) when (exception is CryptographicException or JsonException)
+            {
+                DocumentUnreadable(_logger, collection.Kind, key, exception);
+                return null;
+            }
+        }, StatementRepeat.SafeToRepeat, cancellationToken);
+
     public Task<bool> WriteAsync<T>(ConfigurationCollection<T> collection, ConfigurationWrite<T> write, CancellationToken cancellationToken)
         => database.ExecuteAsync(async (connection, _, token) =>
         {

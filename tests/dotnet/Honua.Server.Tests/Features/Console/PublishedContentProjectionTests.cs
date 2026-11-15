@@ -39,7 +39,8 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminKey);
-            });
+            })
+            .UseProcessLocalConsoleState();
     }
 
     public async Task InitializeAsync()
@@ -175,7 +176,7 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
     [Endpoint("PATCH /api/v1/console/content/{id}")]
     public async Task GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership()
     {
-        var store = _fixture.Services.GetRequiredService<InMemoryConsoleContentStore>();
+        var store = _fixture.Services.GetRequiredService<IAuthoredConsoleContent>();
         await store.CreateAsync(new()
         {
             Id = "publication",
@@ -205,7 +206,7 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
     [Endpoint("GET /api/v1/console/content")]
     public async Task GetContent_MultipleAuthoredPages_PaginatesAfterCombiningWithGraphItems()
     {
-        var store = _fixture.Services.GetRequiredService<InMemoryConsoleContentStore>();
+        var store = _fixture.Services.GetRequiredService<IAuthoredConsoleContent>();
         for (var index = 0; index < 201; index++)
         {
             await store.CreateAsync(new()

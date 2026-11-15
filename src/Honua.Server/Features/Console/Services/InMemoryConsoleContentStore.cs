@@ -7,7 +7,7 @@ using Honua.Core.Features.Console.Domain;
 
 namespace Honua.Server.Features.Console.Services;
 
-internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
+internal sealed class InMemoryConsoleContentStore : IAuthoredConsoleContent
 {
     private readonly ConcurrentDictionary<string, ConsoleContentItem> _items = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
@@ -20,7 +20,8 @@ internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
     public Task<ConsoleContentListResult> ListAsync(ConsoleContentQuery query, CancellationToken cancellationToken = default)
         => Task.FromResult(ConsoleContentSelection.Page(_items.Values, query));
 
-    internal IReadOnlyList<ConsoleContentItem> SnapshotItems() => _items.Values.ToArray();
+    public ValueTask<IReadOnlyCollection<ConsoleContentItem>> SnapshotItemsAsync(CancellationToken cancellationToken)
+        => ValueTask.FromResult<IReadOnlyCollection<ConsoleContentItem>>(_items.Values.ToArray());
 
     public Task<ConsoleContentItem?> GetAsync(string id, CancellationToken cancellationToken = default)
     {
@@ -130,40 +131,5 @@ internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
     }
 
     public Task<IReadOnlyList<ConsoleContentItem>> GetProvenanceChainAsync(string id, int maxDepth, CancellationToken cancellationToken = default)
-    {
-        if (!_items.TryGetValue(id, out var anchor))
-            return Task.FromResult<IReadOnlyList<ConsoleContentItem>>(Array.Empty<ConsoleContentItem>());
-
-        var visited = new HashSet<string>(StringComparer.Ordinal) { anchor.Id };
-        var ordered = new List<ConsoleContentItem> { anchor };
-        var frontier = new Queue<(ConsoleContentItem Item, int Depth)>();
-        frontier.Enqueue((anchor, 0));
-
-        while (frontier.Count > 0)
-        {
-            var (current, depth) = frontier.Dequeue();
-            if (depth >= maxDepth)
-                continue;
-
-            var referenceIndex = 0;
-            while (referenceIndex < current.Provenance.Count)
-            {
-                var reference = current.Provenance[referenceIndex];
-                if (reference is not null &&
-                    !string.IsNullOrWhiteSpace(reference.ItemId) &&
-                    visited.Add(reference.ItemId) &&
-                    _items.TryGetValue(reference.ItemId, out var next))
-                {
-                    ordered.Add(next);
-                    frontier.Enqueue((next, depth + 1));
-                }
-
-                referenceIndex++;
-            }
-        }
-
-        IReadOnlyList<ConsoleContentItem> result = ordered;
-        return Task.FromResult(result);
-    }
-
+        => Task.FromResult(ConsoleProvenanceWalk.Collect(_items, id, maxDepth));
 }
