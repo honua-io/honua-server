@@ -360,9 +360,10 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
 
             // A 3D+ Zarr, or a store with several arrays, opens as a subdataset list.
             // The root document has no geotransform; the data array does.
-            foreach (var subdataset in SelectZarrSubdatasets(last?.StandardOutput, zarrPath, mdimJson))
+            var subdatasets = SelectZarrSubdatasets(last?.StandardOutput, zarrPath, mdimJson);
+            using var subdatasetScope = GdalRemoteInputScope.TrustDerived(subdatasets, zarrPath);
+            foreach (var subdataset in subdatasets)
             {
-                using var subdatasetScope = GdalRemoteInputScope.TrustDerived(subdataset, zarrPath);
                 last = await RunInfoAsync(
                     runner, context, subdataset, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
                 if (IsCoordinateInfo(last))

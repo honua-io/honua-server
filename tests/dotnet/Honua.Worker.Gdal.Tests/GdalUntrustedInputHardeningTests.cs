@@ -425,19 +425,19 @@ public sealed class GdalUntrustedInputHardeningTests
         const string root = "/vsis3/bucket/cube.zarr";
         const string subdataset = "ZARR:\"/vsis3/bucket/cube.zarr\":/temperature";
 
-        using (GdalRemoteInputScope.TrustDerived(subdataset, root))
+        using (GdalRemoteInputScope.TrustDerived([subdataset], root))
         {
             GdalRemoteInputScope.Classify(new[] { subdataset }).Should().Be(GdalRemoteInputs.None);
         }
 
         using var rootScope = GdalRemoteInputScope.Trust(root);
-        using (GdalRemoteInputScope.TrustDerived("ZARR:\"/vsis3/other/cube.zarr\":/t", root))
+        using (GdalRemoteInputScope.TrustDerived(["ZARR:\"/vsis3/other/cube.zarr\":/t"], root))
         {
             GdalRemoteInputScope.Classify(new[] { "ZARR:\"/vsis3/other/cube.zarr\":/t" })
                 .Should().Be(GdalRemoteInputs.None);
         }
 
-        using (GdalRemoteInputScope.TrustDerived(subdataset, root))
+        using (GdalRemoteInputScope.TrustDerived([subdataset], root))
         {
             GdalRemoteInputScope.Classify(new[] { subdataset })
                 .Should().Be(new GdalRemoteInputs(Remote: true, S3: true, Azure: false));

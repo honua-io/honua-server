@@ -51,23 +51,31 @@ internal static class GdalRemoteInputScope
     }
 
     /// <summary>
-    /// Trusts an argument GDAL derived from an already trusted root (for example a
-    /// <c>ZARR:"/vsis3/…":/array</c> subdataset name) with the root's access. A
-    /// root that is not trusted in the current scope trusts nothing.
+    /// Trusts arguments GDAL derived from an already trusted root (for example
+    /// <c>ZARR:"/vsis3/…":/array</c> subdataset names) with the root's access. A
+    /// root that is not trusted in the current scope trusts nothing, and an
+    /// argument that does not contain the root is ignored.
     /// </summary>
-    /// <param name="argument">The exact derived argument.</param>
-    /// <param name="trustedRoot">The trusted path it was derived from; it must occur in <paramref name="argument"/>.</param>
+    /// <param name="arguments">The exact derived arguments.</param>
+    /// <param name="trustedRoot">The trusted path they were derived from.</param>
     /// <returns>A handle that restores the previous scope.</returns>
-    public static IDisposable TrustDerived(string argument, string trustedRoot)
+    public static IDisposable TrustDerived(IEnumerable<string> arguments, string trustedRoot)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(argument);
+        ArgumentNullException.ThrowIfNull(arguments);
         ArgumentException.ThrowIfNullOrWhiteSpace(trustedRoot);
         var previous = Trusted.Value;
-        if (previous is not null
-            && previous.TryGetValue(trustedRoot, out var access)
-            && argument.Contains(trustedRoot, StringComparison.Ordinal))
+        if (previous is not null && previous.TryGetValue(trustedRoot, out var access))
         {
-            Trusted.Value = previous.SetItem(argument, access);
+            var next = previous;
+            foreach (var argument in arguments)
+            {
+                if (!string.IsNullOrEmpty(argument) && argument.Contains(trustedRoot, StringComparison.Ordinal))
+                {
+                    next = next.SetItem(argument, access);
+                }
+            }
+
+            Trusted.Value = next;
         }
 
         return new Restore(previous);
