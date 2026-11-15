@@ -13,18 +13,31 @@ namespace Honua.Server.Tests.Features.Admin;
 
 public sealed partial class AdminAuthEndpointsTests
 {
-    [IntegrationTheory]
-    [InlineData("test-admin-key", true)]
-    [InlineData("invalid-key", false)]
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/auth/session")]
-    public async Task GetSession_ExplicitApiKeyWithSessionCookie_UsesExplicitCredential(string apiKey, bool authenticated)
+    public async Task GetSession_ValidApiKeyWithSessionCookie_IsAuthenticated()
     {
         await SignInGrpcBrowserAsync();
-        _client.DefaultRequestHeaders.Add("X-API-Key", apiKey);
+        _client.DefaultRequestHeaders.Add("X-API-Key", "test-admin-key");
 
         var session = await _client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
 
-        session!.IsAuthenticated.Should().Be(authenticated);
+        session!.IsAuthenticated.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/session")]
+    public async Task GetSession_InvalidApiKeyWithSessionCookie_PreservesBrowserSession()
+    {
+        await SignInGrpcBrowserAsync();
+        _client.DefaultRequestHeaders.Add("X-API-Key", "invalid-key");
+
+        var session = await _client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
+
+        session!.IsAuthenticated.Should().BeFalse();
+        _client.DefaultRequestHeaders.Remove("X-API-Key");
+        var restored = await _client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
+        restored!.IsAuthenticated.Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -74,24 +87,30 @@ public sealed partial class AdminAuthEndpointsTests
         response.Headers.GetValues("grpc-status").Should().ContainSingle().Which.Should().Be("3");
     }
 
-    [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [IntegrationTest]
     [Protocol(TestProtocols.Grpc)]
     [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/PlanSpec")]
-    public async Task GrpcWeb_SessionCookieWithUntrustedCsrf_ReturnsPermissionDeniedMetadata(bool crossSite)
+    public async Task GrpcWeb_SessionCookieWithInvalidCsrf_ReturnsPermissionDeniedMetadata()
     {
         await SignInGrpcBrowserAsync();
-        if (crossSite)
-        {
-            await SetCsrfHeaderAsync(_client);
-            _client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "cross-site");
-        }
-        else
-        {
-            _client.DefaultRequestHeaders.Add("X-Honua-CSRF", "invalid");
-        }
+        _client.DefaultRequestHeaders.Add("X-Honua-CSRF", "invalid");
+
+        using var response = await PostEmptyGrpcWebAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("grpc-status").Should().ContainSingle().Which.Should().Be("7");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Grpc)]
+    [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/PlanSpec")]
+    public async Task GrpcWeb_SessionCookieWithCrossSiteCsrf_ReturnsPermissionDeniedMetadata()
+    {
+        await SignInGrpcBrowserAsync();
+        await SetCsrfHeaderAsync(_client);
+        _client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "cross-site");
 
         using var response = await PostEmptyGrpcWebAsync();
 
@@ -117,6 +136,26 @@ public sealed partial class AdminAuthEndpointsTests
         browser.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token!.AccessToken);
 
         using var response = await PostEmptyGrpcWebAsync(browser);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("grpc-status").Should().ContainSingle().Which.Should().Be("3");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Grpc)]
+    [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/PlanSpec")]
+    public async Task GrpcWeb_ExplicitPortalBearerWithSessionCookie_ReachesServiceWithoutCsrf()
+    {
+        await SignInGrpcBrowserAsync();
+        await SetCsrfHeaderAsync(_client);
+        var issuance = await GenerateTokenAsync(_client, "test-admin-key");
+        _client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
+        using var token = System.Text.Json.JsonDocument.Parse(issuance);
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", token.RootElement.GetProperty("token").GetString());
+
+        using var response = await PostEmptyGrpcWebAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.GetValues("grpc-status").Should().ContainSingle().Which.Should().Be("3");

@@ -197,6 +197,12 @@ internal static class AdminAuthEndpoints
             return TypedResults.Ok(CreateSessionResponse(context.User, "operator-bearer", null));
         }
 
+        if (context.User.Identity?.IsAuthenticated != true
+            && (context.Request.Headers.ContainsKey("X-API-Key") || context.Request.Headers.ContainsKey("Authorization")))
+        {
+            return TypedResults.Ok(new AdminAuthSessionResponse());
+        }
+
         var sessionId = context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName];
         var session = await sessionStore.GetAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
         if (session is null)
