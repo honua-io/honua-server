@@ -51,7 +51,7 @@ public sealed partial class CandidateTelemetryGateCertificationTests
         private static Task SeedPreviousFeatureAsync(string postgres)
             => Docker.RunCheckedAsync([
                 "exec", postgres, "psql", "-U", "honua", "-d", "honua", "-v", "ON_ERROR_STOP=1", "-q", "-c",
-                $$"""
+                $$$"""
                 INSERT INTO honua.services (service_name, description, srid, supported_formats, capabilities, metadata)
                 VALUES ('candidate_gate', 'Rollback feature proof', 4326, ARRAY['JSON'], ARRAY['Query'],
                         '{"accessPolicy":{"allowAnonymous":true}}');
@@ -65,7 +65,7 @@ public sealed partial class CandidateTelemetryGateCertificationTests
                 VALUES ('candidate_gate', 7650, 0);
                 INSERT INTO public.features (objectid, layer_id, geometry, attributes)
                 VALUES (7650, 7650, ST_SetSRID(ST_Point(1, 2), 4326),
-                        jsonb_build_object('objectid', 7650, 'name', '{{PreviousFeatureMarker}}'));
+                        jsonb_build_object('objectid', 7650, 'name', '{{{PreviousFeatureMarker}}}'));
                 """
             ]);
     }
