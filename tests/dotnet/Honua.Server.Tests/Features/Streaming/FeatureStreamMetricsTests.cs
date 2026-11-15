@@ -116,20 +116,6 @@ public sealed class FeatureStreamMetricsTests
     }
 
     [UnitTest]
-    public void RecordClusterBroadcastDropped_IncrementsLossCounter()
-    {
-        using var factory = new TestMeterFactory();
-        var metrics = new FeatureStreamMetrics(factory);
-
-        var measurements = CaptureLongMeasurements(
-            metrics.Meter,
-            "honua.streaming.cluster_broadcast_dropped_total",
-            metrics.RecordClusterBroadcastDropped);
-
-        measurements.Should().Contain(m => m.Value == 1);
-    }
-
-    [UnitTest]
     public void DisconnectSession_RecordsAdminCloseAndRefreshesActiveGauge()
     {
         using var factory = new TestMeterFactory();

@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Licensing.Abstractions;
 
 namespace Honua.ControlPlane;
@@ -21,7 +22,8 @@ internal sealed partial class JobExecutionService(
     IEnumerable<IJobTerminalCallback> terminalCallbacks,
     IExecutionLogStore? logStore,
     ILogger<JobExecutionService> logger,
-    ILicenseOperationPolicy? licensePolicy = null) : BackgroundService
+    ILicenseOperationPolicy? licensePolicy = null,
+    PollWakeSignal<IJobQueue>? wake = null) : BackgroundService
 {
     private const string SafeExecutionFailureMessage = "Job execution failed.";
     private const string DrainDeadlineFailureMessage = "Worker drain deadline expired.";
@@ -33,6 +35,10 @@ internal sealed partial class JobExecutionService(
     private static readonly TimeSpan DefaultPartitionLeaseDuration = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan DefaultPartitionLeaseRenewInterval = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan DefaultPartitionLeaseContentionDelay = TimeSpan.FromSeconds(5);
+
+    // The interval stays fixed: a worker process (Honua.Worker.Gdal) claims jobs another process
+    // enqueues and never hears this process's wake, so backing off would delay those jobs.
+    private readonly IdlePollPacer _pacer = new(wake, PollInterval, PollInterval);
     private readonly TimeSpan _partitionLeaseDuration = DefaultPartitionLeaseDuration;
     private readonly TimeSpan _partitionLeaseRenewInterval = DefaultPartitionLeaseRenewInterval;
     private readonly TimeSpan _partitionLeaseContentionDelay = DefaultPartitionLeaseContentionDelay;
@@ -188,6 +194,7 @@ internal sealed partial class JobExecutionService(
 
         while (!claimToken.IsCancellationRequested)
         {
+            _pacer.BeginPoll();
             string? claimedId = null;
 
             try
@@ -243,7 +250,7 @@ internal sealed partial class JobExecutionService(
 
             try
             {
-                await Task.Delay(PollInterval, claimToken).ConfigureAwait(false);
+                await _pacer.WaitIdleAsync(claimToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (claimToken.IsCancellationRequested)
             {
@@ -569,7 +576,14 @@ internal sealed partial class JobExecutionService(
                 return;
             }
 
-            if (stoppingToken.IsCancellationRequested)
+            // A completed external publication cannot be safely replayed on shutdown.
+            // Require both the executor's explicit completion signal and its durable
+            // receipt; an earlier side effect alone does not complete ordinary work.
+            if (stoppingToken.IsCancellationRequested
+                && (result.Status != ExecutionJobStatus.Succeeded
+                    || !result.CompletedWithCommittedEffects
+                    || await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false)
+                        is not { CommittedEffectReferences.Count: > 0 }))
             {
                 if (Volatile.Read(ref _drainDeadlineExpired) != 0)
                 {

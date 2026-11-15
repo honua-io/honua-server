@@ -273,7 +273,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetService<ISchemaContext>(),
-                serviceProvider.GetRequiredService<IConfiguration>()));
+                serviceProvider.GetRequiredService<IConfiguration>(),
+                serviceProvider.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()));
         services.AddScoped<Honua.Core.Features.SensorThings.Abstractions.ISensorThingsEntityStore>(
             serviceProvider => (Honua.Core.Features.SensorThings.Abstractions.ISensorThingsEntityStore)
                 serviceProvider.GetRequiredService<Honua.Core.Features.SensorThings.Abstractions.IObservationStore>());
@@ -389,6 +390,11 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IDatabaseSchemaGuard>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>()));
+
+        // A host that replaces or decorates IMetadataV2GraphStore has no activation journal: the watch
+        // store resolves to null there, so the watcher idles and its findings source reports notConfigured.
+        services.AddScoped<ICatalogActivationWatchStore>(serviceProvider =>
+            (serviceProvider.GetRequiredService<IMetadataV2GraphStore>() as ICatalogActivationWatchStore)!);
 
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.

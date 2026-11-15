@@ -25,7 +25,7 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
     [InlineData(true, true, true)]
     public void Create_PreservesVisibilityProjectionDatesAndIdentifiers(bool additional, bool encoded, bool prepared)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -88,7 +88,7 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
         var fields = Enumerable.Range(0, 16)
             .Select(index => new MetadataV2Field { Name = $"field{index}", Type = MetadataV2FieldType.String })
             .ToArray();
-        var resource = new MetadataV2Resource { SchemaFields = fields };
+        var resource = new MetadataV2Object { SchemaFields = fields };
         var feature = Feature.Create(1, null,
             fields.ToImmutableDictionary(field => field.Name, _ => (object?)"value"));
         var options = new GeoJsonFeatureBuildOptions(IncludeAdditionalAttributes: additional);
@@ -127,7 +127,7 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
         var fields = Enumerable.Range(0, 512)
             .Select(index => new MetadataV2Field { Name = $"field{index}", Type = MetadataV2FieldType.String })
             .ToArray();
-        var resource = new MetadataV2Resource { SchemaFields = fields };
+        var resource = new MetadataV2Object { SchemaFields = fields };
         var attributes = (projected ? fields : fields.Take(1))
             .ToImmutableDictionary(field => field.Name, _ => (object?)"value");
         var feature = Feature.Create(1, null, attributes);
@@ -159,7 +159,7 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
     [Fact]
     public void Create_PreparedOptionsRejectDifferentResource()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new() { Name = "secret", Type = MetadataV2FieldType.String }]
         };
@@ -176,7 +176,7 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
     [Fact]
     public void Create_PreparedOptionsRejectDifferentAttributePolicy()
     {
-        var resource = new MetadataV2Resource { SchemaFields = [] };
+        var resource = new MetadataV2Object { SchemaFields = [] };
         var options = GeoJsonFeatureBaseBuilder.PrepareOptions(resource);
         var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("extra", "value"));
         var call = () => GeoJsonFeatureBaseBuilder.Create(feature, resource,
@@ -187,7 +187,7 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
     [Fact]
     public void Create_PreparedSchemaKeepsProjectionAndHiddenFieldRules()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -218,7 +218,7 @@ public sealed class GeoJsonFeatureBaseBuilderTests(ITestOutputHelper output)
         var fields = Enumerable.Range(0, 16)
             .Select(index => new MetadataV2Field { Name = $"field{index}", Type = MetadataV2FieldType.String })
             .ToArray();
-        var resource = new MetadataV2Resource { SchemaFields = fields };
+        var resource = new MetadataV2Object { SchemaFields = fields };
         var feature = Feature.Create(1, null,
             fields.ToImmutableDictionary(field => field.Name, _ => (object?)"value"));
 

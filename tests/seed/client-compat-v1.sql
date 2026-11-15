@@ -910,7 +910,13 @@ BEGIN
             'metadata', jsonb_build_object(
                 'id', 'ci-compatibility-seed',
                 'name', 'ci-compatibility-seed',
-                'title', 'CI compatibility seed'
+                'title', 'CI compatibility seed',
+                'description', 'Authored metadata for the canonical client compatibility fixture.',
+                'publisher', 'CI Compatibility Fixture',
+                'contactPoint', jsonb_build_object(
+                    'name', 'Compatibility Fixture Maintainer',
+                    'email', 'fixture-maintainer@example.invalid'
+                )
             ),
             'catalogs', '[]'::jsonb,
             'resources', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM resource_rows), '[]'::jsonb),

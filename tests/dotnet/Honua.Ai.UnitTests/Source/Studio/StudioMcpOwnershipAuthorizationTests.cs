@@ -139,12 +139,12 @@ public sealed class StudioMcpOwnershipAuthorizationTests
                 family == DraftToolFamily.PublicationProposal ? ItemId.ToString("D") : DraftId.ToString("D"));
             if (family == DraftToolFamily.PublicationProposal)
             {
+                // Every MCP caller is an agent, so even an administrator receives a proposal.
                 var output = result.StructuredContent!.Value;
-                var published = callerKind == CallerKind.Admin;
-                output.GetProperty("status").GetString().Should().Be(published ? "Published" : "AwaitingApproval");
-                output.GetProperty("humanConfirmationRequired").GetBoolean().Should().Be(!published);
-                output.TryGetProperty("shareUrl", out _).Should().Be(published);
-                output.TryGetProperty("proposalId", out _).Should().Be(!published);
+                output.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+                output.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
+                output.TryGetProperty("shareUrl", out _).Should().BeFalse();
+                output.TryGetProperty("proposalId", out _).Should().BeTrue();
             }
         }
         else
@@ -356,7 +356,8 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         auditLog.Events.Should().ContainSingle().Which.Should().BeEquivalentTo(new
         {
             EventType = AuditEventType.Authorization,
-            Actor = Bob,
+            // Studio authorization audits record the canonical actor tenant resolution stamps.
+            Actor = $"test:subject:-:{Bob}",
             ActorType = AuditActorType.UserId,
             ResourceType = "studio-package-draft",
             ResourceId = DraftId.ToString("D"),

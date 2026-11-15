@@ -1,11 +1,12 @@
 name: Derived Artifact Normalization Consumer
+run-name: Normalization producer ${{ github.event.workflow_run.id }} attempt ${{ github.event.workflow_run.run_attempt }}
 
 on:
   workflow_run:
     workflows: ["Derived Artifact Normalization"]
     types: [completed]
 
-# The workflow GITHUB_TOKEN stays read-only in every mode. Enforce mode writes
+# Envelope validation keeps its GITHUB_TOKEN read-only in every mode. Enforce mode writes
 # only through a short-lived installation token minted immediately before the
 # single mutation step; envelope download, validation, and comparison never see
 # a credential. Required App permissions: Contents read+write (blobs/tree/commit
@@ -17,20 +18,47 @@ permissions:
   contents: read
   pull-requests: read
 
-concurrency:
-  group: normalization-consumer-${{ github.event.workflow_run.head_sha }}
-  cancel-in-progress: false
-  queue: max
-
-# Enforce since the 2026-11-12 v3 shadow audit (#3219): 76 valid envelopes, all
-# byte-reproduced independently, with the release App token configured.
-# Rollback is the one-value change back to `observe`.
+# Feature PRs must not commit repository-state projections.
+# Keep envelope validation and drift reporting, with publication owned by the
+# existing generated-files-on-trunk producer. Superseded producer generations
+# are cancelled by trusted admission, not by a workflow-level concurrency group.
 env:
-  NORMALIZATION_MODE: enforce
+  NORMALIZATION_MODE: observe
 
 jobs:
+  admit:
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    outputs:
+      pr: ${{ steps.live.outputs.pr }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - id: live
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const {admitNormalization} = require('./scripts/ci/admit-normalization-consumer');
+            const pr = await admitNormalization({github, context});
+            if (!pr) return;
+            const {cancelOlderConsumers} = require('./scripts/ci/cancel-older-normalization-consumers');
+            await cancelOlderConsumers({github, context, core}, pr);
+            core.setOutput('pr', String(pr));
+
   validate:
+    needs: admit
+    concurrency:
+      group: normalization-consumer-${{ needs.admit.outputs.pr }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+      cancel-in-progress: true
     if: >
+      needs.admit.outputs.pr != '' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success'
     name: Validate normalization envelope
@@ -305,7 +333,10 @@ jobs:
                 .update(fs.readFileSync(recipePath)).digest('hex');
               const exactDigest = await readBlobDigest(recipePath, true);
               if (exactDigest !== trustedDigest) {
-                throw new Error(`${recipePath} does not match the trusted generation recipe.`);
+                core.setOutput('superseded', 'true');
+                core.notice(`${recipePath} does not match the trusted generation recipe; candidate rejected.`);
+                await core.summary.addRaw('Ineligible normalization recipe; no candidate or mutation.\n').write();
+                return;
               }
             }
 

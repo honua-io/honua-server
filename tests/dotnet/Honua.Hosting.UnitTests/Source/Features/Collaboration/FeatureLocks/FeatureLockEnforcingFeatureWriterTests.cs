@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Collaboration.FeatureLocks;
 /// inferred.
 /// </remarks>
 [Protocol(TestProtocols.Infrastructure)]
-public sealed class FeatureLockEnforcingFeatureWriterTests
+public sealed partial class FeatureLockEnforcingFeatureWriterTests
 {
     private const int StorageLayerId = 4;
     private const string ServiceName = "parcels";
@@ -274,11 +274,11 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
         return new MetadataV2GraphSnapshot(graph, "aliased-etag", DateTimeOffset.UnixEpoch);
     }
 
-    private static MetadataV2Resource AliasedResource(string id, string name, string bindingId)
+    private static MetadataV2Object AliasedResource(string id, string name, string bindingId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = [bindingId],
             PrimaryStorageBindingId = bindingId
         };
@@ -293,7 +293,7 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
             StorageLayerId = storageLayerId
         };
 
-    private static MetadataV2Publication AliasedPublication(
+    private static MetadataV2Layer AliasedPublication(
         string id,
         string serviceId,
         string resourceId,
@@ -305,7 +305,7 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = storageBindingId,
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 IsNumeric = true
@@ -366,12 +366,12 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "0" },
                     ServiceId = "svc-parcels",
                     ResourceId = "res-parcels",
-                    Identifier = new MetadataV2PublicationIdentifier
+                    Identifier = new MetadataV2LayerIdentifier
                     {
                         Value = StorageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                         IsNumeric = true
@@ -404,6 +404,8 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
     /// </summary>
     private sealed class RecordingFeatureWriter : IFeatureWriter
     {
+        public ReceiptRecordingTransaction Transaction { get; } = new();
+
         public int ApplyEditsCalls { get; private set; }
 
         public int DeleteCalls { get; private set; }
@@ -411,7 +413,7 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
         public Task<IFeatureWriterTransaction> BeginTransactionAsync(
             IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
             CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+            => Task.FromResult<IFeatureWriterTransaction>(Transaction);
 
         public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
             => Task.FromResult(feature);

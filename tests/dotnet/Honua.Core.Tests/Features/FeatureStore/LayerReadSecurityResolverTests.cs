@@ -55,12 +55,12 @@ public sealed partial class LayerReadSecurityResolverTests
     [Fact]
     public async Task ApplyAsync_ResourceKeyed_UsesTheBoundResourceWhenStorageLayerIdsCollide()
     {
-        var first = new MetadataV2Resource
+        var first = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-first", Name = "first" },
             StorageBindingIds = ["binding-first"]
         };
-        var second = new MetadataV2Resource
+        var second = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-second", Name = "second" },
             StorageBindingIds = ["binding-second"]
@@ -222,29 +222,29 @@ public sealed partial class LayerReadSecurityResolverTests
         var expression = new PropertyReference("status");
         var filterService = new Mock<IFilterExpressionService>();
         filterService
-            .Setup(service => service.ParseAndNormalize(It.IsAny<FilterLanguage>(), It.IsAny<string?>(), It.IsAny<MetadataV2Resource>()))
+            .Setup(service => service.ParseAndNormalize(It.IsAny<FilterLanguage>(), It.IsAny<string?>(), It.IsAny<MetadataV2Object>()))
             .Returns(FilterParseResult.Success(expression));
         filterService
-            .Setup(service => service.Translate(It.IsAny<FilterExpression?>(), It.IsAny<MetadataV2Resource>()))
+            .Setup(service => service.Translate(It.IsAny<FilterExpression?>(), It.IsAny<MetadataV2Object>()))
             .Returns(FilterTranslationResult.Success(expression, permanentFilter));
 
         var rowSource = new Mock<IRowLevelSecurityFilterSource>();
         rowSource
-            .Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Resource>(), It.IsAny<CancellationToken>()))
+            .Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Object>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(rowFilter);
 
         var maskSource = new Mock<IFieldMaskSource>();
         maskSource
-            .Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Resource>(), It.IsAny<CancellationToken>()))
+            .Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Object>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(maskedFields is null ? ImmutableArray<string>.Empty : ImmutableArray.Create(maskedFields));
 
         return new LayerReadSecurityResolver(graphProvider, filterService.Object, rowSource.Object, maskSource.Object);
     }
 
-    private static MetadataV2Resource CreateResource(bool withPermanentFilter) => new()
+    private static MetadataV2Object CreateResource(bool withPermanentFilter) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels" },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         StorageBindingIds = ["binding-parcels"],
         PermanentFilter = withPermanentFilter
             ? new MetadataV2PermanentFilter { Expression = "status = 'active'", Language = MetadataV2PermanentFilterLanguages.GeoServicesSql }

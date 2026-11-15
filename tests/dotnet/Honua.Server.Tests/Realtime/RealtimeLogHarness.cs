@@ -33,6 +33,8 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
 
     public NpgsqlDataSource DataSource => _jobs.DataSource;
 
+    public string Schema => _jobs.Schema;
+
     public string ConnectionString => _fixture.ConnectionString;
 
     public static async Task<RealtimeLogHarness> CreateAsync(DatabaseFixtureAdapter fixture)
@@ -48,10 +50,10 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
         return new RealtimeLogHarness(jobs, fixture);
     }
 
-    public async Task ApplyMigrationAsync()
+    public async Task ApplyMigrationAsync(string resource = MigrationResource)
     {
-        await using var stream = typeof(PostgresRealtimeEventLog).Assembly.GetManifestResourceStream(MigrationResource)
-            ?? throw new InvalidOperationException($"Embedded migration '{MigrationResource}' was not found.");
+        await using var stream = typeof(PostgresRealtimeEventLog).Assembly.GetManifestResourceStream(resource)
+            ?? throw new InvalidOperationException($"Embedded migration '{resource}' was not found.");
         using var reader = new StreamReader(stream);
         var migration = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal);
         await _fixture.ExecuteDdlUnderLockAsync(migration);
@@ -61,7 +63,7 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
 
     // A task's dispatcher over this schema.
     public RealtimeDispatcher CreateDispatcher(RealtimeOptions? options = null)
-        => new(Log, Options.Create(options ?? new RealtimeOptions()), NullLogger<RealtimeDispatcher>.Instance);
+        => new(Log, [], Options.Create(options ?? new RealtimeOptions()), NullLogger<RealtimeDispatcher>.Instance);
 
     // A task's listener on this database.
     public RealtimeListener CreateListener(RealtimeOptions options, string? connectionString = null)
