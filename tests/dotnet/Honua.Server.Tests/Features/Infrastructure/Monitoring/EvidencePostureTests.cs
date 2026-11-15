@@ -341,6 +341,30 @@ public sealed class EvidencePostureTests
         Assert.True(EvidencePostureFactory.IsActionable(aggregate));
     }
 
+    [UnitTheory]
+    [InlineData(6, true)]
+    [InlineData(12, false)]
+    [Operation(Operations.TestInfrastructure)]
+    public void Aggregate_MixedCadences_ExpiresAtEarliestComponentDeadline(int elapsedMinutes, bool actionable)
+    {
+        var observed = new DateTimeOffset(2026, 11, 15, 0, 0, 0, TimeSpan.Zero);
+        var daily = EvidencePostureFactory.Complete(
+            "test.daily", EvidencePostureVocabulary.BackendKinds.InProcess, BackendId, observed, TimeSpan.FromDays(1));
+        var frequent = EvidencePostureFactory.Complete(
+            "test.frequent", EvidencePostureVocabulary.BackendKinds.InProcess, BackendId,
+            observed.AddMinutes(6), TimeSpan.FromMinutes(5));
+
+        var aggregate = EvidencePostureFactory.Validate(
+            EvidencePostureFactory.Aggregate("test", BackendId, TimeSpan.FromMinutes(5), [daily, frequent]),
+            observed.AddMinutes(elapsedMinutes));
+
+        Assert.Equal(observed, aggregate.ObservedAt);
+        Assert.Equal(frequent.ValidUntil, aggregate.ValidUntil);
+        Assert.Equal(660, aggregate.MaximumAgeSeconds);
+        Assert.Equal(actionable, EvidencePostureFactory.IsActionable(aggregate));
+        Assert.Equal(!actionable, aggregate.ReasonCodes.Contains(EvidencePostureVocabulary.ReasonCodes.Stale));
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public void Serialize_UsesSourceGeneratedContextAndClosedVocabularyWireNames()

@@ -22,7 +22,8 @@ internal static partial class AnalysisContentEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Analysis", "Content")
             .WithDescription("Durable saved-query and analysis-package content versions.")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         _ = content.MapPost("/items", HandleCreateItemAsync)
             .WithName("CreateAnalysisContentItem")
@@ -68,7 +69,8 @@ internal static partial class AnalysisContentEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Analysis", "Artifacts")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         _ = artifacts.MapGet("/{artifactId}", HandleGetArtifactAsync)
             .WithName("GetAnalysisArtifact")
@@ -78,7 +80,8 @@ internal static partial class AnalysisContentEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Analysis", "Jobs")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthorization();
 
         _ = jobs.MapGet("/{jobId}/logs", HandleGetJobLogsAsync)
             .WithName("GetAnalysisJobLogs")
@@ -217,8 +220,7 @@ internal static partial class AnalysisContentEndpoints
         try
         {
             var result = await service.EstimateVersionAsync(
-                itemId,
-                contentVersion,
+                new AnalysisContentVersionAccess(itemId, contentVersion, context.User),
                 context.RequestAborted).ConfigureAwait(false);
 
             return Results.Json(
@@ -336,8 +338,7 @@ internal static partial class AnalysisContentEndpoints
         try
         {
             var result = await service.PreviewSavedQueryAsync(
-                itemId,
-                contentVersion,
+                new AnalysisContentVersionAccess(itemId, contentVersion, context.User),
                 request.Limit,
                 context.RequestAborted).ConfigureAwait(false);
             return Results.Json(result, AnalysisContentApiJsonContext.Default.SavedQueryPreviewResult);

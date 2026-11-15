@@ -7,6 +7,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Ai.AnalysisContent;
 
+internal sealed record AnalysisContentVersionAccess(string ItemId, int Version, ClaimsPrincipal Principal);
+
 internal sealed record AnalysisContentItemResult(
     AnalysisContentItem Item,
     AnalysisContentVersion Version);
