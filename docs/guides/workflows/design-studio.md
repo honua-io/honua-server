@@ -1,6 +1,6 @@
 ---
 type: guide
-title: "Design a App through prompt and preview"
+title: "Design an App through prompt and preview"
 description: "Iterate directly on map and app content, inspect the latest preview, and undo scoped changes while preserving source data and unrelated work."
 status: draft
 tags: [gis, domain-language, workflow, studio]
@@ -122,7 +122,7 @@ workflow:
         - "Show the actual rendering or dependency error; retain editable design state for refinement or undo."
 ---
 
-# Design a App through prompt and preview
+# Design an App through prompt and preview
 
 Studio design is a conversation with a visible result. Start from the current [App](../../concepts/domain/app.md), selection, and [Studio editor](../../concepts/domain/studio-workspace.md). Apply the requested creative change directly and show the corresponding preview. Refine it or undo it without requiring activation for each edit.
 
