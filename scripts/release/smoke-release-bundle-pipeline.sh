@@ -47,6 +47,35 @@ got_lanes="$(jq -r '.repositoryLanes | length' "$W/evidence.json")"
 [[ "$exp_lanes" == "$got_lanes" ]] || { echo "[ERROR] repositoryLanes count $got_lanes != registry sdk+lanes $exp_lanes" >&2; exit 1; }
 echo "[OK] evidence merged (gates=$got_gates lanes=$got_lanes)"
 
+
+echo
+echo "Validating: a nested preview SDK profile cannot be masked by another profile"
+for profiles in \
+  '{"profile":"preview-http-baseseed"}' \
+  '{"receipt":{"profile":"preview-http-baseseed"}}' \
+  '{"evidence_receipt":{"profile":"preview-http-baseseed"}}' \
+  '{"profile":"release","receipt":{"profile":"preview-http-baseseed"}}' \
+  '{"profile":"release","evidence_receipt":{"profile":"preview-http-baseseed"}}' \
+  '{"receipt":{"profile":"release"},"evidence_receipt":{"profile":"preview-http-baseseed"}}' \
+  '{"profile":"","receipt":{"profile":"preview-http-baseseed"}}'; do
+  jq -nc --argjson profiles "$profiles" \
+    '{id:"sdk-profile-negative-control",conclusion:"success"} + $profiles' > "$W/preview.ndjson"
+  if "$COLLECT" --registry "$REGISTRY" --sdk "$W/preview.ndjson" \
+    --output "$W/preview-evidence.json" >"$W/preview.log" 2>&1; then
+    echo "[ERROR] preview-profile SDK receipt accepted: $profiles" >&2
+    exit 1
+  fi
+  if ! grep -q 'preview-profile SDK receipt' "$W/preview.log"; then
+    echo "[ERROR] SDK profile rejection did not report the preview profile" >&2
+    exit 1
+  fi
+done
+jq -nc '{id:"sdk-profile-positive-control",conclusion:"success",profile:"release",
+         receipt:{profile:"release"},evidence_receipt:{profile:"release"}}' > "$W/release.ndjson"
+"$COLLECT" --registry "$REGISTRY" --sdk "$W/release.ndjson" \
+  --output "$W/release-evidence.json" >/dev/null
+echo "[OK] every preview SDK profile location is rejected, including mixed profiles"
+
 echo
 echo "Validating: manifest builds from the merged evidence with a passed candidate image"
 "$GEN" --evidence "$W/evidence.json" \
