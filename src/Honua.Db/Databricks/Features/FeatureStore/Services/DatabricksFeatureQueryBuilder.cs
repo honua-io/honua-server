@@ -15,14 +15,14 @@ using Honua.Db.Databricks.Queries.Filters;
 
 namespace Honua.Db.Databricks.Features.FeatureStore.Services;
 
-internal sealed class DatabricksFeatureQueryBuilder
+internal static class DatabricksFeatureQueryBuilder
 {
     private const string GeometryHexAlias = "__honua_geom_hex";
     private const string IdAlias = "__honua_id";
     private static readonly DatabricksSqlDialect Dialect = DatabricksSqlDialect.Instance;
 
     /// <inheritdoc />
-    public DatabricksSqlStatement BuildSelect(DatabricksLayerMapping mapping, FeatureQuery query)
+    public static DatabricksSqlStatement BuildSelect(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         EnsureSupported(query);
@@ -47,7 +47,7 @@ internal sealed class DatabricksFeatureQueryBuilder
     }
 
     /// <inheritdoc />
-    public DatabricksSqlStatement BuildCount(DatabricksLayerMapping mapping, FeatureQuery query)
+    public static DatabricksSqlStatement BuildCount(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         EnsureSupported(query);
@@ -61,7 +61,7 @@ internal sealed class DatabricksFeatureQueryBuilder
     }
 
     /// <inheritdoc />
-    public DatabricksSqlStatement BuildExtent(DatabricksLayerMapping mapping, FeatureQuery? query)
+    public static DatabricksSqlStatement BuildExtent(DatabricksLayerMapping mapping, FeatureQuery? query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         var effectiveQuery = query ?? default;
@@ -81,7 +81,7 @@ internal sealed class DatabricksFeatureQueryBuilder
     }
 
     /// <inheritdoc />
-    public DatabricksSqlStatement BuildObjectIds(DatabricksLayerMapping mapping, FeatureQuery query)
+    public static DatabricksSqlStatement BuildObjectIds(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         EnsureSupported(query);
@@ -234,7 +234,7 @@ internal sealed class DatabricksFeatureQueryBuilder
     }
 
     /// <inheritdoc />
-    public DatabricksSqlStatement BuildStatistics(DatabricksLayerMapping mapping, FeatureQuery query)
+    public static DatabricksSqlStatement BuildStatistics(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         EnsureSupported(query);

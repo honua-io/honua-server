@@ -76,12 +76,10 @@ public static class ServiceCollectionExtensions
                 })
             .AddHttpResiliencePolicy(DatabricksServiceClientName.ResilienceServiceType, BuildResilienceOptions(options));
 
-        services.AddSingleton<DatabricksFeatureQueryBuilder>();
         services.AddScoped<IDatabricksFeatureDataAccess, DatabricksFeatureDataAccess>();
 
         services.AddScoped<DatabricksFeatureStore>(sp => new DatabricksFeatureStore(
             sp.GetRequiredService<DatabricksLayerMappingRegistry>(),
-            sp.GetRequiredService<DatabricksFeatureQueryBuilder>(),
             sp.GetRequiredService<IDatabricksFeatureDataAccess>(),
             Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DatabricksFeatureStore>());

@@ -45,29 +45,25 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     };
 
     private readonly DatabricksLayerMappingRegistry _mappings;
-    private readonly DatabricksFeatureQueryBuilder _queryBuilder;
     private readonly IDatabricksFeatureDataAccess _dataAccess;
     private readonly LayerReadSecurityResolver? _readSecurity;
     private readonly FeatureProviderBinding? _binding;
 
     public DatabricksFeatureStore(
         DatabricksLayerMappingRegistry mappings,
-        DatabricksFeatureQueryBuilder queryBuilder,
         IDatabricksFeatureDataAccess dataAccess,
         LayerReadSecurityResolver? readSecurity = null)
-        : this(mappings, queryBuilder, dataAccess, readSecurity, binding: null)
+        : this(mappings, dataAccess, readSecurity, binding: null)
     {
     }
 
     private DatabricksFeatureStore(
         DatabricksLayerMappingRegistry mappings,
-        DatabricksFeatureQueryBuilder queryBuilder,
         IDatabricksFeatureDataAccess dataAccess,
         LayerReadSecurityResolver? readSecurity,
         FeatureProviderBinding? binding)
     {
         _mappings = mappings ?? throw new ArgumentNullException(nameof(mappings));
-        _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _readSecurity = readSecurity;
         _binding = binding;
@@ -77,7 +73,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
-        return new DatabricksFeatureStore(_mappings, _queryBuilder, _dataAccess, _readSecurity, binding);
+        return new DatabricksFeatureStore(_mappings, _dataAccess, _readSecurity, binding);
     }
 
     /// <inheritdoc />
@@ -108,7 +104,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var statement = _queryBuilder.BuildSelect(mapping, query);
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(mapping, query);
         var features = await _dataAccess.ExecuteSelectAsync(mapping, statement, cancellationToken).ConfigureAwait(false);
 
         // When the page is smaller than the requested limit, the result is complete and
@@ -138,7 +134,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var statement = _queryBuilder.BuildObjectIds(mapping, query);
+        var statement = DatabricksFeatureQueryBuilder.BuildObjectIds(mapping, query);
         return await _dataAccess.ExecuteObjectIdsAsync(statement, cancellationToken).ConfigureAwait(false);
     }
 
@@ -146,7 +142,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var statement = _queryBuilder.BuildCount(mapping, query);
+        var statement = DatabricksFeatureQueryBuilder.BuildCount(mapping, query);
         return await _dataAccess.ExecuteCountAsync(statement, cancellationToken).ConfigureAwait(false);
     }
 
@@ -154,7 +150,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var statement = _queryBuilder.BuildExtent(mapping, query);
+        var statement = DatabricksFeatureQueryBuilder.BuildExtent(mapping, query);
         return await _dataAccess.ExecuteExtentAsync(mapping, statement, cancellationToken).ConfigureAwait(false);
     }
 
@@ -177,7 +173,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var mapping = await ResolveMappingAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var statement = _queryBuilder.BuildStatistics(mapping, query);
+        var statement = DatabricksFeatureQueryBuilder.BuildStatistics(mapping, query);
         return await _dataAccess.ExecuteStatisticsAsync(statement, cancellationToken).ConfigureAwait(false);
     }
 
