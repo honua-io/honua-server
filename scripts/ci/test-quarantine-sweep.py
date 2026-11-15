@@ -192,9 +192,21 @@ class CheckpointTests(unittest.TestCase):
             dict(total_count=101, artifacts=[artifact(101)]),
         ]):
             self.assertEqual(101, len(sweep.inventory('actions/artifacts', 'artifacts')))
-        with patch.object(sweep, 'api', return_value=dict(total_count=50001)), \
+        with patch.object(sweep, 'api', return_value=dict(total_count=sweep.MAX_PAGES * 100 + 1)), \
                 self.assertRaisesRegex(ValueError, 'capacity'):
             sweep.inventory('actions/artifacts', 'artifacts')
+
+    def test_inventory_accepts_retained_repository_volume(self):
+        count = 75855
+        def page(path):
+            number = int(path.rsplit('=', 1)[1])
+            start = (number - 1) * 100
+            return dict(total_count=count, artifacts=[dict(id=i) for i in range(start, min(start + 100, count))])
+        with patch.object(sweep, 'api', side_effect=page) as read:
+            items = sweep.inventory('actions/artifacts', 'artifacts')
+        self.assertEqual(count, len(items))
+        self.assertEqual(759, read.call_count)
+        self.assertEqual(set(range(count)), {item['id'] for item in items})
 
     def test_archive_rejects_traversal_symlinks_and_expansion_overflow(self):
         for name, mode in (('../evil.flake-candidates.json', 0), ('/evil.retry-attempt.xml', 0),
