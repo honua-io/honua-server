@@ -33,6 +33,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
     private readonly IPrimaryDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresSceneFeatureSource> _logger;
     private readonly IFilterExpressionService? _filterExpressionService;
+    private SqlFragment? _boundPermanentFilter;
 
     public PostgresSceneFeatureSource(
         IPrimaryDatabaseConnectionProvider connectionProvider,
@@ -81,13 +82,13 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
                 .Append(" AS \"a_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('"');
         }
 
-        var permanentFilter = ResolveScenePermanentFilter(resource);
+        _boundPermanentFilter = ResolveScenePermanentFilter(resource);
         var sql = $"""
             SELECT {selectColumns}
             FROM {qualifiedTable}
             WHERE {DatabaseSchema.LayerIdColumn} = @layer_id
               AND {DatabaseSchema.ObjectIdColumn} > @last_key
-              {(permanentFilter is null ? string.Empty : "AND (" + permanentFilter.Sql + ")")}
+              {(_boundPermanentFilter is null ? string.Empty : "AND (" + _boundPermanentFilter.Sql + ")")}
             ORDER BY {DatabaseSchema.ObjectIdColumn} ASC
             LIMIT {PageSize}
             """;
@@ -104,7 +105,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
             // treat a partial feature list as complete.
             cancellationToken.ThrowIfCancellationRequested();
 
-            var batch = await ReadBatchAsync(sql, storageLayerId, lastKey, attributeFields, permanentFilter, cancellationToken).ConfigureAwait(false);
+            var batch = await ReadBatchAsync(sql, storageLayerId, lastKey, attributeFields, cancellationToken).ConfigureAwait(false);
             if (batch.Count == 0)
             {
                 break;
@@ -139,7 +140,6 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         int layerId,
         long lastKey,
         List<MetadataV2Field> attributeFields,
-        SqlFragment? permanentFilter,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -147,15 +147,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         command.CommandText = sql;
         command.Parameters.Add(new NpgsqlParameter("@layer_id", layerId));
         command.Parameters.Add(new NpgsqlParameter("@last_key", lastKey));
-        if (permanentFilter is not null)
-        {
-            for (var i = 0; i < permanentFilter.Parameters.Count; i++)
-            {
-                command.Parameters.Add(new NpgsqlParameter(
-                    "@p" + i.ToString(CultureInfo.InvariantCulture),
-                    permanentFilter.Parameters[i] ?? DBNull.Value));
-            }
-        }
+        AddFragmentParameters(command, _boundPermanentFilter);
         // Pass attribute field names as JSON-path parameters so the SQL itself
         // never interpolates field names (defense in depth — fields come from
         // the trusted catalog, but parameter binding keeps the contract
@@ -232,6 +224,21 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
             }
 
             return results;
+        }
+    }
+
+    private static void AddFragmentParameters(NpgsqlCommand command, SqlFragment? fragment)
+    {
+        if (fragment is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < fragment.Parameters.Count; i++)
+        {
+            command.Parameters.Add(new NpgsqlParameter(
+                "@p" + i.ToString(CultureInfo.InvariantCulture),
+                fragment.Parameters[i] ?? DBNull.Value));
         }
     }
 

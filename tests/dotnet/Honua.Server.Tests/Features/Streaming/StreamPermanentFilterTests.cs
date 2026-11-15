@@ -11,9 +11,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// A saved permanent filter is part of the stream read policy, or the layer is closed.
-/// </summary>
 [Protocol(TestProtocols.Streaming)]
 public sealed class StreamPermanentFilterTests
 {
@@ -22,14 +19,12 @@ public sealed class StreamPermanentFilterTests
     {
         var predicates = new List<FilterExpression>();
 
-        var added = FeatureStreamEndpoints.TryAppendPermanentFilterPredicate(
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
             Resource("classification <> 'secret'"),
             Filters(),
-            predicates,
-            out var error);
+            predicates);
 
-        added.Should().BeTrue();
-        error.Should().BeNull();
+        act.Should().NotThrow();
         predicates.Should().ContainSingle();
         var security = new StreamSubscriberSecurity(
             new HashSet<string>(StringComparer.Ordinal) { "svc" },
@@ -47,14 +42,12 @@ public sealed class StreamPermanentFilterTests
     {
         var predicates = new List<FilterExpression>();
 
-        var added = FeatureStreamEndpoints.TryAppendPermanentFilterPredicate(
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
             Resource("classification <> 'secret'", "not-a-language"),
             Filters(),
-            predicates,
-            out var error);
+            predicates);
 
-        added.Should().BeFalse();
-        error.Should().NotBeNullOrWhiteSpace();
+        act.Should().Throw<InvalidOperationException>();
         predicates.Should().BeEmpty();
     }
 
@@ -66,14 +59,12 @@ public sealed class StreamPermanentFilterTests
             " AND ",
             Enumerable.Repeat("classification <> 'a'", InMemoryFilterEvaluator.MaxStreamingDepth + 2));
 
-        var added = FeatureStreamEndpoints.TryAppendPermanentFilterPredicate(
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
             Resource(expression),
             Filters(),
-            predicates,
-            out var error);
+            predicates);
 
-        added.Should().BeFalse();
-        error.Should().NotBeNullOrWhiteSpace();
+        act.Should().Throw<InvalidOperationException>();
         predicates.Should().BeEmpty();
     }
 
@@ -82,14 +73,12 @@ public sealed class StreamPermanentFilterTests
     {
         var predicates = new List<FilterExpression>();
 
-        var added = FeatureStreamEndpoints.TryAppendPermanentFilterPredicate(
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
             Resource(null),
             Filters(),
-            predicates,
-            out var error);
+            predicates);
 
-        added.Should().BeTrue();
-        error.Should().BeNull();
+        act.Should().NotThrow();
         predicates.Should().BeEmpty();
     }
 

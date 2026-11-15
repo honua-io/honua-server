@@ -349,15 +349,10 @@ public sealed class LayerReadSecurityResolver
         IFilterExpressionService? filterExpressionService)
         => PermanentFilterResolver.Resolve(resource, filterExpressionService);
 
-    /// <summary>
-    /// Parses the permanent filter for a caller that evaluates rows in memory.
-    /// </summary>
-    public static bool TryResolvePermanentFilterExpression(
+    public static FilterExpression? RequirePermanentFilterExpression(
         MetadataV2Object resource,
-        IFilterExpressionService? filterExpressionService,
-        out FilterExpression? expression,
-        out string? error)
-        => PermanentFilterResolver.TryParseExpression(resource, filterExpressionService, out expression, out error);
+        IFilterExpressionService? filterExpressionService)
+        => PermanentFilterResolver.ParseSavedExpression(resource, filterExpressionService);
 
     private async Task<MetadataV2Object?> FindResourceAsync(int layerId, CancellationToken cancellationToken)
     {

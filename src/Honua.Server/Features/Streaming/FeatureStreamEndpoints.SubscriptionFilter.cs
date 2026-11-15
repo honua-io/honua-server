@@ -453,10 +453,8 @@ internal static partial class FeatureStreamEndpoints
                 if (!policies.TryGetValue(layer.Resource.Metadata.Id, out var policy))
                 {
                     var predicates = (await rowSource.ResolveExpressionsAsync(layer.Resource, cancellationToken).ConfigureAwait(false)).ToList();
-                    if (!TryAppendPermanentFilterPredicate(layer.Resource, filterService, predicates, out _))
+                    if (!PermanentFilterAccepted(layer.Resource, filterService, predicates))
                     {
-                        // A permanent filter that cannot be evaluated in memory must not
-                        // fall open. Deny this publication instead of streaming every row.
                         deniedNames.Add(nameKey);
                         deniedExact.Add((service.Metadata.Id, layer.LayerId));
                         continue;
@@ -481,39 +479,49 @@ internal static partial class FeatureStreamEndpoints
             snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal), exact, named, deniedExact);
     }
 
-    internal static bool TryAppendPermanentFilterPredicate(
+    private static bool PermanentFilterAccepted(
         MetadataV2Object resource,
         IFilterExpressionService filterExpressionService,
-        List<FilterExpression> predicates,
-        out string? error)
+        List<FilterExpression> predicates)
     {
-        ArgumentNullException.ThrowIfNull(predicates);
-        if (!Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.TryResolvePermanentFilterExpression(
-                resource, filterExpressionService, out var expression, out error))
+        try
+        {
+            AppendPermanentFilterPredicate(resource, filterExpressionService, predicates);
+            return true;
+        }
+        catch (InvalidOperationException)
         {
             return false;
         }
+    }
 
+    internal static void AppendPermanentFilterPredicate(
+        MetadataV2Object resource,
+        IFilterExpressionService filterExpressionService,
+        List<FilterExpression> predicates)
+    {
+        ArgumentNullException.ThrowIfNull(predicates);
+        var expression = Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver
+            .RequirePermanentFilterExpression(resource, filterExpressionService);
         if (expression is null)
         {
-            return true;
+            return;
         }
 
         // The same depth guard as a subscriber filter. Past the limit the
         // evaluator fails closed, and a surrounding NOT would invert that.
         if (InMemoryFilterEvaluator.ExceedsMaxDepth(expression))
         {
-            error = $"Saved permanent filter for resource '{resource.Metadata.Id}' exceeds the streaming depth limit.";
-            return false;
+            throw new InvalidOperationException(
+                $"Saved permanent filter for resource '{resource.Metadata.Id}' exceeds the streaming depth limit.");
         }
 
-        if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(expression, out error))
+        if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(expression, out var error))
         {
-            return false;
+            throw new InvalidOperationException(error ?? "Saved permanent filter cannot be evaluated.");
         }
 
         predicates.Add(expression);
-        return true;
     }
 
     private static bool TryResolveFilterLanguage(string? filterLang, out FilterLanguage language, out string error)

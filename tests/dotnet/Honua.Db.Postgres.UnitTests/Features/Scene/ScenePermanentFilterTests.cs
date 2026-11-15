@@ -10,9 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Scene;
 
-/// <summary>
-/// Scene publishing must not read a layer whose permanent filter cannot be applied.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ScenePermanentFilterTests
 {
