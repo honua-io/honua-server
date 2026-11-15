@@ -22,6 +22,52 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
 {
+    [UnitTest]
+    public async Task FormatAsGeoParquetStream_HundredThousandFeatures_UsesBoundedFileStorage()
+    {
+        const int count = 100_000;
+        var features = Enumerable.Range(1, count).Select(id => Feature.Create(id, null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", $"{id:D8}-{new string('x', 256)}"))).ToImmutableArray();
+        var query = QueryResult<Feature>.Create(count, features);
+        var resource = CreateLayer(Field("objectid", MetadataV2FieldType.BigInteger, nullable: false),
+            Field("name", MetadataV2FieldType.String));
+        var baseline = GC.GetTotalMemory(true);
+        var (payload, contentType) = GeoParquetQueryFormatter.FormatAsGeoParquetStream(query, resource, new GeoParquetStreamEncodingOptions
+        {
+            ReturnGeometry = false,
+            OutputSrid = null,
+            ReturnZ = false,
+            ReturnM = false,
+            GeometryLimits = new GeometryLimits(),
+            EncodingLimits = new GeoParquetLimits
+            {
+                MaxRowsPerBatch = 256,
+                MaxEstimatedBatchBytes = 1024 * 1024,
+                MaxEstimatedInputBytes = 512 * 1024 * 1024
+            }
+        });
+        await using (payload)
+        {
+            payload.Should().BeAssignableTo<FileStream>();
+            contentType.Should().Be("application/vnd.apache.parquet");
+            (GC.GetTotalMemory(true) - baseline).Should().BeLessThan(8 * 1024 * 1024);
+            var path = ((FileStream)payload).Name;
+            using (var reader = new ParquetSharp.Arrow.FileReader(payload, leaveOpen: true))
+            using (var batches = reader.GetRecordBatchReader())
+            {
+                long rows = 0;
+                while (await batches.ReadNextRecordBatchAsync() is { } batch)
+                {
+                    using (batch) rows += batch.Length;
+                }
+                rows.Should().Be(count);
+            }
+            await payload.DisposeAsync();
+            File.Exists(path).Should().BeFalse();
+        }
+        GC.KeepAlive(query);
+    }
+
     [UnitTheory]
     [InlineData(3)]
     [InlineData(4)]
@@ -1767,6 +1813,28 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload.ToArray()));
         reader.Schema.Metadata["honua:captureId"].Should().Be("capture-1");
         reader.Schema.Metadata.Should().ContainKey("geo");
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FormatAsGeoParquetStream_FileMetadata_IsWrittenForEmptyAndPopulatedResults(bool empty)
+    {
+        var feature = Feature.Create(1, new WKBWriter().Write(new Point(1, 2)), ImmutableDictionary<string, object?>.Empty);
+        var result = QueryResult<Feature>.Create(empty ? 0 : 1, empty ? [] : [feature]);
+        var (payload, _) = GeoParquetFeatureWriter.FormatAsGeoParquetStream(result, CreateLayer(), new GeoParquetStreamEncodingOptions
+        {
+            ObjectIdFieldName = "objectid",
+            ReturnGeometry = true,
+            OutputSrid = 4326,
+            FileMetadata = new Dictionary<string, string> { ["honua:captureId"] = "capture-1" }
+        });
+        using (payload)
+        using (var reader = new ParquetSharp.Arrow.FileReader(payload))
+        {
+            reader.Schema.Metadata["honua:captureId"].Should().Be("capture-1");
+            reader.Schema.Metadata.Should().ContainKey("geo");
+        }
     }
 
     [UnitTest]

@@ -123,9 +123,15 @@ public sealed partial class PairedPublishEndpointTests(DatabaseFixtureAdapter da
         var current = pointerMoved ? await PublishAsync(IdentityField) : original.PublishedPublication!;
         var request = new TileOperationStartRequest
         {
-            Operation = "paired-publish", ServiceId = WebAppFixture.TestServiceId,
-            LayerId = WebAppFixture.TestLayerId, PublicationId = _publicationId,
-            IdentityField = IdentityField, TileMatrixSetId = "WebMercatorQuad", MinZoom = 0, MaxZoom = 2, MaxTiles = 50
+            Operation = "paired-publish",
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            PublicationId = _publicationId,
+            IdentityField = IdentityField,
+            TileMatrixSetId = "WebMercatorQuad",
+            MinZoom = 0,
+            MaxZoom = 2,
+            MaxTiles = 50
         };
         using var scope = _fixture.Services.CreateScope();
         using var systemRead = JobSecurityScope.BeginSystem();
@@ -133,7 +139,9 @@ public sealed partial class PairedPublishEndpointTests(DatabaseFixtureAdapter da
 
         var replayed = await core.ExecuteAsync(original with
         {
-            Status = OperationStatus.Queued, PublishedPublication = null, CompletedAt = null
+            Status = OperationStatus.Queued,
+            PublishedPublication = null,
+            CompletedAt = null
         }, request, scope.ServiceProvider, CancellationToken.None);
 
         replayed.Status.Should().Be(pointerMoved ? OperationStatus.Failed : OperationStatus.Completed);

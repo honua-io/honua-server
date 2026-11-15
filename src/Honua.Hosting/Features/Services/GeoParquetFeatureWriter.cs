@@ -68,6 +68,42 @@ public static partial class GeoParquetFeatureWriter
         GeoParquetLimits? encodingLimits = null,
         IReadOnlyDictionary<string, string>? fileMetadata = null)
     {
+        var (payload, contentType) = FormatAsGeoParquetStream(result, resource, new GeoParquetStreamEncodingOptions
+        {
+            ObjectIdFieldName = objectIdFieldName,
+            ReturnGeometry = returnGeometry,
+            OutputSrid = outputSrid,
+            ReturnZ = returnZ,
+            ReturnM = returnM,
+            GeometryLimits = geometryLimits,
+            OutFields = outFields,
+            Logger = logger,
+            EncodingLimits = encodingLimits,
+            FileMetadata = fileMetadata
+        });
+        using (payload)
+        using (var copy = new MemoryStream())
+        {
+            payload.CopyTo(copy);
+            return (copy.ToArray(), contentType);
+        }
+    }
+
+    public static (Stream response, string contentType) FormatAsGeoParquetStream(
+        QueryResult<Feature> result,
+        MetadataV2Object resource,
+        GeoParquetStreamEncodingOptions options)
+    {
+        var objectIdFieldName = options.ObjectIdFieldName;
+        var returnGeometry = options.ReturnGeometry;
+        var outputSrid = options.OutputSrid;
+        var returnZ = options.ReturnZ;
+        var returnM = options.ReturnM;
+        var geometryLimits = options.GeometryLimits;
+        var outFields = options.OutFields;
+        var logger = options.Logger;
+        var encodingLimits = options.EncodingLimits;
+        var fileMetadata = options.FileMetadata;
         ArgumentNullException.ThrowIfNull(resource);
         encodingLimits ??= new GeoParquetLimits();
         ValidateEncodingLimits(encodingLimits);
@@ -155,9 +191,9 @@ public static partial class GeoParquetFeatureWriter
     // wrapped in TypeInitializationException).
     // Translate that into a typed ParquetRuntimeUnavailableException so protocol adapters can
     // return a clean 501 capability response instead of an unhandled 500 (honua-server#1942).
-    private static ReadOnlyMemory<byte> WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
+    private static BoundedParquetStream WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
     {
-        using var stream = new BoundedParquetStream(limits.MaxResponseBytes);
+        var stream = new BoundedParquetStream(limits.MaxResponseBytes);
         try
         {
             // Construct and dispose the builder itself explicitly (rather than chaining off
@@ -173,17 +209,25 @@ public static partial class GeoParquetFeatureWriter
                 writer.Close();
             }
 
-            return stream.GetBuffer().AsMemory(0, checked((int)stream.Length));
+            stream.Position = 0;
+            return stream;
         }
         catch (Exception) when (stream.LimitExceeded)
         {
             // The native callback can wrap a managed Stream exception. Keep the shared
             // budget contract even when the refusal occurs while writing the footer.
+            stream.Dispose();
             throw new GeoParquetLimitExceededException();
         }
         catch (Exception ex) when (ParquetRuntimeUnavailableException.IsNativeLoadFailure(ex))
         {
+            stream.Dispose();
             throw new ParquetRuntimeUnavailableException(ex);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
         }
     }
 
@@ -224,7 +268,7 @@ public static partial class GeoParquetFeatureWriter
         return selectedFields;
     }
 
-    private static (ReadOnlyMemory<byte> response, string contentType) CreateEmptyGeoParquet(
+    private static (Stream response, string contentType) CreateEmptyGeoParquet(
         MetadataV2Object resource,
         string objectIdFieldName,
         bool returnGeometry,
