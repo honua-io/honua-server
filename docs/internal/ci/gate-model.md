@@ -364,7 +364,7 @@ carries two independent gate lanes per sampled operation:
   via pass/fail fixtures under `scripts/ci/fixtures/`; the live latency measurement runs in
   `geoservices-import-fidelity-external.yml` (on-demand).
 
-Shared OGC capabilities XML tests run in a standalone metadata shard, leaving the WMS class/complement partition and its legacy budgets unchanged.
+Shared OGC capabilities XML tests live in the Wms namespace and run in Maps Supporting. The WMS class/complement partition and its legacy budgets stay unchanged; Supporting also retains catalog metadata and cross-protocol XML source triggers.
 
 ## Verification receipts and batch landing (quality-contract amendment, 2026-09)
 
@@ -756,10 +756,12 @@ receipts. This adds no jobs or runners and changes no required check names or
 unchanged. The quarantine publisher keeps one artifact per shard, the newest
 attempt.
 
-`CapabilitiesMetadataXmlTests` is outside the Wms namespace, so it is not part of
-the OGC Classic Maps class partition. The shard `OGC Classic Capabilities Metadata`
-claims that class alone. Its dispatch rank is an unmeasured 6.0 until a full run
-records it. The WMS children keep the original namespace cut, budgets and paths.
+`CapabilitiesMetadataXmlTests` now lives in the Wms namespace and is covered by
+Maps Supporting. Remove obsolete standalone metadata entries and the stale
+Classic-namespace WMTS clause: they select no tests, and duplicate shard names
+break the budget selector partition. The frozen WMS partition still covers all
+134 methods (61 Core, 73 Supporting), with its original budgets and source
+triggers plus catalog metadata invalidation.
 
 The retained `*.timing.json` includes `execution` with actual result counts,
 TRX SHA-256, source SHA/dirty flag, project, and runner/verifier hashes. The timing
