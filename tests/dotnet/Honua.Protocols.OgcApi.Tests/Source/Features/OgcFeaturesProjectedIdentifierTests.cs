@@ -86,7 +86,8 @@ public sealed class OgcFeaturesProjectedIdentifierTests : IClassFixture<OgcFeatu
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         var document = XDocument.Parse(body);
-        document.Descendants().Where(element => element.Name.LocalName == "name").Should().ContainSingle();
-        document.Descendants().Where(element => element.Name.LocalName == "public_id").Should().BeEmpty();
+        var properties = document.Descendants().Where(element => element.Name.LocalName == "property").ToArray();
+        properties.Should().ContainSingle(element => (string?)element.Attribute("name") == "name");
+        properties.Should().NotContain(element => (string?)element.Attribute("name") == "public_id");
     }
 }
