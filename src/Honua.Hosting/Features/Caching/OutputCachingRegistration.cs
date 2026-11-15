@@ -76,6 +76,8 @@ internal static class OutputCachingRegistration
                 // download the entire object per read. Range requests skip lookup and storage.
                 policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
                 policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
+                policy.VaryByValue(static context => new KeyValuePair<string, string>(
+                    "content-coding", context.Request.Headers.AcceptEncoding.ToString()));
                 // Metadata responses (service directory, capabilities, collections, STAC,
                 // tiles, styles) are filtered by the process-wide license edition and
                 // entitlements, but the cache key otherwise only varies by route + tenant +
