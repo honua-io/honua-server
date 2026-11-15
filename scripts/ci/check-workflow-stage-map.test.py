@@ -152,6 +152,7 @@ class StageMapTests(unittest.TestCase):
         document = json.loads((root / checker.MAP).read_text())
         sources = {binding["source"] for row in document["stages"]
                    for entry in row["surfaces"].values() for binding in entry["bindings"]}
+        sources |= {checker.MAP, checker.POLICY}
         for source in sources:
             with self.subTest(source=source):
                 self.assertTrue(any(fnmatch.fnmatchcase(source, pattern) for pattern in patterns))

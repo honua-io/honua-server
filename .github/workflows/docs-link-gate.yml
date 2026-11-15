@@ -56,6 +56,7 @@ on:
       - 'scripts/ci/gis_workflow.py'
       - 'scripts/ci/check-workflow-stage-map.py'
       - 'scripts/ci/check-workflow-stage-map.test.py'
+      - 'scripts/ci/retired-terms.v1.json'
       - 'scripts/ci/generate-okf-graph.py'
       - 'scripts/ci/generate-okf-graph.test.py'
       - 'scripts/ci/okf-requirements.txt'
