@@ -463,6 +463,33 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         result.Should().Be(25832);
     }
 
+    [Theory]
+    [InlineData(nameof(EsriProjectedPrj.NewYorkLongIslandFtUs), 2263)]
+    [InlineData(nameof(EsriProjectedPrj.NewYorkLongIsland2011FtUs), 6539)]
+    [InlineData(nameof(EsriProjectedPrj.CaliforniaZone5FtUs), 2229)]
+    [InlineData(nameof(EsriProjectedPrj.Lambert93), 2154)]
+    [InlineData(nameof(EsriProjectedPrj.BritishNationalGrid), 27700)]
+    [InlineData(nameof(EsriProjectedPrj.BcAlbers), 3005)]
+    [InlineData(nameof(EsriProjectedPrj.MgaZone55), 28355)]
+    [InlineData(nameof(EsriProjectedPrj.AustralianAlbers), 3577)]
+    public async Task DetectFromPrjAsync_EsriProjectedWithoutAuthority_MatchesEpsgByParameters(string fixture, int expected)
+    {
+        var prj = (string)typeof(EsriProjectedPrj).GetField(fixture)!.GetValue(null)!;
+
+        var result = await _service!.DetectFromPrjAsync(prj);
+
+        result.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task DetectFromPrjAsync_EsriProjectedWithNoEpsgEquivalent_ReturnsNull()
+    {
+        // International feet on a CRS EPSG defines only in US survey feet: no candidate, so the import asks for the SRID.
+        var result = await _service!.DetectFromPrjAsync(EsriProjectedPrj.NewYorkLongIslandInternationalFeet);
+
+        result.Should().BeNull();
+    }
+
     [Fact]
     public async Task DetectFromShapefilePrjAsync_WithNonExistentFile_ReturnsNull()
     {
