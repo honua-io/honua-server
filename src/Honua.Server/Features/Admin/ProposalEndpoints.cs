@@ -259,7 +259,7 @@ internal static class ProposalEndpoints
         {
             await OperationApprovalDenialRecorder.RecordAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
-                new(proposal, actor, OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Approve),
+                new() { Proposal = proposal, Actor = actor, Reason = OperationApprovalDenialReason.HumanSessionRequired, Decision = OperationApprovalDecision.Approve },
                 context.RequestAborted).ConfigureAwait(false);
             return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
         }
@@ -283,7 +283,7 @@ internal static class ProposalEndpoints
         {
             await OperationApprovalDenialRecorder.RecordAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
-                new(proposal, actor, OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Reject),
+                new() { Proposal = proposal, Actor = actor, Reason = OperationApprovalDenialReason.HumanSessionRequired, Decision = OperationApprovalDecision.Reject },
                 context.RequestAborted).ConfigureAwait(false);
             return Results.Problem(detail: HumanRejectionRequiredMessage, statusCode: StatusCodes.Status403Forbidden);
         }

@@ -267,7 +267,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             await OperationApprovalDenialRecorder.RecordAsync(
                 _scopeFactory,
-                new(proposal, approvedBy, OperationApprovalDenialReason.CurrentAuthority, OperationApprovalDecision.Approve),
+                new() { Proposal = proposal, Actor = approvedBy, Reason = OperationApprovalDenialReason.CurrentAuthority, Decision = OperationApprovalDecision.Approve },
                 cancellationToken)
                 .ConfigureAwait(false);
             throw;
@@ -291,7 +291,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             await OperationApprovalDenialRecorder.RecordAsync(
                 _scopeFactory,
-                new(proposal, approvedBy, OperationApprovalDenialReason.EvidenceInvalid, OperationApprovalDecision.Approve),
+                new() { Proposal = proposal, Actor = approvedBy, Reason = OperationApprovalDenialReason.EvidenceInvalid, Decision = OperationApprovalDecision.Approve },
                 cancellationToken)
                 .ConfigureAwait(false);
             throw;
@@ -1030,7 +1030,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         catch (InvalidOperationException exception) when (exception is not ServiceUnavailableException)
         {
             await OperationApprovalDenialRecorder.RecordAsync(_scopeFactory,
-                new(proposal, approval.ApprovedBy, OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Approve),
+                new() { Proposal = proposal, Actor = approval.ApprovedBy, Reason = OperationApprovalDenialReason.HumanSessionRequired, Decision = OperationApprovalDecision.Approve },
                 cancellationToken).ConfigureAwait(false);
             throw;
         }

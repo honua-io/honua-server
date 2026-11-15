@@ -35,8 +35,13 @@ public sealed class OperationApprovalDenialRecorderTests
         }).BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var proposal = Proposal() with { Plan = new() { ExecutionPayload = Canary } };
         var factory = services.GetRequiredService<IServiceScopeFactory>();
-        var denial = new OperationApprovalDenial(
-            proposal, "decider", (OperationApprovalDenialReason)reason, (OperationApprovalDecision)decision);
+        var denial = new OperationApprovalDenial
+        {
+            Proposal = proposal,
+            Actor = "decider",
+            Reason = (OperationApprovalDenialReason)reason,
+            Decision = (OperationApprovalDecision)decision,
+        };
         await OperationApprovalDenialRecorder.RecordAsync(factory, denial, default);
         await OperationApprovalDenialRecorder.RecordAsync(factory, denial, default);
         sinks.Should().HaveCount(2);
@@ -102,8 +107,13 @@ public sealed class OperationApprovalDenialRecorderTests
         sink.Event!.CorrelationId.Should().Be("proposal");
     }
 
-    private static OperationApprovalDenial Denial(OperationProposal proposal) => new(
-        proposal, "decider", OperationApprovalDenialReason.HumanSessionRequired, OperationApprovalDecision.Approve);
+    private static OperationApprovalDenial Denial(OperationProposal proposal) => new()
+    {
+        Proposal = proposal,
+        Actor = "decider",
+        Reason = OperationApprovalDenialReason.HumanSessionRequired,
+        Decision = OperationApprovalDecision.Approve,
+    };
 
     private static OperationProposal Proposal() => new()
     {

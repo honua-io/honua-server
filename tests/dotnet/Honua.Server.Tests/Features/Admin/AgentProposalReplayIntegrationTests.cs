@@ -161,14 +161,15 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
     public async Task LayerPublish_AgentProposalApprovedByPerson_ReplaysThroughLoopback()
     {
         var suffix = Guid.NewGuid().ToString("N")[..12];
+        // The source table and the published service share one name.
         var table = $"agent_replay_{suffix}";
-        var service = $"agent_replay_{suffix}";
+        var service = table;
         var connectionId = await CreateConnectionAsync($"agent-replay-{suffix}");
         await CreatePointTableAsync(table);
         try
         {
             using var agent = await CreateCallerAsync("operator-bearer-mcp");
-            var proposalId = await SubmitLayerPublishAsync(agent, connectionId, table, service);
+            var proposalId = await SubmitLayerPublishAsync(agent, connectionId, table);
 
             (await PublishedLayerNamesAsync(connectionId, service)).Should().BeEmpty("an agent's publish waits for a person");
             await ApproveAndAssertSucceededAsync(proposalId);
@@ -191,14 +192,14 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
         INSERT INTO public.{table} (name, geom) VALUES ('Replayed', ST_SetSRID(ST_Point(1, 1), 4326));
         """);
 
-    private Task<string> SubmitLayerPublishAsync(HttpClient agent, Guid connectionId, string table, string service) =>
+    private Task<string> SubmitLayerPublishAsync(HttpClient agent, Guid connectionId, string table) =>
         SubmitMcpAsync(agent, "honua_admin_layer_publish", new
         {
             connectionId = connectionId.ToString("D"),
             schema = "public",
             table,
             layerName = "Agent replay",
-            serviceName = service,
+            serviceName = table,
             geometryColumn = "geom",
             geometryType = "Point",
             srid = 4326,

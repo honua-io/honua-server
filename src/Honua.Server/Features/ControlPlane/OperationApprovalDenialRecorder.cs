@@ -20,11 +20,13 @@ internal enum OperationApprovalDecision
     Reject
 }
 
-internal readonly record struct OperationApprovalDenial(
-    OperationProposal Proposal,
-    string Actor,
-    OperationApprovalDenialReason Reason,
-    OperationApprovalDecision Decision);
+internal readonly record struct OperationApprovalDenial
+{
+    public required OperationProposal Proposal { get; init; }
+    public required string Actor { get; init; }
+    public required OperationApprovalDenialReason Reason { get; init; }
+    public required OperationApprovalDecision Decision { get; init; }
+}
 
 internal static class OperationApprovalDenialRecorder
 {
@@ -36,7 +38,7 @@ internal static class OperationApprovalDenialRecorder
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var (proposal, actor, reason, decision) = denial;
+        var (proposal, actor, reason, decision) = (denial.Proposal, denial.Actor, denial.Reason, denial.Decision);
         var reasonCode = reason switch
         {
             OperationApprovalDenialReason.HumanSessionRequired => "human_session_required",
