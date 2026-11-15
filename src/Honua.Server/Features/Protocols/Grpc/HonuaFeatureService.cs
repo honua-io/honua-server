@@ -182,7 +182,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                     queryContext.ReturnGeometry,
                     queryContext.GeometryLimits,
                     query.Distinct ? null : pkField,
-                    queryContext.AttributeHiddenFields),
+                    queryContext.AttributeHiddenFields,
+                    layer.AttributeFields),
                 feature,
                 queryContext.GlobalIdField));
         }
@@ -237,7 +238,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                     queryContext.ReturnGeometry,
                     queryContext.GeometryLimits,
                     query.Distinct ? null : pkField,
-                    queryContext.AttributeHiddenFields),
+                    queryContext.AttributeHiddenFields,
+                    layer.AttributeFields),
                 enumerator.Current,
                 queryContext.GlobalIdField));
 

@@ -19,6 +19,13 @@ public sealed class GrpcTypedValueTests
 {
     private const string GlobalId = "6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f";
 
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Decimal, Proto.FieldType.Decimal)]
+    [InlineData(MetadataV2FieldType.TimestampOffset, Proto.FieldType.TimestampOffset)]
+    public void ToProtoField_ExactCanonicalType_AdvertisesMatchingWireType(MetadataV2FieldType canonical, Proto.FieldType wire)
+        => GrpcConversionHelpers.ToProtoField(new MetadataV2Field { Name = "value", TypeValue = canonical })
+            .FieldType.Should().Be(wire);
+
     [UnitTest]
     public void ToFeatureEditBatch_PreciseCases_ParseLosslessly()
     {
@@ -35,9 +42,8 @@ public sealed class GrpcTypedValueTests
         // Dates and times are stored as canonical text, as the other edit protocols store them.
         attributes["day"].Should().Be("2026-11-14");
         attributes["opens"].Should().Be("08:30:00.1234567");
-        attributes["signed"].Should().Be(new DateTimeOffset(2026, 11, 14, 8, 30, 0, 500, TimeSpan.FromHours(-8)));
-        ((decimal)attributes["fee"]!).ToString(System.Globalization.CultureInfo.InvariantCulture)
-            .Should().Be("12345678901234567890.10");
+        attributes["signed"].Should().Be(new GrpcExactValue(MetadataV2FieldType.TimestampOffset, "2026-11-14T08:30:00.5-08:00"));
+        attributes["fee"].Should().Be(new GrpcExactValue(MetadataV2FieldType.Decimal, "12345678901234567890.10"));
     }
 
     [UnitTheory]
@@ -215,7 +221,7 @@ public sealed class GrpcTypedValueTests
         => new() { SchemaFields = [new MetadataV2Field { Name = "n", TypeValue = type }] };
 
     private static FeatureEditBatch DecimalBatch(string value)
-        => Batch(ImmutableDictionary<string, object?>.Empty.Add("n", GrpcTypedValues.ParseDecimal(value)));
+        => Batch(ImmutableDictionary<string, object?>.Empty.Add("n", GrpcTypedValues.ExactDecimal(value)));
 
     [UnitTest]
     public void EnsureStorable_OffsetTimestamp_FailsPrecondition()
@@ -224,6 +230,65 @@ public sealed class GrpcTypedValueTests
 
         FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(new MetadataV2Resource(), batch))
             .Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+    }
+
+    [UnitTheory]
+    [InlineData("-0.00", "2026-11-14T08:30:00.5000-08:00")]
+    [InlineData("12345678901234567890.1000", "2026-11-14T08:30:00.0000001+05:45")]
+    public void EnsureStorable_ExactSchema_PreservesWireTextAcrossCreatesUpdatesAndOperations(string amount, string offsetText)
+    {
+        var resource = new MetadataV2Resource { SchemaFields =
+        [
+            new() { Name = "AMOUNT", TypeValue = MetadataV2FieldType.Decimal },
+            new() { Name = "signed", TypeValue = MetadataV2FieldType.TimestampOffset }
+        ] };
+        var feature = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
+            .Add("amount", GrpcTypedValues.ExactDecimal(amount))
+            .Add("signed", GrpcTypedValues.ExactTimestampOffset(offsetText)));
+        var batch = FeatureEditBatch.Create(creates: [feature], updates: [feature],
+            operations: [FeatureEditOperation.Create(feature)],
+            rollbackOnFailure: true);
+
+        var normalized = GrpcTypedValues.EnsureStorable(resource, batch);
+
+        normalized.RollbackOnFailure.Should().BeTrue();
+        foreach (var stored in new[] { normalized.Creates[0], normalized.Updates[0], normalized.Operations[0].Feature!.Value })
+        {
+            stored.Attributes["amount"].Should().Be(amount);
+            stored.Attributes["signed"].Should().Be(offsetText);
+            var wire = GrpcConversionHelpers.ToProtoFeature(stored, fields: resource.SchemaFields);
+            wire.Attributes["amount"].DecimalValue.Should().Be(amount);
+            wire.Attributes["signed"].TimestampOffsetValue.Should().Be(offsetText);
+        }
+    }
+
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Decimal, "1.50")]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "2026-11-14T00:00:00Z")]
+    public void EnsureStorable_ExactFieldRequiresTypedWireCase(MetadataV2FieldType type, string text)
+        => FluentActions.Invoking(() => GrpcTypedValues.EnsureStorable(NumericResource(type),
+                Batch(ImmutableDictionary<string, object?>.Empty.Add("n", text))))
+            .Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Decimal, "1e5")]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "2026-11-14")]
+    public void ToProtoFeature_InvalidStoredExactText_FailsExplicitly(MetadataV2FieldType type, string text)
+    {
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("n", text));
+        FluentActions.Invoking(() => GrpcConversionHelpers.ToProtoFeature(feature, fields: NumericResource(type).SchemaFields))
+            .Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+    }
+
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Decimal)]
+    [InlineData(MetadataV2FieldType.TimestampOffset)]
+    public void EnsureStorable_ExactFieldAllowsNull(MetadataV2FieldType type)
+    {
+        var result = GrpcTypedValues.EnsureStorable(NumericResource(type),
+            Batch(ImmutableDictionary<string, object?>.Empty.Add("n", null)));
+        GrpcConversionHelpers.ToProtoFeature(result.Creates[0], fields: NumericResource(type).SchemaFields)
+            .Attributes["n"].ValueCase.Should().Be(Proto.AttributeValue.ValueOneofCase.NullValue);
     }
 
     private static FeatureEditBatch Batch(ImmutableDictionary<string, object?> attributes)

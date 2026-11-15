@@ -547,6 +547,29 @@ internal static class MetadataV2AttributeValidation
                     ? null
                     : $"Field '{field.Name}' must be a number.";
 
+            case MetadataV2FieldType.Decimal:
+            case MetadataV2FieldType.TimestampOffset:
+                if (value is not string exactText)
+                {
+                    return $"Field '{field.Name}' must be an exact value encoded as text.";
+                }
+                try
+                {
+                    if (field.Type == MetadataV2FieldType.Decimal)
+                    {
+                        _ = ExactAttributeValues.ParseDecimal(exactText);
+                    }
+                    else
+                    {
+                        _ = ExactAttributeValues.ParseTimestampOffset(exactText);
+                    }
+                    return null;
+                }
+                catch (Exception exception) when (exception is ArgumentException or ExactValueRangeException)
+                {
+                    return $"Field '{field.Name}' contains an invalid or unsupported exact value.";
+                }
+
             case MetadataV2FieldType.Boolean:
                 if (value is bool)
                 {
