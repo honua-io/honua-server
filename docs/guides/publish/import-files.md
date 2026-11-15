@@ -46,7 +46,7 @@ Run `POST /api/v1/admin/import/upload` with these form values:
 | `targetSrid` | `4326` |
 | `overwriteExisting` | `true` |
 
-Optional form fields: `sourceSrid` (when CRS auto-detection fails), `targetSchema`, `forceBackground`. `targetSchema` must be a configured operational schema: the default (`honua_data`, set by `Database__DefaultOperationalSchema`), `public`, or a schema listed in `Database__OperationalSchemas__0`, `Database__OperationalSchemas__1`, and so on. Any other schema, and always the server metadata schema (`honua`) and PostgreSQL system schemas, returns `400 Bad Request`. Files above the background-job threshold (see `GET /api/v1/admin/import/limits`) return `202 Accepted` with a `jobId` instead of a synchronous result.
+Optional form fields: `sourceSrid` (when CRS auto-detection fails), `sourceLayer` (the feature layer to import from a multi-layer GeoPackage), `targetSchema`, `forceBackground`. `targetSchema` must be a configured operational schema: the default (`honua_data`, set by `Database__DefaultOperationalSchema`), `public`, or a schema listed in `Database__OperationalSchemas__0`, `Database__OperationalSchemas__1`, and so on. Any other schema, and always the server metadata schema (`honua`) and PostgreSQL system schemas, returns `400 Bad Request`. Files above the background-job threshold (see `GET /api/v1/admin/import/limits`) return `202 Accepted` with a `jobId` instead of a synchronous result.
 
 ### 4. Poll the job (background imports only)
 
@@ -147,8 +147,8 @@ and the published layer's primary identifier can be different fields.
 | Format | Extension | Notes |
 | --- | --- | --- |
 | GeoJSON | `.geojson`, `.json` | Assumed WGS 84 per the GeoJSON spec. |
-| Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf`/`.shx`/`.prj`; a raw `.shp` upload is rejected. CRS read from `.prj`. |
-| GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. |
+| Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf`/`.shx`/`.prj`; a raw `.shp` upload is rejected. CRS read from `.prj`, including ESRI-style projected definitions with no EPSG code (State Plane, national grids, Transverse Mercator, Lambert and Albers projections), which are matched to the EPSG CRS with the same projection parameters, unit and datum. |
+| GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. A GeoPackage with several feature layers needs `sourceLayer` set to one layer's table name; without it the import fails with a message listing the layers. |
 | GPX | `.gpx` | WGS 84 by definition. |
 | KML / KMZ | `.kml`, `.kmz` | WGS 84 by definition. |
 | WKT | `.wkt` | No embedded CRS; provide `sourceSrid` if not WGS 84. |
@@ -187,7 +187,8 @@ When the server cannot detect a source CRS and no `sourceSrid` was supplied, the
 
 - **`Shapefile uploads must be a .zip containing .shp and .dbf files.`** — zip the full shapefile sidecar set instead of uploading `.shp` alone.
 - **`Unsupported file format`** — the extension is not in your build's `GET /formats` list; convert to a supported format.
-- **Import fails with `import.source_srid_required`** — the file carries no CRS information; re-run with `sourceSrid` set to the EPSG code of the source data.
+- **Import fails with `import.source_srid_required`** — the file carries no CRS information, or its projected `.prj` matches no EPSG CRS (or several); re-run with `sourceSrid` set to the EPSG code of the source data.
+- **A GeoJSON feature has `"geometry": null`** — the feature is imported without geometry and the result carries an `import.geometry_missing` warning with its feature index. A feature with no `geometry` member at all is still rejected.
 - **`Background import service not available` (503)** — the file exceeds the synchronous size limit (or `forceBackground` was set) and this host has no runner for background imports: a Lambda host without Redis and a batch workload, or a host without an import job service. Check `GET /api/v1/admin/import/limits` and the `import.background` capability in `GET /api/v1/capabilities/manifest`; its `reasonCode` is `durable-runner-required` or `shared-file-storage-required`.
 - **FileGDB import succeeds but data looks incomplete** — check the `warnings` array; advanced geodatabase constructs are not preserved.
 
