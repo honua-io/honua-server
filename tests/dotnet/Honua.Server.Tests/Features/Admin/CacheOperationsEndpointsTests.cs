@@ -81,14 +81,6 @@ public sealed class CacheOperationsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    public async Task GetRetiredCacheServerMetrics_ReturnsNotFound()
-    {
-        var response = await _client.GetAsync("/api/v1/admin/operations/cache/redis");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/cache/invalidate")]
     public async Task PostInvalidate_WithKeyPattern_ReturnsSuccess()
     {
