@@ -46,19 +46,21 @@ public class OidcAuthenticationTests
     private const string TestConnectionEncryptionMasterKey = "AuthTestsConnectionMasterKey-123456";
     private const string TestAdminPassword = "TestAdminPassword123!";
     private readonly ITestOutputHelper _output;
+    private readonly string _postgresConnectionString;
     private const string TestSigningKey = "ThisIsATestSigningKeyThatIsLongEnoughForHS256Algorithm!";
     private const string TestIssuer = "https://test-issuer.example.com";
     private const string TestAudience = "test-client-id";
 
-    public OidcAuthenticationTests(ITestOutputHelper output)
+    public OidcAuthenticationTests(DatabaseFixtureAdapter fixture, ITestOutputHelper output)
     {
         _output = output;
+        _postgresConnectionString = fixture.ConnectionString;
     }
 
     /// <summary>
     /// Helper method to configure WebApplicationFactory with OIDC settings.
     /// </summary>
-    private static WebApplicationFactory<Program> CreateOidcTestFactory(
+    private WebApplicationFactory<Program> CreateOidcTestFactory(
         Action<IWebHostBuilder>? configure = null,
         Dictionary<string, string?>? oidcSettings = null,
         string environmentName = "Test")
@@ -85,8 +87,8 @@ public class OidcAuthenticationTests
                 {
                     var settings = new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:DefaultConnection"] = TestPostgresConnectionString,
-                        ["ConnectionStrings:honua"] = TestPostgresConnectionString,
+                        ["ConnectionStrings:DefaultConnection"] = _postgresConnectionString,
+                        ["ConnectionStrings:honua"] = _postgresConnectionString,
                         ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey,
                         ["HONUA_DEV_AUTH"] = "false"
                     };
@@ -139,7 +141,7 @@ public class OidcAuthenticationTests
                     services.RemoveAll<Npgsql.NpgsqlDataSource>();
                     services.RemoveAll<IDatabaseConnectionProvider>();
                     services.RemoveAll<IAdoNetDatabaseConnectionProvider>();
-                    services.AddSingleton(_ => NpgsqlDataSource.Create(TestPostgresConnectionString));
+                    services.AddSingleton(_ => NpgsqlDataSource.Create(_postgresConnectionString));
 
                     // Add mock implementations
                     services.AddScoped<TestFeatureStore>();
@@ -152,8 +154,6 @@ public class OidcAuthenticationTests
                 });
             });
     }
-
-    private static string TestPostgresConnectionString => TestConnectionStrings.DefaultPostgresConnectionString;
 
     /// <summary>
     /// Service provider carrying an Enterprise-entitled license so claims transformation tests
