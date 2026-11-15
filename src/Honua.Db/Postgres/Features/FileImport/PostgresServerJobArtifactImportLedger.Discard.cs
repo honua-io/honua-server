@@ -70,15 +70,12 @@ internal sealed partial class PostgresServerJobArtifactImportLedger
 
     private async Task SpendReceiptAsync(NpgsqlTransaction transaction, string scopeKey, CancellationToken cancellationToken)
     {
-        await using (var spend = new NpgsqlCommand(
+        await using var spend = new NpgsqlCommand(
             $"UPDATE {_table} SET fingerprint = @discarded, updated_at = now() WHERE scope_key = @scope_key",
-            transaction.Connection!, transaction))
-        {
-            spend.Parameters.AddWithValue("discarded", DiscardedFingerprint(scopeKey));
-            spend.Parameters.AddWithValue("scope_key", scopeKey);
-            await spend.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-
+            transaction.Connection!, transaction);
+        spend.Parameters.AddWithValue("discarded", DiscardedFingerprint(scopeKey));
+        spend.Parameters.AddWithValue("scope_key", scopeKey);
+        await spend.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<StagedImportDiscardOutcome?> TryDropOwnedAsync(
