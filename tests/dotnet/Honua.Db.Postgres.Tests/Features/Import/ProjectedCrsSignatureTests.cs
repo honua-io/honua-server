@@ -77,6 +77,20 @@ public sealed class ProjectedCrsSignatureTests
             "PARAMETER[\"Latitude_Of_Origin\"", "PARAMETER[\"Azimuth\",1.0],PARAMETER[\"Latitude_Of_Origin\"", StringComparison.Ordinal))
             .Should().BeNull();
 
+    [Theory]
+    [InlineData("UNIT[\"Grad\",0.015707963267948967]")]
+    [InlineData("UNIT[\"Radian\",1]")]
+    [InlineData("")]
+    public void UnsupportedGeographicAngularUnit_HasNoSignature(string angularUnit)
+    {
+        var wkt = EsriProjectedPrj.BritishNationalGrid.Replace(
+            "UNIT[\"Degree\",0.0174532925199433]", angularUnit, StringComparison.Ordinal);
+
+        wkt.Should().NotBe(EsriProjectedPrj.BritishNationalGrid);
+        ProjectedCrsSignature.TryCreate(wkt).Should().BeNull(
+            "projection angles must not be interpreted as degrees without a degree unit");
+    }
+
     private static string Fixture(string name) =>
         (string)typeof(EsriProjectedPrj).GetField(name)!.GetValue(null)!;
 }

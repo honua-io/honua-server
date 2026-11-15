@@ -564,6 +564,18 @@ public class CrsDetectionServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DetectFromPrjAsync_UnknownNameWithGradAngles_ReturnsNull()
+    {
+        var prj = EsriProjectedPrj.BritishNationalGrid
+            .Replace("PROJCS[\"British_National_Grid\"", "PROJCS[\"Unrecognised_Grad_Grid\"", StringComparison.Ordinal)
+            .Replace("UNIT[\"Degree\",0.0174532925199433]", "UNIT[\"Grad\",0.015707963267948967]", StringComparison.Ordinal);
+
+        var result = await _service!.DetectFromPrjAsync(prj);
+
+        result.Should().BeNull("grad-based angles must not match a degree-based EPSG definition");
+    }
+
+    [Fact]
     public async Task DetectFromShapefilePrjAsync_WithNonExistentFile_ReturnsNull()
     {
         // Arrange

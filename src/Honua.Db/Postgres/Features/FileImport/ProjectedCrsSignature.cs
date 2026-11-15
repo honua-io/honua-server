@@ -55,8 +55,14 @@ internal sealed record ProjectedCrsSignature(ProjectionDefinition Projection, do
             return null;
         var projectionName = root.Child("PROJECTION")?.Text(0);
         var unit = root.Child("UNIT")?.Number(1);
-        var datum = CrsDatum.TryCreate(root.Child("GEOGCS"));
-        if (projectionName is null || unit is not > 0 || datum is null
+        var geographic = root.Child("GEOGCS");
+        var angularUnit = geographic?.Child("UNIT")?.Number(1);
+        var datum = CrsDatum.TryCreate(geographic);
+        // Projection angles and the prime meridian are compared in degrees. Refuse other
+        // geographic units rather than assigning a degree-based EPSG code to different coordinates.
+        var degreeUnit = Math.PI / 180;
+        if (projectionName is null || unit is not > 0 || datum is null || angularUnit is not > 0
+            || Math.Abs(angularUnit.Value - degreeUnit) > UnitRelativeTolerance * degreeUnit
             || !_projectionFamilies.TryGetValue(projectionName, out var family))
             return null;
         var parameters = ReadParameters(root);
