@@ -48,19 +48,17 @@ public sealed class FeatureDataAccessTimeoutTests
 
         applyTimeout.Should().NotBeNull();
 
-        var stateMachineAttribute = method.GetCustomAttribute<AsyncStateMachineAttribute>();
-        stateMachineAttribute.Should().NotBeNull();
+        var stateMachineType = method.GetCustomAttribute<AsyncStateMachineAttribute>()?.StateMachineType;
+        var implementation = stateMachineType is null
+            ? method
+            : stateMachineType.GetMethod("MoveNext", BindingFlags.NonPublic | BindingFlags.Instance);
 
-        var moveNext = stateMachineAttribute!.StateMachineType.GetMethod(
-            "MoveNext",
-            BindingFlags.NonPublic | BindingFlags.Instance);
+        implementation.Should().NotBeNull();
 
-        moveNext.Should().NotBeNull();
+        var il = implementation!.GetMethodBody()?.GetILAsByteArray();
+        var ilBytes = il ?? throw new InvalidOperationException("Expected IL bytes for the async method implementation.");
 
-        var il = moveNext!.GetMethodBody()?.GetILAsByteArray();
-        var ilBytes = il ?? throw new InvalidOperationException("Expected IL bytes for the async state machine's MoveNext method.");
-
-        ContainsMethodCall(ilBytes, moveNext.Module, applyTimeout!).Should().BeTrue();
+        ContainsMethodCall(ilBytes, implementation.Module, applyTimeout!).Should().BeTrue();
     }
 
     private static bool ContainsMethodCall(byte[] il, Module module, MethodInfo target)

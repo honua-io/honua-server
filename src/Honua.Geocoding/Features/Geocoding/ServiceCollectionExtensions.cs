@@ -54,7 +54,7 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection($"{GeocodingConfiguration.SectionName}:Providers:Local"));
         // Factory registration closes over the configuration argument so hosts (and DI
         // validation) do not need IConfiguration itself registered in the container.
-        services.TryAddSingleton<IGeocoderReferenceDataImportService>(sp => new GeocoderReferenceDataImportService(
+        services.TryAddSingleton<GeocoderReferenceDataImportService>(sp => new GeocoderReferenceDataImportService(
             configuration,
             sp.GetRequiredService<IOptionsMonitor<LocalGeocoderProviderConfiguration>>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<GeocoderReferenceDataImportService>>()));
