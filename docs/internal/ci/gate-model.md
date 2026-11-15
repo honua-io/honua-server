@@ -780,7 +780,8 @@ are rejected so a passing sibling cannot conceal a missing failure. Duplicate di
 in unrelated passing methods remain untouched in the merged results. Infrastructure and
 execution failures remain blocking. Each test command runs in a dedicated process group.
 Cancellation signals that group and its snapshotted descendants, including those that leave
-the group, and escalates to SIGKILL after at most half a second. Group escalation also reaches
+the group. Process discovery has a 0.2-second deadline, with group cleanup preserved
+on discovery failure, followed by at most half a second before SIGKILL. Group escalation also reaches
 children forked after the snapshot. Required check names and minimum-execution checks remain
 unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
 25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean
@@ -788,12 +789,13 @@ gate duplicate coverage consume the same list. A separate `Flaky Test Detection`
 quarantined methods without exclusions or retries and is explicitly non-gating.
 
 The publisher has issue-write permission only on trusted default-branch code, reached by
-same-repository successful/failed `workflow_run` completions, a twice-hourly recovery
-schedule, or default-branch manual dispatch. Checkout is pinned to the default branch;
+a twice-hourly schedule or default-branch manual dispatch. Completion events do not
+start full-history scans: at the measured 159 listing requests per sweep, two scheduled
+sweeps consume 318 history requests per hour before bounded artifact inspections. Checkout is pinned to the default branch;
 checkpoints from branch dispatches are ignored. It validates source workflow/repository provenance, raw case
 evidence and hashes, and never executes downloaded data or checks out the triggering branch.
-Job-level concurrency filters cancelled and fork completions before admission, serializes
-issue writes, and replaces pending sweeps instead of overflowing a 100-run FIFO queue.
+Job-level concurrency serializes issue writes and replaces pending sweeps. Source
+provenance and completion filters remain enforced during discovery.
 Each sweep lists the bounded histories of CI and PR Gate, selects completed trusted runs
 updated since the checkpoint, and reads artifacts per source run. It never lists the
 repository-wide artifact collection. Full creation-ordered histories preserve discovery
@@ -803,7 +805,7 @@ run versions let equal-timestamp backlogs advance without repeatedly spending th
 Source completion and attempt identity are rechecked after artifact discovery; a racing
 rerun is deferred without consuming its artifacts. Its update watermark retains a five-minute overlap and
 never passes the oldest deferred run, including runs with equal timestamps. Remaining
-evidence stays discoverable for the next event or scheduled sweep.
+evidence stays discoverable for the next scheduled or manual sweep.
 
 Only a fully successful publication uploads its checkpoint; failed publication or checkpoint
 upload replays from the previous successful checkpoint. Successful skipped jobs are ignored

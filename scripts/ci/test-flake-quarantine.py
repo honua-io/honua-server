@@ -197,6 +197,19 @@ class RetryTests(unittest.TestCase):
 
 
 class ProcessSnapshotTests(unittest.TestCase):
+    def test_stalled_snapshot_preserves_outer_deadline_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory) / 'ps'
+            fake.write_text('#!/usr/bin/env python3\nimport time\ntime.sleep(30)\n')
+            fake.chmod(0o755)
+            with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}'}):
+                RunnerTests().assert_timeout_cleanup(foreground=False)
+
+    def test_missing_snapshot_preserves_group_identity(self):
+        import shard_processes
+        with patch.object(shard_processes.subprocess, 'check_output', side_effect=FileNotFoundError):
+            self.assertEqual({1234}, shard_processes.descendant_pids(1234))
+
     def test_snapshot_survives_signal_to_supervisor_group(self):
         with tempfile.TemporaryDirectory() as directory:
             fake = Path(directory) / 'ps'
