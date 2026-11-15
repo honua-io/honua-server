@@ -27,16 +27,26 @@ BEGIN
             WHERE binding->>'storageType' = 'relational-table'
                 AND binding->>'storageLayerId' IS NOT NULL
                 AND binding->>'connectionId' IS NULL
+        ), explicit_names AS (
+            SELECT *,
+                CASE WHEN binding->'options' ? 'tableName'
+                    THEN COALESCE(binding->'options'->>'tableName', '')
+                    ELSE binding->'options'->>'table' END AS explicit_table,
+                CASE WHEN binding->'options' ? 'schemaName'
+                    THEN COALESCE(binding->'options'->>'schemaName', '')
+                    ELSE binding->'options'->>'schema' END AS explicit_schema
+            FROM normalized_bindings
         ), binding_names AS (
             SELECT *,
-                COALESCE(NULLIF(options->>'tablename', ''), NULLIF(options->>'table', ''),
-                    trim(both '"' FROM btrim(locator_parts[array_length(locator_parts, 1)]))) AS table_name,
-                COALESCE(NULLIF(options->>'schemaname', ''), NULLIF(options->>'schema', ''),
-                    CASE WHEN COALESCE(NULLIF(options->>'tablename', ''), NULLIF(options->>'table', '')) IS NULL
+                CASE WHEN btrim(COALESCE(explicit_table, '')) = ''
+                    THEN trim(both '"' FROM btrim(locator_parts[array_length(locator_parts, 1)]))
+                    ELSE explicit_table END AS table_name,
+                COALESCE(explicit_schema,
+                    CASE WHEN btrim(COALESCE(explicit_table, '')) = ''
                         AND array_length(locator_parts, 1) > 1
                         THEN trim(both '"' FROM btrim(locator_parts[array_length(locator_parts, 1) - 1])) END) AS schema_name,
                 lower(btrim(COALESCE(options->>'sourcebacked', 'false'))) = 'true' AS source_backed
-            FROM normalized_bindings
+            FROM explicit_names
         ), resolved_bindings AS (
             SELECT *, to_regclass(CASE WHEN schema_name IS NULL THEN format('%I', table_name)
                 ELSE format('%I.%I', schema_name, table_name) END) AS feature_table

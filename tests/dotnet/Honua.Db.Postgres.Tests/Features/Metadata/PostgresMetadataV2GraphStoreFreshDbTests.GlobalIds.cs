@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Metadata;
@@ -265,9 +266,10 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
     }
 
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SaveAsync_GlobalIdLayer_WithSeparateFeatureSchema_EnforcesIdentity(bool explicitOptions)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task SaveAsync_GlobalIdLayer_WithSeparateFeatureSchema_EnforcesIdentity(int optionCase)
     {
         var metadataSchema = await fixture.CreateIsolatedSchemaAsync("global_id_metadata");
         var featureSchema = await fixture.CreateIsolatedSchemaAsync("global_id_features");
@@ -283,21 +285,25 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             var store = new PostgresMetadataV2GraphStore(new TestConnectionProvider(fixture.DataSource, featureSchema),
                 "Test", FixtureBypassDatabaseSchemaGuard.Instance, metadataSchema);
             var graph = GlobalIdGraph(featureSchema);
-            if (explicitOptions)
+            if (optionCase != 0)
             {
                 graph = graph with
                 {
                     StorageBindings = [graph.StorageBindings[0] with
                     {
-                        Locator = "unrelated.features",
+                        Locator = optionCase == 1 ? "unrelated.features" : $"{featureSchema}.features",
                         Options = new Dictionary<string, JsonElement>
                         {
-                            ["SchemaName"] = JsonSerializer.SerializeToElement(featureSchema),
-                            ["TableName"] = JsonSerializer.SerializeToElement("features")
+                            [optionCase == 1 ? "schemaName" : "SchemaName"] =
+                                JsonSerializer.SerializeToElement(optionCase == 1 ? featureSchema : "unrelated"),
+                            [optionCase == 1 ? "tableName" : "TableName"] = JsonSerializer.SerializeToElement("features")
                         }
                     }]
                 };
             }
+            var mapping = FeatureStorageMapping.FromMetadata(graph.Resources[0], graph.StorageBindings[0]);
+            mapping.SchemaName.Should().Be(featureSchema);
+            mapping.TableName.Should().Be("features");
             await store.SaveAsync(graph, expectedEtag: null);
 
             var duplicate = async () => await fixture.ExecuteAsync($$"""
