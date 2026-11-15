@@ -21,6 +21,20 @@ public sealed class FeatureQueryBuilderOrderingTests
         return new FeatureQueryBuilder(stringBuilderPool, new GeometryProcessor());
     }
 
+    [Theory]
+    [InlineData(MetadataV2FieldType.Decimal, "::numeric")]
+    [InlineData(MetadataV2FieldType.TimestampOffset, "::timestamptz")]
+    public void BuildQuery_ExactAttributeOrdering_UsesDeclaredComparisonType(MetadataV2FieldType type, string cast)
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = [new OrderByClause("exact_value", ascending: true, type)]
+        };
+        var result = CreateBuilder().BuildSelectRawGeoJsonQuery(1, query);
+        result.Sql.Should().Contain(cast);
+        result.Sql.Should().NotContain("::double precision");
+    }
+
     [Fact]
     public void BuildQuery_OrderByWithoutNullOrdering_EmitsNoNullsQualifier()
     {

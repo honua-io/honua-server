@@ -265,7 +265,11 @@ internal sealed class AdminConnectImportOperationExecutor(
                 ? new ByteArrayContent(Convert.FromBase64String(pair.Value!))
                 : new StringContent(pair.Value!, Encoding.UTF8);
             if (pair.Key == "file")
+            {
+                // Upload validation requires a part MIME type; the importer detects the format from the file name.
+                part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
                 content.Add(part, pair.Key, request.Parameters.GetValueOrDefault("fileName") ?? "upload.bin");
+            }
             else if (pair.Key == "fileName") continue;
             else content.Add(part, pair.Key);
         }
