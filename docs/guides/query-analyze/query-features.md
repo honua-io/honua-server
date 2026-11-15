@@ -44,13 +44,13 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 
    CQL2 and FeatureServer also take real geometries, and OData supports `geo.distance` and `geo.intersects` in `$filter` (see [CQL2 and filtering](../../reference/cql2-and-filtering.md)).
 
-3. Page through large results with `--limit` (the response notes when more rows are available):
+3. Limit the first response with `--limit`:
 
    ```bash
    honua query my_service/0 --limit 100
    ```
 
-   OGC responses include `next` links — follow those instead of computing offsets yourself when possible.
+   The default table output ends with `(more available; raise --limit)` when the server has more rows; `--format json` shows the FeatureServer `exceededTransferLimit` flag, and GeoJSON output omits it. The CLI has no page-offset option. Increasing `--limit` requests a larger first page, subject to server limits. For complete results, use a protocol client to page with FeatureServer `resultOffset`, or follow OGC `next` links.
 
 4. Select only the properties you need with repeated `--fields`:
 
@@ -60,11 +60,13 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 
    In protocol clients, `sortby` takes comma-separated fields with an optional `-` prefix for descending; `orderByFields` takes `field ASC|DESC`.
 
-5. Count without fetching when you only need a number:
+5. Count an attribute-filtered result without fetching its features:
 
    ```bash
    honua query my_service/0 --where "population > 10000" --count
    ```
+
+   In CLI 0.4.0, `--count` applies `--where` but ignores `--bbox`. For spatial counts, use a protocol client with the same spatial filter and FeatureServer `returnCountOnly=true`, or inspect OGC `numberMatched`.
 
 ## Verify
 
@@ -72,11 +74,12 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 honua query my_service/0 --limit 1 --format geojson
 ```
 
-Expected (trimmed): a GeoJSON FeatureCollection with `numberMatched` and paging links.
+Expected (trimmed, when a feature matches): a GeoJSON FeatureCollection containing the returned features. The CLI omits `numberMatched` and paging links from this format.
 
 ```json
-{ "type": "FeatureCollection", "features": [ { "type": "Feature" } ],
-  "numberMatched": 1234, "links": [ { "rel": "next" } ] }
+{ "type": "FeatureCollection", "features": [
+  { "type": "Feature", "geometry": { "type": "Point", "coordinates": [-156.47, 20.89] }, "properties": { "name": "Example" } }
+] }
 ```
 
 ## Troubleshoot
