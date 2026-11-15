@@ -18,10 +18,8 @@ internal sealed class FeatureStreamMetrics
     private readonly Counter<long> _sessionsRejectedCounter;
     private readonly Counter<long> _heartbeatsSentCounter;
     private readonly Counter<long> _replayEventsDeliveredCounter;
-    private readonly Counter<long> _clusterBroadcastDroppedCounter;
 
     private long _activeSessions;
-    private long _clusterBroadcastBacklog;
 
     public FeatureStreamMetrics(IMeterFactory meterFactory)
     {
@@ -69,23 +67,11 @@ internal sealed class FeatureStreamMetrics
             "Durably-stored feature-change events replayed to a reconnecting client from its "
             + "resume cursor, tagged by transport.");
 
-        _clusterBroadcastDroppedCounter = _meter.CreateCounter<long>(
-            "honua.streaming.cluster_broadcast_dropped_total",
-            unit: null,
-            "Cross-node broadcast payloads dropped because the retry backlog overflowed while "
-            + "Redis publish was unavailable (recoverable through the durable store and cross-node poll).");
-
         _meter.CreateObservableGauge(
             "honua.streaming.active_sessions",
             () => Interlocked.Read(ref _activeSessions),
             unit: "sessions",
             description: "Currently connected feature-stream sessions.");
-
-        _meter.CreateObservableGauge(
-            "honua.streaming.cluster_broadcast_backlog",
-            () => Interlocked.Read(ref _clusterBroadcastBacklog),
-            unit: null,
-            description: "Cross-node broadcast payloads buffered awaiting a Redis publish retry.");
     }
 
     public Meter Meter => _meter;
@@ -121,12 +107,6 @@ internal sealed class FeatureStreamMetrics
         }
     }
 
-    public void RecordClusterBroadcastDropped()
-        => _clusterBroadcastDroppedCounter.Add(1);
-
-    public void RecordGaugeSnapshot(long activeSessions, long clusterBroadcastBacklog)
-    {
-        Interlocked.Exchange(ref _activeSessions, activeSessions);
-        Interlocked.Exchange(ref _clusterBroadcastBacklog, clusterBroadcastBacklog);
-    }
+    public void RecordGaugeSnapshot(long activeSessions)
+        => Interlocked.Exchange(ref _activeSessions, activeSessions);
 }

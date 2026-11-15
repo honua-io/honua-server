@@ -272,6 +272,7 @@ it.
   upgrading from an earlier pre-release build; sessions and tokens are not carried over.
   Workflow definitions, runs and schedule and trigger cursors held in Redis are not imported:
   republish each workflow package with a Schedule target after the upgrade, and expect
-  scheduled and event-triggered workflows to start from the current time."
+  scheduled and event-triggered workflows to start from the current time. Managed WFS stored
+  queries held in the previous volatile store are not imported: recreate them after the upgrade."
 
 Workflow definition and run `SetAsync` retain the unconditional replacement contract. Workflow history reads remain unbounded; occurrence fencing and bounded history are separate pipeline follow-up work. Active runs, including cancelled runs with unsettled children, remain discoverable for reconciliation past their retention deadline.

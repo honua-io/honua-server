@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Coalesced, failed and rerun completions must retain their publication evidence."""
+from contextlib import redirect_stdout
 import importlib.util
 import io
 import json
@@ -8,6 +9,7 @@ from pathlib import Path
 import stat
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -48,8 +50,13 @@ class SweepTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             checkpoint = Path(directory) / 'cursor.json'
             with patch.object(sweep, 'load_cursor', return_value=previous or cursor()), \
-                    patch.object(sweep, 'inventory', return_value=artifacts), \
-                    patch.object(sweep, 'api', side_effect=lambda path: (runs or {})[int(path.rsplit('/', 1)[1])]), \
+                    patch.object(sweep, 'source_runs', return_value=[run for run in (runs or {}).values()
+                        if sweep.trusted(run, sweep.SOURCES) and run['status'] == 'completed'
+                        and run['conclusion'] in {'success', 'failure'}
+                        and sweep.timestamp(run['updated_at']) >= sweep.timestamp((previous or cursor())['since'])]), \
+                    patch.object(sweep, 'inventory', side_effect=lambda path, key:
+                        [item for item in artifacts if item['workflow_run']['id'] == int(path.split('/')[2])]), \
+                    patch.object(sweep, 'api', side_effect=lambda path: (runs or {})[int(path.split('/')[2])]), \
                     patch.object(sweep, 'publish_run') as publish:
                 sweep.sweep(checkpoint)
             return json.loads(checkpoint.read_text()), publish
@@ -69,6 +76,7 @@ class SweepTests(unittest.TestCase):
             checkpoint = Path(directory) / 'cursor.json'
             with patch.object(sweep, 'load_cursor', return_value=cursor()), \
                     patch.object(sweep, 'inventory', return_value=evidence), \
+                    patch.object(sweep, 'source_runs', return_value=[source()]), \
                     patch.object(sweep, 'api', return_value=source()), \
                     patch.object(sweep, 'publish_run', side_effect=RuntimeError('API unavailable')), \
                     self.assertRaises(RuntimeError):
@@ -86,6 +94,7 @@ class SweepTests(unittest.TestCase):
         self.assertEqual([], state['artifact_ids'])
         publish.assert_not_called()
         rerun = source(created_at='2020-01-01T00:00:00Z')
+        rerun['updated_at'] = state['since']
         state, publish = self.execute(evidence, {10: rerun}, previous=state)
         self.assertEqual([1], state['artifact_ids'])
         self.assertEqual(1, publish.call_count)
@@ -98,13 +107,60 @@ class SweepTests(unittest.TestCase):
         runs[13]['updated_at'] = '2026-11-13T23:59:59Z'
         state, publish = self.execute([artifact(i, i) for i in runs], runs)
         publish.assert_not_called()
-        self.assertEqual([10, 11, 12, 13], state['artifact_ids'])
+        self.assertEqual([], state['artifact_ids'])
 
     def test_batch_cap_preserves_backlog_and_missing_artifacts_are_pruned(self):
         with patch.object(sweep, 'MAX_BATCH_RUNS', 1):
-            state, publish = self.execute([artifact(1), artifact(2, 11)], {10: source()}, cursor([999]))
+            state, publish = self.execute([artifact(1), artifact(2, 11)], {10: source(), 11: source(11)}, cursor([999]))
         self.assertEqual([1], state['artifact_ids'])
         self.assertEqual(1, publish.call_count)
+
+    def test_empty_runs_count_toward_budget_and_resume_equal_timestamp_backlog(self):
+        runs = {i: source(i) for i in range(1, 1201)}
+        state, publish = self.execute([], runs)
+        self.assertEqual(25, len(state['run_versions']))
+        publish.assert_not_called()
+        state, _ = self.execute([], runs, state)
+        self.assertEqual(50, len(state['run_versions']))
+        self.assertLessEqual(sweep.timestamp(state['since']), sweep.timestamp(source()['updated_at']))
+
+    def test_rerun_started_after_discovery_never_consumes_new_attempt(self):
+        listed = source()
+        pending = dict(listed, status='in_progress', run_attempt=3)
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / 'cursor.json'
+            with patch.object(sweep, 'load_cursor', return_value=cursor()), \
+                    patch.object(sweep, 'source_runs', return_value=[listed]), \
+                    patch.object(sweep, 'inventory', return_value=[artifact(3, attempt=3)]), \
+                    patch.object(sweep, 'api', return_value=pending), \
+                    patch.object(sweep, 'publish_run') as publish:
+                sweep.sweep(checkpoint)
+            state = json.loads(checkpoint.read_text())
+        publish.assert_not_called()
+        self.assertEqual([], state['artifact_ids'])
+        self.assertEqual({}, state['run_versions'])
+        state, publish = self.execute([artifact(3, attempt=3)], {10: dict(pending, status='completed')}, state)
+        self.assertEqual([3], state['artifact_ids'])
+        self.assertEqual(1, publish.call_count)
+
+    def test_source_discovery_scans_old_creation_pages_and_only_source_workflows(self):
+        old = source(created_at='2020-01-01T00:00:00Z')
+        stale = source(11); stale['updated_at'] = '2020-01-01T00:00:00Z'
+        fork = source(12); fork['head_repository'] = dict(full_name='fork/repo')
+        with patch.object(sweep, 'inventory', return_value=[stale, fork, old]) as listing:
+            self.assertEqual([10], [run['id'] for run in sweep.source_runs(SINCE)])
+        self.assertEqual({('actions/workflows/ci.yml/runs', 'workflow_runs'),
+                          ('actions/workflows/pr-gate.yml/runs', 'workflow_runs')},
+                         {call.args for call in listing.call_args_list})
+
+    def test_batch_cursor_does_not_skip_deferred_equal_timestamp_runs(self):
+        evidence = [artifact(1), artifact(2, 11)]
+        runs = {10: source(), 11: source(11)}
+        with patch.object(sweep, 'MAX_BATCH_RUNS', 1):
+            state, _ = self.execute(evidence, runs)
+        self.assertLessEqual(sweep.timestamp(state['since']), sweep.timestamp(runs[11]['updated_at']))
+        state, publish = self.execute(evidence, runs, state)
+        self.assertEqual([11], [call.args[0]['id'] for call in publish.call_args_list])
 
     def test_newest_attempt_wins_even_when_artifact_ids_rank_differently(self):
         items = [artifact(100, attempt=1), artifact(10, attempt=2), artifact(11, shard='unit')]
@@ -194,6 +250,120 @@ class CheckpointTests(unittest.TestCase):
             self.assertEqual(101, len(sweep.inventory('actions/artifacts', 'artifacts')))
         with patch.object(sweep, 'api', return_value=dict(total_count=sweep.MAX_PAGES * 100 + 1)), \
                 self.assertRaisesRegex(ValueError, 'capacity'):
+            sweep.inventory('actions/artifacts', 'artifacts')
+
+    def test_inventory_fetches_bounded_parallel_pages_without_losing_order(self):
+        barrier = threading.Barrier(8, timeout=2)
+        active = 0
+        peak = 0
+        lock = threading.Lock()
+
+        def page(path):
+            nonlocal active, peak
+            number = int(path.rsplit('=', 1)[1])
+            if number > 1:
+                with lock:
+                    active += 1
+                    peak = max(peak, active)
+                barrier.wait()
+                with lock:
+                    active -= 1
+            start = (number - 1) * 100
+            return dict(total_count=850, artifacts=[dict(id=i) for i in range(start, min(start + 100, 850))])
+
+        with patch.object(sweep, 'api', side_effect=page):
+            items = sweep.inventory('actions/artifacts', 'artifacts')
+        self.assertEqual(8, peak)
+        self.assertEqual(list(range(850)), [item['id'] for item in items])
+
+    def test_inventory_page_failure_leaves_checkpoint_unwritten(self):
+        def page(path):
+            if path.endswith('page=2'):
+                raise RuntimeError('page unavailable')
+            entries = [artifact(i) for i in range(1, 101)]
+            # Discovery lists source runs first; serve the page under whichever key is listed.
+            return dict(total_count=201, artifacts=entries, workflow_runs=entries)
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / 'cursor.json'
+            with patch.object(sweep, 'load_cursor', return_value=cursor()), \
+                    patch.object(sweep, 'api', side_effect=page), \
+                    patch.object(sweep, 'publish_run') as publish, \
+                    self.assertRaisesRegex(RuntimeError, 'page unavailable'):
+                sweep.sweep(checkpoint)
+            self.assertFalse(checkpoint.exists())
+            publish.assert_not_called()
+
+    def test_inventory_upload_during_out_of_order_reads_leaves_checkpoint_unwritten(self):
+        page_three_read = threading.Event()
+        old = list(range(301, 0, -1))
+        new = [302] + old
+
+        def page(path):
+            number = int(path.rsplit('=', 1)[1])
+            if number == 1:
+                snapshot = old
+            elif number == 3:
+                snapshot = old
+                page_three_read.set()
+            else:
+                self.assertTrue(page_three_read.wait(2))
+                snapshot = new
+            start = (number - 1) * 100
+            entries = [dict(id=i) for i in snapshot[start:start + 100]]
+            return dict(total_count=len(snapshot), artifacts=entries, workflow_runs=entries)
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / 'cursor.json'
+            with patch.object(sweep, 'load_cursor', return_value=cursor()), \
+                    patch.object(sweep, 'api', side_effect=page), \
+                    patch.object(sweep, 'publish_run') as publish, \
+                    self.assertRaisesRegex(ValueError, 'changed during discovery'):
+                sweep.sweep(checkpoint)
+            self.assertFalse(checkpoint.exists())
+            publish.assert_not_called()
+
+    def test_inventory_restarts_once_when_a_new_run_changes_the_total(self):
+        changed = threading.Event()
+
+        def page(path):
+            number = int(path.rsplit('=', 1)[1])
+            if number == 2 and not changed.is_set():
+                # A run created between the reads of pages 1 and 2.
+                changed.set()
+            total = 151 if changed.is_set() else 150
+            identities = list(range(total))[(number - 1) * 100:number * 100]
+            return dict(total_count=total, workflow_runs=[dict(id=i) for i in identities])
+
+        output = io.StringIO()
+        with patch.object(sweep, 'api', side_effect=page), redirect_stdout(output):
+            items = sweep.inventory('actions/workflows/ci.yml/runs', 'workflow_runs')
+        self.assertEqual(list(range(151)), [item['id'] for item in items])
+        self.assertIn('restarting (attempt 2 of 3)', output.getvalue())
+
+    def test_inventory_duplicate_across_pages_cannot_hide_a_missing_entry(self):
+        with patch.object(sweep, 'api', side_effect=[
+            dict(total_count=101, artifacts=[artifact(i) for i in range(100)]),
+            dict(total_count=101, artifacts=[artifact(99)]),
+        ]), self.assertRaisesRegex(ValueError, 'incomplete'):
+            sweep.inventory('actions/artifacts', 'artifacts')
+
+    def test_inventory_full_last_page_requires_empty_terminal_page(self):
+        def page(path):
+            number = int(path.rsplit('=', 1)[1])
+            return dict(total_count=200, artifacts=[dict(id=i) for i in range((number - 1) * 100, min(number * 100, 200))])
+
+        with patch.object(sweep, 'api', side_effect=page) as read:
+            self.assertEqual(list(range(200)), [item['id'] for item in sweep.inventory('actions/artifacts', 'artifacts')])
+        self.assertEqual(3, read.call_count)
+
+    def test_inventory_growth_beyond_capacity_in_later_page_fails_closed(self):
+        def page(path):
+            if path.endswith('page=1'):
+                return dict(total_count=101, artifacts=[artifact(i) for i in range(100)])
+            return dict(total_count=sweep.MAX_PAGES * 100 + 1, artifacts=[])
+
+        with patch.object(sweep, 'api', side_effect=page), self.assertRaisesRegex(ValueError, 'capacity'):
             sweep.inventory('actions/artifacts', 'artifacts')
 
     def test_inventory_accepts_retained_repository_volume(self):

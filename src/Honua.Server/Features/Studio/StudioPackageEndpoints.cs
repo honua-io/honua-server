@@ -348,7 +348,7 @@ internal static class StudioPackageEndpoints
 
     private static async Task<IResult> HandleCreateAppPackageDraft(
         HttpContext context,
-        [FromServices] IAppPackageDraftFactory drafts,
+        [FromServices] AppPackageDraftFactory drafts,
         [FromServices] StudioEndpointAuthorization authorization)
     {
         var authResult = await EnsureGenerateAuthorizedAsync(authorization, context, "studio-app-generation").ConfigureAwait(false);
@@ -396,7 +396,7 @@ internal static class StudioPackageEndpoints
 
     private static async Task<IResult> HandleCreateMapPackageDraft(
         HttpContext context,
-        [FromServices] IMapPackageDraftFactory drafts,
+        [FromServices] MapPackageDraftFactory drafts,
         [FromServices] StudioEndpointAuthorization authorization)
     {
         var authResult = await EnsureGenerateAuthorizedAsync(authorization, context, "studio-map-generation").ConfigureAwait(false);

@@ -349,6 +349,11 @@ public sealed class LayerReadSecurityResolver
         IFilterExpressionService? filterExpressionService)
         => PermanentFilterResolver.Resolve(resource, filterExpressionService);
 
+    public static FilterExpression? RequirePermanentFilterExpression(
+        MetadataV2Object resource,
+        IFilterExpressionService? filterExpressionService)
+        => PermanentFilterResolver.ParseSavedExpression(resource, filterExpressionService);
+
     private async Task<MetadataV2Object?> FindResourceAsync(int layerId, CancellationToken cancellationToken)
     {
         if (_v2Provider is null)

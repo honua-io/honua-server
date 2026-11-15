@@ -3,11 +3,6 @@
 
 namespace Honua.Infrastructure.Caching;
 
-internal interface ICacheStorageMetricsProvider
-{
-    Task<CacheStorageMetrics> GetStorageMetricsAsync(CancellationToken cancellationToken = default);
-}
-
 internal sealed record CacheStorageMetrics
 {
     public required string Backend { get; init; }

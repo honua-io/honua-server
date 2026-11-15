@@ -79,8 +79,11 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
 
     private bool IsFolderOperation => FolderToolName(_descriptor.OperationId) is not null;
 
+    // Staged imports read job artifacts and create tables, so they need admin authority like admin.* operations.
     private bool RequiresAdminAuthorization =>
-        IsFolderOperation || _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
+        IsFolderOperation
+        || _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal)
+        || _descriptor.OperationId.StartsWith("dataset.stage.", StringComparison.Ordinal);
 
     private bool RequiresProposalSubmission =>
         _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
@@ -630,6 +633,7 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
             writer.WriteString("type", type);
         }
         if (!string.IsNullOrWhiteSpace(schema.Format)) writer.WriteString("format", schema.Format);
+        if (schema.Minimum is { } minimum) writer.WriteNumber("minimum", minimum);
         if (schema.EnumValues.Count > 0)
         {
             writer.WriteStartArray("enum");

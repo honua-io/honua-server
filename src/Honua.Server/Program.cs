@@ -24,6 +24,7 @@ using Honua.Core.Features.Security;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Server.Features.AgentWorkspace;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Federation;
 using Honua.Server.Features.Admin.Jobs;
@@ -375,6 +376,9 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
         return;
     }
 
+    builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
+        new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+
     if (nativeAot)
     {
         keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
@@ -514,8 +518,7 @@ builder.Services.Configure<Honua.Infrastructure.Caching.QueryResultCacheOptions>
     options.EnableDetailedMetrics = !builder.Environment.IsProduction();
 });
 
-builder.Services.AddSingleton<Honua.Infrastructure.Caching.IQueryResultCacheManager,
-    Honua.Infrastructure.Caching.QueryResultCacheManager>();
+builder.Services.AddSingleton<Honua.Infrastructure.Caching.QueryResultCacheManager>();
 
 if (useTestSchemaHeaders)
 {
@@ -721,6 +724,12 @@ Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(bu
 
 // Configure caching options and register cache services
 InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration);
+if (builder.Configuration.GetValue<bool>("ExternalEdits:Enabled")
+    && Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
+{
+    builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Caching.ExternalLayerChangeWorker>();
+}
+
 
 if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
 {
@@ -908,11 +917,10 @@ if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment
     Honua.Infrastructure.Redis.RedisThawProbeExtensions.AddRedisThawProbe(builder.Services);
 }
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
-// evaluation, rate accounting, and redacted analytics ingestion. In-memory
-// defaults; durable providers can replace these via TryAdd later.
-builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.IEmbedKeyStore>(sp =>
+// evaluation, rate accounting, and redacted analytics ingestion. In-memory stores.
+builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore>(sp =>
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore(sp.GetService<TimeProvider>()));
-builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.IEmbedAnalyticsStore>(
+builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore>(
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore());
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
@@ -997,6 +1005,7 @@ if (Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneTriggerModeResolve
 
 // Register shared validation services
 builder.Services.AddValidationServices();
+builder.Services.AddLocalProcessWorkspaces();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(
@@ -1108,8 +1117,7 @@ if (offlineSyncEnabled)
             sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
             sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
 #endif
-    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
-        Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
 }
 
 // ---- Extracted: import/export job managers, migration evidence, tile operations
@@ -1125,7 +1133,7 @@ builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
 
 // ---- Extracted: feature-change events, streaming, transactional outbox
 //      (Startup/FeatureEventsAndStreamingRegistration.cs)
-builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration, requiresDurableDistributedEvents);
+builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration);
 // ---- End extracted block
 
 // ---- Cross-node realtime: event log and fan-out provider (ADR-0085)
@@ -1978,6 +1986,7 @@ app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapStudioPublishedRouteEndpoints();
 app.MapStudioSessionEndpoints();
+app.MapLocalProcessWorkspaces();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
 Honua.Server.Features.Studio.Ai.StudioAiProxyEndpoints.MapStudioAiProxyEndpoints(app);

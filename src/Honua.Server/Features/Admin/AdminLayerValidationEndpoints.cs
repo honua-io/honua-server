@@ -29,7 +29,7 @@ internal static class AdminLayerValidationEndpoints
     private static async Task<IResult> HandleGetLayerValidation(
         int storageLayerId,
         HttpContext context,
-        [FromServices] ILayerValidationService validationService,
+        [FromServices] LayerValidationService validationService,
         CancellationToken cancellationToken)
     {
         if (storageLayerId < 0)

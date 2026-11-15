@@ -2,6 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.IO;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Honua.Core.Features.Publishing.Descriptors;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Newtonsoft.Json.Linq;
@@ -36,7 +39,7 @@ public sealed class PublicationDescriptorSchemaTests
         var descriptor = Load(Path.Join(ExamplesDirectory, "maui-county-parcels.json"));
 
         descriptor.IsValid(Schema.Value, out IList<ValidationError> errors).Should().BeTrue(Describe(errors));
-        PublicationDescriptorRules.Violations(descriptor).Should().BeEmpty();
+        PublicationDescriptorRules.Violations(Nodes(descriptor)).Should().BeEmpty();
     }
 
     [UnitTheory]
@@ -53,7 +56,19 @@ public sealed class PublicationDescriptorSchemaTests
         }
 
         schemaValid.Should().BeTrue($"{file} must pass the schema so only rule {expectedFailure} rejects it: {Describe(errors)}");
-        PublicationDescriptorRules.Violations(descriptor).Should().Equal(expectedFailure);
+        PublicationDescriptorRules.Violations(Nodes(descriptor)).Should().Equal(expectedFailure);
+    }
+
+    [UnitTest]
+    public void TypedDescriptor_RoundTripsTheMauiExample_StillPassesSchemaAndRules()
+    {
+        var text = File.ReadAllText(Path.Join(ExamplesDirectory, "maui-county-parcels.json"));
+        var typed = JsonSerializer.Deserialize(text, PublicationDescriptorJsonContext.Default.PublicationDescriptor)!;
+
+        var written = JObject.Parse(JsonSerializer.Serialize(typed, PublicationDescriptorJsonContext.Default.PublicationDescriptor));
+
+        written.IsValid(Schema.Value, out IList<ValidationError> errors).Should().BeTrue(Describe(errors));
+        PublicationDescriptorRules.Violations(typed).Should().BeEmpty();
     }
 
     [UnitTest]
@@ -82,6 +97,8 @@ public sealed class PublicationDescriptorSchemaTests
             .ToDictionary(property => property.Name, property => property.Value.Value<string>()!, StringComparer.Ordinal);
 
     private static JObject Load(string path) => JObject.Parse(File.ReadAllText(path));
+
+    private static JsonObject Nodes(JObject descriptor) => JsonNode.Parse(descriptor.ToString())!.AsObject();
 
     private static string Describe(IEnumerable<ValidationError> errors) =>
         string.Join("; ", errors.Select(error => $"{error.Path}: {error.Message}"));
