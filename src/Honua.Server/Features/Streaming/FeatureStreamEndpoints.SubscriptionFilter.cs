@@ -479,51 +479,6 @@ internal static partial class FeatureStreamEndpoints
             snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal), exact, named, deniedExact);
     }
 
-    private static bool PermanentFilterAccepted(
-        MetadataV2Object resource,
-        IFilterExpressionService filterExpressionService,
-        List<FilterExpression> predicates)
-    {
-        try
-        {
-            AppendPermanentFilterPredicate(resource, filterExpressionService, predicates);
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-    }
-
-    internal static void AppendPermanentFilterPredicate(
-        MetadataV2Object resource,
-        IFilterExpressionService filterExpressionService,
-        List<FilterExpression> predicates)
-    {
-        ArgumentNullException.ThrowIfNull(predicates);
-        var expression = Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver
-            .RequirePermanentFilterExpression(resource, filterExpressionService);
-        if (expression is null)
-        {
-            return;
-        }
-
-        // The same depth guard as a subscriber filter. Past the limit the
-        // evaluator fails closed, and a surrounding NOT would invert that.
-        if (InMemoryFilterEvaluator.ExceedsMaxDepth(expression))
-        {
-            throw new InvalidOperationException(
-                $"Saved permanent filter for resource '{resource.Metadata.Id}' exceeds the streaming depth limit.");
-        }
-
-        if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(expression, out var error))
-        {
-            throw new InvalidOperationException(error ?? "Saved permanent filter cannot be evaluated.");
-        }
-
-        predicates.Add(expression);
-    }
-
     private static bool TryResolveFilterLanguage(string? filterLang, out FilterLanguage language, out string error)
     {
         language = FilterLanguage.Cql2Text;
