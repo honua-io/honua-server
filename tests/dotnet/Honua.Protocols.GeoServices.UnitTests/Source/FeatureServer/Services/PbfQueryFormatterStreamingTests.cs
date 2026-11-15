@@ -10,6 +10,13 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
+[CollectionDefinition("PbfMemory", DisableParallelization = true)]
+public sealed class PbfMemoryCollectionDefinition
+{
+}
+
+// The streaming regression measures process-wide retained memory.
+[Collection("PbfMemory")]
 public sealed partial class PbfQueryFormatterTests
 {
     [Fact]
