@@ -16,9 +16,13 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
 {
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SaveAsync_GlobalIdLayer_EnforcesNormalizedIdentityPerLayer(bool sourceBacked)
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(true, "PrimaryKeyColumn")]
+    [InlineData(true, "GeometryColumn")]
+    [InlineData(true, "AttributesColumn")]
+    [InlineData(true, "LayerDiscriminatorColumn")]
+    public async Task SaveAsync_GlobalIdLayer_EnforcesNormalizedIdentityPerLayer(bool sourceBacked, string? ignoredOption)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("global_id_integrity");
         try
@@ -48,6 +52,18 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                     }]
                 };
             }
+            if (ignoredOption is not null)
+            {
+                graph = graph with { StorageBindings = [graph.StorageBindings[0] with
+                {
+                    Options = new Dictionary<string, JsonElement>(graph.StorageBindings[0].Options)
+                    { [ignoredOption] = JsonSerializer.SerializeToElement("other_column") }
+                }] };
+            }
+            var mapping = FeatureStorageMapping.FromMetadata(graph.Resources[0], graph.StorageBindings[0]);
+            mapping.SupportsManagedWrites.Should().BeTrue();
+            mapping.PrimaryKeyColumn.Should().Be("objectid");
+            mapping.GeometryColumn.Should().BeNull();
             await store.SaveAsync(graph, expectedEtag: null);
 
             command.CommandText = $$"""
