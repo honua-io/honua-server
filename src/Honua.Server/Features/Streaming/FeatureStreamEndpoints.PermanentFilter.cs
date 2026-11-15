@@ -45,9 +45,10 @@ internal static partial class FeatureStreamEndpoints
                 $"Saved permanent filter for resource '{resource.Metadata.Id}' exceeds the streaming depth limit.");
         }
 
-        if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(expression, out var error))
+        if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(expression, out _))
         {
-            throw new InvalidOperationException(error ?? "Saved permanent filter cannot be evaluated.");
+            throw new InvalidOperationException(
+                $"Saved permanent filter for resource '{resource.Metadata.Id}' cannot be evaluated.");
         }
 
         predicates.Add(expression);

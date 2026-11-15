@@ -114,7 +114,7 @@ internal static class PermanentFilterResolver
         if (!parsed.IsSuccess || parsed.Expression == null)
         {
             throw new InvalidOperationException(
-                $"Saved permanent filter for resource '{resource.Metadata.Id}' is invalid: {parsed.ErrorMessage ?? "Invalid filter."}");
+                $"Saved permanent filter for resource '{resource.Metadata.Id}' is invalid.");
         }
 
         return parsed.Expression;

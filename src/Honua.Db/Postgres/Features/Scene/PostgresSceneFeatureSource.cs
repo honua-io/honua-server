@@ -128,12 +128,23 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
             return null;
         }
 
-        // Null here means the filter could not be translated. Publishing the
-        // unfiltered table would bake hidden rows into derived tiles.
-        return LayerReadSecurityResolver.ResolvePermanentFilter(resource, _filterExpressionService)
-            ?? throw new InvalidOperationException(
-                $"Saved permanent filter for resource '{resource.Metadata.Id}' could not be applied to scene publishing.");
+        // Parser and translator failures quote the saved filter. Replace them
+        // before scene generation logs the exception.
+        SqlFragment? fragment;
+        try
+        {
+            fragment = LayerReadSecurityResolver.ResolvePermanentFilter(resource, _filterExpressionService);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+        {
+            throw SceneFilterFailure(resource);
+        }
+
+        return fragment ?? throw SceneFilterFailure(resource);
     }
+
+    private static InvalidOperationException SceneFilterFailure(MetadataV2Object resource)
+        => new($"Saved permanent filter for resource '{resource.Metadata.Id}' could not be applied to scene publishing.");
 
     private async Task<List<SceneFeature>> ReadBatchAsync(
         string sql,
