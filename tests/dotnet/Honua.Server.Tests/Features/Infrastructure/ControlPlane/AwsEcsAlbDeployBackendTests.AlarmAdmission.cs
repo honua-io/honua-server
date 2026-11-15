@@ -49,10 +49,14 @@ public sealed partial class AwsEcsAlbDeployBackendTests
         }
         Func<Task> execute = boundary switch
         {
-            "start" => async () => { await backend.StartAsync(operation); },
-            "promote" => async () => { await backend.PromoteAsync(operation); },
-            "prepare" => async () => { await backend.EnsurePreparationAdmittedAsync(operation, default); },
-            "complete" => async () => { await backend.CompleteProtectionAsync(operation); },
+            "start" => async () => { await backend.StartAsync(operation); }
+            ,
+            "promote" => async () => { await backend.PromoteAsync(operation); }
+            ,
+            "prepare" => async () => { await backend.EnsurePreparationAdmittedAsync(operation, default); }
+            ,
+            "complete" => async () => { await backend.CompleteProtectionAsync(operation); }
+            ,
             _ => async () => { await backend.ActivateCheckpointAsync(operation, default); }
         };
 

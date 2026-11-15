@@ -52,7 +52,8 @@ public sealed partial class DeployWorkflowServiceTests
                 TrafficExposedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
                 CanaryRamp = new CanaryRampSpec
                 {
-                    StepWeights = [10, 50, 100], CurrentStepIndex = 1,
+                    StepWeights = [10, 50, 100],
+                    CurrentStepIndex = 1,
                     StepBakeDuration = TimeSpan.FromMinutes(5)
                 }
             }

@@ -113,13 +113,21 @@ public sealed partial class DeployWorkflowServiceTests
             .Returns<Task<DeployObservation>>(_ => throw new DeployAdmissionBlockedException("Deployment alarms are not OK."));
         var operation = CreateOperationRecord(WorkflowOperationStatus.Reconciling,
             parameters: new Dictionary<string, string> { [DeployTelemetrySignalEvaluator.BreachStreakParameterKey] = "1" });
-        operation = operation with { Deploy = operation.Deploy! with { Protection = new DeployProtectionState
+        operation = operation with
         {
-            Phase = DeployProtectionPhase.Observing,
-            PreviousRevision = "sha256:old", CandidateRevision = "sha256:new",
-            FirstExposureAt = DateTimeOffset.UtcNow.AddMinutes(-5),
-            ObservationDeadline = DateTimeOffset.UtcNow.AddSeconds(-1), PolicyDigest = "test"
-        } } };
+            Deploy = operation.Deploy! with
+            {
+                Protection = new DeployProtectionState
+                {
+                    Phase = DeployProtectionPhase.Observing,
+                    PreviousRevision = "sha256:old",
+                    CandidateRevision = "sha256:new",
+                    FirstExposureAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+                    ObservationDeadline = DateTimeOffset.UtcNow.AddSeconds(-1),
+                    PolicyDigest = "test"
+                }
+            }
+        };
         await store.TryCreateAsync(operation);
         var evaluator = new StubDeployTelemetrySignalEvaluator(new DeployTelemetryDecision
         {
