@@ -903,7 +903,7 @@ public static class VersionManagementServerEndpoints
         }
 
         // Opening an edit session against a version that is mid-reconcile/post would be a false
-        // acknowledgement: the version is locked (PostgreSQL lease) for the duration of that job, so no
+        // acknowledgement: the version is held under the version lock for the duration of that job, so no
         // edit can land. Refuse with a 409 in-progress, matching reconcile/post lock contention.
         if (requireWritable && version.State is VersionState.Reconciling or VersionState.Posting)
         {

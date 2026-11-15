@@ -790,15 +790,25 @@ internal sealed partial class AnalysisContentService(
                 "The analysis job or log store is currently unavailable.",
                 ex);
         }
-        // The job and log stores are PostgreSQL; a transient connection failure is the same
-        // retryable outage. Non-transient database errors are defects and propagate unchanged.
-        catch (DbException ex) when (ex.IsTransient)
+        // The job and log stores are PostgreSQL. Classify outages as the content store does
+        // (PostgresAnalysisContentStore.IsStoreUnavailable): transient failures plus the
+        // connection (08), resources (53), operator-intervention (57) and authorization (28)
+        // SQL-state classes. Other database errors are defects and propagate unchanged.
+        catch (DbException ex) when (IsDatabaseOutage(ex))
         {
             throw new AnalysisContentStoreUnavailableException(
                 "The analysis job or log store is currently unavailable.",
                 ex);
         }
     }
+
+    private static bool IsDatabaseOutage(DbException exception)
+        => exception.IsTransient
+            || exception.SqlState is { Length: >= 2 } state
+                && (state.StartsWith("08", StringComparison.Ordinal)
+                    || state.StartsWith("53", StringComparison.Ordinal)
+                    || state.StartsWith("57", StringComparison.Ordinal)
+                    || state.StartsWith("28", StringComparison.Ordinal));
 
     private async Task<AnalysisContentItem> GetRequiredItemAsync(
         string itemId,

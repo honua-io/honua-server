@@ -334,13 +334,28 @@ public sealed class AnalysisContentServiceTests
 
     [UnitTest]
     [Operation(Operations.JobStatus)]
+    public async Task GetJobFailureAsync_WhenAuthorizationBackendUnavailable_ThrowsStoreUnavailable()
+    {
+        // 28P01 is not transient, but it is an infrastructure outage the content store also
+        // reports as 503; the job path must classify it the same way.
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.GetJobAsync("job-failure", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Throws(new FakeDbException(isTransient: false, sqlState: "28P01"));
+        var sut = CreateService(jobService: jobService);
+
+        await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
+            () => sut.GetJobFailureAsync("job-failure", Principal(), CancellationToken.None));
+    }
+
+    [UnitTest]
+    [Operation(Operations.JobStatus)]
     public async Task GetJobFailureAsync_WhenJobStoreRaisesNonTransientDbError_Propagates()
     {
         // A non-transient database error is a defect, not an outage: it must not be
         // reported to the caller as a retryable 503.
         var jobService = Substitute.For<IGeoprocessingJobService>();
         jobService.GetJobAsync("job-failure", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
-            .Throws(new FakeDbException(isTransient: false));
+            .Throws(new FakeDbException(isTransient: false, sqlState: "42P01"));
         var sut = CreateService(jobService: jobService);
 
         await Assert.ThrowsAsync<FakeDbException>(
@@ -974,8 +989,10 @@ public sealed class AnalysisContentServiceTests
             };
     }
 
-    private sealed class FakeDbException(bool isTransient) : DbException("database unavailable")
+    private sealed class FakeDbException(bool isTransient, string? sqlState = null) : DbException("database unavailable")
     {
         public override bool IsTransient { get; } = isTransient;
+
+        public override string? SqlState { get; } = sqlState;
     }
 }
