@@ -1,6 +1,8 @@
 """Keep the manual upgrade's contract approval scoped to reviewed migrations."""
 import json
+from pathlib import Path
 import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -50,6 +52,28 @@ class ContractMigrationTests(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     self.migrate()
                 self.assertEqual(1, run.call_count)
+
+    def test_verified_first_run_needs_no_approval(self):
+        success = dict(format='honua.migrate-only/v1', code='success', exitCode=0, schemaVerified=True)
+        with patch('compose_contract_migrations.subprocess.run', return_value=result(success, 0)) as run:
+            self.migrate()
+        self.assertEqual(1, run.call_count)
+
+    def test_other_refusals_and_unannotated_contracts_name_the_cause(self):
+        refusal = summary('database-unavailable')
+        unannotated = summary()
+        unannotated['pendingScripts'][0]['classification'] = 'contract-unannotated'
+        for data, cause in ((refusal, 'database-unavailable'), (unannotated, SCRIPT)):
+            with self.subTest(cause=cause), patch('compose_contract_migrations.subprocess.run', return_value=result(data)) as run:
+                with self.assertRaisesRegex(AssertionError, cause):
+                    self.migrate()
+                self.assertEqual(1, run.call_count)
+
+    def test_rejection_holds_under_optimized_python(self):
+        script = ('import sys; sys.path.insert(0, sys.argv[1]); import compose_contract_migrations as m\n'
+                  'try:\n    m.reviewed_nonce({"code": "other"})\nexcept AssertionError:\n    sys.exit(0)\nsys.exit(1)')
+        here = str(Path(__file__).resolve().parent)
+        self.assertEqual(0, subprocess.run([sys.executable, '-O', '-c', script, here]).returncode)
 
     def test_changed_reviewed_script_never_gets_approval(self):
         with patch('compose_contract_migrations.subprocess.run', return_value=result(summary())) as run, \

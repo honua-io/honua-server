@@ -1496,16 +1496,17 @@ future contracts require a separate review. The exact returned nonce authorizes
 one retry, which must exit 0 with a verified schema. Unknown contracts, changed
 SQL, malformed summaries and failed verification stop the journey. This adds no
 jobs or runners (one lifecycle runner before and after). Run 43729796698's manual
-journey reported one pass and one failure in 349 seconds before this repair;
-installed after-change proof and timing remain pending.
+journey reported one pass and one failure in 349 seconds before this repair.
+Refusals name the script, refusal code and exit code, never raw output, and the
+checks raise explicitly so `python -O` cannot strip them.
 
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
 
 GitHub-managed Code Quality is switched off for this repository, so there is no
 managed analysis to supersede and no helper workflow for it; `codeql.yml` is the
-only C# analysis that runs.
+only CodeQL analysis of C# (Roslyn analyzers still run as errors in the build).
 CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
-already cancel superseded PR runs through their existing per-PR concurrency groups.
+cancel superseded PR runs through their per-PR concurrency groups.
 
 Normalization consumer admission reads the exact producer attempt before joining
 its per-PR cancellation group. Only a successful envelope-packaging job admits
