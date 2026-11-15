@@ -547,11 +547,12 @@ public static class InMemoryFilterEvaluator
         return false;
     }
 
-    // LIKE patterns are client-controlled (each streaming subscription supplies its own filter),
-    // so the compiled-regex cache must be bounded: cycling subscriptions with unique patterns
-    // would otherwise pin a compiled Regex per pattern for the process lifetime. Beyond the cap,
-    // patterns are evaluated with uncached interpreted regexes instead of growing the cache.
+    // LIKE patterns are client-controlled. The cache is bounded so unique patterns cannot
+    // pin one automaton per subscription for the process lifetime. Patterns past the
+    // length or wildcard cap are refused before they are compiled.
     private const int MaxCachedLikePatterns = 1024;
+    private const int MaxLikePatternLength = 256;
+    private const int MaxLikeWildcards = 32;
 
     private static readonly ConcurrentDictionary<string, Regex> LikePatternCache = new();
 
@@ -559,25 +560,50 @@ public static class InMemoryFilterEvaluator
     {
         var input = left.ToString() ?? string.Empty;
         var pattern = right.ToString() ?? string.Empty;
-
-        // Cache compiled regex per LIKE pattern to avoid per-event allocation on the broadcast hot path.
-        if (!LikePatternCache.TryGetValue(pattern, out var regex))
+        if (pattern.Length > MaxLikePatternLength || CountLikeWildcards(pattern) > MaxLikeWildcards)
         {
-            regex = LikePatternCache.Count < MaxCachedLikePatterns
-                ? LikePatternCache.GetOrAdd(pattern, static p => CreateLikeRegex(p, compiled: true))
-                : CreateLikeRegex(pattern, compiled: false);
+            throw new UnevaluableLikePatternException();
         }
 
-        return regex.IsMatch(input);
+        try
+        {
+            if (!LikePatternCache.TryGetValue(pattern, out var regex))
+            {
+                regex = LikePatternCache.Count < MaxCachedLikePatterns
+                    ? LikePatternCache.GetOrAdd(pattern, static p => CreateLikeRegex(p))
+                    : CreateLikeRegex(pattern);
+            }
+
+            return regex.IsMatch(input);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            throw new UnevaluableLikePatternException();
+        }
     }
 
-    private static Regex CreateLikeRegex(string pattern, bool compiled)
+    private static int CountLikeWildcards(string pattern)
+    {
+        var count = 0;
+        foreach (var character in pattern)
+        {
+            if (character is '%' or '_')
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static Regex CreateLikeRegex(string pattern)
     {
         // Convert SQL LIKE pattern to regex: % → .*, _ → ., escape others.
+        // NonBacktracking keeps a failed match linear. It cannot be combined with Compiled or a match timeout.
         var regexPattern = "^" + Regex.Escape(pattern)
             .Replace("%", ".*", StringComparison.Ordinal)
             .Replace("_", ".", StringComparison.Ordinal) + "$";
-        return new Regex(regexPattern, compiled ? RegexOptions.Compiled : RegexOptions.None, TimeSpan.FromSeconds(1));
+        return new Regex(regexPattern, RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
     }
 
     public static bool ExceedsMaxDepth(FilterExpression expression)

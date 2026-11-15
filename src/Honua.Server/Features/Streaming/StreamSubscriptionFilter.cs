@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Streaming;
@@ -149,7 +150,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
             }
         }
 
-        if (_subscriberSecurity is not null && !_subscriberSecurity.Allows(envelope))
+        if (_subscriberSecurity is not null && !AllowsSubscriber(envelope))
         {
             return false;
         }
@@ -215,8 +216,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
                 return false;
             }
 
-            if (_attributeFilter is not null &&
-                !InMemoryFilterEvaluator.Evaluate(_attributeFilter, parsedProperties))
+            if (_attributeFilter is not null && !AttributeMatches(parsedProperties))
             {
                 return false;
             }
@@ -230,6 +230,33 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
 
         return true;
     }
+
+    private bool AllowsSubscriber(FeatureStreamEnvelope envelope)
+    {
+        try
+        {
+            return _subscriberSecurity!.Allows(envelope);
+        }
+        catch (Exception ex) when (IsUnevaluableLike(ex))
+        {
+            return false;
+        }
+    }
+
+    private bool AttributeMatches(IReadOnlyDictionary<string, JsonElement> properties)
+    {
+        try
+        {
+            return InMemoryFilterEvaluator.Evaluate(_attributeFilter!, properties);
+        }
+        catch (Exception ex) when (IsUnevaluableLike(ex))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsUnevaluableLike(Exception exception)
+        => exception is UnevaluableLikePatternException or RegexMatchTimeoutException;
 
     internal FeatureStreamEnvelope Project(FeatureStreamEnvelope envelope)
         => _subscriberSecurity?.Project(envelope) ?? envelope;

@@ -105,6 +105,45 @@ public sealed class InMemoryFilterEvaluatorTests
     }
 
     [UnitTest]
+    public void Evaluate_Like_MatchesABoundedWildcard()
+    {
+        var expression = new BinaryExpression(
+            new PropertyReference("name"),
+            BinaryOperator.Like,
+            new Literal("%secret%", LiteralType.Text));
+
+        InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("""{"name":"top-secret"}""")).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_Like_RefusesTooManyWildcardsWithoutEchoingThePattern()
+    {
+        const string marker = "saved-like-marker";
+        var expression = new BinaryExpression(
+            new PropertyReference("name"),
+            BinaryOperator.Like,
+            new Literal(marker + new string('%', 33), LiteralType.Text));
+
+        var error = Assert.Throws<UnevaluableLikePatternException>(() =>
+            InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("""{"name":"eeee"}""")));
+
+        error.ToString().Should().NotContain(marker);
+    }
+
+    [UnitTest]
+    public void Evaluate_NotLike_RefusesTooManyWildcardsInsteadOfInverting()
+    {
+        var expression = new BinaryExpression(
+            new PropertyReference("name"),
+            BinaryOperator.NotLike,
+            new Literal(new string('_', 33), LiteralType.Text));
+
+        var act = () => InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("""{"name":"eeee"}"""));
+
+        act.Should().Throw<UnevaluableLikePatternException>();
+    }
+
+    [UnitTest]
     public void Evaluate_BigIntegerEquality_PreservesPrecision()
     {
         const long objectId = 9_007_199_254_740_993L;

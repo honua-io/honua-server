@@ -6,6 +6,7 @@ using System.Net.WebSockets;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Streaming;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
@@ -577,6 +578,27 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Contains(messages, m => m.Envelope.SubscriptionId == FeatureStreamSessionManager.DefaultSubscriptionId);
         Assert.Contains(messages, m => m.Envelope.SubscriptionId == "subB");
         Assert.All(messages, m => Assert.Equal(500, m.Envelope.Cursor));
+    }
+
+    [UnitTest]
+    public void Broadcast_UnevaluableLikeOnOneSession_StillDeliversToOtherSessions()
+    {
+        const string marker = "saved-like-marker";
+        var filter = new StreamSubscriptionFilter(attributeFilter: new BinaryExpression(
+            new PropertyReference("name"),
+            BinaryOperator.Like,
+            new Literal(marker + new string('%', 33), LiteralType.Text)));
+        using var denied = _manager.CreateSession("WebSocket", "denied", filter);
+        using var open = _manager.CreateSession("WebSocket", "open");
+
+        var delivered = _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 7),
+            propertiesJson: """{"name":"eeee"}"""));
+
+        Assert.True(delivered >= 1);
+        Assert.False(denied.Reader.TryRead(out _));
+        Assert.True(open.Reader.TryRead(out var message));
+        Assert.Equal(7, message.Envelope.Cursor);
     }
 
     [UnitTest]
