@@ -124,6 +124,10 @@ class StageMapTests(unittest.TestCase):
         ]
         rules, _ = checker.policy_literals(checker.REPO)
         samples.append(next(literal for literal in rules if " " not in literal))
+        policy = json.loads((checker.REPO / checker.POLICY).read_text())
+        by_id = {item["id"]: item["literal"] for item in policy["rules"]}
+        samples.append("honua_" + by_id["map-envelope"].lower() + "_export")
+        samples.append(by_id["hosted-layer"].lower().replace(" ", ":"))
         for operation in samples:
             with self.subTest(operation=operation):
                 binding["operation"] = operation
