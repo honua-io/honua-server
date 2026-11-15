@@ -48,10 +48,10 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             result.Warnings.Should().NotContain(w => w.Contains("publishing did not complete", StringComparison.OrdinalIgnoreCase));
             var snapshot = await graphStore.GetCurrentAsync();
             var resource = snapshot.Graph.Resources.Single(r => r.Metadata.Name == "Subtype Layer");
-            resource.Type.Should().Be(MetadataV2ResourceType.Table);
+            resource.Type.Should().Be(MetadataV2ObjectType.Table);
             resource.Spatial.Should().BeNull();
             snapshot.Graph.Publications.Should().NotContain(p =>
-                p.ResourceId == resource.Metadata.Id && p.PublicationType == MetadataV2PublicationType.StacCollection);
+                p.ResourceId == resource.Metadata.Id && p.PublicationType == MetadataV2LayerType.StacCollection);
             resource.SchemaFields.Should().NotContain(f => f.Type == MetadataV2FieldType.Geometry);
             resource.Subtypes.Should().NotBeNull();
             var storage = snapshot.Graph.StorageBindings.Single(b => b.ResourceId == resource.Metadata.Id);

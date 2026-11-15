@@ -92,8 +92,8 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WebAppFixture fixture,
         int layerIndex,
         AccessPolicy? accessPolicy,
-        MetadataV2ResourceTemporal? temporal,
-        MetadataV2ResourceSpatial? spatial,
+        MetadataV2ObjectTemporal? temporal,
+        MetadataV2ObjectSpatial? spatial,
         MetadataV2PermanentFilter? permanentFilter,
         MetadataV2ExtrusionInfo? extrusion,
         JsonElement? stacExtension,
@@ -304,7 +304,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     internal static void UpdateResourceEditing(
         WebAppFixture fixture,
         int layerIndex,
-        MetadataV2ResourceEditing? editing)
+        MetadataV2ObjectEditing? editing)
     {
         var provider = RequireProvider(fixture);
         var snapshot = ReadCurrent(fixture, provider);
@@ -382,6 +382,30 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             Revision = snapshot.Graph.Revision + 1,
         };
         WriteGraph(fixture, provider, updatedGraph);
+    }
+
+    // Replaces the resource published at layerIndex with
+    // mutate's result, for tests that need metadata the seeded graph lacks
+    // (for example a declared global-ID field).
+    internal static Task UpdateResourceAsync(
+        WebAppFixture fixture,
+        int layerIndex,
+        Func<MetadataV2Resource, MetadataV2Resource> mutate)
+    {
+        var provider = RequireProvider(fixture);
+        var snapshot = ReadCurrent(fixture, provider);
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex)
+            ?? throw new InvalidOperationException($"No publication for layer {layerIndex} in the test V2 graph.");
+        var resources = snapshot.Graph.Resources.ToArray();
+        var index = Array.FindIndex(resources, resource => string.Equals(resource.Metadata.Id, pub.ResourceId, StringComparison.Ordinal));
+        if (index < 0)
+        {
+            throw MissingResourceMutation(layerIndex, pub.ResourceId, nameof(UpdateResourceAsync));
+        }
+
+        resources[index] = mutate(resources[index]);
+        WriteGraph(fixture, provider, snapshot.Graph with { Resources = resources, Revision = snapshot.Graph.Revision + 1 });
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -600,13 +624,11 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WriteGraph(fixture, provider, updatedGraph);
     }
 
-    /// <summary>
-    /// Sets the edit capabilities advertised by every publication on the service(s) named
-    /// <paramref name="serviceName"/> in the Metadata v2 graph. The FormPackage validator
-    /// (and other capability gates) read <see cref="MetadataV2Publication.Capabilities"/>
-    /// from the graph — not the legacy <c>honua.services</c> table — so this is how a test
-    /// makes a service advertise Create/Update/Delete for edit-path coverage.
-    /// </summary>
+    // Sets the edit capabilities advertised by every publication on the service(s) named
+    // serviceName in the Metadata v2 graph. The FormPackage validator
+    // (and other capability gates) read MetadataV2Layer.Capabilities
+    // from the graph, not the honua.services table, so this is how a test
+    // makes a service advertise Create/Update/Delete for edit-path coverage.
     internal static void EnableServiceEditingCapabilities(
         WebAppFixture fixture,
         string serviceName,
