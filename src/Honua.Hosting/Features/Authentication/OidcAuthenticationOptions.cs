@@ -168,7 +168,7 @@ public sealed class TokenValidationOptions
 
     public TimeSpan TokenReplayCacheDuration { get; set; } = TimeSpan.FromHours(24);
 
-    // Replay protection fails open to per-node memory when the shared replay store is unreachable; enable the fail-closed option when single-use must hold during a cache outage.
+    // When the replay store is unreachable a token is accepted without being recorded; enable the fail-closed option when single-use must hold during a store outage.
     public bool ReplayProtectionFailClosed { get; set; }
 }
 

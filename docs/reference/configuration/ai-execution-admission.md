@@ -94,8 +94,7 @@ identity/session checks remain separate. Report denial uses deterministic narrat
 imagery returns a sanitized inference failure.
 
 Migrate by applying the schema, configuring one stable deployment/backend, setting an explicit
-policy through initialize, completing backend recovery/quarantine requirements, and authorizing
-resume. Existing disclosure rules and credentials remain required. Disclosure workload classification is
+policy through initialize, and authorizing resume. Existing disclosure rules and credentials remain required. Disclosure workload classification is
 operator asserted; admission does not inspect content or verify that label. Installed recovery,
 failover/rollback, remote cancellation and full end-to-end operational qualification remain pending.
 
