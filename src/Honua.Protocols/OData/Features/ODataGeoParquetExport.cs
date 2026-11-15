@@ -20,7 +20,13 @@ internal static class ODataGeoParquetExport
         ILogger? logger = null,
         GeoParquetLimits? encodingLimits = null)
     {
-        var (payload, contentType) = FormatPageStream(result, resource, geometryLimits, outFields, logger, encodingLimits);
+        var (payload, contentType) = FormatPageStream(result, resource, new ODataGeoParquetStreamOptions
+        {
+            GeometryLimits = geometryLimits,
+            OutFields = outFields,
+            Logger = logger,
+            EncodingLimits = encodingLimits
+        });
         using (payload)
         using (var copy = new MemoryStream())
         {
@@ -32,24 +38,25 @@ internal static class ODataGeoParquetExport
     internal static (Stream Payload, string ContentType) FormatPageStream(
         QueryResult<Feature> result,
         MetadataV2Object resource,
-        GeometryLimits geometryLimits,
-        string[]? outFields = null,
-        ILogger? logger = null,
-        GeoParquetLimits? encodingLimits = null)
+        ODataGeoParquetStreamOptions options)
     {
+        var geometryLimits = options.GeometryLimits;
+        var outFields = options.OutFields;
+        var logger = options.Logger;
+        var encodingLimits = options.EncodingLimits;
         var objectIdFieldName = resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId;
         var layerSrid = resource.ReadSrid() ?? 4326;
-        return GeoParquetFeatureWriter.FormatAsGeoParquetStream(
-            result,
-            resource,
-            objectIdFieldName,
-            returnGeometry: true,
-            outputSrid: layerSrid,
-            returnZ: true,
-            returnM: false,
-            geometryLimits,
-            outFields,
-            logger,
-            encodingLimits);
+        return GeoParquetFeatureWriter.FormatAsGeoParquetStream(result, resource, new GeoParquetStreamEncodingOptions
+        {
+            ObjectIdFieldName = objectIdFieldName,
+            ReturnGeometry = true,
+            OutputSrid = layerSrid,
+            ReturnZ = true,
+            ReturnM = false,
+            GeometryLimits = geometryLimits,
+            OutFields = outFields,
+            Logger = logger,
+            EncodingLimits = encodingLimits
+        });
     }
 }

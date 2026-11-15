@@ -67,8 +67,18 @@ public static partial class GeoParquetFeatureWriter
         ILogger? logger = null,
         GeoParquetLimits? encodingLimits = null)
     {
-        var (payload, contentType) = FormatAsGeoParquetStream(result, resource, objectIdFieldName,
-            returnGeometry, outputSrid, returnZ, returnM, geometryLimits, outFields, logger, encodingLimits);
+        var (payload, contentType) = FormatAsGeoParquetStream(result, resource, new GeoParquetStreamEncodingOptions
+        {
+            ObjectIdFieldName = objectIdFieldName,
+            ReturnGeometry = returnGeometry,
+            OutputSrid = outputSrid,
+            ReturnZ = returnZ,
+            ReturnM = returnM,
+            GeometryLimits = geometryLimits,
+            OutFields = outFields,
+            Logger = logger,
+            EncodingLimits = encodingLimits
+        });
         using (payload)
         using (var copy = new MemoryStream())
         {
@@ -80,16 +90,17 @@ public static partial class GeoParquetFeatureWriter
     public static (Stream response, string contentType) FormatAsGeoParquetStream(
         QueryResult<Feature> result,
         MetadataV2Object resource,
-        string objectIdFieldName,
-        bool returnGeometry,
-        int? outputSrid,
-        bool returnZ,
-        bool returnM,
-        GeometryLimits geometryLimits,
-        string[]? outFields = null,
-        ILogger? logger = null,
-        GeoParquetLimits? encodingLimits = null)
+        GeoParquetStreamEncodingOptions options)
     {
+        var objectIdFieldName = options.ObjectIdFieldName;
+        var returnGeometry = options.ReturnGeometry;
+        var outputSrid = options.OutputSrid;
+        var returnZ = options.ReturnZ;
+        var returnM = options.ReturnM;
+        var geometryLimits = options.GeometryLimits;
+        var outFields = options.OutFields;
+        var logger = options.Logger;
+        var encodingLimits = options.EncodingLimits;
         ArgumentNullException.ThrowIfNull(resource);
         encodingLimits ??= new GeoParquetLimits();
         ValidateEncodingLimits(encodingLimits);

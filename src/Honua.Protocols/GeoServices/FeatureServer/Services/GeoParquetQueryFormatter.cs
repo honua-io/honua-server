@@ -46,29 +46,13 @@ internal static class GeoParquetQueryFormatter
     public static (Stream response, string contentType) FormatAsGeoParquetStream(
         QueryResult<Feature> result,
         MetadataV2Object resource,
-        bool returnGeometry,
-        int? outputSrid,
-        bool returnZ,
-        bool returnM,
-        GeometryLimits geometryLimits,
-        string[]? outFields = null,
-        ILogger? logger = null,
-        GeoParquetLimits? encodingLimits = null)
+        GeoParquetStreamEncodingOptions options)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
-        return GeoParquetFeatureWriter.FormatAsGeoParquetStream(
-            result,
-            resource,
-            objectIdFieldName,
-            returnGeometry,
-            outputSrid,
-            returnZ,
-            returnM,
-            geometryLimits,
-            outFields,
-            logger,
-            encodingLimits);
+        return GeoParquetFeatureWriter.FormatAsGeoParquetStream(result, resource, options with
+        {
+            ObjectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource)
+        });
     }
 
     internal static List<MetadataV2Field> ResolveSelectedFields(MetadataV2Object resource, string[]? outFields)

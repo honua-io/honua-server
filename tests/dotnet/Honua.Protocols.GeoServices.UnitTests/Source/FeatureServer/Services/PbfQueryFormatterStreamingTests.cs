@@ -19,7 +19,16 @@ public sealed partial class PbfQueryFormatterTests
             .Add("name", new string('x', 200_000)));
         var query = QueryResult<Feature>.Create(1, [feature]);
         var (expected, _) = _sut.FormatAsPbf(query, layer, false, null, false, false, null, null, null);
-        var (response, contentType) = _sut.FormatAsPbfStream(query, layer, false, null, false, false, null, null, null);
+        var (response, contentType) = _sut.FormatAsPbfStream(query, layer, new PbfStreamEncodingOptions
+        {
+            ReturnGeometry = false,
+            OutputSrid = null,
+            ReturnZ = false,
+            ReturnM = false,
+            GeometryPrecision = null,
+            MaxAllowableOffset = null,
+            OutFields = null
+        });
         using var body = new BinaryWriteDigest();
         var context = new DefaultHttpContext();
         context.Response.Body = body;
@@ -38,7 +47,16 @@ public sealed partial class PbfQueryFormatterTests
         var features = Enumerable.Range(1, count).Select(id => Feature.Create(id, null, attributes)).ToImmutableArray();
         var query = QueryResult<Feature>.Create(count, features);
         var baseline = GC.GetTotalMemory(true);
-        var (response, _) = _sut.FormatAsPbfStream(query, CreatePointLayer(), false, null, false, false, null, null, null);
+        var (response, _) = _sut.FormatAsPbfStream(query, CreatePointLayer(), new PbfStreamEncodingOptions
+        {
+            ReturnGeometry = false,
+            OutputSrid = null,
+            ReturnZ = false,
+            ReturnM = false,
+            GeometryPrecision = null,
+            MaxAllowableOffset = null,
+            OutFields = null
+        });
         (GC.GetTotalMemory(true) - baseline).Should().BeLessThan(8 * 1024 * 1024);
         using var body = new BinaryWriteDigest();
         var context = new DefaultHttpContext();

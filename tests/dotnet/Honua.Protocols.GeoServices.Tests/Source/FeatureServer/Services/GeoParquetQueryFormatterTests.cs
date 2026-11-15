@@ -32,13 +32,20 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         var resource = CreateLayer(Field("objectid", MetadataV2FieldType.BigInteger, nullable: false),
             Field("name", MetadataV2FieldType.String));
         var baseline = GC.GetTotalMemory(true);
-        var (payload, contentType) = GeoParquetQueryFormatter.FormatAsGeoParquetStream(query, resource,
-            false, null, false, false, new GeometryLimits(), encodingLimits: new GeoParquetLimits
+        var (payload, contentType) = GeoParquetQueryFormatter.FormatAsGeoParquetStream(query, resource, new GeoParquetStreamEncodingOptions
+        {
+            ReturnGeometry = false,
+            OutputSrid = null,
+            ReturnZ = false,
+            ReturnM = false,
+            GeometryLimits = new GeometryLimits(),
+            EncodingLimits = new GeoParquetLimits
             {
                 MaxRowsPerBatch = 256,
                 MaxEstimatedBatchBytes = 1024 * 1024,
                 MaxEstimatedInputBytes = 512 * 1024 * 1024
-            });
+            }
+        });
         await using (payload)
         {
             payload.Should().BeAssignableTo<FileStream>();

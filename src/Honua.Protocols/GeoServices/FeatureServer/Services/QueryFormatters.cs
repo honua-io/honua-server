@@ -83,7 +83,17 @@ internal sealed class QueryFormatter : IQueryFormatter
         return format.ToLowerInvariant() switch
         {
             "pbf" => ValueTask.FromResult<(object response, string contentType)>(
-                _pbfFormatter.FormatAsPbfStream(result, resource, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields, quantizationTransform)),
+                _pbfFormatter.FormatAsPbfStream(result, resource, new PbfStreamEncodingOptions
+                {
+                    ReturnGeometry = returnGeometry,
+                    OutputSrid = outputSrid,
+                    ReturnZ = returnZ,
+                    ReturnM = returnM,
+                    GeometryPrecision = geometryPrecision,
+                    MaxAllowableOffset = maxAllowableOffset,
+                    OutFields = outFields,
+                    QuantizationTransform = quantizationTransform
+                })),
             "geojson" => ValueTask.FromResult<(object response, string contentType)>(
                 FormatAsGeoJson(result, resource, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
             "json" => ValueTask.FromResult<(object response, string contentType)>(
@@ -121,18 +131,18 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits effectiveLimits,
         string[]? outFields)
     {
-        var (response, contentType) = GeoParquetFeatureWriter.FormatAsGeoParquetStream(
-            result,
-            resource,
-            GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
-            returnGeometry,
-            outputSrid,
-            returnZ,
-            returnM,
-            effectiveLimits,
-            outFields,
-            _logger,
-            _geoParquetLimits);
+        var (response, contentType) = GeoParquetFeatureWriter.FormatAsGeoParquetStream(result, resource, new GeoParquetStreamEncodingOptions
+        {
+            ObjectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
+            ReturnGeometry = returnGeometry,
+            OutputSrid = outputSrid,
+            ReturnZ = returnZ,
+            ReturnM = returnM,
+            GeometryLimits = effectiveLimits,
+            OutFields = outFields,
+            Logger = _logger,
+            EncodingLimits = _geoParquetLimits
+        });
 
         return (Results.Stream(response, contentType), contentType);
     }

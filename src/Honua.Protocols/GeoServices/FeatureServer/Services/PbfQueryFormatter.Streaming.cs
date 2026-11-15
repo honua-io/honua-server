@@ -17,15 +17,16 @@ internal sealed partial class PbfQueryFormatter
     public (IResult response, string contentType) FormatAsPbfStream(
         QueryResult<Feature> result,
         MetadataV2Object resource,
-        bool returnGeometry,
-        int? outputSrid,
-        bool returnZ,
-        bool returnM,
-        int? geometryPrecision,
-        double? maxAllowableOffset,
-        string[]? outFields,
-        QuantizationTransform? quantizationTransform = null)
+        PbfStreamEncodingOptions options)
     {
+        var returnGeometry = options.ReturnGeometry;
+        var outputSrid = options.OutputSrid;
+        var returnZ = options.ReturnZ;
+        var returnM = options.ReturnM;
+        var geometryPrecision = options.GeometryPrecision;
+        var maxAllowableOffset = options.MaxAllowableOffset;
+        var outFields = options.OutFields;
+        var quantizationTransform = options.QuantizationTransform;
         var limits = GeometryOutputProcessor.CreateEffectiveLimits(_geometryLimits, geometryPrecision,
             maxAllowableOffset, forceSimplify: maxAllowableOffset is > 0);
         var header = new ProtobufWriter(256);
