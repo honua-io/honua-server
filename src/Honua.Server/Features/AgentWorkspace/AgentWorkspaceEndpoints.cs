@@ -1,7 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.AgentWorkspace;
 
@@ -9,6 +13,7 @@ internal static class AgentWorkspaceEndpoints
 {
     public static IServiceCollection AddLocalProcessWorkspaces(this IServiceCollection services)
     {
+        services.TryAddSingleton<IOperatorScopeAuthorizer, OperatorScopeAuthorizer>();
         services.AddSingleton<AgentWorkspaceIdentityStore>();
         services.AddScoped<AgentWorkspaceAuthorization>();
         services.AddHttpClient<ILocalProcessWorkspaceGateway, LocalProcessWorkspaceGateway>(client => client.Timeout = TimeSpan.FromSeconds(30))
@@ -34,9 +39,9 @@ internal static class AgentWorkspaceEndpoints
                 return Results.Json(new LocalProcessError(exception.Message), LocalProcessJsonContext.Default.LocalProcessError, statusCode: exception.StatusCode);
             }
         });
-        group.MapPost("/workspaces", Create);
-        group.MapGet("/workspaces/{workspaceId}", Get);
-        group.MapLocalProcesses();
+        group.MapPost("/workspaces", Create).RequiresScope(OperatorResourceType.Workspace, OperatorOperation.Create);
+        group.MapGet("/workspaces/{workspaceId}", Get).RequiresScope(OperatorResourceType.Workspace, OperatorOperation.Read);
+        endpoints.MapLocalProcesses(versions);
     }
 
     private static async Task<IResult> Create(HttpContext context, AgentWorkspaceAuthorization authorization, AgentWorkspaceIdentityStore store)

@@ -54,10 +54,10 @@ public sealed class JsonContextRegistrationTests
     {
         var serializerOptions = BuildConfiguredHttpJsonOptions().SerializerOptions;
 
-        serializerOptions.GetTypeInfo(typeof(LocalProcessBindRequest)).Should().NotBeNull();
-        serializerOptions.GetTypeInfo(typeof(LocalProcessSourceWrite)).Should().NotBeNull();
-        serializerOptions.GetTypeInfo(typeof(LocalProcessSnapshotRequest)).Should().NotBeNull();
-        serializerOptions.GetTypeInfo(typeof(LocalProcessRunRequest)).Should().NotBeNull();
+        serializerOptions.GetTypeInfo<LocalProcessBindRequest>().Should().NotBeNull();
+        serializerOptions.GetTypeInfo<LocalProcessSourceWrite>().Should().NotBeNull();
+        serializerOptions.GetTypeInfo<LocalProcessSnapshotRequest>().Should().NotBeNull();
+        serializerOptions.GetTypeInfo<LocalProcessRunRequest>().Should().NotBeNull();
     }
 
     [UnitTest]

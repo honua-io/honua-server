@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.ControlPlane;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Domain;
@@ -21,7 +20,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
-using Npgsql;
 
 namespace Honua.Server.Tests.Features.AgentWorkspace;
 
@@ -40,8 +38,6 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
     {
         _fixture.ConfigureWebHost(ConfigureHost).ConfigureServices(services =>
         {
-            services.RemoveAll<JobStoreDatabase>();
-            services.AddSingleton(provider => new JobStoreDatabase(provider.GetRequiredService<NpgsqlDataSource>(), _fixture.CurrentSchema));
             services.RemoveAll<IOperatorAuthorizationEvaluator>();
             services.AddSingleton<IOperatorAuthorizationEvaluator, AllowOperator>();
             services.RemoveAll<ILocalProcessWorkspaceGateway>();
@@ -53,10 +49,6 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
             services.AddSingleton<ILocalProcessWorkspaceGateway>(new LocalProcessWorkspaceGateway(new HttpClient(_sandbox), configuration));
         });
         await _fixture.InitializeAsync();
-        await using var stream = typeof(Program).Assembly.GetManifestResourceStream("Honua.Server.Migrations.155_CreateAgentWorkspaceIdentities.sql")!;
-        using var reader = new StreamReader(stream);
-        var ddl = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", $"\"{_fixture.CurrentSchema}\"", StringComparison.Ordinal);
-        await _fixture.Postgres.ExecuteDdlUnderLockAsync(ddl);
     }
 
     private static void ConfigureHost(IWebHostBuilder builder)
@@ -168,39 +160,147 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
         using var owner = Client("alice", "tenant-a");
         var workspace = await CreateWorkspace(owner);
         using var stranger = Client("bob", "tenant-a");
-        var prefix = $"/api/v1/agent/workspaces/{workspace.WorkspaceId}/processes/local/";
+        var id = workspace.WorkspaceId;
+        var snapshot = new string('a', 32);
+        var run = new string('b', 32);
         var routes = new[]
         {
-            ("GET", "project/identity"), ("POST", "project/bind"), ("DELETE", $"project/bindings/{workspace.WorkspaceId}"),
-            ("GET", "project"), ("GET", "sources/main.py"), ("PUT", "sources/main.py"), ("POST", "snapshots"),
-            ("GET", "snapshots/" + new string('a', 32)), ("GET", $"snapshots/{new string('a', 32)}/sources/main.py"),
-            ("POST", "runs"), ("GET", "runs"), ("GET", "runs/" + new string('b', 32)),
-            ("POST", $"runs/{new string('b', 32)}/cancel"), ("GET", "commands/command-1"),
-            ("GET", $"runs/{new string('b', 32)}/artifacts/result.txt")
+            ("GET", $"/api/v1/agent/workspaces/{id}/processes/local/project/identity"),
+            ("POST", $"/api/v1/agent/workspaces/{id}/processes/local/project/bind"),
+            ("DELETE", $"/api/v1/agent/workspaces/{id}/processes/local/project/bindings/{id}"),
+            ("GET", $"/api/v1/agent/workspaces/{id}/processes/local/project"),
+            ("GET", $"/api/v1/agent/workspaces/{id}/processes/local/sources/main.py"),
+            ("PUT", $"/api/v1/agent/workspaces/{id}/processes/local/sources/main.py"),
+            ("POST", $"/api/v1/agent/workspaces/{id}/processes/local/snapshots"),
+            ("GET", $"/api/v1/agent/workspaces/{id}/processes/local/snapshots/{snapshot}"),
+            ("GET", $"/api/v1/agent/workspaces/{id}/processes/local/snapshots/{snapshot}/sources/main.py"),
+            ("POST", $"/api/v1/agent/workspaces/{id}/processes/local/runs"),
+            ("GET", $"/api/v1/agent/workspaces/{id}/processes/local/runs"),
+            ("GET", $"/api/v1/agent/workspaces/{id}/processes/local/runs/{run}"),
+            ("POST", $"/api/v1/agent/workspaces/{id}/processes/local/runs/{run}/cancel"),
+            ("GET", $"/api/v1/agent/workspaces/{id}/processes/local/commands/command-1"),
+            ("GET", $"/api/v1/agent/workspaces/{id}/processes/local/runs/{run}/artifacts/result.txt")
         };
         foreach (var (method, path) in routes)
         {
-            using var request = new HttpRequestMessage(new HttpMethod(method), prefix + path);
+            using var request = new HttpRequestMessage(new HttpMethod(method), path);
             if (method is "POST" or "PUT")
                 request.Content = new StringContent("""{"projectId":"project","expectedRevision":1,"content":"source","sourceDigest":"digest","snapshotId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","snapshotDigest":"digest","commandId":"command-1"}""", Encoding.UTF8, "application/json");
             using var response = await stranger.SendAsync(request);
             response.StatusCode.Should().Be(HttpStatusCode.NotFound, "{0} {1} must check the stored owner", method, path);
         }
         _sandbox.Calls.Should().Be(0);
+        var workspaceRoutes = _fixture.Services.GetRequiredService<Microsoft.AspNetCore.Routing.EndpointDataSource>().Endpoints
+            .OfType<Microsoft.AspNetCore.Routing.RouteEndpoint>()
+            .Where(endpoint => endpoint.RoutePattern.RawText?.Contains("/agent/workspaces", StringComparison.Ordinal) == true)
+            .ToList();
+        workspaceRoutes.Should().HaveCount(17);
+        workspaceRoutes.Should().OnlyContain(endpoint => endpoint.Metadata.GetMetadata<AgentWorkspaceScope>() != null,
+            "every workspace route must declare the OAuth scope it requires");
     }
+
+    [IntegrationTest]
+    [Endpoint("DELETE /api/v1/agent/workspaces/{workspaceId}/processes/local/project/bindings/{bindingId}")]
+    public async Task RevokeBinding_Owner_RevokesOnlyTheirOwnWorkspaceBinding()
+    {
+        using var owner = Client("alice", "tenant-a");
+        var workspace = await CreateWorkspace(owner);
+        using var foreign = await owner.DeleteAsync($"/api/v1/agent/workspaces/{workspace.WorkspaceId}/processes/local/project/bindings/{Guid.NewGuid():N}");
+        foreign.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        _sandbox.Calls.Should().Be(0);
+        using var revoked = await owner.DeleteAsync($"/api/v1/agent/workspaces/{workspace.WorkspaceId}/processes/local/project/bindings/{workspace.WorkspaceId}");
+        revoked.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        _sandbox.Calls.Should().Be(1);
+        _sandbox.Workspace.Should().Be(workspace.WorkspaceId);
+    }
+
+    private static readonly (string Method, string Path)[] MutatingLocalRoutes =
+    [
+        ("POST", "project/bind"), ("DELETE", "project/bindings/{0}"), ("PUT", "sources/main.py"), ("POST", "snapshots"),
+        ("POST", "runs"), ("POST", "runs/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/cancel")
+    ];
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/agent/workspaces")]
+    [Endpoint("GET /api/v1/agent/workspaces/{workspaceId}")]
+    [Endpoint("GET /api/v1/agent/workspaces/{workspaceId}/processes/local/project/identity")]
+    [Endpoint("POST /api/v1/agent/workspaces/{workspaceId}/processes/local/project/bind")]
+    [Endpoint("DELETE /api/v1/agent/workspaces/{workspaceId}/processes/local/project/bindings/{bindingId}")]
+    [Endpoint("PUT /api/v1/agent/workspaces/{workspaceId}/processes/local/sources/{**path}")]
+    [Endpoint("POST /api/v1/agent/workspaces/{workspaceId}/processes/local/snapshots")]
+    [Endpoint("POST /api/v1/agent/workspaces/{workspaceId}/processes/local/runs")]
+    [Endpoint("POST /api/v1/agent/workspaces/{workspaceId}/processes/local/runs/{runId}/cancel")]
+    public async Task ReadOnlyBearer_ReadsOwnedWorkspace_ButCannotCreateEditOrRun()
+    {
+        using var owner = Client("alice", "tenant-a");
+        var workspace = await CreateWorkspace(owner);
+        using var reader = Client("alice", "tenant-a", scope: OperatorScopeCatalog.Read);
+
+        using var create = await reader.PostAsync("/api/v1/agent/workspaces", null);
+        create.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var read = await reader.GetAsync($"/api/v1/agent/workspaces/{workspace.WorkspaceId}");
+        read.StatusCode.Should().Be(HttpStatusCode.OK);
+        var prefix = $"/api/v1/agent/workspaces/{workspace.WorkspaceId}/processes/local/";
+        using var identity = await reader.GetAsync(prefix + "project/identity");
+        identity.StatusCode.Should().Be(HttpStatusCode.OK);
+        _sandbox.Calls.Should().Be(1);
+
+        foreach (var (method, path) in MutatingLocalRoutes)
+        {
+            using var response = await reader.SendAsync(LocalRequest(method, prefix + string.Format(System.Globalization.CultureInfo.InvariantCulture, path, workspace.WorkspaceId)));
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden, "{0} {1} must enforce the token scope ceiling", method, path);
+        }
+        _sandbox.Calls.Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/agent/workspaces")]
+    [Endpoint("GET /api/v1/agent/workspaces/{workspaceId}")]
+    public async Task BearerWithoutRecognizedScope_IsDeniedBeforeTheStore()
+    {
+        using var owner = Client("alice", "tenant-a");
+        var workspace = await CreateWorkspace(owner);
+        using var unscoped = Client("alice", "tenant-a", scope: null);
+        using var create = await unscoped.PostAsync("/api/v1/agent/workspaces", null);
+        using var read = await unscoped.GetAsync($"/api/v1/agent/workspaces/{workspace.WorkspaceId}");
+        create.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        read.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/agent/workspaces/{workspaceId}/processes/local/runs")]
+    public async Task RunWithoutCustomCodeScope_IsForbidden()
+    {
+        using var owner = Client("alice", "tenant-a");
+        var workspace = await CreateWorkspace(owner);
+        var scopes = string.Join(' ', OperatorScopeCatalog.Read, OperatorScopeCatalog.Create, OperatorScopeCatalog.Update,
+            OperatorScopeCatalog.Delete, OperatorScopeCatalog.Execute, OperatorScopeCatalog.ExecuteMutating);
+        using var editor = Client("alice", "tenant-a", scope: scopes);
+        using var response = await editor.SendAsync(LocalRequest("POST", $"/api/v1/agent/workspaces/{workspace.WorkspaceId}/processes/local/runs"));
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        _sandbox.Calls.Should().Be(0);
+    }
+
+    private static HttpRequestMessage LocalRequest(string method, string uri) => new(new HttpMethod(method), uri)
+    {
+        Content = method is "POST" or "PUT"
+            ? new StringContent("""{"projectId":"project","expectedRevision":1,"content":"source","sourceDigest":"digest","snapshotId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","snapshotDigest":"digest","commandId":"command-1"}""", Encoding.UTF8, "application/json")
+            : null
+    };
 
     private async Task<AgentWorkspaceIdentity> CreateWorkspace(HttpClient client)
     {
         using var response = await client.PostAsync("/api/v1/agent/workspaces", null);
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        return JsonSerializer.Deserialize(await response.Content.ReadAsStringAsync(), LocalProcessJsonContext.Default.AgentWorkspaceIdentity)!;
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
+        return JsonSerializer.Deserialize(body, LocalProcessJsonContext.Default.AgentWorkspaceIdentity)!;
     }
 
-    private HttpClient Client(string subject, string tenant, bool human = true)
+    private HttpClient Client(string subject, string tenant, bool human = true, string? scope = OperatorScopeCatalog.Full)
     {
         var claims = new List<Claim>
         {
-            new("sub", subject), new("tid", tenant), new("roles", "admin"), new("scope", OperatorScopeCatalog.Full),
+            new("sub", subject), new("tid", tenant), new("roles", "admin"), new("scope", scope ?? "openid profile"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
         claims.Add(new Claim(human ? "amr" : "grant_type", human ? "mfa" : "client_credentials"));
