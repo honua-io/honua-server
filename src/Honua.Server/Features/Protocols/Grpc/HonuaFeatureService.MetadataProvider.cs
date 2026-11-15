@@ -4,6 +4,7 @@
 using Grpc.Core;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Protocols.Grpc;
