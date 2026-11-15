@@ -80,9 +80,8 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
 
         if (!updated)
         {
-            // The caller's read (possibly served from this cache) lost a concurrent sync race.
-            // Evict the cached entry best-effort so the retry reads the winner's cursor from
-            // the authoritative store instead of the stale cached state.
+            // The caller lost a concurrent sync race. Evict its stale cache entry
+            // best-effort; the next read will obtain the authoritative cursor.
             try
             {
                 await _cache.RemoveAsync(replica.ReplicaId, cancellationToken).ConfigureAwait(false);
@@ -113,14 +112,8 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
 
     public async Task<ReplicaState?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
     {
-        // Read-through: cache first
-        var cached = await _cache.GetAsync(replicaId, cancellationToken).ConfigureAwait(false);
-        if (cached != null)
-        {
-            return cached;
-        }
-
-        // Cache miss: fall back to Postgres
+        // Local cache entries cannot observe another host deleting a replica or advancing
+        // its sync cursor. Read Postgres on every request to keep both authoritative.
         var record = await _repository.GetAsync(replicaId, cancellationToken).ConfigureAwait(false);
         if (record == null)
         {
