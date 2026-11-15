@@ -113,6 +113,28 @@ jq -e '.releaseGates[] | select(.id=="server-security-nightly") | .evidenceState
   || { echo "[ERROR] failing gate not mapped to blocked with blocker" >&2; exit 1; }
 echo "[OK] conclusion->evidenceState mapping correct"
 
+
+echo "Validating: only explicit successful conclusions pass across every evidence surface"
+jq -n '
+  ["success", "passed", "green", "ok", "SUCCESS", "completed", "failure",
+   "cancelled", "skipped", "neutral", "timed_out", "action_required", "", null]
+  | map(. as $conclusion | {
+      id: ((if (["success", "passed", "green", "ok", "SUCCESS"] | index($conclusion))
+           then "passed-" else "blocked-" end) + ($conclusion // "missing")),
+      conclusion: $conclusion
+    })
+  | {releaseGates: ., repositoryLanes: ., releaseLaneCriteria: .}
+' >"$WORKDIR/conclusions.json"
+"$GEN" "${COMMON_ARGS[@]}" --evidence "$WORKDIR/conclusions.json" \
+  --output "$WORKDIR/manifest-conclusions.json" >/dev/null
+jq -e '
+  [.releaseGates[], .repositoryLanes[], .releaseLaneCriteria[]]
+  | length == 42 and all(.[];
+      .evidenceState == (if (.id | startswith("passed-")) then "passed" else "blocked" end))
+' "$WORKDIR/manifest-conclusions.json" >/dev/null \
+  || { echo "[ERROR] non-success conclusion passed or success alias blocked" >&2; exit 1; }
+echo "[OK] all three evidence surfaces require explicit success"
+
 echo
 echo "Validating: without a digest, candidate.image is blocked with the #41 follow-up"
 "$GEN" "${COMMON_ARGS[@]}" --output "$WORKDIR/manifest-noimage.json" >/dev/null

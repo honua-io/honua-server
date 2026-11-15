@@ -119,7 +119,7 @@ manifest="$(
     # Map a CI conclusion to an evidenceState.
     def state_from($conclusion; $blockers):
       ($conclusion // "" | ascii_downcase) as $c |
-      if   ($c | IN("success","passed","green","ok","completed")) then "passed"
+      if   ($c | IN("success","passed","green","ok")) then "passed"
       elif ($c == "" and (($blockers // []) | length) == 0) then "blocked"
       else "blocked" end;
 
