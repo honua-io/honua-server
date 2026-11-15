@@ -27,6 +27,8 @@ public sealed record MetadataV2ObjectMetadata : ExtensibleJsonRecord
     private IReadOnlyList<string>? _keywords;
     private IReadOnlyList<string>? _themes;
     private IReadOnlyList<MetadataV2Link>? _links;
+    private IReadOnlyList<string>? _topicCategories;
+    private IReadOnlyList<MetadataV2ResponsibleParty>? _contacts;
 
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
@@ -97,6 +99,12 @@ public sealed record MetadataV2ObjectMetadata : ExtensibleJsonRecord
     [JsonPropertyName("license")]
     public string? License { get; init; }
 
+    [JsonPropertyName("accessConstraints")]
+    public string? AccessConstraints { get; init; }
+
+    [JsonPropertyName("fees")]
+    public string? Fees { get; init; }
+
     [JsonPropertyName("attribution")]
     public string? Attribution { get; init; }
 
@@ -106,12 +114,38 @@ public sealed record MetadataV2ObjectMetadata : ExtensibleJsonRecord
     [JsonPropertyName("contactPoint")]
     public MetadataV2ContactPoint? ContactPoint { get; init; }
 
+    [JsonPropertyName("contacts")]
+    public IReadOnlyList<MetadataV2ResponsibleParty> Contacts
+    {
+        get => _contacts ?? Array.Empty<MetadataV2ResponsibleParty>();
+        init => _contacts = value;
+    }
+
     [JsonPropertyName("links")]
     public IReadOnlyList<MetadataV2Link> Links
     {
         get => _links ?? Array.Empty<MetadataV2Link>();
         init => _links = value;
     }
+
+    [JsonPropertyName("topicCategories")]
+    public IReadOnlyList<string> TopicCategories
+    {
+        get => _topicCategories ?? Array.Empty<string>();
+        init => _topicCategories = value;
+    }
+
+    [JsonPropertyName("updateFrequency")]
+    public string? UpdateFrequency { get; init; }
+
+    [JsonPropertyName("lineage")]
+    public string? Lineage { get; init; }
+
+    [JsonPropertyName("spatialResolution")]
+    public MetadataV2SpatialResolution? SpatialResolution { get; init; }
+
+    [JsonPropertyName("temporalResolution")]
+    public string? TemporalResolution { get; init; }
 
     private static readonly IReadOnlyDictionary<string, string> EmptyStringMap =
         new Dictionary<string, string>();

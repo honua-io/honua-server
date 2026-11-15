@@ -1,7 +1,7 @@
 ---
 type: index
 title: "GIS workflow contracts"
-description: "Human walkthroughs and structured composition contracts for analysis, publishing, map/app design, and operation."
+description: "Human walkthroughs and structured workflow contracts for analysis, publishing, map/app design, and operation."
 tags: [gis, domain-language, workflow]
 ---
 
@@ -30,6 +30,10 @@ Routine Studio design is the direct prompt/edit/preview/refine/undo loop. Data p
 - [Recover or cancel an interrupted job](recover-job.md)
 - [Run a native conversion and retain its output](run-native-job.md)
 - [Clean up owned outputs and configuration](cleanup-resources.md)
-- [Design a map application through prompt and preview](design-studio.md)
+- [Design an App through prompt and preview](design-studio.md)
 
-A workflow page is not a release qualification receipt. Follow the source-linked implementation limits, including preview status and the distinction between the current Studio draft adapter and its Git-workspace design contract.
+A workflow page is not a release qualification receipt. Follow the source-linked implementation limits, including preview status and the distinction between the current Studio draft adapter and its Git worktree design contract.
+
+## Vocabulary review rule
+
+Review workflow prose and semantic bindings against the [canonical glossary](../../concepts/domain/README.md). Use Connection, Dataset, Layer, Service, Folder, Environment, Map, App, Draft, Version, and Released for those objects. Reject Composition, Published layer, workspace as a grouping or tenancy object, and slot or serving target as user-facing objects. Distinguish a Layer from a Map's drawing layer. Keep exact current API identifiers, schema values, and historical file paths unchanged when documenting their existing contracts; they do not define alternative object names.

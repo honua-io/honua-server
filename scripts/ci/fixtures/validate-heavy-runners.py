@@ -156,7 +156,7 @@ SELECTED_RUNNER = (
     "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
     " && needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
 )
-PR_GATE_LIGHT_JOBS = {"runner-select", "format", "fast-tests", "affected-shards-select", "affected-shards", "ci-router-validation", "required"}
+PR_GATE_LIGHT_JOBS = {"runner-select", "format", "affected-shards-select", "affected-shards", "ci-router-validation", "required"}
 LIGHT_RUNNER = (
     "${{ vars.HONUA_LIGHT_RUNNER"
     " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
@@ -210,7 +210,11 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, need
             ["runner-select", "format", "fast-tests"], ["honua-build", "ubuntu-latest", ""], scenarios,
         ):
             light, fork, draft, expected = scenario
-            expression = self.jobs[name]["runs-on"].removeprefix("${{").removesuffix("}}").strip()
+            if name == "fast-tests":
+                expected = "ubuntu-latest"
+            runner = self.jobs[name]["runs-on"]
+            expression = (runner.removeprefix("${{").removesuffix("}}").strip()
+                          if runner.startswith("${{") else json.dumps(runner))
             context = {
                 "expression": expression.replace("needs.runner-select", "needs['runner-select']"),
                 "selected": selected, "light": light, "fork": fork, "draft": draft,
@@ -234,6 +238,15 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, need
         for name in PR_GATE_LIGHT_JOBS:
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], LIGHT_RUNNER)
+
+    def test_light_jobs_pin_temp_to_the_runner_directory_before_other_work(self):
+        for name in PR_GATE_LIGHT_JOBS:
+            with self.subTest(job=name):
+                step = self.jobs[name]["steps"][0]
+                self.assertEqual(step["name"], "Use the job's own temp directory")
+                for key in ("TMPDIR", "TEMP", "TMP"):
+                    self.assertIn(f'echo "{key}=${{RUNNER_TEMP}}"', step["run"])
+                self.assertIn("GITHUB_ENV", step["run"])
 
     def test_remaining_control_jobs_stay_hosted(self):
         for name in set(self.jobs) - PR_GATE_SELECTED_JOBS - PR_GATE_LIGHT_JOBS - {SHARD_JOBS["pr-gate.yml"][0]}:
@@ -274,6 +287,10 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, need
         self.assertEqual(select["permissions"], {"contents": "read", "id-token": "write"})
         for step in select["steps"]:
             with self.subTest(step=step.get("name") or step.get("uses")):
+                if step.get("name") == "Use the job's own temp directory":
+                    self.assertNotIn("if", step)
+                    self.assertEqual(step["timeout-minutes"], 1)
+                    continue
                 self.assertTrue(step["if"].startswith("vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce'"))
                 self.assertTrue(step["continue-on-error"])
         self.assertLess(sum(step["timeout-minutes"] for step in select["steps"]), select["timeout-minutes"])

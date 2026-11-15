@@ -26,6 +26,8 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Honua.Infrastructure.Rendering;
 
+using Honua.Core.Features.Metadata.Services;
+
 namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
 internal sealed partial class Wcs20Handler
@@ -250,7 +252,7 @@ internal sealed partial class Wcs20Handler
                 cancellationToken)
             .ConfigureAwait(false);
 
-        var document = BuildCapabilitiesDocument(context, coverageResult.Coverages, supportedCrs.Uris, sections);
+        var document = BuildCapabilitiesDocument(context, coverageResult, supportedCrs.Uris, sections);
         return Xml(document);
     }
 
@@ -573,7 +575,8 @@ internal sealed partial class Wcs20Handler
                         Wcs20Utilities.ExceptionCodes.NoSuchCoverage,
                         $"Coverage '{scope.LayerId!.Value.ToString(CultureInfo.InvariantCulture)}' was not found.",
                         Wcs20Utilities.Parameters.CoverageId))
-                : new CoverageListResult([coverage.Coverage.Value], null);
+                : new CoverageListResult([coverage.Coverage.Value], null,
+                    PublishedMetadataProjection.ForCapabilities(snapshot.Graph, coverage.Coverage.Value.Service));
         }
 
         var service = ResolveService(context, snapshot, scope);
@@ -586,7 +589,7 @@ internal sealed partial class Wcs20Handler
         // Walk publications on the WCS-enabled service, dedupe by resource (prefer
         // IsPrimary) so a resource exposed through multiple publications is listed once,
         // then keep only those backed by a raster the IRasterStore can serve.
-        var byResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Resource Resource, int StorageLayerId)>(StringComparer.Ordinal);
+        var byResource = new Dictionary<string, (MetadataV2Layer Publication, MetadataV2Object Resource, int StorageLayerId)>(StringComparer.Ordinal);
         foreach (var publication in snapshot.Index.PublicationsByService[service.Service!.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
@@ -627,7 +630,7 @@ internal sealed partial class Wcs20Handler
                 entry.Publication.LayerIndex));
         }
 
-        return new CoverageListResult(coverages, null);
+        return new CoverageListResult(coverages, null, PublishedMetadataProjection.ForCapabilities(snapshot.Graph, service.Service));
     }
 
     private async Task<CoverageResolutionResult> ResolveCoverageAsync(
@@ -733,14 +736,14 @@ internal sealed partial class Wcs20Handler
         var raster = await GetPrimaryRasterWithExtentAsync(layerId, cancellationToken).ConfigureAwait(false);
         return raster is null
             ? new LayerCoverageResult(null, null)
-            : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, null), null);
+            : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, owningService), null);
     }
 
     private static bool TryResolveResourceForLayer(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         int layerId,
-        out MetadataV2Resource resource,
+        out MetadataV2Object resource,
         out MetadataV2Service? owningService)
     {
         var matchingBindings = snapshot.Graph.StorageBindings
@@ -761,7 +764,7 @@ internal sealed partial class Wcs20Handler
             .Select(candidate => candidate!)
             .ToArray();
 
-        var preferred = routable.FirstOrDefault(candidate => candidate.Type == MetadataV2ResourceType.RasterDataset)
+        var preferred = routable.FirstOrDefault(candidate => candidate.Type == MetadataV2ObjectType.RasterDataset)
             ?? routable.FirstOrDefault();
         if (preferred is not null)
         {
@@ -797,7 +800,7 @@ internal sealed partial class Wcs20Handler
         if (fallbackOwners.Length > 0)
         {
             var rasterOwners = fallbackOwners
-                .Where(entry => entry.Resource.Type == MetadataV2ResourceType.RasterDataset)
+                .Where(entry => entry.Resource.Type == MetadataV2ObjectType.RasterDataset)
                 .ToArray();
             (resource, owningService) = SelectCoverageOwner(
                 context,
@@ -814,12 +817,12 @@ internal sealed partial class Wcs20Handler
     private static bool TryFindOwningService(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out MetadataV2Service? owningService)
     {
         owningService = null;
         var hasCoveragePublication = false;
-        var visible = new List<(MetadataV2Resource Resource, MetadataV2Service Service)>();
+        var visible = new List<(MetadataV2Object Resource, MetadataV2Service Service)>();
         foreach (var publication in snapshot.Graph.Publications)
         {
             if (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
@@ -849,12 +852,12 @@ internal sealed partial class Wcs20Handler
         return true;
     }
 
-    private static (MetadataV2Resource Resource, MetadataV2Service Service) SelectCoverageOwner(
+    private static (MetadataV2Object Resource, MetadataV2Service Service) SelectCoverageOwner(
         HttpContext context,
-        IReadOnlyList<(MetadataV2Resource Resource, MetadataV2Service Service)> visible)
+        IReadOnlyList<(MetadataV2Object Resource, MetadataV2Service Service)> visible)
     {
-        (MetadataV2Resource Resource, MetadataV2Service Service)? policyBearing = null;
-        (MetadataV2Resource Resource, MetadataV2Service Service)? grantMatch = null;
+        (MetadataV2Object Resource, MetadataV2Service Service)? policyBearing = null;
+        (MetadataV2Object Resource, MetadataV2Service Service)? grantMatch = null;
         var scopeGoverned = LayerScopedWriteKey.IsScopeGovernedPrincipal(context.User);
         foreach (var candidate in visible)
         {
@@ -1111,35 +1114,30 @@ internal sealed partial class Wcs20Handler
 
     private static XDocument BuildCapabilitiesDocument(
         HttpContext context,
-        IReadOnlyCollection<WcsCoverage> coverages,
+        CoverageListResult catalog,
         IReadOnlyList<string> supportedCrsUris,
         IReadOnlySet<string>? sections)
     {
+        var coverages = catalog.Coverages;
+        var metadata = catalog.Metadata ?? new MetadataV2ObjectMetadata();
         var rootChildren = new List<object>();
 
         if (IncludesSection(sections, "ServiceIdentification"))
         {
             rootChildren.Add(new XElement(Ows + "ServiceIdentification",
-                new XElement(Ows + "Title", "Honua WCS 2.0.1"),
-                new XElement(Ows + "Abstract", "Honua Web Coverage Service for raster and coverage data."),
-                new XElement(Ows + "Keywords",
-                    new XElement(Ows + "Keyword", "WCS"),
-                    new XElement(Ows + "Keyword", "coverage"),
-                    new XElement(Ows + "Keyword", "raster")),
+                new XElement(Ows + "Title", metadata.Title ?? "Honua WCS 2.0.1"),
+                new XElement(Ows + "Abstract", metadata.Description ?? string.Empty),
+                CatalogCapabilitiesXml.Keywords(metadata, Ows),
                 new XElement(Ows + "ServiceType", "WCS"),
                 new XElement(Ows + "ServiceTypeVersion", Wcs20Utilities.Version),
                 new XElement(Ows + "Profile", "http://www.opengis.net/spec/WCS_protocol-binding_get-kvp/1.0"),
-                new XElement(Ows + "Fees", "NONE"),
-                new XElement(Ows + "AccessConstraints", "NONE")));
+                new XElement(Ows + "Fees", metadata.Fees ?? string.Empty),
+                new XElement(Ows + "AccessConstraints", metadata.AccessConstraints ?? string.Empty)));
         }
 
         if (IncludesSection(sections, "ServiceProvider"))
         {
-            rootChildren.Add(new XElement(Ows + "ServiceProvider",
-                new XElement(Ows + "ProviderName", "Honua"),
-                new XElement(Ows + "ProviderSite", new XAttribute(XLink + "href", "https://honua.io")),
-                new XElement(Ows + "ServiceContact",
-                    new XElement(Ows + "Role", "pointOfContact"))));
+            rootChildren.Add(CatalogCapabilitiesXml.Provider(metadata, Ows));
         }
 
         if (IncludesSection(sections, "OperationsMetadata"))
@@ -3136,7 +3134,7 @@ internal sealed partial class Wcs20Handler
             Wcs20Utilities.XmlContentType,
             Encoding.UTF8);
 
-    private readonly record struct CoverageListResult(IReadOnlyList<WcsCoverage> Coverages, IResult? Error);
+    private readonly record struct CoverageListResult(IReadOnlyList<WcsCoverage> Coverages, IResult? Error, MetadataV2ObjectMetadata? Metadata = null);
 
     private readonly record struct CoverageResolutionResult(WcsCoverage? Coverage, IResult? Error);
 
@@ -3145,7 +3143,7 @@ internal sealed partial class Wcs20Handler
     private readonly record struct ServiceResolutionResult(MetadataV2Service? Service, IResult? Error);
 
     private readonly record struct WcsCoverage(
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         int LayerId,
         RasterInfo Raster,
         MetadataV2Service? Service,

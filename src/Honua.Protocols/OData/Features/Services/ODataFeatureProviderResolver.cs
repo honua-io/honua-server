@@ -20,8 +20,8 @@ internal sealed class ODataFeatureProviderResolver(
     public async Task<IFeatureReader> ResolveReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
-        MetadataV2Resource resource,
-        MetadataV2Publication? publication,
+        MetadataV2Object resource,
+        MetadataV2Layer? publication,
         int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
@@ -46,8 +46,8 @@ internal sealed class ODataFeatureProviderResolver(
     public Task<IFeatureReader> ResolveQueryReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
-        MetadataV2Resource resource,
-        MetadataV2Publication? publication,
+        MetadataV2Object resource,
+        MetadataV2Layer? publication,
         int storageLayerId,
         bool requireCount,
         CancellationToken cancellationToken)
@@ -56,8 +56,8 @@ internal sealed class ODataFeatureProviderResolver(
     public async Task<IFeatureReader> ResolveQueryReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
-        MetadataV2Resource resource,
-        MetadataV2Publication? publication,
+        MetadataV2Object resource,
+        MetadataV2Layer? publication,
         int storageLayerId,
         bool requireCount,
         bool requireTextSearch,
@@ -101,8 +101,8 @@ internal sealed class ODataFeatureProviderResolver(
     public async Task<(bool Supported, string? ErrorMessage)> CheckWriteSupportAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
-        MetadataV2Resource resource,
-        MetadataV2Publication? publication,
+        MetadataV2Object resource,
+        MetadataV2Layer? publication,
         int storageLayerId,
         CancellationToken cancellationToken)
     {
@@ -141,7 +141,7 @@ internal sealed class ODataFeatureProviderResolver(
         return (false, "OData writes through connection-bound or secondary data providers are not supported.");
     }
 
-    private static bool RequiresReadRouting(MetadataV2GraphSnapshot snapshot, MetadataV2Publication? publication)
+    private static bool RequiresReadRouting(MetadataV2GraphSnapshot snapshot, MetadataV2Layer? publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         return publication is not null &&
@@ -150,7 +150,7 @@ internal sealed class ODataFeatureProviderResolver(
 
     private FeatureProviderQueryRouter RequireProviderRouter(
         MetadataV2Service? service,
-        MetadataV2Publication? publication)
+        MetadataV2Layer? publication)
     {
         if (_providerQueryRouter is null)
         {
