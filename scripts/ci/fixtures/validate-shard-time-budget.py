@@ -7,6 +7,7 @@ defect it is written for.
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 import os
@@ -61,6 +62,37 @@ def check_total_budget_defers_the_overflow(config: dict[str, Any]) -> None:
         raise FixtureError(f"the total budget let {result['projected_runner_minutes']} runner-minutes through")
     if not any(entry["reason"] == "over_total_budget" for entry in result["deferred_to_trunk"]):
         raise FixtureError("a selection past the total budget did not defer the overflow")
+
+
+def check_source_paths_have_budgeted_owners(config: dict[str, Any]) -> None:
+    """A source change must retain a PR owner after the time budget is applied."""
+    limit = budget_module.load_time_budget(config)["max_shard_minutes"]
+    source_paths = {path for shard in config["shards"] for path in shard["paths"]
+                    if path.startswith("src/")}
+    fast_paths = {path for shard in config["shards"] if shard["dispatch_rank"] <= limit
+                  for path in shard["paths"]}
+    missing = sorted(path for path in source_paths
+                     if not any(path.startswith(owner) for owner in fast_paths))
+    if missing:
+        raise FixtureError(f"source paths without a PR owner within {limit} min: {missing}")
+
+
+def check_source_owner_failure_injection(config: dict[str, Any]) -> None:
+    mutated = copy.deepcopy(config)
+    path = "src/Honua.Server/Features/Geocoding/"
+    owners = [shard for shard in mutated["shards"]
+              if any(path.startswith(prefix) for prefix in shard["paths"])]
+    assert owners, "The ownership failure injection needs the real Geocoding source path."
+    limit = budget_module.load_time_budget(config)["max_shard_minutes"]
+    for shard in owners:
+        shard["dispatch_rank"] = limit + 1
+    try:
+        check_source_paths_have_budgeted_owners(mutated)
+    except FixtureError as error:
+        if path not in str(error):
+            raise FixtureError("ownership injection did not identify the uncovered source path") from error
+    else:
+        raise FixtureError("accepted a source path whose every PR owner is over budget")
 
 
 def slowest_uniquely_owned_shard(config: dict[str, Any]) -> dict[str, Any]:
@@ -137,6 +169,8 @@ def check_failure_injections(config: dict[str, Any]) -> None:
 
 def main() -> int:
     config = selector.load_config(shard_fixtures.CONFIG_PATH)
+    check_source_paths_have_budgeted_owners(config)
+    check_source_owner_failure_injection(config)
     check_budget_bounds_the_selection(config)
     check_total_budget_defers_the_overflow(config)
     check_all_deferred_selection_skips_offline(config)

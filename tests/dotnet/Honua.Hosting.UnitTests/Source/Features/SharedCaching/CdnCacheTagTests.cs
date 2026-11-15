@@ -344,7 +344,7 @@ public sealed partial class CdnCacheTagTests
     private static MetadataV2Graph TwoServicesWithLayerZero()
     {
         var builder = new TestMetadataV2GraphBuilder()
-            .AddResource("res-0", "Layer 0", MetadataV2ResourceType.FeatureDataset)
+            .AddResource("res-0", "Layer 0", MetadataV2ObjectType.FeatureDataset)
             .AddStorageBinding("binding-0", "res-0", "features:0", storageLayerId: 0);
         foreach (var name in new[] { "parcels", "roads" })
         {
@@ -356,7 +356,7 @@ public sealed partial class CdnCacheTagTests
                     resourceId: "res-0",
                     layerIndex: 0,
                     serviceLocalId: "0",
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer);
         }
 
         var graph = builder.Build();

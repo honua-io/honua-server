@@ -16,11 +16,58 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Honua.TestKit.Attributes;
 using Xunit.Abstractions;
+using static Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services.FormatterTestResources;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
 public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
 {
+    [UnitTest]
+    public async Task FormatAsGeoParquetStream_HundredThousandFeatures_UsesBoundedFileStorage()
+    {
+        const int count = 100_000;
+        var features = Enumerable.Range(1, count).Select(id => Feature.Create(id, null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", $"{id:D8}-{new string('x', 256)}"))).ToImmutableArray();
+        var query = QueryResult<Feature>.Create(count, features);
+        var resource = CreateLayer(Field("objectid", MetadataV2FieldType.BigInteger, nullable: false),
+            Field("name", MetadataV2FieldType.String));
+        var baseline = GC.GetTotalMemory(true);
+        var (payload, contentType) = GeoParquetQueryFormatter.FormatAsGeoParquetStream(query, resource, new GeoParquetStreamEncodingOptions
+        {
+            ReturnGeometry = false,
+            OutputSrid = null,
+            ReturnZ = false,
+            ReturnM = false,
+            GeometryLimits = new GeometryLimits(),
+            EncodingLimits = new GeoParquetLimits
+            {
+                MaxRowsPerBatch = 256,
+                MaxEstimatedBatchBytes = 1024 * 1024,
+                MaxEstimatedInputBytes = 512 * 1024 * 1024
+            }
+        });
+        await using (payload)
+        {
+            payload.Should().BeAssignableTo<FileStream>();
+            contentType.Should().Be("application/vnd.apache.parquet");
+            (GC.GetTotalMemory(true) - baseline).Should().BeLessThan(8 * 1024 * 1024);
+            var path = ((FileStream)payload).Name;
+            using (var reader = new ParquetSharp.Arrow.FileReader(payload, leaveOpen: true))
+            using (var batches = reader.GetRecordBatchReader())
+            {
+                long rows = 0;
+                while (await batches.ReadNextRecordBatchAsync() is { } batch)
+                {
+                    using (batch) rows += batch.Length;
+                }
+                rows.Should().Be(count);
+            }
+            await payload.DisposeAsync();
+            File.Exists(path).Should().BeFalse();
+        }
+        GC.KeepAlive(query);
+    }
+
     [UnitTheory]
     [InlineData(3)]
     [InlineData(4)]
@@ -464,8 +511,8 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         geoDoc.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry");
     }
 
-    [Fact]
-    public async Task FormatAsGeoParquet_WithMetadataV2Resource_WritesReadableParquetWithGeoMetadata()
+    [UnitTest]
+    public async Task FormatAsGeoParquet_WithMetadataV2Object_WritesReadableParquetWithGeoMetadata()
     {
         var resource = CreateResource(
             Field("objectid", MetadataV2FieldType.BigInteger, nullable: false),
@@ -1593,13 +1640,10 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         return ((DoubleArray)bbox.Fields[index]).GetValue(row);
     }
 
-    /// <summary>
-    /// honua-server#4666: a resource may declare geometry through its schema alone —
-    /// <see cref="MetadataV2Resource.Spatial"/> is nullable, so a graph compiled from a source
-    /// that carries a geometry column but no declared layer geometry type leaves the slot unset.
-    /// The writer used to read only the typed slot, so such a layer was served as an
-    /// attribute-only Parquet file: silent, unsignalled geometry loss for every consumer.
-    /// </summary>
+    // A resource may declare geometry through its schema alone: the Spatial slot is nullable, so a
+    // graph compiled from a source with a geometry column but no declared layer geometry type leaves
+    // it unset. Reading only the typed slot would serve an attribute-only Parquet file and silently
+    // drop the geometry for every consumer.
     [Fact]
     public async Task FormatAsGeoParquet_WhenSpatialSlotIsAbsentButSchemaDeclaresGeometry_StillWritesGeometryColumn()
     {
@@ -1750,32 +1794,17 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         GeoParquetFeatureWriter.SerializeGeometryTypes([]).Should().Be("[]");
     }
 
-    /// <summary>
-    /// A resource whose geometry is declared only by a <see cref="MetadataV2FieldType.Geometry"/>
-    /// schema field, with no <see cref="MetadataV2Resource.Spatial"/> slot at all.
-    /// </summary>
-    private static MetadataV2Resource CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
-        => new()
-        {
-            Metadata = new MetadataV2ObjectMetadata
-            {
-                Id = "test-layer",
-                Name = "test_layer",
-                Description = "Test Layer"
-            },
-            SchemaFields =
-            [
-                .. fields,
-                new MetadataV2Field
-                {
-                    Name = "shape",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = true
-                }
-            ]
-        };
+    private static MetadataV2ObjectMetadata TestLayerMetadata() => new()
+    {
+        Id = "test-layer",
+        Name = "test_layer",
+        Description = "Test Layer"
+    };
 
-    private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)
+    private static MetadataV2Object CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
+        => FormatterTestResources.WithoutSpatialSlot(TestLayerMetadata(), fields);
+
+    private static MetadataV2Object CreateLayer(params MetadataV2Field[] fields)
         => CreateResource(fields);
 
     private static MetadataV2Field Field(
@@ -1793,43 +1822,11 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             SqlType = sqlType
         };
 
-    private static MetadataV2Resource CreateResource(params MetadataV2Field[] fields)
+    private static MetadataV2Object CreateResource(params MetadataV2Field[] fields)
         => CreateResourceWithGeometryType(MetadataV2GeometryType.Point, fields);
 
-    private static MetadataV2Resource CreateResourceWithGeometryType(
+    private static MetadataV2Object CreateResourceWithGeometryType(
         MetadataV2GeometryType geometryType,
         params MetadataV2Field[] fields)
-        => new()
-        {
-            Metadata = new MetadataV2ObjectMetadata
-            {
-                Id = "test-layer",
-                Name = "test_layer",
-                Description = "Test Layer"
-            },
-            SchemaFields =
-            [
-                .. fields,
-                new MetadataV2Field
-                {
-                    Name = "shape",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = true,
-                    SemanticRoles = ["geometry.primary"]
-                }
-            ],
-            Spatial = new MetadataV2ResourceSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = geometryType,
-                PrimaryGeometryField = "shape"
-            }
-        };
-
-    private static byte[] CreatePointWkb(double x, double y)
-        => new WKBWriter().Write(new Point(x, y) { SRID = 4326 });
-
-    private static byte[] CreatePointWkbWithZm(double x, double y, double z, double m)
-        => new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: true)
-            .Write(new Point(new CoordinateZM(x, y, z, m)) { SRID = 4326 });
+        => FormatterTestResources.WithGeometryType(TestLayerMetadata(), geometryType, fields);
 }

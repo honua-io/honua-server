@@ -25,7 +25,7 @@ CREATE OR REPLACE FUNCTION $HonuaSchema$.record_external_layer_change(
     changed_layer_id integer, changed_extent double precision[] DEFAULT NULL)
 RETURNS bigint
 LANGUAGE plpgsql
-AS $function$
+AS $$
 DECLARE
     next_revision bigint;
 BEGIN
@@ -42,6 +42,6 @@ BEGIN
     VALUES (changed_layer_id, next_revision, changed_extent);
     RETURN next_revision;
 END;
-$function$;
+$$;
 
 REVOKE ALL ON FUNCTION $HonuaSchema$.record_external_layer_change(integer, double precision[]) FROM PUBLIC;

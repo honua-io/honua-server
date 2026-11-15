@@ -69,7 +69,6 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
                 builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
                 // Re-check a token's backing credential on every request so a revocation is
                 // observable immediately instead of after the revalidation window.
-                builder.UseSetting("Authentication:PortalToken:SourceRevalidationSeconds", "0");
                 builder.UseSetting("Cors:AllowedOrigins:0", "http://localhost:3000");
                 builder.ConfigureServices(services =>
                     services.AddSingleton<IStartupFilter>(new RemoteIpStartupFilter(ClientIp)));

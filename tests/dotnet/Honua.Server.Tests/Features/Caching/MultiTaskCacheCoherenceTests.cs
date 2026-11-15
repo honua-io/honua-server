@@ -154,7 +154,7 @@ public sealed partial class MultiTaskCacheCoherenceTests : IAsyncLifetime
         await fixture.Postgres.ExecuteDdlUnderLockAsync(ddl);
     }
 
-    private static async Task ChangeLayerAsync(WebAppFixture task, Func<MetadataV2Resource, MetadataV2Resource> change)
+    private static async Task ChangeLayerAsync(WebAppFixture task, Func<MetadataV2Object, MetadataV2Object> change)
     {
         await using var scope = task.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();

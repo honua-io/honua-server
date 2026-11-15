@@ -241,8 +241,6 @@ builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
 builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
     services => services.GetRequiredService<Honua.ControlPlane.OperationHumanApprovalAuthority>());
 
-// Enable Aspire integrations only when Aspire configuration is present.
-var useAspire = builder.Configuration.GetSection("Aspire").Exists();
 var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
@@ -266,47 +264,26 @@ var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastr
     requiresDurableDistributedEvents);
 ConnectionMultiplexer? connectedRedis = null;
 
-if (useAspire)
+var tracingSection = builder.Configuration.GetSection(TracingOptions.SectionName);
+var tracingEnabled = tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled));
+if (tracingSection.Exists() || tracingEnabled)
 {
-    // Add Aspire service defaults (OTel, health, resilience)
-    builder.AddServiceDefaults();
+    builder.AddTelemetryDefaults();
+}
 
-    // Add Npgsql with connection from Aspire
-    builder.AddNpgsqlDataSource("DefaultConnection");
-
-    // Add Redis if configured, otherwise fallback to in-memory cache
-    if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
+// Add Redis if configured, otherwise fallback to in-memory cache
+if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
+{
+    var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
+    builder.Services.AddStackExchangeRedisCache(options =>
     {
-        builder.AddRedisDistributedCache("redis");
-    }
-    else
-    {
-        builder.Services.AddDistributedMemoryCache();
-    }
+        options.Configuration = redisCacheConnectionString;
+        options.InstanceName = cacheKeyPrefix;
+    });
 }
 else
 {
-    var tracingSection = builder.Configuration.GetSection(TracingOptions.SectionName);
-    var tracingEnabled = tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled));
-    if (tracingSection.Exists() || tracingEnabled)
-    {
-        builder.AddTelemetryDefaults();
-    }
-
-    // Add Redis if configured, otherwise fallback to in-memory cache
-    if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
-    {
-        var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
-        builder.Services.AddStackExchangeRedisCache(options =>
-        {
-            options.Configuration = redisCacheConnectionString;
-            options.InstanceName = cacheKeyPrefix;
-        });
-    }
-    else
-    {
-        builder.Services.AddDistributedMemoryCache();
-    }
+    builder.Services.AddDistributedMemoryCache();
 }
 
 if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
@@ -331,8 +308,8 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
                     "Redis durable coordination is required in this environment, but the Redis multiplexer did not establish an active startup connection.");
             }
 
-            var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
-            ProgramLog.RedisStartupConnectionInactive(startupLogger);
+            using var startupLoggerFactory = LoggerFactory.Create(static logging => logging.AddConsole());
+            ProgramLog.RedisStartupConnectionInactive(startupLoggerFactory.CreateLogger<Program>());
         }
     }
     catch (Exception ex)
@@ -344,8 +321,8 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
                 ex);
         }
 
-        var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
-        ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
+        using var startupLoggerFactory = LoggerFactory.Create(static logging => logging.AddConsole());
+        ProgramLog.RedisStartupConnectionFailed(startupLoggerFactory.CreateLogger<Program>(), ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
     }
 }
@@ -618,6 +595,11 @@ if (hostHasSystemDatabase)
         .GetSection(Honua.ControlPlane.ControlPlaneTriggerOptions.SectionName)
         .GetValue<Honua.ControlPlane.ControlPlaneTriggerMode>("TriggerMode", Honua.ControlPlane.ControlPlaneTriggerMode.Poll);
 
+    builder.Services.AddScoped<Honua.Infrastructure.Monitoring.OpsNotificationReminderRunner>();
+    builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler>(
+        static provider => provider.GetRequiredService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>());
+
     if (!isTestEnvironment)
     {
         // All reconcile families are mode-selected (Phase 1: execution jobs; Phase 2: deploy +
@@ -648,6 +630,11 @@ if (hostHasSystemDatabase)
             // route auto-safe remediation findings back through the operation gateway. It is
             // only hosted with the Redis-backed operation gateway; no-Redis hosts stay inert.
             builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
+            if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
+            {
+                builder.Services.AddHostedService(static provider =>
+                    provider.GetRequiredService<Honua.Infrastructure.Monitoring.OpsNotificationReminderService>());
+            }
         }
     }
 
@@ -741,6 +728,11 @@ if (builder.Configuration.GetValue<bool>("ExternalEdits:Enabled")
 }
 
 
+if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
+{
+    builder.Services.AddHostedService<Honua.ControlPlane.CatalogActivationWatcher>();
+}
+
 // Configure cloud file storage for imports and attachments
 builder.Services.AddCloudFileStorage(builder.Configuration);
 builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions>(
@@ -750,6 +742,14 @@ builder.Services.AddAwsImportObjectStore();
 Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
     builder.Services, builder.Configuration);
 builder.Services.AddHostedService<Honua.ControlPlane.ReleaseChangeCdnInvalidation>();
+Honua.Cloud.Aws.Features.Monitoring.AwsOpsWatchdogServiceCollectionExtensions.AddAwsOpsWatchdogKillSwitch(
+    builder.Services, builder.Configuration);
+if (systemDatabaseConfigured && builder.Services.Any(service =>
+    service.ServiceType == typeof(Honua.Core.Features.Observability.Abstractions.IOpsWatchdogKillSwitch)))
+{
+    builder.Services.AddScoped<Honua.Infrastructure.Monitoring.OpsAutonomySettingsWriter>();
+    builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsWatchdogStartupReconciliation>();
+}
 #endif
 
 // Configure file upload security limits
@@ -1093,7 +1093,7 @@ if (replicaProvider != DataProviderNames.DuckDb &&
 
 // The version lock serializes reconcile, post and resolve per (service, version) across nodes on a
 // lease row in the system database. A host with no system database has one node, so an in-process
-// lock is enough. The async job store below still uses Redis when it is configured.
+// lock is enough.
 if (builder.Services.TryAddPostgresExecutionJobStore(builder.Configuration))
 {
     builder.Services.TryAddSingleton<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore,
@@ -1104,10 +1104,6 @@ builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVer
     sp.GetService<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore>() is { } leases
         ? new Honua.Core.Features.Infrastructure.Coordination.LeaseVersionLock(leases)
         : new Honua.Core.Features.FeatureStore.Services.InProcessVersionLock());
-builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobStore>(sp =>
-    new Honua.Infrastructure.Coordination.RedisVersionJobStore(
-        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
-        sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionJobStore>>()));
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobRunner,
     Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
 if (offlineSyncEnabled)
@@ -1711,6 +1707,9 @@ app.UseWhen(
     });
 #endif
 
+// Runs after every credential type is hydrated and before tenant and schema resolution.
+app.UseMiddleware<AnonymousPressureAdmissionMiddleware>();
+
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
 // before any downstream feature handler reads ITenantContext (#1144).
@@ -2007,6 +2006,7 @@ app.MapGeocodingOperationsEndpoints();
 
 // Configure feature-change streaming transport (#501)
 app.MapFeatureStreamEndpoints();
+app.MapRealtimeNotificationEndpoints();
 app.MapFeatureStreamConformanceEndpoints();
 
 // Configure security endpoints (CSP violation reporting)
@@ -2096,12 +2096,6 @@ if (offlineSyncEnabled)
     app.MapFieldCollectionSyncEndpoints();
 }
 app.MapTileOperationsEndpoints();
-
-// Map health endpoints for Aspire dashboard (only when Aspire is enabled)
-if (useAspire)
-{
-    app.MapDefaultEndpoints();
-}
 
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();
