@@ -8,7 +8,7 @@ resource: "honua://capability/streaming.feature-subscriptions"
 
 Receive an event for every feature insert, update, and delete — pushed to your endpoint as a signed webhook or streamed live over WebSocket/SSE.
 
-**Prerequisites:** A writable layer (see [Edit features](edit-features.md)). Streaming is an Experimental surface and is disabled by default: it works on a single node, and delivery across several nodes needs an optional Redis add-on. To use it, enable `Capabilities:Experimental:realtime.feature-streams:Enabled=true` in addition to the required license. Webhook configuration requires restart access to the server's environment; replay and session admin require an admin API key.
+**Prerequisites:** A writable layer (see [Edit features](edit-features.md)). Streaming is an Experimental surface and is disabled by default: every node delivers every committed change, including edits made directly in the database, because streams read the PostgreSQL change log. To use it, enable `Capabilities:Experimental:realtime.feature-streams:Enabled=true` in addition to the required license. Webhook configuration requires restart access to the server's environment; replay and session admin require an admin API key.
 
 Every write — FeatureServer, OGC API Features, OData (including `$batch`), WFS 2.0 transactions, and gRPC `ApplyEdits` — publishes one normalized envelope: `eventId`, `timestamp`, `serviceId`, `layerId`, `objectId`, `operation` (`insert`|`update`|`delete`), `protocol`, `requestId`, plus geometry/attributes when available. Delivery is at-least-once on every channel; always dedupe on `eventId`.
 
@@ -39,17 +39,17 @@ printf '%s.%s' "$TIMESTAMP" "$RAW_BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_H
 
 > Use `createHonuaServerRealtimeSubscription` from `@honua/sdk-js/realtime` and subscribe with `layerId: 0`; the SDK handles the SSE endpoint and event decoding.
 
-SSE subscriptions are fixed by query parameters (`serviceId`, `layers`, `bbox`, `filter` CQL2, `datetime`) at connect time; each `feature-change` event's SSE `id:` is a cursor, so `EventSource` reconnects resume automatically (or pass `cursor=` explicitly).
+SSE subscriptions are fixed by query parameters (`serviceId`, `layers`, `bbox`, `filter` CQL2, `datetime`) at connect time; each `feature-change` event's SSE `id:` is a cursor of the form `features:<generation>`, so `EventSource` reconnects resume automatically (or pass `cursor=` explicitly). A cursor without the `features:` prefix comes from an earlier server version: the stream sends a `reset` event with reason `cursor-epoch` and continues live, so resynchronize from a snapshot. Any other malformed cursor is rejected with `400`.
 
 ### 4. Stream over WebSocket with dynamic subscriptions
 
 Connect a WebSocket to `GET /api/v1/streaming/features`, then send JSON control frames:
 
 ```json
-{"type":"subscribe","subscriptionId":"alpha","layerId":0,"bbox":[-158,21,-157,22],"filter":"status = 'active'","cursor":1234}
+{"type":"subscribe","subscriptionId":"alpha","layerId":0,"bbox":[-158,21,-157,22],"filter":"status = 'active'","cursor":"features:1234"}
 ```
 
-One socket carries many subscriptions; the server answers with `status`, `heartbeat`, `error`, and `feature-change` frames, and `cursor` triggers replay of missed events before live delivery. Unfiltered all-layer streams require admin access; everyone else subscribes to explicit service or layer scopes.
+One socket carries many subscriptions; the server answers with `status`, `heartbeat`, `error`, and `feature-change` frames, and `cursor` triggers replay of missed events before live delivery. Change frames include a numeric `cursor` for ordering and a namespaced `resumeCursor` such as `features:1234`; send `resumeCursor` back in a query or control frame to resume. Bare numeric inputs trigger the legacy cursor-epoch reset. Unfiltered all-layer streams require admin access; everyone else subscribes to explicit service or layer scopes.
 
 ### 5. Start from a baseline (snapshot-then-delta)
 
@@ -65,16 +65,16 @@ Streamed framing:
 ```json
 {"type":"snapshot-begin","snapshotId":"9f2…","subscriptionId":"alpha","sequence":0,"cursor":4821,"reason":"initial","layerIds":[0]}
 {"type":"snapshot-feature","snapshotId":"9f2…","sequence":1,"cursor":4821,"layerId":0,"objectId":17,"geometry":{…},"geometryCrs":"EPSG:4326","attributes":{…}}
-{"type":"snapshot-end","snapshotId":"9f2…","sequence":2,"cursor":4821,"featureCount":1,"complete":true}
+{"type":"snapshot-end","snapshotId":"9f2…","sequence":2,"cursor":4821,"resumeCursor":"features:4821","featureCount":1,"complete":true}
 ```
 
-- **`sequence` is the subscription-local position.** It starts at 0 and advances by exactly one for every snapshot or delta frame this subscription admits, so it stays contiguous even though `cursor` skips values belonging to events your filter rejected. Use `sequence` for gap detection and `cursor` only for replay/resume.
+- **`sequence` is the subscription-local position.** It starts at 0 and advances by exactly one for every snapshot or delta frame this subscription admits, so it stays contiguous even though `cursor` skips values belonging to events your filter rejected. Use `sequence` for gap detection and send `resumeCursor` back for replay/resume.
 - **`cursor` on the snapshot frames is the delta boundary.** It is captured before the baseline read starts, so no mutation can slip between the two. A mutation that commits just before the boundary can appear in both the baseline and the delta stream — delta envelopes carry the full post-mutation attributes, so applying them in `sequence` order over the baseline is idempotent.
 - **`reason`** is `initial` for a fresh subscription, or `cursor-expired` / `cursor-invalid` when you reconnected with a `cursor` the server can no longer replay from. In those cases the server sends a **replacement snapshot** instead of silently continuing with deltas.
 - **`complete: false`** means the baseline hit `FeatureStreaming__MaxSnapshotFeatures` (default 5000), `FeatureStreaming__MaxSnapshotScanRows` (default 20000), or `FeatureStreaming__MaxSnapshotBytes` (default 4 MiB). Do not treat a truncated baseline as authoritative state — narrow the subscription scope or raise the bounds. All three are advertised on `/api/v1/streaming/features/capabilities`, and the stream sends a terminating `status: error` frame naming which bound it hit. The byte budget is the one a large-geometry layer reaches first, and it is what keeps a baseline deliverable through a response path that buffers before returning (API gateways and serverless invoke responses are commonly capped at 6 MB).
 
 - **An unservable snapshot is a typed problem, not a dead stream.** If a layer in the subscription scope has left the catalog, or its backing store will not accept the baseline read, the request is refused with an RFC 7807 `503` problem document naming the condition — before the stream is opened, since a committed stream can no longer carry a status code.
-- **On SSE, only `snapshot-end` carries an `id:`.** A baseline becomes a resumable cursor only once it is whole, so a connection that drops mid-baseline reconnects (via `Last-Event-ID`) into another snapshot rather than a delta tail with a half-applied baseline.
+- **On SSE, only `snapshot-end` carries an `id:`.** On WebSocket, completed `snapshot-end` and batched `snapshot` frames carry `resumeCursor`; incomplete baselines omit it. A baseline becomes a resumable cursor only once it is whole, so a connection that drops mid-baseline reconnects (via `Last-Event-ID`) into another snapshot rather than a delta tail with a half-applied baseline.
 - **A replay-window gap ends the stream before the first post-gap delta is emitted.** Reconnect with the last complete cursor; snapshot mode then returns a replacement snapshot instead of letting a retention race leave stale state marked current.
 
 Each advertised layer also carries `canCompleteBaseline`, separately from `canSubscribe`.
@@ -122,7 +122,7 @@ The workflow is three requests, and the third belongs in a `finally` block:
 
 > Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/feature-events/replay?limit=100`.
 
-Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `nextCursor`, repeat while `hasMore=true`. Retention is in-memory and capped by `FeatureChangeEvents__MaxRetainedEvents` (default 20000); on PostgreSQL a transactional outbox makes publication atomic with the row mutation.
+Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `nextCursor`, repeat while `hasMore=true`. Events are read from the PostgreSQL change log, which every edit writes in its own transaction. A cursor stays resumable for `Realtime__Retention__features` (default 24 hours) and at most `Realtime__ResumeMaxEvents` (default 10000) events behind the newest change.
 
 ### 8. Manage live sessions (admin)
 

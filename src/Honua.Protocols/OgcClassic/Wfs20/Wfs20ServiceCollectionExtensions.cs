@@ -32,10 +32,11 @@ internal static class Wfs20ServiceCollectionExtensions
         services.AddScoped<Wfs20EditServices>();
         services.AddScoped<Wfs20SpatialServices>();
         services.AddScoped<Wfs20Handler>();
+        services.TryAddSingleton<IWfsStoredQueryStore, InMemoryWfsStoredQueryStore>();
 
         // Register additional WFS 2.0 services for comprehensive OGC compliance
-        services.AddScoped<IGmlSerializer, GmlSerializer>();
-        services.AddScoped<IWfs20FeatureFormatConverter, Wfs20FeatureFormatConverter>();
+        services.AddScoped<GmlSerializer>();
+        services.AddScoped<Wfs20FeatureFormatConverter>();
 
         return services;
     }

@@ -122,7 +122,7 @@ jobs:
     if: always() && !cancelled() && (needs.runner-select.result == 'success' || github.event.pull_request.draft == true)
     name: PR Gate / ${{ matrix.check }}
     needs: runner-select
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.analyzer-partition == 'tests' && 'ubuntu-latest' || github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Format and both analyzer partitions run independently after runner selection.
     strategy:
@@ -169,7 +169,9 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.event.pull_request.draft == true || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        # Analyzer rows restore their selected Release graph inside format-check.
+        # Only dotnet format needs this full-solution workspace restore.
+        if: matrix.format == 'true' && (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.event.pull_request.draft == true || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: scripts/ci/dotnet-restore-retry.sh Honua.sln
 
       - name: Format Check

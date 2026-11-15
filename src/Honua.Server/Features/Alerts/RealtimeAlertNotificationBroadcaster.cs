@@ -30,7 +30,7 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
             null, cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask<IAlertNotificationSubscription> SubscribeAsync(
+    public async ValueTask<Subscription> SubscribeAsync(
         Func<AlertEventEnvelope, RealtimePosition, CancellationToken, Task> handler,
         SubscriptionOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -100,7 +100,7 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
     [LoggerMessage(Level = LogLevel.Warning, Message = "An alert realtime subscription closed after a delivery failure.")]
     private static partial void LogSubscriptionFailure(ILogger logger, Exception exception);
 
-    private sealed class Subscription : IAlertNotificationSubscription
+    internal sealed class Subscription : IDisposable
     {
         private const int DeliveryCapacity = 64;
         private readonly RealtimeAlertNotificationBroadcaster _owner;
