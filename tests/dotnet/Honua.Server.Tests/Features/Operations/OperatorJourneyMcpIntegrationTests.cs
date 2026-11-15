@@ -225,7 +225,11 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
         var malformedResult = malformed.GetProperty("result");
         var refusal = malformedResult.GetProperty("structuredContent");
         refusal.GetProperty("status").GetString().Should().Be("Failed");
-        refusal.GetProperty("details").GetProperty("statusCode").GetInt32().Should().Be(400);
+        // Operation details keep HTTP status as text, matching the admin executor dictionary.
+        refusal.GetProperty("details").GetProperty("statusCode").GetString().Should().Be("400");
+        var previewResponse = refusal.GetProperty("details").GetProperty("response").GetString();
+        previewResponse.Should().Contain("Failed to preview file");
+        previewResponse.Should().NotContain("JsonException").And.NotContain("BytePositionInLine");
         var refusalText = malformedResult.GetProperty("content")[0].GetProperty("text").GetString();
         using var refusalDocument = JsonDocument.Parse(refusalText!);
         JsonElement.DeepEquals(refusalDocument.RootElement, refusal).Should().BeTrue();
