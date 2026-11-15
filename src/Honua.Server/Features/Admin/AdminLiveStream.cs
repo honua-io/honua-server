@@ -30,7 +30,9 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
         after ??= (await provider.GetWindowAsync(RealtimeFamily.Admin, context.RequestAborted).ConfigureAwait(false)).Head;
         var channel = Channel.CreateBounded<RealtimeDelivery>(new BoundedChannelOptions(SubscriberCapacity)
         {
-            SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.Wait
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
         });
         await using var subscription = provider.Subscribe(new RealtimeSubscriptionRequest(
             RealtimeFamily.Admin, topics, after, channel.Writer));

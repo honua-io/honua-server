@@ -13,7 +13,9 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
     private readonly Channel<OpsHealthSnapshotResponse> _opsHealth =
         Channel.CreateBounded<OpsHealthSnapshotResponse>(new BoundedChannelOptions(1)
         {
-            FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true, SingleWriter = false
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = false
         });
     private readonly AdminRealtimePublisher _publisher;
     private readonly OpsHealthFlushSignal _flushSignal;
