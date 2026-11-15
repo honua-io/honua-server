@@ -41,28 +41,43 @@ namespace Honua.Server.Tests.Features.Streaming;
 [Collection("Database")]
 [Protocol(TestProtocols.Streaming)]
 [Operation(Operations.Streaming)]
-public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
+public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureStreamProHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro));
+    private readonly FeatureStreamProHost _host;
+    private WebAppFixture _fixture => _host.Fixture;
     private HttpClient _client = null!;
     private bool _defaultApplicationStarted;
 
+    public FeatureStreamEndpointsTests(FeatureStreamProHost host)
+    {
+        _host = host;
+    }
+
     public Task InitializeAsync() => Task.CompletedTask;
 
-    private async Task StartDefaultApplicationAsync()
+    private Task StartDefaultApplicationAsync()
     {
         if (_defaultApplicationStarted)
         {
-            return;
+            return Task.CompletedTask;
         }
 
+        // The host is already up. Drop sessions left by the previous case.
+        _host.ResetBetweenTests();
         _defaultApplicationStarted = true;
-        await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();
+        return Task.CompletedTask;
     }
 
-    public Task DisposeAsync() => _defaultApplicationStarted ? _fixture.DisposeAsync() : Task.CompletedTask;
+    public Task DisposeAsync()
+    {
+        if (_defaultApplicationStarted)
+        {
+            _client.Dispose();
+        }
+
+        return Task.CompletedTask;
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]

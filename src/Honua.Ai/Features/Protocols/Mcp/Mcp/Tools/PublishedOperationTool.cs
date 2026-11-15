@@ -633,6 +633,7 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
             writer.WriteString("type", type);
         }
         if (!string.IsNullOrWhiteSpace(schema.Format)) writer.WriteString("format", schema.Format);
+        if (schema.Minimum is { } minimum) writer.WriteNumber("minimum", minimum);
         if (schema.EnumValues.Count > 0)
         {
             writer.WriteStartArray("enum");
