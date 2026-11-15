@@ -499,6 +499,14 @@ internal static partial class FeatureStreamEndpoints
             return true;
         }
 
+        // The same depth guard as a subscriber filter. Past the limit the
+        // evaluator fails closed, and a surrounding NOT would invert that.
+        if (InMemoryFilterEvaluator.ExceedsMaxDepth(expression))
+        {
+            error = $"Saved permanent filter for resource '{resource.Metadata.Id}' exceeds the streaming depth limit.";
+            return false;
+        }
+
         if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(expression, out error))
         {
             return false;

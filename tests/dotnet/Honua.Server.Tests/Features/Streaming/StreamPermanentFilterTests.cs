@@ -59,6 +59,25 @@ public sealed class StreamPermanentFilterTests
     }
 
     [UnitTest]
+    public void Append_RejectsAFilterDeeperThanTheStreamingLimit()
+    {
+        var predicates = new List<FilterExpression>();
+        var expression = string.Join(
+            " AND ",
+            Enumerable.Repeat("classification <> 'a'", InMemoryFilterEvaluator.MaxStreamingDepth + 2));
+
+        var added = FeatureStreamEndpoints.TryAppendPermanentFilterPredicate(
+            Resource(expression),
+            Filters(),
+            predicates,
+            out var error);
+
+        added.Should().BeFalse();
+        error.Should().NotBeNullOrWhiteSpace();
+        predicates.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public void Append_LeavesPredicatesUntouchedWhenTheLayerHasNoPermanentFilter()
     {
         var predicates = new List<FilterExpression>();
