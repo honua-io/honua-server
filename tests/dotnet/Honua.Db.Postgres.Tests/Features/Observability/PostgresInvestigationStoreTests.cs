@@ -199,7 +199,7 @@ public sealed partial class PostgresInvestigationStoreTests(PostgresFixture fixt
                 pin_id BIGSERIAL PRIMARY KEY,
                 investigation_id TEXT NOT NULL REFERENCES "{schema}".investigations(investigation_id) ON DELETE CASCADE,
                 event_ref TEXT NOT NULL,
-                event_kind SMALLINT NOT NULL,
+                event_kind SMALLINT NOT NULL CHECK (event_kind BETWEEN 1 AND 7),
                 occurred_at TIMESTAMPTZ NOT NULL,
                 note TEXT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -209,7 +209,7 @@ public sealed partial class PostgresInvestigationStoreTests(PostgresFixture fixt
             CREATE TABLE IF NOT EXISTS "{schema}".investigation_links (
                 link_id BIGSERIAL PRIMARY KEY,
                 investigation_id TEXT NOT NULL REFERENCES "{schema}".investigations(investigation_id) ON DELETE CASCADE,
-                resource_kind SMALLINT NOT NULL,
+                resource_kind SMALLINT NOT NULL CHECK (resource_kind BETWEEN 1 AND 4),
                 resource_id TEXT NOT NULL,
                 note TEXT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
