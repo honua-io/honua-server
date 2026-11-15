@@ -8,9 +8,17 @@ namespace Honua.Alerts;
 
 internal sealed class WebSocketAlertDeliverySink : IAlertDeliverySink
 {
-    private readonly RealtimeAlertNotificationBroadcaster _broadcaster;
+    // The dispatcher builds every sink when the host starts, including hosts without PostgreSQL,
+    // so the realtime log is resolved on the first delivery rather than at construction.
+    private readonly Lazy<RealtimeAlertNotificationBroadcaster> _broadcaster;
 
     public WebSocketAlertDeliverySink(RealtimeAlertNotificationBroadcaster broadcaster)
+    {
+        ArgumentNullException.ThrowIfNull(broadcaster);
+        _broadcaster = new Lazy<RealtimeAlertNotificationBroadcaster>(broadcaster);
+    }
+
+    public WebSocketAlertDeliverySink(Lazy<RealtimeAlertNotificationBroadcaster> broadcaster)
     {
         _broadcaster = broadcaster ?? throw new ArgumentNullException(nameof(broadcaster));
     }
@@ -24,7 +32,7 @@ internal sealed class WebSocketAlertDeliverySink : IAlertDeliverySink
     {
         try
         {
-            await _broadcaster.BroadcastAsync(alertEvent, cancellationToken).ConfigureAwait(false);
+            await _broadcaster.Value.BroadcastAsync(alertEvent, cancellationToken).ConfigureAwait(false);
 
             return new AlertDeliveryResult { Succeeded = true, Retryable = false };
         }
