@@ -29,7 +29,8 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
     public async Task QueryPageAndCount_DegenerateEnvelope_SelectsCoincidentPoints(
         double minX, double minY, double maxX, double maxY, long[] expectedIds, bool preferSerialPlan)
     {
-        var reader = CreateReader(preferSerialPlan: preferSerialPlan);
+        // The bounded serial plan only engages for source-backed point layers.
+        var reader = CreateReader(preferSerialPlan: preferSerialPlan, sourceBacked: preferSerialPlan);
         var query = new FeatureQuery
         {
             Limit = 100,

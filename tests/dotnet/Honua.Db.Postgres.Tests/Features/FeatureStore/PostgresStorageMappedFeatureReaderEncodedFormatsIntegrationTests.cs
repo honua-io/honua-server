@@ -602,7 +602,8 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         int storageSrid = 4326,
         string primaryKeyColumn = "objectid",
         bool legacyPrimaryIdLast = false,
-        bool semanticPrimaryId = false)
+        bool semanticPrimaryId = false,
+        bool sourceBacked = false)
     {
         var schemaFields = new List<MetadataV2Field>
         {
@@ -653,7 +654,9 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
                     [FeatureStorageMapping.SourceBackedOption] = "true",
                     ["postgresSmallintColumn:population"] = "true"
                 }
-                : null);
+                : sourceBacked
+                    ? new Dictionary<string, string> { [FeatureStorageMapping.SourceBackedOption] = "true" }
+                    : null);
 
         return new PostgresStorageMappedFeatureReader(
             connectionProvider ?? new FixtureConnectionProvider(connectionString ?? _fixture.ConnectionString),
