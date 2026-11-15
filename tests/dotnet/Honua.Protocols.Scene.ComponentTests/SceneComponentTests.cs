@@ -83,6 +83,8 @@ public sealed class SceneComponentTests
                 ["Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false"
             });
             builder.Services.AddScene(builder.Configuration);
+            builder.Services.AddResponseCompression(options =>
+                options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>());
             if (generations is not null)
             {
                 builder.Services.AddSingleton(generations);
@@ -104,6 +106,7 @@ public sealed class SceneComponentTests
         {
             app.UseGlobalExceptionHandling();
             app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
+            app.UseResponseCompression();
             app.Use(static (context, next) =>
             {
                 context.Response.OnStarting(static state =>

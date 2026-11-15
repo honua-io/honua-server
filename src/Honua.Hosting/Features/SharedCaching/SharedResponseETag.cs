@@ -26,7 +26,7 @@ internal static class SharedResponseETag
         if (result is FileContentHttpResult file)
         {
             var etag = await ConfigurationResponseETag.ForResponseAsync(context,
-                file.EntityTag?.ToString() ?? tags.ComputeETag(file.FileContents.Span)).ConfigureAwait(false);
+                file.EntityTag?.ToString() ?? tags.ComputeETag(file.FileContents.Span), file.ContentType ?? "application/octet-stream").ConfigureAwait(false);
             return Results.Bytes(file.FileContents, file.ContentType, file.FileDownloadName,
                 file.EnableRangeProcessing, file.LastModified, EntityTagHeaderValue.Parse(etag));
         }
@@ -34,7 +34,7 @@ internal static class SharedResponseETag
         if (result is ContentHttpResult { StatusCode: null or StatusCodes.Status200OK } text)
         {
             var etag = await ConfigurationResponseETag.ForResponseAsync(context,
-                tags.ComputeETag(text.ResponseContent ?? string.Empty)).ConfigureAwait(false);
+                tags.ComputeETag(text.ResponseContent ?? string.Empty), text.ContentType ?? "text/plain").ConfigureAwait(false);
             return new ConditionalTextResult(text, etag, tags);
         }
 

@@ -25,10 +25,10 @@ internal static class ConfigurationResponseETag
         return services;
     }
 
-    internal static async ValueTask<string> ForResponseAsync(HttpContext context, string etag)
+    internal static async ValueTask<string> ForResponseAsync(HttpContext context, string etag, string contentType)
     {
         var services = GetServices(context);
-        etag = WithContentCoding(context, services?.GetService<IResponseCompressionProvider>(), etag);
+        etag = WithContentCoding(context, etag, contentType);
         var source = services?.GetService<IConfigurationGenerationSource>();
         if (source is null)
         {
@@ -40,9 +40,24 @@ internal static class ConfigurationResponseETag
             "-g", generation.ToString(CultureInfo.InvariantCulture), "\"");
     }
 
-    private static string WithContentCoding(HttpContext context, IResponseCompressionProvider? compression, string etag)
+    private static bool IsCompressible(HttpContext context, IResponseCompressionProvider compression, string contentType)
     {
-        if (compression is null)
+        var originalContentType = context.Response.ContentType;
+        try
+        {
+            context.Response.ContentType = contentType;
+            return compression.ShouldCompressResponse(context);
+        }
+        finally
+        {
+            context.Response.ContentType = originalContentType;
+        }
+    }
+
+    private static string WithContentCoding(HttpContext context, string etag, string contentType)
+    {
+        var compression = GetServices(context)?.GetService<IResponseCompressionProvider>();
+        if (compression is null || !IsCompressible(context, compression, contentType))
         {
             return etag;
         }

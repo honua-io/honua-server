@@ -170,7 +170,7 @@ internal static class ResponseCacheUtilities
     {
         public async Task ExecuteAsync(HttpContext httpContext)
         {
-            var etag = await ConfigurationResponseETag.ForResponseAsync(httpContext, cached.ETag!)
+            var etag = await ConfigurationResponseETag.ForResponseAsync(httpContext, cached.ETag!, cached.ContentType)
                 .ConfigureAwait(false);
             await CreateResponseResult(httpContext, cached with { ETag = etag }, etagService)
                 .ExecuteAsync(httpContext).ConfigureAwait(false);

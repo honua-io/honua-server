@@ -300,7 +300,7 @@ internal static partial class SceneEndpoints
 
             activity?.SetTag(SceneTelemetry.ResultSizeTag, manifest.SizeBytes);
 
-            var etag = await ConfigurationResponseETag.ForResponseAsync(context, manifest.ETag).ConfigureAwait(false);
+            var etag = await ConfigurationResponseETag.ForResponseAsync(context, manifest.ETag, SceneContentTypes.OpenUsdStageContentType).ConfigureAwait(false);
             SetDynamicSceneCacheHeaders(
                 context,
                 etag,
@@ -473,7 +473,7 @@ internal static partial class SceneEndpoints
             return MapResolutionError(context, scene, resolvedAssetPath, error, activity, logger);
         }
 
-        var etag = await ConfigurationResponseETag.ForResponseAsync(context, ComputeETag(resolved.File))
+        var etag = await ConfigurationResponseETag.ForResponseAsync(context, ComputeETag(resolved.File), resolved.ContentType)
             .ConfigureAwait(false);
         SetCacheHeaders(context, etag, resolved.File, cacheMaxAge, isProtected, scene.CachePolicy, tokenTransport);
 

@@ -199,6 +199,24 @@ public sealed class ConfigurationETagTests
         response.Content.Headers.ContentRange.Should().BeNull();
     }
 
+    [Fact]
+    public async Task ConditionalRead_NonCompressibleAssetWithIfRange_PreservesStrongValidator()
+    {
+        await using var server = await TestServer.StartAsync();
+        using var identity = await server.Client.GetAsync("/tile");
+        using var initialRequest = new HttpRequestMessage(HttpMethod.Get, "/tile");
+        initialRequest.Headers.AcceptEncoding.ParseAdd("gzip");
+        using var first = await server.Client.SendAsync(initialRequest);
+        first.Content.Headers.ContentEncoding.Should().BeEmpty();
+        first.Headers.ETag.Should().Be(identity.Headers.ETag);
+        first.Headers.ETag!.IsWeak.Should().BeFalse();
+        using var request = CreateRangeRequest(first.Headers.ETag);
+        request.Headers.AcceptEncoding.ParseAdd("gzip");
+        using var partial = await server.Client.SendAsync(request);
+        partial.StatusCode.Should().Be(System.Net.HttpStatusCode.PartialContent);
+        (await partial.Content.ReadAsByteArrayAsync()).Should().Equal(1);
+    }
+
     private static HttpRequestMessage CreateRangeRequest(System.Net.Http.Headers.EntityTagHeaderValue etag)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "/tile");
