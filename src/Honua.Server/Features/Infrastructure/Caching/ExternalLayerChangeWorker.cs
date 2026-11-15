@@ -91,7 +91,8 @@ internal sealed partial class ExternalLayerChangeWorker(
         var changeId = string.Create(CultureInfo.InvariantCulture, $"external-layer:{pending.Layer}:{pending.Revision}");
         try
         {
-            await invalidation.InvalidateExternalEditAsync(pending.Layer, pending.Extent, changeId, cancellationToken)
+            var change = new ExternalEditInvalidation(pending.Layer, pending.Extent, changeId);
+            await invalidation.InvalidateExternalEditAsync(change, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested && exception is not OutOfMemoryException)

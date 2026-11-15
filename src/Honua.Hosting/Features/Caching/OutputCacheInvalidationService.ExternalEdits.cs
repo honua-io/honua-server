@@ -9,21 +9,21 @@ namespace Honua.Infrastructure.Caching;
 internal sealed partial class OutputCacheInvalidationService
 {
     internal async Task InvalidateExternalEditAsync(
-        int layerId, BoundingBox? extent, string changeId, CancellationToken cancellationToken)
+        ExternalEditInvalidation change, CancellationToken cancellationToken)
     {
-        await EvictStorageLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EvictStorageLayerAsync(change.LayerId, cancellationToken).ConfigureAwait(false);
         if (_cdnInvalidation is null)
         {
             return;
         }
 
-        var paths = await CdnPathsForEditedStorageLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (extent is { } bounds && _cdnInvalidation.TagsEnabled && !paths.Contains("/*", StringComparer.Ordinal))
+        var paths = await CdnPathsForEditedStorageLayerAsync(change.LayerId, cancellationToken).ConfigureAwait(false);
+        if (change.Extent is { } bounds && _cdnInvalidation.TagsEnabled && !paths.Contains("/*", StringComparer.Ordinal))
         {
-            paths = RegionalExternalEditPaths(layerId, bounds, paths);
+            paths = RegionalExternalEditPaths(change.LayerId, bounds, paths);
         }
 
-        var result = await _cdnInvalidation.InvalidateNowAsync(paths, cancellationToken, CdnPurgeCause.Edit(changeId))
+        var result = await _cdnInvalidation.InvalidateNowAsync(paths, cancellationToken, CdnPurgeCause.Edit(change.ChangeId))
             .ConfigureAwait(false);
         if (result.Failed)
         {
@@ -41,3 +41,5 @@ internal sealed partial class OutputCacheInvalidationService
         return regional.Length <= CdnTileRegionTags.MaxInvalidations ? regional : CdnPaths.Everything;
     }
 }
+
+internal sealed record ExternalEditInvalidation(int LayerId, BoundingBox? Extent, string ChangeId);
