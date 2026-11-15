@@ -14,6 +14,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.MultiTenancy;
@@ -48,6 +49,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
     private string _token = string.Empty;
     private bool _rotateDuringUpload;
     private int _failUploads;
+    private UnixFileMode? _uploadScratchMode;
     private bool _loseUploadAcknowledgement;
 
     public CustomCodeArtifactEndpointsTests()
@@ -72,6 +74,10 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
                 {
                     _failUploads--;
                     return UploadResult.CreateFailure("Transient storage failure");
+                }
+                if (!OperatingSystem.IsWindows())
+                {
+                    _uploadScratchMode = File.GetUnixFileMode(((FileStream)request.Content).Name);
                 }
                 using var bytes = new MemoryStream();
                 await request.Content.CopyToAsync(bytes);
@@ -169,6 +175,10 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         CustomCodeArtifactDescriptor.TryParse(_records["broker-job"].ArtifactReferences.Single(), out var receipt).Should().BeTrue();
         receipt!.Sha256.Should().Be(Convert.ToHexStringLower(SHA256.HashData(bytes)));
         receipt.State.Should().Be("available");
+        if (!OperatingSystem.IsWindows())
+        {
+            _uploadScratchMode.Should().Be(PrivateTempFile.OwnerReadWrite);
+        }
         using var download = await _admin.GetAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1");
         download.StatusCode.Should().Be(HttpStatusCode.OK, await download.Content.ReadAsStringAsync());
         (await download.Content.ReadAsByteArrayAsync()).Should().Equal(bytes);

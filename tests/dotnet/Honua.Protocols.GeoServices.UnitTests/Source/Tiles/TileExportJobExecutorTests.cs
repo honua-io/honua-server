@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Authorization.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
@@ -96,7 +97,15 @@ public sealed class TileExportJobExecutorTests
         var producer = Substitute.For<ITileExportPackageProducer>();
         producer.CanProduce(Arg.Any<TileExportJobPlan>()).Returns(true);
         producer.ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-            .Returns(call => call.Arg<Stream>().WriteAsync(new byte[] { 1 }).AsTask());
+            .Returns(call =>
+            {
+                var scratch = call.Arg<Stream>().Should().BeOfType<FileStream>().Subject;
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.GetUnixFileMode(scratch.Name).Should().Be(PrivateTempFile.OwnerReadWrite);
+                }
+                return scratch.WriteAsync(new byte[] { 1 }).AsTask();
+            });
         var fence = Substitute.For<ITileExportSourceFence>();
         fence.SourceKind.Returns(TileExportSourceKind.Map);
         fence.IsAvailableAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<CancellationToken>()).Returns(true);

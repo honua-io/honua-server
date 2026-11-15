@@ -25,7 +25,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 /// <summary>Production dispatcher, independent shared-store clients, and OGC value read-back.</summary>
-public sealed class DurableFeatureStreamTests : IDisposable
+public sealed partial class DurableFeatureStreamTests : IDisposable
 {
     private readonly string _root = Path.Join(Path.GetTempPath(), "honua-shared-stream-" + Guid.NewGuid().ToString("N"));
     private readonly Dictionary<string, ExecutionJobRecord> _records = new(StringComparer.Ordinal);

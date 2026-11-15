@@ -19,6 +19,7 @@ using Honua.TestKit.Formats;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Tiles.PMTiles;
 using Honua.Server.Features.Admin.Services;
@@ -55,6 +56,10 @@ public sealed partial class TileCacheJobExecutorPublishTests
         });
         await sut.ProcessQueuedJobAsync(firstJobId);
         var firstDescriptor = (await sut.GetAsync(firstJobId))!.PublishedArtifact!;
+        if (!OperatingSystem.IsWindows())
+        {
+            stub.LastUploadMode.Should().Be(PrivateTempFile.OwnerReadWrite);
+        }
 
         var secondJobId = await sut.StartAsync(new TileOperationStartRequest
         {

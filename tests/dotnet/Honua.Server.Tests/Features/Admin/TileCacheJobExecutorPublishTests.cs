@@ -876,11 +876,17 @@ public sealed partial class TileCacheJobExecutorPublishTests
 
         public byte[]? LastUploadBytes { get; private set; }
 
+        public UnixFileMode? LastUploadMode { get; private set; }
+
         public List<string> DeletedFileIds { get; } = [];
 
         public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
         {
             LastUpload = request;
+            if (!OperatingSystem.IsWindows() && request.Content is FileStream scratch)
+            {
+                LastUploadMode = File.GetUnixFileMode(scratch.Name);
+            }
             var fileId = !string.IsNullOrWhiteSpace(request.ObjectKeyOverride)
                 ? request.ObjectKeyOverride
                 : Guid.NewGuid().ToString("N");

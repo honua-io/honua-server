@@ -7,6 +7,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Honua.FileStorage;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
@@ -35,6 +36,43 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
         identity.Checksum!.Value.Should().Be(Convert.ToHexString(SHA256.HashData(_payload)).ToLowerInvariant());
         _bucket.Keys.Should().Equal(key);
         _bucket.ContentTypeOf(key).Should().Be("image/tiff");
+    }
+
+    [UnitTest]
+    public async Task WriteAsync_KeepsTheUploadSpoolPrivateUntilStorageConsumesIt()
+    {
+        var storage = Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage>();
+        UnixFileMode? observedMode = null;
+        byte[]? observedBytes = null;
+        string? scratchPath = null;
+        storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), null, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var spool = (FileStream)call.Arg<FileUploadRequest>().Content;
+                scratchPath = spool.Name;
+                if (!OperatingSystem.IsWindows())
+                {
+                    observedMode = File.GetUnixFileMode(scratchPath);
+                }
+                using var bytes = new MemoryStream();
+                await spool.CopyToAsync(bytes);
+                observedBytes = bytes.ToArray();
+                return UploadResult.CreateFailure("storage unavailable");
+            });
+        var store = new ObjectStorageGeoprocessingOutputObjectStore(
+            storage, Options.Create(new GeoprocessingOutputStagingOptions { Enabled = true }),
+            new GeoprocessingOutputStorageKeyPrefix(string.Empty));
+
+        var write = () => WriteAsync(store, NewKey(), _payload);
+
+        await write.Should().ThrowAsync<IOException>();
+        observedBytes.Should().Equal(_payload);
+        scratchPath.Should().NotBeNull();
+        File.Exists(scratchPath).Should().BeFalse();
+        if (!OperatingSystem.IsWindows())
+        {
+            observedMode.Should().Be(PrivateTempFile.OwnerReadWrite);
+        }
     }
 
     [UnitTest]

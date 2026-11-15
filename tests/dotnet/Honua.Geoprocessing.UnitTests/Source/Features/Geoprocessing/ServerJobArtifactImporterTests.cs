@@ -13,6 +13,7 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Security;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit.Attributes;
@@ -44,6 +45,12 @@ public sealed class ServerJobArtifactImporterTests
                 request.LocalFilePath.Should().BeNull();
                 request.SourceUrl.Should().BeNull();
                 request.ObjectStoreUri.Should().BeNull();
+                if (!OperatingSystem.IsWindows())
+                {
+                    var scratch = request.FileStream.Should().BeOfType<FileStream>().Subject;
+                    File.GetUnixFileMode(scratch.Name).Should().Be(PrivateTempFile.OwnerReadWrite);
+                }
+
                 request.FileStream!.Position = 0;
                 using var copy = new MemoryStream();
                 request.FileStream.CopyTo(copy);
