@@ -63,7 +63,8 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
             finalProgressTtl: ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
         var run = new ImportRun(jobId, request with { JobId = jobId }, progress, context, Stopwatch.StartNew(), licenseCancellation, jobCancellation.Token);
 
-        return await ExecuteRunAsync(run).ConfigureAwait(false);
+        var recovered = await RecoverAsync(run).ConfigureAwait(false);
+        return recovered ?? await ExecuteRunAsync(run).ConfigureAwait(false);
     }
 
     private async Task<JobExecutionResult> ExecuteRunAsync(ImportRun run)
@@ -102,18 +103,6 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
     private async Task<JobExecutionResult> RunAsync(ImportRun run)
     {
         var jobId = run.JobId;
-        var stored = await _jobManager.ProgressStore.GetProgressAsync(jobId, run.Token).ConfigureAwait(false);
-        run.Progress.Seed(stored);
-        if (stored != null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status))
-        {
-            if (stored.DataCommitted)
-            {
-                await RecordCommitAsync(run).ConfigureAwait(false);
-            }
-
-            return ReplayTerminal(stored);
-        }
-
         var validation = await GeoservicesServiceUrlValidation.ValidateAsync(
             run.Request.ServiceUrl, _allowedHostSuffixes, run.Token).ConfigureAwait(false);
         if (!validation.IsValid)

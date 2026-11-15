@@ -67,4 +67,57 @@ public sealed partial class ImportJobExecutorTests
         await importer.DidNotReceive().ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(),
             Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>());
     }
+
+    [UnitTest]
+    public async Task ExecuteAsync_NoCommittedReceipt_StillValidatesSource()
+    {
+        var request = GeoservicesRequest(Guid.NewGuid().ToString("N")) with
+        {
+            ServiceUrl = "http://127.0.0.1/private-source"
+        };
+        var importer = Substitute.For<IGeoservicesImportService, IGeoservicesImportCommitRecovery>();
+        using var provider = CreateGeoservicesProvider(importer);
+        var (jobs, manager, executor) = CreateGeoservicesExecutor(provider);
+        await manager.SubmitAsync(request, GeoservicesImportProgress.CreateInitial(
+            request.JobId!, request.ServiceUrl, request.LayerId, request.TableName));
+
+        var result = await executor.ExecuteAsync((await jobs.GetAsync(request.JobId!))!,
+            Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        var progress = (await manager.ProgressStore.GetProgressAsync(request.JobId!))!;
+        progress.Status.Should().Be(GeoservicesImportStatus.Failed);
+        progress.DataCommitted.Should().BeFalse();
+        await ((IGeoservicesImportCommitRecovery)importer).Received(1)
+            .RecoverCommittedImportAsync(Arg.Is<GeoservicesImportRequest>(r => r.JobId == request.JobId), Arg.Any<CancellationToken>());
+        await importer.DidNotReceive().ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(),
+            Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_TerminalFailure_ReplaysWithoutCommitRecovery()
+    {
+        var request = GeoservicesRequest(Guid.NewGuid().ToString("N"));
+        var importer = Substitute.For<IGeoservicesImportService, IGeoservicesImportCommitRecovery>();
+        using var provider = CreateGeoservicesProvider(importer);
+        var (jobs, manager, executor) = CreateGeoservicesExecutor(provider);
+        await manager.SubmitAsync(request, GeoservicesImportProgress.CreateInitial(
+            request.JobId!, request.ServiceUrl, request.LayerId, request.TableName));
+        await manager.ProgressStore.SetProgressAsync(request.JobId!, GeoservicesImportProgress.CreateInitial(
+            request.JobId!, request.ServiceUrl, request.LayerId, request.TableName) with
+        {
+            Status = GeoservicesImportStatus.Failed,
+            ErrorMessage = "Original failure"
+        }, TimeSpan.FromMinutes(10));
+
+        var result = await executor.ExecuteAsync((await jobs.GetAsync(request.JobId!))!,
+            Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        (await manager.ProgressStore.GetProgressAsync(request.JobId!))!.ErrorMessage.Should().Be("Original failure");
+        await ((IGeoservicesImportCommitRecovery)importer).DidNotReceive()
+            .RecoverCommittedImportAsync(Arg.Any<GeoservicesImportRequest>(), Arg.Any<CancellationToken>());
+        await importer.DidNotReceive().ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(),
+            Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>());
+    }
 }
