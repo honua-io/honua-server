@@ -50,7 +50,7 @@ internal sealed record McpPromptDefinition(
 
     private string Substitute(IReadOnlyDictionary<string, string>? arguments)
     {
-        var builder = new StringBuilder(Template);
+        var values = new Dictionary<string, string>(Arguments.Count, StringComparer.Ordinal);
         foreach (var argument in Arguments)
         {
             var hasValue = arguments is not null
@@ -63,11 +63,39 @@ internal sealed record McpPromptDefinition(
                     $"Prompt '{Name}' requires argument '{argument.Name}'.");
             }
 
-            var value = hasValue
+            values[argument.Name] = hasValue
                 ? arguments![argument.Name].Trim()
                 : UnspecifiedOptionalPlaceholder;
+        }
 
-            builder.Replace("{" + argument.Name + "}", value);
+        // One pass over the template. Values are copied as text, so a value
+        // that contains a later argument's {name} is not rewritten.
+        var template = Template;
+        var builder = new StringBuilder(template.Length);
+        for (var index = 0; index < template.Length; index++)
+        {
+            if (template[index] != '{')
+            {
+                builder.Append(template[index]);
+                continue;
+            }
+
+            var close = template.IndexOf('}', index + 1);
+            if (close < 0)
+            {
+                builder.Append(template[index]);
+                continue;
+            }
+
+            var name = template.Substring(index + 1, close - index - 1);
+            if (!values.TryGetValue(name, out var value))
+            {
+                builder.Append(template[index]);
+                continue;
+            }
+
+            builder.Append(value);
+            index = close;
         }
 
         return builder.ToString();
