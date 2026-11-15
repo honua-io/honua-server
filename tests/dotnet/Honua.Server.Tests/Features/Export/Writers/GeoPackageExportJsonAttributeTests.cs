@@ -32,6 +32,7 @@ public sealed class GeoPackageExportJsonAttributeTests
     [InlineData("Date", "\"2026-11-15\"", "2026-11-15", "text")]
     [InlineData("DateTime", "0", "1970-01-01T00:00:00.0000000Z", "text")]
     [InlineData("Binary", "\"AAEC/w==\"", "000102FF", "blob")]
+    [InlineData("Binary", "\"not base64!\"", "not base64!", "text")]
     public async Task WriteAsync_WithJsonAttribute_PreservesSqliteValue(
         string fieldType, string? json, object? expected, string expectedStorageType)
     {
