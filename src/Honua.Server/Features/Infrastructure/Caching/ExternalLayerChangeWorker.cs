@@ -101,7 +101,8 @@ internal sealed partial class ExternalLayerChangeWorker(
             _schedule[pending.Layer] = new(failures, now + backoff);
             if (leases is not null)
             {
-                // Holding the claim for the backoff keeps the other tasks from retrying sooner.
+                // Extending the claim to the backoff keeps the other tasks from retrying sooner, while the
+                // claim is still held; a purge that outlasted the window leaves only this task's own backoff.
                 await leases.RenewAsync(claim, backoff, cancellationToken).ConfigureAwait(false);
             }
 
