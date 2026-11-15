@@ -13,7 +13,8 @@ namespace Honua.ControlPlane;
 internal sealed partial class PostgresWorkflowOperationStore(
     ControlPlaneStorage storage,
     WorkflowOperationRetention retention,
-    ILogger<PostgresWorkflowOperationStore> logger) : IWorkflowOperationStore, IExpiredRowSweep
+    ILogger<PostgresWorkflowOperationStore> logger,
+    PollWakeSignal<IWorkflowOperationStore>? wake = null) : IWorkflowOperationStore, IExpiredRowSweep
 {
     private readonly JobStoreDatabase _database = storage.Database;
     private const int DefaultPageSize = 50;
@@ -57,6 +58,7 @@ internal sealed partial class PostgresWorkflowOperationStore(
         {
             Log.WorkflowOperationCreated(logger, created.OperationId, created.Kind.ToString(), created.Status.ToString());
             LogMetadataReleaseStage(created);
+            wake?.Wake();
         }
 
         return inserted;
@@ -78,6 +80,7 @@ internal sealed partial class PostgresWorkflowOperationStore(
             new OperationWrite(stored, ResolveRetention(operation, ttl), ExpectedVersion: null),
             cancellationToken).ConfigureAwait(false);
         LogUpdated(stored);
+        wake?.Wake();
     }
 
     public async Task<bool> TrySetAsync(
@@ -99,6 +102,7 @@ internal sealed partial class PostgresWorkflowOperationStore(
         }
 
         LogUpdated(stored);
+        wake?.Wake();
         return true;
     }
 
