@@ -360,6 +360,8 @@ carries two independent gate lanes per sampled operation:
   via pass/fail fixtures under `scripts/ci/fixtures/`; the live latency measurement runs in
   `geoservices-import-fidelity-external.yml` (on-demand).
 
+Shared OGC capabilities XML tests run in a standalone metadata shard, leaving the WMS class/complement partition and its legacy budgets unchanged.
+
 ## Verification receipts and batch landing (quality-contract amendment, 2026-09)
 
 The fleet lander (honua-flow `tools/land-ready-prs.sh`, `tools/land-batch.sh`)
