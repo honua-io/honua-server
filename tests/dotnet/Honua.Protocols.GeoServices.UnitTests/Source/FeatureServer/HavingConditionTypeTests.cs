@@ -12,7 +12,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 public sealed class HavingConditionTypeTests
 {
-    private static readonly MetadataV2Resource Layer = new()
+    private static readonly MetadataV2Object Layer = new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "layer", Name = "layer" },
         SchemaFields =

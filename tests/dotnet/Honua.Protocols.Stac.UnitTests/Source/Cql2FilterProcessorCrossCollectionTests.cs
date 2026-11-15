@@ -719,7 +719,7 @@ public sealed class Cql2FilterProcessorCrossCollectionTests
                 new MetadataV2Field { Name = "remote_geometry", Type = MetadataV2FieldType.Geometry },
                 new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.Json })]);
 
-    private static MetadataV2Resource Resource(string id, params MetadataV2Field[] fields) => new()
+    private static MetadataV2Object Resource(string id, params MetadataV2Field[] fields) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
         SchemaFields = fields
