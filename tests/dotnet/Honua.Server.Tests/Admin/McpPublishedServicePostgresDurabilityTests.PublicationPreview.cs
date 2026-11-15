@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
@@ -43,11 +44,38 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests
         details.GetProperty("previewReference").GetString().Should().NotBeNullOrWhiteSpace();
         DateTimeOffset.Parse(details.GetProperty("expiresAt").GetString()!,
             System.Globalization.CultureInfo.InvariantCulture).Should().BeAfter(startedAt);
+        AssertPlannedPublication(details);
         (await PublishedLayerCountAsync(_firstTable)).Should().Be(0);
         (await ReadPersistedRevisionAsync()).Should().Be(revision);
         (await ReadPreviewMetadataEtagAsync()).Should().Be(etag);
         (await CountSourceRowsAsync(_firstTable)).Should().Be(sourceRows);
         (await ReadPreviewSourceHashAsync()).Should().Be(sourceHash);
+    }
+
+    private void AssertPlannedPublication(JsonElement details)
+    {
+        details.GetProperty("layerIdentity").GetString().Should().Be("unallocated");
+        details.GetProperty("routesAreAllocated").GetString().Should().Be("false");
+        var service = JsonSerializer.Deserialize(details.GetProperty("plannedService").GetString()!,
+            MetadataV2JsonContext.Default.MetadataV2Service)!;
+        var resource = JsonSerializer.Deserialize(details.GetProperty("plannedResource").GetString()!,
+            MetadataV2JsonContext.Default.MetadataV2Object)!;
+        var binding = JsonSerializer.Deserialize(details.GetProperty("plannedStorageBinding").GetString()!,
+            MetadataV2JsonContext.Default.MetadataV2StorageBinding)!;
+        service.Metadata.Name.Should().Be(_serviceName);
+        resource.SchemaFields.Select(field => field.Name).Should().Equal("id", "name");
+        resource.StorageBindingIds.Should().Contain(binding.Metadata.Id);
+        binding.ResourceId.Should().Be(resource.Metadata.Id);
+        using var publications = JsonDocument.Parse(details.GetProperty("plannedPublications").GetString()!);
+        publications.RootElement.GetArrayLength().Should().Be(2);
+        foreach (var element in publications.RootElement.EnumerateArray())
+        {
+            var publication = element.Deserialize(MetadataV2JsonContext.Default.MetadataV2Layer)!;
+            publication.ResourceId.Should().Be(resource.Metadata.Id);
+            publication.ServiceId.Should().Be(service.Metadata.Id);
+            publication.StorageBindingId.Should().Be(binding.Metadata.Id);
+            service.PublicationIds.Should().Contain(publication.Metadata.Id);
+        }
     }
 
     private async Task<string> ReadPreviewMetadataEtagAsync()
