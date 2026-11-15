@@ -155,7 +155,7 @@ public sealed class ImportedDomainEnforcementTests
         string attribute,
         object value)
     {
-        var resource = new MetadataV2Resource { SchemaFields = [field] };
+        var resource = new MetadataV2Object { SchemaFields = [field] };
         var validator = new FeatureMutationValidator(Substitute.For<IGeometryValidator>());
 
         return validator.ValidateAttributes(

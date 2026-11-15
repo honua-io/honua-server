@@ -11,6 +11,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Honua.Core.Features.Security;
 
 namespace Honua.Import.TileCachePackage;
 
@@ -99,13 +100,13 @@ internal static class TileCachePackageEndpoints
 
         // Stream the request body to a bounded temp file so the ZIP archive can be
         // read with random access without buffering the whole package in memory.
-        // The second segment is a server-generated "honua-tpk-{guid}.tmp" name (not
-        // derived from the caller-supplied fileName), so it can never be rooted/absolute.
-        var tempPath = Path.Join(Path.GetTempPath(), $"honua-tpk-{Guid.NewGuid():N}.tmp");
+        // The name is server-generated ("honua-tpk-{guid}.tmp", not derived from the
+        // caller-supplied fileName) and the file is created exclusively and owner-only.
+        var tempPath = PrivateTempFile.NewPath("honua-tpk-", ".tmp");
         try
         {
             long written;
-            await using (var temp = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.SequentialScan))
+            await using (var temp = PrivateTempFile.Create(tempPath, FileOptions.SequentialScan))
             {
                 written = await CopyBoundedAsync(context.Request.Body, temp, maxPackageBytes, cancellationToken).ConfigureAwait(false);
             }
