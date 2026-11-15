@@ -93,8 +93,7 @@ public sealed class AwsEcsAlbRollbackFailureRealCertificationTests : IClassFixtu
         _output.WriteLine($"[cert] injecting rollback failure with non-existent listener rule '{missingRuleArn}'.");
 
         var realBackend = new AwsEcsAlbDeployBackend(
-            albClient,
-            ecsClient,
+            new AwsEcsAlbDeployClients(albClient, ecsClient),
             NullLogger<AwsEcsAlbDeployBackend>.Instance);
         var backend = new RollbackRuleFaultInjectingBackend(realBackend, missingRuleArn);
         var store = new InMemoryWorkflowOperationStore();

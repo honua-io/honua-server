@@ -375,6 +375,9 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
         return;
     }
 
+    builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
+        new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+
     if (nativeAot)
     {
         keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
@@ -721,6 +724,12 @@ Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(bu
 
 // Configure caching options and register cache services
 InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration);
+if (builder.Configuration.GetValue<bool>("ExternalEdits:Enabled")
+    && Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
+{
+    builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Caching.ExternalLayerChangeWorker>();
+}
+
 
 if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
 {
@@ -1125,7 +1134,7 @@ builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
 
 // ---- Extracted: feature-change events, streaming, transactional outbox
 //      (Startup/FeatureEventsAndStreamingRegistration.cs)
-builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration, requiresDurableDistributedEvents);
+builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration);
 // ---- End extracted block
 
 // ---- Cross-node realtime: event log and fan-out provider (ADR-0085)

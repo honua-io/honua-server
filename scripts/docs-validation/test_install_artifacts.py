@@ -110,6 +110,10 @@ class ArtifactTests(unittest.TestCase):
                     (artifacts.ROOT / "docker/proj-grids" / name).read_bytes(),
                     (work / "docker/proj-grids" / name).read_bytes(),
                 )
+    def test_documented_publication_preserves_the_packaged_initializer(self):
+        document = (artifacts.ROOT / "docs/get-started/quickstart.md").read_text()
+        self.assertIn("Save this as `publish-quickstart.py`", document)
+        self.assertEqual("python publish-quickstart.py", public.public_blocks()["query"])
 
 
 class RoutingTests(unittest.TestCase):

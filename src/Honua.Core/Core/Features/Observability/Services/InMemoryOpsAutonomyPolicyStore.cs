@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 
@@ -110,7 +111,11 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
             var recentCount = _actions.Values.Count(action =>
                 string.Equals(action.Rule, request.Rule, StringComparison.Ordinal) &&
                 action.ReservedAt >= cutoff);
-            if (recentCount >= Math.Max(1, request.MaxAutoActionsPerWindow))
+            var actionCount = _actions.Values.Count(action =>
+                action.OperationClass == request.OperationClass &&
+                string.Equals(action.ActionDiscriminator, request.ActionDiscriminator, StringComparison.Ordinal) &&
+                action.ReservedAt >= cutoff);
+            if (Math.Max(recentCount, actionCount) >= Math.Max(1, request.MaxAutoActionsPerWindow))
             {
                 return Task.FromResult(new OpsAutonomyReservationResult
                 {
@@ -120,7 +125,11 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
             }
 
             var reservationId = $"auto-{Guid.NewGuid():N}";
-            _actions[reservationId] = new ActionState(request.Rule, request.FindingId, now);
+            _actions[reservationId] = new ActionState(request.Rule, request.FindingId, now)
+            {
+                OperationClass = request.OperationClass,
+                ActionDiscriminator = request.ActionDiscriminator,
+            };
             Touch(request.Rule, now);
             return Task.FromResult(new OpsAutonomyReservationResult
             {
@@ -270,6 +279,10 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         string FindingId,
         DateTimeOffset ReservedAt)
     {
+        public OperationClass OperationClass { get; init; }
+
+        public string? ActionDiscriminator { get; init; }
+
         public OpsAutonomyActionOutcome? Outcome { get; init; }
 
         public DateTimeOffset? CompletedAt { get; init; }
