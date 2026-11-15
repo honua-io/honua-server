@@ -247,9 +247,9 @@ scan_authorities() {
     echo "retired merge-train authority still exists" >&2; return 1;
   }
 
-  # Dispatching the live-capable train is itself a merge authority regardless
-  # of how train_apply is spelled or valued. Canonical locations are separately
-  # allowlisted; every other executable source must be unable to wake this flow.
+  # The retired train stays forbidden: dispatching a resurrected merge-train.yml
+  # would be a merge authority regardless of how train_apply is spelled or valued,
+  # so no executable source may reference that flow.
   local live_dispatch="gh[[:space:]]+api[^#;|&]*/actions/workflows/([^/[:space:]]*/)?merge-train\.yml/dispatches|createWorkflowDispatch[^)]*merge-train\.yml"
   # A variable workflow selector cannot be proven non-authoritative statically.
   # Reject it everywhere except the explicit dispatch authority allowlist.
@@ -289,7 +289,7 @@ scan_authorities() {
       echo "forbidden merge-capable primitive in ${rel}" >&2; found=1
     fi
     if ! is_dispatch_allowlisted "${rel}" && grep -Eiq "${live_dispatch}" <<<"${source}"; then
-      echo "forbidden live merge-train dispatch in ${rel}" >&2; found=1
+      echo "forbidden merge-train dispatch in ${rel}" >&2; found=1
     fi
     if ! is_dispatch_allowlisted "${rel}" && has_forbidden_workflow_run "${source}"; then
       echo "forbidden live or dynamic workflow dispatch in ${rel}" >&2; found=1

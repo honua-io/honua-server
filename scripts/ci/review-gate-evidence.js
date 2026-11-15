@@ -43,16 +43,14 @@ const ATTESTING_REVIEWERS = [
     // GraphQL spelling. Verified live: a review posted by the Claude GitHub App
     // comes back from GraphQL as `{login: "claude", __typename: "Bot"}`
     // (anthropics/claude-code-action#1650) while REST reports `claude[bot]`.
-    // Without this entry every review the Claude lane posts is invisible to the
+    // Without this entry every review the Claude App posts is invisible to the
     // gate, because review-gate.yml reads the GraphQL shape.
     botLogins: ['claude'],
     reviewMarker: /Claude Review|Reviewed commit/i,
     cleanMarker: /Claude Review:\s+No major issues found\./i,
-    // THE canonical body `.github/workflows/claude-review.yml` posts for a clean
-    // head, kept here so the lane cannot drift from the marker that grades it.
-    // `cleanCommentBody(head)` must satisfy `cleanMarker` and the reviewed-commit
-    // parser below; review-gate-evidence.test.js asserts exactly that by feeding
-    // the generated body back through `evaluateCodexEvidence`.
+    // The clean-comment template a Claude bot posts for a clean head, kept
+    // beside the marker that grades it; review-gate-evidence.test.js feeds it
+    // back through `evaluateCodexEvidence` so the two cannot drift.
     cleanCommentBody: head =>
       `Claude Review: No major issues found.\n\n**Reviewed commit:** \`${head}\``,
   },

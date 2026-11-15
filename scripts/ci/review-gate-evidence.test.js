@@ -498,9 +498,9 @@ test('the registered clean body cannot attest for a different head', () => {
 });
 
 test('hasOpenObjection is exposed and identity-scoped for inverted admission', () => {
-  // The merge train's inverted admission rule (fix-forward) no longer demands
-  // positive exact-head evidence, so a standing objection must be visible on
-  // its own rather than only through exactReview/exactCleanComment being false.
+  // review-gate.yml blocks on a standing objection independently of positive
+  // exact-head evidence, so it must be visible on its own rather than only
+  // through exactReview/exactCleanComment being false.
   const objected = evaluateCodexEvidence({
     reviews: [review('CHANGES_REQUESTED')], cleanComments: [], unresolvedCount: 0, head,
   });

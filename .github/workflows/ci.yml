@@ -1635,7 +1635,7 @@ jobs:
       # must-fix PRs kept adding cases until a shard tipped over on trunk.
       #
       # WHERE THIS FIRES. Only here, on the full matrix: the nightly schedule,
-      # a manual dispatch, and the train's train/batch/* dispatch. It is NOT a
+      # and a manual full dispatch. It is NOT a
       # per-PR signal — pr-gate.yml runs no shard matrix at all, so a PR head
       # produces no *.timing.json anywhere and there is nothing for the audit to
       # read. Under the trailing-matrix landing model that means the warning
