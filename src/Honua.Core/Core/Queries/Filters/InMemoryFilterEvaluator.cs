@@ -599,7 +599,7 @@ public static class InMemoryFilterEvaluator
     private static Regex CreateLikeRegex(string pattern)
     {
         // Convert SQL LIKE pattern to regex: % → .*, _ → ., escape others.
-        // NonBacktracking keeps a failed match linear. It cannot be combined with Compiled or a match timeout.
+        // NonBacktracking keeps a failed match linear.
         var regexPattern = "^" + Regex.Escape(pattern)
             .Replace("%", ".*", StringComparison.Ordinal)
             .Replace("_", ".", StringComparison.Ordinal) + "$";

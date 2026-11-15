@@ -256,6 +256,25 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithIdsAndUnevaluableLike_ReturnsSanitizedBadRequest()
+    {
+        const string marker = "private-pattern-marker";
+        var pattern = marker + new string('%', 33);
+        var filter = Uri.EscapeDataString($"properties.name LIKE '{pattern}'");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={WebAppFixture.TestLayerId}&ids={FilterMatchId}&filter-lang=cql2-text&filter={filter}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("LIKE pattern could not be evaluated.");
+        content.Should().NotContain(marker);
+        _capturedQueries.Should().NotBeEmpty("a candidate must reach in-memory evaluation");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
     public async Task SearchGet_WithIdsAndMalformedFilter_ReturnsBadRequestBeforeProviderRouting()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);

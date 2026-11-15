@@ -244,6 +244,47 @@ public sealed class InMemoryFilterEvaluatorTests
         InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("{}")).Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(256, true)]
+    [InlineData(257, false)]
+    public void Evaluate_Like_EnforcesPatternLengthBoundary(int length, bool accepted)
+    {
+        var pattern = new string('a', length);
+        var expression = new BinaryExpression(new PropertyReference("name"), BinaryOperator.Like,
+            new Literal(pattern, LiteralType.Text));
+        var properties = CreateProperties($"{{\"name\":\"{pattern}\"}}");
+
+        if (accepted)
+        {
+            InMemoryFilterEvaluator.Evaluate(expression, properties).Should().BeTrue();
+        }
+        else
+        {
+            Action act = () => InMemoryFilterEvaluator.Evaluate(expression, properties);
+            act.Should().Throw<UnevaluableLikePatternException>();
+        }
+    }
+
+    [Theory]
+    [InlineData(32, true)]
+    [InlineData(33, false)]
+    public void Evaluate_Like_EnforcesWildcardBoundary(int count, bool accepted)
+    {
+        var expression = new BinaryExpression(new PropertyReference("name"), BinaryOperator.Like,
+            new Literal(new string('_', count), LiteralType.Text));
+        var properties = CreateProperties($"{{\"name\":\"{new string('a', count)}\"}}");
+
+        if (accepted)
+        {
+            InMemoryFilterEvaluator.Evaluate(expression, properties).Should().BeTrue();
+        }
+        else
+        {
+            Action act = () => InMemoryFilterEvaluator.Evaluate(expression, properties);
+            act.Should().Throw<UnevaluableLikePatternException>();
+        }
+    }
+
     private static Dictionary<string, JsonElement> CreateProperties(string json)
     {
         using var document = JsonDocument.Parse(json);
