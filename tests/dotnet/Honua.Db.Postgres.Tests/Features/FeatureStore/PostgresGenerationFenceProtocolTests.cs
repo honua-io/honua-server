@@ -11,16 +11,27 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 public sealed class PostgresGenerationFenceProtocolTests(PostgresFixture fixture)
 {
     [IntegrationTheory(Timeout = 180000)]
-    [InlineData("commit")]
-    [InlineData("rollback")]
-    [InlineData("savepoint-commit")]
-    [InlineData("savepoint-rollback")]
-    public async Task SnapshotFence_AssignedLowerWriter_DefersUntilItsTopTransactionFinishes(string outcome)
+    [InlineData("commit", false)]
+    [InlineData("commit", true)]
+    [InlineData("rollback", false)]
+    [InlineData("rollback", true)]
+    [InlineData("savepoint-commit", false)]
+    [InlineData("savepoint-commit", true)]
+    [InlineData("savepoint-rollback", false)]
+    [InlineData("savepoint-rollback", true)]
+    public async Task TransactionFence_AssignedLowerWriter_DefersUntilItsTopTransactionFinishes(
+        string outcome, bool higherXidFirst)
     {
         await using var scope = await FenceScope.CreateAsync(fixture);
         await using var lower = await scope.OpenAsync();
         await using var higher = await scope.OpenAsync();
         await using var publisher = await scope.OpenAsync();
+        await using var higherTransaction = await higher.BeginTransactionAsync();
+        if (higherXidFirst)
+        {
+            await ScalarAsync(higher, "SELECT pg_current_xact_id()::text");
+        }
+
         await using var transaction = await lower.BeginTransactionAsync();
         if (outcome.StartsWith("savepoint", StringComparison.Ordinal))
         {
@@ -30,7 +41,10 @@ public sealed class PostgresGenerationFenceProtocolTests(PostgresFixture fixture
         await ScalarAsync(lower, "SELECT pg_current_xact_id()::text");
         var lowerGeneration = await AllocateAsync(lower);
         await ExecuteAsync(lower, $"INSERT INTO changes VALUES ({lowerGeneration})");
-        var higherGeneration = await CommitHigherAsync(higher);
+        await ScalarAsync(higher, "SELECT pg_current_xact_id()::text");
+        var higherGeneration = await AllocateAsync(higher);
+        await ExecuteAsync(higher, $"INSERT INTO changes VALUES ({higherGeneration})");
+        await higherTransaction.CommitAsync();
         var candidate = await CaptureAsync(publisher);
 
         (await FenceOpenAsync(publisher, candidate)).Should().BeFalse();
@@ -61,7 +75,7 @@ public sealed class PostgresGenerationFenceProtocolTests(PostgresFixture fixture
     }
 
     [IntegrationTest(Timeout = 180000)]
-    public async Task SnapshotFence_LaterWriter_RemainsOpenWithoutEnteringCapturedPrefix()
+    public async Task TransactionFence_LaterWriter_RemainsOpenWithoutEnteringCapturedPrefix()
     {
         await using var scope = await FenceScope.CreateAsync(fixture);
         await using var writer = await scope.OpenAsync();
@@ -83,18 +97,14 @@ public sealed class PostgresGenerationFenceProtocolTests(PostgresFixture fixture
     }
 
     [IntegrationTest(Timeout = 180000)]
-    public async Task SnapshotFence_AllocationBeforeXid_CanPublishPastAnUnfinishedLowerWriter()
+    public async Task TransactionFence_AllocationBeforeXid_CanPublishPastAnUnfinishedLowerWriter()
     {
         await using var scope = await FenceScope.CreateAsync(fixture);
         await using var lower = await scope.OpenAsync();
         await using var higher = await scope.OpenAsync();
         await using var publisher = await scope.OpenAsync();
-        // Prime the sequence's WAL reservation so nextval need not assign an XID itself.
-        await AllocateAsync(higher);
-        await using var transaction = await lower.BeginTransactionAsync();
-        var lowerGeneration = await AllocateAsync(lower);
-        (await ScalarAsync(lower, "SELECT pg_current_xact_id_if_assigned()::text"))
-            .Should().Be(DBNull.Value);
+        await using var transaction = await AllocateWithoutXidAsync(lower, higher);
+        var lowerGeneration = (long)(await ScalarAsync(lower, "SELECT last_value FROM generations"))!;
         var higherGeneration = await CommitHigherAsync(higher);
         var candidate = await CaptureAsync(publisher);
 
@@ -137,18 +147,20 @@ public sealed class PostgresGenerationFenceProtocolTests(PostgresFixture fixture
             .Should().Be(true, "reading the sequence after the snapshot admitted an unfinished lower allocation");
     }
 
-    private readonly record struct Candidate(long AllocatedThrough, string SnapshotXmax);
+    // The cut is an explicitly assigned XID after the sequence read. Snapshot xmax
+    // alone follows completed XIDs and can omit a newer unfinished allocator.
+    private readonly record struct Candidate(long AllocatedThrough, string TransactionCut);
 
     private static async Task<Candidate> CaptureAsync(NpgsqlConnection publisher)
     {
         var allocated = (long)(await ScalarAsync(publisher, "SELECT last_value FROM generations"))!;
-        var xmax = (string)(await ScalarAsync(publisher, "SELECT pg_snapshot_xmax(pg_current_snapshot())::text"))!;
-        return new Candidate(allocated, xmax);
+        var cut = (string)(await ScalarAsync(publisher, "SELECT pg_current_xact_id()::text"))!;
+        return new Candidate(allocated, cut);
     }
 
     private static async Task<bool> FenceOpenAsync(NpgsqlConnection publisher, Candidate candidate) =>
         (bool)(await ScalarAsync(publisher,
-            $"SELECT pg_snapshot_xmin(pg_current_snapshot()) >= '{candidate.SnapshotXmax}'::xid8"))!;
+            $"SELECT pg_snapshot_xmin(pg_current_snapshot()) >= '{candidate.TransactionCut}'::xid8"))!;
 
     private static async Task<long> PublishedAsync(NpgsqlConnection publisher, Candidate candidate) =>
         (long)(await ScalarAsync(publisher,
@@ -162,6 +174,37 @@ public sealed class PostgresGenerationFenceProtocolTests(PostgresFixture fixture
         await ExecuteAsync(writer, $"INSERT INTO changes VALUES ({generation})");
         await transaction.CommitAsync();
         return generation;
+    }
+
+    private static async Task<NpgsqlTransaction> AllocateWithoutXidAsync(
+        NpgsqlConnection writer, NpgsqlConnection primer)
+    {
+        // A checkpoint can make the next nextval emit WAL and assign an XID.
+        // Discard that setup attempt; only an unassigned allocation proves the case.
+        for (var attempt = 0; attempt < 8; attempt++)
+        {
+            await AllocateAsync(primer);
+            var transaction = await writer.BeginTransactionAsync();
+            try
+            {
+                await AllocateAsync(writer);
+                if (await ScalarAsync(writer, "SELECT pg_current_xact_id_if_assigned()::text") is DBNull)
+                {
+                    return transaction;
+                }
+
+                await transaction.RollbackAsync();
+            }
+            catch
+            {
+                await transaction.DisposeAsync();
+                throw;
+            }
+
+            await transaction.DisposeAsync();
+        }
+
+        throw new InvalidOperationException("Could not establish an allocation without an assigned XID.");
     }
 
     private static async Task<long> AllocateAsync(NpgsqlConnection writer) =>
