@@ -29,8 +29,9 @@ public sealed partial class PublishedOperationToolTests
         var descriptor = AdminApiOperationCatalog.Descriptors.Single(d => d.OperationId == operationId);
         var executor = new RecordingExecutor(operationId);
         var bridge = new CapturingProposalBridge();
+        using var catalog = new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System);
         var dispatcher = new OperationDispatcher(
-            new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System), [executor],
+            catalog, [executor],
             new AllowAllPolicyDecisionPoint(), TimeProvider.System, bridge);
         var tool = new PublishedOperationTool(descriptor, "cat-undeclared", NullLogger.Instance);
         var http = Context(dispatcher, authorization: ProposalAuthorization(), roles: ["admin", "agent"]);
@@ -50,8 +51,9 @@ public sealed partial class PublishedOperationToolTests
         var descriptor = AdminApiOperationCatalog.Descriptors.Single(d => d.OperationId == operationId);
         var executor = new RecordingExecutor(operationId);
         var bridge = new CapturingProposalBridge();
+        using var catalog = new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System);
         var dispatcher = new OperationDispatcher(
-            new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System), [executor],
+            catalog, [executor],
             new AllowAllPolicyDecisionPoint(), TimeProvider.System, bridge);
         var tool = new PublishedOperationTool(descriptor, "cat-undeclared", NullLogger.Instance);
         var http = Context(dispatcher, authorization: ProposalAuthorization(), roles: ["admin", "agent"]);
@@ -114,8 +116,9 @@ public sealed partial class PublishedOperationToolTests
             NullLogger<PublishedOperationToolSource>.Instance);
         var surface = new McpDataAccessSurface(
             [], [], NullLogger<McpDataAccessSurface>.Instance, limits: null, toolSources: [source]);
-        var services = new ServiceCollection().AddSingleton<IOperationInvoker>(invoker)
-            .AddSingleton<IPublishedOperationCache>(new PublishedOperationCache())
+        using var cache = new PublishedOperationCache();
+        using var services = new ServiceCollection().AddSingleton<IOperationInvoker>(invoker)
+            .AddSingleton<IPublishedOperationCache>(cache)
             .BuildServiceProvider();
 
         var response = await surface.DispatchAsync(
