@@ -87,7 +87,7 @@ internal static class FeatureServerVersioning
         if (forEdit && !VersionAccessPolicy.CanEditVersion(version, callerOwner, isAdmin))
         {
             return (null, StandardErrorHelpers.CreateForbidden(
-                context, $"Version '{gdbVersion}' accepts edits only from its owner."));
+                context, $"Version '{gdbVersion}' accepts edits only from its owner or an administrator."));
         }
 
         return (resolvedVersion, null);
