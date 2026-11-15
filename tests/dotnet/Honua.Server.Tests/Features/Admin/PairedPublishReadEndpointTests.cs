@@ -11,6 +11,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Descriptors;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
@@ -257,8 +258,8 @@ public sealed partial class PairedPublishEndpointTests
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resource = snapshot.Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId];
         var binding = snapshot.Index.StorageBindingsById[resource.PrimaryStorageBindingId!];
-        var publication = snapshot.Graph.Publications.Single(candidate =>
-            candidate.ResourceId == resource.Metadata.Id && candidate.LayerIndex == WebAppFixture.TestLayerId);
+        var publication = PMTilesProxySourceResolver.ResolveForPublish(
+            snapshot, WebAppFixture.TestServiceId, WebAppFixture.TestLayerId)!.Publication;
         // Exercise the legacy resolver's index fallback: the old storage handle
         // remains the public layer index after the same binding moves to another store.
         binding.StorageLayerId.Should().Be(publication.LayerIndex);
