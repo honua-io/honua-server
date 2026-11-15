@@ -45,14 +45,14 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     };
 
     private readonly DatabricksLayerMappingRegistry _mappings;
-    private readonly DatabricksFeatureQueryBuilder _queryBuilder;
+    private readonly IDatabricksFeatureQueryBuilder _queryBuilder;
     private readonly IDatabricksFeatureDataAccess _dataAccess;
     private readonly LayerReadSecurityResolver? _readSecurity;
     private readonly FeatureProviderBinding? _binding;
 
     public DatabricksFeatureStore(
         DatabricksLayerMappingRegistry mappings,
-        DatabricksFeatureQueryBuilder queryBuilder,
+        IDatabricksFeatureQueryBuilder queryBuilder,
         IDatabricksFeatureDataAccess dataAccess,
         LayerReadSecurityResolver? readSecurity = null)
         : this(mappings, queryBuilder, dataAccess, readSecurity, binding: null)
@@ -61,7 +61,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
 
     private DatabricksFeatureStore(
         DatabricksLayerMappingRegistry mappings,
-        DatabricksFeatureQueryBuilder queryBuilder,
+        IDatabricksFeatureQueryBuilder queryBuilder,
         IDatabricksFeatureDataAccess dataAccess,
         LayerReadSecurityResolver? readSecurity,
         FeatureProviderBinding? binding)
