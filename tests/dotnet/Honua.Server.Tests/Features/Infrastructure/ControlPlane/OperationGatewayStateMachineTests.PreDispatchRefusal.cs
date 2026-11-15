@@ -263,8 +263,16 @@ public sealed partial class OperationGatewayStateMachineTests
         var proposal = CreateProposal("agent-denied-approval", OperationClass.Deploy,
             OperationProposalStatus.AwaitingApproval);
 
-        await OperationApprovalDenialRecorder.RecordAsync(services.GetRequiredService<IServiceScopeFactory>(),
-            proposal, "canonical-agent", OperationApprovalDenialReason.HumanSessionRequired, CancellationToken.None);
+        await OperationApprovalDenialRecorder.RecordAsync(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            new OperationApprovalDenial
+            {
+                Proposal = proposal,
+                Actor = "canonical-agent",
+                Reason = OperationApprovalDenialReason.HumanSessionRequired,
+                Decision = OperationApprovalDecision.Approve,
+            },
+            CancellationToken.None);
 
         var record = Assert.Single(audit.Events);
         Assert.Equal("operation.approval_denied", record.Action);
