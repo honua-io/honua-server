@@ -5,6 +5,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Core.Features.Realtime;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -30,6 +31,24 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     {
         _factory = factory;
         _client = _factory.CreateClient();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ReadinessCheck)]
+    [Endpoint("GET /healthz/ready")]
+    public async Task ReadinessProbe_DuringRealtimeDrain_Returns503WhileLivenessRemainsHealthy()
+    {
+        await using var factory = _factory.WithWebHostBuilder(_ => { });
+        using var client = factory.CreateClient();
+        factory.Services.GetRequiredService<IRealtimeStreamLifecycle>().BeginDrain();
+
+        using var readiness = await client.GetAsync("/healthz/ready");
+        using var liveness = await client.GetAsync("/healthz/live");
+
+        readiness.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        readiness.Headers.CacheControl?.NoStore.Should().BeTrue();
+        (await readiness.Content.ReadAsStringAsync()).Should().Be("Not Ready");
+        liveness.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]

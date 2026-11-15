@@ -32,7 +32,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// rule at a time against fake seams.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
-public sealed class OpsFindingsServiceTests
+public sealed partial class OpsFindingsServiceTests
 {
     [UnitTheory]
     [InlineData(false)]
@@ -139,9 +139,11 @@ public sealed class OpsFindingsServiceTests
         Assert.False(OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out _));
     }
 
-    [UnitTest]
+    [UnitTheory]
+    [InlineData(2, 2)]
+    [InlineData(600, 500)]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Evaluate_AlertDispatchDeadLetters_ProducesCriticalFindingWithRedriveAction()
+    public async Task Evaluate_AlertDispatchDeadLetters_ProducesCriticalFindingWithRedriveAction(int deadLetters, int expectedBound)
     {
         // #2556: the registered alerts.redrive_dead_letters actuator (#2579) means dead-letters now
         // carry a real recommended action instead of being purely informational.
@@ -149,7 +151,7 @@ public sealed class OpsFindingsServiceTests
         {
             IsDispatcherEnabled = true,
             IsDispatcherRunning = true,
-            LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = deadLetters },
         };
         var service = CreateService(alertHealth: alertHealth);
 
@@ -161,6 +163,9 @@ public sealed class OpsFindingsServiceTests
         Assert.NotNull(finding.RecommendedAction);
         Assert.Equal(OperationClass.AdminConfigChange, finding.RecommendedAction!.Kind);
         Assert.Contains("\"action\":\"alerts.redrive_dead_letters\"", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+        Assert.Contains($"\"maxCount\":{expectedBound}", finding.RecommendedAction.ExecutionPayload, StringComparison.Ordinal);
+        Assert.Equal(expectedBound, finding.RecommendedAction.BlastRadius);
+        Assert.False(finding.RecommendedAction.AutoSafe);
     }
 
     [UnitTest]

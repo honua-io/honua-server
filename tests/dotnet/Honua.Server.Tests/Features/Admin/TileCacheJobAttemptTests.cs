@@ -7,6 +7,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Publishing.Descriptors;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
@@ -54,6 +55,52 @@ public sealed partial class TileCacheJobExecutorPublishTests
             }
         }
 
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompleteAsync_ActivatedPublicationSurvivesCancellationAndProjectionFailure(bool rejectProjection)
+    {
+        var store = new ComparingInMemoryProgressStore();
+        var context = PublishingContext();
+        var progress = new TileCacheAttemptProgress(store, context);
+        var initial = TileOperationProgress.CreateInitial("paired-committed", "paired-publish", null, 1, "WebMercatorQuad");
+        await progress.StartAsync(initial, CancellationToken.None);
+        var published = new PublishedPublication("publication", "version", "capture", "publication/version/descriptor.json", "publication/current.json");
+        var completed = initial with { Status = OperationStatus.Completed, PublishedPublication = published };
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        context.ThrowIfExecutionLeaseLostAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException(new OperationCanceledException("Cancelled after activation")));
+        context.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.Arg<CancellationToken>().IsCancellationRequested.Should().BeFalse();
+                return Task.CompletedTask;
+            });
+        if (rejectProjection)
+        {
+            await store.SetProgressAsync(initial.JobId, initial with { CurrentPhase = "Successor attempt" });
+        }
+        using var services = BuildScope(new StubCloudStorage(), includeCloudStorage: true);
+
+        var result = await CreateExecutor(store, services).CompleteAsync(completed, progress, context, cancellation.Token);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        result.CompletedWithCommittedEffects.Should().BeTrue();
+        await context.Received(1).RecordCommittedEffectAsync(
+            "paired-publication:" + published.DescriptorKey, CancellationToken.None);
+        var saved = await store.GetProgressAsync<TileOperationProgress>(initial.JobId);
+        if (rejectProjection)
+        {
+            saved!.CurrentPhase.Should().Be("Successor attempt");
+        }
+        else
+        {
+            saved!.PublishedPublication.Should().Be(published);
+            saved.Status.Should().Be(OperationStatus.Completed);
+        }
     }
 
     private static IUniversalProgressStore PauseTileCompletion(IUniversalProgressStore progress,
