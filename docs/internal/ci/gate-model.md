@@ -1467,6 +1467,17 @@ This change adds no runners or jobs: one lifecycle runner before and after.
 Live after-change readiness diagnostics and elapsed time await a new failure;
 no lifecycle rerun or runtime savings are claimed from unit validation.
 
+The manual rc.1 upgrade and return each run migrate-only after stopping rc.1
+and before candidate startup. The harness explicitly selects Gate, clears prior
+approval, and accepts exit 5 only for annotated contracts on its reviewed script
+allowlist with matching SHA-256 bytes. Migration 183 removes optional indexes;
+future contracts require a separate review. The exact returned nonce authorizes
+one retry, which must exit 0 with a verified schema. Unknown contracts, changed
+SQL, malformed summaries and failed verification stop the journey. This adds no
+jobs or runners (one lifecycle runner before and after). Run 43729796698's manual
+journey reported one pass and one failure in 349 seconds before this repair;
+installed after-change proof and timing remain pending.
+
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
 
 GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so their
