@@ -46,7 +46,7 @@ internal sealed partial class CdnInvalidationService
         using var deadline = new CancellationTokenSource(ShutdownFlushTimeout);
         try
         {
-            var batches = await SendWithinLimitsAsync(paths, CdnPurgeCause.Edit(CdnPurgeCause.Shutdown), deadline.Token)
+            var batches = await SendWithinLimitsAsync(paths, CdnPurgeCause.Shutdown(), deadline.Token)
                 .ConfigureAwait(false);
             if (batches.Result.Failed)
             {
@@ -101,7 +101,7 @@ internal sealed partial class CdnInvalidationService
     // A settle repeat is itself never repeated.
     private void AfterSubmitted(IReadOnlyCollection<string> sent, CdnPurgeCause cause)
     {
-        if (cause.ChangeId == CdnPurgeCause.SettledEdits || ActivePurgeBacked is null)
+        if (cause.Kind is CdnPurgeKind.Settle || ActivePurgeBacked is null)
         {
             return;
         }
@@ -134,7 +134,7 @@ internal sealed partial class CdnInvalidationService
 
         if (batch.Due.Length > 0)
         {
-            var result = await SendAfterEditAsync(batch.Due, CdnPurgeCause.Edit(CdnPurgeCause.SettledEdits), CancellationToken.None)
+            var result = await SendAfterEditAsync(batch.Due, CdnPurgeCause.Settle(), CancellationToken.None)
                 .ConfigureAwait(false);
             if (result is { Outcome: CdnInvalidationOutcome.Failed })
             {

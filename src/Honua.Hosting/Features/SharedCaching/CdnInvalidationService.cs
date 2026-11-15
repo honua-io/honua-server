@@ -92,7 +92,8 @@ internal sealed partial class CdnInvalidationService(
         {
             var now = _timeProvider.GetUtcNow();
             var due = _lastEditInvalidation + CurrentCoalescingWindow();
-            if (_windowClosesAt.HasValue || due > now)
+            // Once the task is stopping no window timer will fire in time, so an edit is sent at once.
+            if (!_stopping && (_windowClosesAt.HasValue || due > now))
             {
                 _pendingEditPaths.UnionWith(paths);
                 due = due > now ? due : now;
@@ -201,8 +202,9 @@ internal sealed partial class CdnInvalidationService(
             return result;
         }
 
-        // A result that is still busy has already used its retries: an edit made now would not reach the CDN either.
-        if (result.Failed)
+        // A result that is still busy has already used its retries: an edit made now would not reach the CDN either. A
+        // stopping task's send skips those retries, so its busy answer says too little to hold off the fleet.
+        if (result.Failed && cause.Kind is not CdnPurgeKind.Shutdown)
         {
             _reliability?.RecordFailedPurge();
         }
@@ -253,7 +255,7 @@ internal sealed partial class CdnInvalidationService(
         IReadOnlyCollection<string> withinBudget, CdnPurgeCause cause, CancellationToken cancellationToken)
     {
         var result = await invalidator.InvalidateAsync(withinBudget, cancellationToken).ConfigureAwait(false);
-        foreach (var delay in cause.ChangeId == CdnPurgeCause.Shutdown ? Array.Empty<TimeSpan>() : BusyRetryDelays)
+        foreach (var delay in cause.Kind is CdnPurgeKind.Shutdown ? Array.Empty<TimeSpan>() : BusyRetryDelays)
         {
             if (result.Outcome is not CdnInvalidationOutcome.Busy)
             {
@@ -343,11 +345,15 @@ internal sealed record CdnPurgeCause(string Reason, string ChangeId)
 
     internal const string CoalescedEdits = "coalesced";
 
-    // The repeat of an edit purge after the settle delay; it is not repeated again.
-    internal const string SettledEdits = "settle";
+    // Set only by the service itself: the change id can come from a client's correlation id, so it never decides how
+    // a purge is handled.
+    internal CdnPurgeKind Kind { get; private init; } = CdnPurgeKind.Change;
 
-    // Edit purges a stopping task sent instead of leaving them to its windows.
-    internal const string Shutdown = "shutdown";
+    // The repeat of a purge after the settle delay; it is not repeated again.
+    internal static CdnPurgeCause Settle() => new("edit", "settle") { Kind = CdnPurgeKind.Settle };
+
+    // Purges a stopping task sends instead of leaving them to its windows.
+    internal static CdnPurgeCause Shutdown() => new("edit", "shutdown") { Kind = CdnPurgeKind.Shutdown };
 
     internal static CdnPurgeCause Admin(string changeId) => new("admin", changeId);
 
@@ -364,4 +370,11 @@ internal sealed class NoCdnInvalidator : ICdnInvalidator
         IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken = default)
         => Task.FromResult(CdnInvalidationResult.NotConfigured);
+}
+
+internal enum CdnPurgeKind
+{
+    Change,
+    Settle,
+    Shutdown,
 }

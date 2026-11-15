@@ -14,7 +14,6 @@ public sealed class PurgeBackedDeliveryTests
 {
     private readonly ManualTimeProvider _time = new();
 
-
     [UnitTest]
     public async Task FailedEditPurge_WithPurgeBackedLayers_IsSentAgainAfterTheRetryDelay()
     {
@@ -131,6 +130,35 @@ public sealed class PurgeBackedDeliveryTests
         await cdn.AttemptsReach(2);
 
         cdn.Sent[^1].Should().Equal("/*");
+    }
+
+    [UnitTest]
+    public async Task ChangeWhoseIdSpellsSettle_StillGetsItsSettleRepeat()
+    {
+        var cdn = new FlakyInvalidator(failures: 0);
+        var service = new CdnInvalidationService(
+            cdn, NullLogger<CdnInvalidationService>.Instance, new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(monthlyLimit: 0)) });
+
+        // A client chooses its correlation id, which becomes the change id of the purge it causes.
+        await service.InvalidateNowAsync(["#honua-layer:3"], CancellationToken.None, CdnPurgeCause.Edit("settle"));
+        await _time.TimerIsWaiting();
+        _time.Advance(PurgeBackedDelivery.SettleDelay);
+
+        await cdn.AttemptsReach(2);
+    }
+
+    [UnitTest]
+    public async Task EditAfterTheShutdownFlush_IsSentAtOnceInsteadOfWaitingForAWindow()
+    {
+        var cdn = new FlakyInvalidator(failures: 0);
+        var service = new CdnInvalidationService(
+            cdn, NullLogger<CdnInvalidationService>.Instance, new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(monthlyLimit: 0)) });
+        await service.InvalidateAfterEditAsync(["#honua-layer:3"], CancellationToken.None);
+        await service.FlushPendingAsync();
+
+        await service.InvalidateAfterEditAsync(["#honua-layer:4"], CancellationToken.None);
+
+        cdn.Sent[^1].Should().Equal("#honua-layer:4");
     }
 
     [UnitTest]

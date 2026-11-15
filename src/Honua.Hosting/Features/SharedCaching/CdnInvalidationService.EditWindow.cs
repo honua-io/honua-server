@@ -49,7 +49,7 @@ internal sealed partial class CdnInvalidationService
         {
             claimed = await ClaimAcrossTasksAsync(paths, cancellationToken).ConfigureAwait(false);
             // A settle repeat whose address another task holds is dropped: that task's purge is newer and settles itself.
-            if (claimed.Length < paths.Length && cause.ChangeId != CdnPurgeCause.SettledEdits)
+            if (claimed.Length < paths.Length && cause.Kind is not CdnPurgeKind.Settle)
             {
                 DeferToNextWindow(paths.Except(claimed, StringComparer.Ordinal), HeldLeaseRetryDelay());
             }
@@ -65,7 +65,7 @@ internal sealed partial class CdnInvalidationService
             // This task holds the leases, so no other task will send these; a CDN still busy after the retries gets them next window.
             if (batches.BusyPaths.Count > 0)
             {
-                if (cause.ChangeId == CdnPurgeCause.SettledEdits)
+                if (cause.Kind is CdnPurgeKind.Settle)
                 {
                     _delivery.SettleOnly(batches.BusyPaths);
                 }
@@ -97,24 +97,32 @@ internal sealed partial class CdnInvalidationService
 
     private void DeferToNextWindow(IEnumerable<string> paths, TimeSpan delay)
     {
-        if (_stopping)
-        {
-            string[] unsent = [.. paths];
-            Log.ShutdownPurgesNotSent(logger, unsent.Length, string.Join(' ', unsent));
-            return;
-        }
-
         var due = _timeProvider.GetUtcNow() + delay;
+        string[]? unsent = null;
         lock (_gate)
         {
-            _pendingEditPaths.UnionWith(paths);
-            if (_windowClosesAt is { } scheduled && scheduled <= due)
+            // After the shutdown flush no window timer will fire before the process ends.
+            if (_stopping)
             {
-                return;
+                unsent = [.. paths];
             }
+            else
+            {
+                _pendingEditPaths.UnionWith(paths);
+                if (_windowClosesAt is { } scheduled && scheduled <= due)
+                {
+                    return;
+                }
 
-            _windowClosesAt = due;
-            _lastEditInvalidation = _timeProvider.GetUtcNow();
+                _windowClosesAt = due;
+                _lastEditInvalidation = _timeProvider.GetUtcNow();
+            }
+        }
+
+        if (unsent is not null)
+        {
+            Log.ShutdownPurgesNotSent(logger, unsent.Length, string.Join(' ', unsent));
+            return;
         }
 
         _ = InvalidatePendingWhenWindowClosesAsync(due);

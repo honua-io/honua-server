@@ -73,11 +73,16 @@ internal sealed partial class CdnPurgeReliability(
     // A failed or still-busy purge: this task stops at once, and the other tasks at their next read.
     internal void RecordFailedPurge()
     {
+        // Only a deployment that gives purge-backed lifetimes needs the other tasks to know.
+        var share = _options?.CurrentValue is { CacheTagsEnabled: true, PurgeBacked.Configured: true };
         lock (_gate)
         {
             _lastFailure = _clock.GetUtcNow();
             _failing = true;
-            _renewal ??= HoldFailureLeaseWhileFailingAsync();
+            if (share)
+            {
+                _renewal ??= HoldFailureLeaseWhileFailingAsync();
+            }
         }
     }
 
