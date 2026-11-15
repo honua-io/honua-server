@@ -41,10 +41,10 @@ test('reported FeatureServer and geometry drift changes only the canonical numer
 });
 
 test('zero counts remove the row and restoring a count recreates exactly the original page', () => {
-  const without = updateProofCount(page, key, 597, 0);
+  const without = updateProofCount(page, key, { previous: 597, next: 0 });
   assert.equal(without, page.toString().replace('| Proving tests | 597 |\n', ''));
-  assert.equal(updateProofCount(Buffer.from(without), key, 0, 597), page.toString());
-  assert.equal(updateProofCount(page, key, 597, 597), null);
+  assert.equal(updateProofCount(Buffer.from(without), key, { previous: 0, next: 597 }), page.toString());
+  assert.equal(updateProofCount(page, key, { previous: 597, next: 597 }), null);
 });
 
 test('already regenerated pages are idempotent', async () => {
@@ -77,12 +77,12 @@ test('missing provenance, mismatched identity, ambiguous or unexpected counts fa
     page.toString().replace('| Proving tests | 597 |', '| Proving tests | 596 |'),
     page.toString().replace('| Proving tests | 597 |', '| Proving tests | 597 |\n| Proving tests | 597 |'),
     page.toString().replace('| Proving tests | 597 |\n', ''),
-  ]) assert.throws(() => updateProofCount(Buffer.from(text), key, 597, 599), /generated capability|unexpected/);
+  ]) assert.throws(() => updateProofCount(Buffer.from(text), key, { previous: 597, next: 599 }), /generated capability|unexpected/);
 });
 
 test('oversized and invalid UTF-8 blobs are rejected', async () => {
-  assert.throws(() => updateProofCount(Buffer.alloc(65537, 65), key, 597, 599), /byte bound/);
-  assert.throws(() => updateProofCount(Buffer.from([0xff]), key, 597, 599), /encoded data/);
+  assert.throws(() => updateProofCount(Buffer.alloc(65537, 65), key, { previous: 597, next: 599 }), /byte bound/);
+  assert.throws(() => updateProofCount(Buffer.from([0xff]), key, { previous: 597, next: 599 }), /encoded data/);
   await assert.rejects(derive([[key, 597]], [[key, 599]], { [path]: Buffer.alloc(65537, 65) }), /byte bound/);
 });
 

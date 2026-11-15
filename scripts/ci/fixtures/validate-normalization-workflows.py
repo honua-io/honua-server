@@ -82,6 +82,21 @@ def validate_app_token_scope(document: dict) -> None:
         raise AssertionError("normalization App token scope must be exactly the repository and approved permissions")
 
 
+def validate_concept_derivation(names, blocks, mint_name):
+    compare_name = "Compare prospective blobs without checking out PR code"
+    if names.index(compare_name) >= names.index(mint_name):
+        raise AssertionError("concept derivation must precede credential minting")
+    compare_block = blocks[compare_name]
+    for fragment in (
+        "require('./scripts/ci/normalization-concept-counts')",
+        "await deriveConceptCountOutputs({ outputs: plan.outputs, readBlob })",
+        "plan.outputs.push(...concepts)",
+        "entry.mode !== '100644'",
+        "content.length !== entry.size",
+    ):
+        require(compare_block, fragment, "trusted bounded concept derivation must precede credential minting")
+
+
 def validate(
     producer: str,
     consumer: str,
@@ -298,18 +313,7 @@ def validate(
     if names.index(mutation_name) != len(names) - 1:
         raise AssertionError("the mutation step must be the final step")
     blocks = dict(steps)
-    compare_name = "Compare prospective blobs without checking out PR code"
-    if names.index(compare_name) >= names.index(mint_name):
-        raise AssertionError("concept derivation must precede credential minting")
-    compare_block = blocks[compare_name]
-    for fragment in (
-        "require('./scripts/ci/normalization-concept-counts')",
-        "await deriveConceptCountOutputs({ outputs: plan.outputs, readBlob })",
-        "plan.outputs.push(...concepts)",
-        "entry.mode !== '100644'",
-        "content.length !== entry.size",
-    ):
-        require(compare_block, fragment, "trusted bounded concept derivation must precede credential minting")
+    validate_concept_derivation(names, blocks, mint_name)
     mint_block = blocks[mint_name]
     mutation_block = blocks[mutation_name]
 

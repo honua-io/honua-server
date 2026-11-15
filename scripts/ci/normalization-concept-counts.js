@@ -39,7 +39,7 @@ function proofCounts(bytes) {
 // Deliberately narrower than rendering arbitrary Markdown from contributor data:
 // preserve every existing byte except the numeric proof row. Other documentation
 // changes still require canonical generation by the author and ordinary gates.
-function updateProofCount(bytes, key, previous, next) {
+function updateProofCount(bytes, key, { previous, next }) {
   const text = boundedBytes(bytes, MAX_PAGE_BYTES, key);
   if (!text.includes(`\n${GENERATED}\n`)
       || !text.includes(`\nresource: "honua://capability/${key}"\n`)
@@ -73,7 +73,7 @@ async function deriveConceptCountOutputs({ outputs, readBlob }) {
     const path = `docs/okf/capabilities/${key}.md`;
     const current = await readBlob(path, MAX_PAGE_BYTES, false);
     if (current === null) continue;
-    const updated = updateProofCount(current, key, previous.get(key), count);
+    const updated = updateProofCount(current, key, { previous: previous.get(key), next: count });
     if (updated === null) continue;
     const content = Buffer.from(updated, 'utf8');
     boundedBytes(content, MAX_PAGE_BYTES, path);
