@@ -87,6 +87,7 @@ internal static class ObservabilityServiceCollectionExtensions
         {
             DatabasePressureSignal = sp.GetService<IOpsDatabasePressureSignal>(),
             AdmissionGate = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(),
+            CatalogActivationWatches = sp.GetService<Honua.Core.Features.Metadata.Abstractions.ICatalogActivationWatchStore>(),
             RollupStore = sp.GetService<IOpsHealthRollupStore>(),
             ExternalEventStore = sp.GetService<IOpsExternalEventStore>(),
             CollectionLedger = sp.GetRequiredService<OpsFindingsCollectionLedger>(),

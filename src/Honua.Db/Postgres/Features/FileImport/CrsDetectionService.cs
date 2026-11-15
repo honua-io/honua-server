@@ -211,7 +211,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
                 }
             }
         }
-        else if (TryMatchEsriProjectedName(cleanedContent, out var esriEpsg)
+        else if (TryMatchEsriProjectedName(cleanedContent) is int esriEpsg
                  && await ValidateSridAsync(esriEpsg, cancellationToken))
         {
             // 3. Common ESRI projected .prj files carry no authority node; match the projected
@@ -223,47 +223,42 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         return await FindSridByWktMatchAsync(cleanedContent, cancellationToken);
     }
 
-    /// <summary>
-    /// Attempts to map a common ESRI projected-CRS WKT name to its EPSG code without full PROJ
-    /// parsing. Handles a small explicit table (Web Mercator, World Mercator) and the WGS 84 /
-    /// NAD83 / ETRS89 UTM zone families. Returns <see langword="false"/> when the name is not a
-    /// recognized ESRI projected name, in which case detection falls through to the
-    /// spatial_ref_sys WKT match (or the caller must supply an explicit source SRID).
-    /// </summary>
-    private static bool TryMatchEsriProjectedName(string wktContent, out int epsg)
+    private static int? TryMatchEsriProjectedName(string wktContent)
     {
-        epsg = 0;
-
         var nameMatch = _projectedNameRegex.Match(wktContent);
         if (!nameMatch.Success)
-            return false;
+            return null;
 
         var name = nameMatch.Groups[1].Value.Trim();
 
-        if (_esriProjectedNameCodes.TryGetValue(name, out epsg))
-            return true;
+        if (_esriProjectedNameCodes.TryGetValue(name, out var explicitCode))
+            return explicitCode;
 
+        if (TryComputeEsriUtmCode(name) is int utmCode)
+            return utmCode;
+
+        return EsriProjectedCrsNames.TryGet(name);
+    }
+
+    private static int? TryComputeEsriUtmCode(string name)
+    {
         var utm = _esriUtmNameRegex.Match(name);
         if (!utm.Success)
-            return false;
+            return null;
 
         if (!int.TryParse(utm.Groups["zone"].Value, out var zone) || zone is < 1 or > 60)
-            return false;
+            return null;
 
         var north = string.Equals(utm.Groups["hemi"].Value, "N", StringComparison.OrdinalIgnoreCase);
         var datum = utm.Groups["datum"].Value;
 
         if (datum.StartsWith("WGS_1984", StringComparison.OrdinalIgnoreCase))
-        {
-            epsg = (north ? 32600 : 32700) + zone;
-            return true;
-        }
+            return (north ? 32600 : 32700) + zone;
 
         if (datum.StartsWith("NAD_1983", StringComparison.OrdinalIgnoreCase) && north)
         {
             // NAD83 UTM (northern hemisphere): EPSG 26901..26923 for zones 1..23.
-            epsg = 26900 + zone;
-            return true;
+            return 26900 + zone;
         }
 
         if ((datum.StartsWith("ETRS_1989", StringComparison.OrdinalIgnoreCase)
@@ -271,12 +266,10 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             && north)
         {
             // ETRS89 UTM: EPSG 25828..25838 for zones 28..38.
-            epsg = 25800 + zone;
-            return true;
+            return 25800 + zone;
         }
 
-        epsg = 0;
-        return false;
+        return null;
     }
 
     /// <summary>
