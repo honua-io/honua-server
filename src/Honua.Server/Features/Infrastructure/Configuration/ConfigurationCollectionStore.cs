@@ -9,7 +9,6 @@ internal sealed class ConfigurationCollectionStore<T>(
     where T : class
 {
     private Cached? _current;
-    private long _localWrites;
 
     public Task<ConfigurationSnapshot<T>> ReadAsync(CancellationToken token) => documents.ReadAsync(collection, token);
 
@@ -27,7 +26,9 @@ internal sealed class ConfigurationCollectionStore<T>(
         var generation = contexts?.HttpContext?.Items[RequestConfigurationGeneration.ContextKey] is long captured
             ? captured
             : await documents.GetGenerationAsync(token).ConfigureAwait(false);
-        var localWrites = Interlocked.Read(ref _localWrites);
+        // A write committed through this task's documents since the snapshot was read discards it too, so the writing
+        // request reads its own change; the count is taken first, so a read that began before a write is never kept.
+        var localWrites = documents.CommittedWrites;
         var current = Volatile.Read(ref _current);
         if (current is not null && current.LocalWrites == localWrites && current.Snapshot.Generation == generation)
         {
@@ -48,7 +49,7 @@ internal sealed class ConfigurationCollectionStore<T>(
     }
 
     public Task<bool> TryCreateAsync(string key, T value, CancellationToken token)
-        => WriteAsync(new(key, 0, value), token);
+        => documents.WriteAsync(collection, new(key, 0, value), token);
 
     public async Task<T?> MutateAsync(string key, Func<T?, T?> mutation, CancellationToken token)
     {
@@ -60,7 +61,7 @@ internal sealed class ConfigurationCollectionStore<T>(
             {
                 return next;
             }
-            if (await WriteAsync(new(key, current?.Revision ?? 0, next), token).ConfigureAwait(false))
+            if (await documents.WriteAsync(collection, new(key, current?.Revision ?? 0, next), token).ConfigureAwait(false))
             {
                 return next;
             }
@@ -74,7 +75,7 @@ internal sealed class ConfigurationCollectionStore<T>(
         {
             var current = await documents.FindAsync(collection, key, token).ConfigureAwait(false);
             if (current is null) { return false; }
-            if (await WriteAsync(new(key, current.Revision, default), token).ConfigureAwait(false)) { return true; }
+            if (await documents.WriteAsync(collection, new(key, current.Revision, default), token).ConfigureAwait(false)) { return true; }
         }
         throw new InvalidOperationException("Concurrent configuration updates exceeded the retry limit.");
     }
@@ -84,23 +85,7 @@ internal sealed class ConfigurationCollectionStore<T>(
     public async Task<bool> DeleteWithDependentsAsync(string key, IReadOnlyList<string> dependentKinds, CancellationToken token)
     {
         var deleted = await documents.DeleteKeyAsync([collection.Kind, .. dependentKinds], key, token).ConfigureAwait(false);
-        if (deleted.Count > 0)
-        {
-            Interlocked.Increment(ref _localWrites);
-        }
         return deleted.Contains(collection.Kind, StringComparer.Ordinal);
-    }
-
-    // The request that wrote must read its own change, and its captured generation is the one before the write.
-    // A snapshot whose read began before the write is discarded even when it is stored after it.
-    private async Task<bool> WriteAsync(ConfigurationWrite<T> write, CancellationToken token)
-    {
-        var written = await documents.WriteAsync(collection, write, token).ConfigureAwait(false);
-        if (written)
-        {
-            Interlocked.Increment(ref _localWrites);
-        }
-        return written;
     }
 
     private sealed class Cached(ConfigurationSnapshot<T> snapshot, long localWrites)

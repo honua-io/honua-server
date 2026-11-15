@@ -45,7 +45,7 @@ internal sealed class PostgresConsoleContentStore(
         };
         if (!await _items.TryCreateAsync(id, stored, cancellationToken).ConfigureAwait(false))
         {
-            throw new ConsoleContentIdConflictException(id);
+            throw ConsoleContentIdConflictException.AlreadyExists(id);
         }
         return stored;
     }

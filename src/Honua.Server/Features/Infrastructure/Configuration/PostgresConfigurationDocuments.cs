@@ -30,6 +30,7 @@ internal sealed partial class PostgresConfigurationDocuments(
     private readonly ILogger _logger = logger ?? (ILogger)NullLogger.Instance;
     private readonly string _documents = database.Table("configuration_documents");
     private readonly string _generation = database.Table("configuration_generation");
+    private long _committedWrites;
 
     public Task<long> GetGenerationAsync(CancellationToken cancellationToken)
         => database.ExecuteAsync(async (connection, _, token) =>
@@ -108,7 +109,7 @@ internal sealed partial class PostgresConfigurationDocuments(
     // Deletes the key's document in each kind in one transaction, for documents that must not outlive another.
     // Returns the kinds that had a document under the key.
     public Task<IReadOnlyList<string>> DeleteKeyAsync(IReadOnlyList<string> kinds, string key, CancellationToken cancellationToken)
-        => database.ExecuteAsync<IReadOnlyList<string>>(async (connection, _, token) =>
+        => CountCommittedAsync(database.ExecuteAsync<IReadOnlyList<string>>(async (connection, _, token) =>
         {
             await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
             await LockGenerationAsync(connection, token).ConfigureAwait(false);
@@ -126,10 +127,10 @@ internal sealed partial class PostgresConfigurationDocuments(
             }
             await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
             return deleted;
-        }, StatementRepeat.NotAfterSend, cancellationToken);
+        }, StatementRepeat.NotAfterSend, cancellationToken), static deleted => deleted.Count > 0);
 
     public Task<bool> WriteAsync<T>(ConfigurationCollection<T> collection, ConfigurationWrite<T> write, CancellationToken cancellationToken)
-        => database.ExecuteAsync(async (connection, _, token) =>
+        => CountCommittedAsync(database.ExecuteAsync(async (connection, _, token) =>
         {
             await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
             await LockGenerationAsync(connection, token).ConfigureAwait(false);
@@ -137,7 +138,7 @@ internal sealed partial class PostgresConfigurationDocuments(
             var written = await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
             await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
             return written;
-        }, StatementRepeat.NotAfterSend, cancellationToken);
+        }, StatementRepeat.NotAfterSend, cancellationToken), static written => written);
 
     public ConfigurationChange PrepareWrite<T>(ConfigurationCollection<T> collection, ConfigurationWrite<T> write)
         => new(collection.Kind, write.Key, write.ExpectedRevision, write.Value is null ? null
@@ -146,7 +147,7 @@ internal sealed partial class PostgresConfigurationDocuments(
     // Lock the generation before checking the read snapshot: concurrent admin writes either precede
     // this reconciliation or force it to re-read. Profiles and their ownership manifest commit together.
     public Task<bool> WriteBatchAsync(long expectedGeneration, IReadOnlyList<ConfigurationChange> changes, CancellationToken cancellationToken)
-        => database.ExecuteAsync(async (connection, _, token) =>
+        => CountCommittedAsync(database.ExecuteAsync(async (connection, _, token) =>
         {
             await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
             if (await LockGenerationAsync(connection, token).ConfigureAwait(false) != expectedGeneration) { return false; }
@@ -157,7 +158,21 @@ internal sealed partial class PostgresConfigurationDocuments(
             }
             await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
             return true;
-        }, StatementRepeat.NotAfterSend, cancellationToken);
+        }, StatementRepeat.NotAfterSend, cancellationToken), static written => written);
+
+    // Writes this instance has committed. A task's collection caches compare it, so the task that wrote reads its
+    // change at once although its request captured the generation before the write.
+    public long CommittedWrites => Interlocked.Read(ref _committedWrites);
+
+    private async Task<TResult> CountCommittedAsync<TResult>(Task<TResult> write, Func<TResult, bool> committed)
+    {
+        var result = await write.ConfigureAwait(false);
+        if (committed(result))
+        {
+            Interlocked.Increment(ref _committedWrites);
+        }
+        return result;
+    }
 
     private async Task<long> LockGenerationAsync(NpgsqlConnection connection, CancellationToken token)
     {

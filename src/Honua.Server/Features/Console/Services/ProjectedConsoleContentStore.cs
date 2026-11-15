@@ -31,7 +31,7 @@ internal sealed class ProjectedConsoleContentStore(
         var published = await publishedContent.ReadAsync(cancellationToken).ConfigureAwait(false);
         if (published.OwnedIds.Contains(item.Id))
         {
-            throw new InvalidOperationException("Published metadata is read-only in the content catalog.");
+            throw ConsoleContentIdConflictException.PublishedMetadata();
         }
         return await authoredContent.CreateAsync(item, cancellationToken).ConfigureAwait(false);
     }
