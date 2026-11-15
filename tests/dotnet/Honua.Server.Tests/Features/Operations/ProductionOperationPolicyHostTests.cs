@@ -13,6 +13,7 @@ using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -40,6 +41,10 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 [Operation(Operations.Security)]
 public sealed class ProductionOperationPolicyHostTests
 {
+    private readonly DatabaseFixtureAdapter _database;
+
+    public ProductionOperationPolicyHostTests(DatabaseFixtureAdapter database) => _database = database;
+
     private const string AdminPassword = "ProductionPolicyAdmin123!";
     private const string ConnectionEncryptionMasterKey = "ProductionPolicyConnectionMasterKey-123456";
 
@@ -127,7 +132,7 @@ public sealed class ProductionOperationPolicyHostTests
             });
     }
 
-    private static WebApplicationFactory<Program> CreateProductionFactory(IDictionary<string, string?> settings)
+    private WebApplicationFactory<Program> CreateProductionFactory(IDictionary<string, string?> settings)
         => TestWebApplicationFactory.CreateForEnvironment("Production")
             .WithWebHostBuilder(builder =>
             {
@@ -137,8 +142,8 @@ public sealed class ProductionOperationPolicyHostTests
                 {
                     var values = new Dictionary<string, string?>(settings)
                     {
-                        ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString,
-                        ["ConnectionStrings:honua"] = TestConnectionStrings.DefaultPostgresConnectionString,
+                        ["ConnectionStrings:DefaultConnection"] = _database.ConnectionString,
+                        ["ConnectionStrings:honua"] = _database.ConnectionString,
                         ["Security:ConnectionEncryption:MasterKey"] = ConnectionEncryptionMasterKey,
                         ["HONUA_ADMIN_PASSWORD"] = AdminPassword,
                     };
@@ -149,7 +154,7 @@ public sealed class ProductionOperationPolicyHostTests
                     services.RemoveAll<IDatabaseCompatibilityChecker>();
                     services.AddSingleton<IDatabaseCompatibilityChecker, AlwaysCompatibleDatabaseCompatibilityChecker>();
                     services.RemoveAll<NpgsqlDataSource>();
-                    services.AddSingleton(_ => NpgsqlDataSource.Create(TestConnectionStrings.DefaultPostgresConnectionString));
+                    services.AddSingleton(_ => NpgsqlDataSource.Create(_database.ConnectionString));
                 });
             });
 

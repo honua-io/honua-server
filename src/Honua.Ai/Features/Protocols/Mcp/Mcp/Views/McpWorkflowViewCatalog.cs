@@ -221,6 +221,20 @@ internal static class McpWorkflowViewCatalog
         [
             new McpWorkflowViewStageDefinition
             {
+                Id = "inspect",
+                Title = "Inspect dataset",
+                Description = "Read supported formats and limits, preview a file or URL, and validate a connection table before publishing.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_formats"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_limits"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_preview"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_preview_url"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_connections_tables_validate"),
+                ],
+            },
+            new McpWorkflowViewStageDefinition
+            {
                 Id = "admin",
                 Title = "Closed admin roster",
                 Description = "Read server status and API-key grants, then create, test, import, publish, and set access.",

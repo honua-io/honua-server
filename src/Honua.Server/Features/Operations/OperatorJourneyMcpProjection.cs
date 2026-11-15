@@ -20,5 +20,10 @@ internal sealed class OperatorJourneyMcpProjection : IAuditedAdminMcpProjection
             "admin.import.upload-object",
             "dataset.stage.preview",
             "dataset.stage.import",
+            "admin.import.formats",
+            "admin.import.limits",
+            "admin.import.preview",
+            "admin.import.preview-url",
+            "admin.connections.tables.validate",
         };
 }
