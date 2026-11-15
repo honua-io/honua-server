@@ -105,7 +105,7 @@ PR-time CodeQL security analysis comes from `codeql.yml`'s own
 `pull_request` lane: code-scanning **default setup is `not-configured`** for this
 repository, and every entry in `/code-scanning/analyses` carries
 `analysis_key: .github/workflows/codeql.yml:analyze`. The separate
-`dynamic/github-code-scanning/codeql` runs titled `Code Quality: PR #N` are
+`dynamic/github-code-quality/codeql` runs titled `Code Quality: PR #N` are
 GitHub **Code Quality**, a different product that publishes no security
 analysis.
 
@@ -153,6 +153,13 @@ completion cannot cancel a resolver for the current head. They skip ordinary dra
 PR payloads and re-read live draft state before attestation, including comment
 and workflow-completion events. CodeQL already cancels by PR number and skips
 draft PR analysis; its scheduled/manual analysis remains enabled.
+`analysis-run-admission.yml` reconciles the two allowlisted analysis workflows
+from trusted trunk code. It cancels superseded PR heads and coalesces active
+same-head duplicates only when another active run or completed successful Analyze
+jobs preserve the analysis. Failed, cancelled and skipped analyses remain retryable.
+Managed Code Quality retains draft coverage because its ready-for-review trigger
+is not controlled by this repository. Trunk, scheduled and manual runs without a
+PR identity remain independent.
 Review event ordering is not guaranteed. A late old-head event reconciles the current live PR head after cancelling an older resolver. Draft conversion retains a lightweight cancellation path into the shared attestation group; the live draft is then shed before checkout or status publication. Other draft pull-request payloads skip resolution.
 
 Trusted observers resolve the current PR before expensive jobs: prebuild
@@ -987,3 +994,13 @@ avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
 The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
+
+### Lightweight workflow runner admission
+
+Repository hygiene, Clean code, Runner label lint, Review Gate Attestation,
+Review Event Bridge, Derived Artifact Normalization, OpenAPI drift/governance and
+analysis admission use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with
+`ubuntu-latest` fallback. The shared reusable workflows must be pinned to a
+revision supporting that selector. Each local shell job establishes `TMPDIR`,
+`TEMP` and `TMP` from `RUNNER_TEMP` before checkout. Clearing the variable affects
+new jobs; it does not migrate queued or running jobs.

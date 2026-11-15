@@ -1,0 +1,42 @@
+name: Analysis run admission
+
+on:
+  workflow_run:
+    workflows: [CodeQL, CodeQL - Code Quality]
+    types: [requested, in_progress, completed]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  coalesce:
+    if: >-
+      github.event.workflow_run.path == '.github/workflows/codeql.yml' ||
+      github.event.workflow_run.path == 'dynamic/github-code-quality/codeql'
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    concurrency:
+      group: analysis-admission-${{ github.event.workflow_run.workflow_id }}-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
+    steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
+      - name: Checkout trusted controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/trunk
+          persist-credentials: false
+      - name: Coalesce analysis for the current PR head
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { admit } = require('./scripts/ci/analysis-run-admission.js');
+            await admit({ github, context, core });

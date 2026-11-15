@@ -505,8 +505,8 @@ wake/wait orchestration. Both sparse checkouts include the shared validator.
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
 `server-test-producer` run. The selector itself and the four Format/analyzer matrix jobs use the
 fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback.
-The four Fast/architecture matrix jobs always use `ubuntu-latest`, splitting
-these eight jobs evenly across the two pools when light routing is enabled.
+The four Fast/architecture matrix jobs use the same fork-guarded selector.
+All eight use the light pool when light routing is enabled.
 All eight remain independent of producer admission and heavy settings and keep
 their existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
 availability switch: keep it unset while the light pool is unhealthy; new jobs
@@ -1440,3 +1440,23 @@ no lifecycle rerun or runtime savings are claimed from unit validation.
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
 
 Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
+
+## Lightweight workflow routing and analysis admission
+
+The lightweight workflow callers use the same fork-guarded `HONUA_LIGHT_RUNNER`
+JSON selector and `ubuntu-latest` fallback as PR Gate control jobs. This includes
+Repository hygiene, Clean code, Runner label lint, Review Gate Attestation,
+Review Event Bridge, Derived Artifact Normalization and OpenAPI drift/governance.
+Reusable workflow pins must include the shared selector support. Each local
+shell job exports `TMPDIR`, `TEMP` and `TMP` from `RUNNER_TEMP` before checkout.
+The variable remains an operator availability switch for newly admitted jobs.
+
+Analysis admission runs trusted trunk code for the repository CodeQL workflow
+and GitHub-managed Code Quality only. It cancels obsolete PR heads and active
+same-head duplicates while retaining a replacement active run or completed
+successful Analyze jobs. It rechecks live PR/head and replacement state before
+cancellation. Failed, cancelled and skipped analysis stays retryable; all language
+Analyze jobs must succeed before completed evidence suppresses a duplicate.
+Managed Code Quality keeps draft coverage. Trunk and scheduled analysis with no
+PR identity remains enabled. This controller changes admission only; it removes
+no security query suites and publishes no substitute success checks.
