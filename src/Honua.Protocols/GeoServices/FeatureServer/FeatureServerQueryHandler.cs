@@ -502,7 +502,10 @@ internal sealed partial class FeatureServerQueryHandler(
                     ["f=geojson is not supported for returnCountOnly, returnIdsOnly, or returnExtentOnly queries."]);
             }
 
-            var canCache = !ShouldBypassQueryResponseCache(validatedParams) &&
+            // PBF and GeoParquet return a live stream, so they are not stored as a cached byte payload.
+            var canCache = !format.Equals("pbf", StringComparison.OrdinalIgnoreCase) &&
+                           !format.Equals("parquet", StringComparison.OrdinalIgnoreCase) &&
+                           !ShouldBypassQueryResponseCache(validatedParams) &&
                            ResponseCacheUtilities.ShouldCache(context, _cacheOptions);
             var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
             if (canCache && cacheTtl <= TimeSpan.Zero)
@@ -1198,18 +1201,9 @@ internal sealed partial class FeatureServerQueryHandler(
                 FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, result.Items.Length, result.TotalCount);
                 HonuaTelemetry.SetSuccess(featureActivity, result.Items.Length);
 
-                if (isPbf)
+                if (formattedResponse is IResult binaryResult)
                 {
-                    return await CreateCachedBytesResultAsync(
-                        (byte[])formattedResponse!,
-                        contentType ?? "application/x-protobuf");
-                }
-
-                if (isParquet)
-                {
-                    return await CreateCachedMemoryResultAsync(
-                        (ReadOnlyMemory<byte>)formattedResponse!,
-                        contentType ?? "application/vnd.apache.parquet");
+                    return binaryResult;
                 }
 
                 if (isArrow)
