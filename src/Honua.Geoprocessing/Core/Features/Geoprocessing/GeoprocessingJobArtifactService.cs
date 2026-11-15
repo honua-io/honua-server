@@ -55,6 +55,8 @@ internal sealed class GeoprocessingJobArtifactService
     // Replay is skipped once the result package is stored, and callbacks ignore the caller's token so a cancelled read cannot leave a replay half-done.
     internal async Task ReplayTerminalCallbacksAsync(ExecutionJobRecord job)
     {
+        EnsureResultsRetained(job);
+
         if (_terminalCallbacks.Length == 0
             || await HasStoredResultPackageAsync(job).ConfigureAwait(false))
         {
