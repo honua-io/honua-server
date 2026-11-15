@@ -98,17 +98,17 @@ internal static partial class MapServerEndpoints
 
             if (!TryParseSize(GetValue(values, "size"), defaultWidth, defaultHeight, out var imageWidth, out var imageHeight, out var sizeError))
             {
-                return StandardErrorHelpers.CreateBadRequest(context, sizeError ?? "Invalid size parameter.");
+                return CreateExportBadRequest(context, responseFormat, sizeError ?? "Invalid size parameter.");
             }
 
             if (!TryParseDpi(GetValue(values, "dpi"), defaultDpi, out var dpi, out var dpiError))
             {
-                return StandardErrorHelpers.CreateBadRequest(context, dpiError ?? "Invalid dpi parameter.");
+                return CreateExportBadRequest(context, responseFormat, dpiError ?? "Invalid dpi parameter.");
             }
 
             if (!TryParseTransparent(GetValue(values, "transparent"), defaultTransparent, out var transparent, out var transparentError))
             {
-                return StandardErrorHelpers.CreateBadRequest(context, transparentError ?? "Invalid transparent parameter.");
+                return CreateExportBadRequest(context, responseFormat, transparentError ?? "Invalid transparent parameter.");
             }
 
             var formatRaw = GetValue(values, "format");
@@ -119,7 +119,7 @@ internal static partial class MapServerEndpoints
 
             if (!TryNormalizeImageFormat(formatRaw, out var imageFormat, out var formatError))
             {
-                return StandardErrorHelpers.CreateBadRequest(context, formatError ?? "Invalid format parameter.");
+                return CreateExportBadRequest(context, responseFormat, formatError ?? "Invalid format parameter.");
             }
 
             var bboxSrRaw = GetValue(values, "bboxSR");
@@ -127,13 +127,13 @@ internal static partial class MapServerEndpoints
             var bboxSrid = TryParseSrid(bboxSrRaw);
             if (!string.IsNullOrWhiteSpace(bboxSrRaw) && !bboxSrid.HasValue)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, "Invalid bboxSR parameter.");
+                return CreateExportBadRequest(context, responseFormat, "Invalid bboxSR parameter.");
             }
 
             var imageSrid = TryParseSrid(imageSrRaw);
             if (!string.IsNullOrWhiteSpace(imageSrRaw) && !imageSrid.HasValue)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, "Invalid imageSR parameter.");
+                return CreateExportBadRequest(context, responseFormat, "Invalid imageSR parameter.");
             }
 
             var serviceSrid = ResolveExportServiceSrid(service, publishedLayers);

@@ -25,6 +25,32 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
 {
+    [IntegrationTheory]
+    [InlineData("size=0,64")]
+    [InlineData("size=64,-1")]
+    [InlineData("size=nope")]
+    [InlineData("dpi=0")]
+    [InlineData("transparent=nope")]
+    [InlineData("format=nope")]
+    [InlineData("bboxSR=nope")]
+    [InlineData("imageSR=nope")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithInvalidImageParameters_UsesResponseFormatErrorStatus(string invalidParameter)
+    {
+        foreach (var responseFormat in new[] { "json", "pjson", "image" })
+        {
+            using var response = await Fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&{invalidParameter}&f={responseFormat}");
+
+            var expectedStatus = responseFormat == "image" ? HttpStatusCode.BadRequest : HttpStatusCode.OK;
+            response.StatusCode.Should().Be(expectedStatus);
+            response.Content.Headers.ContentType?.MediaType.Should().Contain("json");
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
@@ -35,8 +61,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&format=gif&f=image");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
