@@ -175,6 +175,7 @@ public sealed class CorsConfigurationTests
         };
 
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddCorsPolicies(configuration, environment);
         var provider = services.BuildServiceProvider();
 
