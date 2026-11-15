@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -30,7 +31,9 @@ Path(sys.argv[2]).write_text((root / "docs/a").read_text() + "+" + (root / "docs
 def fixture_environment(**extra):
     """Keep git on the fixture repository only, whatever git state the caller exports."""
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    return {**environment, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", **extra}
+    # The step under test calls a bare python3; resolve it to this interpreter.
+    path = os.pathsep.join([os.path.dirname(sys.executable), environment.get("PATH", "")])
+    return {**environment, "PATH": path, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", **extra}
 
 
 def git(work, *arguments):

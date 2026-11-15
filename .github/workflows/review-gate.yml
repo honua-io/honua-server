@@ -150,8 +150,8 @@ jobs:
       group: review-gate-${{ needs.resolve.outputs.pr }}
       # Attestations queue in order instead of cancelling red on the PR page.
       # Each re-reads live review and admission state, so the last one
-      # publishes the current verdict. An attestation whose live review state
-      # changes between its first snapshot and final revalidation fails red;
+      # publishes the current verdict. An attestation whose live review or
+      # admission state changes between its first snapshot and final revalidation fails red;
       # the queued event behind that change re-attests an open, ready head.
       # Bursts are not collapsed: each event runs in turn, up to 100 waiting.
       cancel-in-progress: false

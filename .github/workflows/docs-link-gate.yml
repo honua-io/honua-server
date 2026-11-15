@@ -153,6 +153,8 @@ jobs:
 
       # The published graph describes the pull request head alone: that head's
       # committed documents, read by that head's own generator in its own tree.
+      # It is the one step judged on the head, so a head whose generator cannot
+      # run as called here fails although its merge would be valid.
       - name: Generate exact-head OKF agent graph
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
