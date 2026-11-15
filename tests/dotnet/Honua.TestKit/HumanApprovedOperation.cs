@@ -21,7 +21,8 @@ internal static class HumanApprovedOperation
         return client;
     }
 
-    internal static async Task<JsonElement> ApproveAndReadHandleAsync(WebAppFixture fixture, string proposalId)
+    internal static async Task<JsonElement> ApproveAndReadHandleAsync(
+        WebAppFixture fixture, string proposalId, string expectedApprovalStatus = "Succeeded")
     {
         using var human = await EmulatedHumanApprovalSession.CreateClientAsync(fixture.Services, () => fixture.CreateClient());
         using var review = await human.GetAsync($"/api/v1/admin/proposals/{proposalId}/approval-review");
@@ -34,7 +35,7 @@ internal static class HumanApprovedOperation
         var body = await approved.Content.ReadAsStringAsync();
         approved.IsSuccessStatusCode.Should().BeTrue(body);
         using var approval = JsonDocument.Parse(body);
-        approval.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", body);
+        approval.RootElement.GetProperty("status").GetString().Should().Be(expectedApprovalStatus, body);
         var proposal = await fixture.Services.GetRequiredService<IOperationProposalStore>().GetAsync(proposalId);
         var operationId = proposal!.Audit.OperationInstanceId;
         operationId.Should().NotBeNullOrWhiteSpace();

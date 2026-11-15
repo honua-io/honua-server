@@ -353,7 +353,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
             {
                 ["serviceId"] = _fixture.GetCurrentV2GraphSnapshot().Graph.Publications
                     .First(publication => publication.LayerIndex == WebAppFixture.TestLayerId
-                        && publication.PublicationType == MetadataV2PublicationType.EsriMapLayer).ServiceId,
+                        && publication.PublicationType == MetadataV2LayerType.EsriMapLayer).ServiceId,
                 ["serviceLayerIndex"] = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["styleId"] = styleId,
             },

@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
+using Honua.Server.Startup;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using DotNet.Testcontainers.Containers;
@@ -111,6 +113,25 @@ public sealed class LocalSubstratePostgresFixture : IAsyncLifetime
                     """
                 : "CREATE EXTENSION IF NOT EXISTS postgis;";
             await command.ExecuteNonQueryAsync();
+        }
+
+        return connectionString;
+    }
+
+    // A fresh PostGIS database with the real server core-schema migrations applied, for an in-process
+    // server host whose durable stores (for example the deploy workflow-operation store) need a system
+    // database. TestWebApplicationFactory sets HONUA_SKIP_MIGRATIONS, so the caller owns schema preparation.
+    public async Task<string> CreateMigratedServerDatabaseAsync()
+    {
+        var connectionString = await CreateFreshDatabaseAsync(enablePostGis: true);
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
+            ServerCoreSchemaMigrations.Manifest);
+        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        if (!result.Successful)
+        {
+            throw new InvalidOperationException(
+                $"The server core-schema migrations failed on a fresh system database: {result.ErrorMessage}");
         }
 
         return connectionString;

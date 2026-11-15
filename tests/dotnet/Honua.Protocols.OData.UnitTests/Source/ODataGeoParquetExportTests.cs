@@ -24,7 +24,7 @@ public sealed class ODataGeoParquetExportTests
     [UnitTest]
     public async Task FormatPage_PointWithZ_PreservesZ()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "test-layer", Name = "test_layer" },
             SchemaFields =
@@ -43,7 +43,7 @@ public sealed class ODataGeoParquetExportTests
                     SemanticRoles = ["geometry.primary"]
                 }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
@@ -62,7 +62,7 @@ public sealed class ODataGeoParquetExportTests
             resource,
             new GeometryLimits());
 
-        using var stream = new MemoryStream(payload);
+        using var stream = new MemoryStream(payload.ToArray());
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
         using var batchReader = reader.GetRecordBatchReader();
         var batch = await batchReader.ReadNextRecordBatchAsync();

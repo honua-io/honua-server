@@ -15,10 +15,14 @@ certification/bounded-roster/run-roster.sh \
 
 The script refuses to run with uncommitted producer inputs, because every receipt
 names the harness commit as `producer_source_sha`. It exits non-zero when the
-release verdict or the contract verdict is not green, after copying the run
+release verdict is not green or contract readiness fails, after copying the run
 evidence. A green shell status is the verifier status. Write receipts beneath gitignored
 `artifacts/` and attach retained evidence to the GitHub Release in honua-release.
 Durable receipt URL routing is part of the [output migration](https://github.com/honua-io/honua-server/issues/7064).
+
+Contract readiness uses `--check-readiness`: every required cell must have a
+producer and denominator join, with only `no-candidate` remaining. Its JSON still
+records skips and `green: false`; only the release verdict can certify the candidate.
 
 ## What makes a cell pass
 

@@ -8,7 +8,7 @@ public static class MetadataV2RelationshipEditPolicy
     public const string ReadOnlyReason =
         "Composite relationship ownership edits are not supported; this resource is read-only.";
 
-    public static bool RequiresReadOnly(MetadataV2Resource resource)
+    public static bool RequiresReadOnly(MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.Relationships.Any(static relationship => relationship.Composite);

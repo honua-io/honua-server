@@ -52,11 +52,13 @@ docker run -p 8080:8080 -p 8081:8081 \
 
 **Kubernetes** — deploy with the Helm chart in [honua-helm](https://github.com/honua-io/honua-helm); see the [Kubernetes guide](docs/guides/deploy/kubernetes.md).
 
-**Local development** — .NET Aspire with a dashboard for traces, logs, and metrics:
+**Local development** — start the Docker Compose stack with private per-install credentials:
 
 ```bash
-dotnet run --project src/Honua.AppHost
+python3 scripts/docker/quickstart.py
 ```
+
+See the [local development guide](docs/guides/deploy/local-development.md) for source builds.
 
 To run geoprocessing jobs locally (in-process, no cloud), use the [local GP dev quickstart](docs/guides/query-analyze/gp-local-dev-quickstart.md). For self-hosted pilots, run the [pilot onboarding runbook](docs/guides/deploy/pilot-onboarding-runbook.md) before handing a deployment to another team.
 
@@ -118,7 +120,7 @@ Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), Op
 - **GeoServices REST migration and coexistence** — Honua works with the selected, operation-scoped desktop GIS and mapping SDK workflows listed in the certification matrix, bounded by the published [GeoServices parity matrix](docs/reference/compatibility/geoservices-parity.md) and [cross-client certification matrix](docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md). Import public GeoServices REST and GeoServer services into PostGIS (service imports are **(Enterprise)**); scan GeoServices REST servers and GeoServer for deterministic migration inventories. See [Migrate from GeoServices REST](docs/guides/migrate/from-geoservices-rest.md) and [from GeoServer](docs/guides/migrate/from-geoserver.md).
 - **No GDAL required on the server** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase (`.gdb.zip`), and GeoParquet directly, with CRS auto-detection and PostGIS reprojection; the serving container ships no GDAL, while optional geoprocessing worker images bundle it separately.
 - **Rendering and rasters** — MapServer export/identify/legend, OGC API Maps, WCS, and server-generated Terrain-RGB elevation tiles (Community); ImageServer and OGC API Coverages **(Preview)**. Cloud-optimized GeoTIFFs registered in place from S3/Azure are served under **(Pro)**.
-- **Geoprocessing and workflows** — one canonical async job runtime behind GPServer, OGC API Processes, gRPC, and MCP; declarative multi-step DAG workflows with retries and cron scheduling (Redis required for durable jobs).
+- **Geoprocessing and workflows** — one canonical async job runtime behind GPServer, OGC API Processes, gRPC, and MCP; declarative multi-step DAG workflows with retries and cron scheduling backed by PostgreSQL.
 - **AI-operable** — the `/mcp` surface implements the open [geospatial-mcp](https://github.com/honua-io/geospatial-mcp) standard so agents can validate plans, dry-run, execute, and read results with the same authorization as any other client. MCP discovery/query and spec artifacts are Community; agent operations and spec-apply execution are **(Pro)**; approval workflows are **(Enterprise)**. See [Connect AI agents](docs/guides/connect/ai-agents-mcp.md).
 - **Cloud-native operations** — container-first and stateless; multi-layer caching with in-memory fallback (output cache and Redis caching are **(Pro)**); OpenTelemetry traces and metrics; API-key auth, OIDC SSO **(Pro)** — multi-provider OIDC, SAML 2.0, and SCIM 2.0 are **(Enterprise)** — and experimental mTLS client-certificate auth **(Enterprise)** (off by default, not on the GA path); a server-computed operate loop for humans, Console, and agents ([Operating Honua](docs/guides/operate/README.md)).
 
@@ -172,13 +174,13 @@ Security__ConnectionEncryption__MasterKey="change-me-random-string-32-plus-chara
 **Common options:**
 
 ```bash
-ConnectionStrings__Redis="localhost:6379"   # optional; shared caches, and required for durable jobs/workflows
+ConnectionStrings__Redis="localhost:6379"   # optional; shared caches
 HONUA_OBSERVABILITY=true                    # metrics endpoints (health probes are always on)
 HONUA_OPENTELEMETRY=true                    # distributed tracing
 Cors__AllowedOrigins__0="https://app.example.com"
 ```
 
-PostGIS is mandatory; Redis is optional. A single-node install with no `ConnectionStrings__Redis` starts, reports `Ready`, and serves the full read path with an in-memory cache — it refuses durable jobs, workflows, Studio drafts, and governed operation proposals and approvals with a typed `dependency-unavailable` error. Redis is therefore required for the governed control plane; the capability manifest reports this as `operations.proposals` and `jobs.runner` with `available: false`. See [Redis is optional; PostGIS is not](docs/guides/deploy/docker-compose.md#redis-is-optional-postgis-is-not).
+PostgreSQL/PostGIS stores data, durable jobs, workflow definitions and runs, and governed operation proposals and approvals. These capabilities remain available without a Redis connection. Response caching falls back to per-node memory when no shared cache is configured. See [Docker Compose deployment](docs/guides/deploy/docker-compose.md).
 
 **Production tuning** — bounded database admission is the default production posture: keep `Limits__Connections__MaxConcurrentQueries` aligned with the pool size and size from the shared database budget across replicas (small 4-vCPU nodes profile best in the 4–6 active-query range; larger pools can overfeed PostGIS and worsen tail latency). Adaptive admission (`Limits__Connections__AdaptiveConcurrencyEnabled`) is an explicit tuning profile, not the default — monitor `/monitoring/metrics/connection-pool` and keep fixed-cap results as the baseline. Full guidance: [Scale and tune performance](docs/guides/deploy/scaling-and-performance.md) and [admission and pooling variables](docs/reference/configuration/environment-variables.md#admission-and-pooling).
 

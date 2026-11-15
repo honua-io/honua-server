@@ -57,7 +57,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
         {
             builder.AddResource($"resource-{id}", $"Parcels-{id}",
                 accessPolicy: new AccessPolicy { AllowAnonymous = id != 8, AllowedRoles = ["admin"] },
-                spatial: new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.GeometryCollection })
+                spatial: new MetadataV2ObjectSpatial { GeometryType = MetadataV2GeometryType.GeometryCollection })
                 .AddPublication($"publication-{id}", ServiceId, $"resource-{id}", layerIndex: id);
         }
         var graph = builder.Build();
@@ -162,7 +162,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
         var conflicting = _graph.Publications.Single(publication => publication.Metadata.Id == "publication-10") with
         {
             LayerIndex = 7,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+            Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
         };
         SetGraph(_graph with
         {
@@ -277,7 +277,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
         var conflicting = _graph.Publications.Single(publication => publication.Metadata.Id == "publication-10") with
         {
             LayerIndex = 7,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+            Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
         };
         SetGraph(_graph with
         {
@@ -308,7 +308,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
             },
             ServiceId = "other-parcels",
             LayerIndex = 7,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+            Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
         };
         SetGraph(_graph with
         {
