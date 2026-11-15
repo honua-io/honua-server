@@ -66,6 +66,7 @@ internal sealed partial class StreamingFileImportService
     /// </summary>
     private async IAsyncEnumerable<IFeature> ReadGeoPackageStreamingAsync(
         Stream stream,
+        string? sourceLayer,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         GeoPackageScratch? scratch = null;
@@ -81,7 +82,7 @@ internal sealed partial class StreamingFileImportService
 
         try
         {
-            await foreach (var feature in ReadGeoPackageStreamingAsync(filePath, cancellationToken))
+            await foreach (var feature in ReadGeoPackageStreamingAsync(filePath, sourceLayer, cancellationToken))
             {
                 yield return feature;
             }
@@ -97,35 +98,43 @@ internal sealed partial class StreamingFileImportService
 
     private static async IAsyncEnumerable<IFeature> ReadGeoPackageStreamingAsync(
         string filePath,
+        string? sourceLayer,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var layers = await GetGeoPackageLayersAsync(filePath, cancellationToken);
-        var layer = ResolveSingleGeoPackageImportLayer(layers);
+        var layer = ResolveGeoPackageImportLayer(layers, sourceLayer);
         await foreach (var feature in ReadGeoPackageLayerAsync(filePath, layer, cancellationToken))
         {
             yield return feature;
         }
     }
 
-    private static GeoPackageLayerInfo ResolveSingleGeoPackageImportLayer(IReadOnlyList<GeoPackageLayerInfo> layers)
+    private const int MaxListedGeoPackageLayers = 20;
+    private const int MaxGeoPackageLayerNameLength = 129;
+
+    // The named layer when sourceLayer is given; otherwise the only layer. The messages name the file's layers and
+    // say how to choose one, because they are returned to the caller as the import error.
+    private static GeoPackageLayerInfo ResolveGeoPackageImportLayer(IReadOnlyList<GeoPackageLayerInfo> layers, string? sourceLayer)
     {
         if (layers.Count == 0)
-        {
             throw new InvalidDataException("GeoPackage does not contain any feature layers.");
-        }
-
-        if (layers.Count > 1)
+        // Names come from the uploaded file; list only the ones this importer can read, which are also bounded.
+        var layerNames = string.Join(", ", layers.Take(MaxListedGeoPackageLayers).Select(layer =>
+                GeoPackageTableNameRegex().IsMatch(layer.TableName) ? layer.TableName : "[unsupported layer name]"))
+            + (layers.Count > MaxListedGeoPackageLayers ? $" and {layers.Count - MaxListedGeoPackageLayers} more" : string.Empty);
+        if (sourceLayer is { Length: > MaxGeoPackageLayerNameLength })
+            throw new InvalidDataException($"sourceLayer must be at most {MaxGeoPackageLayerNameLength} characters. The GeoPackage's layers are: {layerNames}.");
+        if (!string.IsNullOrWhiteSpace(sourceLayer))
         {
-            throw new InvalidDataException(BuildMultiLayerGeoPackageImportMessage(layers));
+            return layers.FirstOrDefault(layer => string.Equals(layer.TableName, sourceLayer, StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidDataException(
+                    $"GeoPackage has no feature layer named '{sourceLayer}'. Its layers are: {layerNames}. Choose one with sourceLayer.");
         }
 
-        return layers[0];
-    }
-
-    private static string BuildMultiLayerGeoPackageImportMessage(IReadOnlyList<GeoPackageLayerInfo> layers)
-    {
-        var layerNames = string.Join(", ", layers.Select(layer => layer.TableName));
-        return $"GeoPackage contains multiple feature layers ({layerNames}). Import requires a single-layer GeoPackage; preview AvailableLayers lists the source layers to export or split before import.";
+        return layers.Count == 1
+            ? layers[0]
+            : throw new InvalidDataException(
+                $"This GeoPackage has {layers.Count} feature layers ({layerNames}); choose one with sourceLayer.");
     }
 
     private static async IAsyncEnumerable<IFeature> ReadGeoPackageLayerAsync(

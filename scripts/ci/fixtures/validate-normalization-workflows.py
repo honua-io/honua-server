@@ -102,8 +102,8 @@ def validate(
     require(producer, "  pull_request:\n", "producer must use an unprivileged pull_request event")
     require(
         producer,
-        "    types: [opened, synchronize, reopened, ready_for_review, edited]",
-        "producer must observe ready and retargeted heads",
+        "    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]",
+        "producer must observe ready, retargeted and draft-conversion heads",
     )
     require(producer, "  contents: read", "producer contents permission must be read-only")
     require(producer, "  packages: read", "producer package permission must be read-only")
@@ -387,9 +387,9 @@ def validate(
 
 def validate_concurrency(producer: str, consumer: str) -> None:
     producer_doc, consumer_doc = yaml.safe_load(producer), yaml.safe_load(consumer)
-    expected = "normalization-producer-${{ !github.event.pull_request.draft && (github.event.action != 'edited' || github.event.changes.base.ref.from != null) && github.event.pull_request.number || format('ignored-{0}', github.run_id) }}"
+    expected = "normalization-producer-${{ !github.event.pull_request.draft && (github.event.action != 'edited' || github.event.changes.base.ref.from != null) && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || format('ignored-{0}', github.run_id) }}"
     if producer_doc.get("concurrency") != {"group": expected, "cancel-in-progress": True}:
-        raise AssertionError("producer must cancel superseded normalization runs per PR")
+        raise AssertionError("producer must cancel superseded eligible normalization runs within one PR head and isolate other heads")
     job = consumer_doc["jobs"]["validate"]
     if "concurrency" in consumer_doc or job.get("concurrency") != {
         "group": "normalization-consumer-${{ needs.admit.outputs.pr }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}", "cancel-in-progress": True,

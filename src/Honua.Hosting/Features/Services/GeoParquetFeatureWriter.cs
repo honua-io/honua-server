@@ -65,7 +65,8 @@ public static partial class GeoParquetFeatureWriter
         GeometryLimits geometryLimits,
         string[]? outFields = null,
         ILogger? logger = null,
-        GeoParquetLimits? encodingLimits = null)
+        GeoParquetLimits? encodingLimits = null,
+        IReadOnlyDictionary<string, string>? fileMetadata = null)
     {
         var (payload, contentType) = FormatAsGeoParquetStream(result, resource, new GeoParquetStreamEncodingOptions
         {
@@ -77,7 +78,8 @@ public static partial class GeoParquetFeatureWriter
             GeometryLimits = geometryLimits,
             OutFields = outFields,
             Logger = logger,
-            EncodingLimits = encodingLimits
+            EncodingLimits = encodingLimits,
+            FileMetadata = fileMetadata
         });
         using (payload)
         using (var copy = new MemoryStream())
@@ -101,6 +103,7 @@ public static partial class GeoParquetFeatureWriter
         var outFields = options.OutFields;
         var logger = options.Logger;
         var encodingLimits = options.EncodingLimits;
+        var fileMetadata = options.FileMetadata;
         ArgumentNullException.ThrowIfNull(resource);
         encodingLimits ??= new GeoParquetLimits();
         ValidateEncodingLimits(encodingLimits);
@@ -118,7 +121,7 @@ public static partial class GeoParquetFeatureWriter
         var batches = PlanBatches(features, encodingLimits);
         if (features.Length == 0)
         {
-            return CreateEmptyGeoParquet(resource, objectIdFieldName, returnGeometry, outFields, outputSrid, encodingLimits);
+            return CreateEmptyGeoParquet(resource, objectIdFieldName, returnGeometry, outFields, outputSrid, encodingLimits, fileMetadata);
         }
 
         var runtimeFields = DetectRuntimeFields(features, resource);
@@ -152,6 +155,7 @@ public static partial class GeoParquetFeatureWriter
         var (schema, fieldsToInclude, resolvedObjectIdFieldName, geometryColumnName, bboxColumnName) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid,
             runtimeFields, geometryTypes, includeCovering: includeCovering);
+        schema = WithFileMetadata(schema, fileMetadata);
 
         return (WriteArrowParquet(schema, writer =>
         {
@@ -270,12 +274,32 @@ public static partial class GeoParquetFeatureWriter
         bool returnGeometry,
         string[]? outFields,
         int? outputSrid,
-        GeoParquetLimits encodingLimits)
+        GeoParquetLimits encodingLimits,
+        IReadOnlyDictionary<string, string>? fileMetadata)
     {
         var (schema, _, _, _, _) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid, isEmpty: true);
 
-        return (WriteArrowParquet(schema, writeBatches: null, encodingLimits), ContentType);
+        return (WriteArrowParquet(WithFileMetadata(schema, fileMetadata), writeBatches: null, encodingLimits), ContentType);
+    }
+
+    private static Schema WithFileMetadata(Schema schema, IReadOnlyDictionary<string, string>? fileMetadata)
+    {
+        if (fileMetadata is not { Count: > 0 })
+        {
+            return schema;
+        }
+
+        var metadata = new Dictionary<string, string>(schema.Metadata ?? new Dictionary<string, string>(), StringComparer.Ordinal);
+        foreach (var (key, value) in fileMetadata)
+        {
+            if (!metadata.TryAdd(key, value))
+            {
+                throw new ArgumentException($"GeoParquet file metadata key '{key}' collides with a key the writer owns.", nameof(fileMetadata));
+            }
+        }
+
+        return new Schema(schema.FieldsList, metadata);
     }
 
     private static (Schema schema, List<MetadataV2Field> fieldsToInclude, string objectIdFieldName, string geometryColumnName, string bboxColumnName) BuildSchema(

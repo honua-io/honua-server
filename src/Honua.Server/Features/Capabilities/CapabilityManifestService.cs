@@ -1025,7 +1025,6 @@ internal sealed class CapabilityManifestService(
         var limits = options.Limits;
         var importLimits = limits.Imports;
         var featureStreamOptions = options.Streaming;
-        var featureChangeEventOptions = options.FeatureChangeEvents;
         var uploads = options.FileUpload;
         var uploadSecurity = options.FileUploadSecurity;
         var grpc = options.Grpc;
@@ -1093,7 +1092,7 @@ internal sealed class CapabilityManifestService(
                 MaxSubscriptionsPerSession = featureStreamOptions.MaxSubscriptionsPerSession,
                 MaxSubscriptionIdLength = featureStreamOptions.MaxSubscriptionIdLength,
                 MaxControlFrameBytes = featureStreamOptions.MaxControlFrameBytes,
-                CursorRetentionLimit = featureChangeEventOptions.MaxRetainedEvents,
+                CursorRetentionLimit = options.CursorRetentionLimit,
                 HeartbeatIntervalSeconds = featureStreamOptions.HeartbeatInterval.TotalSeconds,
                 GrpcStreamBatchSize = Math.Max(grpc.StreamBatchSize, 1)
             },

@@ -10,6 +10,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Events;
+using Honua.Server.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
@@ -86,7 +87,7 @@ public sealed partial class FeatureStreamEndpointsTests
             (await denied.Content.ReadAsStringAsync(ct)).Should().NotContain("feature-change");
         }
 
-        var anchor = await fixture.GetService<IFeatureChangeEventStore>().AppendAsync(new FeatureChangeEventRequest
+        var anchor = await fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = "test",
             LayerId = 0,
@@ -96,9 +97,8 @@ public sealed partial class FeatureStreamEndpointsTests
             RequestId = "split-anchor",
         }, ct);
 
-        var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
         async Task PublishAsync(long objectId, string entitledRole, string marker)
-            => await publisher.PublishAsync(new FeatureChangeEventRequest
+            => await fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = "test",
                 LayerId = 0,
@@ -110,7 +110,7 @@ public sealed partial class FeatureStreamEndpointsTests
             }, ct);
 
         // Identical URLs but for the credential.
-        var path = $"/api/v1/streaming/features?serviceId=test&layers=0&cursor={anchor.Cursor}&token=";
+        var path = $"/api/v1/streaming/features?serviceId=test&layers=0&cursor={FeatureStreamCursor.Format(anchor.Cursor)}&token=";
 
         await using var aliceStream = await OpenSplitStreamAsync(fixture, webSocket, path + alice, ct);
         await using var bobStream = await OpenSplitStreamAsync(fixture, webSocket, path + bob, ct);
@@ -173,7 +173,7 @@ public sealed partial class FeatureStreamEndpointsTests
         var issuer = fixture.GetService<IPortalTokenIssuer>();
         var alice = await IssueSplitTokenAsync(issuer, "alice", ["reader"], "tenant-a", ct);
         var bob = await IssueSplitTokenAsync(issuer, "bob", ["admin", "reader"], "tenant-b", ct);
-        var anchor = await fixture.GetService<IFeatureChangeEventStore>().AppendAsync(new FeatureChangeEventRequest
+        var anchor = await fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = "test",
             LayerId = 0,
@@ -184,13 +184,12 @@ public sealed partial class FeatureStreamEndpointsTests
         }, ct);
 
         await using var aliceStream = await OpenSplitStreamAsync(fixture, webSocket,
-            $"/api/v1/streaming/features?serviceId=test&layers=0&cursor={anchor.Cursor}&token={alice}", ct);
+            $"/api/v1/streaming/features?serviceId=test&layers=0&cursor={FeatureStreamCursor.Format(anchor.Cursor)}&token={alice}", ct);
         // No service, layer or row filter can conceal a broken tenant delivery policy here.
         await using var bobStream = await OpenSplitStreamAsync(fixture, webSocket,
-            $"/api/v1/streaming/features?cursor={anchor.Cursor}&token={bob}", ct);
-        var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
+            $"/api/v1/streaming/features?cursor={FeatureStreamCursor.Format(anchor.Cursor)}&token={bob}", ct);
         async Task PublishAsync(int layerId, long objectId, string marker) =>
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            await fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = "test",
                 LayerId = layerId,

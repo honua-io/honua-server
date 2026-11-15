@@ -282,21 +282,22 @@ internal sealed partial class StreamingFileImportService
         return stagingName ?? tableName + "__staging";
     }
 
-    /// <summary>
-    /// Atomically replaces the live target with the freshly-loaded staging sibling inside a
-    /// single transaction, so the drop+rename is all-or-nothing.
-    /// </summary>
-    private async Task SwapStagingTableAsync(
-        NpgsqlConnection connection,
-        string schemaName,
-        string tableName,
-        int featureCount,
-        ImportCommitParticipant? commitParticipant,
-        int storageSrid,
-        double? coordinateEpoch,
-        ImportedDatasetSpatialMetadata.Identity? expectedIdentity,
-        CancellationToken cancellationToken)
+    private sealed record StagingPromotion(string Schema, string Table, string StagingTable)
     {
+        internal required ImportLoadMode LoadMode { get; init; }
+
+        internal required int FeatureCount { get; init; }
+        internal ImportCommitParticipant? CommitParticipant { get; init; }
+        internal required int StorageSrid { get; init; }
+        internal double? CoordinateEpoch { get; init; }
+        internal ImportedDatasetSpatialMetadata.Identity? ExpectedIdentity { get; init; }
+    }
+
+    private async Task SwapStagingTableAsync(
+        NpgsqlConnection connection, StagingPromotion promotion, CancellationToken cancellationToken)
+    {
+        var (schemaName, tableName, _) = promotion;
+        var expectedIdentity = promotion.ExpectedIdentity;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -304,8 +305,15 @@ internal sealed partial class StreamingFileImportService
                 connection, transaction, schemaName, tableName, expectedIdentity, cancellationToken);
             var previousType = expectedIdentity is null ? null : await ReadImportedGeometryTypeAsync(
                 connection, transaction, schemaName, tableName, cancellationToken);
-            await using (var command = new NpgsqlCommand(SwapImportTableSql, connection, transaction))
+            // Only create-only promotes a uniquely named table; replace keeps the shared swap,
+            // including when its target does not exist yet.
+            if (promotion.LoadMode == ImportLoadMode.CreateOnly)
             {
+                await PromoteFreshStagingTableAsync(transaction, promotion, cancellationToken);
+            }
+            else
+            {
+                await using var command = new NpgsqlCommand(SwapImportTableSql, connection, transaction);
                 command.Parameters.AddWithValue("schema_name", schemaName);
                 command.Parameters.AddWithValue("table_name", tableName);
                 await command.ExecuteNonQueryAsync(cancellationToken);
@@ -321,10 +329,10 @@ internal sealed partial class StreamingFileImportService
                 connection, transaction, schemaName, tableName, "geometry", cancellationToken);
             await ImportedDatasetSpatialMetadata.WriteAsync(
                 connection, transaction, _schemaConfiguration.MetadataSchema, schemaName, tableName,
-                "geometry", identity, storageSrid, coordinateEpoch, cancellationToken);
+                "geometry", identity, promotion.StorageSrid, promotion.CoordinateEpoch, cancellationToken);
 
             await InvokeCommitParticipantAsync(
-                commitParticipant, transaction, schemaName, tableName, featureCount, cancellationToken);
+                promotion.CommitParticipant, transaction, schemaName, tableName, promotion.FeatureCount, cancellationToken);
 
             await transaction.CommitSafelyAsync(cancellationToken);
         }

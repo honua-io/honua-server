@@ -17,13 +17,8 @@ public sealed class PortalTokenAuthenticationOptions
 
     public int DefaultExpirationMinutes { get; set; } = DefaultExpirationMinutesValue;
 
-    public const int DefaultSourceRevalidationSecondsValue = 10;
-
     // A requested lifetime is clamped to this ceiling and to the source credential's expiry, so a short-lived key cannot mint a long-lived token.
     public int MaxExpirationMinutes { get; set; } = DefaultMaxExpirationMinutesValue;
-
-    // This interval is also the worst-case delay before a revoked credential stops its tokens; zero re-reads on every request.
-    public int SourceRevalidationSeconds { get; set; } = DefaultSourceRevalidationSecondsValue;
 
     public PortalOAuth2Options OAuth2 { get; set; } = new();
 }

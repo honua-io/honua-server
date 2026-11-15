@@ -259,13 +259,16 @@ internal static class McpWorkflowViewCatalog
             {
                 Id = "connect-import",
                 Title = "Connect and import",
-                Description = "Job status and result discovery; inline CSV or GeoJSON ingest, up to 4 MB.",
+                Description = "Job status and result discovery; inline CSV or GeoJSON ingest, up to 4 MB; "
+                    + "preview a job artifact, then propose its import into fresh server-owned staging for human approval.",
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_list_jobs"),
                     McpWorkflowViewMemberRule.Exact("honua_get_job_results"),
                     McpWorkflowViewMemberRule.Exact("honua_ingest_dataset"),
                     McpWorkflowViewMemberRule.Exact("honua_ingest_job_artifact"),
+                    McpWorkflowViewMemberRule.Exact("honua_op_dataset_stage_preview"),
+                    McpWorkflowViewMemberRule.Exact("honua_op_dataset_stage_import"),
                 ],
             },
             new McpWorkflowViewStageDefinition
@@ -338,8 +341,10 @@ internal static class McpWorkflowViewCatalog
     {
         Name = OperateViewName,
         Title = "Operate",
-        Description = "Read health, findings, events, release status, and deploy operations, then propose one finding.",
-        Revision = "operate.v1",
+        Description =
+            "Read health, findings, events, release status, and deploy operations, then propose one finding, "
+            + "an upgrade, or a rollback.",
+        Revision = "operate.v2",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -356,6 +361,17 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_platform_release_status"),
                     McpWorkflowViewMemberRule.Exact("honua_deploy_operations"),
                     McpWorkflowViewMemberRule.Exact("honua_supported_operation_kinds"),
+                ],
+            },
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "release",
+                Title = "Propose an upgrade or rollback",
+                Description = "Propose platform release convergence or a rollback. Each proposal waits for approval.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_propose_platform_release_convergence"),
+                    McpWorkflowViewMemberRule.Exact("honua_propose_rollback"),
                 ],
             },
             new McpWorkflowViewStageDefinition

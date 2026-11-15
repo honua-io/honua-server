@@ -273,11 +273,18 @@ internal static class InfrastructureCompositionRoot
         services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
         services.AddSingleton<ICacheHealthChecker>(sp => sp.GetRequiredService<InMemoryCacheService>());
 
+        ConfigureExternalEditRevisions(services, configuration);
+
         services.AddSingleton<IResponseCache>(sp =>
         {
-            var innerCache = new CacheServiceResponseCache(
+            IResponseCache innerCache = new CacheServiceResponseCache(
                 sp.GetRequiredService<ICacheService>(),
                 sp.GetRequiredService<IOptions<CacheOptions>>().Value);
+            if (sp.GetService<IExternalLayerRevisionSource>() is { } revisions)
+            {
+                innerCache = new ExternalRevisionResponseCache(innerCache, revisions);
+            }
+
             return new MonitoredResponseCacheDecorator(
                 innerCache,
                 sp.GetRequiredService<IPerformanceMonitor>(),
@@ -289,6 +296,17 @@ internal static class InfrastructureCompositionRoot
         services.AddHostedService(sp => sp.GetRequiredService<CacheRefreshCoordinator>());
 
         ConfigureMetadataGraphCoherence(services);
+    }
+
+    private static void ConfigureExternalEditRevisions(IServiceCollection services, IConfiguration configuration)
+    {
+        if (configuration.GetValue<bool>("ExternalEdits:Enabled"))
+        {
+            services.TryAddSingleton<IExternalLayerRevisionSource>(sp =>
+                new Honua.Server.Features.Infrastructure.Caching.PostgresExternalLayerRevisions(
+                    () => sp.GetRequiredService<Honua.ControlPlane.JobStoreDatabase>(),
+                    sp.GetRequiredService<IHttpContextAccessor>()));
+        }
     }
 
     public static void ConfigureMetadataGraphCoherence(IServiceCollection services)
