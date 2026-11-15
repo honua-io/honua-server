@@ -263,6 +263,38 @@ public sealed class PurgeBackedLifetimeTests
         outputCache.AllowCacheStorage.Should().BeFalse();
     }
 
+    [UnitTest]
+    public async Task FailedEditPurge_WithPurgeBackedLayers_IsSentAgainAfterTheRetryDelay()
+    {
+        var cdn = new FlakyInvalidator(failures: 1);
+        var service = new CdnInvalidationService(
+            cdn,
+            NullLogger<CdnInvalidationService>.Instance,
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(monthlyLimit: 0)) });
+
+        await service.InvalidateAfterEditAsync(["#honua-layer:3"], CancellationToken.None);
+        await _time.TimerIsWaiting();
+        _time.Advance(CdnInvalidationService.FailedEditPurgeRetryDelay);
+        await cdn.Submitted.WaitAsync(TimeSpan.FromSeconds(10));
+
+        cdn.Attempts.Should().Be(2);
+    }
+
+    [UnitTest]
+    public async Task FailedEditPurge_WithoutPurgeBackedLayers_KeepsTheLifetimeAsTheBackstop()
+    {
+        var cdn = new FlakyInvalidator(failures: 1);
+        var service = new CdnInvalidationService(
+            cdn,
+            NullLogger<CdnInvalidationService>.Instance,
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(monthlyLimit: 0, layers: [])) });
+
+        await service.InvalidateAfterEditAsync(["#honua-layer:3"], CancellationToken.None);
+        _time.Advance(CdnInvalidationService.FailedEditPurgeRetryDelay);
+
+        cdn.Attempts.Should().Be(1);
+    }
+
     private static SharedCacheOptions Options(
         string? tagHeader = "x-cache-tag",
         int monthlyLimit = 1000,
@@ -331,6 +363,27 @@ public sealed class PurgeBackedLifetimeTests
             => Unreadable
                 ? throw new InvalidOperationException("budget store down")
                 : Task.FromResult<CdnPurgeBudgetMonth?>(new CdnPurgeBudgetMonth(submitted, 0, CdnPurgeBudgetDecision.Admitted));
+    }
+
+    private sealed class FlakyInvalidator(int failures) : ICdnInvalidator
+    {
+        private readonly TaskCompletionSource _submitted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _attempts;
+
+        public int Attempts => Volatile.Read(ref _attempts);
+
+        public Task Submitted => _submitted.Task;
+
+        public Task<CdnInvalidationResult> InvalidateAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _attempts) <= failures)
+            {
+                return Task.FromResult(new CdnInvalidationResult(CdnInvalidationOutcome.Failed, "refused"));
+            }
+
+            _submitted.TrySetResult();
+            return Task.FromResult(new CdnInvalidationResult(CdnInvalidationOutcome.Submitted, "I1"));
+        }
     }
 
     private sealed class FailingInvalidator : ICdnInvalidator

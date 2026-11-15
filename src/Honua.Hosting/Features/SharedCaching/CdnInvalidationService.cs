@@ -44,6 +44,10 @@ internal sealed partial class CdnInvalidationService(
     // A lease ends this much before the window does, so the task's own timer, started a database round trip earlier, finds it expired.
     internal static readonly TimeSpan LeaseMargin = TimeSpan.FromSeconds(1);
 
+    // With purge-backed lifetimes a lost edit purge would leave a layer stale for a day rather than minutes, so a failed one
+    // is sent again after this delay. Each attempt counts against the monthly budget, which ends the retries once spent.
+    internal static readonly TimeSpan FailedEditPurgeRetryDelay = TimeSpan.FromMinutes(5);
+
     internal static readonly TimeSpan[] BusyRetryDelays =
         [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)];
 
@@ -175,6 +179,11 @@ internal sealed partial class CdnInvalidationService(
             if (batches.BusyPaths.Count > 0)
             {
                 DeferToNextWindow(batches.BusyPaths, CurrentCoalescingWindow());
+            }
+
+            if (result.Outcome is CdnInvalidationOutcome.Failed && _options?.CurrentValue.PurgeBacked.Configured == true)
+            {
+                DeferToNextWindow(claimed, FailedEditPurgeRetryDelay);
             }
         }
         catch (OperationCanceledException)
