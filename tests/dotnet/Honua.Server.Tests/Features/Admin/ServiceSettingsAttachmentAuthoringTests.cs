@@ -192,8 +192,8 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
         var intent = request.GetProperty("properties").GetProperty("supportsAttachments");
         intent.GetProperty("type").GetString().Should().Be("boolean");
         intent.GetProperty("nullable").GetBoolean().Should().BeTrue();
-        var response = schemas.GetProperty("MetadataV2ObjectEditing");
-        JsonElement.DeepEquals(response, schemas.GetProperty("MetadataV2ResourceEditing")).Should().BeTrue();
+        var response = schemas.GetProperty("MetadataV2ResourceEditing");
+        JsonElement.DeepEquals(response, schemas.GetProperty("MetadataV2ObjectEditing")).Should().BeTrue();
         response.GetProperty("nullable").GetBoolean().Should().BeTrue();
         var properties = response.GetProperty("properties");
         properties.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(

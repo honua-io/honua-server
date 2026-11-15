@@ -69,6 +69,7 @@ internal sealed partial class StreamingFileImportService
             if (!existed)
             {
                 await EnsureTableAsync(connection, options.Schema, options.Table, storageSrid, cancellationToken, transaction);
+                await MarkImportBookkeepingAsync(transaction, (options.Schema, options.Table), cancellationToken);
                 identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
                     connection, transaction, options.Schema, options.Table, "geometry", cancellationToken);
                 await ImportedDatasetSpatialMetadata.WriteAsync(
@@ -100,6 +101,10 @@ internal sealed partial class StreamingFileImportService
         var loadTable = mode == ImportLoadMode.Replace || stagedAppend
             ? await CreateStagingTableAsync(connection, options.Schema, options.Table, storageSrid, cancellationToken, transaction)
             : options.Table;
+        if (loadTable != options.Table)
+        {
+            await MarkImportBookkeepingAsync(transaction, (options.Schema, loadTable), cancellationToken);
+        }
         await transaction.CommitSafelyAsync(cancellationToken);
         return new ImportTargetPreparation
         {
