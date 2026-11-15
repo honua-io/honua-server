@@ -127,7 +127,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Equal(attributes["name"], created.Attributes["name"]);
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("12345678901234567890.1000", "2026-11-14T08:30:00.5000-08:00")]
     [InlineData("-0.00", "2026-11-14T08:30:00.0000001+05:45")]
     public async Task CreateAsync_ExactTypedAttributes_QueryPreservesDecimalScaleAndOffset(string amount, string offsetText)
@@ -168,7 +168,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.False(projectedFeature.Attributes.ContainsKey("signed"));
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task QueryAsync_ExactValues_CompareNumericallyAndByInstantWithoutChangingText()
     {
         var fields = new MetadataV2Field[]
@@ -199,7 +199,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Equal("10.000", Assert.Single(filtered.Items).Attributes["amount"]);
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData(MetadataV2FieldType.TimestampOffset, "2026-11-15T00:00:00.0000002Z", "2026-11-15T01:00:00.0000001+01:00")]
     [InlineData(MetadataV2FieldType.Time, "12:00:00.0000002", "12:00:00.0000001")]
     public async Task QueryAsync_ExactTemporalValues_PreservesSeventhDigitInComparisons(
