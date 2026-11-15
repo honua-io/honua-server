@@ -12,7 +12,6 @@
 //   * PostgreSqlLayerPublishingService.ExtentRefresh.cs     â€” extent recomputation SQL
 //   * PostgreSqlLayerPublishingService.SqlHelpers.cs        â€” shared quoting / expression helpers
 
-using Honua.Db.Postgres.Features.Metadata;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Operations.Domain;
