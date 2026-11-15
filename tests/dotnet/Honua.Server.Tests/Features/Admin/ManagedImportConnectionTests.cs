@@ -106,6 +106,49 @@ public sealed class ManagedImportConnectionTests
     }
 
     [UnitTest]
+    public async Task BuiltInNameAlreadyUsedForThisDatabaseAddsNothing()
+    {
+        var encryption = new RememberingEncryption();
+        var registry = new InMemorySecureConnectionRegistry();
+        await registry.CreateConnectionAsync(Seed(
+            "33333333-3333-4333-8333-333333333333",
+            ManagedImportConnection.FallbackName,
+            ConnectionString));
+        using var services = Services(encryption, ConnectionString, registry);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        Assert.Single(await registry.GetAllConnectionsAsync());
+        Assert.Equal(0, encryption.EncryptCalls);
+    }
+
+    [UnitTest]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The service provider disposes the registered data source.")]
+    public async Task RunningDatabaseWinsOverAReloadedConfiguration()
+    {
+        var encryption = new RememberingEncryption();
+        var running = ConnectionString.Replace("db.internal", "db.running", StringComparison.Ordinal);
+        var reloaded = ConnectionString.Replace("db.internal", "db.reloaded", StringComparison.Ordinal);
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(running) { PersistSecurityInfo = true };
+#pragma warning disable CA2000 // The service provider disposes the registered data source.
+        var dataSource = Npgsql.NpgsqlDataSource.Create(builder.ConnectionString);
+#pragma warning restore CA2000
+        using var services = Services(encryption, reloaded, dataSource: dataSource);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        var connection = Assert.Single(await services.GetRequiredService<ISecureConnectionRegistry>().GetActiveConnectionsAsync());
+        Assert.Equal("db.running", connection.Host);
+        Assert.Contains("db.running", encryption.Stored, StringComparison.Ordinal);
+        Assert.DoesNotContain("db.reloaded", encryption.Stored, StringComparison.Ordinal);
+        Assert.Equal(1, encryption.EncryptCalls);
+    }
+
+    [UnitTest]
     public async Task EncryptionFailureLeavesTheListUnchanged()
     {
         var registry = new InMemorySecureConnectionRegistry();
@@ -116,17 +159,26 @@ public sealed class ManagedImportConnectionTests
         Assert.Empty(await registry.GetAllConnectionsAsync());
     }
 
-    private static ServiceProvider Services(RememberingEncryption encryption, string? connectionString, ISecureConnectionRegistry? registry = null)
+    private static ServiceProvider Services(
+        RememberingEncryption encryption,
+        string? connectionString,
+        ISecureConnectionRegistry? registry = null,
+        Npgsql.NpgsqlDataSource? dataSource = null)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ConnectionStrings:DefaultConnection"] = connectionString
         }).Build();
-        return new ServiceCollection()
+        var services = new ServiceCollection()
             .AddSingleton<IConfiguration>(configuration)
             .AddSingleton<IConnectionEncryptionService>(encryption)
-            .AddSingleton(registry ?? new InMemorySecureConnectionRegistry())
-            .BuildServiceProvider();
+            .AddSingleton(registry ?? new InMemorySecureConnectionRegistry());
+        if (dataSource is not null)
+        {
+            services.AddSingleton(dataSource);
+        }
+
+        return services.BuildServiceProvider();
     }
 
     private sealed class RememberingEncryption : IConnectionEncryptionService

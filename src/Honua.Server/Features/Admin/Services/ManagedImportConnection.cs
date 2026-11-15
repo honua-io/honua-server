@@ -28,10 +28,17 @@ internal static partial class ManagedImportConnection
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            var logger = services.GetService<ILoggerFactory>()?.CreateLogger(typeof(ManagedImportConnection).FullName!);
-            if (logger is not null)
+            try
             {
-                Log.LeftUnchanged(logger, exception);
+                var logger = services.GetService<ILoggerFactory>()?.CreateLogger(typeof(ManagedImportConnection).FullName!);
+                if (logger is not null)
+                {
+                    Log.LeftUnchanged(logger, exception);
+                }
+            }
+            catch (Exception logFailure) when (logFailure is not OperationCanceledException)
+            {
+                // A logger failure must not turn the connections list into an error.
             }
         }
     }
@@ -46,10 +53,8 @@ internal static partial class ManagedImportConnection
             return;
         }
 
-        var connectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
-            configuration,
-            services.GetService<IConnectionSecretResolver>(),
-            cancellationToken).ConfigureAwait(false);
+        var connectionString = await ResolveServerConnectionStringAsync(services, configuration, cancellationToken)
+            .ConfigureAwait(false);
         if (!TryRead(connectionString, out var target))
         {
             return;
@@ -223,7 +228,8 @@ internal static partial class ManagedImportConnection
         string connectionString,
         CancellationToken cancellationToken)
     {
-        if (await RepresentsServerAsync(registry, encryption, Name, connectionString, cancellationToken).ConfigureAwait(false))
+        if (await RepresentsServerAsync(registry, encryption, Name, connectionString, cancellationToken).ConfigureAwait(false) ||
+            await RepresentsServerAsync(registry, encryption, FallbackName, connectionString, cancellationToken).ConfigureAwait(false))
         {
             return null;
         }
@@ -234,13 +240,38 @@ internal static partial class ManagedImportConnection
             return Name;
         }
 
-        if (await RepresentsServerAsync(registry, encryption, FallbackName, connectionString, cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
-
         var fallback = await registry.GetConnectionByNameAsync(FallbackName, cancellationToken).ConfigureAwait(false);
         return fallback is null || fallback.ConnectionId == Id ? FallbackName : null;
+    }
+
+    // The running data source is resolved once at startup. Reading configuration again can
+    // follow a reload to a different database than the one imports already use.
+    private static async Task<string?> ResolveServerConnectionStringAsync(
+        IServiceProvider services,
+        IConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var running = services.GetService<NpgsqlDataSource>()?.ConnectionString;
+        if (!string.IsNullOrWhiteSpace(running))
+        {
+            try
+            {
+                var builder = new NpgsqlConnectionStringBuilder(running);
+                if (!string.IsNullOrWhiteSpace(builder.Password))
+                {
+                    return running;
+                }
+            }
+            catch (ArgumentException)
+            {
+                // A data source string that cannot be read falls through to configuration.
+            }
+        }
+
+        return await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
+            configuration,
+            services.GetService<IConnectionSecretResolver>(),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<bool> RepresentsServerAsync(
