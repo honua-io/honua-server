@@ -29,4 +29,4 @@ public readonly record struct CdnPurgeAdmission(
     int SubmittedCount,
     decimal EstimatedSpend);
 
-public readonly record struct CdnPurgeBudgetMonth(int SubmittedCount, decimal EstimatedSpend, bool Exceeded);
+public readonly record struct CdnPurgeBudgetMonth(int SubmittedCount, decimal EstimatedSpend, CdnPurgeBudgetDecision Decision);

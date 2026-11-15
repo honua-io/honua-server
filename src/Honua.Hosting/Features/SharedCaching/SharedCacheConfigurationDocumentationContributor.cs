@@ -47,18 +47,23 @@ internal sealed class SharedCacheConfigurationDocumentationContributor(IOptionsM
                         "CacheTagHeader",
                         "Response header the CDN reads cache tags from; when set, edits invalidate by tag instead of by path",
                         (string.Empty, current.CacheTagHeader ?? string.Empty)),
-                    Property(
-                        "PurgeBudget:MonthlyEditSubmissions",
-                        "Edit purges sent this UTC month before further edit purges wait for the cache lifetime. Zero disables the cap. Access changes and releases are not counted",
-                        (CdnPurgeBudgetOptions.DefaultMonthlyEditSubmissions, current.PurgeBudget.MonthlyEditSubmissions)),
-                    Property(
-                        "PurgeBudget:EstimatedCostPerSubmission",
-                        "Operator-supplied cost added to the month's spend estimate for each admitted edit purge",
-                        (0m, current.PurgeBudget.EstimatedCostPerSubmission)),
+                    .. PurgeBudgetProperties(current.PurgeBudget),
                 ],
             },
         ];
     }
+
+    private static ConfigurationProperty[] PurgeBudgetProperties(CdnPurgeBudgetOptions budget) =>
+    [
+        Property(
+            "PurgeBudget:MonthlyEditSubmissions",
+            "Edit purges sent this UTC month before further edit purges wait for the cache lifetime. Zero disables the cap. Access changes and releases are not counted",
+            (CdnPurgeBudgetOptions.DefaultMonthlyEditSubmissions, budget.MonthlyEditSubmissions)),
+        Property(
+            "PurgeBudget:EstimatedCostPerSubmission",
+            "Operator-supplied cost added to the month's spend estimate for each admitted edit purge",
+            (0m, budget.EstimatedCostPerSubmission)),
+    ];
 
     public IReadOnlyList<EnvironmentVariableInfo> GetEnvironmentVariables() =>
     [

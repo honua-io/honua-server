@@ -28,7 +28,7 @@ internal sealed partial class PostgresCdnPurgeBudget(JobStoreDatabase database, 
         try
         {
             return await database.ExecuteAsync(
-                (connection, _, token) => AdmitAsync(connection, monthlyLimit, unit, token),
+                (connection, _, token) => AdmitAsync(connection, (monthlyLimit, unit), token),
                 StatementRepeat.NotAfterSend,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -65,8 +65,7 @@ internal sealed partial class PostgresCdnPurgeBudget(JobStoreDatabase database, 
 
     private async Task<CdnPurgeAdmission> AdmitAsync(
         NpgsqlConnection connection,
-        int monthlyLimit,
-        decimal unitCost,
+        (int MonthlyLimit, decimal UnitCost) budget,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(
@@ -88,8 +87,8 @@ internal sealed partial class PostgresCdnPurgeBudget(JobStoreDatabase database, 
         {
             CommandTimeout = 5,
         };
-        command.Parameters.AddWithValue("limit", monthlyLimit);
-        command.Parameters.AddWithValue("unit", unitCost);
+        command.Parameters.AddWithValue("limit", budget.MonthlyLimit);
+        command.Parameters.AddWithValue("unit", budget.UnitCost);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -100,7 +99,7 @@ internal sealed partial class PostgresCdnPurgeBudget(JobStoreDatabase database, 
                 reader.GetDecimal(1));
         }
 
-        return new CdnPurgeAdmission(CdnPurgeBudgetDecision.Exceeded, monthlyLimit, 0);
+        return new CdnPurgeAdmission(CdnPurgeBudgetDecision.Exceeded, budget.MonthlyLimit, 0);
     }
 
     private async Task<CdnPurgeBudgetMonth?> ReadAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
@@ -121,7 +120,10 @@ internal sealed partial class PostgresCdnPurgeBudget(JobStoreDatabase database, 
             return null;
         }
 
-        return new CdnPurgeBudgetMonth(reader.GetInt32(0), reader.GetDecimal(1), reader.GetBoolean(2));
+        return new CdnPurgeBudgetMonth(
+            reader.GetInt32(0),
+            reader.GetDecimal(1),
+            reader.GetBoolean(2) ? CdnPurgeBudgetDecision.Exceeded : CdnPurgeBudgetDecision.Admitted);
     }
 
     private static partial class Log

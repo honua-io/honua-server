@@ -25,24 +25,7 @@ internal sealed partial class CdnInvalidationService
             return null;
         }
 
-        CdnPurgeAdmission admission;
-        try
-        {
-            admission = await _budget.TryAdmitEditAsync(
-                budget.MonthlyEditSubmissions,
-                budget.EstimatedCostPerSubmission,
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            Log.PurgeBudgetUnreadable(logger, exception);
-            return null;
-        }
-
+        var admission = await ReadEditBudgetAdmissionAsync(budget, cancellationToken).ConfigureAwait(false);
         if (admission.Decision is not CdnPurgeBudgetDecision.Exceeded)
         {
             return null;
@@ -59,5 +42,27 @@ internal sealed partial class CdnInvalidationService
         }
 
         return CdnInvalidationResult.BudgetExceeded;
+    }
+
+    private async Task<CdnPurgeAdmission> ReadEditBudgetAdmissionAsync(
+        CdnPurgeBudgetOptions budget,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _budget!.TryAdmitEditAsync(
+                budget.MonthlyEditSubmissions,
+                budget.EstimatedCostPerSubmission,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Log.PurgeBudgetUnreadable(logger, exception);
+            return new CdnPurgeAdmission(CdnPurgeBudgetDecision.Unavailable, 0, 0);
+        }
     }
 }

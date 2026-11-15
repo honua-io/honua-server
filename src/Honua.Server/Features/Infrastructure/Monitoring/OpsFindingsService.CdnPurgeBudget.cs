@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
@@ -19,7 +20,7 @@ internal sealed partial class OpsFindingsService
         }
 
         var month = await _cdnPurgeBudget.ReadCurrentMonthAsync(cancellationToken).ConfigureAwait(false);
-        if (month is not { Exceeded: true } spent)
+        if (month is not { Decision: CdnPurgeBudgetDecision.Exceeded } spent)
         {
             return;
         }

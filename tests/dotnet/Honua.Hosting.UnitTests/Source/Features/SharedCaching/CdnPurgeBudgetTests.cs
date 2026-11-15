@@ -104,7 +104,8 @@ public sealed class CdnPurgeBudgetTests
         }
 
         public Task<CdnPurgeBudgetMonth?> ReadCurrentMonthAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<CdnPurgeBudgetMonth?>(new CdnPurgeBudgetMonth(_count, 0, _count >= limit && limit > 0));
+            => Task.FromResult<CdnPurgeBudgetMonth?>(new CdnPurgeBudgetMonth(
+                _count, 0, _count >= limit && limit > 0 ? CdnPurgeBudgetDecision.Exceeded : CdnPurgeBudgetDecision.Admitted));
     }
 
     private sealed class UnreadableBudget : ICdnPurgeBudget
