@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Coalesce completion events without losing unpublished quarantine evidence."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
@@ -22,6 +23,8 @@ SOURCES = {'.github/workflows/ci.yml', '.github/workflows/pr-gate.yml'}
 ARTIFACT = re.compile(r'^(server-test-results-|pr-gate-affected-shard-)[a-zA-Z0-9_-]+$')
 ATTEMPT = re.compile(r'^(.*?)(?:-attempt-([0-9]+))?$')
 MAX_PAGES = 1000
+INVENTORY_WORKERS = 8
+PAGE_SIZE = 100
 MAX_BATCH_RUNS = 25
 MAX_ZIP_BYTES = 256 * 1024 * 1024
 MAX_EXPANDED_BYTES = 1024 * 1024 * 1024
@@ -34,14 +37,29 @@ def api(path):
 
 def inventory(path, key):
     found = {}
-    for page in range(1, MAX_PAGES + 1):
-        response = api(f'{path}{"&" if "?" in path else "?"}per_page=100&page={page}')
-        if response['total_count'] > MAX_PAGES * 100:
+    page = 1
+    total = 0
+
+    def read(number):
+        response = api(f'{path}{"&" if "?" in path else "?"}per_page={PAGE_SIZE}&page={number}')
+        if response['total_count'] > MAX_PAGES * PAGE_SIZE:
             raise ValueError('Artifact inventory exceeds bounded sweep capacity; checkpoint unchanged')
-        batch = response[key]
-        found.update((item['id'], item) for item in batch)
-        if len(batch) < 100:
-            return list(found.values())
+        return response
+
+    with ThreadPoolExecutor(max_workers=INVENTORY_WORKERS) as executor:
+        while page <= MAX_PAGES:
+            remaining = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE - page + 1)
+            stop = min(page + INVENTORY_WORKERS, page + remaining, MAX_PAGES + 1)
+            responses = list(executor.map(read, range(page, stop)))
+            for response in responses:
+                total = max(total, response['total_count'])
+                batch = response[key]
+                found.update((item['id'], item) for item in batch)
+                if len(batch) < PAGE_SIZE:
+                    print(f'Inventoried {path}: {len(found)} unique entries through page {page}', flush=True)
+                    return list(found.values())
+                page += 1
+            print(f'Inventoried {path}: {len(found)} unique entries through page {page - 1}', flush=True)
     raise ValueError('Artifact inventory exceeded bounded pagination; checkpoint unchanged')
 
 

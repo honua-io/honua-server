@@ -8,6 +8,7 @@ from pathlib import Path
 import stat
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -194,6 +195,64 @@ class CheckpointTests(unittest.TestCase):
             self.assertEqual(101, len(sweep.inventory('actions/artifacts', 'artifacts')))
         with patch.object(sweep, 'api', return_value=dict(total_count=sweep.MAX_PAGES * 100 + 1)), \
                 self.assertRaisesRegex(ValueError, 'capacity'):
+            sweep.inventory('actions/artifacts', 'artifacts')
+
+    def test_inventory_fetches_bounded_parallel_pages_without_losing_order(self):
+        barrier = threading.Barrier(8, timeout=2)
+        active = 0
+        peak = 0
+        lock = threading.Lock()
+
+        def page(path):
+            nonlocal active, peak
+            number = int(path.rsplit('=', 1)[1])
+            if number > 1:
+                with lock:
+                    active += 1
+                    peak = max(peak, active)
+                barrier.wait()
+                with lock:
+                    active -= 1
+            start = (number - 1) * 100
+            return dict(total_count=850, artifacts=[dict(id=i) for i in range(start, min(start + 100, 850))])
+
+        with patch.object(sweep, 'api', side_effect=page):
+            items = sweep.inventory('actions/artifacts', 'artifacts')
+        self.assertEqual(8, peak)
+        self.assertEqual(list(range(850)), [item['id'] for item in items])
+
+    def test_inventory_page_failure_leaves_checkpoint_unwritten(self):
+        def page(path):
+            if path.endswith('page=2'):
+                raise RuntimeError('page unavailable')
+            return dict(total_count=201, artifacts=[artifact(i) for i in range(1, 101)])
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / 'cursor.json'
+            with patch.object(sweep, 'load_cursor', return_value=cursor()), \
+                    patch.object(sweep, 'api', side_effect=page), \
+                    patch.object(sweep, 'publish_run') as publish, \
+                    self.assertRaisesRegex(RuntimeError, 'page unavailable'):
+                sweep.sweep(checkpoint)
+            self.assertFalse(checkpoint.exists())
+            publish.assert_not_called()
+
+    def test_inventory_full_last_page_requires_empty_terminal_page(self):
+        def page(path):
+            number = int(path.rsplit('=', 1)[1])
+            return dict(total_count=200, artifacts=[dict(id=i) for i in range((number - 1) * 100, min(number * 100, 200))])
+
+        with patch.object(sweep, 'api', side_effect=page) as read:
+            self.assertEqual(list(range(200)), [item['id'] for item in sweep.inventory('actions/artifacts', 'artifacts')])
+        self.assertEqual(3, read.call_count)
+
+    def test_inventory_growth_beyond_capacity_in_later_page_fails_closed(self):
+        def page(path):
+            if path.endswith('page=1'):
+                return dict(total_count=101, artifacts=[artifact(i) for i in range(100)])
+            return dict(total_count=sweep.MAX_PAGES * 100 + 1, artifacts=[])
+
+        with patch.object(sweep, 'api', side_effect=page), self.assertRaisesRegex(ValueError, 'capacity'):
             sweep.inventory('actions/artifacts', 'artifacts')
 
     def test_inventory_accepts_retained_repository_volume(self):
