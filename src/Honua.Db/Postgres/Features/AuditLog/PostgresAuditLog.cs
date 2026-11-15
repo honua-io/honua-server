@@ -130,38 +130,26 @@ internal sealed class PostgresAuditLog : IAuditLog
                 }
             }
 
+            var hashInput = new AuditEntryHashInput
+            {
+                PreviousHash = previousHash,
+                Timestamp = auditEvent.Timestamp,
+                EventType = auditEvent.EventType,
+                Actor = actor,
+                ActorType = auditEvent.ActorType,
+                ResourceType = resourceType,
+                ResourceId = resourceId,
+                Action = action,
+                Outcome = auditEvent.Outcome,
+                CorrelationId = correlationId,
+                RemoteIp = remoteIp,
+                UserAgent = userAgent,
+                Details = details,
+                ActorAgent = actorAgent,
+            };
             var entryHash = _chainKey.Length >= AuditChainKeyMaterial.MinimumLength
-                ? AuditEntryHasher.ComputeEntryMac(
-                    _chainKey,
-                    previousHash,
-                    auditEvent.Timestamp,
-                    auditEvent.EventType,
-                    actor,
-                    auditEvent.ActorType,
-                    resourceType,
-                    resourceId,
-                    action,
-                    auditEvent.Outcome,
-                    correlationId,
-                    remoteIp,
-                    userAgent,
-                    details,
-                    actorAgent)
-                : AuditEntryHasher.ComputeEntryHash(
-                    previousHash,
-                    auditEvent.Timestamp,
-                    auditEvent.EventType,
-                    actor,
-                    auditEvent.ActorType,
-                    resourceType,
-                    resourceId,
-                    action,
-                    auditEvent.Outcome,
-                    correlationId,
-                    remoteIp,
-                    userAgent,
-                    details,
-                    actorAgent);
+                ? AuditEntryHasher.ComputeEntryMac(_chainKey, hashInput)
+                : AuditEntryHasher.ComputeEntryHash(hashInput);
 
             await using (var command = new NpgsqlCommand(sql, connection, transaction))
             {

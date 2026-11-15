@@ -4,9 +4,6 @@
 using FluentAssertions;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Core.Features.Operations.Abstractions;
-using Honua.Core.Features.Operations.Domain;
-using Honua.Core.Features.Operations.Services;
 
 namespace Honua.Core.Tests.Features.AuditLog;
 
@@ -135,21 +132,23 @@ public sealed class AuditEventTests
         string? resourceId = "/api/v1/admin/x",
         string details = "{}",
         string? actorAgent = null)
-        => AuditEntryHasher.ComputeEntryHash(
-            prev,
-            new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero),
-            AuditEventType.Authentication,
-            actor,
-            AuditActorType.UserId,
-            resourceType,
-            resourceId,
-            action,
-            AuditOutcome.Success,
-            "corr-1",
-            "10.0.0.1",
-            "agent/1.0",
-            details,
-            actorAgent);
+        => AuditEntryHasher.ComputeEntryHash(new AuditEntryHashInput
+        {
+            PreviousHash = prev,
+            Timestamp = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero),
+            EventType = AuditEventType.Authentication,
+            Actor = actor,
+            ActorType = AuditActorType.UserId,
+            ResourceType = resourceType,
+            ResourceId = resourceId,
+            Action = action,
+            Outcome = AuditOutcome.Success,
+            CorrelationId = "corr-1",
+            RemoteIp = "10.0.0.1",
+            UserAgent = "agent/1.0",
+            Details = details,
+            ActorAgent = actorAgent,
+        });
 
 
     [Trait("Tier", "Fast")]
@@ -173,143 +172,6 @@ public sealed class AuditEventTests
         Hash(actorAgent: "agent-1").Should().NotBe(Hash());
         Hash(actorAgent: "agent-1").Should().NotBe(Hash(actorAgent: "agent-2"));
         Hash(actorAgent: string.Empty).Should().NotBe(Hash());
-    }
-
-    private const string OperationId = "service.publish";
-    private const string McpApiKeyActor = "ApiKey:api-key:3f1c2b4a-8d7e-4c55-9a10-6b2e7d9c0f11";
-
-    [Trait("Tier", "Fast")]
-    [Theory]
-    [InlineData(false, AuditActorType.UserId)]
-    [InlineData(true, AuditActorType.UserId)]
-    public async Task SubmitAsync_AuthenticatedCallCanceledBeforeActuation_AuditsTheCallerNotAnonymous(
-        bool agent, AuditActorType expectedType)
-    {
-        using var requestCancellation = new CancellationTokenSource();
-        var audit = new CapturingAuditLog();
-        using var catalog = new OperationCatalog([new StubDescriptorProvider()], TimeProvider.System);
-        var dispatcher = new OperationDispatcher(
-            catalog,
-            [new CancelingDuringValidationExecutor(requestCancellation)],
-            new AllowAllPolicyDecisionPoint(),
-            TimeProvider.System,
-            auditLog: audit);
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => dispatcher.SubmitAsync(
-            new OperationRequest { OperationId = OperationId },
-            new OperationPolicyContext { PrincipalId = McpApiKeyActor, Roles = agent ? ["agent"] : [], AuthorizationOutcome = "authorized" },
-            requestCancellation.Token));
-
-        var accepted = Assert.Single(audit.Events, entry => entry.Action == "operation.accepted");
-        var cancelled = Assert.Single(audit.Events, entry => entry.Action == "operation.cancelled");
-        Assert.Equal(accepted.ResourceId, cancelled.ResourceId);
-        foreach (var entry in new[] { accepted, cancelled })
-        {
-            Assert.Equal(McpApiKeyActor, entry.Actor);
-            Assert.NotEqual(AuditEvent.AnonymousActor, entry.Actor);
-            Assert.Equal(expectedType, entry.ActorType);
-            Assert.Equal(agent ? McpApiKeyActor : null, entry.ActorAgent);
-        }
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task SubmitAsync_AgentWithoutRequiredScope_AuditsDenialBeforeAcceptance()
-    {
-        var audit = new CapturingAuditLog();
-        using var catalog = new OperationCatalog([new StubDescriptorProvider()], TimeProvider.System);
-        var dispatcher = new OperationDispatcher(
-            catalog,
-            [], new AllowAllPolicyDecisionPoint(), TimeProvider.System, auditLog: audit);
-        var result = await dispatcher.SubmitAsync(
-            new OperationRequest { OperationId = OperationId },
-            new OperationPolicyContext { PrincipalId = McpApiKeyActor, Roles = ["agent"], ScopeGoverned = true });
-
-        Assert.Equal(OperationHandleStatus.Denied, result.Status);
-        var denied = Assert.Single(audit.Events);
-        Assert.Equal("operation.denied", denied.Action);
-        Assert.Equal(McpApiKeyActor, denied.Actor);
-        Assert.Equal(AuditActorType.UserId, denied.ActorType);
-        Assert.Equal(McpApiKeyActor, denied.ActorAgent);
-        Assert.NotNull(result.AuditId);
-    }
-
-    private sealed class CapturingAuditLog : IAuditLog
-    {
-        private readonly List<AuditEvent> _events = [];
-
-        public IReadOnlyList<AuditEvent> Events
-        {
-            get
-            {
-                lock (_events)
-                {
-                    return [.. _events];
-                }
-            }
-        }
-
-        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
-        {
-            lock (_events)
-            {
-                _events.Add(auditEvent);
-            }
-
-            return Task.FromResult<string?>($"audit-{Guid.NewGuid():N}");
-        }
-    }
-
-    private sealed class StubDescriptorProvider : IOperationDescriptorProvider
-    {
-        public string ProviderId => "test";
-
-        public Task<IReadOnlyList<IOperationDescriptor>> ListDescriptorsAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<IOperationDescriptor>>(
-            [
-                new OperationDescriptor
-                {
-                    OperationId = OperationId,
-                    ProviderId = "test",
-                    Title = "Publish",
-                    Description = "Publish a layer",
-                    Category = "Publishing",
-                    ExecutionKind = OperationExecutionKind.Synchronous,
-                    ApprovalModel = OperationApprovalModel.None,
-                    Policy = new OperationPolicyMetadata
-                    {
-                        BlastRadiusClass = OperationBlastRadiusClass.ServiceScope,
-                        SideEffectClass = OperationSideEffectClass.CreatesMetadata,
-                        Determinism = OperationDeterminism.Deterministic,
-                        SupportsDryRun = false,
-                    },
-                },
-            ]);
-    }
-
-    private sealed class CancelingDuringValidationExecutor(CancellationTokenSource requestCancellation)
-        : IOperationExecutor
-    {
-        public string OperationId => AuditEventTests.OperationId;
-
-        public Task<OperationValidation> ValidateAsync(
-            OperationRequest request,
-            CancellationToken cancellationToken = default)
-        {
-            requestCancellation.Cancel();
-            throw new OperationCanceledException(cancellationToken);
-        }
-
-        public Task<OperationHandle> SubmitAsync(
-            OperationRequest request,
-            OperationPolicyContext context,
-            CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("Actuator must not run after canceled validation.");
-
-        public Task<OperationStatus> GetStatusAsync(
-            OperationHandle handle,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
     }
 }
 

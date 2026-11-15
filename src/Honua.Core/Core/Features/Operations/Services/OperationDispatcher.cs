@@ -123,7 +123,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         // enforcing there alone let a discover/create-only bearer invoke sensitive inventories.
         if (OperationScopeMapping.ExceedsScopeAuthority(request, context))
         {
-            var scopeDenied = new OperationHandle
+            return await RecordAgentDenialAsync(new OperationHandle
             {
                 OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
                 OperationId = request.OperationId,
@@ -137,14 +137,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
                 Reason = string.IsNullOrWhiteSpace(context.ApprovedProposalId)
                     ? "Operation exceeds the caller's OAuth scope authority."
                     : "Approved replay operation exceeds the sealed OAuth scope authority.",
-            };
-            if (OperationAuditActor.ResolveAgent(context) is not null)
-            {
-                var auditId = await WriteAuditAsync(scopeDenied, context, "operation.denied",
-                    AuditOutcome.Denied, cancellationToken).ConfigureAwait(false);
-                scopeDenied = scopeDenied with { AuditId = auditId };
-            }
-            return scopeDenied;
+            }, context, cancellationToken).ConfigureAwait(false);
         }
 
         if (proposalOnly)
@@ -403,13 +396,9 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
                     AuditId = decided.AuditId ?? acceptanceAuditId,
                     EvidenceRefs = OperationEnvelopeFactory.PreserveRequestBinding(envelope, decided.EvidenceRefs),
                 };
-                if (projected.Status == OperationHandleStatus.Denied &&
-                    OperationAuditActor.ResolveAgent(invocationContext) is not null)
-                {
-                    var denialId = await WriteAuditAsync(projected, invocationContext, "operation.denied",
-                        AuditOutcome.Denied, cancellationToken).ConfigureAwait(false);
-                    projected = projected with { AuditId = denialId };
-                }
+                projected = projected.Status == OperationHandleStatus.Denied
+                    ? await RecordAgentDenialAsync(projected, invocationContext, cancellationToken).ConfigureAwait(false)
+                    : projected;
                 return projected.Status == OperationHandleStatus.RequiresApproval
                     ? await PersistApprovalDecisionAsync(projected, cancellationToken).ConfigureAwait(false)
                     : await PersistAsync(projected, cancellationToken).ConfigureAwait(false);
@@ -653,6 +642,22 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         }
 
         return failed;
+    }
+
+    // An agent's refusal is audited even when no operation row is accepted, so its denials stay attributable.
+    private async Task<OperationHandle> RecordAgentDenialAsync(
+        OperationHandle denied,
+        OperationPolicyContext context,
+        CancellationToken cancellationToken)
+    {
+        if (OperationAuditActor.ResolveAgent(context) is null)
+        {
+            return denied;
+        }
+
+        var auditId = await WriteAuditAsync(denied, context, "operation.denied", AuditOutcome.Denied, cancellationToken)
+            .ConfigureAwait(false);
+        return denied with { AuditId = auditId };
     }
 
     private async Task PersistPreActuationCancellationAsync(

@@ -26,24 +26,28 @@ public static class AuditEntryHasher
         string correlationId,
         string? remoteIp,
         string? userAgent,
-        string details,
-        string? actorAgent = null)
+        string details)
+        => ComputeEntryHash(new AuditEntryHashInput
+        {
+            PreviousHash = previousHash,
+            Timestamp = timestamp,
+            EventType = eventType,
+            Actor = actor,
+            ActorType = actorType,
+            ResourceType = resourceType,
+            ResourceId = resourceId,
+            Action = action,
+            Outcome = outcome,
+            CorrelationId = correlationId,
+            RemoteIp = remoteIp,
+            UserAgent = userAgent,
+            Details = details,
+        });
+
+    public static string ComputeEntryHash(AuditEntryHashInput entry)
     {
-        var bytes = Encoding.UTF8.GetBytes(Canonicalize(
-            previousHash,
-            timestamp,
-            eventType,
-            actor,
-            actorType,
-            resourceType,
-            resourceId,
-            action,
-            outcome,
-            correlationId,
-            remoteIp,
-            userAgent,
-            details,
-            actorAgent));
+        ArgumentNullException.ThrowIfNull(entry);
+        var bytes = Encoding.UTF8.GetBytes(Canonicalize(entry));
         return Convert.ToHexStringLower(SHA256.HashData(bytes));
     }
 
@@ -61,76 +65,66 @@ public static class AuditEntryHasher
         string correlationId,
         string? remoteIp,
         string? userAgent,
-        string details,
-        string? actorAgent = null)
+        string details)
+        => ComputeEntryMac(chainKey, new AuditEntryHashInput
+        {
+            PreviousHash = previousHash,
+            Timestamp = timestamp,
+            EventType = eventType,
+            Actor = actor,
+            ActorType = actorType,
+            ResourceType = resourceType,
+            ResourceId = resourceId,
+            Action = action,
+            Outcome = outcome,
+            CorrelationId = correlationId,
+            RemoteIp = remoteIp,
+            UserAgent = userAgent,
+            Details = details,
+        });
+
+    public static string ComputeEntryMac(ReadOnlySpan<byte> chainKey, AuditEntryHashInput entry)
     {
+        ArgumentNullException.ThrowIfNull(entry);
         if (chainKey.Length < AuditChainKeyMaterial.MinimumLength)
         {
             throw new ArgumentException("The audit chain key must be at least 32 bytes.", nameof(chainKey));
         }
 
-        var bytes = Encoding.UTF8.GetBytes(Canonicalize(
-            previousHash,
-            timestamp,
-            eventType,
-            actor,
-            actorType,
-            resourceType,
-            resourceId,
-            action,
-            outcome,
-            correlationId,
-            remoteIp,
-            userAgent,
-            details,
-            actorAgent));
+        var bytes = Encoding.UTF8.GetBytes(Canonicalize(entry));
         return Convert.ToHexStringLower(HMACSHA256.HashData(chainKey, bytes));
     }
 
-    private static string Canonicalize(
-        string? previousHash,
-        DateTimeOffset timestamp,
-        AuditEventType eventType,
-        string actor,
-        AuditActorType actorType,
-        string resourceType,
-        string? resourceId,
-        string action,
-        AuditOutcome outcome,
-        string correlationId,
-        string? remoteIp,
-        string? userAgent,
-        string details,
-        string? actorAgent = null)
+    private static string Canonicalize(AuditEntryHashInput entry)
     {
         var builder = new StringBuilder(256);
 
         // Chain link first so the genesis row (no prev) is distinguishable.
-        AppendField(builder, string.IsNullOrEmpty(previousHash) ? null : previousHash);
+        AppendField(builder, string.IsNullOrEmpty(entry.PreviousHash) ? null : entry.PreviousHash);
         // Encode the timestamp at microsecond precision so the writer (hashing the
         // in-memory value) and the verifier (hashing the value read back from a
         // PostgreSQL TIMESTAMPTZ, which stores microseconds) agree. 1 microsecond
         // == 10 .NET ticks; truncating here makes the chain round-trip through the
         // database lossless.
-        var microseconds = timestamp.UtcTicks / TimeSpan.TicksPerMicrosecond;
+        var microseconds = entry.Timestamp.UtcTicks / TimeSpan.TicksPerMicrosecond;
         AppendField(builder, microseconds.ToString(CultureInfo.InvariantCulture));
-        AppendField(builder, eventType.ToString());
-        AppendField(builder, actor);
-        AppendField(builder, actorType.ToString());
-        AppendField(builder, resourceType);
-        AppendField(builder, resourceId);
-        AppendField(builder, action);
-        AppendField(builder, outcome.ToString());
-        AppendField(builder, correlationId);
-        AppendField(builder, remoteIp);
-        AppendField(builder, userAgent);
-        AppendField(builder, details ?? string.Empty);
+        AppendField(builder, entry.EventType.ToString());
+        AppendField(builder, entry.Actor);
+        AppendField(builder, entry.ActorType.ToString());
+        AppendField(builder, entry.ResourceType);
+        AppendField(builder, entry.ResourceId);
+        AppendField(builder, entry.Action);
+        AppendField(builder, entry.Outcome.ToString());
+        AppendField(builder, entry.CorrelationId);
+        AppendField(builder, entry.RemoteIp);
+        AppendField(builder, entry.UserAgent);
+        AppendField(builder, entry.Details ?? string.Empty);
         // Keep legacy canonical bytes unchanged when no agent identity was recorded.
         // Length-prefixed extension fields bind the agent without ambiguity.
-        if (actorAgent is not null)
+        if (entry.ActorAgent is not null)
         {
             AppendField(builder, "actor-agent:v1");
-            AppendField(builder, actorAgent);
+            AppendField(builder, entry.ActorAgent);
         }
         return builder.ToString();
     }
