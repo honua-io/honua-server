@@ -6,18 +6,13 @@ using System.Reflection;
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
-/// <summary>
-/// ESRI projected CRS names that desktop GIS and the Shapefile driver write with no
-/// AUTHORITY node, mapped to EPSG codes. The table is the PROJ <c>alias_name</c> list for
-/// projected CRS (EPSG authority, ESRI source). Ambiguous names are absent.
-/// </summary>
 internal static class EsriProjectedCrsNames
 {
     private const string ResourceName = "Honua.Db.Postgres.Features.FileImport.EsriProjectedCrsNames.txt";
 
     private static readonly FrozenDictionary<string, int> Names = Load();
 
-    internal static bool TryGet(string name, out int epsg) => Names.TryGetValue(name, out epsg);
+    internal static int? TryGet(string name) => Names.TryGetValue(name, out var epsg) ? epsg : null;
 
     private static FrozenDictionary<string, int> Load()
     {

@@ -11,6 +11,6 @@ public class EsriProjectedCrsNamesTests
     public void TryGet_WithAmbiguousProjectedName_ReturnsFalse()
     {
         // The name is an ESRI alias of two deprecated projected codes, so it is not a unique match.
-        EsriProjectedCrsNames.TryGet("NAD_1983_CSRS_MTM_2_SCoPQ", out _).Should().BeFalse();
+        EsriProjectedCrsNames.TryGet("NAD_1983_CSRS_MTM_2_SCoPQ").Should().BeNull();
     }
 }
