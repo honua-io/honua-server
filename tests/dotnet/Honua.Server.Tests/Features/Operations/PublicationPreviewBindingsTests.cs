@@ -20,10 +20,10 @@ public sealed class PublicationPreviewBindingsTests
     public async Task Reference_SurvivesExecutorRecreation_AndAcceptsIdenticalPublishRequest()
     {
         var request = Request();
-        var created = await Bindings().CreateAsync(request, Context(), Base, CancellationToken.None);
+        var created = await Bindings().CreateAsync(request, new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
         var replay = WithReference(request with { OperationId = "service.publish" }, created.Reference);
 
-        await Bindings().VerifyAsync(replay, Context(), Base, CancellationToken.None);
+        await Bindings().VerifyAsync(replay, new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
         created.ExpiresAt.Should().Be(_clock.GetUtcNow() + PublicationPreviewBindings.Lifetime);
         var retained = await _store.GetAsync(created.Reference);
         retained!.Result!.Details.Values.Should().NotContain(value => value.Contains("Host=", StringComparison.Ordinal));
@@ -32,11 +32,11 @@ public sealed class PublicationPreviewBindingsTests
     [UnitTest]
     public async Task Reference_RejectsAnotherActorOrTenant()
     {
-        var created = await Bindings().CreateAsync(Request(), Context(), Base, CancellationToken.None);
+        var created = await Bindings().CreateAsync(Request(), new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
         var request = WithReference(Request(), created.Reference);
 
-        var otherActor = () => Bindings().VerifyAsync(request, Context() with { PrincipalId = "other" }, Base, CancellationToken.None);
-        var otherTenant = () => Bindings().VerifyAsync(request, Context() with { TenantId = "other" }, Base, CancellationToken.None);
+        var otherActor = () => Bindings().VerifyAsync(request, new PublicationPreviewIdentity(Context() with { PrincipalId = "other" }, Base), CancellationToken.None);
+        var otherTenant = () => Bindings().VerifyAsync(request, new PublicationPreviewIdentity(Context() with { TenantId = "other" }, Base), CancellationToken.None);
 
         await otherActor.Should().ThrowAsync<InvalidOperationException>();
         await otherTenant.Should().ThrowAsync<InvalidOperationException>();
@@ -45,7 +45,7 @@ public sealed class PublicationPreviewBindingsTests
     [UnitTest]
     public async Task Reference_RejectsChangedSourceOptionsFieldsAndMetadataBase()
     {
-        var created = await Bindings().CreateAsync(Request(), Context(), Base, CancellationToken.None);
+        var created = await Bindings().CreateAsync(Request(), new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
         var request = WithReference(Request(), created.Reference);
         var changed = new Dictionary<string, string?>(request.Parameters) { ["table"] = "other" };
         var changedOptions = new Dictionary<string, string?>(request.Parameters) { ["enabled"] = "false" };
@@ -58,11 +58,11 @@ public sealed class PublicationPreviewBindingsTests
             request with { Parameters = changedOptions }
         })
         {
-            var act = () => Bindings().VerifyAsync(replay, Context(), Base, CancellationToken.None);
+            var act = () => Bindings().VerifyAsync(replay, new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
             await act.Should().ThrowAsync<InvalidOperationException>();
         }
-        var revision = () => Bindings().VerifyAsync(request, Context(), new LayerPublicationBase(8, Base.Etag), CancellationToken.None);
-        var etag = () => Bindings().VerifyAsync(request, Context(), new LayerPublicationBase(7, "changed"), CancellationToken.None);
+        var revision = () => Bindings().VerifyAsync(request, new PublicationPreviewIdentity(Context(), new LayerPublicationBase(8, Base.Etag)), CancellationToken.None);
+        var etag = () => Bindings().VerifyAsync(request, new PublicationPreviewIdentity(Context(), new LayerPublicationBase(7, "changed")), CancellationToken.None);
         await revision.Should().ThrowAsync<InvalidOperationException>();
         await etag.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -70,12 +70,12 @@ public sealed class PublicationPreviewBindingsTests
     [UnitTest]
     public async Task ReadingReference_DoesNotRenewOriginalExpiry()
     {
-        var created = await Bindings().CreateAsync(Request(), Context(), Base, CancellationToken.None);
+        var created = await Bindings().CreateAsync(Request(), new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
         var request = WithReference(Request(), created.Reference);
         _clock.Now = created.ExpiresAt - TimeSpan.FromTicks(1);
-        await Bindings().VerifyAsync(request, Context(), Base, CancellationToken.None);
+        await Bindings().VerifyAsync(request, new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
         _clock.Now = created.ExpiresAt;
-        var expired = () => Bindings().VerifyAsync(request, Context(), Base, CancellationToken.None);
+        var expired = () => Bindings().VerifyAsync(request, new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
         await expired.Should().ThrowAsync<InvalidOperationException>();
     }
 
@@ -84,7 +84,7 @@ public sealed class PublicationPreviewBindingsTests
     {
         foreach (var reference in new[] { "", "publication-preview-bogus", "publication-preview-" + new string('a', 64) })
         {
-            var act = () => Bindings().VerifyAsync(WithReference(Request(), reference), Context(), Base, CancellationToken.None);
+            var act = () => Bindings().VerifyAsync(WithReference(Request(), reference), new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
             await act.Should().ThrowAsync<InvalidOperationException>();
         }
     }
@@ -92,7 +92,7 @@ public sealed class PublicationPreviewBindingsTests
     [UnitTest]
     public async Task DedicatedPublishNullOptions_MatchOmittedPreviewOptions_ButExplicitRootDoesNot()
     {
-        var created = await Bindings().CreateAsync(Request(), Context(), Base, CancellationToken.None);
+        var created = await Bindings().CreateAsync(Request(), new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
         var request = WithReference(Request(), created.Reference);
         var parameters = new Dictionary<string, string?>(request.Parameters)
         {
@@ -101,9 +101,9 @@ public sealed class PublicationPreviewBindingsTests
             [ServicePublishMetadataPin.RevisionKey] = "7",
             [ServicePublishMetadataPin.EtagKey] = Base.Etag
         };
-        await Bindings().VerifyAsync(request with { Parameters = parameters }, Context(), Base, CancellationToken.None);
+        await Bindings().VerifyAsync(request with { Parameters = parameters }, new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
         parameters["folderId"] = null;
-        var root = () => Bindings().VerifyAsync(request with { Parameters = parameters }, Context(), Base, CancellationToken.None);
+        var root = () => Bindings().VerifyAsync(request with { Parameters = parameters }, new PublicationPreviewIdentity(Context(), Base), CancellationToken.None);
         await root.Should().ThrowAsync<InvalidOperationException>();
     }
 

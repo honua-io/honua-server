@@ -6,13 +6,15 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Admin.Abstractions;
 
-/// <summary>A read-only plan. The layer ID is a placeholder, never an allocation or reservation.</summary>
-public sealed record LayerPublicationPreview(
-    LayerPublicationBase MetadataBase,
-    MetadataV2Service Service,
-    MetadataV2Object Resource,
-    MetadataV2StorageBinding StorageBinding,
-    IReadOnlyList<MetadataV2Layer> Publications);
+// A read-only plan. The layer ID is a placeholder, never an allocation or reservation.
+public sealed record LayerPublicationPreview
+{
+    public required LayerPublicationBase MetadataBase { get; init; }
+    public required MetadataV2Service Service { get; init; }
+    public required MetadataV2Object Resource { get; init; }
+    public required MetadataV2StorageBinding StorageBinding { get; init; }
+    public required IReadOnlyList<MetadataV2Layer> Publications { get; init; }
+}
 
 public interface ILayerPublicationPreviewReader
 {

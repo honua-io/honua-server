@@ -11,6 +11,8 @@ using Honua.Core.Features.Operations.Domain;
 namespace Honua.Server.Features.Operations;
 
 // Durable, actor-bound references. Reading a reference never extends its original lifetime.
+internal sealed record PublicationPreviewIdentity(OperationPolicyContext Policy, LayerPublicationBase MetadataBase);
+
 internal sealed class PublicationPreviewBindings(IOperationInstanceStore store, TimeProvider clock)
 {
     internal const string ReferenceKey = "previewReference";
@@ -19,10 +21,9 @@ internal sealed class PublicationPreviewBindings(IOperationInstanceStore store, 
     internal static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(30);
 
     public async Task<(string Reference, DateTimeOffset ExpiresAt)> CreateAsync(
-        OperationRequest request, OperationPolicyContext context, LayerPublicationBase metadataBase,
-        CancellationToken cancellationToken)
+        OperationRequest request, PublicationPreviewIdentity identity, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(context.PrincipalId))
+        if (string.IsNullOrWhiteSpace(identity.Policy.PrincipalId))
         {
             throw InvalidReference();
         }
@@ -33,8 +34,8 @@ internal sealed class PublicationPreviewBindings(IOperationInstanceStore store, 
         {
             OperationInstanceId = reference,
             OperationId = BindingOperationId,
-            TenantId = context.TenantId,
-            CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
+            TenantId = identity.Policy.TenantId,
+            CorrelationId = identity.Policy.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
             Status = OperationHandleStatus.Completed,
             CreatedAt = now,
             UpdatedAt = now,
@@ -43,10 +44,10 @@ internal sealed class PublicationPreviewBindings(IOperationInstanceStore store, 
                 Summary = "Retained publication preview binding.",
                 Details = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["requesterId"] = context.PrincipalId,
+                    ["requesterId"] = identity.Policy.PrincipalId,
                     ["requestHash"] = ComputeRequestHash(request),
-                    ["metadataRevision"] = metadataBase.Revision.ToString(CultureInfo.InvariantCulture),
-                    ["metadataEtag"] = metadataBase.Etag ?? string.Empty,
+                    ["metadataRevision"] = identity.MetadataBase.Revision.ToString(CultureInfo.InvariantCulture),
+                    ["metadataEtag"] = identity.MetadataBase.Etag ?? string.Empty,
                     ["expiresAt"] = expires.ToString("O", CultureInfo.InvariantCulture)
                 }
             }
@@ -58,8 +59,7 @@ internal sealed class PublicationPreviewBindings(IOperationInstanceStore store, 
         return (reference, expires);
     }
 
-    public async Task VerifyAsync(OperationRequest request, OperationPolicyContext context,
-        LayerPublicationBase currentBase, CancellationToken cancellationToken)
+    public async Task VerifyAsync(OperationRequest request, PublicationPreviewIdentity identity, CancellationToken cancellationToken)
     {
         if (!request.Parameters.TryGetValue(ReferenceKey, out var reference))
         {
@@ -75,16 +75,16 @@ internal sealed class PublicationPreviewBindings(IOperationInstanceStore store, 
         var details = envelope?.Result?.Details;
         if (envelope is null || envelope.OperationId != BindingOperationId ||
             envelope.Status != OperationHandleStatus.Completed || details is null ||
-            !string.Equals(envelope.TenantId, context.TenantId, StringComparison.Ordinal) ||
-            string.IsNullOrWhiteSpace(context.PrincipalId) ||
-            !details.TryGetValue("requesterId", out var requester) || requester != context.PrincipalId ||
+            !string.Equals(envelope.TenantId, identity.Policy.TenantId, StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(identity.Policy.PrincipalId) ||
+            !details.TryGetValue("requesterId", out var requester) || requester != identity.Policy.PrincipalId ||
             !details.TryGetValue("requestHash", out var hash) || hash != ComputeRequestHash(request) ||
             !details.TryGetValue("expiresAt", out var expiresText) ||
             !DateTimeOffset.TryParseExact(expiresText, "O", CultureInfo.InvariantCulture, DateTimeStyles.None, out var expires) ||
             clock.GetUtcNow() >= expires ||
             !details.TryGetValue("metadataRevision", out var revision) ||
-            revision != currentBase.Revision.ToString(CultureInfo.InvariantCulture) ||
-            !details.TryGetValue("metadataEtag", out var etag) || etag != (currentBase.Etag ?? string.Empty))
+            revision != identity.MetadataBase.Revision.ToString(CultureInfo.InvariantCulture) ||
+            !details.TryGetValue("metadataEtag", out var etag) || etag != (identity.MetadataBase.Etag ?? string.Empty))
         {
             throw InvalidReference();
         }

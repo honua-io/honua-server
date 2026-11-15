@@ -30,149 +30,128 @@ internal sealed partial class PostgreSqlLayerPublishingService
         public IReadOnlyList<string> StyleResourceIds { get; init; } = [];
     }
 
+    private sealed record PublicationGraphObjects
+    {
+        public required MetadataV2Service Service { get; init; }
+        public required MetadataV2Object Resource { get; init; }
+        public required MetadataV2StorageBinding Binding { get; init; }
+        public required MetadataV2Layer Feature { get; init; }
+        public MetadataV2Layer? Stac { get; init; }
+    }
+
     private MetadataV2Graph BuildPublishedLayerGraph(PublishedLayerGraphPlan plan)
     {
         var graph = plan.Graph;
-        var request = plan.Request;
-        var layerId = plan.LayerId;
-        var storage = plan.Storage;
-        var resourcePrimaryKeyColumn = plan.PrimaryKey;
-        var resourceGeometryColumn = plan.GeometryColumn;
-        var geometryType = plan.GeometryType;
-        var srid = plan.Srid;
-        var storageCoordinateEpoch = plan.StorageCoordinateEpoch;
-        var fields = plan.Fields;
-        var extent = plan.Extent;
-        var capabilities = plan.Capabilities;
-        var publicationScope = plan.Scope;
-        var now = plan.GeneratedAt;
-        var styleResources = plan.StyleResources;
-        var styleResourceIds = plan.StyleResourceIds;
-        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
-        // Managed storage belongs to the server, even when the source route has a connection ID.
-        var storageConnectionId = storage.IsManagedStore ? null : request.ConnectionId;
-        var graphLayerKey = BuildLayerGraphId("layer", layerId, storageConnectionId);
-        var service = BuildPublishedService(graph, plan.ServiceName, srid, now);
-        service = service with { Metadata = ApplyPublicationScope(service.Metadata, publicationScope) };
-        var organizedGraph = PublishedImportTarget.PrepareFolder(graph, request, service.Metadata.Tenant);
-        service = PublishedImportTarget.BindService(organizedGraph, service, request);
-        service = PublishedServiceOrganization.Apply(organizedGraph, service, request);
-        var resource = BuildPublishedResource(
-            request,
-            layerId,
-            storageConnectionId,
-            resourcePrimaryKeyColumn,
-            resourceGeometryColumn,
-            geometryType,
-            srid,
-            storage.StorageSrid,
-            storageCoordinateEpoch,
-            fields,
-            extent,
-            now);
-        var binding = BuildPublishedStorageBinding(
-            request,
-            storage,
-            new PublishedStorageBindingContext(layerId, resource.Metadata.Id, now)
-            {
-                TemporalColumn = ResolveTemporalColumnForPublish(request.TemporalColumn, fields)
-            });
-        var featurePublication = BuildPublishedPublication(
-            service,
-            resource,
-            binding,
-            layerIdText,
-            graphLayerKey,
-            request.LayerName.Trim(),
-            MetadataV2LayerType.EsriFeatureLayer,
-            isPrimary: true,
-            idPrefix: "pub",
-            request.Enabled,
-            now,
-            capabilities);
-        var stacPublication = string.IsNullOrWhiteSpace(storage.GeometryColumn) ? null : BuildPublishedPublication(
-            service,
-            resource,
-            binding,
-            layerIdText,
-            graphLayerKey,
-            request.LayerName.Trim(),
-            MetadataV2LayerType.StacCollection,
-            isPrimary: false,
-            idPrefix: "pub-stac",
-            request.Enabled,
-            now);
-        var connection = BuildPublishedConnection(storageConnectionId, now);
-        if (connection is not null)
-        {
-            connection = connection with
-            {
-                Metadata = PreserveDependencyMetadata(
-                    graph.Connections.FirstOrDefault(candidate => candidate.Metadata.Id == connection.Metadata.Id)?.Metadata,
-                    connection.Metadata,
-                    publicationScope)
-            };
-        }
-        resource = resource with { Metadata = ApplyPublicationScope(resource.Metadata, publicationScope) };
-        binding = binding with { Metadata = ApplyPublicationScope(binding.Metadata, publicationScope) };
-        featurePublication = featurePublication with { Metadata = ApplyPublicationScope(featurePublication.Metadata, publicationScope) };
-        if (stacPublication is not null)
-        {
-            stacPublication = stacPublication with { Metadata = ApplyPublicationScope(stacPublication.Metadata, publicationScope) };
-        }
-        service = service with
-        {
-            PublicationIds = service.PublicationIds
-                .Append(featurePublication.Metadata.Id)
-                .Concat(stacPublication is null ? [] : new[] { stacPublication.Metadata.Id })
-                .Distinct(StringComparer.Ordinal)
-                .ToArray()
-        };
-
-        if (styleResourceIds.Count > 0)
-        {
-            resource = resource with { StyleResourceIds = styleResourceIds };
-        }
-
-        var resourcesWithStyles = UpsertById(graph.Resources, resource, static item => item.Metadata.Id);
-        // codeql[cs/linq/missed-select]: folds each style into the graph with UpsertById and preserved dependency metadata
-        foreach (var styleResource in styleResources)
-        {
-            var scopedStyle = styleResource with
-            {
-                Metadata = PreserveDependencyMetadata(
-                    graph.Resources.FirstOrDefault(candidate => candidate.Metadata.Id == styleResource.Metadata.Id)?.Metadata,
-                    styleResource.Metadata,
-                    publicationScope)
-            };
-            resourcesWithStyles = UpsertById(resourcesWithStyles, scopedStyle, static item => item.Metadata.Id);
-        }
-
-        var updatedGraph = graph with
-        {
-            Revision = Math.Max(graph.Revision + 1, 1),
-            GeneratedAt = now,
-            Folders = organizedGraph.Folders,
-            Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
-            Resources = resourcesWithStyles,
-            StorageBindings = UpsertById(graph.StorageBindings, binding, static item => item.Metadata.Id),
-            Publications = stacPublication is null
-                ? UpsertPublication(graph.Publications, featurePublication)
-                : UpsertPublication(
-                UpsertPublication(graph.Publications, featurePublication),
-                stacPublication),
-            Connections = connection is null
-                ? graph.Connections
-                : UpsertById(graph.Connections, connection, static item => item.Metadata.Id)
-        };
-
+        var service = BuildPublishedService(graph, plan.ServiceName, plan.Srid, plan.GeneratedAt);
+        service = service with { Metadata = ApplyPublicationScope(service.Metadata, plan.Scope) };
+        var organizedGraph = PublishedImportTarget.PrepareFolder(graph, plan.Request, service.Metadata.Tenant);
+        service = PublishedImportTarget.BindService(organizedGraph, service, plan.Request);
+        service = PublishedServiceOrganization.Apply(organizedGraph, service, plan.Request);
+        var objects = BuildPublicationGraphObjects(plan, service);
+        var updatedGraph = AssemblePublicationGraph(plan, objects, organizedGraph);
         var validation = MetadataV2GraphValidator.Validate(updatedGraph);
         if (!validation.IsValid)
         {
             throw new InvalidOperationException(
                 $"Published layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
         }
-
         return updatedGraph;
+    }
+
+    private PublicationGraphObjects BuildPublicationGraphObjects(PublishedLayerGraphPlan plan, MetadataV2Service service)
+    {
+        var resource = BuildPublicationResource(plan);
+        var binding = BuildPublishedStorageBinding(plan.Request, plan.Storage,
+            new PublishedStorageBindingContext(plan.LayerId, resource.Metadata.Id, plan.GeneratedAt)
+            {
+                TemporalColumn = ResolveTemporalColumnForPublish(plan.Request.TemporalColumn, plan.Fields)
+            });
+        binding = binding with { Metadata = ApplyPublicationScope(binding.Metadata, plan.Scope) };
+        var objects = (Service: service, Resource: resource, Binding: binding);
+        var feature = BuildPlannedPublication(plan, objects, primary: true);
+        var stac = string.IsNullOrWhiteSpace(plan.Storage.GeometryColumn)
+            ? null : BuildPlannedPublication(plan, objects, primary: false);
+        service = service with
+        {
+            PublicationIds = service.PublicationIds.Append(feature.Metadata.Id)
+                .Concat(stac is null ? [] : new[] { stac.Metadata.Id })
+                .Distinct(StringComparer.Ordinal).ToArray()
+        };
+        return new PublicationGraphObjects
+        {
+            Service = service, Resource = resource, Binding = binding, Feature = feature, Stac = stac
+        };
+    }
+
+    private MetadataV2Object BuildPublicationResource(PublishedLayerGraphPlan plan)
+    {
+        // Managed storage belongs to the server, even when the source route has a connection ID.
+        var connectionId = plan.Storage.IsManagedStore ? null : plan.Request.ConnectionId;
+        var resource = BuildPublishedResource(plan.Request, plan.LayerId, connectionId,
+            plan.PrimaryKey, plan.GeometryColumn, plan.GeometryType, plan.Srid, plan.Storage.StorageSrid,
+            plan.StorageCoordinateEpoch, plan.Fields, plan.Extent, plan.GeneratedAt);
+        resource = resource with { Metadata = ApplyPublicationScope(resource.Metadata, plan.Scope) };
+        return plan.StyleResourceIds.Count > 0 ? resource with { StyleResourceIds = plan.StyleResourceIds } : resource;
+    }
+
+    private MetadataV2Layer BuildPlannedPublication(PublishedLayerGraphPlan plan,
+        (MetadataV2Service Service, MetadataV2Object Resource, MetadataV2StorageBinding Binding) objects, bool primary)
+    {
+        var connectionId = plan.Storage.IsManagedStore ? null : plan.Request.ConnectionId;
+        var publication = BuildPublishedPublication(objects.Service, objects.Resource, objects.Binding,
+            plan.LayerId.ToString(CultureInfo.InvariantCulture), BuildLayerGraphId("layer", plan.LayerId, connectionId),
+            plan.Request.LayerName.Trim(), primary ? MetadataV2LayerType.EsriFeatureLayer : MetadataV2LayerType.StacCollection,
+            primary, primary ? "pub" : "pub-stac", plan.Request.Enabled, plan.GeneratedAt,
+            primary ? plan.Capabilities : null);
+        return publication with { Metadata = ApplyPublicationScope(publication.Metadata, plan.Scope) };
+    }
+
+    private MetadataV2Graph AssemblePublicationGraph(PublishedLayerGraphPlan plan, PublicationGraphObjects objects,
+        MetadataV2Graph organizedGraph)
+    {
+        var graph = plan.Graph;
+        var connection = BuildPlannedConnection(plan);
+        return graph with
+        {
+            Revision = Math.Max(graph.Revision + 1, 1),
+            GeneratedAt = plan.GeneratedAt,
+            Folders = organizedGraph.Folders,
+            Services = UpsertById(graph.Services, objects.Service, static item => item.Metadata.Id),
+            Resources = BuildPlannedResources(plan, objects.Resource),
+            StorageBindings = UpsertById(graph.StorageBindings, objects.Binding, static item => item.Metadata.Id),
+            Publications = objects.Stac is null
+                ? UpsertPublication(graph.Publications, objects.Feature)
+                : UpsertPublication(UpsertPublication(graph.Publications, objects.Feature), objects.Stac),
+            Connections = connection is null ? graph.Connections
+                : UpsertById(graph.Connections, connection, static item => item.Metadata.Id)
+        };
+    }
+
+    private static IReadOnlyList<MetadataV2Object> BuildPlannedResources(PublishedLayerGraphPlan plan, MetadataV2Object resource)
+    {
+        var resources = UpsertById(plan.Graph.Resources, resource, static item => item.Metadata.Id);
+        foreach (var styleResource in plan.StyleResources)
+        {
+            var scopedStyle = styleResource with
+            {
+                Metadata = PreserveDependencyMetadata(
+                    plan.Graph.Resources.FirstOrDefault(candidate => candidate.Metadata.Id == styleResource.Metadata.Id)?.Metadata,
+                    styleResource.Metadata, plan.Scope)
+            };
+            resources = UpsertById(resources, scopedStyle, static item => item.Metadata.Id);
+        }
+        return resources;
+    }
+
+    private static MetadataV2Connection? BuildPlannedConnection(PublishedLayerGraphPlan plan)
+    {
+        var connectionId = plan.Storage.IsManagedStore ? null : plan.Request.ConnectionId;
+        var connection = BuildPublishedConnection(connectionId, plan.GeneratedAt);
+        return connection is null ? null : connection with
+        {
+            Metadata = PreserveDependencyMetadata(
+                plan.Graph.Connections.FirstOrDefault(candidate => candidate.Metadata.Id == connection.Metadata.Id)?.Metadata,
+                connection.Metadata, plan.Scope)
+        };
     }
 }

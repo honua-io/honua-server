@@ -51,9 +51,27 @@ internal sealed class ServicePublicationPreviewExecutor(IServiceProvider service
             throw new InvalidOperationException("Publication metadata changed while previewing. Create a new preview.");
         }
         var binding = await services.GetRequiredService<PublicationPreviewBindings>()
-            .CreateAsync(request, context, preview.MetadataBase, cancellationToken).ConfigureAwait(false);
+            .CreateAsync(request, new PublicationPreviewIdentity(context, preview.MetadataBase), cancellationToken).ConfigureAwait(false);
         var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
-        var details = new Dictionary<string, string>(StringComparer.Ordinal)
+        var details = BuildDetails(request, preview, binding);
+        return new OperationHandle
+        {
+            OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
+            OperationId = OperationId,
+            TenantId = context.TenantId,
+            CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
+            Status = OperationHandleStatus.Completed,
+            CreatedAt = now,
+            UpdatedAt = now,
+            MetadataRevision = preview.MetadataBase.Revision,
+            Result = new OperationResultSummary { Summary = "Previewed publication; no layer or route allocated.", Details = details }
+        };
+    }
+
+    private static Dictionary<string, string> BuildDetails(OperationRequest request, LayerPublicationPreview preview,
+        (string Reference, DateTimeOffset ExpiresAt) binding)
+    {
+        return new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["schema"] = request.Parameters["schema"]!,
             ["table"] = request.Parameters["table"]!,
@@ -70,18 +88,6 @@ internal sealed class ServicePublicationPreviewExecutor(IServiceProvider service
             ["plannedStorageBinding"] = JsonSerializer.Serialize(preview.StorageBinding, MetadataV2JsonContext.Default.MetadataV2StorageBinding),
             ["plannedPublications"] = "[" + string.Join(",", preview.Publications.Select(publication =>
                 JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Layer))) + "]"
-        };
-        return new OperationHandle
-        {
-            OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
-            OperationId = OperationId,
-            TenantId = context.TenantId,
-            CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
-            Status = OperationHandleStatus.Completed,
-            CreatedAt = now,
-            UpdatedAt = now,
-            MetadataRevision = preview.MetadataBase.Revision,
-            Result = new OperationResultSummary { Summary = "Previewed publication; no layer or route allocated.", Details = details }
         };
     }
 

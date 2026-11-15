@@ -69,11 +69,11 @@ public sealed class McpToolRosterDriftTests
     }
 
     [UnitTest]
-    public void ConnectionDiscovery_IsInPublishingViewsAndFullCatalog_AndRosterHas150Tools()
+    public void ConnectionDiscovery_IsInPublishingViewsAndFullCatalog_AndRosterHas151Tools()
     {
         var roster = Generate();
         var discovery = new[] { "honua_admin_connections_list", "honua_admin_connection_tables_list" };
-        roster.Static.Concat(roster.ProjectedAdmin).Should().HaveCount(150);
+        roster.Static.Concat(roster.ProjectedAdmin).Should().HaveCount(151);
         roster.ProjectedAdmin.Should().Contain(discovery);
         roster.ProjectedAdmin.Should().Contain("honua_admin_connection_layers_list");
         roster.Views.Values.SelectMany(static members => members)
@@ -83,6 +83,17 @@ public sealed class McpToolRosterDriftTests
         foreach (var (view, members) in roster.Views.Where(pair => pair.Key is not
                      (McpWorkflowViewCatalog.ConfigureViewName or McpWorkflowViewCatalog.SetupViewName)))
             members.Should().NotIntersectWith(discovery, view);
+    }
+
+    [UnitTest]
+    public void PublicationPreview_IsDiscoverableInConfigureAndFullCatalog()
+    {
+        const string preview = "honua_op_service_publication_preview";
+        var roster = Generate();
+        roster.ProjectedAdmin.Should().Contain(preview);
+        roster.Views[McpWorkflowViewCatalog.ConfigureViewName].Should().Contain(preview);
+        foreach (var (view, members) in roster.Views.Where(pair => pair.Key != McpWorkflowViewCatalog.ConfigureViewName))
+            members.Should().NotContain(preview, view);
     }
 
     [UnitTest]

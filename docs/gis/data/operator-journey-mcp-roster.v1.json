@@ -130,6 +130,27 @@
       ]
     },
     {
+      "toolName": "honua_op_service_publication_preview",
+      "operationId": "service.publication.preview",
+      "mode": "read",
+      "inputFields": [
+        "connectionId",
+        "description",
+        "fields",
+        "folderId",
+        "geometryColumn",
+        "geometryType",
+        "layerName",
+        "namespace",
+        "primaryKey",
+        "publicName",
+        "schema",
+        "serviceName",
+        "srid",
+        "table"
+      ]
+    },
+    {
       "toolName": "honua_admin_services_access_policy_set",
       "operationId": "admin.services.access-policy.set",
       "mode": "execute",

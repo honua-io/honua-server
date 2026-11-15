@@ -17,6 +17,7 @@ public sealed class OperationScopeMappingTests
     [InlineData("folder.delete", OperatorOperation.Publish)]
     [InlineData("service.move", OperatorOperation.Publish)]
     [InlineData("admin.layer.publish", OperatorOperation.Publish)]
+    [InlineData("service.publication.preview", OperatorOperation.Read)]
     [InlineData("style.apply-preset", OperatorOperation.Publish)]
     [InlineData("admin.connections.create", OperatorOperation.Create)]
     [InlineData("admin.import.upload", OperatorOperation.Create)]
@@ -43,6 +44,7 @@ public sealed class OperationScopeMappingTests
     [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("admin.layer.display.get", OperatorScopeCatalog.Read)]
+    [InlineData("service.publication.preview", OperatorScopeCatalog.Read)]
     [InlineData("admin.layer.spatial.set", OperatorScopeCatalog.Update)]
     public void LayerConfiguration_ScopeAuthority_AllowsMatchingScope(string operationId, string scope)
     {
@@ -55,6 +57,7 @@ public sealed class OperationScopeMappingTests
     [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("admin.layer.spatial.get", OperatorScopeCatalog.Discover)]
+    [InlineData("service.publication.preview", OperatorScopeCatalog.Discover)]
     [InlineData("admin.layer.display.set", OperatorScopeCatalog.Read)]
     public void LayerConfiguration_ScopeAuthority_RejectsInsufficientScope(string operationId, string scope)
     {

@@ -73,22 +73,45 @@ internal sealed partial class PostgreSqlLayerPublishingService
         NpgsqlConnection connection, PublicationSourceRequest source, CancellationToken cancellationToken)
     {
         var request = source.Request;
-        var connectionString = source.ConnectionString;
-        var schema = request.Schema.Trim();
-        var table = request.Table.Trim();
-        var serviceName = source.ServiceName;
+        var table = await ValidatePublicationSourceAsync(connection, source, cancellationToken).ConfigureAwait(false);
+        var (geometryColumn, geometryType) = ResolvePublicationGeometry(table, request);
+        var serviceSrid = await ResolveExistingServiceSridAsync(connection, source.ServiceName, cancellationToken)
+            .ConfigureAwait(false);
+        var srid = serviceSrid ?? request.Srid ?? table.Srid ?? 4326;
+        srid = srid > 0 ? srid : 4326;
+        var columns = SelectPublicationColumns(table, request);
+        var primaryKey = ResolvePublicationPrimaryKey(table, columns, request);
+        var prepared = new PreparedPublicationSource
+        {
+            Table = table,
+            GeometryColumn = geometryColumn,
+            GeometryType = geometryType,
+            Srid = srid,
+            StorageSrid = table.Srid is > 0 ? table.Srid.Value : srid,
+            SelectedColumns = columns,
+            PrimaryKeyColumn = primaryKey,
+            Fields = [],
+            AttributeColumns = []
+        };
+        return await CompletePublicationSourceAsync(connection, new PublicationSourceCompletion(source, prepared),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<TableInfo> ValidatePublicationSourceAsync(
+        NpgsqlConnection connection, PublicationSourceRequest source, CancellationToken cancellationToken)
+    {
+        var request = source.Request;
         var isManagedStore = request.StorageMode == LayerStorageMode.Managed || request.CreateEditableCopy;
-        var managedCopyTarget = source.ManagedCopyTarget;
         var validation = await ValidateTableForPublishCoreAsync(
-                connectionString,
+                source.ConnectionString,
                 new TablePublishValidationRequest
                 {
                     AllowEmptyTable = request.AllowEmptyTable,
                     ManagedStore = isManagedStore,
-                    Schema = schema,
-                    Table = table,
+                    Schema = request.Schema.Trim(),
+                    Table = request.Table.Trim(),
                     LayerName = request.LayerName,
-                    ServiceName = serviceName,
+                    ServiceName = source.ServiceName,
                     TargetSrid = request.Srid,
                     GeometryColumn = request.GeometryColumn,
                     PrimaryKey = request.PrimaryKey,
@@ -101,11 +124,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ConfigureAwait(false);
         ThrowIfPublishValidationFailed(validation, request.CreateEditableCopy);
 
-        var tableInfo = await ResolveTableInfoForValidationAsync(connection, schema, table, cancellationToken)
+        return await ResolveTableInfoForValidationAsync(connection, request.Schema.Trim(), request.Table.Trim(), cancellationToken)
             ?? throw new LayerPublishingException(
                 LayerPublishingErrorKind.NotFound,
-                $"Table '{schema}.{table}' was not found.");
+                $"Table '{request.Schema.Trim()}.{request.Table.Trim()}' was not found.");
 
+    }
+
+    private static (string? Column, string Type) ResolvePublicationGeometry(TableInfo tableInfo, LayerPublishRequest request)
+    {
         var geometryColumn = string.IsNullOrWhiteSpace(request.GeometryColumn)
             ? tableInfo.GeometryColumn
             : request.GeometryColumn;
@@ -142,15 +169,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
             _ => geometryType
         };
 
-        var serviceSrid = await ResolveExistingServiceSridAsync(connection, serviceName, cancellationToken)
-            .ConfigureAwait(false);
-        var srid = serviceSrid ?? request.Srid ?? tableInfo.Srid ?? 4326;
-        if (srid <= 0)
-        {
-            srid = 4326;
-        }
-        var storageSrid = tableInfo.Srid is > 0 ? tableInfo.Srid.Value : srid;
+        return (geometryColumn, geometryType);
+    }
 
+    private static List<ColumnInfo> SelectPublicationColumns(TableInfo tableInfo, LayerPublishRequest request)
+    {
         var columns = tableInfo.Columns;
         if (columns.Count == 0)
         {
@@ -167,6 +190,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 "No fields selected for publishing.");
         }
 
+        return selectedColumns;
+    }
+
+    private static ColumnInfo? ResolvePublicationPrimaryKey(TableInfo table, List<ColumnInfo> selectedColumns,
+        LayerPublishRequest request)
+    {
+        var isManagedStore = request.StorageMode == LayerStorageMode.Managed || request.CreateEditableCopy;
         var primaryKeyName = ResolvePrimaryKeyName(selectedColumns, request.PrimaryKey);
         if (primaryKeyName is null && (!isManagedStore || request.CreateEditableCopy))
         {
@@ -181,7 +211,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 string.Equals(col.Name, primaryKeyName, StringComparison.OrdinalIgnoreCase));
         if (primaryKeyColumn == null && (!isManagedStore || request.CreateEditableCopy))
         {
-            var existsInTable = columns.Any(col =>
+            var existsInTable = table.Columns.Any(col =>
                 string.Equals(col.Name, primaryKeyName, StringComparison.OrdinalIgnoreCase));
             var message = existsInTable
                 ? $"Primary key field '{primaryKeyName}' must be included in selected fields."
@@ -190,7 +220,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         // A managed-store layer takes its identity from the managed store, so its source key
-        // may be of any type, unselected or absent (honua-server#4859).
+        // may be of any type, unselected or absent.
         if (!isManagedStore || request.CreateEditableCopy)
         {
             var primaryKeyType = MapPostgresType(primaryKeyColumn!.DataType);
@@ -202,19 +232,31 @@ internal sealed partial class PostgreSqlLayerPublishingService
             }
         }
 
+        return primaryKeyColumn;
+    }
+
+    private sealed record PublicationSourceCompletion(PublicationSourceRequest Source, PreparedPublicationSource Prepared);
+
+    private async Task<PreparedPublicationSource> CompletePublicationSourceAsync(NpgsqlConnection connection,
+        PublicationSourceCompletion completion, CancellationToken cancellationToken)
+    {
+        var source = completion.Source;
+        var prepared = completion.Prepared;
+        var request = source.Request;
+        var isManagedStore = request.StorageMode == LayerStorageMode.Managed || request.CreateEditableCopy;
         var fields = isManagedStore && !request.CreateEditableCopy
-            ? BuildManagedLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains)
-            : BuildLayerFields(selectedColumns, primaryKeyColumn!, geometryColumn, request.FieldDomains);
+            ? BuildManagedLayerFields(prepared.SelectedColumns, prepared.PrimaryKeyColumn, prepared.GeometryColumn, request.FieldDomains)
+            : BuildLayerFields(prepared.SelectedColumns, prepared.PrimaryKeyColumn!, prepared.GeometryColumn, request.FieldDomains);
         var attributeColumns = isManagedStore && !request.CreateEditableCopy
-            ? SelectManagedAttributeColumns(selectedColumns, primaryKeyColumn, geometryColumn)
-            : selectedColumns;
+            ? SelectManagedAttributeColumns(prepared.SelectedColumns, prepared.PrimaryKeyColumn, prepared.GeometryColumn)
+            : prepared.SelectedColumns;
 
         var managedSchema = request.CreateEditableCopy
-            ? await ValidateManagedCopyTargetAsync(connection, fields, managedCopyTarget!, cancellationToken).ConfigureAwait(false)
+            ? await ValidateManagedCopyTargetAsync(connection, fields, source.ManagedCopyTarget!, cancellationToken).ConfigureAwait(false)
             : null;
         if (request.CreateEditableCopy)
         {
-            var primaryIndex = fields.FindIndex(field => field.Name.Equals(primaryKeyColumn!.Name, StringComparison.OrdinalIgnoreCase));
+            var primaryIndex = fields.FindIndex(field => field.Name.Equals(prepared.PrimaryKeyColumn!.Name, StringComparison.OrdinalIgnoreCase));
             fields[primaryIndex] = fields[primaryIndex] with { Type = MetadataV2FieldType.BigInteger };
             fields.Add(new LayerFieldInsert(ManagedSourceIdField, MetadataV2FieldType.BigInteger, null, true,
                 "Original source object ID for migration identity mapping; null for newly created features."));
@@ -223,18 +265,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // Reject a bad temporal column before any rows are copied; the graph projection resolves it again.
         _ = ResolveTemporalColumnForPublish(request.TemporalColumn, fields);
 
-        return new PreparedPublicationSource
-        {
-            Table = tableInfo,
-            GeometryColumn = geometryColumn,
-            GeometryType = geometryType,
-            Srid = srid,
-            StorageSrid = storageSrid,
-            SelectedColumns = selectedColumns,
-            PrimaryKeyColumn = primaryKeyColumn,
-            Fields = fields,
-            AttributeColumns = attributeColumns,
-            ManagedSchema = managedSchema
-        };
+        return prepared with { Fields = fields, AttributeColumns = attributeColumns, ManagedSchema = managedSchema };
     }
 }

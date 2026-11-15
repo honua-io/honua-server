@@ -25,7 +25,16 @@ internal static class ServicePublicationPreviewOperation
             Determinism = OperationDeterminism.RuntimeDynamic,
             SupportsDryRun = false
         },
-        InputSchema =
+        InputSchema = BuildInputs(),
+        OutputSchema = [
+            new OperationParameterDescriptor
+            {
+                Name = "previewReference", Title = "Retained preview reference", Required = true,
+                Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Text }
+            }
+        ]
+    };
+    private static OperationParameterDescriptor[] BuildInputs() =>
         [
             new OperationParameterDescriptor
             {
@@ -45,13 +54,6 @@ internal static class ServicePublicationPreviewOperation
             },
             .. ServicePublishOperation.BuildDescriptor().InputSchema
                 .Where(parameter => parameter.Name != PublicationPreviewBindings.ReferenceKey)
-        ],
-        OutputSchema = [
-            new OperationParameterDescriptor
-            {
-                Name = "previewReference", Title = "Retained preview reference", Required = true,
-                Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Text }
-            }
-        ]
-    };
+        ];
+
 }

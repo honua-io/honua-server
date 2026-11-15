@@ -41,7 +41,7 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services)
                 throw new InvalidOperationException("The approved publication metadata base is no longer current.");
             }
             await services.GetRequiredService<PublicationPreviewBindings>()
-                .VerifyAsync(prepared, context, currentBase, cancellationToken).ConfigureAwait(false);
+                .VerifyAsync(prepared, new PublicationPreviewIdentity(context, currentBase), cancellationToken).ConfigureAwait(false);
         }
         return prepared;
     }
