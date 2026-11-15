@@ -302,3 +302,9 @@ internal sealed class FailingInvalidator : ICdnInvalidator
     public Task<CdnInvalidationResult> InvalidateAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken = default)
         => Task.FromResult(new CdnInvalidationResult(CdnInvalidationOutcome.Failed, "refused"));
 }
+
+internal sealed class FixedOutcomeInvalidator(CdnInvalidationOutcome outcome) : ICdnInvalidator
+{
+    public Task<CdnInvalidationResult> InvalidateAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken = default)
+        => Task.FromResult(new CdnInvalidationResult(outcome, outcome.ToString()));
+}

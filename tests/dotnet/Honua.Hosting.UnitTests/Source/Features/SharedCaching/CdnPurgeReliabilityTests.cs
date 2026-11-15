@@ -147,4 +147,37 @@ public sealed class CdnPurgeReliabilityTests
     [InlineData(1000, 100)]
     public void BudgetReserve_RoundsUp(int limit, int expected)
         => SharedCachePurgeBacked.BudgetReserve(limit).Should().Be(expected);
+
+    [UnitTheory]
+    [InlineData(nameof(CdnInvalidationOutcome.Busy), true)]
+    [InlineData(nameof(CdnInvalidationOutcome.Failed), false)]
+    public async Task ShutdownFlush_OnlyARefusal_HoldsOffLongLifetimes(string outcome, bool expectedReach)
+    {
+        var options = Options();
+        var reliability = await PrimedReliabilityAsync(options);
+        var service = new CdnInvalidationService(
+            new FixedOutcomeInvalidator(Enum.Parse<CdnInvalidationOutcome>(outcome)),
+            NullLogger<CdnInvalidationService>.Instance,
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options), Reliability = reliability });
+        service.InvalidateWithNextWindow(["#honua-layer:3"]);
+
+        await service.FlushPendingAsync();
+
+        reliability.PurgesReachCdn().Should().Be(expectedReach, "a busy answer to a send without retries says too little");
+    }
+
+    [UnitTest]
+    public async Task PurgeSubmittedAfterTheShutdownFlush_LogsItsSettleInsteadOfSchedulingIt()
+    {
+        var logger = new RecordingLogger();
+        var service = new CdnInvalidationService(
+            new FixedOutcomeInvalidator(CdnInvalidationOutcome.Submitted), logger,
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(monthlyLimit: 0)) });
+        await service.FlushPendingAsync();
+
+        await service.InvalidateNowAsync(["#honua-layer:3"], CancellationToken.None);
+
+        _time.WaitingTimers.Should().Be(0);
+        logger.Messages.Should().Contain(message => message.StartsWith("A stopping task could not send", StringComparison.Ordinal));
+    }
 }
