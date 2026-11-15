@@ -191,7 +191,14 @@ public sealed class SceneOpenUsdManifestEndpointTests
             first.StatusCode.Should().Be(HttpStatusCode.OK);
             first.Headers.ETag.Should().NotBeNull();
 
-            first.Headers.ETag!.IsWeak.Should().Be(coding == "gzip");
+            // Only JSON is in the production compression set; the USDA stage keeps its strong validator.
+            var compressed = coding == "gzip" && asset == "tileset.json";
+            first.Headers.ETag!.IsWeak.Should().Be(compressed);
+            if (!compressed)
+            {
+                first.Content.Headers.ContentEncoding.Should().BeEmpty();
+            }
+
             using var request = new HttpRequestMessage(new HttpMethod(method), path);
             request.Headers.AcceptEncoding.ParseAdd(coding);
             request.Headers.IfNoneMatch.Add(first.Headers.ETag);
@@ -200,6 +207,45 @@ public sealed class SceneOpenUsdManifestEndpointTests
 
             response.StatusCode.Should().Be(HttpStatusCode.NotModified);
             response.Headers.ETag!.Tag.Should().Be(first.Headers.ETag!.Tag);
+        }
+        finally
+        {
+            await fixture.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/tileset.json")]
+    public async Task ConditionalProtectedSceneRead_Gzip_KeepsAcceptEncodingAndCredentialVary()
+    {
+        var fixtureRoot = NvidiaConstructionFixturePaths.ResolveFixtureRoot();
+        var fixture = await CreateFixtureAsync(
+            fixtureRoot,
+            NvidiaConstructionFixturePaths.MainSceneId,
+            NvidiaConstructionFixturePaths.MainTilesetFileName,
+            protectedScene: true).ConfigureAwait(false);
+
+        try
+        {
+            using var authenticated = fixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var path = $"/scenes/{NvidiaConstructionFixturePaths.MainSceneId}/tileset.json";
+            using var initial = new HttpRequestMessage(HttpMethod.Get, path);
+            initial.Headers.AcceptEncoding.ParseAdd("gzip");
+            using var first = await authenticated.SendAsync(initial).ConfigureAwait(false);
+            first.StatusCode.Should().Be(HttpStatusCode.OK);
+            first.Headers.ETag!.IsWeak.Should().BeTrue();
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, path);
+            request.Headers.AcceptEncoding.ParseAdd("gzip");
+            request.Headers.IfNoneMatch.Add(first.Headers.ETag);
+            using var response = await authenticated.SendAsync(request).ConfigureAwait(false);
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotModified);
+            response.Headers.Vary.Should().Contain("Accept-Encoding");
+            response.Headers.Vary.Should().Contain("Authorization");
+            response.Headers.Vary.Should().Contain("X-API-Key");
         }
         finally
         {

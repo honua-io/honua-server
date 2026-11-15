@@ -28,7 +28,7 @@ internal static class ConfigurationResponseETag
     internal static async ValueTask<string> ForResponseAsync(HttpContext context, string etag, string contentType)
     {
         var services = GetServices(context);
-        etag = WithContentCoding(context, etag, contentType);
+        etag = WithContentCoding(context, services, etag, contentType);
         var source = services?.GetService<IConfigurationGenerationSource>();
         if (source is null)
         {
@@ -54,9 +54,9 @@ internal static class ConfigurationResponseETag
         }
     }
 
-    private static string WithContentCoding(HttpContext context, string etag, string contentType)
+    private static string WithContentCoding(HttpContext context, IServiceProvider? services, string etag, string contentType)
     {
-        var compression = GetServices(context)?.GetService<IResponseCompressionProvider>();
+        var compression = services?.GetService<IResponseCompressionProvider>();
         if (compression is null || !IsCompressible(context, compression, contentType))
         {
             return etag;
