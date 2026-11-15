@@ -1510,3 +1510,10 @@ no security query suites and publishes no substitute success checks.
 OpenAPI governance admits changes to `scripts/ci/lib/python-resolve.sh`, the
 shared Python resolver sourced by its contract validator. A helper-only change
 therefore runs the consuming PR check under the existing non-draft condition.
+
+Docs Link Gate can run a newer workflow against an older PR head. When that head
+predates both the workflow-inventory generator and its template, it validates the
+existing documentation with the complete link and concept suite. A partial
+inventory generator/template pair or a failing generator remains an error. This
+compatibility path adds no jobs and preserves all documentation assertions.
+
