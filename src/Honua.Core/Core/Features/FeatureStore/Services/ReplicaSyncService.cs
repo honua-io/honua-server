@@ -626,7 +626,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         List<int> layerConflictSlots,
         List<string> layerConflictIds,
         ReplicaLayerApplyResult applyResult,
-        IReadOnlyDictionary<string, long> baseGenerations,
+        Dictionary<string, long> baseGenerations,
         long preBatchGeneration,
         long withheldBaseGeneration,
         bool canRecordConflicts,

@@ -14,7 +14,7 @@ public sealed partial class ReplicaSyncService
 
     private readonly record struct ConflictEvidenceCandidate(ReplicaSyncConflict Conflict, int Slot);
 
-    private static IReadOnlyDictionary<string, long> ResolveConflictBaseGenerations(
+    private static Dictionary<string, long> ResolveConflictBaseGenerations(
         ConflictEvidenceContext context,
         IEnumerable<ConflictEvidenceCandidate> candidates,
         ReplicaLayerApplyResult result)
