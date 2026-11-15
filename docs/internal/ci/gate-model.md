@@ -789,7 +789,9 @@ are rejected so a passing sibling cannot conceal a missing failure. Duplicate di
 in unrelated passing methods remain untouched in the merged results. Infrastructure and
 execution failures remain blocking. Each test command runs in a dedicated process group.
 Cancellation signals that group and its snapshotted descendants, including those that leave
-the group. Process discovery has a 0.2-second deadline, with group cleanup preserved
+the group. Signal handlers record cancellation; cleanup runs outside the active child wait
+so it cannot reenter the subprocess wait lock. The supervisor checks cancellation at most
+every 0.1 seconds. Process discovery has a 0.2-second deadline, with group cleanup preserved
 on discovery failure, followed by at most half a second before SIGKILL. Group escalation also reaches
 children forked after the snapshot. Required check names and minimum-execution checks remain
 unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at

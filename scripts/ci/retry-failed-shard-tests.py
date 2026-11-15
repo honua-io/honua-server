@@ -39,18 +39,12 @@ def terminate_test(child, signum):
 
 
 def call_test(command):
-    child = None
     cancellation_signal = None
-    cleanup_started = False
 
     def forward(signum, _frame):
-        nonlocal cancellation_signal, cleanup_started
+        nonlocal cancellation_signal
         if cancellation_signal is None:
             cancellation_signal = signum
-        if child is None or cleanup_started:
-            return
-        cleanup_started = True
-        terminate_test(child, cancellation_signal)
 
     previous = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
     try:
@@ -59,10 +53,18 @@ def call_test(command):
         # Standalone shards own a group for bounded signal escalation here.
         grouped = os.environ.get('HONUA_SERVER_TEST_TIMEOUT_FOREGROUND') == 'true'
         with subprocess.Popen(command, start_new_session=os.name == 'posix' and not grouped) as child:
-            if cancellation_signal is not None:
-                forward(cancellation_signal, None)
-            code = child.wait()
-            return -cancellation_signal if cancellation_signal is not None else code
+            # A signal handler must not reenter Popen.wait while its waitpid lock
+            # is held. Record cancellation, then clean up outside that wait.
+            while cancellation_signal is None:
+                try:
+                    code = child.wait(timeout=0.1)
+                    if cancellation_signal is None:
+                        return code
+                except subprocess.TimeoutExpired:
+                    continue
+            terminate_test(child, cancellation_signal)
+            child.wait()
+            return -cancellation_signal
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
