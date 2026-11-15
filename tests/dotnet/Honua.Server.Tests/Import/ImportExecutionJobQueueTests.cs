@@ -133,11 +133,10 @@ public sealed partial class ImportExecutionJobQueueTests
         (await manager.ProgressStore.GetProgressAsync(request.JobId!))!.Status.Should().Be(GeoservicesImportStatus.Cancelled);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(GeoservicesImportStatus.Completed)]
     [InlineData(GeoservicesImportStatus.NeedsReview)]
     [InlineData(GeoservicesImportStatus.Failed)]
-    [Trait("Category", "Unit")]
     public async Task SetProgressAsync_CommittedImportAfterCancellation_PreservesOutcome(GeoservicesImportStatus status)
     {
         var jobs = ImportExecutionTestJobs.Create();

@@ -21,10 +21,9 @@ public sealed partial class ImportJobExecutorTests
         Expired
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(LicenseRecoveryState.Valid)]
     [InlineData(LicenseRecoveryState.Expired)]
-    [Trait("Category", "Unit")]
     public async Task ExecuteAsync_CommitAcknowledgementLost_RecoversReceiptOnNextAttempt(LicenseRecoveryState licenseState)
     {
         var request = GeoservicesRequest(Guid.NewGuid().ToString("N"));

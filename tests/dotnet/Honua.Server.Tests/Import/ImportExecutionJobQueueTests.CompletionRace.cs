@@ -18,8 +18,7 @@ public sealed partial class ImportExecutionJobQueueTests
 {
     public enum ProgressRetention { Available, Expired }
 
-    [Theory]
-    [Trait("Category", "Unit")]
+    [UnitTheory]
     [InlineData(ProgressRetention.Available)]
     [InlineData(ProgressRetention.Expired)]
     public async Task GetProgressAsync_JobCompletesDuringRead_ReturnsFinalProgress(ProgressRetention retention)

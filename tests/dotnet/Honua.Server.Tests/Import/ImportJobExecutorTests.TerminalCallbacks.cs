@@ -7,14 +7,14 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
+using Honua.TestKit.Attributes;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
 public sealed partial class ImportJobExecutorTests
 {
-    [Fact]
-    [Trait("Category", "Unit")]
+    [UnitTest]
     public async Task ExecuteAsync_GeoServerTerminalCallback_PreservesReturnedFailureCount()
     {
         var request = GeoServerRequest(Guid.NewGuid().ToString("N"));
@@ -41,13 +41,12 @@ public sealed partial class ImportJobExecutorTests
         (await manager.ProgressStore.GetProgressAsync(request.JobId!))!.FailedResources.Should().Be(3);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(GeoservicesImportStatus.Completed, ExecutionJobStatus.Succeeded)]
     [InlineData(GeoservicesImportStatus.NeedsReview, ExecutionJobStatus.Succeeded)]
     [InlineData(GeoservicesImportStatus.Failed, ExecutionJobStatus.Succeeded)]
     [InlineData(GeoservicesImportStatus.Cancelled, ExecutionJobStatus.Succeeded)]
     [InlineData(GeoservicesImportStatus.Completed, ExecutionJobStatus.Failed)]
-    [Trait("Category", "Unit")]
     public async Task ExecuteAsync_ProviderTerminalCallbackBeforeResult_PreservesCompleteFinalOutcome(
         GeoservicesImportStatus callbackStatus, ExecutionJobStatus expectedStatus)
     {

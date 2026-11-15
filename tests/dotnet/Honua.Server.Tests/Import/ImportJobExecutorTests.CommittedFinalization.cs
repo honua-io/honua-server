@@ -10,6 +10,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -17,8 +18,7 @@ namespace Honua.Server.Tests.Import;
 
 public sealed partial class ImportJobExecutorTests
 {
-    [Fact]
-    [Trait("Category", "Unit")]
+    [UnitTest]
     public async Task ExecuteAsync_CommitAttestationFails_LeavesProgressRecoverable()
     {
         var request = PublishedGeoservicesRequest(Guid.NewGuid().ToString("N"), 4);
@@ -40,11 +40,10 @@ public sealed partial class ImportJobExecutorTests
         GeoservicesImportJobManager.IsTerminalStatus(progress.Status).Should().BeFalse();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(GeoservicesImportStatus.Completed, ExecutionJobStatus.Succeeded)]
     [InlineData(GeoservicesImportStatus.NeedsReview, ExecutionJobStatus.Succeeded)]
     [InlineData(GeoservicesImportStatus.Failed, ExecutionJobStatus.Failed)]
-    [Trait("Category", "Unit")]
     public async Task ProcessJob_CancellationAfterImportCommit_PreservesCommittedOutcome(
         GeoservicesImportStatus outcome, ExecutionJobStatus executionStatus)
     {
@@ -82,8 +81,7 @@ public sealed partial class ImportJobExecutorTests
         progress.PublishedLayerId.Should().Be(42);
     }
 
-    [Fact]
-    [Trait("Category", "Unit")]
+    [UnitTest]
     public async Task ExecuteAsync_LicenseExpiresDuringCommitReceipt_PreservesCommittedDetails()
     {
         using var license = new CancellationTokenSource();
