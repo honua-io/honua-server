@@ -32,10 +32,18 @@ internal sealed partial class PbfQueryFormatter
         var header = new ProtobufWriter(256);
         try
         {
-            var encoding = WriteFeatureHeader(ref header, result, resource,
-                GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
-                outputSrid ?? resource.ReadSrid() ?? 4326, returnGeometry, returnZ, returnM,
-                limits, outFields, quantizationTransform);
+            var encoding = WriteFeatureHeader(ref header, result, new FeatureHeaderOptions
+            {
+                Resource = resource,
+                ObjectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
+                Srid = outputSrid ?? resource.ReadSrid() ?? 4326,
+                ReturnGeometry = returnGeometry,
+                ReturnZ = returnZ,
+                ReturnM = returnM,
+                GeometryLimits = limits,
+                OutFields = outFields,
+                QuantizationTransform = quantizationTransform
+            });
             var featureResultLength = header.Position;
             // Protobuf lengths precede nested messages. Validate and count each feature
             // before sending headers, retaining only one encoded feature at a time.
@@ -88,6 +96,19 @@ internal sealed partial class PbfQueryFormatter
             length++;
         }
         return length;
+    }
+
+    private sealed record FeatureHeaderOptions
+    {
+        public required MetadataV2Object Resource { get; init; }
+        public required string ObjectIdFieldName { get; init; }
+        public int Srid { get; init; }
+        public bool ReturnGeometry { get; init; }
+        public bool ReturnZ { get; init; }
+        public bool ReturnM { get; init; }
+        public required GeometryLimits GeometryLimits { get; init; }
+        public string[]? OutFields { get; init; }
+        public QuantizationTransform? QuantizationTransform { get; init; }
     }
 
     private sealed record FeatureEncoding(GeoServicesFieldInfo[] Fields, Dictionary<string, int> FieldIndex,

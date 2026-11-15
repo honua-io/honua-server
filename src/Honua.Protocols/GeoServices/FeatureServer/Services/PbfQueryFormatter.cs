@@ -253,8 +253,18 @@ internal sealed partial class PbfQueryFormatter
         string[]? outFields,
         QuantizationTransform? quantizationTransform)
     {
-        var encoding = WriteFeatureHeader(ref writer, result, resource, objectIdFieldName, srid,
-            returnGeometry, returnZ, returnM, geometryLimits, outFields, quantizationTransform);
+        var encoding = WriteFeatureHeader(ref writer, result, new FeatureHeaderOptions
+        {
+            Resource = resource,
+            ObjectIdFieldName = objectIdFieldName,
+            Srid = srid,
+            ReturnGeometry = returnGeometry,
+            ReturnZ = returnZ,
+            ReturnM = returnM,
+            GeometryLimits = geometryLimits,
+            OutFields = outFields,
+            QuantizationTransform = quantizationTransform
+        });
         foreach (var feature in result.Items)
         {
             var message = EncodeFeature(feature, encoding);
@@ -277,16 +287,17 @@ internal sealed partial class PbfQueryFormatter
     private static FeatureEncoding WriteFeatureHeader(
         ref ProtobufWriter writer,
         QueryResult<Feature> result,
-        MetadataV2Object resource,
-        string objectIdFieldName,
-        int srid,
-        bool returnGeometry,
-        bool returnZ,
-        bool returnM,
-        GeometryLimits geometryLimits,
-        string[]? outFields,
-        QuantizationTransform? quantizationTransform)
+        FeatureHeaderOptions options)
     {
+        var resource = options.Resource;
+        var objectIdFieldName = options.ObjectIdFieldName;
+        var srid = options.Srid;
+        var returnGeometry = options.ReturnGeometry;
+        var returnZ = options.ReturnZ;
+        var returnM = options.ReturnM;
+        var geometryLimits = options.GeometryLimits;
+        var outFields = options.OutFields;
+        var quantizationTransform = options.QuantizationTransform;
         writer.WriteString(1, objectIdFieldName);
 
         var geometryType = resource.ReadGeometryType();
