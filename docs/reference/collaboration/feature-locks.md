@@ -41,7 +41,7 @@ page:
 | Manifest capability | What it reports |
 | --- | --- |
 | `collaboration.feature-locks` | `supported: true` — enforcement ships on every feature-write path. `available` is `true` only once you supply an [authorizer](#authorization) and, when a [deployment profile](../../guides/deploy/capability-deployment-profiles.md) is configured, that profile enables `collaboration.map-sessions`. Until an authorizer is supplied it is `false` with `reasonCode: disabled-by-configuration`, because a lease that can never be granted is not an available capability. A profile that omits `collaboration.map-sessions` removes the routes and reports `available: false` with `reasonCode: deployment-profile-excluded`. |
-| `collaboration.feature-locks.cross-node` | `lifecycle: implemented`; `supported` and `available` are true with the shared PostgreSQL store and false with the in-memory fallback. See [Persistence and node scope](#persistence-and-node-scope). |
+| `collaboration.feature-locks.cross-node` | `lifecycle: implemented`, `supported: true`. `available` is true when the host has the shared PostgreSQL store and an authorizer that can grant leases; otherwise `reasonCode` is `dependency-unavailable` (no shared store) or `disabled-by-configuration` (no authorizer). See [Persistence and node scope](#persistence-and-node-scope). |
 | `edit.geoservices-version-tokens` | `supported: false`, `lifecycle: planned`, `reasonCode: unsupported` — the GeoServices `applyEdits` surface honours no client-supplied version token. The row is named for that surface on purpose: OGC API Features **does** enforce `If-Match`/`412`, and a generically-named row would tell you to disable optimistic concurrency where it works. |
 
 That is the same shape the manifest already uses for an unimplemented file-format writer,
@@ -161,6 +161,11 @@ and are removed by retention sweeps.
 Hosts without the shared database use `InMemoryFeatureLockService`. Its leases remain local
 to the node that granted them and disappear when that process restarts. Use the PostgreSQL
 store when collaborative editing must span nodes.
+
+During the rolling upgrade that first brings the PostgreSQL store, nodes still on the earlier
+release keep their in-process leases, so a lease taken on an upgraded node does not block a
+write routed to a node that has not upgraded yet, and the reverse. Finish the rollout before
+relying on leases across nodes.
 
 ## Authorization
 

@@ -113,10 +113,10 @@ def test_mapping_to_a_nonexistent_key_fails():
 def test_a_declared_gap_may_not_name_a_capability_key():
     """The bucket exists because mapping a gap onto a served key lies twice.
 
-    `edit.geoservices-version-tokens` and `collaboration.feature-locks.cross-node`
-    are Planned registry entries the manifest publishes as supported:false. Both
-    were previously mapped onto working keys, which told clients those keys were
-    unavailable and hid the gap. Naming a key here must fail.
+    `edit.geoservices-version-tokens` is a Planned registry entry the manifest
+    publishes as supported:false. It was previously mapped onto a working key,
+    which told clients that key was unavailable and hid the gap. Naming a key
+    here must fail.
     """
     real = MODULE.ADJUDICATION
     payload = json.loads(real.read_text(encoding="utf-8"))

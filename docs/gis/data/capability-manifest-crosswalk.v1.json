@@ -71,7 +71,7 @@
       "kind": "Feature",
       "capability": "collaboration.map-sessions",
       "resolution": "mapped",
-      "note": "Leases are shared through the PostgreSQL lease store, so a lease claimed on one node blocks a competing write on another; a host without the system database keeps the in-process store and the manifest publishes supported:false there. Same licensed capability as collaboration.feature-locks."
+      "note": "Leases are shared through the PostgreSQL lease store, so a lease claimed on one node blocks a competing write on another; a host without the system database keeps the in-process store, and the manifest publishes available:false with reasonCode dependency-unavailable there. Same licensed capability as collaboration.feature-locks."
     },
     {
       "manifestId": "edit.features",

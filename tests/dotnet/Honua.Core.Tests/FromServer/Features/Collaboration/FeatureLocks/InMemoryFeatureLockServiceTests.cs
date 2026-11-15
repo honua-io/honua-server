@@ -18,6 +18,21 @@ public sealed class InMemoryFeatureLockServiceTests
 
     [UnitTest]
     [Operation(Operations.Security)]
+    public void Admits_RequiresTheRecordedPrincipal_AndFallsBackToClientFieldsWithoutOne()
+    {
+        var owner = Alice with { PrincipalName = "alice@example.test" };
+
+        owner.Admits(owner with { DisplayName = "Renamed" }).Should().BeTrue();
+        owner.Admits(owner with { PrincipalName = "other@example.test" }).Should().BeFalse();
+        owner.Admits(owner with { PrincipalName = null }).Should().BeFalse();
+        owner.Admits(owner with { SessionId = "session-b" }).Should().BeFalse();
+        Alice.Admits(Alice with { PrincipalName = "alice@example.test" }).Should().BeTrue(
+            "a lease taken outside an authenticated request is matched on the caller-supplied fields");
+        Alice.Admits(Alice with { HolderId = "bob" }).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
     public async Task Mutations_DifferentPrincipal_PreserveOriginalLease()
     {
         var service = new InMemoryFeatureLockService(new MutableTimeProvider(Instant()));

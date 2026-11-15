@@ -530,9 +530,14 @@ internal sealed class CapabilityManifestService(
             Capability("collaboration.feature-locks", "collaboration", context,
                 configured: runtimeInventory.FeatureLockAuthorizerConfigured,
                 requiresAuthentication: true),
-            // PostgreSQL-backed leases span nodes; the local fallback does not.
+            // Cross-node leases need the PostgreSQL store, and like every lease they need an authorizer that
+            // can grant one. Without the store the in-process fallback is a missing dependency, not a gap.
             Capability("collaboration.feature-locks.cross-node", "collaboration", context,
-                supported: runtimeInventory.HasSharedFeatureLockStore),
+                configured: runtimeInventory.HasSharedFeatureLockStore && runtimeInventory.FeatureLockAuthorizerConfigured,
+                unavailableReasonOverride: runtimeInventory.HasSharedFeatureLockStore
+                    ? null
+                    : CapabilityReasonCodes.DependencyUnavailable,
+                requiresAuthentication: true),
             Capability("edit.geoservices-version-tokens", "edit", context,
                 maturity: CapabilityMaturity.Planned,
                 supported: false),
@@ -716,7 +721,9 @@ internal sealed class CapabilityManifestService(
             },
             ["collaboration.feature-locks.cross-node"] = new()
             {
-                Supported = runtimeInventory.HasSharedFeatureLockStore,
+                Configured = runtimeInventory.HasSharedFeatureLockStore && runtimeInventory.FeatureLockAuthorizerConfigured,
+                UnavailableReason = runtimeInventory.HasSharedFeatureLockStore ? null : CapabilityReasonCodes.DependencyUnavailable,
+                RequiresAuthentication = true,
             },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },

@@ -26,7 +26,7 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
         }
         return MutateAsync<FeatureLockClaimResponse>(feature, (existing, now) =>
         {
-            if (existing is not null && !IsSameHolder(existing.Holder, holder))
+            if (existing is not null && !existing.Holder.Admits(holder))
             {
                 return (new(FeatureLockClaimStatus.HeldByOther, Error: FeatureLockHeldError.FromLease(existing)), existing);
             }
@@ -51,7 +51,7 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
             {
                 return (new(FeatureLockRenewStatus.NotFound), null);
             }
-            if (!IsSameHolder(existing.Holder, holder))
+            if (!existing.Holder.Admits(holder))
             {
                 return (new(FeatureLockRenewStatus.HeldByOther, Error: FeatureLockHeldError.FromLease(existing)), existing);
             }
@@ -75,7 +75,7 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
             {
                 return (new(FeatureLockReleaseStatus.NotFound, feature), null);
             }
-            return !IsSameHolder(existing.Holder, holder)
+            return !existing.Holder.Admits(holder)
                 ? (new(FeatureLockReleaseStatus.HeldByOther, feature, Error: FeatureLockHeldError.FromLease(existing)), existing)
                 : (new(FeatureLockReleaseStatus.Released, feature, ReleasedLease: existing), null);
         }, cancellationToken);
@@ -132,11 +132,15 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
         => await database.ExecuteAsync(async (connection, _, token) =>
         {
             await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
-            // This also serializes claims for a feature that has no row yet. Include the schema
-            // in the lock key so independently hosted catalogues do not block each other.
-            await using (var gate = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))", connection, transaction))
+            // This also serializes claims for a feature that has no row yet, so it is what prevents a double grant.
+            // The key is built from the table (schema included, so separate catalogues do not block each other) and
+            // the key columns in a fixed format, so tasks of different versions take the same lock during a rollout.
+            await using (var gate = new NpgsqlCommand(
+                "SELECT pg_advisory_xact_lock(hashtextextended(concat_ws('|', @table, @service, @layer::text, @feature), 0))",
+                connection, transaction))
             {
-                gate.Parameters.AddWithValue("key", _table + JsonSerializer.Serialize(feature, FeatureLockStoreJsonContext.Default.FeatureRef));
+                gate.Parameters.AddWithValue("table", _table);
+                AddKey(gate, feature);
                 await gate.ExecuteNonQueryAsync(token).ConfigureAwait(false);
             }
             DateTimeOffset now;
@@ -147,7 +151,11 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
             var mutation = new LeaseMutation(transaction, feature, _table);
             var existing = await mutation.ReadAsync(now, token).ConfigureAwait(false);
             var (result, lease) = transition(existing, now);
-            await mutation.WriteAsync(lease, token).ConfigureAwait(false);
+            // A refusal returns the live lease unchanged, and rewriting it would only add a row version.
+            if (lease is null || !ReferenceEquals(lease, existing))
+            {
+                await mutation.WriteAsync(lease, token).ConfigureAwait(false);
+            }
             await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
             return result;
         }, StatementRepeat.NotAfterSend, cancellationToken).ConfigureAwait(false);
@@ -199,21 +207,6 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
     private static FeatureLockLease Renew(FeatureLockLease lease, TimeSpan duration, DateTimeOffset now)
         => lease with { RenewedAt = now, ExpiresAt = now.Add(duration) };
 
-    private static bool IsSameHolder(LockHolder existing, LockHolder candidate)
-    {
-        if (!string.Equals(existing.PrincipalName, candidate.PrincipalName, StringComparison.Ordinal)
-            || !string.Equals(existing.HolderId, candidate.HolderId, StringComparison.Ordinal))
-        {
-            return false;
-        }
-        if (!string.IsNullOrWhiteSpace(existing.SessionId) || !string.IsNullOrWhiteSpace(candidate.SessionId))
-        {
-            return string.Equals(existing.SessionId, candidate.SessionId, StringComparison.Ordinal);
-        }
-        return string.IsNullOrWhiteSpace(existing.TenantId) && string.IsNullOrWhiteSpace(candidate.TenantId)
-            || string.Equals(existing.TenantId, candidate.TenantId, StringComparison.Ordinal);
-    }
-
     private static void Validate(FeatureRef feature)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(feature.ServiceName);
@@ -231,6 +224,5 @@ internal sealed class PostgresFeatureLockService(JobStoreDatabase database) : IF
     }
 }
 
-[JsonSerializable(typeof(FeatureRef))]
 [JsonSerializable(typeof(FeatureLockLease))]
 internal sealed partial class FeatureLockStoreJsonContext : JsonSerializerContext;

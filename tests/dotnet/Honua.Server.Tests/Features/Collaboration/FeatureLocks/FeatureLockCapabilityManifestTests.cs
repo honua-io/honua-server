@@ -119,14 +119,17 @@ public sealed class FeatureLockCapabilityManifestTests
     }
 
     [IntegrationTheory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
+    [InlineData(false, false, true, null)]
+    [InlineData(true, false, true, null)]
+    [InlineData(false, false, false, "disabled-by-configuration")]
+    [InlineData(true, false, false, "disabled-by-configuration")]
+    [InlineData(false, true, true, "dependency-unavailable")]
+    [InlineData(true, true, true, "dependency-unavailable")]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task Manifest_CrossNodeSupport_FollowsSelectedStore(bool fromRegistry, bool localStore)
+    public async Task Manifest_CrossNodeAvailability_FollowsSelectedStoreAndAuthorizer(
+        bool fromRegistry, bool localStore, bool allowWrite, string? expectedReason)
     {
-        var fixture = CreateFixture(allowWrite: true, fromRegistry: fromRegistry);
+        var fixture = CreateFixture(allowWrite, fromRegistry);
         if (localStore)
         {
             fixture = fixture.ConfigureServices(services =>
@@ -139,9 +142,13 @@ public sealed class FeatureLockCapabilityManifestTests
         using var client = fixture.CreateAdminClient();
         using var document = await GetManifestAsync(client);
         var crossNode = Capability(document, CrossNodeCapability);
-        crossNode.GetProperty("supported").GetBoolean().Should().Be(!localStore);
-        crossNode.GetProperty("available").GetBoolean().Should().Be(!localStore);
+
+        crossNode.GetProperty("supported").GetBoolean().Should().BeTrue("shared leases are implemented");
         crossNode.GetProperty("lifecycle").GetString().Should().Be("implemented");
+        crossNode.GetProperty("available").GetBoolean().Should().Be(expectedReason is null);
+        (crossNode.TryGetProperty("reasonCode", out var reason) && reason.ValueKind != JsonValueKind.Null
+            ? reason.GetString()
+            : null).Should().Be(expectedReason);
     }
 
     [IntegrationTest]

@@ -39,7 +39,36 @@ public sealed record LockHolder(
     string? DisplayName = null,
     string? SessionId = null,
     string? TenantId = null,
-    string? PrincipalName = null);
+    string? PrincipalName = null)
+{
+    // Whether the candidate is this lease holder, for editing under the lease and for renewing or releasing it.
+    // The authenticated principal is the only field on a lease the caller did not choose, so it is the one that
+    // can prove ownership: when the lease records a principal, the candidate's must match it. Every other field
+    // arrives from the client, and a second editor that has seen a conflict response knows all of them. A lease
+    // with no principal was created outside an authenticated request and falls back to the caller-supplied fields.
+    public bool Admits(LockHolder candidate)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        if (!string.IsNullOrWhiteSpace(PrincipalName)
+            && !string.Equals(PrincipalName, candidate.PrincipalName, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.Equals(HolderId, candidate.HolderId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(SessionId) || !string.IsNullOrWhiteSpace(candidate.SessionId))
+        {
+            return string.Equals(SessionId, candidate.SessionId, StringComparison.Ordinal);
+        }
+
+        return (string.IsNullOrWhiteSpace(TenantId) && string.IsNullOrWhiteSpace(candidate.TenantId))
+            || string.Equals(TenantId, candidate.TenantId, StringComparison.Ordinal);
+    }
+}
 
 public sealed record FeatureLockLease(
     string LockId,

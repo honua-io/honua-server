@@ -82,7 +82,7 @@ public sealed class FeatureEditGuard : IFeatureEditGuard
         }
 
         // An active lease exists. It is satisfied only when the caller holds it.
-        if (intent.Holder is { } holder && IsSameHolder(lease.Holder, holder))
+        if (intent.Holder is { } holder && lease.Holder.Admits(holder))
         {
             return new LockEvaluation(Satisfied: true, HeldByOther: null);
         }
@@ -137,38 +137,6 @@ public sealed class FeatureEditGuard : IFeatureEditGuard
     }
 
     private static readonly LockHolder UnknownHolder = new("(none)");
-
-    private static bool IsSameHolder(LockHolder existing, LockHolder candidate)
-    {
-        // The authenticated principal is the only field on a lease the caller did not
-        // choose, so it is the one that can prove ownership. Every other field —
-        // HolderId, SessionId, TenantId — arrives from the client, and a second editor
-        // that has seen a conflict response knows all of them. When the lease records a
-        // principal, the writer's principal must match it; a lease with none was created
-        // outside an authenticated request and falls back to the caller-supplied fields.
-        if (!string.IsNullOrWhiteSpace(existing.PrincipalName) &&
-            !string.Equals(existing.PrincipalName, candidate.PrincipalName, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (!string.Equals(existing.HolderId, candidate.HolderId, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(existing.SessionId) || !string.IsNullOrWhiteSpace(candidate.SessionId))
-        {
-            return string.Equals(existing.SessionId, candidate.SessionId, StringComparison.Ordinal);
-        }
-
-        if (!string.IsNullOrWhiteSpace(existing.TenantId) || !string.IsNullOrWhiteSpace(candidate.TenantId))
-        {
-            return string.Equals(existing.TenantId, candidate.TenantId, StringComparison.Ordinal);
-        }
-
-        return true;
-    }
 
     private readonly record struct LockEvaluation(bool Satisfied, FeatureLockLease? HeldByOther);
 }

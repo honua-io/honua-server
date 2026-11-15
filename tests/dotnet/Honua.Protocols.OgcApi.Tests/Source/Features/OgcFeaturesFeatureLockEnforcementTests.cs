@@ -164,6 +164,32 @@ public sealed class OgcFeaturesFeatureLockEnforcementTests : IAsyncLifetime
             "neither protocol may write through another editor's lease");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task Replace_OnASecondTask_IsRefusedWhileTheFirstTaskHoldsTheLease_AndAcceptedAfterRelease()
+    {
+        await using var secondTask = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ShareSchemaWith(_fixture);
+        await secondTask.InitializeAsync();
+        secondTask.EnableV2ServiceEditingCapabilities(ServiceName, ["Create", "Update", "Delete"]);
+        var objectId = await _fixture.InsertFeatureAsync(TestLayerId, "two-task-original");
+        await ClaimLeaseAsync(objectId);
+        var path = $"/ogc/features/collections/{TestLayerId}/items/{objectId}";
+
+        using (var intruder = ReplacementBody(objectId, "two-task-intruder"))
+        {
+            (await secondTask.Client.PutAsync(path, intruder)).StatusCode.Should().Be(HttpStatusCode.Locked);
+        }
+        (await ReadStoredNameAsync(objectId)).Should().Be("two-task-original", "a lease taken on one task binds the other");
+
+        var release = await _fixture.GetService<IFeatureLockService>().ReleaseAsync(
+            FeatureRef.Canonical(ServiceName, TestLayerId, objectId), new LockHolder(Holder), FeatureLockAccessContext.AuthorizedWrite);
+        release.Status.Should().Be(FeatureLockReleaseStatus.Released);
+        using var afterRelease = ReplacementBody(objectId, "two-task-after-release");
+        (await secondTask.Client.PutAsync(path, afterRelease)).IsSuccessStatusCode.Should().BeTrue();
+        (await ReadStoredNameAsync(objectId)).Should().Be("two-task-after-release");
+    }
+
     private async Task ClaimLeaseAsync(long objectId)
     {
         var claim = await _fixture.GetService<IFeatureLockService>().ClaimAsync(
