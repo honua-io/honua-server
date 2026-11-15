@@ -1,7 +1,11 @@
 name: auto-merge ready pull requests
 
+# pull_request_target: this job holds the bot App key, so it runs the trunk copy of this file and
+# its ref is trunk, which the bot-app environment's trunk-only deployment rule admits. The key is
+# out of a branch's reach only once it lives in that environment instead of the repository. The
+# job checks out nothing and only calls the API.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, ready_for_review, reopened, synchronize, labeled, unlabeled, converted_to_draft, edited]
 
 permissions: {}
@@ -20,6 +24,7 @@ jobs:
       && (github.event.pull_request.base.ref == 'trunk' || github.event.action == 'edited')
       && (!github.event.pull_request.draft || github.event.action == 'converted_to_draft')
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-24.04' }}
+    environment: bot-app
     timeout-minutes: 5
     steps:
       - name: Create repository-scoped bot token
@@ -70,6 +75,10 @@ jobs:
             }
             if (!eligible) {
               core.notice('Auto-merge disabled or unchanged: live pull request is ineligible.');
+              return;
+            }
+            if (pr.mergeStateStatus === 'DIRTY') {
+              core.notice('PR has merge conflicts; auto-merge is armed after the branch is updated.');
               return;
             }
             if (['CLEAN', 'UNSTABLE', 'HAS_HOOKS'].includes(pr.mergeStateStatus)) {
