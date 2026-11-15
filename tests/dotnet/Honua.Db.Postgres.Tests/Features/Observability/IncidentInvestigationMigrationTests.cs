@@ -52,7 +52,7 @@ public sealed class IncidentInvestigationMigrationTests(PostgresFixture fixture)
     [InlineData(6, 1)]
     [InlineData(1, 0)]
     [InlineData(1, 9)]
-    [IntegrationTest]
+    [Trait("Category", "Integration")]
     public async Task Migration_RejectsUndefinedReferenceKinds(int linkKind, int pinKind)
     {
         await WithSchemaAsync(async schema =>
