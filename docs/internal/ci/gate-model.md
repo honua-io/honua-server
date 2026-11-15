@@ -686,11 +686,13 @@ REST reports `claude[bot]`, GraphQL reports `claude`. **The gate reads GraphQL**
 in production — a registry that accepted only `claude[bot]` would make every
 review the lane posts invisible to the gate.
 
-`claude` is also a real GitHub User, and a User can hold a PAT, so it is accepted
-only when GitHub additionally types the author as a `Bot`. That is why every
-`author` selection in the snapshot query carries `__typename`, and why
-`reviewerFor(login, typename)` takes two arguments. Dropping `__typename` from
-the query silently disables the Claude identity.
+Both suffix-less spellings are ordinary account names (`claude` is a real GitHub
+User; `chatgpt-codex-connector` is a registered Organization), and an account can
+hold a PAT, so each is accepted only when GitHub additionally types the author as
+a `Bot`. That is why every `author` selection in the snapshot query carries
+`__typename`, and why `reviewerFor(login, typename)` takes two arguments.
+Dropping `__typename` from the query silently disables both identities, and the
+gate then fails open: reviewer threads and objections stop blocking.
 
 ### The Claude lane (retired)
 
