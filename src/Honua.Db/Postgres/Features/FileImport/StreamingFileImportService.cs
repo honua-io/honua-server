@@ -496,7 +496,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             var sourceSrid = request.SourceSrid ?? detectedSrid;
             if (!sourceSrid.HasValue)
             {
-                errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
+                errorMessage = await SourceSridRequiredMessageAsync(format.Value, shapefileScratch?.ShpPath, cancellationToken);
                 var validationErrors = SourceSridRequiredIssues(errorMessage);
                 result = ImportResult.CreateFailure(
                     request.TableName,

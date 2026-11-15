@@ -16,7 +16,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// Integration tests for CRS detection functionality
 /// </summary>
 [Collection("Database")]
-public class CrsDetectionServiceTests : IAsyncLifetime
+public partial class CrsDetectionServiceTests : IAsyncLifetime
 {
     private readonly PostgresFixture _fixture = new();
     private CrsDetectionService? _service;

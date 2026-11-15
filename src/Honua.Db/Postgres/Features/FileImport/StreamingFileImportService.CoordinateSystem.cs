@@ -80,6 +80,36 @@ internal sealed partial class StreamingFileImportService
             if (stream.CanSeek) stream.Position = 0;
         }
     }
+    private static async Task<string> SourceSridRequiredMessageAsync(
+        SupportedFileFormat format, string? shpPath, CancellationToken cancellationToken)
+    {
+        var message = $"Source SRID is required for {format} imports when CRS cannot be detected.";
+        if (shpPath != null)
+        {
+            var prjPath = Directory.EnumerateFiles(Path.GetDirectoryName(shpPath)!)
+                .FirstOrDefault(path => Path.GetExtension(path).Equals(".prj", StringComparison.OrdinalIgnoreCase));
+            if (prjPath != null)
+            {
+                try
+                {
+                    using var reader = File.OpenText(prjPath);
+                    var header = new char[512];
+                    var count = await reader.ReadBlockAsync(header.AsMemory(), cancellationToken);
+                    var text = new string(header, 0, count);
+                    var start = text.IndexOf('"');
+                    var end = start < 0 ? -1 : text.IndexOf('"', start + 1);
+                    if (end > start + 1)
+                    {
+                        var name = string.Concat(text[(start + 1)..end].Where(character => !char.IsControl(character)).Take(200));
+                        message += $" The .prj declares '{name}'.";
+                    }
+                }
+                catch (IOException) { /* The override remains actionable if the sidecar cannot be read. */ }
+            }
+        }
+        return message + " Set SourceSrid to the source EPSG code when uploading; use TargetSrid only to select the output coordinate system.";
+    }
+
     private static ImportValidationIssue[] SourceSridRequiredIssues(string message) =>
         [ImportValidationIssue.Create(
             ImportValidationErrorCodes.SourceSridRequired,

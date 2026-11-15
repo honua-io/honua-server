@@ -220,7 +220,10 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         }
 
         // 4. Try to match against PostGIS spatial_ref_sys by WKT comparison
-        return await FindSridByWktMatchAsync(cleanedContent, cancellationToken);
+        var exactMatch = await FindSridByWktMatchAsync(cleanedContent, cancellationToken);
+        return exactMatch ?? (isProjected
+            ? await FindSridByProjectedParametersAsync(cleanedContent, cancellationToken)
+            : null);
     }
 
     /// <summary>
