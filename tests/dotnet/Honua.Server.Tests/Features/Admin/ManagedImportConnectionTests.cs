@@ -73,6 +73,49 @@ public sealed class ManagedImportConnectionTests
         Assert.Equal(0, encryption.EncryptCalls);
     }
 
+    [UnitTest]
+    public async Task NameAlreadyUsedForThisDatabaseAddsNothing()
+    {
+        var encryption = new RememberingEncryption();
+        var registry = new InMemorySecureConnectionRegistry();
+        await registry.CreateConnectionAsync(Seed("11111111-1111-4111-8111-111111111111", ManagedImportConnection.Name, ConnectionString));
+        using var services = Services(encryption, ConnectionString, registry);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        Assert.Single(await registry.GetAllConnectionsAsync());
+        Assert.Equal(0, encryption.EncryptCalls);
+    }
+
+    [UnitTest]
+    public async Task NameAlreadyUsedForAnotherDatabaseUsesTheBuiltInName()
+    {
+        var encryption = new RememberingEncryption();
+        var registry = new InMemorySecureConnectionRegistry();
+        await registry.CreateConnectionAsync(Seed(
+            "22222222-2222-4222-8222-222222222222",
+            ManagedImportConnection.Name,
+            "Host=elsewhere;Port=5432;Database=other;Username=other;Password=other"));
+        using var services = Services(encryption, ConnectionString, registry);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        var created = Assert.Single(await registry.GetActiveConnectionsAsync(), connection => connection.ConnectionId == ManagedImportConnection.Id);
+        Assert.Equal(ManagedImportConnection.FallbackName, created.Name);
+        Assert.Equal(2, (await registry.GetAllConnectionsAsync()).Count());
+    }
+
+    [UnitTest]
+    public async Task EncryptionFailureLeavesTheListUnchanged()
+    {
+        var registry = new InMemorySecureConnectionRegistry();
+        using var services = Services(new RememberingEncryption { Fail = true }, ConnectionString, registry);
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        Assert.Empty(await registry.GetAllConnectionsAsync());
+    }
+
     private static ServiceProvider Services(RememberingEncryption encryption, string? connectionString, ISecureConnectionRegistry? registry = null)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -90,9 +133,15 @@ public sealed class ManagedImportConnectionTests
     {
         public string? Stored { get; private set; }
         public int EncryptCalls { get; private set; }
+        public bool Fail { get; init; }
 
         public Task<byte[]> EncryptConnectionStringAsync(string connectionString)
         {
+            if (Fail)
+            {
+                throw new InvalidOperationException("The encryption key is not available.");
+            }
+
             EncryptCalls++;
             Stored = connectionString;
             return Task.FromResult(System.Text.Encoding.UTF8.GetBytes(connectionString));
@@ -104,5 +153,25 @@ public sealed class ManagedImportConnectionTests
         public Task<int> GetCurrentKeyVersionAsync() => Task.FromResult(1);
         public Task<bool> ValidateEncryptionAsync() => Task.FromResult(true);
         public Task<int> RotateKeyAsync() => Task.FromResult(2);
+    }
+
+    private static DataConnection Seed(string id, string name, string connectionString)
+    {
+        var connectionId = Guid.Parse(id);
+        var connection = DataConnection.CreateWithEncryptedCredentials(
+            name,
+            "elsewhere",
+            5432,
+            "other",
+            "other",
+            System.Text.Encoding.UTF8.GetBytes(connectionString),
+            1,
+            "operator",
+            "operator connection",
+            sslRequired: false,
+            SslMode.Disable);
+        connection.ConnectionId = connectionId;
+        connection.Id = connectionId.ToString("D");
+        return connection;
     }
 }
