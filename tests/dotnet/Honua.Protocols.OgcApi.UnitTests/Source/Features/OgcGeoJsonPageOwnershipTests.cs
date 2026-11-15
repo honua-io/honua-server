@@ -25,7 +25,7 @@ public sealed class OgcGeoJsonPageOwnershipTests
     [InlineData(true)]
     public void Create_CanonicalFeatures_HaveIndependentResponseProperties(bool encoded)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [

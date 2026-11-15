@@ -15,16 +15,6 @@ internal sealed partial class MySqlFeatureQueryBuilder
     [GeneratedRegex(@"@p(\d+)", RegexOptions.CultureInvariant)]
     private static partial Regex NamedParameterRegex();
 
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ComparisonRegex();
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex NullCheckRegex();
-
     private static void AppendWhereClause(
         StringBuilder sb,
         MySqlLayerMapping mapping,
@@ -226,32 +216,17 @@ internal sealed partial class MySqlFeatureQueryBuilder
         // Minimal safe parser for legacy WHERE strings — restricts to single-field comparisons
         // and IS [NOT] NULL chained by AND. CQL2/OGC filters should reach here as SqlFilter
         // (via ISqlFilterTranslator), not Where.
-        var expressions = WhereClauseSplitter.SplitOnAnd(whereClause);
-        if (expressions.Count == 0)
+        var translated = new List<string>();
+        foreach (var expression in LegacyWhereClauseParser.Parse(WhereClauseSplitter.SplitOnAnd(whereClause), LegacyWhereGrammar.Basic))
         {
-            throw new ArgumentException("WHERE clause format not supported.");
-        }
-
-        var translated = new List<string>(expressions.Count);
-        // Not rewritten as .Select(): each iteration is a multi-branch parser that can
-        // throw, mutate the shared `paramIndex`/`parameters` accumulators, and `continue`
-        // early per branch -- not a pure map of one iteration variable to another.
-        foreach (var expr in (expressions).Select(raw => raw.Trim()))
-        {
-            if (expr.Length == 0)
-            {
-                throw new ArgumentException("WHERE clause format not supported.");
-            }
-
-            if (expr.Equals("1=1", StringComparison.Ordinal) ||
-                expr.Equals("TRUE", StringComparison.OrdinalIgnoreCase))
+            if (expression.Kind == LegacyWhereExpressionKind.True)
             {
                 translated.Add("TRUE");
                 continue;
             }
 
-            var nullMatch = NullCheckRegex().Match(expr);
-            if (nullMatch.Success)
+            var nullMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var field = nullMatch.Groups["field"].Value;
                 MySqlIdentifier.ValidateFieldName(field);
@@ -262,14 +237,14 @@ internal sealed partial class MySqlFeatureQueryBuilder
                 continue;
             }
 
-            var compMatch = ComparisonRegex().Match(expr);
-            if (compMatch.Success)
+            var compMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.Comparison)
             {
                 var field = compMatch.Groups["field"].Value;
                 MySqlIdentifier.ValidateFieldName(field);
                 EnsureFieldIsConfigured(mapping, field);
-                var op = NormalizeOperator(compMatch.Groups["op"].Value);
-                var value = ParseValueToken(compMatch.Groups["value"].Value);
+                var op = LegacyWhereClauseParser.NormalizeOperator(compMatch.Groups["op"].Value, LegacyWhereGrammar.Basic);
+                var value = LegacyWhereClauseParser.ParseValueToken(compMatch.Groups["value"].Value);
                 translated.Add($"{MySqlIdentifier.Quote(field)} {op} @p{paramIndex++}");
                 parameters.Add(value);
                 continue;
@@ -303,34 +278,5 @@ internal sealed partial class MySqlFeatureQueryBuilder
         throw new ArgumentException(
             $"WHERE field '{field}' is not declared on layer {mapping.LayerId}.");
     }
-
-    private static string NormalizeOperator(string op) => op.Trim().ToUpperInvariant() switch
-    {
-        "NOT LIKE" => "NOT LIKE",
-        "LIKE" => "LIKE",
-        ">=" => ">=",
-        "<=" => "<=",
-        "!=" or "<>" => "!=",
-        "=" => "=",
-        ">" => ">",
-        "<" => "<",
-        _ => throw new ArgumentException($"Unsupported operator: {op}")
-    };
-
-    private static object ParseValueToken(string token)
-    {
-        if (token.StartsWith('\'') && token.EndsWith('\''))
-        {
-            return token[1..^1].Replace("''", "'", StringComparison.Ordinal);
-        }
-
-        if (decimal.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var num))
-        {
-            return num;
-        }
-
-        return token;
-    }
-
 
 }

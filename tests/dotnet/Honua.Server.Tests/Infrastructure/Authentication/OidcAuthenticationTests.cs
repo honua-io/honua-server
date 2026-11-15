@@ -46,19 +46,21 @@ public class OidcAuthenticationTests
     private const string TestConnectionEncryptionMasterKey = "AuthTestsConnectionMasterKey-123456";
     private const string TestAdminPassword = "TestAdminPassword123!";
     private readonly ITestOutputHelper _output;
+    private readonly DatabaseFixtureAdapter _database;
     private const string TestSigningKey = "ThisIsATestSigningKeyThatIsLongEnoughForHS256Algorithm!";
     private const string TestIssuer = "https://test-issuer.example.com";
     private const string TestAudience = "test-client-id";
 
-    public OidcAuthenticationTests(ITestOutputHelper output)
+    public OidcAuthenticationTests(DatabaseFixtureAdapter database, ITestOutputHelper output)
     {
+        _database = database;
         _output = output;
     }
 
     /// <summary>
     /// Helper method to configure WebApplicationFactory with OIDC settings.
     /// </summary>
-    private static WebApplicationFactory<Program> CreateOidcTestFactory(
+    private WebApplicationFactory<Program> CreateOidcTestFactory(
         Action<IWebHostBuilder>? configure = null,
         Dictionary<string, string?>? oidcSettings = null,
         string environmentName = "Test")
@@ -153,7 +155,7 @@ public class OidcAuthenticationTests
             });
     }
 
-    private static string TestPostgresConnectionString => TestConnectionStrings.DefaultPostgresConnectionString;
+    private string TestPostgresConnectionString => _database.ConnectionString;
 
     /// <summary>
     /// Service provider carrying an Enterprise-entitled license so claims transformation tests
@@ -196,7 +198,7 @@ public class OidcAuthenticationTests
                         SemanticRoles = ["geometry.primary"],
                     },
                 ],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,
@@ -211,7 +213,7 @@ public class OidcAuthenticationTests
                 layerIndex: 0,
                 storageBindingId: "binding-layer-0",
                 serviceLocalId: "0",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .Build();
 
         services.RemoveAll<IMetadataV2GraphProvider>();

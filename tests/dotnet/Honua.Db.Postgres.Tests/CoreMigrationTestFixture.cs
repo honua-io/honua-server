@@ -11,11 +11,26 @@ namespace Honua.Db.Postgres.Tests;
 /// </summary>
 internal static class CoreMigrationTestFixture
 {
-    public static Task ApplyMetadataV2Async(PostgresFixture fixture, string schema) =>
-        ApplyAsync(
+    public static async Task ApplyMetadataV2Async(PostgresFixture fixture, string schema)
+    {
+        await ApplyPreVocabularyMetadataV2Async(fixture, schema);
+        await ApplyAsync(
+            fixture,
+            schema,
+            "src", "Honua.Server", "Migrations", "186_ExpandMetadataV2Vocabulary.sql");
+    }
+
+    public static async Task ApplyPreVocabularyMetadataV2Async(PostgresFixture fixture, string schema)
+    {
+        await ApplyAsync(
             fixture,
             schema,
             "src", "Honua.Server", "Migrations", "031_CreateMetadataV2Snapshot.sql");
+        await ApplyAsync(
+            fixture,
+            schema,
+            "src", "Honua.Server", "Migrations", "155_CreateMetadataFieldHistory.sql");
+    }
 
     public static Task ApplyRasterLayerStatisticsAsync(PostgresFixture fixture, string schema) =>
         ApplyAsync(
@@ -39,8 +54,7 @@ internal static class CoreMigrationTestFixture
 
         var quotedSchema = $"\"{schema.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
         var sql = (await File.ReadAllTextAsync(RepositoryPaths.Resolve(migrationPath)))
-            .Replace("$HonuaSchema$", quotedSchema, StringComparison.Ordinal)
-            .Replace("honua.", $"{quotedSchema}.", StringComparison.Ordinal);
+            .Replace("$HonuaSchema$", quotedSchema, StringComparison.Ordinal);
 
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();

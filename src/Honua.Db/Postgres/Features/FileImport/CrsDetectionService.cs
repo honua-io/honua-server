@@ -211,7 +211,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
                 }
             }
         }
-        else if (TryMatchEsriProjectedName(cleanedContent, out var esriEpsg)
+        else if (TryMatchEsriProjectedName(cleanedContent) is int esriEpsg
                  && await ValidateSridAsync(esriEpsg, cancellationToken))
         {
             // 3. Common ESRI projected .prj files carry no authority node; match the projected
@@ -220,50 +220,51 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         }
 
         // 4. Try to match against PostGIS spatial_ref_sys by WKT comparison
-        return await FindSridByWktMatchAsync(cleanedContent, cancellationToken);
+        var textMatch = await FindSridByWktMatchAsync(cleanedContent, cancellationToken);
+        if (textMatch.HasValue || !isProjected)
+            return textMatch;
+
+        // 5. ESRI-dialect projected WKT (State Plane, national grids, Albers and Lambert projections) never
+        //    matches spatial_ref_sys text; compare its projection parameters, unit and datum instead.
+        return await FindSridByProjectedParametersAsync(cleanedContent, cancellationToken);
     }
 
-    /// <summary>
-    /// Attempts to map a common ESRI projected-CRS WKT name to its EPSG code without full PROJ
-    /// parsing. Handles a small explicit table (Web Mercator, World Mercator) and the WGS 84 /
-    /// NAD83 / ETRS89 UTM zone families. Returns <see langword="false"/> when the name is not a
-    /// recognized ESRI projected name, in which case detection falls through to the
-    /// spatial_ref_sys WKT match (or the caller must supply an explicit source SRID).
-    /// </summary>
-    private static bool TryMatchEsriProjectedName(string wktContent, out int epsg)
+    private static int? TryMatchEsriProjectedName(string wktContent)
     {
-        epsg = 0;
-
         var nameMatch = _projectedNameRegex.Match(wktContent);
         if (!nameMatch.Success)
-            return false;
+            return null;
 
         var name = nameMatch.Groups[1].Value.Trim();
 
-        if (_esriProjectedNameCodes.TryGetValue(name, out epsg))
-            return true;
+        if (_esriProjectedNameCodes.TryGetValue(name, out var explicitCode))
+            return explicitCode;
 
+        if (TryComputeEsriUtmCode(name) is int utmCode)
+            return utmCode;
+
+        return EsriProjectedCrsNames.TryGet(name);
+    }
+
+    private static int? TryComputeEsriUtmCode(string name)
+    {
         var utm = _esriUtmNameRegex.Match(name);
         if (!utm.Success)
-            return false;
+            return null;
 
         if (!int.TryParse(utm.Groups["zone"].Value, out var zone) || zone is < 1 or > 60)
-            return false;
+            return null;
 
         var north = string.Equals(utm.Groups["hemi"].Value, "N", StringComparison.OrdinalIgnoreCase);
         var datum = utm.Groups["datum"].Value;
 
         if (datum.StartsWith("WGS_1984", StringComparison.OrdinalIgnoreCase))
-        {
-            epsg = (north ? 32600 : 32700) + zone;
-            return true;
-        }
+            return (north ? 32600 : 32700) + zone;
 
         if (datum.StartsWith("NAD_1983", StringComparison.OrdinalIgnoreCase) && north)
         {
             // NAD83 UTM (northern hemisphere): EPSG 26901..26923 for zones 1..23.
-            epsg = 26900 + zone;
-            return true;
+            return 26900 + zone;
         }
 
         if ((datum.StartsWith("ETRS_1989", StringComparison.OrdinalIgnoreCase)
@@ -271,12 +272,10 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             && north)
         {
             // ETRS89 UTM: EPSG 25828..25838 for zones 28..38.
-            epsg = 25800 + zone;
-            return true;
+            return 25800 + zone;
         }
 
-        epsg = 0;
-        return false;
+        return null;
     }
 
     /// <summary>
@@ -570,6 +569,44 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             // Intentionally generic: any failure querying spatial_ref_sys (connection, timeout,
             // malformed WKT) should fall through to "no match" rather than propagate, so the
             // import can continue down the remaining SRID-detection fallbacks.
+            CrsLog.SridDetectionByWktFailed(_logger, ex);
+            return null;
+        }
+    }
+
+    // Returns the single EPSG projected CRS whose parameters, unit and datum match; none or several is no match.
+    private async Task<int?> FindSridByProjectedParametersAsync(string wktContent, CancellationToken cancellationToken)
+    {
+        // An unknown datum cannot be verified against a candidate, so it is never inferred.
+        var source = ProjectedCrsSignature.TryCreate(wktContent);
+        if (source?.Datum.EpsgCode is not { } datumCode)
+            return null;
+        try
+        {
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            using var command = new NpgsqlCommand(@"
+                SELECT srid, srtext
+                FROM spatial_ref_sys
+                WHERE auth_name = 'EPSG' AND srtext LIKE 'PROJCS[%' AND srtext LIKE ANY(@patterns)
+                  AND position(@datum IN srtext) > 0
+                LIMIT 20000", connection);
+            command.Parameters.AddWithValue("@patterns", ProjectedCrsSignature.ProjectionPatterns(source.Projection.Family).ToArray());
+            command.Parameters.AddWithValue("@datum", $"AUTHORITY[\"EPSG\",\"{datumCode}\"]");
+            var matches = new HashSet<int>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken) && matches.Count < 2)
+            {
+                var candidate = ProjectedCrsSignature.TryCreate(reader.GetString(1));
+                if (candidate is not null && source.Matches(candidate))
+                    matches.Add(reader.GetInt32(0));
+            }
+
+            return matches.Count == 1 ? matches.Single() : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            // Same contract as the text match: a spatial_ref_sys failure is "no match", and the import then asks
+            // for an explicit source SRID.
             CrsLog.SridDetectionByWktFailed(_logger, ex);
             return null;
         }

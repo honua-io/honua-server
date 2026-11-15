@@ -16,6 +16,7 @@
     "operation-initiation": "v1",
     "operation-human-approval": "v1",
     "coordinated-release-human-approval": "v1",
-    "normalization-envelope": "v3"
+    "normalization-envelope": "v3",
+    "publication-descriptor": "1.0"
   }
 }

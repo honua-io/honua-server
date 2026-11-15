@@ -142,6 +142,10 @@ class MultiProjectTests(unittest.TestCase):
     def test_shared_deadline_stops_detached_test_process(self):
         self.assert_deadline_cleanup(detach=True)
 
+    def test_shared_deadline_stops_test_when_discovery_times_out(self):
+        with patch.object(multi, 'descendant_pids', side_effect=lambda parent: {parent}):
+            self.assert_deadline_cleanup(detach=False)
+
     def assert_deadline_cleanup(self, detach):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

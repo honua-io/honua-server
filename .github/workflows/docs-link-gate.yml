@@ -36,6 +36,8 @@ on:
       - 'docs/gis/data/capability-matrix.v1.json'
       - 'docs/okf/**'
       - 'docs/llms.txt'
+      - 'docs/guides/workflows/stage-map.v1.json'
+      - 'docs/developer/api-specs/admin-api.json'
       - 'docs/.gitbook.yaml'
       # Shipped config the anchor manifest sweeps for runtime docs URLs.
       - 'docs/guides/deploy/examples/**'
@@ -52,10 +54,15 @@ on:
       - 'scripts/ci/check-okf-bundle.test.py'
       - 'scripts/ci/okf_frontmatter.py'
       - 'scripts/ci/gis_workflow.py'
+      - 'scripts/ci/check-workflow-stage-map.py'
+      - 'scripts/ci/check-workflow-stage-map.test.py'
+      - 'scripts/ci/retired-terms.v1.json'
       - 'scripts/ci/generate-okf-graph.py'
       - 'scripts/ci/generate-okf-graph.test.py'
       - 'scripts/ci/okf-requirements.txt'
       - 'scripts/ci/okf-bundle.v1.json'
+      - 'scripts/ci/generate-workflow-inventory.py'
+      - 'scripts/ci/workflow-inventory.template.md'
       - 'scripts/ci/generate-capability-concepts.py'
       - 'scripts/ci/generate-llms-txt.py'
       - 'scripts/ci/doc-wire-reference-allowlist.v1.json'
@@ -89,6 +96,11 @@ jobs:
 
       - name: Install the safe OKF YAML reader
         run: python3 -m pip install -r scripts/ci/okf-requirements.txt
+
+      - name: Regenerate trunk-owned documentation for validation
+        run: |
+          python3 scripts/ci/generate-workflow-inventory.py
+          python3 scripts/ci/generate-capability-concepts.py
 
       # The checker's own tests run first and are self-contained (synthetic docs
       # trees in temp directories). A checker that wrongly reports clean is the
@@ -126,6 +138,11 @@ jobs:
       # outside by a recorded decision rather than by being un-navigable.
       - name: Check the OKF concept bundle
         run: python3 scripts/ci/check-okf-bundle.py --summary
+
+      - name: Check the workflow stage vocabulary and source bindings
+        run: |
+          python3 scripts/ci/check-workflow-stage-map.test.py
+          python3 scripts/ci/check-workflow-stage-map.py --gaps
 
       - name: Check the derived OKF agent graph
         run: |

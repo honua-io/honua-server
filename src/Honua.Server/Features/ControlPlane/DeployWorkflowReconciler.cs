@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Microsoft.Extensions.Hosting;
 
 namespace Honua.ControlPlane;
@@ -21,8 +22,14 @@ internal sealed partial class DeployWorkflowReconciler(
         if (operation.CurrentPhase == ICheckpointedDeployBackend.PendingPhase)
         {
             // The marker is committed before migration starts. An interrupted migration is never
-            // automatically repeated because its outcome may be unknown.
-            var preparing = operation with { CurrentPhase = ICheckpointedDeployBackend.PreparingPhase, UpdatedAt = DateTimeOffset.UtcNow };
+            // automatically repeated because its outcome may be unknown, so admission is decided first.
+            await backend.EnsurePreparationAdmittedAsync(operation, cancellationToken).ConfigureAwait(false);
+            var preparing = operation with
+            {
+                CurrentPhase = ICheckpointedDeployBackend.PreparingPhase,
+                ErrorMessage = null,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
             if (!await workflowStore.TrySetAsync(preparing, cancellationToken: cancellationToken).ConfigureAwait(false)) return;
             var claimed = await workflowStore.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
             if (claimed is null || claimed.CurrentPhase != ICheckpointedDeployBackend.PreparingPhase) return;
@@ -41,32 +48,7 @@ internal sealed partial class DeployWorkflowReconciler(
 
         if (operation.CurrentPhase == ICheckpointedDeployBackend.RampPhase)
         {
-            var step = await ((IDeployBackend)backend).StartAsync(operation, cancellationToken).ConfigureAwait(false);
-            if (step.Status == WorkflowOperationStatus.Failed)
-            {
-                var rollback = await ((IDeployBackend)backend).RollbackAsync(operation, cancellationToken).ConfigureAwait(false);
-                var status = rollback.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack
-                    ? rollback.Status : WorkflowOperationStatus.ManualInterventionRequired;
-                var recovering = operation with
-                {
-                    Status = status,
-                    CurrentPhase = rollback.Message ?? "Canary ramp failed; rollback requested.",
-                    UpdatedAt = DateTimeOffset.UtcNow,
-                    CompletedAt = status == WorkflowOperationStatus.ManualInterventionRequired ? DateTimeOffset.UtcNow : null
-                };
-                await workflowStore.TrySetAsync(recovering, cancellationToken: cancellationToken).ConfigureAwait(false);
-                return;
-            }
-
-            var ramp = operation.Deploy?.CanaryRamp ?? throw new InvalidOperationException("Canary ramp is missing.");
-            var advanced = operation with
-            {
-                Status = WorkflowOperationStatus.Reconciling,
-                CurrentPhase = step.Message ?? "Canary step submitted.",
-                UpdatedAt = DateTimeOffset.UtcNow,
-                Deploy = operation.Deploy! with { CanaryRamp = ramp with { CurrentStepStartedAt = DateTimeOffset.UtcNow } }
-            };
-            await workflowStore.TrySetAsync(advanced, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await ReconcileRampAsync(operation, (IDeployBackend)backend, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -94,6 +76,7 @@ internal sealed partial class DeployWorkflowReconciler(
             {
                 Status = cutover.Status,
                 CurrentPhase = cutover.Message ?? "Deploy traffic shift submitted.",
+                ErrorMessage = cutover.Status == WorkflowOperationStatus.Failed ? cutover.Message : null,
                 UpdatedAt = DateTimeOffset.UtcNow,
                 CompletedAt = IsTerminal(cutover.Status) ? DateTimeOffset.UtcNow : null,
                 Deploy = operation.Deploy! with
@@ -282,6 +265,12 @@ internal sealed partial class DeployWorkflowReconciler(
                 Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
             }
         }
+        catch (DeployAdmissionBlockedException ex)
+        {
+            // Admission refused before mutation; keep the operation open so retry and rollback remain available.
+            Log.DeployAdmissionRefused(logger, operationId, ex.Message);
+            await RecordAdmissionRefusalAsync(reconciledVersion, ex, reconciliationCancellation.Token).ConfigureAwait(false);
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Update/rollback may stop the very host driving it. Keep the durable phase
@@ -420,7 +409,8 @@ internal sealed partial class DeployWorkflowReconciler(
             // independent of the operation-wide warmup window and preserves single-step behavior
             // (the default) when no ramp is configured. A backend-recommended rollback bypasses
             // the hold so provider-detected failures still settle promptly.
-            if (!checkpointStaged && string.IsNullOrWhiteSpace(rollbackReason) && current.Deploy?.Protection == null)
+            if (!checkpointStaged && string.IsNullOrWhiteSpace(rollbackReason) && current.Deploy?.Protection == null &&
+                current.CurrentPhase != ICheckpointedDeployBackend.RampPhase)
             {
                 var rampBakeHold = GetCanaryRampBakeHold(current);
                 if (rampBakeHold != null)
@@ -798,7 +788,7 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    private static async Task<WorkflowOperationRecord> ApplyPostActivationProtectionWindowAsync(
+    private static async Task<WorkflowOperationRecord> ApplyPostActivationProtectionWindowCoreAsync(
         WorkflowOperationRecord current,
         IDeployBackend backend,
         CancellationToken cancellationToken)
@@ -1079,7 +1069,28 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    internal static async Task<WorkflowOperationRecord> AdvanceOrPromoteAsync(
+    private async Task RecordAdmissionRefusalAsync(
+        WorkflowOperationRecord? operation, DeployAdmissionBlockedException refusal, CancellationToken cancellationToken)
+    {
+        if (operation is null || IsTerminal(operation.Status) || operation.ErrorMessage == refusal.Message)
+        {
+            return;
+        }
+
+        try
+        {
+            await workflowStore.TrySetAsync(
+                operation with { ErrorMessage = refusal.Message, UpdatedAt = DateTimeOffset.UtcNow },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+        {
+            // The refusal is already logged; the operation stays open and the next pass records it.
+            Log.WorkflowOperationReconcileFailed(logger, operation.OperationId, ex);
+        }
+    }
+
+    private static async Task<WorkflowOperationRecord> AdvanceOrPromoteCoreAsync(
         WorkflowOperationRecord current,
         IDeployBackend backend,
         CancellationToken cancellationToken)
@@ -1200,9 +1211,10 @@ internal sealed partial class DeployWorkflowReconciler(
 internal sealed class DeployWorkflowReconcilerBackgroundService(
     IWorkflowOperationStore workflowStore,
     IWorkflowOperationReconciler reconciler,
-    ILogger<DeployWorkflowReconcilerBackgroundService> logger) : BackgroundService
+    ILogger<DeployWorkflowReconcilerBackgroundService> logger,
+    PollWakeSignal<IWorkflowOperationStore>? wake = null) : BackgroundService
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    private readonly IdlePollPacer _pacer = new(wake);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -1210,9 +1222,12 @@ internal sealed class DeployWorkflowReconcilerBackgroundService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            _pacer.BeginPoll();
+            var idle = false;
             try
             {
                 var activeOperations = await workflowStore.ListActiveAsync(WorkflowOperationKind.Deploy, stoppingToken).ConfigureAwait(false);
+                idle = activeOperations.Count == 0;
                 foreach (var operation in activeOperations)
                 {
                     stoppingToken.ThrowIfCancellationRequested();
@@ -1240,7 +1255,7 @@ internal sealed class DeployWorkflowReconcilerBackgroundService(
                 DeployWorkflowReconciler.Log.WorkflowOperationPollLoopFailed(logger, ex);
             }
 
-            await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+            await (idle ? _pacer.WaitIdleAsync(stoppingToken) : _pacer.WaitAfterWorkAsync(stoppingToken)).ConfigureAwait(false);
         }
     }
 }

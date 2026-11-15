@@ -12,6 +12,10 @@ Tracked by issue **#1182**. The implementation lives in
 ## Surface
 
 All routes live under `/api/v1/analysis/...` and require admin authorization.
+When tenant resolution is enabled, tenant-bound administrators also require a
+platform administrator role; unbound bootstrap administrators remain supported.
+Saved-query previews and package estimates check read access to every referenced
+layer before reading data, including when tenant resolution is disabled.
 Responses are plain camelCase JSON DTOs, not the older `ApiResponse<T>`
 envelope. Null fields are omitted. Expected errors use the shared admin
 `application/problem+json` shape. Admin authorization is enforced before the

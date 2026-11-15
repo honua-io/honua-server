@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -47,12 +48,20 @@ public sealed partial class FeatureProviderQueryRouterTests
         var router = CreateRouter(connectionId, DataProviderNames.DuckDb, provider);
         var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
 
-        var activities = new List<Activity>();
+        using var parent = new Activity(nameof(FeatureProviderQueryRouterTests));
+        parent.Start();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = static source => source.Name == "Honua.Core.FeatureStore",
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activities.Add,
+            ActivityStopped = activity =>
+            {
+                if (activity.ParentSpanId == parent.SpanId)
+                {
+                    activities.Add(activity);
+                }
+            },
         };
         ActivitySource.AddActivityListener(listener);
 
@@ -87,12 +96,20 @@ public sealed partial class FeatureProviderQueryRouterTests
         var router = CreateRouter(connectionId, DataProviderNames.DuckDb, provider);
         var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
 
-        var activities = new List<Activity>();
+        using var parent = new Activity(nameof(FeatureProviderQueryRouterTests));
+        parent.Start();
+        var activities = new ConcurrentBag<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = static source => source.Name == "Honua.Core.FeatureStore",
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activities.Add,
+            ActivityStopped = activity =>
+            {
+                if (activity.ParentSpanId == parent.SpanId)
+                {
+                    activities.Add(activity);
+                }
+            },
         };
         ActivitySource.AddActivityListener(listener);
 
@@ -196,7 +213,7 @@ public sealed partial class FeatureProviderQueryRouterTests
         return provider.Object;
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
         CreateSnapshot(string connectionId, string providerName = DataProviderNames.DuckDb)
     {
         var service = new MetadataV2Service
@@ -204,10 +221,10 @@ public sealed partial class FeatureProviderQueryRouterTests
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-maps", Name = "Maps" },
             SpatialReference = MetadataV2SpatialReference.Wgs84
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-roads", Name = "roads" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-roads"],
             SchemaFields =
             [
@@ -227,7 +244,7 @@ public sealed partial class FeatureProviderQueryRouterTests
                 },
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.LineString,
@@ -248,13 +265,13 @@ public sealed partial class FeatureProviderQueryRouterTests
             Metadata = new MetadataV2ObjectMetadata { Id = connectionId, Name = "warehouse" },
             Provider = providerName
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-roads", Name = "roads" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = binding.Metadata.Id,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "1", IsNumeric = true }
+            Identifier = new MetadataV2LayerIdentifier { Value = "1", IsNumeric = true }
         };
         var graph = new MetadataV2Graph
         {

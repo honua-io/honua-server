@@ -124,6 +124,7 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
 
             if (!_request.Writer.TryWrite(new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, head)))
             {
+                RecordDropped(1);
                 CloseLocked(new RealtimeSubscriptionClosedException(RealtimeResetReasons.SlowConsumer));
                 return;
             }
@@ -177,9 +178,8 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
     private async Task ReplayUntilLiveAsync(CancellationToken cancellationToken)
     {
         var options = _dispatcher.Options;
-        var log = _dispatcher.Log;
         var family = _request.Family.Name;
-        var window = await log.ReadWindowAsync(family, cancellationToken).ConfigureAwait(false);
+        var window = await _dispatcher.ReadWindowAsync(family, cancellationToken).ConfigureAwait(false);
         var (position, reset) = StartPosition(window, options);
         if (reset is not null)
         {
@@ -190,7 +190,8 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
         while (true)
         {
             var before = position;
-            var page = await log.ReadAfterAsync(new(family, position, options.ReplayBatchSize, _scopes), cancellationToken)
+            var page = await _dispatcher.ReadAfterAsync(
+                new(family, position, _scopes, options.ReplayBatchSize), cancellationToken)
                 .ConfigureAwait(false);
 
             var current = await ReadRetentionGapAsync(page, before, cancellationToken).ConfigureAwait(false);
@@ -233,12 +234,12 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
     private async Task<RealtimeLogWindow?> ReadRetentionGapAsync(
         IReadOnlyList<RealtimeEvent> page, long position, CancellationToken cancellationToken)
     {
-        if (_scopes is null && page.Count > 0 && page[0].Sequence == position + 1)
+        if (_dispatcher.IsContiguous(_request.Family.Name) && _scopes is null && page.Count > 0 && page[0].Sequence == position + 1)
         {
             return null;
         }
 
-        var current = await _dispatcher.Log.ReadWindowAsync(_request.Family.Name, cancellationToken).ConfigureAwait(false);
+        var current = await _dispatcher.ReadWindowAsync(_request.Family.Name, cancellationToken).ConfigureAwait(false);
         return current.Oldest > position + 1 && position < current.Head ? current : null;
     }
 
@@ -255,7 +256,7 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
             return (window.Head, new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, window.Head));
         }
 
-        if (window.Head - after > options.ResumeMaxEvents)
+        if (_dispatcher.IsContiguous(_request.Family.Name) && window.Head - after > options.ResumeMaxEvents)
         {
             return (window.Head, new RealtimeDelivery.Reset(RealtimeResetReasons.TooFarBehind, window.Head));
         }
@@ -314,8 +315,22 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
 
         if (matches && !_request.Writer.TryWrite(new RealtimeDelivery.Event(realtimeEvent)))
         {
+            RecordDropped(1);
             _request.Writer.TryWrite(new RealtimeDelivery.Reset(RealtimeResetReasons.SlowConsumer, head));
             CloseLocked(new RealtimeSubscriptionClosedException(RealtimeResetReasons.SlowConsumer));
+        }
+    }
+
+    private bool MatchesOrFalse(RealtimeEvent realtimeEvent)
+    {
+        try
+        {
+            return Matches(realtimeEvent);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Only counting a drop; the filter's failure is reported where delivery evaluates it.
+            return false;
         }
     }
 
@@ -348,8 +363,29 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
         }
 
         _closed = true;
+        if (error is RealtimeSubscriptionClosedException { Reason: RealtimeResetReasons.SlowConsumer })
+        {
+            RealtimeMetrics.SlowConsumerClosed.Add(1, new KeyValuePair<string, object?>("family", Family.Name));
+        }
+
+        // On a failure, held events this session would have received are lost with its replay; a
+        // clean close (disconnect, drain) loses nothing the client still wanted.
+        if (error is not null)
+        {
+            // Held events at or below the position were already written by the replay pages.
+            RecordDropped(_handoff.Count(held => held.Sequence > _position && MatchesOrFalse(held)));
+        }
+
         _handoff.Clear();
         _dispatcher.Remove(this);
         _request.Writer.TryComplete(error);
+    }
+
+    private void RecordDropped(int frames)
+    {
+        if (frames > 0)
+        {
+            RealtimeMetrics.FramesDropped.Add(frames, new KeyValuePair<string, object?>("family", Family.Name));
+        }
     }
 }

@@ -10,21 +10,6 @@ using Npgsql;
 
 namespace Honua.Infrastructure.DataIntegrity;
 
-public interface IDataIntegrityCoordinator
-{
-    Task<T> ExecuteCoordinatedTransactionAsync<T>(
-        string operationId,
-        Func<IDataIntegrityTransaction, CancellationToken, Task<T>> operation,
-        IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
-        TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default);
-
-    Task<IAsyncDisposable> AcquireDistributedLockAsync(
-        string lockKey,
-        TimeSpan timeout,
-        CancellationToken cancellationToken = default);
-}
-
 public interface IDataIntegrityTransaction : IAsyncDisposable
 {
     NpgsqlTransaction DatabaseTransaction { get; }
@@ -47,7 +32,7 @@ public interface IDataIntegrityTransaction : IAsyncDisposable
     Task RollbackAsync(CancellationToken cancellationToken = default);
 }
 
-internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
+internal sealed class DataIntegrityCoordinator
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<DataIntegrityCoordinator> _logger;
@@ -521,7 +506,7 @@ public static class DataIntegrityCoordinatorServiceCollectionExtensions
 {
     public static IServiceCollection AddDataIntegrityCoordination(this IServiceCollection services)
     {
-        services.AddScoped<IDataIntegrityCoordinator, DataIntegrityCoordinator>();
+        services.AddScoped<DataIntegrityCoordinator>();
         return services;
     }
 }

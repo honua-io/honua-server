@@ -13,6 +13,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Honua.Tests.ProviderUnitSupport;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.GeoServicesRest.Tests;
@@ -27,6 +28,15 @@ public sealed class GeoServicesRestPaginationTests
     private const int LayerId = 1;
     private const string ServiceUrl = "https://services.arcgis.com/org/arcgis/rest/services/parcels/FeatureServer";
     private const string TestSourceName = "Honua.GeoServicesRest.Tests.Pagination";
+
+    private static readonly ParcelsLayerFixture Parcels = new(DataProviderNames.GeoServicesRest, "remote.parcels")
+    {
+        ObjectIdField = "objectid",
+        GeometryField = "shape",
+        GeometryType = MetadataV2GeometryType.Point,
+        ConnectionName = "remote-parcels",
+        AttributeFields = []
+    };
 
     [Trait("Tier", "Fast")]
     [Fact]
@@ -239,94 +249,7 @@ public sealed class GeoServicesRestPaginationTests
         };
 
     private static FeatureProviderBinding CreateBinding(GeoServicesRestFeatureStore provider, DataConnection connection)
-    {
-        var (snapshot, service, resource, publication) = CreateSnapshot(connection.ConnectionId);
-        var storageBinding = snapshot.ResolveStorageBinding(publication)
-            ?? throw new InvalidOperationException("Test snapshot did not include a storage binding.");
-
-        return new FeatureProviderBinding(
-            service,
-            resource,
-            publication,
-            storageBinding,
-            FeatureStorageMapping.FromMetadata(resource, storageBinding),
-            LayerId,
-            provider,
-            connection);
-    }
-
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
-        CreateSnapshot(Guid connectionId)
-    {
-        var service = new MetadataV2Service
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
-            SpatialReference = MetadataV2SpatialReference.Wgs84
-        };
-        var resource = new MetadataV2Resource
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            StorageBindingIds = ["binding-parcels"],
-            SchemaFields =
-            [
-                new MetadataV2Field
-                {
-                    Name = "objectid",
-                    Type = MetadataV2FieldType.BigInteger,
-                    Nullable = false,
-                    SemanticRoles = ["id.primary"]
-                },
-                new MetadataV2Field
-                {
-                    Name = "shape",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = false,
-                    SemanticRoles = ["geometry.primary"]
-                }
-            ],
-            Spatial = new MetadataV2ResourceSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = MetadataV2GeometryType.Point,
-                PrimaryGeometryField = "shape"
-            }
-        };
-        var storageBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels", Name = "binding-parcels" },
-            ResourceId = resource.Metadata.Id,
-            ConnectionId = connectionId.ToString(),
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "remote.parcels",
-            StorageLayerId = LayerId
-        };
-        var metadataConnection = new MetadataV2Connection
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "remote-parcels" },
-            Provider = DataProviderNames.GeoServicesRest
-        };
-        var publication = new MetadataV2Publication
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
-            ServiceId = service.Metadata.Id,
-            ResourceId = resource.Metadata.Id,
-            StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2PublicationIdentifier { Value = LayerId.ToString(CultureInfo.InvariantCulture), IsNumeric = true }
-        };
-        var graph = new MetadataV2Graph
-        {
-            Revision = 1,
-            Environment = "test",
-            Resources = [resource],
-            Connections = [metadataConnection],
-            StorageBindings = [storageBinding],
-            Services = [service],
-            Publications = [publication]
-        };
-
-        return (new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow), service, resource, publication);
-    }
+        => Parcels.CreateBinding(provider, connection);
 
     /// <summary>
     /// Fake client that simulates an upstream FeatureServer with a fixed

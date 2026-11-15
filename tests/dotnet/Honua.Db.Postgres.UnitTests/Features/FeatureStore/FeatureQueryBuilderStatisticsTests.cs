@@ -13,6 +13,36 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderStatisticsTests
 {
+    [Theory]
+    [InlineData(MetadataV2FieldType.Decimal)]
+    [InlineData(MetadataV2FieldType.TimestampOffset)]
+    public void BuildStatisticsQuery_ExactFields_RejectsLossyAggregatesButAllowsCount(MetadataV2FieldType fieldType)
+    {
+        var queryBuilder = CreateQueryBuilder();
+        foreach (var statisticType in Enum.GetValues<StatisticType>())
+        {
+            var query = new FeatureQuery
+            {
+                OutStatistics = ImmutableArray.Create(new StatisticDefinition
+                {
+                    StatisticType = statisticType,
+                    OnStatisticField = "exact_value",
+                    OutStatisticFieldName = "result",
+                    FieldType = fieldType
+                })
+            };
+            if (statisticType == StatisticType.Count)
+            {
+                queryBuilder.BuildStatisticsQuery(1, query).Sql.Should().Contain("COUNT(attributes->>'exact_value')");
+            }
+            else
+            {
+                Action build = () => queryBuilder.BuildStatisticsQuery(1, query);
+                build.Should().Throw<NotSupportedException>().WithMessage("*lossless result contract*");
+            }
+        }
+    }
+
     [Fact]
     public void BuildStatisticsQuery_CastsNumericAndTemporalAggregatesToTypedExpressions()
     {

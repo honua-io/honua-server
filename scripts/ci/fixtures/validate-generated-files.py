@@ -99,7 +99,8 @@ class GeneratedGraphFreshness(unittest.TestCase):
                 for name in ('generate-feature-catalog.sh', 'generate-admin-operation-parity-exports.sh',
                              'generate-mcp-tool-roster.sh', 'generate-geoservices-parity.sh'):
                     (ci / name).write_text('exit 0\n')
-                for name in ('verify-admin-operation-parity.py', 'generate-capability-matrix.py'):
+                for name in ('verify-admin-operation-parity.py', 'generate-capability-matrix.py',
+                             'generate-workflow-inventory.py'):
                     (ci / name).write_text('pass\n')
                 (ci / 'generate-capability-concepts.py').write_text(
                     'from pathlib import Path\n'
@@ -224,6 +225,28 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertIn('verify-admin-operation-parity.py', generator)
         self.assertIn('generate-admin-operation-parity-exports.sh "$@" --no-build --no-restore', generator)
         self.assertIn('generate-geoservices-parity.sh "$@" --no-build --no-restore', generator)
+
+    def test_trunk_roster_consumers_regenerate_before_the_strict_roster_test(self):
+        # PRs may not commit the roster (check-generated-file-ownership.py), so
+        # every trunk run that executes McpToolRosterDriftTests must project it
+        # first; otherwise each MCP tool merge is red until the nightly writer.
+        ci = (ROOT / '.github/workflows/ci.yml').read_text()
+        name = '- name: Regenerate the MCP roster projection for protocol tests'
+        self.assertIn(name, ci)
+        step = ci[ci.index(name):].split('\n      - name:', 1)[0]
+        self.assertIn("if: matrix.family == 'protocols'", step)
+        self.assertIn('bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release --no-build --no-restore',
+                      step)
+        self.assertLess(ci.index('- name: Build missing foundation outputs'), ci.index(name))
+        self.assertLess(ci.index(name), ci.index('- name: Run foundation family tests'))
+        contract = (ROOT / '.github/workflows/mcp-client-contract.yml').read_text()
+        generate = '- name: Generate the roster projection before the strict roster test'
+        self.assertIn(generate, contract)
+        step = contract[contract.index(generate):].split('\n      - name:', 1)[0]
+        self.assertNotIn('if:', step)
+        self.assertIn('bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release', step)
+        self.assertLess(contract.index(generate),
+                        contract.index('- name: Invoke every advertised tool and audit its inputs and discovery'))
 
     def test_managed_generators_resolve_repository_root_from_another_directory(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -15,28 +15,6 @@ namespace Honua.Db.Postgres.Features.Scene;
 /// </summary>
 internal static class SceneDatasetServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the Postgres-backed <see cref="ISceneDatasetRegistry"/> and
-    /// <see cref="ISceneRegistrationService"/>, falling back to a
-    /// configuration-backed registry for entries that are not persisted in
-    /// Postgres.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Order with respect to <c>AddScene(...)</c> is irrelevant. The
-    /// configuration-backed registry registered by <c>AddScene</c> is preserved
-    /// as <see cref="IConfigurationSceneDatasetRegistry"/> so it can be used as
-    /// a fallback for local-dev/test scenarios where datasets are declared via
-    /// the <c>Scenes:Datasets</c> configuration section.
-    /// </para>
-    /// <para>
-    /// When the active <c>DataSource:Provider</c> is not Postgres (e.g. DuckDB),
-    /// this method is a no-op: the configuration-backed registry stays the
-    /// authoritative <see cref="ISceneDatasetRegistry"/>, and
-    /// <see cref="ISceneRegistrationService"/> is left unregistered so the
-    /// admin endpoints decline to map themselves.
-    /// </para>
-    /// </remarks>
     public static IServiceCollection AddPostgresSceneRegistry(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -114,12 +92,6 @@ internal static class SceneDatasetServiceCollectionExtensions
     }
 }
 
-/// <summary>
-/// Marker interface used to chain a non-Postgres scene registry behind the
-/// Postgres-backed primary. The configuration-backed registry installed by
-/// <c>AddScene</c> is promoted to this alias so it remains available as a
-/// fallback without conflicting on <see cref="ISceneDatasetRegistry"/>.
-/// </summary>
 internal interface IConfigurationSceneDatasetRegistry : ISceneDatasetRegistry;
 
 internal sealed class ConfigurationSceneDatasetRegistryAdapter : IConfigurationSceneDatasetRegistry

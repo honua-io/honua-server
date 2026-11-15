@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import xml.etree.ElementTree as ET
 
 spec = importlib.util.spec_from_file_location('quarantine', Path(__file__).with_name('flake_quarantine.py'))
@@ -197,6 +197,19 @@ class RetryTests(unittest.TestCase):
 
 
 class ProcessSnapshotTests(unittest.TestCase):
+    def test_stalled_snapshot_preserves_outer_deadline_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory) / 'ps'
+            fake.write_text('#!/usr/bin/env python3\nimport time\ntime.sleep(30)\n')
+            fake.chmod(0o755)
+            with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}'}):
+                RunnerTests().assert_timeout_cleanup(foreground=False)
+
+    def test_missing_snapshot_preserves_group_identity(self):
+        import shard_processes
+        with patch.object(shard_processes.subprocess, 'check_output', side_effect=FileNotFoundError):
+            self.assertEqual({1234}, shard_processes.descendant_pids(1234))
+
     def test_snapshot_survives_signal_to_supervisor_group(self):
         with tempfile.TemporaryDirectory() as directory:
             fake = Path(directory) / 'ps'
@@ -220,6 +233,28 @@ class ProcessSnapshotTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_cancellation_does_not_reenter_an_active_child_wait(self):
+        child = MagicMock(pid=1234)
+        child.__enter__.return_value = child
+        waiting = False
+        cancelled = False
+
+        def wait(timeout=None):
+            nonlocal waiting, cancelled
+            self.assertFalse(waiting, 'Cancellation reentered the active child wait')
+            waiting = True
+            if not cancelled:
+                cancelled = True
+                signal.raise_signal(signal.SIGTERM)
+            waiting = False
+            return 0
+
+        child.wait.side_effect = wait
+        with patch.object(runner.subprocess, 'Popen', return_value=child), \
+                patch.object(runner, 'descendant_pids', return_value={1234}), \
+                patch.object(runner.os, 'killpg'), patch.object(runner.os, 'kill'):
+            self.assertEqual(-signal.SIGTERM, runner.call_test(['fixture']))
+
     def test_duplicate_gate_wrapper_cleans_up_term_ignoring_child(self):
         self.assert_timeout_cleanup(foreground=False)
 
@@ -229,13 +264,29 @@ class RunnerTests(unittest.TestCase):
     def test_timeout_cleans_up_descendant_outside_inherited_group(self):
         self.assert_timeout_cleanup(foreground=False, descendant_setup='os.setsid()')
 
-    def assert_timeout_cleanup(self, foreground, descendant_setup='pass'):
+    def test_timeout_cleans_up_child_forked_after_process_snapshot(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            fake = root / 'dotnet'
+            marker = root / 'snapshot'
+            fake_ps = root / 'ps'
+            real_ps = shutil.which('ps')
+            fake_ps.write_text('#!/usr/bin/env python3\n'
+                               'import pathlib, subprocess, sys\n'
+                               f'listing = subprocess.check_output([{real_ps!r}, *sys.argv[1:]])\n'
+                               f'pathlib.Path({str(marker)!r}).touch()\n'
+                               'sys.stdout.buffer.write(listing)\n')
+            fake_ps.chmod(0o755)
+            before_fork = f'while not pathlib.Path({str(marker)!r}).exists(): time.sleep(0.01)\n'
+            with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}'}):
+                self.assert_timeout_cleanup(foreground=False, before_fork=before_fork)
+
+    def assert_timeout_cleanup(self, foreground, descendant_setup='pass', before_fork=''):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory) / 'dotnet'
             fake.write_text('#!/usr/bin/env python3\n'
                             'import os, pathlib, signal, time\n'
                             'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+                            + before_fork +
                             'is_child = os.fork() == 0\n'
                             f'if is_child: {descendant_setup}\n'
                             'suffix = ".descendant.pid" if is_child else ".pid"\n'
@@ -369,6 +420,14 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual('open', api.call_args.args[1]['state'])
         api = self.publish([{**entry(), **candidate}], [issue])
         api.assert_not_called()
+
+    def test_replayed_publication_does_not_reopen_closed_or_expired_issue(self):
+        candidate = dict(project=PROJECT, test='Honua.Tests.Case.Flaky')
+        issue = dict(title=publisher.title(candidate), number=123, user=dict(login='github-actions[bot]'),
+                     body=publisher.issue_body(candidate, 'https://example.com/run'))
+        self.publish([], [issue]).assert_not_called()
+        issue['body'] = publisher.issue_body(candidate, 'https://example.com/new-run')
+        self.assertEqual(1, self.publish([], [issue]).call_count)
 
 
 class GitHubApiTests(unittest.TestCase):

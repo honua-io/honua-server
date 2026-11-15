@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Import;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
-public class StreamingImportTests : IAsyncLifetime
+public partial class StreamingImportTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
@@ -355,6 +355,8 @@ public class StreamingImportTests : IAsyncLifetime
         };
         content.Add(fileContent);
         content.Add(new StringContent("csv_import_table"), "TableName");
+        using var sourceSrid = new StringContent("4326");
+        content.Add(sourceSrid, "SourceSrid");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
@@ -1132,6 +1134,8 @@ public class StreamingImportTests : IAsyncLifetime
         };
         content.Add(fileContent);
         content.Add(new StringContent(tableName), "TableName");
+        using var sourceSrid = new StringContent("4326");
+        content.Add(sourceSrid, "SourceSrid");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);

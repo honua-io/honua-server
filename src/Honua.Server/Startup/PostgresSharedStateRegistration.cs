@@ -7,9 +7,14 @@ using Honua.Server.Features.Collaboration.FeatureLocks;
 using Honua.Ai.Protocols.Mcp;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Studio.Drafts;
+using Honua.Core.Features.Tiles;
+using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
@@ -43,18 +48,18 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton(provider => new JobStoreDatabase(
             provider.GetRequiredService<NpgsqlDataSource>(),
             configuration[SystemSchemaKey]));
+        // One wake signal per store kind, shared by the store that rings it and the loops that wait on it.
+        services.TryAddSingleton(typeof(PollWakeSignal<>));
         services.TryAddSingleton<PostgresExecutionJobStore>();
         services.TryAddSingleton<PostgresLeaseStore>();
-        // A host with no system database runs one node and has no lease store (deliberately null),
-        // so callers that ask with GetService fall back to in-process coordination.
-        services.TryAddSingleton<ILeaseStore>(provider =>
-            provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresLeaseStore>() : null!);
+        services.AddSharedCacheCoordination();
 
         services.TryAddSingleton(provider => new ControlPlaneStorage(
             provider.GetRequiredService<JobStoreDatabase>(),
             provider.GetRequiredService<ILeaseStore>()));
         services.TryAddSingleton<WorkflowOperationRetention>();
         services.TryAddSingleton<PostgresOperationProposalStore>();
+        services.TryAddSingleton<PostgresOpsNotificationStore>();
         services.TryAddSingleton<PostgresWorkflowOperationStore>();
         services.TryAddSingleton<PostgresOperationInstanceStore>();
         services.TryAddSingleton(provider => new PostgresOperationSecretStore(
@@ -72,6 +77,9 @@ internal static class PostgresSharedStateRegistration
         services.AddSharedOrLocal<IIdempotencyReservationStore, PostgresIdempotencyReservationStore>(
             static () => new InMemoryIdempotencyReservationStore());
         services.AddSharedOrLocal<ITokenReplayStore, PostgresTokenReplayStore>(static () => new InMemoryTokenReplayStore());
+        services.AddSharedOrLocal<IVersionJobStore, PostgresVersionJobStore>(static () => new InMemoryVersionJobStore());
+        services.AddSharedOrLocal<ITileCacheGenerationCheckpointStore, PostgresTileCacheGenerationCheckpointStore>(
+            static () => new InMemoryTileCacheGenerationCheckpointStore());
         services.AddPackageDrafts();
         services.TryAddSingleton<PostgresMcpSessionStore>();
         // Without a system database there is no shared session store (deliberately null), and the
@@ -103,6 +111,19 @@ internal static class PostgresSharedStateRegistration
                 : new InMemoryFeatureLockService(provider.GetService<TimeProvider>()));
     }
 
+    private static void AddSharedCacheCoordination(this IServiceCollection services)
+    {
+        services.TryAddSingleton<PostgresCdnPurgeBudget>();
+        services.TryAddSingleton<ICdnPurgeBudget>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null
+                ? provider.GetRequiredService<PostgresCdnPurgeBudget>()
+                : null!);
+        // A host with no system database runs one node and has no lease store (deliberately null),
+        // so callers that ask with GetService fall back to in-process coordination.
+        services.TryAddSingleton<ILeaseStore>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresLeaseStore>() : null!);
+    }
+
     private static void AddRetentionSweeps(this IServiceCollection services)
     {
         services.AddRetentionSweep<PostgresOperationProposalStore>();
@@ -110,6 +131,8 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresOperationInstanceStore>();
         services.AddRetentionSweep<PostgresOperationSecretStore>();
         services.AddRetentionSweep<PostgresUniversalProgressStore>();
+        services.AddRetentionSweep<PostgresVersionJobStore>();
+        services.AddRetentionSweep<PostgresTileCacheGenerationCheckpointStore>();
         services.AddRetentionSweep<PostgresSecurityTokenStore>();
         services.AddRetentionSweep<PostgresTokenReplayStore>();
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();

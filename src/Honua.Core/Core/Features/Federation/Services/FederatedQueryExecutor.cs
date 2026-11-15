@@ -4,17 +4,17 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Federation.Abstractions;
 using Honua.Core.Features.Federation.Domain;
-using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
-using Polly;
 using Polly.CircuitBreaker;
+using Polly;
 
 namespace Honua.Core.Features.Federation.Services;
 
-internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
+internal sealed class FederatedQueryExecutor
 {
     // PA-017: remote federated source calls had metrics and structured logging but no
     // distributed tracing span, so a slow/failing remote source was invisible in traces.

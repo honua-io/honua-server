@@ -133,7 +133,7 @@ public sealed class EditingParityConformanceMatrixTests
         ];
     }
 
-    private static MetadataV2Resource ContingentResource() => new()
+    private static MetadataV2Object ContingentResource() => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "res", Name = "Contingent" },
         ContingentValueGroups =
@@ -159,7 +159,7 @@ public sealed class EditingParityConformanceMatrixTests
         ]
     };
 
-    private static MetadataV2Resource BatchRuleResource() => ResourceWithRules(new MetadataV2AttributeRule
+    private static MetadataV2Object BatchRuleResource() => ResourceWithRules(new MetadataV2AttributeRule
     {
         Name = "BatchCalc",
         Type = MetadataV2AttributeRuleType.Calculation,
@@ -168,7 +168,7 @@ public sealed class EditingParityConformanceMatrixTests
         Batch = true
     });
 
-    private static MetadataV2Resource InsertOnlyConstraintResource() => ResourceWithRules(new MetadataV2AttributeRule
+    private static MetadataV2Object InsertOnlyConstraintResource() => ResourceWithRules(new MetadataV2AttributeRule
     {
         Name = "InsertOnly",
         Type = MetadataV2AttributeRuleType.Constraint,
@@ -176,21 +176,21 @@ public sealed class EditingParityConformanceMatrixTests
         TriggeringEvents = ["insert"]
     });
 
-    private static MetadataV2Resource ExclusionResource() => ResourceWithRules(new MetadataV2AttributeRule
+    private static MetadataV2Object ExclusionResource() => ResourceWithRules(new MetadataV2AttributeRule
     {
         Name = "ExcludeDrafts",
         Type = MetadataV2AttributeRuleType.Exclusion,
         ScriptExpression = "$feature.status == 'draft'"
     });
 
-    private static MetadataV2Resource UnsupportedArcadeResource() => ResourceWithRules(new MetadataV2AttributeRule
+    private static MetadataV2Object UnsupportedArcadeResource() => ResourceWithRules(new MetadataV2AttributeRule
     {
         Name = "ComplexArcade",
         Type = MetadataV2AttributeRuleType.Constraint,
         ScriptExpression = "Decode($feature.kind, 1, 'a', 'b') == 'a'"
     });
 
-    private static MetadataV2Resource ResourceWithRules(params MetadataV2AttributeRule[] rules)
+    private static MetadataV2Object ResourceWithRules(params MetadataV2AttributeRule[] rules)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res", Name = "Rules" },

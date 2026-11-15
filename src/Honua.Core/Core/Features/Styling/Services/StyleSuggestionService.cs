@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Styling.Services;
 
-internal sealed partial class StyleSuggestionService : IStyleSuggestionService
+public sealed partial class StyleSuggestionService
 {
     private const int MaxProfilingFields = 10;
     private const int SampleLimit = 50_000;
@@ -42,7 +42,7 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
     }
 
     public async Task<StyleSuggestion> SuggestAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         StyleSuggestionOptions? options = null,
         CancellationToken cancellationToken = default)
@@ -116,7 +116,7 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
     }
 
     private static MetadataV2Field[] GetProfilingCandidates(
-        MetadataV2Resource resource, StyleSuggestionOptions options)
+        MetadataV2Object resource, StyleSuggestionOptions options)
     {
         var fields = resource.SchemaFields
             .Where(f => !ExcludedFieldTypes.Contains(f.Type))
@@ -413,7 +413,7 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
     }
 
     private static StyleSuggestion BuildGeometryOnlySuggestion(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         MetadataV2GeometryType geometryType,
         string fallbackReason,

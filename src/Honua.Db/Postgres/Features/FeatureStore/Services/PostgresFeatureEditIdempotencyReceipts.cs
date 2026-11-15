@@ -24,6 +24,6 @@ internal sealed class PostgresFeatureEditIdempotencyReceipts(
             scope,
             commandTimeoutSeconds: 30,
             cancellationToken).ConfigureAwait(false);
-        return bytes;
+        return bytes is null ? (ReadOnlyMemory<byte>?)null : new ReadOnlyMemory<byte>(bytes);
     }
 }
