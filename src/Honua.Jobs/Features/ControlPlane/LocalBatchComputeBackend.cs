@@ -55,7 +55,8 @@ internal sealed class LocalBatchComputeBackend(
         // and may never signal the execution-job token.
         ExecutionJobCancellationTokens.CancelAttempt(cancellationNotifiers, job);
 
-        if (job.Status == ExecutionJobStatus.Queued)
+        if (job.Status == ExecutionJobStatus.Queued &&
+            !ExecutionJobCancellationHelper.RequiresCommitRecovery(job))
         {
             return new BatchComputeObservation
             {

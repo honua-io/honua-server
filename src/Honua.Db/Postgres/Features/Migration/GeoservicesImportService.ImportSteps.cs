@@ -58,21 +58,11 @@ internal sealed partial class GeoservicesImportService
         // the winner just committed, or is still publishing, copying attachments into, or reconciling.
         // The lease is session-level so it survives the data commit; the finally below releases it, and a
         // dropped connection (a crashed worker) releases it too.
-        if (!await TryAcquireTargetImportLockAsync(connection, targetSchema, request.TableName, cancellationToken))
+        var receiptContext = new ImportCommitReceiptContext(connection, transaction, request, targetSchema);
+        var lockFailure = await GetTargetLockFailureAsync(receiptContext, stopwatch, cancellationToken);
+        if (lockFailure is not null)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
-            stopwatch.Stop();
-            Log.TargetImportInProgress(_logger, request.TableName);
-            return GeoservicesImportResult.CreateFailure(
-                request.TableName,
-                request.ServiceUrl,
-                request.LayerId,
-                $"Another import is already writing target table '{request.TableName}'; this job did not modify it. "
-                + "Wait for that import to finish, then retry.",
-                stopwatch.Elapsed) with
-            {
-                ServiceName = request.ServiceName
-            };
+            return lockFailure;
         }
 
         // #4827: the step a top-level failure happened in, so the job reports where it failed and
@@ -83,7 +73,6 @@ internal sealed partial class GeoservicesImportService
         var failedFeatures = 0;
         try
         {
-            var receiptContext = new ImportCommitReceiptContext(connection, transaction, request, targetSchema);
             var committed = await ReadCommittedImportAsync(receiptContext, cancellationToken);
             if (committed is not null)
             {

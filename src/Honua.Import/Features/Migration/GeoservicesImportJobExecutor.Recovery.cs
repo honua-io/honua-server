@@ -1,18 +1,41 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Migration;
 
 internal sealed partial class GeoservicesImportJobExecutor
 {
-    private async Task<JobExecutionResult?> RecoverAsync(ImportRun run)
+    public async Task<JobExecutionResult?> RecoverCancellationAsync(
+        ExecutionJobRecord job, IJobExecutionContext context, CancellationToken cancellationToken)
+    {
+        var request = _jobManager.ReadRequest(job);
+        if (request is null)
+        {
+            return null;
+        }
+
+        var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
+        using var recoveryCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
+        using var progress = new ImportJobProgressController<GeoservicesImportProgress>(job.OperationId,
+            _jobManager.ProgressStore,
+            ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
+        var run = new ImportRun(job.OperationId, request with { JobId = job.OperationId }, progress,
+            context, Stopwatch.StartNew(), licenseCancellation, recoveryCancellation.Token);
+        return await RecoverAsync(run, replayCancellation: false).ConfigureAwait(false);
+    }
+
+    private async Task<JobExecutionResult?> RecoverAsync(ImportRun run, bool replayCancellation = true)
     {
         var stored = await _jobManager.ProgressStore.GetProgressAsync(run.JobId, run.Token).ConfigureAwait(false);
         run.Progress.Seed(stored);
-        if (stored != null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status))
+        if (stored != null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status) &&
+            (stored.Status != GeoservicesImportStatus.Cancelled || stored.DataCommitted))
         {
             if (stored.DataCommitted)
             {
@@ -26,7 +49,9 @@ internal sealed partial class GeoservicesImportJobExecutor
         GeoservicesImportPlanning.RestoreTenant(scope.ServiceProvider, run.Request.Target);
         if (scope.ServiceProvider.GetRequiredService<IGeoservicesImportService>() is not IGeoservicesImportCommitRecovery recovery)
         {
-            return null;
+            return stored is not null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status)
+                && (replayCancellation || stored.Status != GeoservicesImportStatus.Cancelled)
+                ? ReplayTerminal(stored) : null;
         }
 
         // Source validation and credentials cannot determine whether an earlier attempt committed.
@@ -34,7 +59,9 @@ internal sealed partial class GeoservicesImportJobExecutor
         var result = await recovery.RecoverCommittedImportAsync(run.Request, run.Token).ConfigureAwait(false);
         if (result is null)
         {
-            return null;
+            return stored is not null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status)
+                && (replayCancellation || stored.Status != GeoservicesImportStatus.Cancelled)
+                ? ReplayTerminal(stored) : null;
         }
 
         run.Stopwatch.Stop();

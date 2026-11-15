@@ -1042,6 +1042,12 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
+        if (terminalStatus == ExecutionJobStatus.Cancelled &&
+            await TryRecoverCancelledJobAsync(job, workerId, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var terminal = job with
         {
@@ -1126,6 +1132,10 @@ internal sealed partial class JobExecutionService(
         if (current.CancellationRequestedAt.HasValue)
         {
             Log.AbandonHonouredDurableCancellation(logger, current.OperationId);
+            if (await TryRecoverCancelledJobAsync(current, workerId, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
 
             var cancelNow = DateTimeOffset.UtcNow;
             var cancelled = current with

@@ -16,6 +16,29 @@ namespace Honua.Server.Tests.Import;
 
 public sealed partial class ImportJobExecutorTests
 {
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task ExecuteAsync_CommitAttestationFails_LeavesProgressRecoverable()
+    {
+        var request = PublishedGeoservicesRequest(Guid.NewGuid().ToString("N"), 4);
+        var importer = new CommittedCancelGeoservicesImportService(CommittedResult(request, GeoservicesImportStatus.Completed));
+        importer.Release.SetResult(true);
+        using var provider = CreateGeoservicesProvider(importer);
+        var (jobs, manager, executor) = CreateGeoservicesExecutor(provider);
+        await manager.SubmitAsync(request, GeoservicesImportProgress.CreateInitial(
+            request.JobId!, request.ServiceUrl, request.LayerId, request.TableName));
+        var context = Substitute.For<IJobExecutionContext>();
+        context.RecordCommittedEffectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new IOException("Execution store unavailable"));
+
+        var record = (await jobs.GetAsync(request.JobId!))!;
+        Func<Task> execute = () => executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        await execute.Should().ThrowAsync<IOException>();
+        var progress = (await manager.ProgressStore.GetProgressAsync(request.JobId!))!;
+        GeoservicesImportJobManager.IsTerminalStatus(progress.Status).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(GeoservicesImportStatus.Completed, ExecutionJobStatus.Succeeded)]
     [InlineData(GeoservicesImportStatus.NeedsReview, ExecutionJobStatus.Succeeded)]

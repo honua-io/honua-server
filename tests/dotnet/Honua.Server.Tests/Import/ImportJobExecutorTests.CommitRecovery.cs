@@ -14,6 +14,34 @@ namespace Honua.Server.Tests.Import;
 public sealed partial class ImportJobExecutorTests
 {
     [UnitTest]
+    public async Task ExecuteAsync_CancelledAfterCrash_RecoversCommittedRows()
+    {
+        var request = GeoservicesRequest(Guid.NewGuid().ToString("N"));
+        var importer = Substitute.For<IGeoservicesImportService, IGeoservicesImportCommitRecovery>();
+        ((IGeoservicesImportCommitRecovery)importer)
+            .RecoverCommittedImportAsync(Arg.Any<GeoservicesImportRequest>(), Arg.Any<CancellationToken>())
+            .Returns(CommittedResult(request, GeoservicesImportStatus.NeedsReview));
+        using var provider = CreateGeoservicesProvider(importer);
+        var (jobs, manager, executor) = CreateGeoservicesExecutor(provider);
+        var initial = GeoservicesImportProgress.CreateInitial(
+            request.JobId!, request.ServiceUrl, request.LayerId, request.TableName);
+        await manager.SubmitAsync(request, initial);
+        await RecordCancellationAsync(manager, initial);
+
+        var result = await executor.ExecuteAsync((await jobs.GetAsync(request.JobId!))!,
+            Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        result.CompletedWithCommittedEffects.Should().BeTrue();
+        var progress = (await manager.ProgressStore.GetProgressAsync(request.JobId!))!;
+        progress.Status.Should().Be(GeoservicesImportStatus.NeedsReview);
+        progress.DataCommitted.Should().BeTrue();
+        progress.FeaturesProcessed.Should().Be(4);
+        await importer.DidNotReceive().ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(),
+            Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_RestartWithCommittedRows_RecoversBeforeSourceValidationAndSecrets()
     {
         var request = GeoservicesRequest(Guid.NewGuid().ToString("N")) with

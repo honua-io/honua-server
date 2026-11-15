@@ -135,7 +135,7 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
             var updated = RequestOrCompleteCancellation(job);
             if (await _jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
-                if (!claimed && _jobQueue is not null)
+                if (!claimed && updated.Status.IsTerminal() && _jobQueue is not null)
                 {
                     await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
                 }
@@ -151,7 +151,8 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
     private static ExecutionJobRecord RequestOrCompleteCancellation(ExecutionJobRecord job)
     {
         var now = DateTimeOffset.UtcNow;
-        return !string.IsNullOrEmpty(job.ClaimedBy)
+        return !string.IsNullOrEmpty(job.ClaimedBy) ||
+            (job.Spec.Kind == ExecutionJobKind.GeoservicesImport && job.AttemptCount > 0)
             ? job with { CancellationRequestedAt = now, UpdatedAt = now, CurrentPhase = "Cancelling" }
             : job with
             {

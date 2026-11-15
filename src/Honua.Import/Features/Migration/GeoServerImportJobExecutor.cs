@@ -148,7 +148,8 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
         var importer = scope.ServiceProvider.GetRequiredService<IGeoServerImportService>();
         var reporter = new Progress<GeoServerImportProgress>(p =>
         {
-            if (p.Status != GeoServerImportStatus.Queued)
+            if (p.Status != GeoServerImportStatus.Queued &&
+                !GeoServerImportJobManager.IsTerminalStatus(p.Status))
             {
                 _ = run.Progress.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed);
             }

@@ -39,11 +39,15 @@ public sealed partial class ImportJobExecutorTests
         return services.BuildServiceProvider();
     }
 
-    private static ServiceProvider CreateGeoServerProvider(ThrowingGeoServerImportService service)
+    private static ServiceProvider CreateGeoServerProvider(IGeoServerImportService service)
     {
         var services = new ServiceCollection();
-        services.AddSingleton(service);
-        services.AddSingleton<IGeoServerImportService>(sp => sp.GetRequiredService<ThrowingGeoServerImportService>());
+        if (service is ThrowingGeoServerImportService throwingService)
+        {
+            services.AddSingleton(throwingService);
+        }
+
+        services.AddSingleton<IGeoServerImportService>(sp => service);
         return services.BuildServiceProvider();
     }
 

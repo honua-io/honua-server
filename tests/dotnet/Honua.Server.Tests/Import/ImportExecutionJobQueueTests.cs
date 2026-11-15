@@ -80,6 +80,25 @@ public sealed partial class ImportExecutionJobQueueTests
     }
 
     [UnitTest]
+    public async Task RequestCancellationAsync_PreviouslyAttemptedJob_RemainsQueuedForCommitRecovery()
+    {
+        var jobs = ImportExecutionTestJobs.Create();
+        var queue = Substitute.For<IJobQueue>();
+        var manager = Manager(jobs, queue);
+        var request = Request();
+        await manager.SubmitAsync(request, Initial(request));
+        var record = (await jobs.GetAsync(request.JobId!))!;
+        (await jobs.TrySetAsync(record with { AttemptCount = 1 })).Should().BeTrue();
+
+        await manager.RequestCancellationAsync(request.JobId!);
+
+        var cancelling = (await jobs.GetAsync(request.JobId!))!;
+        cancelling.Status.Should().Be(ExecutionJobStatus.Queued);
+        cancelling.CancellationRequestedAt.Should().NotBeNull();
+        await queue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task RequestCancellationAsync_ClaimedJob_StampsCancellationWithoutReplacingWorkerState()
     {
         var jobs = ImportExecutionTestJobs.Create();

@@ -14,6 +14,27 @@ internal sealed partial class GeoservicesImportService
         NpgsqlConnection Connection, NpgsqlTransaction Transaction, GeoservicesImportRequest Request,
         string Schema, int Features = 0, int Failures = 0);
 
+    private async Task<GeoservicesImportResult?> GetTargetLockFailureAsync(
+        ImportCommitReceiptContext context, System.Diagnostics.Stopwatch stopwatch, CancellationToken cancellationToken)
+    {
+        if (await TryAcquireTargetImportLockAsync(context.Connection, context.Schema, context.Request.TableName, cancellationToken))
+        {
+            return null;
+        }
+
+        await context.Transaction.RollbackAsync(CancellationToken.None);
+        stopwatch.Stop();
+        var request = context.Request;
+        Log.TargetImportInProgress(_logger, request.TableName);
+        return GeoservicesImportResult.CreateFailure(
+            request.TableName, request.ServiceUrl, request.LayerId,
+            $"Another import is already writing target table '{request.TableName}'; this job did not modify it. "
+            + "Wait for that import to finish, then retry.", stopwatch.Elapsed) with
+        {
+            ServiceName = request.ServiceName
+        };
+    }
+
     private async Task<GeoservicesImportResult?> ReadCommittedImportAsync(
         ImportCommitReceiptContext context, CancellationToken cancellationToken)
     {

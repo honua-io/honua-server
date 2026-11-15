@@ -13,6 +13,34 @@ namespace Honua.Server.Tests.Import;
 
 public sealed partial class ImportJobExecutorTests
 {
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task ExecuteAsync_GeoServerTerminalCallback_PreservesReturnedFailureCount()
+    {
+        var request = GeoServerRequest(Guid.NewGuid().ToString("N"));
+        var importer = Substitute.For<IGeoServerImportService>();
+        importer.ImportConfigurationAsync(Arg.Any<GeoServerImportRequest>(),
+            Arg.Any<IProgress<GeoServerImportProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await DeliverTerminalCallbackAsync(call.Arg<IProgress<GeoServerImportProgress>>()!,
+                    GeoServerImportProgress.CreateInitial(request.JobId!, request.GeoServerRestUrl, request.TargetHonuaUrl)
+                        with { Status = GeoServerImportStatus.Failed, CompletedAt = DateTimeOffset.UtcNow });
+                return GeoServerImportResult.CreateFailure(request.GeoServerRestUrl, request.TargetHonuaUrl, "Apply failed")
+                    with { FailedResources = 3 };
+            });
+        using var provider = CreateGeoServerProvider(importer);
+        var (jobs, manager, executor) = CreateGeoServerExecutor(provider);
+        await manager.SubmitAsync(request, GeoServerImportProgress.CreateInitial(
+            request.JobId!, request.GeoServerRestUrl, request.TargetHonuaUrl));
+
+        var result = await executor.ExecuteAsync((await jobs.GetAsync(request.JobId!))!,
+            Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        (await manager.ProgressStore.GetProgressAsync(request.JobId!))!.FailedResources.Should().Be(3);
+    }
+
     [Theory]
     [InlineData(GeoservicesImportStatus.Completed, ExecutionJobStatus.Succeeded)]
     [InlineData(GeoservicesImportStatus.NeedsReview, ExecutionJobStatus.Succeeded)]
@@ -68,12 +96,12 @@ public sealed partial class ImportJobExecutorTests
         return importer;
     }
 
-    private static async Task DeliverTerminalCallbackAsync(IProgress<GeoservicesImportProgress> progress,
-        GeoservicesImportProgress terminal)
+    private static async Task DeliverTerminalCallbackAsync<TProgress>(IProgress<TProgress> progress,
+        TProgress terminal)
     {
-        var reporter = (Progress<GeoservicesImportProgress>)progress;
+        var reporter = (Progress<TProgress>)progress;
         var delivered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnProgress(object? sender, GeoservicesImportProgress value) => delivered.TrySetResult(true);
+        void OnProgress(object? sender, TProgress value) => delivered.TrySetResult(true);
         reporter.ProgressChanged += OnProgress;
         try
         {

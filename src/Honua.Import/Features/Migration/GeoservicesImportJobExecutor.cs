@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Migration;
 
-internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
+internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobCancellationRecoveryExecutor
 {
     internal const string ImportFailedMessage = "Import failed.";
     internal const string LicenseExpiredMessage = "license expired";
@@ -69,9 +69,16 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
 
     private async Task<JobExecutionResult> ExecuteRunAsync(ImportRun run)
     {
+        GeoservicesImportResult result;
         try
         {
-            return await RunAsync(run).ConfigureAwait(false);
+            var rejection = await ValidateSourceAsync(run).ConfigureAwait(false);
+            if (rejection is not null)
+            {
+                return rejection;
+            }
+
+            result = await RunAsync(run).ConfigureAwait(false);
         }
         catch (Exception ex) when (run.LicenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
@@ -98,9 +105,12 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
             Log.JobException(_logger, run.JobId, ex);
             return NotRetryable(ImportFailedMessage);
         }
+
+        // A committed import remains recoverable when execution-store bookkeeping fails.
+        return await CompleteAsync(run, result).ConfigureAwait(false);
     }
 
-    private async Task<JobExecutionResult> RunAsync(ImportRun run)
+    private async Task<JobExecutionResult?> ValidateSourceAsync(ImportRun run)
     {
         var jobId = run.JobId;
         var validation = await GeoservicesServiceUrlValidation.ValidateAsync(
@@ -113,6 +123,11 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
             return NotRetryable(validation.ErrorMessage ?? ImportFailedMessage);
         }
 
+        return null;
+    }
+
+    private async Task<GeoservicesImportResult> RunAsync(ImportRun run)
+    {
         if (run.Progress.CurrentProgress is { } queued)
         {
             await run.Progress.SetProgressAsync(queued with
@@ -126,7 +141,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor
 
         var result = await ImportAsync(run).ConfigureAwait(false);
         run.Stopwatch.Stop();
-        return await CompleteAsync(run, result).ConfigureAwait(false);
+        return result;
     }
 
     private async Task<GeoservicesImportResult> ImportAsync(ImportRun run)

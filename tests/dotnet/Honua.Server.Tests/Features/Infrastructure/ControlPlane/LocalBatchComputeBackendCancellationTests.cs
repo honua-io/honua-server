@@ -19,6 +19,34 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class LocalBatchComputeBackendCancellationTests
 {
     [UnitTheory]
+    [InlineData(0, ExecutionJobStatus.Cancelled)]
+    [InlineData(1, ExecutionJobStatus.Queued)]
+    public async Task CancelAsync_AttemptedImport_LeavesReceiptRecoveryQueued(int attempts, ExecutionJobStatus expected)
+    {
+        var backend = new LocalBatchComputeBackend(Substitute.For<IUniversalProgressStore>(), []);
+        var job = new ExecutionJobRecord
+        {
+            OperationId = "import-recovery",
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            AttemptCount = attempts,
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.GeoservicesImport,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "import"
+            }
+        };
+
+        var observation = await backend.CancelAsync(job);
+
+        Assert.Equal(expected, observation.Status);
+    }
+
+    [UnitTheory]
     [InlineData(ExecutionJobKind.Export, OperationStatus.Completed)]
     [InlineData(ExecutionJobKind.Export, OperationStatus.Cancelled)]
     [InlineData(ExecutionJobKind.Export, OperationStatus.Failed)]
