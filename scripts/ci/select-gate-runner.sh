@@ -20,15 +20,15 @@ readonly WAIT_SECONDS="${GATE_RUNNER_WAIT_SECONDS:-180}"
 readonly POLL_SECONDS="${GATE_RUNNER_POLL_SECONDS:-10}"
 # Producer admission is independent of the heavy shard pool.
 readonly REQUIRED_IDLE_RUNNERS=2
-# Idle heavy runners left for this gate's even affected shards, which start
-# after Build and tests; a heavy job never waits behind start work.
-readonly SHARD_RESERVE=2
-# Start jobs one gate may move to the heavy pool; the rest stay hosted, so
-# gates selecting from the same 30-second heartbeat cannot fill the pool.
-readonly START_HEAVY_CAP=4
-# Longest hosted run first, measured on 24 PR Gates 15 Nov 18:44-21:44Z (median
-# minutes 12.2, 12.0, 10.7, 10.6). server-governance (starts PostGIS) and the
-# shortest, unit-fast (8.1), stay hosted.
+# Idle heavy runners never planned: two for this gate's even affected shards,
+# which start after Build and tests and have no hosted fallback, and one for
+# advisory and AOT jobs that share the pool.
+readonly HEAVY_RESERVE=3
+# A gate spends half of the idle runners above the reserve, at most this many,
+# so a second gate reading the same heartbeat still finds the reserve free.
+readonly START_HEAVY_CAP=2
+# Longest hosted run first (gate-model.md lists the measurements).
+# server-governance starts PostGIS and unit-fast is shortest; both stay hosted.
 readonly START_JOBS=(analyzers-server architecture server-fast analyzers-other)
 
 heavy_ready=false
@@ -45,22 +45,28 @@ select_runner() {
   exit 0
 }
 
-# Prints the plain runner label of the configured heavy pool, or nothing.
+# Prints the one label that alone selects the heavy pool (the group's own
+# label, or a sole label), else nothing: a generic label such as self-hosted
+# would match runners outside the group.
 heavy_label() {
-  jq -r 'if type == "object" then (.labels // [])[0] // empty
-    elif type == "array" then .[0] // empty
-    elif type == "string" then . else empty end' <<< "${HONUA_HEAVY_RUNNER:-null}" 2>/dev/null |
-    grep -E '^[A-Za-z0-9._-]+$' || true
+  jq -rs 'if length != 1 then empty else .[0] |
+    if type == "object" then
+      .group as $group | (.labels // []) as $labels |
+      if ($group | type) == "string" and ($labels | type) == "array" and any($labels[]; . == $group) then $group
+      elif ($labels | type) == "array" and ($labels | length) == 1 then $labels[0] else empty end
+    elif type == "array" and length == 1 then .[0]
+    elif type == "string" then . else empty end end' <<< "${HONUA_HEAVY_RUNNER:-}" 2>/dev/null |
+    grep -xE '[A-Za-z0-9._-]+' || true
 }
 
-# Spends min(cap, idle heavy - reserve) heavy runners. A busy gate pool moves
-# the two producers first (they gate the shards); START_JOBS take the rest.
-# Sets producer (the producers' runner) and start_heavy (",job,job,").
+# Prints "<producer runner> <start_heavy>" for $1 idle heavy runners and the
+# producers' current runner $2. The budget is half the idle runners above the
+# reserve, capped; a busy gate pool moves both producers first (they gate the
+# shards), then START_JOBS take what is left.
 plan_heavy() {
-  local idle="$1" pool budget job
-  producer="$2"
+  local idle="$1" producer="$2" planned="," pool budget job
   pool="$(heavy_label)"
-  budget=$((idle - SHARD_RESERVE))
+  budget=$(( (idle - HEAVY_RESERVE) / 2 ))
   (( budget <= START_HEAVY_CAP )) || budget=${START_HEAVY_CAP}
   [[ -n "${pool}" ]] || budget=0
   if [[ "${producer}" == "${HOSTED_RUNNER}" ]] && (( budget >= 2 )); then
@@ -69,9 +75,10 @@ plan_heavy() {
   fi
   for job in "${START_JOBS[@]}"; do
     (( budget > 0 )) || break
-    start_heavy+="${job},"
+    planned+="${job},"
     budget=$((budget - 1))
   done
+  echo "${producer} ${planned}"
 }
 
 group_field() {
@@ -105,10 +112,10 @@ while true; do
   state="$(jq -r '.state' <<< "${proof}")"
   case "${state}" in
     ready)
-      plan_heavy "${heavy_idle}" "${label}"
+      read -r producer start_heavy <<< "$(plan_heavy "${heavy_idle}" "${label}")"
       select_runner "${producer}" "build host has ${REQUIRED_IDLE_RUNNERS} idle runners" ;;
     busy)
-      plan_heavy "${heavy_idle}" "${HOSTED_RUNNER}"
+      read -r producer start_heavy <<< "$(plan_heavy "${heavy_idle}" "${HOSTED_RUNNER}")"
       select_runner "${producer}" "build-host gate runners busy; ${heavy_idle} idle heavy runners" ;;
   esac
   (( SECONDS < deadline )) || select_runner "${HOSTED_RUNNER}" "build host not ready within ${WAIT_SECONDS}s (${state})"

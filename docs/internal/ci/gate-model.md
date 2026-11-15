@@ -545,18 +545,23 @@ host and read its heartbeat, nothing else) and runs
 - When the host is busy, or no heartbeat arrives within three minutes, the two
   producers use `ubuntu-latest`, unless idle heavy runners cover them (below). A
   stopped host is still woken for later runs.
-- Heavy start plan (`start_heavy`): from the same proof, idle heavy runners above
-  a reserve of two (left for this gate's even affected shards) are spent, at most
-  four per gate, so gates reading the same 30-second heartbeat cannot fill the
-  pool. A busy gate pool moves both producers first, as the plain label of
-  `HONUA_HEAVY_RUNNER`, because they gate the shards; the remaining budget goes to
-  `analyzers-server`, `architecture`, `server-fast` and `analyzers-other`, in that
-  order (longest median hosted run on 24 gates, 15 Nov 2026: 12.2, 12.0, 10.7 and
-  10.6 minutes after 5 to 9 minutes of hosted queue). `server-governance` (starts
-  PostGIS) and `unit-fast` (shortest) stay hosted. A planned job runs on the
-  fork-guarded `HONUA_HEAVY_RUNNER` JSON selector; no label, a group-only
-  selector, a stale or invalid proof, enforce mode, drafts and forks all keep it
-  hosted. Fast/architecture jobs pin temp to `RUNNER_TEMP` and skip the hosted-only
+- Heavy start plan (`start_heavy`): from the same proof, the selector never plans
+  three idle heavy runners (two for this gate's even affected shards, which have no
+  hosted fallback, and one for advisory and AOT jobs) and spends half of the idle
+  runners above that, at most two per gate, so a second gate reading the same
+  heartbeat still finds the reserve. The heartbeat records availability; it does
+  not reserve runners, so several gates starting together can still queue on the
+  pool, and a lost spot host leaves planned jobs queued as it does shards. A busy
+  gate pool moves both producers first, on the label that alone selects the heavy
+  pool (the group's own label or a sole label; otherwise they stay hosted),
+  because they gate the shards; the remaining budget goes to `analyzers-server`,
+  `architecture`, `server-fast` and `analyzers-other`, in that order (longest
+  median hosted run on 24 gates, 15 Nov 2026: 12.2, 12.0, 10.7 and 10.6 minutes
+  after 5 to 9 minutes of hosted queue). `server-governance` (starts PostGIS) and
+  `unit-fast` (shortest) stay hosted. A planned job runs on the fork-guarded
+  `HONUA_HEAVY_RUNNER` JSON selector; a stale or invalid proof, enforce mode,
+  drafts and forks keep it hosted. A failed-jobs rerun reuses the original plan.
+  Fast/architecture jobs pin temp to `RUNNER_TEMP` and skip the hosted-only
   `sudo` disk cleanup on self-hosted runners.
 - Any failure selects `ubuntu-latest`. Every selection step is
   `continue-on-error`, so the job cannot fail and skip the required producer,

@@ -511,10 +511,10 @@ class GateRunnerSelectionTests(unittest.TestCase):
         pool = {**WAKE_CREDENTIALS, "HONUA_HEAVY_RUNNER": '{"group":"honua-heavy","labels":["honua-heavy"]}'}
         jobs = ["analyzers-server", "architecture", "server-fast", "analyzers-other"]
         cases = [  # (gate idle, heavy idle) -> producer runner, planned start jobs
-            ((2, 8), "honua-build", jobs), ((2, 5), "honua-build", jobs[:3]), ((2, 3), "honua-build", jobs[:1]),
-            ((2, 2), "honua-build", []), ((2, 1), "honua-build", []), ((2, 0), "honua-build", []),
-            ((1, 8), "honua-heavy", jobs[:2]), ((0, 6), "honua-heavy", jobs[:2]), ((1, 5), "honua-heavy", jobs[:1]),
-            ((1, 4), "honua-heavy", []), ((1, 3), "ubuntu-latest", jobs[:1]), ((0, 2), "ubuntu-latest", []),
+            ((2, 8), "honua-build", jobs[:2]), ((2, 7), "honua-build", jobs[:2]), ((2, 6), "honua-build", jobs[:1]),
+            ((2, 5), "honua-build", jobs[:1]), ((2, 4), "honua-build", []), ((2, 0), "honua-build", []),
+            ((1, 8), "honua-heavy", []), ((0, 7), "honua-heavy", []), ((1, 6), "ubuntu-latest", jobs[:1]),
+            ((1, 5), "ubuntu-latest", jobs[:1]), ((1, 4), "ubuntu-latest", []), ((0, 2), "ubuntu-latest", []),
         ]
         for (idle, heavy_idle), runner, planned in cases:
             proof = json.loads(heartbeat(idle=idle))
@@ -523,6 +523,29 @@ class GateRunnerSelectionTests(unittest.TestCase):
                 fields, _ = self.run_selection_details(HostScenario(heartbeat=json.dumps(proof)), pool)
                 self.assertEqual(fields, {"runner": runner, "heavy_ready": str(heavy_idle > 0).lower(),
                                           "start_heavy": "," + "".join(f"{job}," for job in planned)})
+
+    def test_only_a_label_that_alone_selects_the_heavy_pool_moves_producers(self):
+        proof = json.loads(heartbeat(idle=0))
+        proof["heavy"] = {"version": 1, "idle": 8}
+        cases = [('{"group":"honua-heavy","labels":["self-hosted","honua-heavy"]}', "honua-heavy"),
+                 ('{"group":"honua-heavy","labels":["custom"]}', "custom"), ('["honua-heavy"]', "honua-heavy"),
+                 ('"honua-heavy"', "honua-heavy"), ('{"group":"honua-heavy","labels":["self-hosted","linux"]}', None),
+                 ('["self-hosted","honua-heavy"]', None), ('"honua-heavy"\n"other"', None)]
+        for configured, label in cases:
+            with self.subTest(configured=configured):
+                environment = {**WAKE_CREDENTIALS, "HONUA_HEAVY_RUNNER": configured}
+                fields, _ = self.run_selection_details(HostScenario(heartbeat=json.dumps(proof)), environment)
+                self.assertEqual(fields["runner"], label or "ubuntu-latest")
+                self.assertEqual(fields["start_heavy"], ",")
+
+    def test_ready_gate_pool_keeps_producers_without_a_heavy_label(self):
+        proof = json.loads(heartbeat(idle=2))
+        proof["heavy"] = {"version": 1, "idle": 8}
+        for configured in ("", '{"group":"honua-heavy"}', '["self-hosted","x64"]'):
+            with self.subTest(configured=configured):
+                environment = {**WAKE_CREDENTIALS, "HONUA_HEAVY_RUNNER": configured}
+                fields, _ = self.run_selection_details(HostScenario(heartbeat=json.dumps(proof)), environment)
+                self.assertEqual(fields, {"runner": "honua-build", "heavy_ready": "true", "start_heavy": ","})
 
     def test_start_jobs_stay_hosted_without_a_plain_heavy_label_or_valid_proof(self):
         fresh = json.loads(heartbeat(idle=0))
