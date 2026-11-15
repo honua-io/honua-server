@@ -63,7 +63,8 @@ public sealed class VerticalSliceIsolationTests
         "WorkflowPackages",
         "Operations", // Honua Operations Toolset slice: descriptor/executor split + policy-gated dispatcher over composable operations.
         "Temporal", // Temporal data history slice (honua-server#1166): capability discovery + as-of read.
-        "FieldWorkflows" // Back-office field workflow slice (honua-server#1158/#1159/#1160): review/QA + exports over form submissions.
+        "FieldWorkflows", // Back-office field workflow slice (honua-server#1158/#1159/#1160): review/QA + exports over form submissions.
+        "AgentWorkspace" // Owner-scoped native local process workspaces: identity store + sandbox gateway.
     };
 
     /// <summary>

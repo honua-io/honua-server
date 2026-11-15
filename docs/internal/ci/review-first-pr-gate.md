@@ -137,13 +137,8 @@ the singular combined-status response is not historical evidence.
   summary write occurs between the final joint snapshot and the receipt/rerun.
   Normal PR Gate concurrency cancels the residual race if the head moves after
   those reads.
-- Live merge-train selection and pre-land validation independently fetch current
-  reviews, threads, labels, and head identity from GitHub. They refresh
-  `Review Gate` and fail closed on negative/truncated evidence, so a stale status
-  or suppressed bridge can never authorize landing.
-- Resolving a thread has no GitHub Actions event. The live train repairs that
-  stale failure during selection; an operator can re-attest sooner with trusted
-  default-branch code using:
+- Resolving a thread has no GitHub Actions event. An operator re-attests with
+  trusted default-branch code using:
 
   ```bash
   gh api --method POST repos/honua-io/honua-server/dispatches \
@@ -163,8 +158,7 @@ no-op. A duplicate API rejection is ignored only after a fresh run read proves
 that the rerun was already accepted; all other API errors fail visibly.
 
 Bridge delivery is intentionally best-effort. It improves status freshness but
-is never used as proof that review evidence is still valid. The merge train is
-a manual batch merge authority and re-attests from source evidence twice.
+is never used as proof that review evidence is still valid.
 
 ### Shedding a superseded subject
 
@@ -201,10 +195,6 @@ or label event happened to wake the gate again. For the same reason an event
 that names no subject SHA — `issue_comment`, the highest-volume trigger — is
 never shed on staleness anywhere: its entire purpose is that review evidence
 moved while the head did not.
-
-`claude-review.yml` applies the same rule one step earlier, deciding closed,
-draft, and moved subjects from the API before it checks out the trusted reviewer
-policy at all.
 
 Closing and reopening a PR can create multiple runs for an unchanged head. The
 dispatcher deterministically selects the newest canonical run by GitHub

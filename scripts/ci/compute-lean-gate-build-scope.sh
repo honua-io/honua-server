@@ -30,8 +30,8 @@
 #   script force-fulls whenever it cannot compute a trustworthy diff base (a
 #   non-pull_request event, a checkout too shallow to hold the base commit, or
 #   any failure of the underlying script). A residual affected-closure miss is
-#   caught by the merge train's full-solution build BEFORE the change lands, so
-#   it is fixed forward and never reaches trunk unverified.
+#   caught by the post-merge affected run and the scheduled full CI build, and
+#   is fixed forward from there.
 #
 # Inputs (env):
 #   BUILD_SCOPE        'full' (default), 'affected' or 'test-roots'.
