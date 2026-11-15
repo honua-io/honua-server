@@ -71,7 +71,7 @@ internal sealed partial class OperationHumanApprovalAuthority(
     }
 
     // A rejection only closes the proposal, so it needs no review capability, but it needs the same
-    // verified person in an interactive OIDC session as an approval.
+    // verified person in an interactive browser session as an approval.
     public async Task VerifyRejectionAsync(OperationProposal proposal, HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(proposal);
