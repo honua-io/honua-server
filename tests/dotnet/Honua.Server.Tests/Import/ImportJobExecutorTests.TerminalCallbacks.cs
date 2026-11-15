@@ -23,11 +23,11 @@ public sealed partial class ImportJobExecutorTests
             Arg.Any<IProgress<GeoServerImportProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
+                var initial = GeoServerImportProgress.CreateInitial(request.JobId!, request.GeoServerRestUrl, request.TargetHonuaUrl);
                 await DeliverTerminalCallbackAsync(call.Arg<IProgress<GeoServerImportProgress>>()!,
-                    GeoServerImportProgress.CreateInitial(request.JobId!, request.GeoServerRestUrl, request.TargetHonuaUrl)
-                        with { Status = GeoServerImportStatus.Failed, CompletedAt = DateTimeOffset.UtcNow });
-                return GeoServerImportResult.CreateFailure(request.GeoServerRestUrl, request.TargetHonuaUrl, "Apply failed")
-                    with { FailedResources = 3 };
+                    initial with { Status = GeoServerImportStatus.Failed, CompletedAt = DateTimeOffset.UtcNow });
+                var failure = GeoServerImportResult.CreateFailure(request.GeoServerRestUrl, request.TargetHonuaUrl, "Apply failed");
+                return failure with { FailedResources = 3 };
             });
         using var provider = CreateGeoServerProvider(importer);
         var (jobs, manager, executor) = CreateGeoServerExecutor(provider);
@@ -85,9 +85,9 @@ public sealed partial class ImportJobExecutorTests
             Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
+                var initial = GeoservicesImportProgress.CreateInitial(request.JobId!, request.ServiceUrl, request.LayerId, request.TableName);
                 await DeliverTerminalCallbackAsync(call.Arg<IProgress<GeoservicesImportProgress>>()!,
-                    GeoservicesImportProgress.CreateInitial(request.JobId!, request.ServiceUrl, request.LayerId, request.TableName)
-                        with { Status = callbackStatus, FeaturesProcessed = 1, CompletedAt = DateTimeOffset.UtcNow });
+                    initial with { Status = callbackStatus, FeaturesProcessed = 1, CompletedAt = DateTimeOffset.UtcNow });
 
                 beforeReturn();
 

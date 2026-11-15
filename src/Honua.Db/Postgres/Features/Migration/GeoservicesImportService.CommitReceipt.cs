@@ -64,10 +64,15 @@ internal sealed partial class GeoservicesImportService
 
         return new GeoservicesImportResult
         {
-            Success = false, NeedsReview = true, DataCommitted = true,
-            TableName = request.TableName, SourceServiceUrl = request.ServiceUrl,
-            SourceLayerId = request.LayerId, ServiceName = request.ServiceName,
-            FeatureCount = reader.GetInt32(4), FailedFeatures = reader.GetInt32(5),
+            Success = false,
+            NeedsReview = true,
+            DataCommitted = true,
+            TableName = request.TableName,
+            SourceServiceUrl = request.ServiceUrl,
+            SourceLayerId = request.LayerId,
+            ServiceName = request.ServiceName,
+            FeatureCount = reader.GetInt32(4),
+            FailedFeatures = reader.GetInt32(5),
             FidelityVerdict = MigrationFidelityVerdicts.Incomplete,
             ErrorMessage = "Imported rows were committed by an earlier execution; publication, attachments and reconciliation require review."
         };

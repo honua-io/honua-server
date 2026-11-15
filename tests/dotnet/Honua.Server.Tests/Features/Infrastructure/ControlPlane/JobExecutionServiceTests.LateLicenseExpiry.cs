@@ -34,7 +34,9 @@ public sealed partial class JobExecutionServiceTests
         var completed = GeoservicesImportProgress.CreateInitial(job.OperationId,
             "https://example.com/FeatureServer", 0, "imported_data") with
         {
-            Status = status, DataCommitted = true, FeaturesProcessed = 12
+            Status = status,
+            DataCommitted = true,
+            FeaturesProcessed = 12
         };
         var manager = new GeoservicesImportJobManager(progressStore,
             NullLogger<GeoservicesImportJobManager>.Instance, store, Substitute.For<IJobQueue>());

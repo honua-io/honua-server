@@ -30,7 +30,8 @@ public sealed partial class ImportJobExecutorTests
         await manager.SubmitAsync(request, initial);
         await manager.ProgressStore.SetProgressAsync(request.JobId!, initial with
         {
-            Status = terminalStatus, ErrorMessage = "Superseded failure"
+            Status = terminalStatus,
+            ErrorMessage = "Superseded failure"
         }, TimeSpan.FromMinutes(10));
 
         var result = await executor.ExecuteAsync(await ClaimedAttemptAsync(jobs, request.JobId!, attempt: 2),
