@@ -57,10 +57,34 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
             self.assertEqual('preserved', services['honua']['environment']['CUSTOMER_SETTING'])
             self.assertEqual('true', services['honua']['environment']['Studio__EndUserAuthorization__Enabled'])
             files = self.compose_env(path)['COMPOSE_FILE']
-            self.assertEqual('compose.yaml:compose.executor.yaml:customer.yaml:compose.console.yaml:compose.executor.image.yaml', files)
+            self.assertEqual('compose.yaml:compose.executor.yaml:compose.console.yaml:customer.yaml:compose.executor.image.yaml', files)
             self.assertEqual(files, services['compose-executor']['environment']['ControlPlane__ComposeExecutor__ComposeFileList'])
             self.assertEqual(1, sum(line.startswith('COMPOSE_FILE=') for line in (path / '.env').read_text().splitlines()))
             self.assertNotIn(read_secret(path, 'HONUA_ADMIN_PASSWORD'), json.dumps(rendered))
+
+    def test_console_profile_keeps_customer_precedence_on_repeated_initialization(self):
+        for separator in (':', ';'):
+            with self.subTest(separator=separator), tempfile.TemporaryDirectory() as directory:
+                path = self.prepare_console(Path(directory))
+                files = separator.join(('compose.yaml', 'compose.executor.yaml', 'compose.console.yaml',
+                                        'customer.yaml', 'compose.executor.image.yaml'))
+                env_file = path / '.env'
+                env_file.write_text(env_file.read_text() +
+                                    f'COMPOSE_PATH_SEPARATOR={separator}\nCOMPOSE_FILE={files}\n')
+                (path / 'customer.yaml').write_text(
+                    'services:\n  honua:\n    environment:\n'
+                    '      Studio__EndUserAuthorization__Enabled: "false"\n'
+                    '      Oidc__AdminAuthCallbackUri: https://customer.example/admin/auth/callback\n')
+
+                for _ in range(2):
+                    self.assertEqual(files, initialize(path, ('console',))['COMPOSE_FILE'])
+                rendered = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                          cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+
+                self.assertEqual(0, rendered.returncode, rendered.stderr)
+                environment = json.loads(rendered.stdout)['services']['honua']['environment']
+                self.assertEqual('false', environment['Studio__EndUserAuthorization__Enabled'])
+                self.assertEqual('https://customer.example/admin/auth/callback', environment['Oidc__AdminAuthCallbackUri'])
 
     def test_console_files_settings_and_certificate(self):
         with tempfile.TemporaryDirectory() as directory:

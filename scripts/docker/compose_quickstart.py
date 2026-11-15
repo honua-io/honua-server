@@ -127,9 +127,11 @@ def console_image_settings(directory, lock, values):
 
 def console_profile_settings(directory, lock, values):
     separator = values.get('COMPOSE_PATH_SEPARATOR', ':')
-    files = [name for name in values['COMPOSE_FILE'].split(separator) if name != 'compose.console.yaml']
-    managed_image = 'compose.executor.image.yaml'
-    files.insert(files.index(managed_image) if managed_image in files else len(files), 'compose.console.yaml')
+    files = values['COMPOSE_FILE'].split(separator)
+    if 'compose.console.yaml' not in files:
+        executor = 'compose.executor.yaml'
+        position = files.index(executor) + 1 if executor in files else 0
+        files.insert(position, 'compose.console.yaml')
     profiles = [name for name in values.get('COMPOSE_PROFILES', '').split(',') if name]
     if 'console' not in profiles:
         profiles.append('console')
