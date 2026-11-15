@@ -10,7 +10,7 @@ using Npgsql;
 namespace Honua.Db.Postgres.Tests.Features.Observability;
 
 [Collection("Database")]
-public sealed class IncidentInvestigationMigrationTests(PostgresFixture fixture)
+public sealed partial class IncidentInvestigationMigrationTests(PostgresFixture fixture)
 {
     private const string Migration = "193_AllowIncidentInvestigationReferences.sql";
 

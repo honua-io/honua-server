@@ -673,3 +673,5 @@ Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: tru
 ### Investigation incident references
 
 `193_AllowIncidentInvestigationReferences.sql` adds companion tables for incident links and pinned incident versions. It preserves the existing investigation tables, discriminator checks and identifiers. Apply the migration before deploying the incident-writing API. Older images continue reading their original tables; incident references remain stored in the companion tables and become visible again when an incident-capable image is deployed. The shared pin and link sequences prevent identifiers from colliding across the original and companion tables. No contract approval or database restore is needed for an image rollback.
+
+The companion tables follow the existing investigation family. When a deployment configures a different schema but the original migration created the investigation tables in `honua`, the new tables stay in `honua` alongside them. The migration does not move existing investigation data.
