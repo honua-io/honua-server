@@ -30,6 +30,7 @@ public sealed partial class FeatureServerReplicaSyncTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_ForeignCommitAfterUpload_RetainsExactConflictResolutionBase()
     {
+        await EnsureOperationEvidenceCaptureAsync();
         var objectId = await AddFeatureAsync("evidence-base");
         var replicaId = await CreateReplicaAsync("ExactOperationEvidence", "0");
         await SynchronizeDownloadAsync(replicaId);
@@ -52,6 +53,22 @@ public sealed partial class FeatureServerReplicaSyncTests
         record!.Value.ResolutionBaseGeneration.Should().Be(ownEvidence.Generation);
         upload.GetRawText().Should().NotContain("operationEvidence");
     }
+
+    private Task EnsureOperationEvidenceCaptureAsync()
+        => _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            // WebAppFixture seeds YAML and skips application migrations. Use the production
+            // capture trigger on the shared change log rather than a test-only approximation.
+            const string resource = "Honua.Server.Migrations.194_CaptureFeatureOperationEvidence.sql";
+            await using var stream = typeof(PostgresFixture).Assembly.GetManifestResourceStream(resource)
+                ?? throw new InvalidOperationException($"The operation evidence migration {resource} was not embedded.");
+            using var reader = new StreamReader(stream);
+            var ddl = await reader.ReadToEndAsync();
+            await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+            await using var command = connection.CreateCommand();
+            command.CommandText = ddl;
+            await command.ExecuteNonQueryAsync();
+        });
 
     private sealed class ConcurrentUploadGate
     {
