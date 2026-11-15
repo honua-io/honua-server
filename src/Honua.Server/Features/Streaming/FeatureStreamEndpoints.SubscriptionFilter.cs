@@ -413,6 +413,7 @@ internal static partial class FeatureStreamEndpoints
     {
         var rowSource = policyServices.GetRequiredService<IRowLevelSecurityFilterSource>();
         var fieldSource = policyServices.GetRequiredService<IFieldMaskSource>();
+        var filterService = policyServices.GetRequiredService<IFilterExpressionService>();
         var exact = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
         var named = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
         var deniedNames = new HashSet<(string Service, int Layer)>();
@@ -451,7 +452,14 @@ internal static partial class FeatureStreamEndpoints
 
                 if (!policies.TryGetValue(layer.Resource.Metadata.Id, out var policy))
                 {
-                    var predicates = await rowSource.ResolveExpressionsAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
+                    var predicates = (await rowSource.ResolveExpressionsAsync(layer.Resource, cancellationToken).ConfigureAwait(false)).ToList();
+                    if (!PermanentFilterAccepted(layer.Resource, filterService, predicates))
+                    {
+                        deniedNames.Add(nameKey);
+                        deniedExact.Add((service.Metadata.Id, layer.LayerId));
+                        continue;
+                    }
+
                     var masked = await fieldSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
                     policy = new StreamLayerReadPolicy(predicates, new HashSet<string>(masked, StringComparer.OrdinalIgnoreCase));
                     policies.Add(layer.Resource.Metadata.Id, policy);

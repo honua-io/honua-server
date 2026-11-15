@@ -54,6 +54,8 @@ internal sealed class OpsFindingsExtendedSignals
 
     public IManagedComposeObserver? ManagedComposeObserver { get; init; }
 
+    public ICdnPurgeBudget? CdnPurgeBudget { get; init; }
+
     public IOpsDatabasePressureSignal? DatabasePressureSignal { get; init; }
 
     public IRuntimeTunableAdmissionGate? AdmissionGate { get; init; }
