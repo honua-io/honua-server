@@ -54,6 +54,8 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
     private static void ConfigureHost(IWebHostBuilder builder)
     {
         builder.UseSetting("HONUA_DEV_AUTH", "false");
+        // Tenant isolation is only observable when the tid claim selects the request tenant.
+        builder.UseSetting("MultiTenancy:Enabled", "true");
         builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
         builder.UseSetting("Studio:Session:EnvironmentId", "local-process-test");
         builder.UseSetting("Oidc:Enabled", "true");
