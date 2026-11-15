@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
@@ -185,6 +186,49 @@ public sealed class OpsAlarmIncidentIntegrationTests : IAsyncLifetime
         queue.Deleted.Should().Equal("unrelated");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(1, 0)]
+    public async Task ProcessAsync_SubsecondTransitions_OrderByAlarmStateTimestamp(int first, int second)
+    {
+        await using var provider = CreateProvider();
+        using var ingestion = CreateIngestion(provider, new RecordingQueue());
+        foreach (var index in new[] { first, second })
+        {
+            var envelope = JsonNode.Parse(Envelope(index, index == 0 ? "ALARM" : "OK"))!;
+            envelope["time"] = _start.ToString("O", CultureInfo.InvariantCulture);
+            envelope["detail"]!["state"]!["timestamp"] = _start.AddMilliseconds(index * 100)
+                .ToString("O", CultureInfo.InvariantCulture).Replace("+00:00", "+0000", StringComparison.Ordinal);
+            await ingestion.ProcessAsync(new($"receipt-{index}", envelope.ToJsonString()), CancellationToken.None);
+        }
+        var observations = (await ReadObservationsAsync(provider)).Observations;
+        observations.Should().HaveCount(2);
+        observations.Select(o => o.ObservedAt).Distinct().Should().HaveCount(2);
+        (await ReadEpisodesAsync()).Should().HaveCount(first == 0 ? 1 : 0)
+            .And.OnlyContain(e => e.State == OpsIncidentEpisodeState.Recovered);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    [Theory]
+    [InlineData(null)]
+    [InlineData("invalid")]
+    [InlineData("2026-11-15T06:00:00")]
+    public async Task ProcessAsync_InvalidStateTimestamp_DoesNotAcknowledge(string? timestamp)
+    {
+        var queue = new RecordingQueue();
+        await using var provider = CreateProvider();
+        using var ingestion = CreateIngestion(provider, queue);
+        var envelope = JsonNode.Parse(Envelope(0, "ALARM"))!;
+        envelope["detail"]!["state"]!["timestamp"] = timestamp;
+        var process = () => ingestion.ProcessAsync(new("invalid-time", envelope.ToJsonString()), CancellationToken.None);
+        await process.Should().ThrowAsync<JsonException>();
+        (await ReadObservationsAsync(provider)).Observations.Should().BeEmpty();
+        queue.Deleted.Should().BeEmpty();
+    }
+
     private ServiceProvider CreateProvider(EpisodeStoreMode episodeStoreMode = EpisodeStoreMode.Standard)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -256,7 +300,7 @@ public sealed class OpsAlarmIncidentIntegrationTests : IAsyncLifetime
     }
 
     private string Envelope(int index, string state) =>
-        $$$$"""{"id":"event-{{{{index}}}}","source":"aws.cloudwatch","detail-type":"CloudWatch Alarm State Change","time":"{{{{_start.AddSeconds(index).ToString("O", CultureInfo.InvariantCulture)}}}}","resources":["arn:aws:cloudwatch:eu-north-1:000000000000:alarm:server-health"],"detail":{"authorityScope":"untrusted","state":{"value":"{{{{state}}}}"}}} """;
+        $$$$"""{"id":"event-{{{{index}}}}","source":"aws.cloudwatch","detail-type":"CloudWatch Alarm State Change","time":"{{{{_start.AddSeconds(index).ToString("O", CultureInfo.InvariantCulture)}}}}","resources":["arn:aws:cloudwatch:eu-north-1:000000000000:alarm:server-health"],"detail":{"authorityScope":"untrusted","state":{"value":"{{{{state}}}}","timestamp":"{{{{_start.AddSeconds(index).ToString("O", CultureInfo.InvariantCulture)}}}}"}}} """;
 
     private static OpsEventIngestionService CreateIngestion(ServiceProvider provider, RecordingQueue queue) =>
         new(queue, provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<OpsEventIngestionService>.Instance);

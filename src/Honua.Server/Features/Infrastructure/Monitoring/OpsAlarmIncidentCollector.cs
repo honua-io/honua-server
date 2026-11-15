@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.Observability.Abstractions;
@@ -32,7 +33,7 @@ internal sealed class OpsAlarmIncidentCollector(
             SourceId = "aws.cloudwatch",
             ObservationId = externalEvent.Id,
             FindingId = OpsFindingId.Create("cloudwatch-alarm", alarmArn),
-            ObservedAt = externalEvent.OccurredAt,
+            ObservedAt = StateTimestamp(stateElement),
             State = state switch
             {
                 "ALARM" => OpsIncidentObservationState.Active,
@@ -83,4 +84,20 @@ internal sealed class OpsAlarmIncidentCollector(
     private static string? Text(JsonElement element, string property)
         => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) &&
            value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    private static DateTimeOffset StateTimestamp(JsonElement state)
+    {
+        var timestamp = Text(state, "timestamp");
+        if (timestamp is { Length: >= 5 } && timestamp[^5] is '+' or '-')
+        {
+            timestamp = timestamp.Insert(timestamp.Length - 2, ":");
+        }
+        string[] formats = ["yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'"];
+        if (DateTimeOffset.TryParseExact(timestamp, formats, CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal, out var observedAt))
+        {
+            return observedAt;
+        }
+        throw new JsonException("CloudWatch alarm state changes require a valid state timestamp with a UTC offset.");
+    }
 }
