@@ -604,7 +604,7 @@ public sealed class LayerPublishJobTests
                     .AddStorageBinding("other-binding", "other-data", "public.other", storageLayerId: 742)
                     .AddService("other-service", "ROADS")
                     .AddPublication("other-publication", "other-service", "other-data", layerIndex: 0,
-                        storageBindingId: "other-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                        storageBindingId: "other-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer)
                     .Build();
                 graph = graph with
                 {
@@ -694,7 +694,7 @@ public sealed class LayerPublishJobTests
             .AddStorageBinding("road-binding", "road-data", "public.roads", storageLayerId: 741)
             .AddService(serviceId, serviceName)
             .AddPublication(publicationId, serviceId, "road-data", layerIndex: 3,
-                storageBindingId: "road-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                storageBindingId: "road-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .Build();
 
     private static LayerPublishJobService Service(

@@ -11,6 +11,8 @@ namespace Honua.Infrastructure.Security;
 /// </summary>
 public static class CorsConfiguration
 {
+    private const string LoggerCategory = "Honua.Server.CorsConfiguration";
+
     private static readonly string[] DefaultDevelopmentOrigins =
     [
         "http://localhost:3000",
@@ -60,9 +62,6 @@ public static class CorsConfiguration
     /// </summary>
     public static void AddCorsPolicies(this IServiceCollection services, IConfiguration configuration, IWebHostEnvironment environment)
     {
-        var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-        var logger = loggerFactory.CreateLogger("Honua.Server.CorsConfiguration");
-
         // Guard against booting a Development profile on a hosted environment.
         // A container or cloud signal (DOTNET_RUNNING_IN_CONTAINER or KUBERNETES_SERVICE_HOST)
         // combined with ASPNETCORE_ENVIRONMENT=Development indicates the dev profile is
@@ -73,11 +72,18 @@ public static class CorsConfiguration
         var permissiveCorsDisabled = environment.IsDevelopment() && runningInManagedHost;
         if (permissiveCorsDisabled)
         {
-            CorsLog.DevelopmentCorsDisabledInHostedEnvironment(logger);
+            // The host's logging pipeline does not exist yet; dispose the bootstrap
+            // factory so its console queue thread does not outlive this call.
+            using var bootstrapLoggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
+            CorsLog.DevelopmentCorsDisabledInHostedEnvironment(bootstrapLoggerFactory.CreateLogger(LoggerCategory));
         }
 
-        services.AddCors(options =>
+        services.AddCors();
+        // Policies are built when CorsOptions is first resolved, so they log through the
+        // host's ILoggerFactory instead of a factory that would outlive the host.
+        services.AddOptions<CorsOptions>().Configure<ILoggerFactory>((options, loggerFactory) =>
         {
+            var logger = loggerFactory.CreateLogger(LoggerCategory);
             // Development policy - controlled development origins only
             options.AddPolicy(DevelopmentPolicy, policy =>
             {

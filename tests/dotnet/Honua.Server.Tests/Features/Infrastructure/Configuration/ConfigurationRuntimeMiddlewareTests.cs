@@ -48,6 +48,11 @@ public sealed class ConfigurationRuntimeMiddlewareTests
 
     [UnitTheory]
     [InlineData("/healthz/live", StatusCodes.Status204NoContent, 0)]
+    [InlineData("/healthz/live/", StatusCodes.Status204NoContent, 0)]
+    [InlineData("/healthz/deep", StatusCodes.Status204NoContent, 0)]
+    [InlineData("/healthz/deep/", StatusCodes.Status204NoContent, 0)]
+    [InlineData("/HEALTHZ/DEEP/", StatusCodes.Status204NoContent, 0)]
+    [InlineData("/healthz/deep/metadata", StatusCodes.Status503ServiceUnavailable, 1)]
     [InlineData("/api/v1/admin/metadata", StatusCodes.Status503ServiceUnavailable, 1)]
     public async Task UseSharedConfiguration_UnmigratedDatabase_DefersResolutionAndRefusesProtectedRequests(
         string path, int expectedStatus, int expectedResolutions)

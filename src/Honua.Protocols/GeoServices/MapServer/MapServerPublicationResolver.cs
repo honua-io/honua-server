@@ -8,12 +8,12 @@ namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static class MapServerPublicationResolver
 {
-    internal static MetadataV2Publication[] ResolveLayerPublications(
+    internal static MetadataV2Layer[] ResolveLayerPublications(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         string? tenantId = null)
     {
-        var publications = new List<MetadataV2Publication>();
+        var publications = new List<MetadataV2Layer>();
         var seenPublicLayerIds = new HashSet<int>();
 
         // Rank every candidate publication for the service so that a resource exposed
@@ -33,8 +33,8 @@ internal static class MapServerPublicationResolver
             .Where(snapshot.IsRoutable)
             .OrderBy(static publication => publication.PublicationType switch
             {
-                MetadataV2PublicationType.EsriMapLayer => 0,
-                MetadataV2PublicationType.EsriFeatureLayer => 1,
+                MetadataV2LayerType.EsriMapLayer => 0,
+                MetadataV2LayerType.EsriFeatureLayer => 1,
                 _ => 2,
             })
             .ThenBy(static publication => publication.Metadata.Id, StringComparer.Ordinal);

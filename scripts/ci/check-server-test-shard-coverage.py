@@ -697,8 +697,8 @@ def evaluate_assertion(
 
       --assert-owner (require_runnable=True) pins a REAL class to its shard. It
         must (a) name a class that exists, (b) in the asserted assembly, (c) that
-        declares at least one recognised test method, and (d) be selected by the
-        shard's filter. (c) is the #3317 half: before it, the assertion proved
+        declares at least one recognised test method, and (d) have every runnable
+        method selected by the shard's filter. (c) guards runnable ownership: before it, the assertion proved
         the class was CLAIMED, never that it would RUN — a class the enumerator
         cannot see declaring a test is exactly the class whose disappearance the
         orphan guard would also miss, so an assertion over it was self-defeating.
@@ -751,7 +751,9 @@ def evaluate_assertion(
                 "nothing about what runs — give it a test method, or use "
                 "--assert-route if the name is a deliberate synthetic probe",
             )
-    if not _eval(parsed[shard_name], fqn):
+    subjects = ([f"{fqn}.{method}" for method in entry["methods"]]
+                if require_runnable else [fqn])
+    if not subjects or not all(_eval(parsed[shard_name], subject) for subject in subjects):
         return AssertionResult(
             1, f"::error::shard {shard_name!r} filter does not select {fqn!r}"
         )
