@@ -513,9 +513,8 @@ wake/wait orchestration. Both sparse checkouts include the shared validator.
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
 `server-test-producer` run. The selector itself and the four Format/analyzer matrix jobs use the
 fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback.
-The four Fast/architecture matrix jobs use the same fork-guarded selector.
-All eight use the light pool when light routing is enabled.
-All eight remain independent of producer admission and heavy settings and keep
+The four Fast/architecture matrix jobs continue to use `ubuntu-latest`.
+These jobs remain independent of producer admission and heavy settings and keep
 their existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
 availability switch: keep it unset while the light pool is unhealthy; new jobs
 then fall back to hosted runners. Forks always use hosted runners. Routing does
