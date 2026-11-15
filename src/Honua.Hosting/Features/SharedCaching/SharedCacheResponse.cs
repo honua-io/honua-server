@@ -76,7 +76,7 @@ internal static class SharedCacheResponse
 
         var options = context.RequestServices.GetService<IOptionsMonitor<SharedCacheOptions>>()?.CurrentValue ?? ProductDefaults;
         context.Response.Headers.CacheControl = FormatCacheControl(context, cacheClass, options);
-        AddMissingVary(context.Response, VaryFor(cacheClass));
+        VaryHeader.AppendMissing(context.Response.Headers, VaryFor(cacheClass));
         if (options.CacheTagsEnabled && CdnCacheTags.ForResponse(Subject(context), context.Request.Path, context.Request.RouteValues["serviceId"]?.ToString())
                 is { Length: > 0 } tags)
         {
@@ -162,15 +162,6 @@ internal static class SharedCacheResponse
 
     private static string Seconds(int seconds)
         => Math.Max(0, seconds).ToString(CultureInfo.InvariantCulture);
-
-    private static void AddMissingVary(HttpResponse response, string[] requestHeaders)
-    {
-        var present = response.Headers.Vary.ToString();
-        foreach (var requestHeader in requestHeaders.Where(header => !present.Contains(header, StringComparison.OrdinalIgnoreCase)))
-        {
-            response.Headers.Append(HeaderNames.Vary, requestHeader);
-        }
-    }
 
     // Origin is always listed: the CORS policy reflects the request origin, and only on requests that send one.
     // A tile without an explicit format is PNG or vector by Accept.

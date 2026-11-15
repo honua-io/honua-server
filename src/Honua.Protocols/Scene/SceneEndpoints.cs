@@ -565,11 +565,11 @@ internal static partial class SceneEndpoints
             headers[HeaderNames.CacheControl] = "no-store";
             if (isProtected && tokenTransport is SceneAccessTokenTransport.None)
             {
-                AppendVary(headers, CredentialVaryHeaders);
+                VaryHeader.AppendMissing(headers, CredentialVaryHeaders);
             }
             else if (isProtected && tokenTransport is SceneAccessTokenTransport.Header)
             {
-                AppendVary(headers, BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader);
+                VaryHeader.AppendMissing(headers, BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader);
             }
         }
         else if (isProtected)
@@ -577,11 +577,11 @@ internal static partial class SceneEndpoints
             headers[HeaderNames.CacheControl] = SharedCacheGuard.NotShared;
             if (tokenTransport is SceneAccessTokenTransport.None)
             {
-                AppendVary(headers, CredentialVaryHeaders);
+                VaryHeader.AppendMissing(headers, CredentialVaryHeaders);
             }
             else if (tokenTransport is SceneAccessTokenTransport.Header)
             {
-                AppendVary(headers, BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader);
+                VaryHeader.AppendMissing(headers, BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader);
             }
         }
         else
@@ -590,19 +590,6 @@ internal static partial class SceneEndpoints
         }
 
         headers[HeaderNames.AcceptRanges] = "bytes";
-    }
-
-    // Appends, so the Accept-Encoding entry added with a coded validator survives on 304s.
-    private static void AppendVary(IHeaderDictionary headers, string values)
-    {
-        var present = headers.GetCommaSeparatedValues(HeaderNames.Vary);
-        foreach (var value in values.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (!present.Contains(value, StringComparer.OrdinalIgnoreCase))
-            {
-                headers.AppendCommaSeparatedValues(HeaderNames.Vary, value);
-            }
-        }
     }
 
     internal static void SetDynamicSceneCacheHeaders(
@@ -625,13 +612,13 @@ internal static partial class SceneEndpoints
             headers[HeaderNames.CacheControl] = "no-store";
             if (isProtected)
             {
-                AppendVary(headers, CredentialVaryHeaders);
+                VaryHeader.AppendMissing(headers, CredentialVaryHeaders);
             }
         }
         else if (isProtected)
         {
             headers[HeaderNames.CacheControl] = SharedCacheGuard.NotShared;
-            AppendVary(headers, CredentialVaryHeaders);
+            VaryHeader.AppendMissing(headers, CredentialVaryHeaders);
         }
         else
         {

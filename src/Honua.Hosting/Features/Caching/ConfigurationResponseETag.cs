@@ -62,12 +62,7 @@ internal static class ConfigurationResponseETag
             return etag;
         }
 
-        var vary = context.Response.Headers.GetCommaSeparatedValues(HeaderNames.Vary);
-        if (!vary.Contains("*", StringComparer.OrdinalIgnoreCase) &&
-            !vary.Contains(HeaderNames.AcceptEncoding, StringComparer.OrdinalIgnoreCase))
-        {
-            context.Response.Headers.AppendCommaSeparatedValues(HeaderNames.Vary, HeaderNames.AcceptEncoding);
-        }
+        VaryHeader.AppendMissing(context.Response.Headers, HeaderNames.AcceptEncoding);
 
         var coding = context.Request.Headers.AcceptEncoding.Count == 0
             ? null
