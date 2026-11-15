@@ -44,13 +44,13 @@ internal static class OperationApprovalDenialRecorder
             OperationApprovalDenialReason.HumanSessionRequired => "human_session_required",
             OperationApprovalDenialReason.EvidenceInvalid => "evidence_invalid",
             OperationApprovalDenialReason.CurrentAuthority => "current_authority",
-            _ => throw new ArgumentOutOfRangeException(nameof(reason))
+            _ => throw new ArgumentOutOfRangeException(nameof(denial), reason, "Unknown approval denial reason.")
         };
         var decisionCode = decision switch
         {
             OperationApprovalDecision.Approve => "approve",
             OperationApprovalDecision.Reject => "reject",
-            _ => throw new ArgumentOutOfRangeException(nameof(decision))
+            _ => throw new ArgumentOutOfRangeException(nameof(denial), decision, "Unknown approval decision.")
         };
         var kind = Enum.IsDefined(proposal.Kind) ? proposal.Kind.ToString() : "Unknown";
         try
