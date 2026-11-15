@@ -156,14 +156,27 @@ public sealed class StreamPermanentFilterTests
     }
 
     [UnitTheory]
-    [InlineData("classification = 1")]
-    [InlineData("classification NOT IN ('a', 1)")]
-    [InlineData("classification <> TRUE")]
-    public void AppendPermanentFilterPredicate_MixedOperandTypes_Throws(string expression)
+    [InlineData("classification = 1", "1")]
+    [InlineData("classification <> TRUE", "True")]
+    public void AppendPermanentFilterPredicate_NormalizedStringLiteral_PreservesText(string expression, string value)
+    {
+        var predicates = new List<FilterExpression>();
+        FeatureStreamEndpoints.AppendPermanentFilterPredicate(Resource(expression), Filters(), predicates);
+
+        var predicate = predicates.Should().ContainSingle().Subject.Should().BeOfType<BinaryExpression>().Subject;
+        predicate.Right.Should().Be(new Literal(value, LiteralType.Text));
+        InMemoryFilterEvaluator.Evaluate(predicate, Envelope(value).Attributes!).Should()
+            .Be(predicate.Operator == BinaryOperator.Equal);
+        InMemoryFilterEvaluator.Evaluate(predicate, Envelope("other").Attributes!).Should()
+            .Be(predicate.Operator == BinaryOperator.NotEqual);
+    }
+
+    [UnitTest]
+    public void AppendPermanentFilterPredicate_MixedOperandTypes_Throws()
     {
         var predicates = new List<FilterExpression>();
         var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
-            Resource(expression), Filters(), predicates);
+            Resource("classification NOT IN ('a', 1)"), Filters(), predicates);
 
         act.Should().Throw<InvalidOperationException>();
         predicates.Should().BeEmpty();
