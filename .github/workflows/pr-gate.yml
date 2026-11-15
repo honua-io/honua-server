@@ -76,6 +76,7 @@ jobs:
     outputs:
       runner: ${{ steps.select.outputs.runner || 'ubuntu-latest' }}
       heavy_ready: ${{ steps.select.outputs.heavy_ready || 'false' }}
+      start_heavy: ${{ steps.select.outputs.start_heavy || ',' }}
     steps:
       # Several self-hosted runners share one host and its /tmp. runner.temp is
       # unavailable in job env, so this step pins temp at the job directory
@@ -116,15 +117,18 @@ jobs:
         timeout-minutes: 5
         env:
           HONUA_PR_GATE_RUNNER: ${{ vars.HONUA_PR_GATE_RUNNER }}
+          HONUA_HEAVY_RUNNER: ${{ vars.HONUA_HEAVY_RUNNER }}
         run: scripts/ci/select-gate-runner.sh
 
   format:
     if: always() && !cancelled() && (needs.runner-select.result == 'success' || github.event.pull_request.draft == true)
     name: PR Gate / ${{ matrix.check }}
     needs: runner-select
-    runs-on: ${{ matrix.analyzer-partition == 'tests' && 'ubuntu-latest' || github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.analyzer-partition == 'tests' && (contains(needs.runner-select.outputs.start_heavy, format(',analyzers-{0},', matrix.analyzer-test-partition)) && vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest') || github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Format and both analyzer partitions run independently after runner selection.
+    # A test-analyzer row takes the heavy pool only when runner-select planned it
+    # (start_heavy); otherwise it stays hosted, never on the light pool.
     strategy:
       fail-fast: false
       matrix:
@@ -187,7 +191,9 @@ jobs:
   fast-tests:
     name: PR Gate / Fast and architecture (${{ matrix.test-group }})
     needs: runner-select
-    runs-on: ubuntu-latest
+    # Hosted unless runner-select planned this group onto idle heavy runners
+    # (start_heavy); forks always stay hosted.
+    runs-on: ${{ contains(needs.runner-select.outputs.start_heavy, format(',{0},', matrix.test-group)) && vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Each group compiles only its own test roots; the producer and the analyzer
     # job compile the diff's affected closure.
@@ -196,6 +202,7 @@ jobs:
       matrix:
         test-group: [architecture, unit-fast, server-fast, server-governance]
     steps:
+      - *job-temp
       # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
       # independent path an admission failure too, otherwise a skipped-success
       # Fast job would never execute on enforced attempt 2.
@@ -234,9 +241,10 @@ jobs:
         run: python3 scripts/ci/compute-fast-test-selection.py --github-output
 
       # One test group builds a fraction of the solution, so the deletion runs in
-      # the background while setup and the build proceed.
+      # the background while setup and the build proceed. Self-hosted runners
+      # have no sudo and keep their own free-disk floor.
       - name: Free disk space
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
+        if: runner.environment == 'github-hosted' && (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
         run: |
           nohup sudo rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup /opt/hostedtoolcache/CodeQL >/dev/null 2>&1 &
 

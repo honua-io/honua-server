@@ -3,9 +3,13 @@
 # host reports enough idle runners, otherwise ubuntu-latest. It wakes a stopped
 # host for later runs but never waits longer than GATE_RUNNER_WAIT_SECONDS, and
 # every failure selects the hosted runner, so the gate cannot hang on the host.
+# Idle heavy runners beyond the shard reserve also take the jobs that would
+# otherwise wait for a hosted runner (start_heavy), longest hosted job first.
 #
-# Inputs: HONUA_PR_GATE_RUNNER (label; empty disables), AWS credentials for the
-# wake role, GITHUB_OUTPUT. Contract: honua-iac bootstrap/aws-build-host README.
+# Inputs: HONUA_PR_GATE_RUNNER (label; empty disables), HONUA_HEAVY_RUNNER (the
+# heavy pool's runs-on JSON; empty keeps every start job hosted), AWS
+# credentials for the wake role, GITHUB_OUTPUT.
+# Contract: honua-iac bootstrap/aws-build-host README.
 
 set -uo pipefail
 
@@ -16,17 +20,58 @@ readonly WAIT_SECONDS="${GATE_RUNNER_WAIT_SECONDS:-180}"
 readonly POLL_SECONDS="${GATE_RUNNER_POLL_SECONDS:-10}"
 # Producer admission is independent of the heavy shard pool.
 readonly REQUIRED_IDLE_RUNNERS=2
+# Idle heavy runners left for this gate's even affected shards, which start
+# after Build and tests; a heavy job never waits behind start work.
+readonly SHARD_RESERVE=2
+# Start jobs one gate may move to the heavy pool; the rest stay hosted, so
+# gates selecting from the same 30-second heartbeat cannot fill the pool.
+readonly START_HEAVY_CAP=4
+# Longest hosted run first, measured on 24 PR Gates 15 Nov 18:44-21:44Z (median
+# minutes 12.2, 12.0, 10.7, 10.6). server-governance (starts PostGIS) and the
+# shortest, unit-fast (8.1), stay hosted.
+readonly START_JOBS=(analyzers-server architecture server-fast analyzers-other)
 
 heavy_ready=false
+start_heavy=","
 
 select_runner() {
   echo "runner=$1" >> "${GITHUB_OUTPUT}"
   echo "heavy_ready=${heavy_ready}" >> "${GITHUB_OUTPUT}"
-  echo "PR Gate compute: $1 ($2)"
+  echo "start_heavy=${start_heavy}" >> "${GITHUB_OUTPUT}"
+  echo "PR Gate compute: $1 ($2); heavy start jobs: ${start_heavy}"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-    echo "PR Gate compute: \`$1\` ($2)" >> "${GITHUB_STEP_SUMMARY}"
+    echo "PR Gate compute: \`$1\` ($2); heavy start jobs: \`${start_heavy}\`" >> "${GITHUB_STEP_SUMMARY}"
   fi
   exit 0
+}
+
+# Prints the plain runner label of the configured heavy pool, or nothing.
+heavy_label() {
+  jq -r 'if type == "object" then (.labels // [])[0] // empty
+    elif type == "array" then .[0] // empty
+    elif type == "string" then . else empty end' <<< "${HONUA_HEAVY_RUNNER:-null}" 2>/dev/null |
+    grep -E '^[A-Za-z0-9._-]+$' || true
+}
+
+# Spends min(cap, idle heavy - reserve) heavy runners. A busy gate pool moves
+# the two producers first (they gate the shards); START_JOBS take the rest.
+# Sets producer (the producers' runner) and start_heavy (",job,job,").
+plan_heavy() {
+  local idle="$1" pool budget job
+  producer="$2"
+  pool="$(heavy_label)"
+  budget=$((idle - SHARD_RESERVE))
+  (( budget <= START_HEAVY_CAP )) || budget=${START_HEAVY_CAP}
+  [[ -n "${pool}" ]] || budget=0
+  if [[ "${producer}" == "${HOSTED_RUNNER}" ]] && (( budget >= 2 )); then
+    producer="${pool}"
+    budget=$((budget - 2))
+  fi
+  for job in "${START_JOBS[@]}"; do
+    (( budget > 0 )) || break
+    start_heavy+="${job},"
+    budget=$((budget - 1))
+  done
 }
 
 group_field() {
@@ -56,10 +101,15 @@ deadline=$((SECONDS + WAIT_SECONDS))
 while true; do
   proof="$(host_state)" || proof='{"state":"unreadable","heavy_ready":false}'
   heavy_ready="$(jq -r '.heavy_ready == true' <<< "${proof}")"
+  heavy_idle="$(jq -r 'if (.heavy_idle | type) == "number" then .heavy_idle else 0 end' <<< "${proof}")"
   state="$(jq -r '.state' <<< "${proof}")"
   case "${state}" in
-    ready) select_runner "${label}" "build host has ${REQUIRED_IDLE_RUNNERS} idle runners" ;;
-    busy) select_runner "${HOSTED_RUNNER}" "build-host runners busy" ;;
+    ready)
+      plan_heavy "${heavy_idle}" "${label}"
+      select_runner "${producer}" "build host has ${REQUIRED_IDLE_RUNNERS} idle runners" ;;
+    busy)
+      plan_heavy "${heavy_idle}" "${HOSTED_RUNNER}"
+      select_runner "${producer}" "build-host gate runners busy; ${heavy_idle} idle heavy runners" ;;
   esac
   (( SECONDS < deadline )) || select_runner "${HOSTED_RUNNER}" "build host not ready within ${WAIT_SECONDS}s (${state})"
   sleep "${POLL_SECONDS}"
