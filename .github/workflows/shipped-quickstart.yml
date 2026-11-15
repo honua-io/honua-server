@@ -1,4 +1,4 @@
-name: Archived quickstart bootstrap and data
+name: Archived quickstart customer journey
 
 on:
   schedule:
@@ -12,6 +12,9 @@ on:
       - 'docker/compose/**'
       - 'docs/guides/connect/working-with-ai-agents.md'
       - 'scripts/docker/*quickstart*.py'
+      - 'tests/js-browser/quickstart/**'
+      - 'tests/js-browser/playwright.quickstart.config.ts'
+      - 'tests/js-browser/package*.json'
       - 'scripts/docs-validation/**'
       - 'src/Honua.Server/Migrations/**'
       - 'scripts/ci/start-empty-quickstart-docker.sh'
@@ -57,6 +60,21 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
+      - name: Create read-only Console artifact token for prospective package
+        if: github.event_name == 'pull_request'
+        id: console-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: honua-console
+          permission-actions: read
+      - name: Fetch official Console for prospective package
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ steps.console-token.outputs.token }}
+        run: python3 scripts/docker/fetch_quickstart_console.py --output "$RUNNER_TEMP/console.zip"
       - name: Prepare official archive or prospective PR package
         env:
           GH_TOKEN: ${{ github.token }}
@@ -64,7 +82,7 @@ jobs:
         run: |
           args=(--output "$RUNNER_TEMP/quickstart-proof")
           if [[ -n "$PR_SOURCE_SHA" ]]; then
-            args+=(--prospective-source-sha "$PR_SOURCE_SHA")
+            args+=(--prospective-source-sha "$PR_SOURCE_SHA" --prospective-console-bundle "$RUNNER_TEMP/console.zip")
           fi
           python3 scripts/docker/prepare_quickstart_proof.py "${args[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -78,7 +96,7 @@ jobs:
           retention-days: 7
 
   install:
-    name: Archive bootstrap, all profiles, publish/query and fresh reinstall
+    name: Archive install, Console/Studio sign-in, publish/query and fresh reinstall
     needs: package
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -94,6 +112,14 @@ jobs:
         with:
           name: quickstart-proof-input
           path: ${{ runner.temp }}/quickstart-proof
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Install browser dependencies
+        working-directory: tests/js-browser
+        run: |
+          npm ci
+          npx --no-install playwright install --with-deps chromium
       - name: Start a dedicated empty Docker daemon
         run: bash scripts/ci/start-empty-quickstart-docker.sh
       - name: Install only archive files and execute documented data access
@@ -110,11 +136,11 @@ jobs:
               '--input', str(root / 'input.json'),
           ], check=True)
           PY
-      - name: Upload bounded bootstrap evidence
+      - name: Upload bounded customer journey evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: archived-quickstart-bootstrap
+          name: archived-quickstart-customer-journey
           path: artifacts/shipped-quickstart/receipt.json
           if-no-files-found: warn
           retention-days: 14

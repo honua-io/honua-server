@@ -26,7 +26,7 @@ def select_candidate() -> tuple[dict, str]:
     runs = json.loads(github("api", f"repos/{REPOSITORY}/actions/workflows/nightly-container-build.yml/runs"
                             "?status=success&per_page=30"))["workflow_runs"]
     for run in runs:
-        if run.get("event") not in ("schedule", "workflow_dispatch") or (
+        if run.get("conclusion") != "success" or run.get("event") not in ("schedule", "workflow_dispatch") or (
                 run.get("head_repository") or {}).get("full_name") != REPOSITORY:
             continue
         sha = run["head_sha"]
@@ -45,18 +45,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--prospective-source-sha")
+    parser.add_argument("--prospective-console-bundle", type=Path)
     args = parser.parse_args()
     if args.output.exists():
         raise ValueError("Proof output must be a new directory")
     if args.prospective_source_sha and not re.fullmatch(r"[a-f0-9]{40}", args.prospective_source_sha):
         raise ValueError("Prospective source revision must be a full commit identifier")
+    if bool(args.prospective_source_sha) != bool(args.prospective_console_bundle):
+        raise ValueError("Prospective source and official Console bundle must be supplied together")
     args.output.mkdir(parents=True)
     run, name = select_candidate()
     print(f"Selected official candidate run {run['id']} at {run['head_sha']}: {name}", flush=True)
     download = args.output / "published"
     github("run", "download", str(run["id"]), "--repo", REPOSITORY, "--name", name, "--dir", str(download))
     archive = download / "honua-compose-quickstart.tar.gz"
-    lock = unpack(archive, download / "contents")
+    lock = unpack(archive, download / "contents", require_console=not bool(args.prospective_source_sha))
     published_digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     kind = "candidate"
     source = run["head_sha"]
@@ -67,8 +70,11 @@ def main() -> None:
         kind = "prospective-pr"
         source = args.prospective_source_sha
         command = ["python3", str(ROOT / "scripts/docker/package_quickstart.py")]
-        for component in ("server", "executor", "worker", "console"):
+        for component in ("server", "executor", "worker"):
             command.extend([f"--{component}-image", lock[component]])
+        console = args.prospective_console_bundle
+        command.extend(["--console-bundle", str(console), "--console-bundle-sha256",
+                        console.with_suffix('.sha256').read_text().strip()])
         command.extend(["--version", lock["version"], "--output", str(args.output / "honua-compose-quickstart")])
         subprocess.run(command, stdin=subprocess.DEVNULL, check=True, timeout=60)
         archive = args.output / "honua-compose-quickstart.tar.gz"

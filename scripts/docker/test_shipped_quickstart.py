@@ -21,9 +21,12 @@ class ArchiveTests(unittest.TestCase):
         self.archive = self.root / "package.tar.gz"
         self.destination = self.root / "install"
         self.destination.mkdir()
-        self.lock = dict.fromkeys(("server", "executor", "worker", "console"),
+        self.lock = dict.fromkeys(("server", "executor", "worker"),
                                   "ghcr.io/honua-io/honua-server@sha256:" + "a" * 64)
         self.files = {name: b"example" for name in proof.REQUIRED}
+        self.lock.update(consoleWeb=proof.CONSOLE_WEB_IMAGE, consoleBundle={"sha256": "b" * 64, "files": 3})
+        self.files.update({"console/index.html": b"html", "console/config.json": b"{}",
+                           "console/_framework/dotnet.js": b"js"})
         self.files["images.json"] = json.dumps(self.lock).encode()
 
     def package(self, extra=None):
@@ -53,13 +56,13 @@ class ArchiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "required package files"):
             proof.unpack(self.archive, self.destination)
 
-    def test_missing_or_mutable_console_pin_is_refused(self):
+    def test_missing_or_mutable_console_edge_pin_is_refused(self):
         for value in ("", "ghcr.io/honua-io/honua-console:latest"):
             with self.subTest(value=value):
-                self.lock["console"] = value
+                self.lock["consoleWeb"] = value
                 self.files["images.json"] = json.dumps(self.lock).encode()
                 self.package()
-                with self.assertRaisesRegex(ValueError, "immutable release image"):
+                with self.assertRaisesRegex(ValueError, "static Console bundle"):
                     proof.unpack(self.archive, self.destination)
 
     def test_unsafe_archive_entries_are_refused_before_extraction(self):
@@ -191,7 +194,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(1, self.execute([installation], [{}]))
         self.assertFalse(json.loads(self.receipt.read_text())["passed"])
 
-    def test_two_installs_are_required_without_claiming_authenticated_journey(self):
+    def test_two_complete_installs_are_required_for_authenticated_journey(self):
         installations = [Mock(), Mock()]
         for index, installation in enumerate(installations):
             installation.run.return_value = "a" * 40
@@ -203,7 +206,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(receipt["passed"])
         self.assertTrue(receipt["freshSecondInstallCredentials"])
         self.assertEqual(2, len(receipt["installations"]))
-        self.assertFalse(receipt["customerJourneyComplete"])
+        self.assertTrue(receipt["customerJourneyComplete"])
         self.assertEqual("prospective-pr", receipt["packageKind"])
         self.assertEqual(123, receipt["publishedRunId"])
         self.assertEqual("c" * 64, receipt["publishedArchiveSha256"])
@@ -301,7 +304,7 @@ class InstallationTests(unittest.TestCase):
                     installation.publish.side_effect = lambda _: (work / "quickstart.py").write_text("overwritten")
                 response = io.BytesIO(b"{}")
                 response.status = 200
-                with patch.object(proof, "wait_ready"), patch.object(proof.urllib.request, "urlopen", return_value=response):
+                with patch.object(proof, "wait_ready"):
                     if defect == "none":
                         result = proof.exercise(installation, {})
                         self.assertTrue(result["reinitializePreservesCredentials"])

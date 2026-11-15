@@ -13,13 +13,13 @@ import validate_shipped_quickstart as proof
 
 def official_run(**overrides):
     return dict({"id": 1, "head_branch": "trunk", "head_sha": "a" * 40,
-                 "event": "workflow_dispatch", "head_repository": {"full_name": prepare.REPOSITORY}}, **overrides)
+                 "event": "workflow_dispatch", "conclusion": "success", "head_repository": {"full_name": prepare.REPOSITORY}}, **overrides)
 
 
 
 class CandidateTests(unittest.TestCase):
     def test_fork_and_unexpected_event_cannot_supply_candidate_inputs(self):
-        for field, value in (("event", "pull_request"), ("head_repository", {"full_name": "other/server"}),
+        for field, value in (("conclusion", "failure"), ("event", "pull_request"), ("head_repository", {"full_name": "other/server"}),
                              ("head_repository", None)):
             run = official_run()
             run[field] = value
@@ -70,7 +70,7 @@ class PrepareTests(unittest.TestCase):
                 output = Path(directory) / "proof"
                 arguments = ["prepare", "--output", str(output)]
                 if prospective:
-                    arguments.extend(["--prospective-source-sha", "b" * 40])
+                    arguments.extend(["--prospective-source-sha", "b" * 40, "--prospective-console-bundle", "fixture.zip"])
                 def github(*args):
                     if args[0] == "run":
                         target = output / "published"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check archived quickstart bootstrap and data access on a dedicated empty Docker host."""
+"""Check the archived quickstart customer journey on a dedicated empty Docker host."""
 from __future__ import annotations
 
 import argparse
@@ -12,9 +12,9 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import urllib.request
 
 from compose_quickstart import ALL_SECRET_KEYS
+from package_quickstart import CONSOLE_WEB_IMAGE, CONSOLE_MAX_FILES, CONSOLE_MAX_BYTES, ROOT
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "docs-validation"))
 from validate_public_install import public_blocks, publication_filename, publish_sample, wait_ready
@@ -23,7 +23,7 @@ REQUIRED = {"compose.yaml", "compose.executor.yaml", "compose.console.yaml", "qu
 IMAGE = re.compile(r"ghcr\.io/honua-io/[a-z0-9.-]+@sha256:[a-f0-9]{64}\Z")
 
 
-def unpack(archive: Path, destination: Path) -> dict:
+def unpack(archive: Path, destination: Path, *, require_console: bool = True) -> dict:
     checksum = archive.with_name(archive.name + ".sha256").read_text().split()
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     if checksum != [digest, archive.name]:
@@ -31,9 +31,9 @@ def unpack(archive: Path, destination: Path) -> dict:
     with tarfile.open(archive, "r:gz") as package:
         members = package.getmembers()
         names = [member.name for member in members]
-        if len(names) != len(set(names)) or len(names) > 1000:
+        if len(names) != len(set(names)) or len(names) > CONSOLE_MAX_FILES + 1000:
             raise ValueError("Quickstart archive contains duplicate or excessive entries")
-        if sum(member.size for member in members) > 64 * 1024 * 1024:
+        if sum(member.size for member in members) > CONSOLE_MAX_BYTES + 64 * 1024 * 1024:
             raise ValueError("Quickstart archive exceeds the installation size limit")
         for member in members:
             path = Path(member.name)
@@ -45,8 +45,20 @@ def unpack(archive: Path, destination: Path) -> dict:
             raise ValueError("Quickstart archive lacks required package files, including Console")
         package.extractall(destination, filter="data")
     lock = json.loads((destination / "images.json").read_text())
-    if any(not IMAGE.fullmatch(lock.get(name, "")) for name in ("server", "executor", "worker", "console")):
+    if any(not IMAGE.fullmatch(lock.get(name, "")) for name in ("server", "executor", "worker")):
         raise ValueError("Quickstart archive lacks immutable release image pins, including Console")
+    if not require_console:
+        return lock
+    bundle = lock.get("consoleBundle", {})
+    if not isinstance(bundle, dict):
+        raise ValueError("Quickstart archive has invalid static Console metadata")
+    files = [path for path in (destination / "console").rglob("*") if path.is_file()]
+    if (lock.get("consoleWeb") != CONSOLE_WEB_IMAGE or
+            not re.fullmatch(r"[a-f0-9]{64}", bundle.get("sha256", "")) or
+            bundle.get("files") != len(files) or
+            not all((destination / "console" / name).is_file() for name in ("index.html", "config.json")) or
+            not any(path.is_file() for path in (destination / "console/_framework").rglob("*"))):
+        raise ValueError("Quickstart archive lacks its verified static Console bundle")
     return lock
 
 
@@ -116,6 +128,17 @@ class Installation:
     def publish(self, blocks: dict[str, str]) -> None:
         publish_sample(self.directory, blocks, self.run)
 
+    def browser(self) -> None:
+        # No credentials in argv, reports, screenshots, traces or inherited environment.
+        environment = dict(self.environment, HONUA_SHIPPING_PASSWORD_FILE=str(
+            self.directory / "secrets/honua_admin_password"))
+        browser = ROOT / "tests/js-browser"
+        result = subprocess.run(["node", str(browser / "node_modules/@playwright/test/cli.js"), "test",
+                                 "--config", "playwright.quickstart.config.ts"], cwd=browser,
+                                env=environment, capture_output=True, text=True, timeout=240)
+        if result.returncode:
+            raise RuntimeError("Installed Console/Studio browser journey failed; output withheld")
+
     def down(self) -> None:
         if not (self.directory / ".env").exists():
             return
@@ -141,19 +164,17 @@ def exercise(installation: Installation, blocks: dict[str, str]) -> dict:
     console_count = installation.health()
     if console_count <= default_count:
         raise ValueError("Console profile did not add a service")
-    with urllib.request.urlopen("http://localhost:18083/version.json", timeout=15) as response:
-        if response.status != 200 or not isinstance(json.load(response), dict):
-            raise ValueError("Installed Console did not expose its version document")
     installation.publish(blocks)
     if (installation.directory / "quickstart.py").read_bytes() != original:
         raise ValueError("Documented publication overwrote the packaged initializer")
+    installation.browser()
     credentials = installation.credentials()
     installation.run(["python3", "quickstart.py"])
     installation.health()
     if installation.credentials() != credentials:
         raise ValueError("Reinitialization changed the installation's saved credentials")
     return {"defaultServices": default_count, "consoleServices": console_count,
-            "secretFreeConfiguration": True, "publishQuery": True, "reinitializePreservesCredentials": True}
+            "secretFreeConfiguration": True, "publishQuery": True, "authenticatedConsoleStudio": True, "reinitializePreservesCredentials": True}
 
 
 def proof_inputs(path: Path, archive: Path) -> dict:
@@ -185,8 +206,8 @@ def main() -> int:
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--input", type=Path, required=True)
     args = parser.parse_args()
-    receipt = {"scope": "archived-bootstrap-and-data-plane", "passed": False, "customerJourneyComplete": False,
-               "authenticatedConsoleStudio": "pending-package-and-identity-journey",
+    receipt = {"scope": "archived-customer-journey", "passed": False, "customerJourneyComplete": False,
+               "authenticatedConsoleStudio": False,
                "installations": []}
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     stage = "validate-input"
@@ -221,7 +242,7 @@ def main() -> int:
                     receipt["version"] = lock["version"]
                 finally:
                     installation.down()
-        receipt.update(passed=True, cleanup=True)
+        receipt.update(passed=True, cleanup=True, customerJourneyComplete=True, authenticatedConsoleStudio=True)
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
         receipt.update(failedStage=stage, errorType=type(error).__name__)
         print("Archived quickstart proof failed at " + stage + "; command output withheld")
