@@ -1,0 +1,54 @@
+name: Full CI dispatch
+
+# GitHub delivers this repository's schedule events hours late, so the ci.yml full-run crons
+# often land in the 07:00-22:00 Pacific daytime window and are cancelled. Push events are not
+# throttled: on every trunk push (plus an hourly backup inside the window) this dispatches one
+# full ci.yml run between 06:00 and 12:00 UTC when none is active and trunk head has no full
+# result yet, at most two a night. Set repository variable HONUA_FULL_CI_DISPATCH=off to stop it.
+on:
+  push:
+    branches: [trunk]
+  schedule:
+    - cron: "41 6-11 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report the decision without dispatching'
+        required: false
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: full-ci-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Full CI dispatch
+    if: github.repository == 'honua-io/honua-server' && vars.HONUA_FULL_CI_DISPATCH != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/ci/full-ci-dispatch.py
+            scripts/ci/full-ci-dispatch.test.py
+            .github/workflows/full-ci-dispatch.yml
+            .github/workflows/ci.yml
+          sparse-checkout-cone-mode: false
+
+      - name: Self-test the dispatch decision
+        run: python3 scripts/ci/full-ci-dispatch.test.py
+
+      - name: Dispatch the full matrix when the overnight window has none
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: python3 scripts/ci/full-ci-dispatch.py ${DRY_RUN}

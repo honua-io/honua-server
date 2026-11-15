@@ -64,6 +64,7 @@ run_fixture scripts/ci/validate-review-first-dispatch.sh scripts/ci/validate-rev
 echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-trunk-signal-watchdog.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-signal-watchdog.py
+  run_fixture full-ci-dispatch "${PYTHON_BIN}" scripts/ci/full-ci-dispatch.test.py
   run_fixture scripts/ci/fixtures/validate-optional-pr-inputs.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-optional-pr-inputs.py
   run_fixture scripts/ci/fixtures/validate-pr-workflow-load.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-workflow-load.py
   run_fixture scripts/ci/fixtures/validate-ogc-rc-workflows.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-ogc-rc-workflows.py
