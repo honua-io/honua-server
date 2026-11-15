@@ -179,7 +179,7 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
         WHERE EXISTS (
             SELECT 1 FROM {_eventsTable} WHERE event_id = @event_id AND severity <> 'critical' FOR NO KEY UPDATE)
             AND @suppressed_until > @updated_at
-            AND @suppressed_until <= @updated_at + INTERVAL '7 days'
+            AND @suppressed_until <= @updated_at + INTERVAL '168 hours'
         ON CONFLICT (event_id) DO UPDATE SET
             lifecycle_status = EXCLUDED.lifecycle_status,
             acknowledged_at  = NULL,
