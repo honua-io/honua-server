@@ -95,6 +95,9 @@ public sealed class QueryParameters
 
     public string? DatumTransformation { get; init; }
 
+    [JsonConverter(typeof(RawJsonStringConverter))]
+    public string? CoordinateEpoch { get; init; }
+
     public string? Time { get; init; }
 
     public string? TimeRelation { get; init; }

@@ -26,6 +26,7 @@ using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
+using Honua.Core.Features.Security;
 
 namespace Honua.Import.RasterImport;
 
@@ -531,11 +532,10 @@ internal static partial class RasterImportEndpoints
         long maxFileSizeBytes,
         CancellationToken cancellationToken)
     {
-        var tempDir = Path.Join(Path.GetTempPath(), "honua-raster-staging");
-        // The second segment is a generated GUID plus only the *extension* portion of the
-        // (already-sanitized) upload name — Path.GetExtension never returns a rooted path,
-        // so this can never silently drop tempDir.
-        var tempFilePath = Path.Join(tempDir, $"{Guid.NewGuid()}{Path.GetExtension(safeFileName)}");
+        // A GUID name directly under the temp path (no shared fixed directory another user could
+        // pre-create) plus only the extension of the sanitized upload name; the copy creates it
+        // exclusively and owner-only.
+        var tempFilePath = PrivateTempFile.NewPath("honua-raster-", Path.GetExtension(safeFileName));
 
         try
         {

@@ -38,6 +38,11 @@ internal static class McpInputDescriptions
     {
         var source = ReadSource(operationId, parameter);
         if (source is not null) return $"{description} Source: {source}.";
+        if (operationId is "admin.layer.display.set" or "admin.layer.spatial.set")
+        {
+            var readTool = PublishedOperationTool.ProjectName(operationId[..^3] + "get");
+            return $"Caller-supplied patch value. {description} Read current values with {readTool}; omitted fields are preserved.";
+        }
         return CallerInputs.Contains((operationId, parameter)) ? $"Caller-supplied. {description}" : description;
     }
 

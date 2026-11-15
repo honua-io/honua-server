@@ -61,7 +61,7 @@ public sealed class RbacRoleClaimEntitlementTests
         var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Community);
         using var provider = BuildServices(entitlements);
         var context = CreateContext(provider, CreatePrincipal(CustomRoleClaimType, MappedRole));
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-1", Name = "layer-1" },
         };
@@ -116,7 +116,7 @@ public sealed class RbacRoleClaimEntitlementTests
             Substitute.For<Honua.Core.Queries.Filters.IFilterExpressionService>(),
             provider.GetRequiredService<IOptions<RbacOptions>>(),
             NullLogger<RowLevelSecurityFilterSource>.Instance);
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-1", Name = "layer-1" },
         };
@@ -167,7 +167,7 @@ public sealed class RbacRoleClaimEntitlementTests
         var snapshot = JobSecurityContextCapture.Capture(CreatePrincipal(CustomRoleClaimType, MappedRole),
             provider.GetRequiredService<IOptions<RbacOptions>>().Value);
         using var securityScope = JobSecurityScope.Begin(snapshot);
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-1", Name = "layer-1" }
         };

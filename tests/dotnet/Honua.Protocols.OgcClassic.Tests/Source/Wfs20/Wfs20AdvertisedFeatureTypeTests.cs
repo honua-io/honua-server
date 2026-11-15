@@ -162,10 +162,10 @@ public sealed class Wfs20AdvertisedFeatureTypeTests
             .AddResource(
                 "res-dup-layer",
                 "Test Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: Anonymous,
                 fields: Fields,
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point
@@ -177,20 +177,20 @@ public sealed class Wfs20AdvertisedFeatureTypeTests
                 protocols: [MetadataV2ServiceProtocols.Wfs20])
             .AddPublication(HiddenDuplicate, "svc-dup-ogc", "res-dup-layer", layerIndex: 0,
                 storageBindingId: "binding-dup-layer", serviceLocalId: "dup_layer",
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
+                publicationType: MetadataV2LayerType.WfsFeatureType)
             .AddPublication(AdvertisedDuplicate, "svc-dup-feature", "res-dup-layer", layerIndex: 0,
                 storageBindingId: "binding-dup-layer", serviceLocalId: "dup_layer",
-                publicationType: MetadataV2PublicationType.WfsFeatureType);
+                publicationType: MetadataV2LayerType.WfsFeatureType);
 
     private static TestMetadataV2GraphBuilder AddProjectedLayer(TestMetadataV2GraphBuilder builder)
         => builder
             .AddResource(
                 "res-projected-layer",
                 "Projected Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: Anonymous,
                 fields: Fields,
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = new MetadataV2SpatialReference
                     {
@@ -206,5 +206,5 @@ public sealed class Wfs20AdvertisedFeatureTypeTests
                 protocols: [MetadataV2ServiceProtocols.Wfs20])
             .AddPublication(ProjectedPublication, "svc-a-projected", "res-projected-layer", layerIndex: 0,
                 storageBindingId: "binding-projected-layer", serviceLocalId: "projected_layer",
-                publicationType: MetadataV2PublicationType.WfsFeatureType);
+                publicationType: MetadataV2LayerType.WfsFeatureType);
 }

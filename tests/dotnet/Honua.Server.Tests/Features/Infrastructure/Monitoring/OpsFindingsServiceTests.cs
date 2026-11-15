@@ -607,6 +607,39 @@ public sealed partial class OpsFindingsServiceTests
             }));
     }
 
+    [UnitTheory]
+    [InlineData(8, 0)]
+    [InlineData(1, 1)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_AnonymousAdmissionActive_ExplainsTemporaryLimit(int inFlight, int queued)
+    {
+        var gate = Substitute.For<IRuntimeTunableAdmissionGate>();
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(inFlight, 10, queued, 0, 0));
+        var service = CreateService(admissionGate: gate);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, finding => finding.Rule == "anonymous-pressure-admission");
+        Assert.Equal(OpsFindingSeverity.Warning, finding.Severity);
+        Assert.Contains("anonymous", finding.Explanation, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("automatically", finding.Explanation, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(finding.RecommendedAction);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_AnonymousAdmissionPressureClears_RemovesFindingDespitePastTimeouts()
+    {
+        var gate = Substitute.For<IRuntimeTunableAdmissionGate>();
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(8, 10, 0, 0, 0));
+        var service = CreateService(admissionGate: gate);
+        Assert.Contains(await service.EvaluateAsync(), finding => finding.Rule == "anonymous-pressure-admission");
+
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(1, 10, 0, 0, 20));
+
+        Assert.DoesNotContain(await service.EvaluateAsync(), finding => finding.Rule == "anonymous-pressure-admission");
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_DbPoolPressureWithAdmissionGateHeadroom_ProducesCriticalFindingWithTuneAction()

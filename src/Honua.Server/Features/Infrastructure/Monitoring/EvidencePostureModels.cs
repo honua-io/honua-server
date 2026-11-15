@@ -144,6 +144,8 @@ public static class EvidencePostureVocabulary
         public const string FindingsExternalEvents = "honua_ops_findings.external_events";
         public const string FindingsWorkflowOperations = "honua_ops_findings.workflow_operations";
         public const string FindingsServingLatencyRollup = "honua_ops_findings.serving_latency_rollup";
+        public const string FindingsAdmissionPressure = "honua_ops_findings.admission_pressure";
+
         public const string FindingsDatabasePressure = "honua_ops_findings.database_pressure";
         public const string FindingsBatchBackends = "honua_ops_findings.batch_backends";
         public const string FindingsCatalogRollbacks = "honua_ops_findings.catalog_rollbacks";

@@ -32,11 +32,11 @@ internal static class TemporalExtentHelpers
         string StartFieldName,
         string? EndFieldName);
 
-    public static bool HasOptInTemporalFields(MetadataV2Resource resource)
+    public static bool HasOptInTemporalFields(MetadataV2Object resource)
         => TryResolveOptInTemporalFieldsV2(resource, out _);
 
     public static bool TryResolveOptInTemporalFieldsV2(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out MetadataV2TemporalFieldSelection selection)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -64,7 +64,7 @@ internal static class TemporalExtentHelpers
         return true;
     }
 
-    private static bool TryFindSchemaTemporalField(MetadataV2Resource resource, string fieldName, out string? resolvedName)
+    private static bool TryFindSchemaTemporalField(MetadataV2Object resource, string fieldName, out string? resolvedName)
     {
         foreach (var field in resource.SchemaFields.Where(field =>
             string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase) &&
@@ -79,7 +79,7 @@ internal static class TemporalExtentHelpers
     }
 
     public static async Task<MetadataV2TemporalRange?> TryResolveTemporalRangeV2Async(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerIndex,
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
@@ -141,7 +141,7 @@ internal static class TemporalExtentHelpers
             hasExtent);
     }
 
-    private static TemporalPropertyType ResolveSchemaPropertyType(MetadataV2Resource resource, string fieldName)
+    private static TemporalPropertyType ResolveSchemaPropertyType(MetadataV2Object resource, string fieldName)
     {
         foreach (var field in resource.SchemaFields.Where(field =>
             string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase)))
