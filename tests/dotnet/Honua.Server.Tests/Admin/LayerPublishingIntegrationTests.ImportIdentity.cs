@@ -53,10 +53,11 @@ public sealed partial class LayerPublishingIntegrationTests
     }
 
     [IntegrationTest]
-    [Protocol(TestProtocols.FeatureServer)]
+    [Protocol(TestProtocols.FeatureServer, TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Import)]
     [Operation(Operations.Create)]
     [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     [Endpoint("POST /api/v1/admin/import/upload")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -71,6 +72,15 @@ public sealed partial class LayerPublishingIntegrationTests
         attributes.GetProperty("name").GetString().Should().Be("a");
         attributes.TryGetProperty("properties", out _).Should().BeFalse();
         attributes.TryGetProperty("created_at", out _).Should().BeFalse();
+
+        using var ogc = JsonDocument.Parse(await ReadOgcItemsAsync(
+            $"filter={Uri.EscapeDataString("source_id = 100")}"));
+        var properties = ogc.RootElement.GetProperty("features").EnumerateArray()
+            .Should().ContainSingle().Subject.GetProperty("properties");
+        properties.GetProperty("source_id").GetInt64().Should().Be(100);
+        properties.GetProperty("name").GetString().Should().Be("a");
+        properties.TryGetProperty("properties", out _).Should().BeFalse();
+        properties.TryGetProperty("created_at", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
