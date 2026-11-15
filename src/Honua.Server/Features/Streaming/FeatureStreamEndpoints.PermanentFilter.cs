@@ -84,7 +84,7 @@ internal static partial class FeatureStreamEndpoints
         var fields = resource.SchemaFields.Where(field =>
             string.Equals(field.Name, property.PropertyName, StringComparison.OrdinalIgnoreCase)).ToArray();
         // System fields map to physical SQL columns rather than event attributes.
-        // Temporal/UUID attributes also need SQL type conversions the evaluator does not apply.
+        // Temporal, UUID and floating-point attributes need SQL type conversions the evaluator does not apply.
         if (property.PropertyName.ToUpperInvariant() is
             "ID" or "OBJECTID" or "OBJECT_ID" or "LAYERID" or "LAYER_ID" or "GEOM" or "GEOMETRY" or "SHAPE")
         {
@@ -92,7 +92,7 @@ internal static partial class FeatureStreamEndpoints
         }
         if (fields.Length != 1 || fields[0].Type is not
             (MetadataV2FieldType.String or MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger or
-             MetadataV2FieldType.Double or MetadataV2FieldType.Float or MetadataV2FieldType.Boolean))
+             MetadataV2FieldType.Boolean))
         {
             throw new InvalidOperationException("Saved permanent filter field cannot be evaluated consistently.");
         }

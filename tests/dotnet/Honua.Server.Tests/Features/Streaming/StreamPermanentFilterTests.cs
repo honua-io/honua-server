@@ -111,6 +111,19 @@ public sealed class StreamPermanentFilterTests
     }
 
     [UnitTheory]
+    [InlineData(MetadataV2FieldType.Double)]
+    [InlineData(MetadataV2FieldType.Float)]
+    public void AppendPermanentFilterPredicate_FloatingPointField_Throws(MetadataV2FieldType fieldType)
+    {
+        var predicates = new List<FilterExpression>();
+        var act = () => FeatureStreamEndpoints.AppendPermanentFilterPredicate(
+            Resource("classification <> 9007199254740993", fieldType: fieldType), Filters(), predicates);
+
+        act.Should().Throw<InvalidOperationException>();
+        predicates.Should().BeEmpty();
+    }
+
+    [UnitTheory]
     [InlineData("classification LIKE 'secret%'")]
     [InlineData("classification NOT LIKE 'secret%'")]
     [InlineData("NOT (classification LIKE 'secret%')")]
