@@ -422,7 +422,7 @@ internal static class McpEndpointExtensions
             return;
         }
 
-        var provider = context.RequestServices.GetService<IRealtimeFanoutProvider>();
+        var provider = McpRealtimeStream.ResolveFanout(context.RequestServices);
         await using var streamLease = provider is null
             ? null
             : await provider.TryAcquireMcpStreamAsync(sessionId, cancellationToken).ConfigureAwait(false);

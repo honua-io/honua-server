@@ -12,6 +12,14 @@ namespace Honua.Ai.Protocols.Mcp;
 
 internal static class McpRealtimeStream
 {
+    // The host's database-gated view when the server registers one, so a host without PostgreSQL
+    // never builds the provider; hosts without that view (Ai-only hosts, tests) use any provider
+    // registered directly.
+    internal static IRealtimeFanoutProvider? ResolveFanout(IServiceProvider services) =>
+        services.GetService(typeof(IOptionalRealtimeFanout)) is IOptionalRealtimeFanout optional
+            ? optional.Provider
+            : services.GetService(typeof(IRealtimeFanoutProvider)) as IRealtimeFanoutProvider;
+
     internal static bool TryParsePosition(string value, out long? after)
     {
         after = null;
