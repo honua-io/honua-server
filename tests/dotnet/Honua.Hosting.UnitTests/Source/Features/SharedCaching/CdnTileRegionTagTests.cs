@@ -21,6 +21,18 @@ public sealed class CdnTileRegionTagTests
             .Should().Equal(CdnTileRegionTags.Metadata(3));
     }
 
+    [UnitTheory]
+    [InlineData("/tiles/3/h3/5/10/12.mvt")]
+    [InlineData("/TILES/3/H3/0/0/0.MVT")]
+    public void ForNativeTile_H3Tile_IsPurgedByEveryRegionalPurgeOfItsLayer(string path)
+    {
+        var tags = CdnTileRegionTags.ForNativeTile(new PathString(path), new TileOptions());
+        var purges = CdnTileRegionTags.Invalidations(3, BoundingBox.FromArray([10d, 10d, 10.1d, 10.1d], 4326));
+
+        tags.Should().ContainSingle();
+        purges.Should().Contain("#" + tags[0]);
+    }
+
     [UnitTest]
     public void Invalidations_LocalEdit_ReachesIntersectingTilesAtEveryZoom()
     {

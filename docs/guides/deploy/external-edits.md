@@ -53,11 +53,17 @@ original revision; subsequent requests cannot reuse that response under the new
 revision. A failed database lookup fails the request rather than replaying an old
 cache entry.
 
-Serving hosts drain the durable change journal about once a second. They use row
-locks to share work and retain failed CDN purges for retry. A purge record carries
-the change ID `external-layer:<layer-id>:<revision>`. With tag invalidation enabled,
-a supplied extent purges regional native tiles, overview tiles, buffered tile
-responses and tile metadata. Other protocols retain their layer-wide purge.
+Serving hosts read the durable change journal about once a second. A host claims
+a layer for 30 seconds before purging it, so each layer is purged at most once per
+30 seconds across all hosts, and the changes recorded in the meantime are combined
+into the next purge. A change is removed from the journal only after its purge
+succeeds. A layer whose purge fails stays queued and is retried with a growing
+delay of up to 15 minutes, without holding up other layers. A purge record carries
+the change ID `external-layer:<layer-id>:<latest revision>`. With tag invalidation
+enabled, changes that all supply an extent purge regional native tiles, overview
+tiles, buffered tile responses (including H3 tiles) and tile metadata for their
+combined extent. A change without an extent makes that purge layer-wide. Other
+protocols retain their layer-wide purge.
 Unsupported or oversized invalidations fall back to a broad purge. CDN propagation
 still takes the time required by the configured provider.
 

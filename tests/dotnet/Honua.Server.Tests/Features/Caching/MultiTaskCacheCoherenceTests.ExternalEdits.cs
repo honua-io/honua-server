@@ -25,11 +25,10 @@ public sealed partial class MultiTaskCacheCoherenceTests
         using var client = _taskB.CreateClient();
         await ReadUntilReplayedAsync(client, CollectionPath);
         await ReadUntilReplayedAsync(client, TilePath);
-        await using var command = _taskA.Postgres.DataSource.CreateCommand($"""
-            INSERT INTO "{_externalSchema}".external_layer_revisions (layer_id, enabled) VALUES (0, true);
-            SELECT "{_externalSchema}".record_external_layer_change(0);
-            """);
-        await command.ExecuteNonQueryAsync();
+        // The layer was registered before task B cached anything, so only the hook can change the revision.
+        await using var command = _taskA.Postgres.DataSource.CreateCommand(
+            $"SELECT \"{_externalSchema}\".record_external_layer_change(0)");
+        (await command.ExecuteScalarAsync()).Should().BeOfType<long>("the hook must record a new revision");
 
         using var collection = await client.GetAsync(CollectionPath);
         using var tile = await client.GetAsync(TilePath);
@@ -51,7 +50,8 @@ public sealed partial class MultiTaskCacheCoherenceTests
         var sql = await File.ReadAllTextAsync(RepositoryPaths.Resolve(
             "src", "Honua.Server", "Migrations", "165_CreateExternalLayerChanges.sql"));
         await using var command = _taskA.Postgres.DataSource.CreateCommand(
-            $"CREATE SCHEMA \"{_externalSchema}\";" + sql.Replace("$HonuaSchema$", $"\"{_externalSchema}\"", StringComparison.Ordinal));
+            $"CREATE SCHEMA \"{_externalSchema}\";" + sql.Replace("$HonuaSchema$", $"\"{_externalSchema}\"", StringComparison.Ordinal)
+            + $"INSERT INTO \"{_externalSchema}\".external_layer_revisions (layer_id, enabled) VALUES (0, true);");
         await command.ExecuteNonQueryAsync();
     }
 }

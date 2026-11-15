@@ -15,8 +15,9 @@ namespace Honua.Server.Tests.Features.Caching;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class ExternalRevisionOutputCacheTests
 {
+    // Cross-host coherence against one database is covered by MultiTaskCacheCoherenceTests; this pins the key derivation.
     [UnitTest]
-    public async Task CommittedEdit_ChangesBothHostsOutputCacheKeys()
+    public async Task SameRevision_GivesHostsTheSameKey_AndANewRevisionChangesIt()
     {
         var source = new Revisions();
         using var first = new ServiceCollection().AddSingleton<IExternalLayerRevisionSource>(source).BuildServiceProvider();

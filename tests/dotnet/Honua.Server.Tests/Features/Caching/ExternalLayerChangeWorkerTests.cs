@@ -4,6 +4,8 @@
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.SharedCaching;
@@ -26,27 +28,92 @@ public sealed class ExternalLayerChangeWorkerTests(DatabaseFixtureAdapter fixtur
     public Task PurgeFails_ChangeRemainsQueuedUntilAnotherHostSuccessfullyRetries()
         => InSchemaAsync(async database =>
         {
-            var cdn = Substitute.For<ICdnInvalidator>();
-            cdn.InvalidateAsync(default!, default).ReturnsForAnyArgs(
-                new CdnInvalidationResult(CdnInvalidationOutcome.Failed, "retry"),
-                new CdnInvalidationResult(CdnInvalidationOutcome.Submitted));
-            await using var services = new ServiceCollection().BuildServiceProvider();
-            var invalidation = new OutputCacheInvalidationService(null, null, null,
-                services.GetRequiredService<IServiceScopeFactory>(), null,
-                NullLogger<OutputCacheInvalidationService>.Instance,
-                new CdnInvalidationService(cdn, NullLogger<CdnInvalidationService>.Instance));
-            ExternalLayerChangeWorker Host() => new(database, invalidation,
-                NullLogger<ExternalLayerChangeWorker>.Instance);
-            using var first = Host();
-            var failed = () => first.ProcessOneAsync(default);
-            await failed.Should().ThrowAsync<InvalidOperationException>();
+            var cdn = Cdn(CdnInvalidationOutcome.Failed, CdnInvalidationOutcome.Submitted);
+            using var first = Worker(database, cdn);
+            (await first.ProcessBatchAsync(default)).Should().Be(0);
             (await CountAsync(database)).Should().Be(1L);
-            using var second = Host();
-            (await second.ProcessOneAsync(default)).Should().BeTrue();
+            using var second = Worker(database, cdn);
+            (await second.ProcessBatchAsync(default)).Should().Be(1);
             (await CountAsync(database)).Should().Be(0L);
-            (await second.ProcessOneAsync(default)).Should().BeFalse();
+            (await second.ProcessBatchAsync(default)).Should().Be(0);
             await cdn.Received(2).InvalidateAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
         });
+
+    [IntegrationTest]
+    public Task FailedPurge_BacksOffOnThatTaskInsteadOfRetryingEveryLoop()
+        => InSchemaAsync(async database =>
+        {
+            var cdn = Cdn(CdnInvalidationOutcome.Failed);
+            using var worker = Worker(database, cdn);
+            await worker.ProcessBatchAsync(default);
+            await worker.ProcessBatchAsync(default);
+            await worker.ProcessBatchAsync(default);
+            await cdn.Received(1).InvalidateAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
+            (await CountAsync(database)).Should().Be(1L);
+        });
+
+    [IntegrationTest]
+    public Task ManyChangesToOneLayer_AreCoalescedIntoOnePurge()
+        => InSchemaAsync(async database =>
+        {
+            for (var change = 0; change < 4; change++)
+            {
+                await RecordAsync(database);
+            }
+
+            var cdn = Cdn(CdnInvalidationOutcome.Submitted);
+            using var worker = Worker(database, cdn);
+            (await worker.ProcessBatchAsync(default)).Should().Be(5);
+            (await CountAsync(database)).Should().Be(0L);
+            await cdn.Received(1).InvalidateAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
+        });
+
+    [IntegrationTest]
+    public Task FailingLayer_DoesNotHoldUpAnotherLayer()
+        => InSchemaAsync(async database =>
+        {
+            await RegisterAsync(database, 8);
+            await RecordAsync(database, 8);
+            var cdn = Cdn(CdnInvalidationOutcome.Failed, CdnInvalidationOutcome.Submitted);
+            using var worker = Worker(database, cdn);
+            (await worker.ProcessBatchAsync(default)).Should().Be(1);
+            (await CountAsync(database)).Should().Be(1L, "only the failing layer's change stays queued");
+        });
+
+    [IntegrationTest]
+    public Task LayerClaimedByAnotherTask_IsLeftForThatTask()
+        => InSchemaAsync(async database =>
+        {
+            var cdn = Cdn(CdnInvalidationOutcome.Submitted);
+            var leases = Substitute.For<ILeaseStore>();
+            leases.TryAcquireAsync(default, default, default).ReturnsForAnyArgs(false);
+            using var worker = Worker(database, cdn, leases);
+            (await worker.ProcessBatchAsync(default)).Should().Be(0);
+            await leases.Received(1).TryAcquireAsync(Arg.Is<LeaseClaim>(claim => claim.LeaseKey == "external-layer-purge:7"),
+                ExternalLayerChangeWorker.PurgeWindow, Arg.Any<CancellationToken>());
+            await cdn.DidNotReceiveWithAnyArgs().InvalidateAsync(default!, default);
+            (await CountAsync(database)).Should().Be(1L);
+        });
+
+    [UnitTheory]
+    [InlineData(1, 60)]
+    [InlineData(2, 120)]
+    [InlineData(4, 480)]
+    [InlineData(5, 900)]
+    [InlineData(40, 900)]
+    public void Backoff_DoublesFromTheWindowUpToFifteenMinutes(int failures, int seconds)
+        => ExternalLayerChangeWorker.Backoff(failures).Should().Be(TimeSpan.FromSeconds(seconds));
+
+    [UnitTest]
+    public void CombinedExtent_CoversEveryChange_AndAnyUnboundedChangeIsLayerWide()
+    {
+        var a = new ExternalLayerChange(7, 1, BoundingBox.FromArray([1d, 2d, 3d, 4d], 4326));
+        var b = new ExternalLayerChange(7, 2, BoundingBox.FromArray([-1d, 3d, 2d, 6d], 4326));
+        ExternalLayerChangeWorker.CombinedExtent([a, b])!.Value.ToArray().Should().Equal(-1d, 2d, 3d, 6d);
+        ExternalLayerChangeWorker.CombinedExtent([a, b with { Extent = null }]).Should().BeNull();
+        ExternalLayerChangeWorker.CombinedExtent([a, b with { Extent = BoundingBox.FromArray([170d, 0d, -170d, 1d], 4326) }])
+            .Should().BeNull();
+    }
 
     [IntegrationTest]
     public Task RevisionRead_IsPinnedWithinRequestAndRefreshesOnTheNextRequest()
@@ -100,12 +167,46 @@ public sealed class ExternalLayerChangeWorkerTests(DatabaseFixtureAdapter fixtur
         }
     }
 
-    private static Task RecordAsync(JobStoreDatabase database)
+    private static Task RecordAsync(JobStoreDatabase database, int layerId = 7)
         => database.ExecuteAsync(async (connection, token) =>
         {
-            await using var command = new NpgsqlCommand($"SELECT {database.Table("record_external_layer_change")}(7)", connection);
+            await using var command = new NpgsqlCommand($"SELECT {database.Table("record_external_layer_change")}(@layer)", connection);
+            command.Parameters.AddWithValue("layer", layerId);
             await command.ExecuteNonQueryAsync(token);
         }, StatementRepeat.NotAfterSend, default);
+
+    private static Task RegisterAsync(JobStoreDatabase database, int layerId)
+        => database.ExecuteAsync(async (connection, token) =>
+        {
+            await using var command = new NpgsqlCommand(
+                $"INSERT INTO {database.Table("external_layer_revisions")} (layer_id, enabled) VALUES (@layer, true)", connection);
+            command.Parameters.AddWithValue("layer", layerId);
+            await command.ExecuteNonQueryAsync(token);
+        }, StatementRepeat.NotAfterSend, default);
+
+    private static ICdnInvalidator Cdn(params CdnInvalidationOutcome[] outcomes)
+    {
+        var cdn = Substitute.For<ICdnInvalidator>();
+        var results = outcomes.Select(outcome => new CdnInvalidationResult(outcome, outcome.ToString())).ToArray();
+        cdn.InvalidateAsync(default!, default).ReturnsForAnyArgs(results[0], results.Skip(1).ToArray());
+        return cdn;
+    }
+
+    private static ExternalLayerChangeWorker Worker(JobStoreDatabase database, ICdnInvalidator cdn, ILeaseStore? leases = null)
+    {
+        var collection = new ServiceCollection();
+        if (leases is not null)
+        {
+            collection.AddSingleton(leases);
+        }
+
+        var services = collection.BuildServiceProvider();
+        var invalidation = new OutputCacheInvalidationService(null, null, null,
+            services.GetRequiredService<IServiceScopeFactory>(), null,
+            NullLogger<OutputCacheInvalidationService>.Instance,
+            new CdnInvalidationService(cdn, NullLogger<CdnInvalidationService>.Instance));
+        return new(database, invalidation, services);
+    }
 
     private static Task<long> CountAsync(JobStoreDatabase database)
         => database.ExecuteAsync(async (connection, _, token) =>

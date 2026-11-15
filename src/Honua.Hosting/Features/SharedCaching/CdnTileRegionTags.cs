@@ -24,6 +24,17 @@ internal static class CdnTileRegionTags
             return [Metadata(metadataLayerId)];
         }
 
+        // H3 hexagons cross tile edges by up to a cell, so an H3 tile is purged with every regional purge
+        // of its layer through the buffered tag rather than by its own cells.
+        if (segments is [var h3Root, var h3Layer, var h3, _, _, var h3Row]
+            && h3Root.Equals("tiles", StringComparison.OrdinalIgnoreCase)
+            && h3.Equals("h3", StringComparison.OrdinalIgnoreCase)
+            && h3Row.EndsWith(".mvt", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(h3Layer, NumberStyles.Integer, CultureInfo.InvariantCulture, out var h3LayerId))
+        {
+            return [Buffered(h3LayerId)];
+        }
+
         if (segments is not [var root, var layerText, var zoomText, var columnText, var rowText]
             || !root.Equals("tiles", StringComparison.OrdinalIgnoreCase)
             || !rowText.EndsWith(".mvt", StringComparison.OrdinalIgnoreCase)
