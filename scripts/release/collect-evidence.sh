@@ -41,7 +41,12 @@ command -v jq >/dev/null 2>&1 || { echo "[ERROR] jq required" >&2; exit 1; }
 # Collected results keyed by signal id (empty array if file absent/empty).
 collected() {
   local f="$1"
-  if [[ -n "$f" && -s "$f" ]]; then jq -s '.' "$f"; else echo '[]'; fi
+  if [[ -n "$f" && -s "$f" ]]; then
+    jq -s 'if (group_by(.id) | any(length > 1))
+           then error("Duplicate suite receipt id") else . end' "$f"
+  else
+    echo '[]'
+  fi
 }
 integration_results="$(collected "$INTEGRATION_NDJSON")"
 sdk_results="$(collected "$SDK_NDJSON")"

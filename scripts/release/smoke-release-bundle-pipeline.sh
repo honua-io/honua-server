@@ -77,6 +77,26 @@ jq -nc '{id:"sdk-profile-positive-control",conclusion:"success",profile:"release
 echo "[OK] every preview SDK profile location is rejected, including mixed profiles"
 
 echo
+echo "Validating: duplicate suite receipts are rejected in either order"
+for kind in integration sdk; do
+  suite_id="$(jq -r --arg kind "$kind" '.[$kind][0].id' "$REGISTRY")"
+  for outcomes in '["failure","success"]' '["success","failure"]' '["success","success"]'; do
+    jq -nc --arg id "$suite_id" --argjson outcomes "$outcomes" \
+      '$outcomes[] | {id:$id, conclusion:.}' > "$W/duplicate.ndjson"
+    if "$COLLECT" --registry "$REGISTRY" "--$kind" "$W/duplicate.ndjson" \
+      --output "$W/duplicate-evidence.json" >"$W/duplicate.log" 2>&1; then
+      echo "[ERROR] duplicate $kind suite receipts accepted: $outcomes" >&2
+      exit 1
+    fi
+    if ! grep -q 'Duplicate suite receipt id' "$W/duplicate.log"; then
+      echo "[ERROR] duplicate receipt rejection did not identify ambiguity" >&2
+      exit 1
+    fi
+  done
+done
+echo "[OK] duplicate integration and SDK receipts are rejected"
+
+echo
 echo "Validating: manifest builds from the merged evidence with a passed candidate image"
 "$GEN" --evidence "$W/evidence.json" \
   --release-id honua-pipeline-test --channel preview --server-ref abc123 \
