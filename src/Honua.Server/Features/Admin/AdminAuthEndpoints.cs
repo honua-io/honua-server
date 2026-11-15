@@ -77,6 +77,7 @@ internal static class AdminAuthEndpoints
 
         _ = group.MapPost("/providers/{providerKey}/authorize-url", HandleCreateAuthorizeUrl)
             .WithDisplayName("Create Admin Auth Authorize Url")
+            .WithMetadata(new UsesBrowserSessionMetadata())
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithMetadata(new RateLimitAttribute(5)); // 5 requests per minute for auth initiation
 
@@ -87,11 +88,13 @@ internal static class AdminAuthEndpoints
 
         _ = group.MapPost("/bearer", HandleIssueOperatorBearer)
             .WithDisplayName("Issue Console Operator Bearer")
+            .WithMetadata(new UsesBrowserSessionMetadata())
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithMetadata(new RateLimitAttribute(10)); // 10 requests per minute for bearer issuance
 
         _ = group.MapPost("/logout", HandleLogout)
             .WithDisplayName("Logout Admin Auth Session")
+            .WithMetadata(new UsesBrowserSessionMetadata())
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         _ = group.MapGet("/providers/{providerKey}/logout-url", HandleGetLogoutUrl)
