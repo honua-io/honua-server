@@ -22,7 +22,8 @@ internal sealed partial class CdnPurgeReliability(
 
     internal static readonly TimeSpan SharedReadTimeout = TimeSpan.FromSeconds(10);
 
-    // After a failed purge, on any task, long lifetimes stop for this long; responses already sent keep theirs.
+    // After a failed purge, on any task, long lifetimes stop for at least this long; responses already sent keep theirs.
+    // The task whose purges fail holds off until one is delivered, and keeps the shared lease held meanwhile.
     internal static readonly TimeSpan FailureHoldOff = TimeSpan.FromMinutes(15);
 
     // The probe holds the failure lease this long at most; a failure recorded meanwhile tries again after it.
@@ -35,9 +36,11 @@ internal sealed partial class CdnPurgeReliability(
     private readonly ICdnPurgeBudget? _budget = coordination?.Budget;
     private readonly ILeaseStore? _leases = coordination?.LeaseStore;
     private readonly Lock _gate = new();
+    private readonly string _failureOwner = "failure:" + Guid.NewGuid().ToString("N");
     private DateTimeOffset _sharedReadAt = DateTimeOffset.MinValue;
     private DateTimeOffset _lastFailure = DateTimeOffset.MinValue;
     private bool _sharedSignalsAllow;
+    private bool _failing;
     private long _version;
     private Task? _sharedRead;
 
@@ -51,7 +54,7 @@ internal sealed partial class CdnPurgeReliability(
         var now = _clock.GetUtcNow();
         lock (_gate)
         {
-            if (now - _lastFailure < FailureHoldOff)
+            if (FailingLocked(now))
             {
                 return false;
             }
@@ -72,9 +75,18 @@ internal sealed partial class CdnPurgeReliability(
         lock (_gate)
         {
             _lastFailure = _clock.GetUtcNow();
+            _failing = true;
         }
 
-        _ = ShareFailureAsync();
+        _ = HoldFailureLeaseAsync();
+    }
+
+    internal void RecordDeliveredPurge()
+    {
+        lock (_gate)
+        {
+            _failing = false;
+        }
     }
 
     // The budget was found spent by a purge on this task; no need to wait for the next read.
@@ -87,13 +99,21 @@ internal sealed partial class CdnPurgeReliability(
         }
     }
 
-    // Awaited by tests and by the background read. A read that started before RecordBudgetSpent does not undo it.
+    // A read that started before RecordBudgetSpent does not undo it. While this task is failing it also keeps the
+    // shared failure lease held, so the other tasks keep holding off for as long as it does.
     internal async Task ReadSharedSignalsAsync(CdnPurgeBudgetOptions budget, CancellationToken cancellationToken)
     {
         long version;
+        bool failing;
         lock (_gate)
         {
             version = _version;
+            failing = FailingLocked(_clock.GetUtcNow());
+        }
+
+        if (failing)
+        {
+            await HoldFailureLeaseAsync().ConfigureAwait(false);
         }
 
         // Real time, not the injected clock: a hung read must end even where the clock is driven by hand.
@@ -186,21 +206,29 @@ internal sealed partial class CdnPurgeReliability(
         }
     }
 
-    private async Task ShareFailureAsync()
+    private bool FailingLocked(DateTimeOffset now) => _failing || now - _lastFailure < FailureHoldOff;
+
+    // Takes the failure lease, or extends it when this task already holds it. Refused while another task's failure
+    // holds it (already shared) or while a probe does, in which case it tries once more after the probe.
+    private async Task HoldFailureLeaseAsync()
     {
         if (_leases is null)
         {
             return;
         }
 
-        var failure = new LeaseClaim(FailureLeaseKey, "failure:" + Guid.NewGuid().ToString("N"));
+        var failure = new LeaseClaim(FailureLeaseKey, _failureOwner);
         try
         {
-            // Refused while another failure holds it (already shared) or while a probe does (try again after it).
-            if (!await _leases.TryAcquireAsync(failure, FailureHoldOff).ConfigureAwait(false))
+            if (await TakeOrRenewAsync(failure).ConfigureAwait(false))
             {
-                await Task.Delay(ProbeHold * 2, _clock).ConfigureAwait(false);
-                await _leases.TryAcquireAsync(failure, FailureHoldOff).ConfigureAwait(false);
+                return;
+            }
+
+            await Task.Delay(ProbeHold * 2, _clock).ConfigureAwait(false);
+            if (!await TakeOrRenewAsync(failure).ConfigureAwait(false))
+            {
+                Log.FailureLeaseHeldElsewhere(logger);
             }
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -208,6 +236,10 @@ internal sealed partial class CdnPurgeReliability(
             Log.SharedSignalsUnreadable(logger, exception);
         }
     }
+
+    private async Task<bool> TakeOrRenewAsync(LeaseClaim failure)
+        => await _leases!.TryAcquireAsync(failure, FailureHoldOff).ConfigureAwait(false)
+           || await _leases.RenewAsync(failure, FailureHoldOff).ConfigureAwait(false);
 
     private static partial class Log
     {
@@ -222,5 +254,11 @@ internal sealed partial class CdnPurgeReliability(
             Level = LogLevel.Warning,
             Message = "The CDN purge budget or the shared purge-failure lease could not be read; responses get the ordinary CDN lifetimes until they can.")]
         public static partial void SharedSignalsUnreadable(ILogger logger, Exception exception);
+
+        [LoggerMessage(
+            EventId = 10322,
+            Level = LogLevel.Debug,
+            Message = "The shared CDN purge-failure lease is held by another task or a probe; that task's hold-off applies.")]
+        public static partial void FailureLeaseHeldElsewhere(ILogger logger);
     }
 }

@@ -132,7 +132,7 @@ public sealed class PurgeBackedLifetimeTests
     }
 
     [UnitTest]
-    public async Task FailedPurge_HoldsOffLongLifetimes_ForFifteenMinutes()
+    public async Task FailedPurge_HoldsOffLongLifetimes_UntilOneIsDeliveredAndForFifteenMinutes()
     {
         var options = Options();
         var reliability = await PrimedReliabilityAsync(options, new FailingInvalidator());
@@ -146,6 +146,9 @@ public sealed class PurgeBackedLifetimeTests
         reliability.PurgesReachCdn().Should().BeFalse();
         _time.Advance(CdnPurgeReliability.FailureHoldOff);
         await reliability.ReadSharedSignalsAsync(options.PurgeBudget, CancellationToken.None);
+        reliability.PurgesReachCdn().Should().BeFalse("no purge has been delivered since the failure");
+
+        reliability.RecordDeliveredPurge();
         reliability.PurgesReachCdn().Should().BeTrue();
     }
 
@@ -273,7 +276,7 @@ public sealed class PurgeBackedLifetimeTests
 
         await service.InvalidateAfterEditAsync(["#honua-layer:3"], CancellationToken.None);
         await _time.TimerIsWaiting();
-        _time.Advance(CdnInvalidationService.FailedEditPurgeRetryDelay);
+        _time.Advance(PurgeBackedDelivery.FirstRetryDelay);
         await cdn.Submitted.WaitAsync(TimeSpan.FromSeconds(10));
 
         cdn.Attempts.Should().Be(2);
@@ -302,7 +305,7 @@ public sealed class PurgeBackedLifetimeTests
     [InlineData(5, 60)]
     [InlineData(30, 60)]
     public void RetryDelay_DoublesFromFiveMinutes_UpToHourly(int attempts, int expectedMinutes)
-        => CdnInvalidationService.RetryDelay(attempts).Should().Be(TimeSpan.FromMinutes(expectedMinutes));
+        => PurgeBackedDelivery.RetryDelay(attempts).Should().Be(TimeSpan.FromMinutes(expectedMinutes));
 
     [UnitTest]
     public async Task FailingEditPurge_StopsRetrying_OnceEveryPurgeBackedCopyHasExpired()
@@ -313,35 +316,71 @@ public sealed class PurgeBackedLifetimeTests
             purgeBacked.Tile = new SharedCacheLifetime { SharedMaxAgeSeconds = 600 };
             purgeBacked.FeatureQuery = new SharedCacheLifetime { SharedMaxAgeSeconds = 60 };
         });
+        var logger = new RecordingLogger();
         var service = new CdnInvalidationService(
-            cdn, NullLogger<CdnInvalidationService>.Instance, new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options) });
+            cdn, logger, new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options) });
 
         await service.InvalidateAfterEditAsync(["#honua-layer:3"], CancellationToken.None);
         await _time.TimerIsWaiting();
-        _time.Advance(CdnInvalidationService.RetryDelay(1));
+        _time.Advance(PurgeBackedDelivery.RetryDelay(1));
         await cdn.AttemptsReach(2);
         await _time.TimerIsWaiting();
-        _time.Advance(CdnInvalidationService.RetryDelay(2));
+        _time.Advance(PurgeBackedDelivery.RetryDelay(2));
         await cdn.AttemptsReach(3);
 
-        // Fifteen minutes after the first failure the 600 s copies have expired: the third failure is not retried.
-        _time.WaitingTimers.Should().Be(0);
+        // Fifteen minutes after the first failure the 600 s copies have expired: the third failure is given up.
+        await Eventually(() => logger.Messages.Any(message => message.StartsWith("Stopped retrying", StringComparison.Ordinal)));
+        _time.Advance(PurgeBackedDelivery.MaximumRetryDelay);
+        cdn.Attempts.Should().Be(3);
     }
 
     [UnitTest]
     public async Task SentEditPurge_WithPurgeBackedLayers_IsRepeatedOnceAfterTheSettleDelay()
     {
         var cdn = new FlakyInvalidator(failures: 0);
+        var logger = new RecordingLogger();
         var service = new CdnInvalidationService(
-            cdn, NullLogger<CdnInvalidationService>.Instance, new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(monthlyLimit: 0)) });
+            cdn, logger, new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(monthlyLimit: 0)) });
 
         await service.InvalidateAfterEditAsync(["#honua-layer:3"], CancellationToken.None);
         await _time.TimerIsWaiting();
-        _time.Advance(CdnInvalidationService.SettleDelay);
+        _time.Advance(PurgeBackedDelivery.SettleDelay);
+        await cdn.AttemptsReach(2);
+        await Eventually(() => logger.Messages.Any(message => message.Contains("change=settle", StringComparison.Ordinal)));
+
+        _time.Advance(PurgeBackedDelivery.SettleDelay * 2);
+        await Task.Delay(TimeSpan.FromMilliseconds(100));
+        cdn.Attempts.Should().Be(2, "the settle repeat is not repeated again");
+        cdn.Sent.Should().AllSatisfy(paths => paths.Should().Equal("#honua-layer:3"));
+    }
+
+    [UnitTest]
+    public async Task SentEditPurge_WithoutCacheTags_IsNotRepeated()
+    {
+        var cdn = new FlakyInvalidator(failures: 0);
+        var service = new CdnInvalidationService(
+            cdn, NullLogger<CdnInvalidationService>.Instance,
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(tagHeader: null, monthlyLimit: 0)) });
+
+        await service.InvalidateAfterEditAsync(["/rest/services/parcels/*"], CancellationToken.None);
+
+        _time.WaitingTimers.Should().Be(0, "a settle timer is created inside the awaited call when one is scheduled");
+        cdn.Attempts.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task SubmittedAdminPurge_WithPurgeBackedLayers_AlsoSettles()
+    {
+        var cdn = new FlakyInvalidator(failures: 0);
+        var service = new CdnInvalidationService(
+            cdn, NullLogger<CdnInvalidationService>.Instance, new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(Options(monthlyLimit: 0)) });
+
+        await service.InvalidateNowAsync(["/*"], CancellationToken.None);
+        await _time.TimerIsWaiting();
+        _time.Advance(PurgeBackedDelivery.SettleDelay);
         await cdn.AttemptsReach(2);
 
-        _time.WaitingTimers.Should().Be(0, "the settle repeat is not repeated again");
-        cdn.Sent.Should().AllSatisfy(paths => paths.Should().Equal("#honua-layer:3"));
+        cdn.Sent[^1].Should().Equal("/*");
     }
 
     [UnitTest]
@@ -378,6 +417,27 @@ public sealed class PurgeBackedLifetimeTests
         _time.Advance(CdnPurgeReliability.FailureHoldOff);
         await otherTask.ReadSharedSignalsAsync(options.PurgeBudget, CancellationToken.None);
         otherTask.PurgesReachCdn().Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task TaskStillFailing_KeepsOtherTasksHeldOff_PastFifteenMinutes()
+    {
+        var options = Options();
+        var leases = new ReleasableLeases(_time);
+        var failingTask = new CdnPurgeReliability(new CloudFrontLimits(), NullLogger<CdnPurgeReliability>.Instance,
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options), LeaseStore = leases, Budget = new FixedBudget(0) });
+        var otherTask = new CdnPurgeReliability(new CloudFrontLimits(), NullLogger<CdnPurgeReliability>.Instance,
+            new CdnPurgeCoordination { TimeProvider = _time, Options = new StaticOptions(options), LeaseStore = leases, Budget = new FixedBudget(0) });
+        failingTask.RecordFailedPurge();
+        await leases.Held(CdnPurgeReliability.FailureLeaseKey);
+
+        _time.Advance(TimeSpan.FromMinutes(10));
+        await failingTask.ReadSharedSignalsAsync(options.PurgeBudget, CancellationToken.None);
+        _time.Advance(TimeSpan.FromMinutes(10));
+        await otherTask.ReadSharedSignalsAsync(options.PurgeBudget, CancellationToken.None);
+
+        otherTask.PurgesReachCdn().Should().BeFalse("the failing task renewed the shared lease on its own read");
+        failingTask.PurgesReachCdn().Should().BeFalse();
     }
 
     [UnitTest]
@@ -424,6 +484,75 @@ public sealed class PurgeBackedLifetimeTests
     [InlineData(1000, 100)]
     public void BudgetReserve_RoundsUp(int limit, int expected)
         => SharedCachePurgeBacked.BudgetReserve(limit).Should().Be(expected);
+
+    [UnitTest]
+    public void Delivery_FailureRecord_EndsOnAnyOutcomeButFailure()
+    {
+        var delivery = new PurgeBackedDelivery(_time);
+        delivery.Failed(["#a"], TimeSpan.FromHours(1));
+        _time.Advance(TimeSpan.FromHours(2));
+
+        delivery.Ended(["#a"]);
+
+        delivery.Failed(["#a"], TimeSpan.FromHours(1)).Paths.Should().Equal("#a");
+    }
+
+    [UnitTest]
+    public void Delivery_EditOfAFailingPath_RestartsItsGiveUpClock()
+    {
+        var delivery = new PurgeBackedDelivery(_time);
+        delivery.Failed(["#a"], TimeSpan.FromHours(1));
+        _time.Advance(TimeSpan.FromMinutes(50));
+        delivery.EditQueued(["#a"]);
+        _time.Advance(TimeSpan.FromMinutes(50));
+
+        var plan = delivery.Failed(["#a"], TimeSpan.FromHours(1));
+
+        plan.Paths.Should().Equal("#a");
+        plan.Abandoned.Should().Be(0);
+        plan.Delay.Should().Be(PurgeBackedDelivery.RetryDelay(2));
+    }
+
+    [UnitTest]
+    public void Delivery_SettleOnlyPath_DoesNotSettleAgain_UnlessAnEditQueuesItAgain()
+    {
+        var delivery = new PurgeBackedDelivery(_time);
+        delivery.SettleOnly(["#a", "#b"]);
+        delivery.EditQueued(["#b"]);
+
+        var due = delivery.ScheduleSettle(["#a", "#b"]);
+        _time.Advance(PurgeBackedDelivery.SettleDelay);
+
+        due.Should().NotBeNull();
+        delivery.TakeDueSettles(due!.Value).Due.Should().Equal("#b");
+    }
+
+    [UnitTest]
+    public void Delivery_PathPurgedAgainBeforeItsSettle_WaitsForItsOwnDelay()
+    {
+        var delivery = new PurgeBackedDelivery(_time);
+        var first = delivery.ScheduleSettle(["#a"]);
+        _time.Advance(TimeSpan.FromSeconds(40));
+        delivery.ScheduleSettle(["#a", "#b"]).Should().BeNull("one timer is already waiting");
+        _time.Advance(TimeSpan.FromSeconds(20));
+
+        var batch = delivery.TakeDueSettles(first!.Value);
+
+        batch.Due.Should().BeEmpty();
+        batch.Next.Should().Be(_time.GetUtcNow() + TimeSpan.FromSeconds(40));
+        _time.Advance(TimeSpan.FromSeconds(40));
+        delivery.TakeDueSettles(batch.Next!.Value).Due.Should().BeEquivalentTo(["#a", "#b"]);
+    }
+
+    private static async Task Eventually(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (!condition())
+        {
+            DateTime.UtcNow.Should().BeBefore(deadline, "the expected outcome did not happen in time");
+            await Task.Delay(TimeSpan.FromMilliseconds(10));
+        }
+    }
 
     private static SharedCacheOptions Options(
         string? tagHeader = "x-cache-tag",
@@ -615,7 +744,18 @@ public sealed class PurgeBackedLifetimeTests
         }
 
         public Task<bool> RenewAsync(LeaseClaim claim, TimeSpan duration, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+        {
+            lock (_gate)
+            {
+                if (_leases.TryGetValue(claim.LeaseKey, out var lease) && lease.Owner == claim.OwnerId && lease.ExpiresAt > clock.GetUtcNow())
+                {
+                    _leases[claim.LeaseKey] = (claim.OwnerId, clock.GetUtcNow() + duration);
+                    return Task.FromResult(true);
+                }
+
+                return Task.FromResult(false);
+            }
+        }
 
         public Task ReleaseAsync(LeaseClaim claim, CancellationToken cancellationToken = default)
         {

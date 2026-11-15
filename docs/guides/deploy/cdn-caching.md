@@ -65,17 +65,19 @@ A response gets the longer lifetime only while an edit would reach the CDN:
 
 - a CloudFront distribution and `SharedCache__CacheTagHeader` are configured;
 - at least 10% of the monthly edit-purge budget is left (rounded up), so the rest can still purge what was stored with a long lifetime;
-- no purge from any task failed or stayed busy in the last 15 minutes;
+- no purge from any task failed or stayed busy in the last 15 minutes, and the task whose purges fail has delivered one since;
 - the layer has no emergency, per-layer or per-tileset lifetime, which win;
 - the response names one layer, and was rendered for this request rather than replayed from the task's memory.
 
 Each task reads the shared budget and failure state at most once a minute; if it cannot, or its last reading is more than 3 minutes old, responses get the ordinary lifetime from the table above. A response with the longer lifetime is not stored in the task's output cache, because another task's edit cannot reach that copy and replaying it after the purge would put the old response back in the CDN for the whole lifetime. A feature query may still be kept in a task's query cache, but a reply from that cache leaves with the ordinary lifetime.
 
-Edit purges carry more weight with these lifetimes, so for as long as any layer is listed:
+Purges carry more weight with these lifetimes, so for as long as any layer is listed and cache tags are on:
 
-- a failed edit purge is sent again after 5, 10, 20 and 40 minutes, then hourly, until every copy it should have removed has expired; each attempt counts against the monthly budget;
-- a sent edit purge is repeated once a minute later, for a response that was rendered before the edit was committed and reached the CDN after the first purge;
-- a task that stops sends the edit purges it is still holding. A task that crashes cannot: after an unplanned task loss, invalidate the affected layers' caches.
+- a failed edit purge is sent again after 5, 10, 20 and 40 minutes, then hourly, until every copy it should have removed has expired (counted from the latest edit of that layer); each attempt counts against the monthly budget;
+- every sent purge, including an operator invalidation, is repeated once a minute later, for a response rendered from the state before the change that reached the CDN after the first purge. Edit purge tags cover whole scopes, so listing even one layer roughly doubles the edit purges counted against the monthly budget for every layer;
+- a task that stops sends the purges it is still holding, within 10 seconds (event 10319 names any it could not send). A task that crashes cannot: after an unplanned task loss, invalidate the affected layers' caches.
+
+An operator invalidation that answers `Honua-Cdn-Invalidation: failed` is not retried: repeat it.
 
 When you remove a layer from the list, or turn off cache tags or the CDN configuration, copies already stored keep their long lifetime. Invalidate the cache once afterwards (the operator cache purge invalidates everything at the CDN).
 

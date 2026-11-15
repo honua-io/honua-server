@@ -6,38 +6,30 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Infrastructure.SharedCaching;
 
-// What purge-backed lifetimes add to edit purges, where a lost purge would leave a layer stale for the long lifetime
-// rather than minutes. A failed purge is retried with backoff until every copy it should have removed has expired; a
-// sent one is repeated once after a settle delay, for a response rendered before the edit committed that reached the
-// CDN after the first purge; and purges still waiting when the task stops are sent then.
+// What purge-backed lifetimes add to purges, where a lost purge would leave a layer stale for the long lifetime rather
+// than minutes: a failed edit purge is retried with backoff; a sent purge is repeated once after a settle delay, for a
+// response rendered from pre-change state that reached the CDN after the first purge; and purges still waiting when the
+// task stops are sent then. None of it runs unless purge-backed lifetimes can actually be given.
 internal sealed partial class CdnInvalidationService
 {
-    internal static readonly TimeSpan FailedEditPurgeRetryDelay = TimeSpan.FromMinutes(5);
+    // A stopping task has little time left, and the host's own deadline may already be close.
+    internal static readonly TimeSpan ShutdownFlushTimeout = TimeSpan.FromSeconds(10);
 
-    internal static readonly TimeSpan MaximumFailedEditPurgeRetryDelay = TimeSpan.FromHours(1);
+    private readonly PurgeBackedDelivery _delivery = new(coordination?.TimeProvider ?? TimeProvider.System);
 
-    // Longer than a slow render, so the repeat lands after any response read before the commit.
-    internal static readonly TimeSpan SettleDelay = TimeSpan.FromMinutes(1);
+    private SharedCachePurgeBacked? ActivePurgeBacked
+        => _options?.CurrentValue is { CacheTagsEnabled: true, PurgeBacked: { Configured: true } purgeBacked } ? purgeBacked : null;
 
-    private readonly Dictionary<string, DateTimeOffset> _failedSince = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, int> _failedAttempts = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, DateTimeOffset> _settleAfter = new(StringComparer.Ordinal);
-    private DateTimeOffset? _settleDueAt;
-
-    // Sends every edit purge this task still holds: pending in a window, waiting for a retry, or waiting to settle.
-    // Called when the task stops; leases are not claimed, since a purge sent twice costs less than one lost.
-    internal async Task FlushPendingAsync(CancellationToken cancellationToken)
+    // Sends every purge this task still holds: pending in a window (retries included) or waiting to settle. Leases are
+    // not claimed and a busy CDN is not waited for: a purge sent twice costs less than one lost.
+    internal async Task FlushPendingAsync()
     {
         string[] paths;
         lock (_gate)
         {
-            paths = [.. _pendingEditPaths.Union(_settleAfter.Keys, StringComparer.Ordinal)];
+            paths = [.. _pendingEditPaths.Union(_delivery.TakeAll(), StringComparer.Ordinal)];
             _pendingEditPaths.Clear();
-            _settleAfter.Clear();
-            _failedSince.Clear();
-            _failedAttempts.Clear();
             _windowClosesAt = null;
-            _settleDueAt = null;
         }
 
         if (paths.Length == 0 || !CdnConfigured)
@@ -45,115 +37,73 @@ internal sealed partial class CdnInvalidationService
             return;
         }
 
-        var batches = await SendWithinLimitsAsync(paths, CdnPurgeCause.Edit(CdnPurgeCause.Shutdown), cancellationToken)
-            .ConfigureAwait(false);
-        if (batches.Result.Failed)
+        using var deadline = new CancellationTokenSource(ShutdownFlushTimeout);
+        try
         {
-            Log.EditInvalidationFailed(logger, batches.Result.Detail ?? batches.Result.Outcome.ToString());
+            var batches = await SendWithinLimitsAsync(paths, CdnPurgeCause.Edit(CdnPurgeCause.Shutdown), deadline.Token)
+                .ConfigureAwait(false);
+            if (batches.Result.Failed)
+            {
+                Log.ShutdownPurgesNotSent(logger, paths.Length, string.Join(' ', paths));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Log.ShutdownPurgesNotSent(logger, paths.Length, string.Join(' ', paths));
         }
     }
 
-    private void AfterEditPurge(string[] sent, BatchInvalidationResult batches, CdnPurgeCause cause)
+    // Edits made while purge-backed lifetimes are on restart the give-up clock of a path that is failing.
+    private void NoteEditQueued(IEnumerable<string> paths)
     {
-        if (batches.BusyPaths.Count > 0)
+        if (ActivePurgeBacked is not null)
         {
-            _reliability?.RecordFailedPurge();
+            _delivery.EditQueued(paths);
         }
+    }
 
-        if (_options?.CurrentValue.PurgeBacked is not { Configured: true } purgeBacked)
+    private void AfterEditPurge(string[] sent, CdnInvalidationResult result, CdnPurgeCause cause)
+    {
+        if (ActivePurgeBacked is not { } purgeBacked)
         {
             return;
         }
 
-        switch (batches.Result.Outcome)
+        if (result.Outcome is not CdnInvalidationOutcome.Failed)
         {
-            case CdnInvalidationOutcome.Failed:
-                RetryFailed(sent, purgeBacked.LongestSharedLifetime);
-                break;
-            case CdnInvalidationOutcome.Submitted:
-                ForgetFailures(sent);
-                if (cause.ChangeId != CdnPurgeCause.SettledEdits)
-                {
-                    ScheduleSettle(sent);
-                }
+            _delivery.Ended(sent);
+            if (result.Outcome is CdnInvalidationOutcome.Submitted)
+            {
+                AfterSubmitted(sent, cause);
+            }
 
-                break;
+            return;
+        }
+
+        var plan = _delivery.Failed(sent, purgeBacked.LongestSharedLifetime);
+        if (plan.Abandoned > 0)
+        {
+            Log.FailedEditPurgeAbandoned(logger, plan.Abandoned);
+        }
+
+        if (plan.Paths.Length > 0)
+        {
+            DeferToNextWindow(plan.Paths, plan.Delay);
         }
     }
 
-    private void RetryFailed(string[] sent, TimeSpan giveUpAfter)
+    // A settle repeat is itself never repeated.
+    private void AfterSubmitted(IReadOnlyCollection<string> sent, CdnPurgeCause cause)
     {
-        var now = _timeProvider.GetUtcNow();
-        var retry = new List<string>(sent.Length);
-        var delay = MaximumFailedEditPurgeRetryDelay;
-        var abandoned = 0;
-        lock (_gate)
+        if (cause.ChangeId == CdnPurgeCause.SettledEdits || ActivePurgeBacked is null)
         {
-            foreach (var path in sent)
-            {
-                var since = _failedSince.TryGetValue(path, out var first) ? first : now;
-                if (now - since >= giveUpAfter)
-                {
-                    _failedSince.Remove(path);
-                    _failedAttempts.Remove(path);
-                    abandoned++;
-                    continue;
-                }
-
-                var attempts = _failedAttempts.GetValueOrDefault(path) + 1;
-                _failedSince[path] = since;
-                _failedAttempts[path] = attempts;
-                retry.Add(path);
-                delay = Min(delay, RetryDelay(attempts));
-            }
+            return;
         }
 
-        if (abandoned > 0)
+        if (_delivery.ScheduleSettle(sent) is { } due)
         {
-            Log.FailedEditPurgeAbandoned(logger, abandoned);
+            _ = SettleWhenDueAsync(due);
         }
-
-        if (retry.Count > 0)
-        {
-            DeferToNextWindow(retry, delay);
-        }
-    }
-
-    // 5, 10, 20, 40 minutes, then hourly.
-    internal static TimeSpan RetryDelay(int attempts)
-        => Min(FailedEditPurgeRetryDelay * (1 << Math.Clamp(attempts - 1, 0, 4)), MaximumFailedEditPurgeRetryDelay);
-
-    private void ForgetFailures(string[] sent)
-    {
-        lock (_gate)
-        {
-            foreach (var path in sent)
-            {
-                _failedSince.Remove(path);
-                _failedAttempts.Remove(path);
-            }
-        }
-    }
-
-    private void ScheduleSettle(string[] sent)
-    {
-        var due = _timeProvider.GetUtcNow() + SettleDelay;
-        lock (_gate)
-        {
-            foreach (var path in sent)
-            {
-                _settleAfter[path] = due;
-            }
-
-            if (_settleDueAt is not null)
-            {
-                return;
-            }
-
-            _settleDueAt = due;
-        }
-
-        _ = SettleWhenDueAsync(due);
     }
 
     private async Task SettleWhenDueAsync(DateTimeOffset due)
@@ -164,34 +114,15 @@ internal sealed partial class CdnInvalidationService
             await Task.Delay(delay, _timeProvider).ConfigureAwait(false);
         }
 
-        string[] paths;
-        DateTimeOffset? next = null;
-        lock (_gate)
+        var batch = _delivery.TakeDueSettles(due);
+        if (batch.Next is { } next)
         {
-            if (_settleDueAt != due)
-            {
-                return;
-            }
-
-            // A path purged again since it was scheduled waits for its own settle delay.
-            var now = _timeProvider.GetUtcNow();
-            paths = [.. _settleAfter.Where(entry => entry.Value <= now).Select(entry => entry.Key)];
-            foreach (var path in paths)
-            {
-                _settleAfter.Remove(path);
-            }
-
-            _settleDueAt = next = _settleAfter.Count > 0 ? _settleAfter.Values.Min() : null;
+            _ = SettleWhenDueAsync(next);
         }
 
-        if (next is { } later)
+        if (batch.Due.Length > 0)
         {
-            _ = SettleWhenDueAsync(later);
-        }
-
-        if (paths.Length > 0)
-        {
-            var result = await SendAfterEditAsync(paths, CdnPurgeCause.Edit(CdnPurgeCause.SettledEdits), CancellationToken.None)
+            var result = await SendAfterEditAsync(batch.Due, CdnPurgeCause.Edit(CdnPurgeCause.SettledEdits), CancellationToken.None)
                 .ConfigureAwait(false);
             if (result is { Outcome: CdnInvalidationOutcome.Failed })
             {
@@ -199,14 +130,13 @@ internal sealed partial class CdnInvalidationService
             }
         }
     }
-
-    private static TimeSpan Min(TimeSpan first, TimeSpan second) => first < second ? first : second;
 }
 
-// Sends this task's waiting edit purges when the host stops: a scale-in or a replacement must not lose them.
+// Sends this task's waiting purges when the host stops: a scale-in or a replacement must not lose them. The flush has
+// its own short deadline rather than the host's token, which may be nearly spent by the services stopped before it.
 internal sealed class CdnPendingPurgeFlush(CdnInvalidationService invalidation) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public Task StopAsync(CancellationToken cancellationToken) => invalidation.FlushPendingAsync(cancellationToken);
+    public Task StopAsync(CancellationToken cancellationToken) => invalidation.FlushPendingAsync();
 }

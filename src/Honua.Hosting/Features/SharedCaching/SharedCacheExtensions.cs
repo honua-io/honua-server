@@ -34,15 +34,7 @@ internal static class SharedCacheExtensions
                 provider.GetRequiredService<ICdnInvalidator>(),
                 provider.GetRequiredService<ILogger<CdnPurgeReliability>>(),
                 shared);
-            return new CdnPurgeCoordination
-            {
-                TimeProvider = shared.TimeProvider,
-                HttpContextAccessor = shared.HttpContextAccessor,
-                Options = shared.Options,
-                LeaseStore = shared.LeaseStore,
-                Budget = shared.Budget,
-                Reliability = reliability,
-            };
+            return shared with { Reliability = reliability };
         });
         services.TryAddSingleton(static provider => provider.GetRequiredService<CdnPurgeCoordination>().Reliability!);
         services.TryAddSingleton<CdnInvalidationService>();

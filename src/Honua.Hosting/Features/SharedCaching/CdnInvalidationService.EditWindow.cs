@@ -48,7 +48,8 @@ internal sealed partial class CdnInvalidationService
         try
         {
             claimed = await ClaimAcrossTasksAsync(paths, cancellationToken).ConfigureAwait(false);
-            if (claimed.Length < paths.Length)
+            // A settle repeat whose address another task holds is dropped: that task's purge is newer and settles itself.
+            if (claimed.Length < paths.Length && cause.ChangeId != CdnPurgeCause.SettledEdits)
             {
                 DeferToNextWindow(paths.Except(claimed, StringComparer.Ordinal), HeldLeaseRetryDelay());
             }
@@ -64,10 +65,15 @@ internal sealed partial class CdnInvalidationService
             // This task holds the leases, so no other task will send these; a CDN still busy after the retries gets them next window.
             if (batches.BusyPaths.Count > 0)
             {
+                if (cause.ChangeId == CdnPurgeCause.SettledEdits)
+                {
+                    _delivery.SettleOnly(batches.BusyPaths);
+                }
+
                 DeferToNextWindow(batches.BusyPaths, CurrentCoalescingWindow());
             }
 
-            AfterEditPurge(claimed, batches, cause);
+            AfterEditPurge(claimed, result, cause);
         }
         catch (OperationCanceledException)
         {

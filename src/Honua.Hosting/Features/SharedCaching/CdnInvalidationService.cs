@@ -67,8 +67,15 @@ internal sealed partial class CdnInvalidationService(
         CancellationToken cancellationToken,
         CdnPurgeCause? cause = null)
     {
-        var result = await SendWithinLimitsAsync([.. paths], cause ?? CauseOfCurrentRequest(), cancellationToken).ConfigureAwait(false);
+        string[] sent = [.. paths];
+        var stated = cause ?? CauseOfCurrentRequest();
+        var result = await SendWithinLimitsAsync(sent, stated, cancellationToken).ConfigureAwait(false);
         ReportOnCurrentResponse(result.Result);
+        if (result.Result.Outcome is CdnInvalidationOutcome.Submitted)
+        {
+            AfterSubmitted(sent, stated);
+        }
+
         return result.Result;
     }
 
@@ -79,6 +86,7 @@ internal sealed partial class CdnInvalidationService(
             return Task.CompletedTask;
         }
 
+        NoteEditQueued(paths);
         DateTimeOffset? schedule = null;
         lock (_gate)
         {
@@ -193,9 +201,14 @@ internal sealed partial class CdnInvalidationService(
             return result;
         }
 
-        if (result.Outcome is CdnInvalidationOutcome.Failed)
+        // A result that is still busy has already used its retries: an edit made now would not reach the CDN either.
+        if (result.Failed)
         {
             _reliability?.RecordFailedPurge();
+        }
+        else if (result.Outcome is CdnInvalidationOutcome.Submitted)
+        {
+            _reliability?.RecordDeliveredPurge();
         }
 
         if (logger.IsEnabled(LogLevel.Information))
@@ -217,7 +230,7 @@ internal sealed partial class CdnInvalidationService(
         var outcome = "failed";
         try
         {
-            var result = await SendWithRetriesAsync(paths, cancellationToken).ConfigureAwait(false);
+            var result = await SendWithRetriesAsync(paths, cause, cancellationToken).ConfigureAwait(false);
             outcome = result.Outcome.ToString().ToLowerInvariant();
             return result;
         }
@@ -235,10 +248,12 @@ internal sealed partial class CdnInvalidationService(
         }
     }
 
-    private async Task<CdnInvalidationResult> SendWithRetriesAsync(IReadOnlyCollection<string> withinBudget, CancellationToken cancellationToken)
+    // A stopping task does not wait out a busy CDN.
+    private async Task<CdnInvalidationResult> SendWithRetriesAsync(
+        IReadOnlyCollection<string> withinBudget, CdnPurgeCause cause, CancellationToken cancellationToken)
     {
         var result = await invalidator.InvalidateAsync(withinBudget, cancellationToken).ConfigureAwait(false);
-        foreach (var delay in BusyRetryDelays)
+        foreach (var delay in cause.ChangeId == CdnPurgeCause.Shutdown ? Array.Empty<TimeSpan>() : BusyRetryDelays)
         {
             if (result.Outcome is not CdnInvalidationOutcome.Busy)
             {
@@ -304,6 +319,12 @@ internal sealed partial class CdnInvalidationService(
             Level = LogLevel.Warning,
             Message = "Stopped retrying failed CDN edit purges: every purge-backed copy they would remove has expired. paths={Count}")]
         public static partial void FailedEditPurgeAbandoned(ILogger logger, int count);
+
+        [LoggerMessage(
+            EventId = 10319,
+            Level = LogLevel.Error,
+            Message = "A stopping task could not send its waiting CDN purges; invalidate these before relying on purge-backed lifetimes. count={Count} paths={Paths}")]
+        public static partial void ShutdownPurgesNotSent(ILogger logger, int count, string paths);
 
         // The purge record: which change caused the invalidation, which task sent it, and what the CDN answered.
         [LoggerMessage(
