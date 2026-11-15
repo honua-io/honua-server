@@ -39,12 +39,14 @@ public sealed class GrpcMetadataProjectorTests
     }
 
     [UnitTheory]
-    [InlineData(MetadataV2FieldType.Decimal, "12345678901234567890.1000", "12345678901234567890.1000", Proto.AttributeValue.ValueOneofCase.DecimalValue)]
-    [InlineData(MetadataV2FieldType.Decimal, "\"0.1000\"", "0.1000", Proto.AttributeValue.ValueOneofCase.DecimalValue)]
-    [InlineData(MetadataV2FieldType.TimestampOffset, "\"2026-11-15T00:01:02.1234567+05:45\"", "2026-11-15T00:01:02.1234567+05:45", Proto.AttributeValue.ValueOneofCase.TimestampOffsetValue)]
+    [InlineData("12345678901234567890.1000", "12345678901234567890.1000", Proto.AttributeValue.ValueOneofCase.DecimalValue)]
+    [InlineData("\"0.1000\"", "0.1000", Proto.AttributeValue.ValueOneofCase.DecimalValue)]
+    [InlineData("\"2026-11-15T00:01:02.1234567+05:45\"", "2026-11-15T00:01:02.1234567+05:45", Proto.AttributeValue.ValueOneofCase.TimestampOffsetValue)]
     public void Subtypes_ExactDiscriminator_PreservesTypeAndTextInDefaultCodeAndTemplate(
-        MetadataV2FieldType type, string json, string text, Proto.AttributeValue.ValueOneofCase expected)
+        string json, string text, Proto.AttributeValue.ValueOneofCase expected)
     {
+        var type = expected == Proto.AttributeValue.ValueOneofCase.DecimalValue
+            ? MetadataV2FieldType.Decimal : MetadataV2FieldType.TimestampOffset;
         var definition = GrpcMetadataProjector.Subtypes(new()
         {
             SubtypeField = "KIND", DefaultSubtypeCode = Json(json),
