@@ -37,10 +37,10 @@ public sealed partial class ImportJobExecutorTests
         var (jobs, manager, executor) = CreateGeoservicesExecutor(provider, policy);
         await manager.SubmitAsync(request, GeoservicesImportProgress.CreateInitial(
             request.JobId!, request.ServiceUrl, request.LayerId, request.TableName));
-        var record = (await jobs.GetAsync(request.JobId!))!;
         var context = Substitute.For<IJobExecutionContext>();
 
-        Func<Task> firstAttempt = () => executor.ExecuteAsync(record, context, CancellationToken.None);
+        var firstRecord = await ClaimedAttemptAsync(jobs, request.JobId!, attempt: 1);
+        Func<Task> firstAttempt = () => executor.ExecuteAsync(firstRecord, context, CancellationToken.None);
         await firstAttempt.Should().ThrowAsync<GeoservicesImportCommitOutcomeUnknownException>();
         GeoservicesImportJobManager.IsTerminalStatus((await manager.ProgressStore.GetProgressAsync(request.JobId!))!.Status)
             .Should().BeFalse();
@@ -48,7 +48,7 @@ public sealed partial class ImportJobExecutorTests
             Arg.Any<GeoservicesImportRequest>(), Arg.Any<CancellationToken>())
             .Returns(CommittedResult(request, GeoservicesImportStatus.NeedsReview));
         policy.OperationCancellation.Returns(CancellationToken.None);
-        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+        var result = await executor.ExecuteAsync(await ClaimedAttemptAsync(jobs, request.JobId!, attempt: 2), context, CancellationToken.None);
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
         result.CompletedWithCommittedEffects.Should().BeTrue();

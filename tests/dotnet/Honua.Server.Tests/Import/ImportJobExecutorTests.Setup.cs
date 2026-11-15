@@ -16,6 +16,10 @@ namespace Honua.Server.Tests.Import;
 
 public sealed partial class ImportJobExecutorTests
 {
+    // Claims number attempts from 1; the in-memory store returns the unclaimed record.
+    private static async Task<ExecutionJobRecord> ClaimedAttemptAsync(IExecutionJobStore jobs, string jobId, int attempt)
+        => (await jobs.GetAsync(jobId))! with { AttemptCount = attempt };
+
     private static (IExecutionJobStore Jobs, GeoservicesImportJobManager Manager, GeoservicesImportJobExecutor Executor)
         CreateGeoservicesExecutor(ServiceProvider provider, ILicenseOperationPolicy? policy = null)
     {

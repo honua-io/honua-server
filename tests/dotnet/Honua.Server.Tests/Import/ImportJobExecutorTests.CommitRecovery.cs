@@ -33,7 +33,7 @@ public sealed partial class ImportJobExecutorTests
             Status = terminalStatus, ErrorMessage = "Superseded failure"
         }, TimeSpan.FromMinutes(10));
 
-        var result = await executor.ExecuteAsync((await jobs.GetAsync(request.JobId!))!,
+        var result = await executor.ExecuteAsync(await ClaimedAttemptAsync(jobs, request.JobId!, attempt: 2),
             Substitute.For<IJobExecutionContext>(), CancellationToken.None);
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
@@ -64,7 +64,7 @@ public sealed partial class ImportJobExecutorTests
             request.JobId!, request.ServiceUrl, request.LayerId, request.TableName));
         var context = Substitute.For<IJobExecutionContext>();
 
-        var result = await executor.ExecuteAsync((await jobs.GetAsync(request.JobId!))!, context, CancellationToken.None);
+        var result = await executor.ExecuteAsync(await ClaimedAttemptAsync(jobs, request.JobId!, attempt: 2), context, CancellationToken.None);
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
         result.CompletedWithCommittedEffects.Should().BeTrue();
@@ -90,7 +90,7 @@ public sealed partial class ImportJobExecutorTests
         await manager.SubmitAsync(request, GeoservicesImportProgress.CreateInitial(
             request.JobId!, request.ServiceUrl, request.LayerId, request.TableName));
 
-        var execute = async () => await executor.ExecuteAsync((await jobs.GetAsync(request.JobId!))!,
+        var execute = async () => await executor.ExecuteAsync(await ClaimedAttemptAsync(jobs, request.JobId!, attempt: 2),
             Substitute.For<IJobExecutionContext>(), CancellationToken.None);
 
         await execute.Should().ThrowAsync<InvalidOperationException>().WithMessage("Target writer is still active.");
@@ -114,7 +114,7 @@ public sealed partial class ImportJobExecutorTests
         await manager.SubmitAsync(request, GeoservicesImportProgress.CreateInitial(
             request.JobId!, request.ServiceUrl, request.LayerId, request.TableName));
 
-        var result = await executor.ExecuteAsync((await jobs.GetAsync(request.JobId!))!,
+        var result = await executor.ExecuteAsync(await ClaimedAttemptAsync(jobs, request.JobId!, attempt: 2),
             Substitute.For<IJobExecutionContext>(), CancellationToken.None);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
@@ -143,7 +143,7 @@ public sealed partial class ImportJobExecutorTests
             ErrorMessage = "Original failure"
         }, TimeSpan.FromMinutes(10));
 
-        var result = await executor.ExecuteAsync((await jobs.GetAsync(request.JobId!))!,
+        var result = await executor.ExecuteAsync(await ClaimedAttemptAsync(jobs, request.JobId!, attempt: 2),
             Substitute.For<IJobExecutionContext>(), CancellationToken.None);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
@@ -151,6 +151,34 @@ public sealed partial class ImportJobExecutorTests
         await ((IGeoservicesImportCommitRecovery)importer).Received(1)
             .RecoverCommittedImportAsync(Arg.Any<GeoservicesImportRequest>(), Arg.Any<CancellationToken>());
         await importer.DidNotReceive().ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(),
+            Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_FirstAttempt_LeavesBusyTargetToImporterWithoutRecoveryWait()
+    {
+        var request = GeoservicesRequest(Guid.NewGuid().ToString("N"));
+        var importer = Substitute.For<IGeoservicesImportService, IGeoservicesImportCommitRecovery>();
+        ((IGeoservicesImportCommitRecovery)importer)
+            .RecoverCommittedImportAsync(Arg.Any<GeoservicesImportRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<GeoservicesImportResult?>(new InvalidOperationException("Target writer is still active.")));
+        importer.ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(),
+                Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(GeoservicesImportResult.CreateFailure(request.TableName, request.ServiceUrl, request.LayerId,
+                "Another import is already writing the target table; this job did not modify it."));
+        using var provider = CreateGeoservicesProvider(importer);
+        var (jobs, manager, executor) = CreateGeoservicesExecutor(provider);
+        await manager.SubmitAsync(request, GeoservicesImportProgress.CreateInitial(
+            request.JobId!, request.ServiceUrl, request.LayerId, request.TableName));
+
+        var result = await executor.ExecuteAsync(await ClaimedAttemptAsync(jobs, request.JobId!, attempt: 1),
+            Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.IsRetryable.Should().BeFalse();
+        await ((IGeoservicesImportCommitRecovery)importer).DidNotReceive()
+            .RecoverCommittedImportAsync(Arg.Any<GeoservicesImportRequest>(), Arg.Any<CancellationToken>());
+        await importer.Received(1).ImportLayerAsync(Arg.Any<GeoservicesImportRequest>(),
             Arg.Any<IProgress<GeoservicesImportProgress>?>(), Arg.Any<CancellationToken>());
     }
 }

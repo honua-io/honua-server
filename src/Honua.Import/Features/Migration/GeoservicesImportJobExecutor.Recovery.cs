@@ -27,12 +27,12 @@ internal sealed partial class GeoservicesImportJobExecutor
             ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.Retention);
         var run = new ImportRun(job.OperationId, request with { JobId = job.OperationId }, progress,
             context, Stopwatch.StartNew(), licenseCancellation, recoveryCancellation.Token);
-        return await RecoverReceiptAsync(run).ConfigureAwait(false);
+        return await RecoverReceiptAsync(run, earlierAttemptMayHaveCommitted: true).ConfigureAwait(false);
     }
 
-    private async Task<JobExecutionResult?> RecoverAsync(ImportRun run)
+    private async Task<JobExecutionResult?> RecoverAsync(ImportRun run, bool earlierAttemptMayHaveCommitted)
     {
-        var recovered = await RecoverReceiptAsync(run).ConfigureAwait(false);
+        var recovered = await RecoverReceiptAsync(run, earlierAttemptMayHaveCommitted).ConfigureAwait(false);
         if (recovered is not null)
         {
             return recovered;
@@ -43,19 +43,20 @@ internal sealed partial class GeoservicesImportJobExecutor
             ? ReplayTerminal(stored) : null;
     }
 
-    private async Task<JobExecutionResult?> RecoverReceiptAsync(ImportRun run)
+    private async Task<JobExecutionResult?> RecoverReceiptAsync(ImportRun run, bool earlierAttemptMayHaveCommitted)
     {
         var stored = await _jobManager.ProgressStore.GetProgressAsync(run.JobId, run.Token).ConfigureAwait(false);
         run.Progress.Seed(stored);
         if (stored != null && GeoservicesImportJobManager.IsTerminalStatus(stored.Status) &&
             stored.DataCommitted)
         {
-            if (stored.DataCommitted)
-            {
-                await RecordCommitAsync(run).ConfigureAwait(false);
-            }
-
+            await RecordCommitAsync(run).ConfigureAwait(false);
             return ReplayTerminal(stored);
+        }
+
+        if (!earlierAttemptMayHaveCommitted)
+        {
+            return null;
         }
 
         await using var scope = _scopeFactory.CreateAsyncScope();
