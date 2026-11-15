@@ -29,7 +29,7 @@
   <!-- Protocol profiles are a separate axis from provider/cloud presets. -->
   <Import Project="..\..\eng\Honua.ProtocolProfiles.props" />
   <PropertyGroup Condition="'$(HonuaIncludeGeoServices)' != 'true'">
-    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Geocoding/GeocodingHandler.cs;Features/Geocoding/GeocodingEndpoints.cs;Features/PrintingTools/**/*.cs;Features/Protocols/SpatialAnalytics/SpatialAnalyticsRequestHandlers*.cs;Features/Protocols/SpatialAnalytics/SpatialAnalyticsEndpoints.cs;Features/Infrastructure/Analytics/AnalyticsFeatureQueryFactory.cs;Features/Infrastructure/Analytics/AnalyticsLayerSelectionFilterTranslator.cs;Features/Infrastructure/Hosting/Modules/GeoServicesProtocolModule.cs;Features/Protocols/Grpc/HonuaFeatureService.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Geocoding/GeocodingHandler.cs;Features/Geocoding/GeocodingEndpoints.cs;Features/PrintingTools/**/*.cs;Features/Protocols/SpatialAnalytics/SpatialAnalyticsRequestHandlers*.cs;Features/Protocols/SpatialAnalytics/SpatialAnalyticsEndpoints.cs;Features/Infrastructure/Analytics/AnalyticsFeatureQueryFactory.cs;Features/Infrastructure/Analytics/AnalyticsLayerSelectionFilterTranslator.cs;Features/Infrastructure/Hosting/Modules/GeoServicesProtocolModule.cs;Features/Protocols/Grpc/HonuaFeatureService*.cs</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup Condition="'$(HonuaIncludeOgcApi)' != 'true'">
     <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/OgcApiProtocolModule.cs</DefaultItemExcludes>
@@ -130,7 +130,7 @@
     <Compile Remove="Features\Infrastructure\Analytics\AnalyticsFeatureQueryFactory.cs" />
     <Compile Remove="Features\Infrastructure\Analytics\AnalyticsLayerSelectionFilterTranslator.cs" />
     <Compile Remove="Features\Infrastructure\Hosting\Modules\GeoServicesProtocolModule.cs" />
-    <Compile Remove="Features\Protocols\Grpc\HonuaFeatureService.cs" />
+    <Compile Remove="Features\Protocols\Grpc\HonuaFeatureService*.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(HonuaIncludeOgcApi)' != 'true'">
     <Compile Remove="Features\Infrastructure\Hosting\Modules\OgcApiProtocolModule.cs" />

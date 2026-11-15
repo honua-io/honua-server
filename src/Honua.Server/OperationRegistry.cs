@@ -117,6 +117,14 @@ public static class OperationRegistry
         new(Mcp, "prompts/get"),
 
         // gRPC FeatureService methods (geospatial.v1.FeatureService)
+        new(Grpc, "geospatial.v1.FeatureService/AbortAttachmentUpload"),
+        new(Grpc, "geospatial.v1.FeatureService/BeginAttachmentUpload"),
+        new(Grpc, "geospatial.v1.FeatureService/CommitAttachmentUpload"),
+        new(Grpc, "geospatial.v1.FeatureService/DeleteAttachment"),
+        new(Grpc, "geospatial.v1.FeatureService/GetAttachmentUrl"),
+        new(Grpc, "geospatial.v1.FeatureService/ListAttachments"),
+        new(Grpc, "geospatial.v1.FeatureService/UploadAttachment"),
+        new(Grpc, "geospatial.v1.FeatureService/UploadAttachmentChunk"),
         new(Grpc, "geospatial.v1.FeatureService/DescribeService"),
         new(Grpc, "geospatial.v1.FeatureService/DescribeLayer"),
         new(Grpc, "geospatial.v1.FeatureService/QueryFeatures"),
