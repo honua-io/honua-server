@@ -1535,3 +1535,21 @@ start-to-finish interval fell from 349.64 to 145.88 seconds, saving 203.76 secon
 (3.40 test-run runner-minutes). Each used one test process with the same filter.
 No runner, workflow, required check, aggregate dependency or shard definition
 changes. These are class timings; a full-shard elapsed saving remains unmeasured.
+### Admin authentication default application lifetime
+
+`AdminAuthEndpointsTests` starts its per-case default application on the first
+request for its default client. The 32 discovered methods (49 cases) that create separately
+configured OIDC or client-certificate applications avoid an unused default
+application. All 47 discovered test methods (64 cases) retain per-case fixture isolation and
+their existing assertions.
+The Server Features Admin Authentication and Credentials shard still runs these
+cases on selected PR runs and twice-daily full trunk runs. No required check,
+aggregate dependency, runner count, workflow or shard definition changes.
+
+Paired Release build-host runs passed the identical 64 cases with one test
+process each. VSTest reported execution fell from 437 to 306 seconds, saving
+131 seconds (2.18 execution runner-minutes). The wider TRX start-to-finish
+interval fell from 446.067028 to 314.676740 seconds, saving 131.390288 seconds
+(2.19 test-run runner-minutes). Queue and build time are excluded. Full-shard
+job savings remain unmeasured: the shard also includes
+`OperatorBearerTokenServiceTests` and CI setup.
