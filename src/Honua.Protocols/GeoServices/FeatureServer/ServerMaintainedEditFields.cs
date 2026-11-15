@@ -94,24 +94,14 @@ internal static class ServerMaintainedEditFields
         if (isInsert)
         {
             StampInsertGlobalId(resource, attributes, editing.GlobalIdField, useGlobalIds);
-        }
-        else
-        {
-            Restore(resource, attributes, existingAttributes, editing.GlobalIdField);
-            Restore(resource, attributes, existingAttributes, editing.CreatorField);
-            Restore(resource, attributes, existingAttributes, editing.CreatedAtField);
+            EditorTrackingFields.StampInsert(resource, attributes, principal.Name, field => TimeValue(field, utcNow));
+            return;
         }
 
-        EditorTrackingFields.Stamp(
-            resource,
-            attributes,
-            isInsert,
-            principal.Name,
-            (MetadataV2Field? field, out object? value) =>
-            {
-                value = TimeValue(field, utcNow);
-                return true;
-            });
+        Restore(resource, attributes, existingAttributes, editing.GlobalIdField);
+        Restore(resource, attributes, existingAttributes, editing.CreatorField);
+        Restore(resource, attributes, existingAttributes, editing.CreatedAtField);
+        EditorTrackingFields.StampUpdate(resource, attributes, principal.Name, field => TimeValue(field, utcNow));
     }
 
     private static void StampInsertGlobalId(
@@ -125,7 +115,7 @@ internal static class ServerMaintainedEditFields
             return;
         }
 
-        var name = CanonicalName(resource, fieldName);
+        var name = EditorTrackingFields.CanonicalName(resource, fieldName);
         var supplied = useGlobalIds && TryGet(attributes, name, out var value) ? value : null;
         attributes[name] = InsertGlobalIds.Resolve(supplied);
     }
@@ -149,7 +139,7 @@ internal static class ServerMaintainedEditFields
             return;
         }
 
-        var name = CanonicalName(resource, fieldName);
+        var name = EditorTrackingFields.CanonicalName(resource, fieldName);
         if (existingAttributes is not null && TryGet(existingAttributes, name, out var value))
         {
             attributes[name] = value;
@@ -163,9 +153,6 @@ internal static class ServerMaintainedEditFields
         => useGlobalIds &&
            editing?.GlobalIdField is { } globalIdField &&
            fieldName.Equals(globalIdField, StringComparison.OrdinalIgnoreCase);
-
-    private static string CanonicalName(MetadataV2Object resource, string fieldName)
-        => EditorTrackingFields.CanonicalName(resource, fieldName);
 
     private static bool TryGet(IDictionary<string, object?> attributes, string name, out object? value)
         => TryGetValue(attributes, name, out value);

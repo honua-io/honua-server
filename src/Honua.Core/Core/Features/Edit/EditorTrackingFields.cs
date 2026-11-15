@@ -5,13 +5,10 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Edit;
 
-// The stored form an edit protocol writes for a tracking timestamp in the declared field type.
-// Returning false leaves the field unstamped.
-public delegate bool TrackingTimeValue(MetadataV2Field? field, out object? value);
-
 // Editor-tracking fields (creator, created at, editor, updated at) belong to the server in every
 // edit protocol: client values are ignored, inserts stamp all four from the caller and the clock,
-// and updates stamp the editor and updated-at fields. Each protocol supplies the stored timestamp.
+// and updates stamp the editor and updated-at fields. Each protocol supplies the stored timestamp
+// for a declared field; a null timestamp leaves that field unstamped.
 public static class EditorTrackingFields
 {
     public static IEnumerable<string> Names(MetadataV2ObjectEditing? editing)
@@ -30,31 +27,38 @@ public static class EditorTrackingFields
         }
     }
 
-    public static void Stamp(
+    public static void StampInsert(
         MetadataV2Object resource,
         IDictionary<string, object?> attributes,
-        bool isInsert,
         string? principalName,
-        TrackingTimeValue timeValue)
+        Func<MetadataV2Field?, object?> timeValue)
     {
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(attributes);
         ArgumentNullException.ThrowIfNull(timeValue);
-
-        var editing = resource.Editing;
-        if (editing is null)
-        {
-            return;
-        }
-
-        if (isInsert)
+        if (resource.Editing is { } editing)
         {
             SetUser(resource, attributes, editing.CreatorField, principalName);
             SetTime(resource, attributes, editing.CreatedAtField, timeValue);
         }
 
-        SetUser(resource, attributes, editing.EditorField, principalName);
-        SetTime(resource, attributes, editing.UpdatedAtField, timeValue);
+        StampUpdate(resource, attributes, principalName, timeValue);
+    }
+
+    public static void StampUpdate(
+        MetadataV2Object resource,
+        IDictionary<string, object?> attributes,
+        string? principalName,
+        Func<MetadataV2Field?, object?> timeValue)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(attributes);
+        ArgumentNullException.ThrowIfNull(timeValue);
+        if (resource.Editing is { } editing)
+        {
+            SetUser(resource, attributes, editing.EditorField, principalName);
+            SetTime(resource, attributes, editing.UpdatedAtField, timeValue);
+        }
     }
 
     // The declared spelling of a field name, matched without regard to case.
@@ -91,9 +95,9 @@ public static class EditorTrackingFields
         MetadataV2Object resource,
         IDictionary<string, object?> attributes,
         string? fieldName,
-        TrackingTimeValue timeValue)
+        Func<MetadataV2Field?, object?> timeValue)
     {
-        if (!string.IsNullOrWhiteSpace(fieldName) && timeValue(FindField(resource, fieldName), out var value))
+        if (!string.IsNullOrWhiteSpace(fieldName) && timeValue(FindField(resource, fieldName)) is { } value)
         {
             attributes[CanonicalName(resource, fieldName)] = value;
         }

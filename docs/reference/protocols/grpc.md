@@ -92,7 +92,9 @@ The server maintains the editing tracking fields, as GeoServices `applyEdits`
 does. `ApplyEdits` ignores client values for the creator, created-at, editor and
 updated-at fields. An insert stamps all four from the authenticated caller and
 the server clock. An update stamps the editor and updated-at fields and keeps
-the stored creator values.
+the stored creator values. Timestamps are stamped into DateTime, Date,
+TimestampOffset, String, BigInteger and Double fields; a tracking field of any
+other type, such as a 32-bit Integer, is left empty.
 
 ## Feature query result contract (REST parity)
 

@@ -298,9 +298,10 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
         EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, editBatch);
         EnsureEditLimits(editBatch, _editLimits);
+        // Dropped before the storability check, so a forged value of any wire type is ignored.
+        editBatch = GrpcEditorTracking.OmitClientValues(layer.Resource, editBatch);
         (editBatch, var globalIds) = await PrepareGlobalIdsAsync(new EditCall(request, layer, context), editBatch)
             .ConfigureAwait(false);
-        editBatch = GrpcEditorTracking.OmitClientValues(layer.Resource, editBatch);
         editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
             .ConfigureAwait(false);
 

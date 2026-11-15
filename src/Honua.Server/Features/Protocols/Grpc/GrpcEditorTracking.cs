@@ -37,35 +37,34 @@ internal static class GrpcEditorTracking
             return batch;
         }
 
-        TrackingTimeValue timeValue = (MetadataV2Field? field, out object? value) => TryTimeValue(field?.Type, utcNow, out value);
+        Func<MetadataV2Field?, object?> timeValue = field => TimeValue(field, utcNow);
         return batch with
         {
-            Creates = Map(batch.Creates, feature => StampFeature(feature, isInsert: true)),
-            Updates = Map(batch.Updates, feature => StampFeature(feature, isInsert: false)),
+            Creates = Map(batch.Creates, feature => StampFeature(feature, attributes =>
+                EditorTrackingFields.StampInsert(resource, attributes, principalName, timeValue))),
+            Updates = Map(batch.Updates, feature => StampFeature(feature, attributes =>
+                EditorTrackingFields.StampUpdate(resource, attributes, principalName, timeValue))),
         };
-
-        Feature StampFeature(Feature feature, bool isInsert)
-        {
-            var attributes = feature.Attributes.ToBuilder();
-            EditorTrackingFields.Stamp(resource, attributes, isInsert, principalName, timeValue);
-            return feature with { Attributes = attributes.ToImmutable() };
-        }
     }
 
-    // A 32-bit integer cannot hold epoch milliseconds, so such a field is left unstamped rather
-    // than failing every write. Exact timestamps are stored as canonical text after EnsureStorable.
-    private static bool TryTimeValue(MetadataV2FieldType? type, DateTimeOffset utcNow, out object? value)
+    // Time-capable types only. Other types, including a 32-bit integer that cannot hold epoch
+    // milliseconds, stay unstamped rather than receiving a value nothing validates. An undeclared
+    // field takes the DateTime form. Exact timestamps are stored as canonical text after EnsureStorable.
+    private static object? TimeValue(MetadataV2Field? field, DateTimeOffset utcNow) => field?.Type switch
     {
-        value = type switch
-        {
-            MetadataV2FieldType.Integer => null,
-            MetadataV2FieldType.Date => GrpcTypedValues.FormatDate(DateOnly.FromDateTime(utcNow.UtcDateTime)),
-            MetadataV2FieldType.String or MetadataV2FieldType.TimestampOffset
-                => utcNow.ToString("O", CultureInfo.InvariantCulture),
-            MetadataV2FieldType.BigInteger or MetadataV2FieldType.Double => utcNow.ToUnixTimeMilliseconds(),
-            _ => utcNow.UtcDateTime,
-        };
-        return value is not null;
+        null or MetadataV2FieldType.DateTime => utcNow.UtcDateTime,
+        MetadataV2FieldType.Date => GrpcTypedValues.FormatDate(DateOnly.FromDateTime(utcNow.UtcDateTime)),
+        MetadataV2FieldType.String or MetadataV2FieldType.TimestampOffset
+            => utcNow.ToString("O", CultureInfo.InvariantCulture),
+        MetadataV2FieldType.BigInteger or MetadataV2FieldType.Double => utcNow.ToUnixTimeMilliseconds(),
+        _ => null,
+    };
+
+    private static Feature StampFeature(Feature feature, Action<IDictionary<string, object?>> stamp)
+    {
+        var attributes = feature.Attributes.ToBuilder();
+        stamp(attributes);
+        return feature with { Attributes = attributes.ToImmutable() };
     }
 
     private static Feature Omit(Feature feature, HashSet<string> names)

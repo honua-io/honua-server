@@ -63,6 +63,8 @@ public sealed partial class GrpcGlobalIdEditTests
     [InlineData(MetadataV2FieldType.String)]
     [InlineData(MetadataV2FieldType.BigInteger)]
     [InlineData(MetadataV2FieldType.Integer)]
+    [InlineData(MetadataV2FieldType.TimestampOffset)]
+    [InlineData(MetadataV2FieldType.Boolean)]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
     public async Task ApplyEdits_Insert_StampsTimeInTheDeclaredFieldType(MetadataV2FieldType type)
     {
@@ -84,17 +86,32 @@ public sealed partial class GrpcGlobalIdEditTests
                 DateOnly.ParseExact((string)stamped!, "yyyy-MM-dd", CultureInfo.InvariantCulture)
                     .Should().BeOnOrAfter(DateOnly.FromDateTime(before.UtcDateTime));
                 break;
-            case MetadataV2FieldType.String:
+            case MetadataV2FieldType.String or MetadataV2FieldType.TimestampOffset:
                 DateTimeOffset.Parse(stamped.Should().BeOfType<string>().Which, CultureInfo.InvariantCulture)
                     .Should().BeOnOrAfter(before);
                 break;
-            case MetadataV2FieldType.Integer:
-                stamped.Should().BeNull("a 32-bit field cannot hold epoch milliseconds, so it stays unstamped");
+            case MetadataV2FieldType.Integer or MetadataV2FieldType.Boolean:
+                stamped.Should().BeNull("only time-capable types are stamped; a 32-bit field cannot hold epoch milliseconds");
                 break;
             default:
                 stamped.Should().BeOfType<long>().Which.Should().BeGreaterThanOrEqualTo(before.ToUnixTimeMilliseconds());
                 break;
         }
+    }
+
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_ForgedValueWithWrongWireType_IsIgnoredNotRejected()
+    {
+        UseLayer(TrackedResource(MetadataV2FieldType.TimestampOffset), capabilities: null);
+        ReturnWriteResult(FeatureEditResult.Success(1, 0, 0, createResults: [EditOperationResult.Success(7)]));
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
+        request.Adds.Add(new Proto.Feature { Attributes = { ["created_date"] = new Proto.AttributeValue { StringValue = "1999-01-01" } } });
+
+        await _sut.ApplyEdits(request, CallContext("insert"));
+
+        WrittenBatch().Creates.Single().Attributes["created_date"].Should().BeOfType<string>()
+            .Which.Should().NotBe("1999-01-01");
     }
 
     [UnitTest]
