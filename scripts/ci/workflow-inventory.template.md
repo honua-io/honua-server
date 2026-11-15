@@ -158,14 +158,15 @@ reports them. Ready PRs require every heavy dependency to succeed and run the
 complete gate.
 
 Verification workflows cancel superseded admission per PR. Review Event Bridge
-and both Review Gate Attestation jobs also cancel older events by PR identity
-across head updates. Completion payloads without a PR number stay isolated by
-run ID until the trusted resolver identifies the PR, so an unresolvable old
-completion cannot cancel a resolver for the current head. They skip ordinary draft
-PR payloads and re-read live draft state before attestation, including comment
+and both Review Gate Attestation jobs queue older events by PR identity
+across head updates instead of cancelling them. Completion payloads without
+a PR number stay isolated by run ID until the trusted resolver identifies
+the PR, so an unresolvable old completion cannot delay or cancel a resolver
+for the current head. They skip ordinary draft PR payloads and re-read live
+draft state before attestation, including comment
 and workflow-completion events. CodeQL already cancels by PR number and skips
 draft PR analysis; its scheduled/manual analysis remains enabled.
-Review event ordering is not guaranteed. A late old-head event reconciles the current live PR head after cancelling an older resolver. Draft conversion retains a lightweight cancellation path into the shared attestation group; the live draft is then shed before checkout or status publication. Other draft pull-request payloads skip resolution.
+Review event ordering is not guaranteed. A late old-head event queues behind newer ones and reconciles the current live PR head. Draft conversion still reaches the shared attestation group, queues, and sheds the live draft before checkout or status publication. Other draft pull-request payloads skip resolution.
 
 Trusted observers resolve the current PR before expensive jobs: prebuild
 producers/parity legs cancel by PR and matrix identity; unrelated comments
@@ -190,9 +191,17 @@ Trusted default-branch supersession code cancels only active runs for older PR
 heads, rechecking live state. Current-head coverage and trunk scans stay protected.
 
 Auto-merge keeps `cancel-in-progress: false` and `queue: max` so live eligibility
-is applied in event order. Review helpers cancel superseded events; their replacement
-re-reads live review evidence and admission state. Closed/draft review subjects
-finish neutrally before publication. Missing admission prerequisites finish the
+is applied in event order. Review helpers (resolver, attestation, bridge) queue superseded events
+with `cancel-in-progress: false` and `queue: max`, because a cancelled
+helper run is a red mark on the PR page. Each queued run re-reads live
+review evidence and admission state. A run that starts on a closed or draft
+subject finishes neutrally before publication. An attestation whose live
+review or admission state changes between its first snapshot and final
+revalidation fails red; the queued event behind that change re-attests an open, ready
+head. Bursts are not collapsed: each event runs its resolver and
+attestation in turn; up to 100 wait per pull request, further arrivals are
+cancelled, and a waiting run still re-reads live state after them.
+Missing admission prerequisites finish the
 attestation helper neutrally while the separate required `Review Gate` status
 remains failing for blocking reviews. Skipping a draft publishes no success;
 `ready_for_review` re-enters trusted attestation on the current head. API and
@@ -208,9 +217,9 @@ Markdown sources and doctor-only tooling have been removed.
 |---|---|---|---|
 | `heavy-shutdown-retry.yml` | Heavy Runner Shutdown Retry | `workflow_run` (completed CI) | One bounded retry of proven full-trunk heavy runner shutdowns; no PR jobs. |
 | `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context. Admission checks run first. `pr-gate` builds the affected graph plus planned managed test roots and the server host, publishes pristine per-project outputs and runs the required boot/migration smoke against its canonical host output. The independent `fast-tests` matrix keeps four check names alongside it, selecting each build/test body by the shared affected-project reverse closure and its existing test roots (empty closures skip only with positive governed-docs proof; unknown selection retains all). Every nonempty managed closure also retains architecture and Server governance checks. Selected groups compile only their own test roots: `architecture` (projection regeneration, source and collector architecture, MCP roster drift), `unit-fast` (isolated unit Fast tier), `server-fast` (Server Fast tier) and `server-governance` (Server governance/drift with PostGIS); both server jobs first refresh the admin parity exports Server.Tests compares. The `format` matrix runs `dotnet format` and the analyzer build (affected closure, analyzers, code style and documentation diagnostics as errors) as four jobs: Format, Analyzers (source projects), Analyzers (tests), and Analyzers (server tests, including the architecture collector so other tests do not recompile Server.Tests). Drafts instantiate only Format; ready PRs instantiate all four rows. The source job always retains all solution source roots, including dependencies of affected test roots, and evaluates ownership after SDK/NuGet imports and removes test-only compilation roots (multi-targeted roots remain conservative); all analyzer jobs compile forward dependencies; `HonuaAnalyzerPartition` assigns each project to exactly one diagnostics pass using `IsTestProject`. Runtime execution proofs and fidelity run in full CI, followed by the default PostGIS profile and connection-write policy checks. The independent format and CI-router jobs remain required; `required.needs` is `[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]`. Selected shard jobs, bounded by the `pr_time_budget` in `.github/ci-shards.json` (over-budget shards are deferred to the next trunk run and named in a green `deferred` verdict), consume the same outputs; their aggregate enforces measured timing/TRX receipts and fails the required context on failed or missing execution. Shard artifacts are named per run attempt. The aggregate downloads only the newest artifact id for each selected shard (`scripts/ci/download-affected-receipts.py`), keeps an earlier attempt when a failed-jobs rerun did not repeat that shard, and does not fall back from a missing or expired newest receipt. Full CI still downloads every attempt directory without merging them. Review-first enforcement and docs-only exits remain inside the unfiltered workflow. See the [artifact contract](server-test-binary-artifacts.md) for identity, transport bounds, fallback and rollback. `runner-select` reserves the gate label for `pr-gate` and `server-test-producer`; Format and source Analyzers use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector; both test-analyzer rows and all four Fast/architecture groups stay on `ubuntu-latest`, falling back to hosted independently of producer admission or static heavy settings, including draft Format. Manual dispatch accepts a default-false `qualify_light` boolean: only `workflow_dispatch` on `refs/heads/trunk` may pin the six existing light selectors to the `honua-light` group and label while normal routing is disabled, with both test-analyzer rows still hosted. PR/fork routing, producer admission and aggregate dependencies remain unchanged. No early light job inherits the two producer slots; existing even-index affected-shard routing is unchanged ([gate-model.md → PR Gate compute runner selection](gate-model.md#pr-gate-compute-runner-selection)). |
-| `review-gate.yml` | Review Gate Attestation | `pull_request_target`, `issue_comment`, trusted `repository_dispatch`, `workflow_run` [PR Gate, Review Event Bridge] | Required admission context. Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. Cancels superseded events by resolved PR number and skips drafts, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt. |
+| `review-gate.yml` | Review Gate Attestation | `pull_request_target`, `issue_comment`, trusted `repository_dispatch`, `workflow_run` [PR Gate, Review Event Bridge] | Required admission context. Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. Queues superseded events by resolved PR number and skips drafts, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt. |
 | `repo-hygiene.yml` | Repository hygiene | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Required additions-only context `repo-hygiene / Repository hygiene`. Validates unique shard names and per-project filters against the PR merge tree in a five-minute job required by the existing aggregate; disjoint grouped projects may share a filter. Runs the execution-evidence checker and its tests from the trusted base commit against the explicit PR head, including older heads without those scripts. Calls the shared SHA-pinned workflow with read-only permissions; reads the repository-owned root allowlist and exact gate-input exceptions from the trusted base branch, rejecting new scratch, run output, dated history, samples and unexpected root entries. |
-| `review-event-bridge.yml` | Review Event Bridge | `pull_request_review`, `pull_request_review_comment` | Best-effort latency hint only; cancels superseded events per PR and skips drafts. GitHub runs these event workflows from the PR merge branch, so the bridge is credential-free/no-checkout and is never trusted for invalidation or landing. |
+| `review-event-bridge.yml` | Review Event Bridge | `pull_request_review`, `pull_request_review_comment` | Best-effort latency hint only; queues superseded events per PR and skips drafts. GitHub runs these event workflows from the PR merge branch, so the bridge is credential-free/no-checkout and is never trusted for invalidation or landing. |
 
 The analyzer jobs enforce the [review prevention rules](analyzer-baseline.md) as
 build errors. Existing findings use an explicit per-finding baseline; normal CI
@@ -278,7 +287,14 @@ action before source ownership evaluation and compilation.
 
 Outside `PR Gate`, `docs-link-gate.yml` keeps firing on `docs/**/*.md`, the
 data files its checkers read, and `README.md`: links, anchors, and the gate that rejects
-added raw HTTP shell examples. Review-first enforcement is unchanged, because an enforced attempt 1
+added raw HTTP shell examples. It validates a pull request as its merge into
+trunk, so the checkers and the files they read match the workflow definition
+whenever the head was cut. The OKF agent graph it uploads is the exception:
+it is generated from the exact head in a separate tree by that head's own
+generator. A documentation defect on trunk fails every pull request the gate
+runs on, and a rerun reuses the same merge, so recovery after the trunk fix
+needs a new event on the pull request.
+Review-first enforcement is unchanged, because an enforced attempt 1
 fails at `Await exact-head review` before the classifier runs. Each docs-only
 job records `docs_only=true` as a step output and the summary line
 `PR Gate: docs-only diff, build and tests skipped (<reason>)`.
@@ -316,8 +332,8 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 | `routing-utility-contract.yml` | Routing Utility Contract | `pull_request` (base `trunk`, GPServer/NAServer discovery and test paths) | Runs the provider-level routing descriptor, catalog collision/access guards, and existing routing utility, metadata, anonymous, SOAP and FindRoutes contracts in the GeoServices component assembly. Requires every new source method and every selected result to execute and pass; retains TRX proof. |
 | `featureserver-relationship-contract.yml` | FeatureServer Relationship Contract | `pull_request` (base `trunk`, relationship projection/test/workflow paths) | Runs service and layer relationship HTTP regressions in the actual GeoServices assembly using the existing .NET setup and pinned PostGIS fixture. Requires every source-derived case to execute and pass, including reciprocal directional names, identity collisions, and authorization visibility; retains TRX proof. |
 | `gp-customcode-runtime.yml` | GP Custom Code Runtime | path-filtered `pull_request`, `workflow_dispatch` | Executes Python and .NET standalone custom-code harness regression suites, including real loopback broker uploads; retains JUnit/TRX evidence. No live cloud qualification is implied. |
-| `gp-scoped-key-contract.yml` | GP Scoped Key Contract | `pull_request` (base `trunk`, GP execution/authentication/test paths) | Runs shared job authorization and terminal regressions plus GP REST/SOAP endpoint and durable-runtime tests in their actual assemblies with PostGIS and Redis fixtures. Requires every new source-derived scoped key case to execute and pass; retains TRX proof. |
-| `ai-admission-contract.yml` | AI Admission Contract | `pull_request` (base `trunk`, AI admission/reporting/control and relevant project/fixture paths), `workflow_dispatch` | Bounded feature evidence on one Docker-capable runner: sequential Release tests for Server reporting and canonical admission controls/toolset, Core reporting, accepted Studio prompt budgets, Studio certification endpoints, and PostgreSQL admission scopes/lifecycle. Requires positive execution of every named class, at least two prompt-budget, three certification endpoint and sixteen PostgreSQL cases, and zero failures/skips; retains raw TRX and tested commit identity. Redis backend/coordinator cases remain in Hosting Components. Adds no required context, routing-cap increase or installed/rollback qualification. |
+| `gp-scoped-key-contract.yml` | GP Scoped Key Contract | `pull_request` (base `trunk`, GP execution/authentication/test paths) | Runs shared job authorization and terminal regressions plus GP REST/SOAP endpoint and durable-runtime tests in their actual assemblies with PostGIS and cache fixtures. Requires every new source-derived scoped key case to execute and pass; retains TRX proof. |
+| `ai-admission-contract.yml` | AI Admission Contract | `pull_request` (base `trunk`, AI admission/reporting/control and relevant project/fixture paths), `workflow_dispatch` | Bounded feature evidence on one Docker-capable runner: sequential Release tests for Server reporting and canonical admission controls/toolset, Core reporting, accepted Studio prompt budgets, Studio certification endpoints, and PostgreSQL admission scopes/lifecycle. Requires positive execution of every named class, at least two prompt-budget, three certification endpoint and sixteen PostgreSQL cases, and zero failures/skips; retains raw TRX and tested commit identity. Distributed-cache backend/coordinator cases remain in Hosting Components. Adds no required context, routing-cap increase or installed/rollback qualification. |
 | `portal-group-discovery-contract.yml` | Portal Group Discovery Contract | `pull_request` (base `trunk`, Portal read/store/test paths) | Runs actual Portal user/group HTTP integration and existing sharing/read regressions with PostGIS. Requires each new source-derived paging and denial case to execute and pass; controlled test-store state is not native production content evidence. |
 
 | Workflow file | Name | Triggers | Notes |
@@ -1021,6 +1037,28 @@ The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migr
 
 Quarantine publication scans retained CI/PR Gate histories twice hourly and on trusted default-branch manual dispatch, rather than once per completion, to amortize API discovery without dropping rerun evidence.
 
+### Feature stream default application lifetime
+
+`FeatureStreamEndpointsTests` shares one seeded Pro application through its
+class fixture. Sequential default-host cases clear sessions and create a fresh admin
+client. The production PostgreSQL event log and its monotonic generations remain
+intact, as they do across separate application lifetimes. Cases that replace licensing,
+metadata or other configuration still build and dispose their own application.
+The shared host uses a one-hour heartbeat interval to avoid unsolicited frames
+between cases; scheduled-heartbeat cases retain their separate configured hosts.
+Credential expiry settings and every assertion are unchanged.
+
+Paired build-host runs of the complete class passed all 126 cases: 802 seconds
+before and 632 seconds after the shared-host change, saving 170 seconds
+(2.83 runner-minutes) with one
+test process in each run. These historical measurements precede the PostgreSQL
+event-log migration and are not timings of the current implementation. The final
+head retains the production database store and is validated in the PR Gate. Full-shard
+elapsed savings have not yet been measured.
+All cases remain in the selected streaming shards and twice-daily full trunk
+runs. This changes no runner count, required check name, required aggregate
+dependency, workflow or shard definition.
+
 ### Advisory heavy compute admission
 
 | Workflow file | Trigger | Compute policy |
@@ -1040,6 +1078,23 @@ Quality uses a managed workflow and is outside these runner-routing changes.
 
 Advisory heavy selection preserves runner-group restrictions in object selectors as well as label arrays. Store native-runtime checks execute all eight cases as container root through rootless Docker on heavy runners; hosted runners retain their root execution. Both image smoke paths select free loopback ports through the shared ownership helper before publishing them explicitly. This avoids the independent Docker allocators choosing the same default port across rootless accounts; readiness remains bound to the launched container.
 
+CodeQL self-hosted execution explicitly budgets 8,192 MB and four extraction
+threads, with `DOTNET_PROCESSOR_COUNT=4` also bounding MSBuild and extractor
+parallelism. Both initialization lanes receive these inputs; analysis inherits
+them from initialization. Hosted execution keeps the action defaults. The heavy
+runner's existing 16 GiB user slice includes the runner and its child processes:
+the remaining half is headroom, not additional provisioned capacity. The pinned
+action reads root cgroup limits and misses this nested slice. In run
+43722168928/job132839988502 it advertised 240,353 MB and 64 threads before the
+kernel killed `Semmle.Autobuil` at the 16 GiB slice limit. On pull requests the
+no-build extractor cannot authenticate to the GitHub Packages feed, so the
+solution restore fails and it restores each project separately, one per
+extraction thread: unbounded on the heavy host, four with this budget, as on
+the four-CPU hosted runner where run 43742167308 passed in 19 minutes.
+Authenticating that feed for the pull request lane is a separate follow-up.
+This is a resource repair, with no query, source, build-mode, timeout or gate
+reduction. A subsequent live CodeQL pass and peak-memory measurement are still
+needed to verify it.
 
 ### Evaluated test analyzer build roots
 

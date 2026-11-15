@@ -144,8 +144,14 @@ See [the workflow inventory](workflow-inventory.md#neutral-automation-helpers)
 for helper check names and queue policy. Helper completion does not grant
 admission: draft helpers skip without publishing success; `ready_for_review`
 re-enters attestation. Blocking reviews retain failure, and real attestation/API
-errors fail. Review helpers cancel superseded events per PR and re-read live
-review/admission state before acting. Normalization cancels repeated eligible
+errors fail. Review helpers queue superseded events per PR (`queue: max`)
+instead of cancelling them, so a superseded resolver or bridge run ends green
+rather than as a cancelled red mark on the PR page. Each attestation re-reads
+live review/admission state before acting. An attestation whose live review
+or admission state changes between its first snapshot and final revalidation fails red;
+the queued event behind that change re-attests an open, ready head. Bursts
+are not collapsed: each event runs in turn, with up to 100 waiting per PR.
+Normalization cancels repeated eligible
 producers for the same PR head. Different heads use separate groups so a delayed
 old event cannot cancel current work and then shed without replacement. Draft
 and title/body-edit events use isolated groups because they cannot generate a
@@ -155,9 +161,9 @@ validation. Live-head checks and compare-and-swap remain required before branch
 mutation. Auto-merge eligibility events retain FIFO serialization because each
 event can change merge eligibility.
 
-Completions without a PR number use an isolated resolver group per run; once resolved, publication cancels older work by PR number. An unresolvable completion cannot cancel a resolver for another run.
+Completions without a PR number use an isolated resolver group per run; once resolved, publication queues behind older work by PR number. An unresolvable completion cannot delay or cancel a resolver for another run.
 
-Review event ordering is not guaranteed. A late old-head event reconciles the current live PR head after cancelling an older resolver. Draft conversion retains a lightweight cancellation path into the shared attestation group; the live draft is then shed before checkout or status publication. Other draft pull-request payloads skip resolution.
+Review event ordering is not guaranteed. A late old-head event queues behind newer ones and reconciles the current live PR head. Draft conversion still reaches the shared attestation group, queues, and sheds the live draft before checkout or status publication. Other draft pull-request payloads skip resolution.
 
 ## Verification stages
 
@@ -240,7 +246,7 @@ These workflows are merge-blocking for all PRs to trunk:
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
 | `control-plane-sdk-governance.yml` | Control plane SDK governance | SDK/control-plane paths |
 | `import-fidelity-scorecard-governance.yml` | Import-fidelity baseline stability + perf-parity gate smoke test (pass/fail fixtures) | Parity/baseline/perf-budget asset paths |
-| `docs-link-gate.yml` | Relative links **and** `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). A URL served only through a `.gitbook.yaml` redirect warns; a `docs.honua.io` URL is an error (that host is dark until 2026.2), and a phase-A URL that lacks the trailing slash or is not listed in the manifest is an error; a `pendingPr` entry is warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot lives in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Stdlib Python, ~15s, no external dependencies. | `docs/**/*.md`, the docs data files the checkers read, `scripts/ci/check-doc-links.py`, `scripts/ci/check-doc-links.test.py`, the workflow itself |
+| `docs-link-gate.yml` | Relative links **and** `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). A URL served only through a `.gitbook.yaml` redirect warns; a `docs.honua.io` URL is an error (that host is dark until 2026.2), and a phase-A URL that lacks the trailing slash or is not listed in the manifest is an error; a `pendingPr` entry is warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot lives in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Python with the pinned YAML reader from `scripts/ci/okf-requirements.txt`, ~15s. A pull request is validated as its merge into trunk, so a head cut before a checker existed is judged by the checkers the workflow calls. The uploaded OKF agent graph is the exception: it is generated from the exact head in a separate tree by that head's own generator, and fails the job when that generator cannot run. A documentation defect on trunk fails every pull request this gate runs on; a rerun reuses the same merge, so recovery after the trunk fix needs a new event on the pull request (a push, or close and reopen). | `docs/**/*.md`, the docs data files the checkers read, `scripts/ci/check-doc-links.py`, `scripts/ci/check-doc-links.test.py`, the workflow itself |
 
 ### Affected-scope gate build
 
@@ -1112,16 +1118,25 @@ aggregate dependency, workflow, or shard definition.
 
 ### Feature stream default application lifetime
 
-FeatureStreamEndpointsTests creates the shared default application per case but
-starts it lazily: only cases that call `StartDefaultApplicationAsync()` start
-it, and only those cases dispose it. Cases that need a custom configuration
-build, start and dispose their own application inside the case, so they no
-longer pay for a default application they never use. Each case still gets its
-own isolated event store, sessions and credentials.
-All cases and assertions remain in the Server Features Streaming Transports and
-Server Features Streaming Endpoints 1, 2, and 4 shards on selected PR runs and
-twice-daily full trunk runs. This changes no runner count, required check name,
-required aggregate dependency, workflow, or shard definition.
+`FeatureStreamEndpointsTests` shares one seeded Pro application through its
+class fixture. Sequential default-host cases clear sessions and create a fresh admin
+client. The production PostgreSQL event log and its monotonic generations remain
+intact, as they do across separate application lifetimes. Cases that replace licensing,
+metadata or other configuration still build and dispose their own application.
+The shared host uses a one-hour heartbeat interval to avoid unsolicited frames
+between cases; scheduled-heartbeat cases retain their separate configured hosts.
+Credential expiry settings and every assertion are unchanged.
+
+Paired build-host runs of the complete class passed all 126 cases: 802 seconds
+before and 632 seconds after the shared-host change, saving 170 seconds
+(2.83 runner-minutes) with one
+test process in each run. These historical measurements precede the PostgreSQL
+event-log migration and are not timings of the current implementation. The final
+head retains the production database store and is validated in the PR Gate. Full-shard
+elapsed savings have not yet been measured.
+All cases remain in the selected streaming shards and twice-daily full trunk
+runs. This changes no runner count, required check name, required aggregate
+dependency, workflow or shard definition.
 
 ### FeatureServer RBAC denial fixture lifetime
 
@@ -1505,6 +1520,23 @@ on GitHub-hosted runners.
 
 Advisory heavy selection preserves runner-group restrictions in object selectors as well as label arrays. Store native-runtime checks execute all eight cases as container root through rootless Docker on heavy runners; hosted runners retain their root execution. Both image smoke paths select free loopback ports through the shared ownership helper before publishing them explicitly. This avoids the independent Docker allocators choosing the same default port across rootless accounts; readiness remains bound to the launched container.
 
+CodeQL self-hosted execution explicitly budgets 8,192 MB and four extraction
+threads, with `DOTNET_PROCESSOR_COUNT=4` also bounding MSBuild and extractor
+parallelism. Both initialization lanes receive these inputs; analysis inherits
+them from initialization. Hosted execution keeps the action defaults. The heavy
+runner's existing 16 GiB user slice includes the runner and its child processes:
+the remaining half is headroom, not additional provisioned capacity. The pinned
+action reads root cgroup limits and misses this nested slice. In run
+43722168928/job132839988502 it advertised 240,353 MB and 64 threads before the
+kernel killed `Semmle.Autobuil` at the 16 GiB slice limit. On pull requests the
+no-build extractor cannot authenticate to the GitHub Packages feed, so the
+solution restore fails and it restores each project separately, one per
+extraction thread: unbounded on the heavy host, four with this budget, as on
+the four-CPU hosted runner where run 43742167308 passed in 19 minutes.
+Authenticating that feed for the pull request lane is a separate follow-up.
+This is a resource repair, with no query, source, build-mode, timeout or gate
+reduction. A subsequent live CodeQL pass and peak-memory measurement are still
+needed to verify it.
 
 ### Evaluated test analyzer build roots
 
