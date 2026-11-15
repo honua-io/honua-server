@@ -5,8 +5,8 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Events;
-using Honua.Server.Features.Realtime;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming;
@@ -17,7 +17,7 @@ internal sealed class FeatureStreamDependencies
         FeatureStreamSessionManager sessionManager,
         IFeatureChangeEventStore eventStore,
         IOptions<FeatureStreamOptions> options,
-        IOptions<RealtimeOptions> realtimeOptions,
+        RealtimeCapabilityLimits realtimeLimits,
         IFilterExpressionService filterExpressionService,
         IMetadataV2GraphProvider metadataV2GraphProvider,
         FeatureStreamRoutabilityGuard routabilityGuard,
@@ -27,7 +27,7 @@ internal sealed class FeatureStreamDependencies
         SessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
         EventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         Options = options ?? throw new ArgumentNullException(nameof(options));
-        RealtimeOptions = realtimeOptions ?? throw new ArgumentNullException(nameof(realtimeOptions));
+        RealtimeLimits = realtimeLimits ?? throw new ArgumentNullException(nameof(realtimeLimits));
         FilterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         MetadataV2GraphProvider = metadataV2GraphProvider ?? throw new ArgumentNullException(nameof(metadataV2GraphProvider));
         RoutabilityGuard = routabilityGuard ?? throw new ArgumentNullException(nameof(routabilityGuard));
@@ -38,7 +38,7 @@ internal sealed class FeatureStreamDependencies
     public FeatureStreamSessionManager SessionManager { get; }
     public IFeatureChangeEventStore EventStore { get; }
     public IOptions<FeatureStreamOptions> Options { get; }
-    public IOptions<RealtimeOptions> RealtimeOptions { get; }
+    public RealtimeCapabilityLimits RealtimeLimits { get; }
     public IFilterExpressionService FilterExpressionService { get; }
     public IMetadataV2GraphProvider MetadataV2GraphProvider { get; }
     public FeatureStreamRoutabilityGuard RoutabilityGuard { get; }

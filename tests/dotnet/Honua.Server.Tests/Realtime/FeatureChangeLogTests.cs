@@ -7,6 +7,7 @@ using System.Threading.Channels;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Realtime;
+using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Events;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
@@ -226,10 +227,10 @@ public sealed class FeatureChangeLogTests(FeatureChangeDatabaseFixture database)
     }
 
     private PostgresFeatureChangeLog CreateLog(RealtimeOptions? options = null)
-        => new(new JobStoreDatabase(database.DataSource), Options.Create(options ?? new RealtimeOptions()), TimeProvider.System);
+        => new(new JobStoreDatabase(database.DataSource), new RealtimeCapabilityLimits(Options.Create(options ?? new RealtimeOptions())), TimeProvider.System);
 
     private PostgresFeatureChangeLog CreateLogAt(DateTimeOffset now)
-        => new(new JobStoreDatabase(database.DataSource), Options.Create(new RealtimeOptions()), new FixedTimeProvider(now));
+        => new(new JobStoreDatabase(database.DataSource), new RealtimeCapabilityLimits(Options.Create(new RealtimeOptions())), new FixedTimeProvider(now));
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

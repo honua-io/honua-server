@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Realtime;
 
-namespace Honua.Server.Features.Realtime;
+namespace Honua.Infrastructure.Abstractions;
 
 // A family whose events are kept outside realtime_events, by the feature slice that owns them.
 // Positions increase but may have gaps, so a missing next position never means lost events: the

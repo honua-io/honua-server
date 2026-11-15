@@ -5,9 +5,8 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.Core.Features.Realtime;
+using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Events;
-using Honua.Server.Features.Realtime;
-using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -19,7 +18,7 @@ namespace Honua.Server.Features.Streaming;
 // (rollbacks, branch rows), so "after N" never means "the Nth". Only DEFAULT-version rows are events.
 internal sealed class PostgresFeatureChangeLog(
     JobStoreDatabase database,
-    IOptions<RealtimeOptions> options,
+    RealtimeCapabilityLimits limits,
     TimeProvider timeProvider) : IRealtimeFamilySource
 {
     public const string DatabaseProtocol = "database";
@@ -132,8 +131,7 @@ internal sealed class PostgresFeatureChangeLog(
 
     private Task<long> ReadOldestResumableAsync(long head, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var settings = options.Value;
-        var retention = settings.Retention.GetValueOrDefault(RealtimeLogFamilies.Features, TimeSpan.FromHours(24));
+        var retention = limits.FeatureRetention;
         return database.ExecuteAsync(
             async (connection, _, token) =>
             {
@@ -146,7 +144,7 @@ internal sealed class PostgresFeatureChangeLog(
                         (SELECT max(generation) FROM {_changes} WHERE version_id IS NULL AND changed_at < @since)
                     """,
                     connection);
-                command.Parameters.Add(new NpgsqlParameter("max_events", NpgsqlDbType.Integer) { Value = settings.ResumeMaxEvents });
+                command.Parameters.Add(new NpgsqlParameter("max_events", NpgsqlDbType.Integer) { Value = limits.CursorRetentionLimit });
                 command.Parameters.Add(new NpgsqlParameter("since", NpgsqlDbType.TimestampTz) { Value = now - retention });
                 await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
                 await reader.ReadAsync(token).ConfigureAwait(false);

@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Events;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
@@ -198,7 +199,7 @@ public sealed class TwoTaskFeatureStreamTests(FeatureChangeDatabaseFixture datab
             var options = Options.Create(new RealtimeOptions());
             var jobs = new JobStoreDatabase(database.DataSource);
             var log = new PostgresRealtimeEventLog(jobs);
-            var changes = new PostgresFeatureChangeLog(jobs, options, TimeProvider.System);
+            var changes = new PostgresFeatureChangeLog(jobs, new RealtimeCapabilityLimits(options), TimeProvider.System);
             var dispatcher = new RealtimeDispatcher(log, [changes], options, NullLogger<RealtimeDispatcher>.Instance);
             var presence = new RealtimePresenceBatcher(log);
             _listener = RealtimeListener.Create(

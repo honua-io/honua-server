@@ -6,12 +6,13 @@ using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Events.Outbox;
+using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Extensions;
 using Honua.Server.Features.Realtime;
-using Honua.Server.Features.Streaming;
 using Honua.Server.Features.Streaming.Conformance;
+using Honua.Server.Features.Streaming;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -30,9 +31,10 @@ internal static class FeatureEventsAndStreamingRegistration
         services.AddOptions<FeatureChangeWebhookOptions>()
             .Bind(configuration.GetSection(FeatureChangeWebhookOptions.SectionName))
             .ValidateOnStart();
+        services.TryAddSingleton<RealtimeCapabilityLimits>();
         services.AddSingleton(sp => new PostgresFeatureChangeLog(
             sp.GetRequiredService<JobStoreDatabase>(),
-            sp.GetRequiredService<IOptions<RealtimeOptions>>(),
+            sp.GetRequiredService<RealtimeCapabilityLimits>(),
             TimeProvider.System));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IRealtimeFamilySource, PostgresFeatureChangeLog>(
             sp => sp.GetRequiredService<PostgresFeatureChangeLog>()));

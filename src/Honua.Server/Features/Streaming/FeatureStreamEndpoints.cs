@@ -6,7 +6,6 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
-using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Helpers;
@@ -14,6 +13,7 @@ using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -236,7 +236,7 @@ internal static partial class FeatureStreamEndpoints
                 ? ["layer", "bbox", "attribute", "temporal"]
                 : [],
             ReplaySupported = enabled,
-            CursorRetentionLimit = deps.RealtimeOptions.Value.ResumeMaxEvents,
+            CursorRetentionLimit = deps.RealtimeLimits.CursorRetentionLimit,
             HeartbeatIntervalSeconds = options.HeartbeatInterval.TotalSeconds,
             MaxConcurrentSessions = options.MaxConcurrentSessions,
             DeleteBeforeImages = enabled,

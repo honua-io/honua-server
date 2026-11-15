@@ -2,12 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Events;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -226,7 +227,7 @@ public sealed class FeatureStreamPublisherTests
         dataSource.Dispose();
         return new PostgresFeatureChangeLog(
             new JobStoreDatabase(dataSource),
-            Options.Create(new RealtimeOptions()),
+            new RealtimeCapabilityLimits(Options.Create(new RealtimeOptions())),
             TimeProvider.System);
     }
 

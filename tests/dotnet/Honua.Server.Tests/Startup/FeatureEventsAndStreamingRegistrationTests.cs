@@ -3,12 +3,13 @@
 
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Realtime;
-using Honua.Core.Features.Infrastructure.Health;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Startup;
 using Honua.Server.Tests.Infrastructure;
@@ -18,8 +19,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using Npgsql;
 using NSubstitute;
+using Npgsql;
 
 namespace Honua.Server.Tests.Startup;
 

@@ -3,6 +3,7 @@
 
 using System.Threading.Channels;
 using Honua.Core.Features.Realtime;
+using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Realtime;

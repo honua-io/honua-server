@@ -8,5 +8,7 @@ namespace Honua.Infrastructure.Abstractions;
 
 internal sealed class RealtimeCapabilityLimits(IOptions<RealtimeOptions> options)
 {
+    public TimeSpan FeatureRetention => options.Value.Retention.GetValueOrDefault(RealtimeLogFamilies.Features, TimeSpan.FromHours(24));
+
     public int CursorRetentionLimit => options.Value.ResumeMaxEvents;
 }

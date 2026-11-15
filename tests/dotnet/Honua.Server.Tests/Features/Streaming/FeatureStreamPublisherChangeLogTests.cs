@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Infrastructure.Abstractions;
 using Honua.Infrastructure.Events;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
@@ -28,7 +29,7 @@ public sealed class FeatureStreamPublisherChangeLogTests(FeatureChangeDatabaseFi
         var sink = new SignalingSink();
         var publisher = new FeatureStreamPublisher(
             new NoWakeSignal(),
-            new PostgresFeatureChangeLog(new JobStoreDatabase(database.DataSource), Options.Create(new RealtimeOptions()), TimeProvider.System),
+            new PostgresFeatureChangeLog(new JobStoreDatabase(database.DataSource), new RealtimeCapabilityLimits(Options.Create(new RealtimeOptions())), TimeProvider.System),
             NullLogger<FeatureStreamPublisher>.Instance,
             new FeatureChangeEventSinkBroadcaster(
                 [sink],

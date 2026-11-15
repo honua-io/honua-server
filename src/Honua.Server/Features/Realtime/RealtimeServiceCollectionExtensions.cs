@@ -4,6 +4,7 @@
 using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Realtime;
+using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
