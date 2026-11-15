@@ -86,12 +86,9 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobO
                 "Failed: license expired; partial import is incomplete"), CancellationToken.None).ConfigureAwait(false);
             return NotRetryable(LicenseExpiredMessage);
         }
-        catch (GeoservicesImportCommitOutcomeUnknownException)
-        {
-            // Neither cancellation nor an execution error proves that COMMIT rolled back.
-            throw;
-        }
-        catch (Exception ex) when (run.Token.IsCancellationRequested && ex is not OutOfMemoryException)
+        // An unknown COMMIT outcome must reach receipt recovery, including after cancellation.
+        catch (Exception ex) when (run.Token.IsCancellationRequested &&
+            ex is not OutOfMemoryException and not GeoservicesImportCommitOutcomeUnknownException)
         {
             await RecordOperatorCancellationAsync(run).ConfigureAwait(false);
             if (ex is OperationCanceledException)
@@ -103,7 +100,7 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobO
         }
         // Intentionally generic: the import job's top-level boundary records any importer fault as a
         // failed job instead of handing it to the retry policy; the job document is already terminal.
-        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException and not GeoservicesImportCommitOutcomeUnknownException)
         {
             return await FailImportAsync(run, ex).ConfigureAwait(false);
         }
@@ -369,33 +366,4 @@ internal sealed partial class GeoservicesImportJobExecutor : IJobExecutor, IJobO
             };
     }
 
-    private static partial class Log
-    {
-        [LoggerMessage(7703, LogLevel.Information, "Processing import job {JobId}")]
-        public static partial void JobStarted(ILogger logger, string jobId);
-
-        [LoggerMessage(7704, LogLevel.Information, "Import job {JobId} completed: {FeatureCount} features in {DurationSeconds:F1}s")]
-        public static partial void JobCompleted(ILogger logger, string jobId, int featureCount, double durationSeconds);
-
-        [LoggerMessage(7705, LogLevel.Warning, "Import job {JobId} failed: {ErrorMessage} (duration: {DurationSeconds:F1}s)")]
-        public static partial void JobFailed(ILogger logger, string jobId, string errorMessage, double durationSeconds);
-
-        [LoggerMessage(7706, LogLevel.Warning, "Import job {JobId} cancelled (duration: {DurationSeconds:F1}s)")]
-        public static partial void JobCancelled(ILogger logger, string jobId, double durationSeconds);
-
-        [LoggerMessage(7707, LogLevel.Error, "Import job {JobId} threw exception")]
-        public static partial void JobException(ILogger logger, string jobId, Exception exception);
-
-        [LoggerMessage(7708, LogLevel.Warning, "Import job {JobId} has no readable request on its execution job")]
-        public static partial void JobRequestNotFound(ILogger logger, string jobId);
-
-        [LoggerMessage(7709, LogLevel.Warning, "Failed to update progress for job {JobId}")]
-        public static partial void ProgressUpdateFailed(ILogger logger, string jobId, Exception exception);
-
-        [LoggerMessage(7712, LogLevel.Warning, "Import job {JobId} blocked by service URL validation: {ServiceUrl}")]
-        public static partial void JobRejectedUnsafeServiceUrl(ILogger logger, string jobId, string serviceUrl);
-
-        [LoggerMessage(7716, LogLevel.Warning, "Import job {JobId} requires operator review (fidelity verdict {FidelityVerdict}, duration: {DurationSeconds:F1}s)")]
-        public static partial void JobNeedsReview(ILogger logger, string jobId, string fidelityVerdict, double durationSeconds);
-    }
 }

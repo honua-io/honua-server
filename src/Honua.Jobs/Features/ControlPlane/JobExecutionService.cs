@@ -382,15 +382,8 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
-        if (executor is IJobOutcomeRecoveryExecutor &&
-            job.AttemptCount > (job.RetryPolicy ?? JobRetryPolicy.Default).MaxAttempts)
+        if (await TryRecoverExhaustedOutcomeAsync(job, workerId, stoppingToken).ConfigureAwait(false))
         {
-            if (!await TryRecoverOutcomeAsync(job, workerId, stoppingToken).ConfigureAwait(false))
-            {
-                await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
-                    "Execution retry budget exhausted; no committed import outcome was found.", stoppingToken).ConfigureAwait(false);
-            }
-
             return;
         }
 

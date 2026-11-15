@@ -9,6 +9,24 @@ namespace Honua.ControlPlane;
 
 internal sealed partial class JobExecutionService
 {
+    private async Task<bool> TryRecoverExhaustedOutcomeAsync(
+        ExecutionJobRecord job, string workerId, CancellationToken cancellationToken)
+    {
+        if (job.AttemptCount <= (job.RetryPolicy ?? JobRetryPolicy.Default).MaxAttempts ||
+            ResolveExecutor(job.Spec.Kind, job.Spec.RuntimeProfile) is not IJobOutcomeRecoveryExecutor)
+        {
+            return false;
+        }
+
+        if (!await TryRecoverOutcomeAsync(job, workerId, cancellationToken).ConfigureAwait(false))
+        {
+            await TerminateJobAsync(job.OperationId, workerId, ExecutionJobStatus.Failed,
+                "Execution retry budget exhausted; no committed import outcome was found.", cancellationToken).ConfigureAwait(false);
+        }
+
+        return true;
+    }
+
     private async Task<bool> TryRecoverOutcomeAsync(
         ExecutionJobRecord job, string workerId, CancellationToken cancellationToken)
     {
