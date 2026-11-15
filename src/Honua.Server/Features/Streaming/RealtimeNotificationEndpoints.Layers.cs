@@ -113,7 +113,7 @@ internal static partial class RealtimeNotificationEndpoints
                 JsonSerializer.Serialize(service, MetadataV2JsonContext.Default.MetadataV2Service) + "\n" +
                 string.Join("\n", group.OrderBy(item => item.Publication.Metadata.Id, StringComparer.Ordinal).Select(item =>
                     JsonSerializer.Serialize(item.Publication, MetadataV2JsonContext.Default.MetadataV2Publication) + "\n" +
-                    JsonSerializer.Serialize(snapshot.ResolveResource(item.Publication), MetadataV2JsonContext.Default.MetadataV2Resource))));
+                    JsonSerializer.Serialize(snapshot.ResolveResource(item.Publication), MetadataV2JsonContext.Default.MetadataV2Object))));
     }
 
     private static IEnumerable<int> ReadableLayers(HttpContext context, MetadataV2GraphSnapshot snapshot, string serviceId)
