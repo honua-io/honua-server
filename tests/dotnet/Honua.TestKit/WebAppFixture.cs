@@ -331,6 +331,9 @@ public sealed class WebAppFixture : IAsyncLifetime
     public MetadataV2GraphSnapshot GetCurrentV2GraphSnapshot()
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.GetCurrentSnapshot(this);
 
+    public void MutateV2Graph(Func<MetadataV2Graph, MetadataV2Graph> mutate)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.MutateGraph(this, mutate);
+
     /// <summary>
     /// Mutates the common metadata block for the canonical resource published at
     /// <paramref name="layerIndex"/>.
@@ -369,6 +372,11 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public void UpdateV2ResourceSubtypes(int layerIndex, MetadataV2Subtypes? subtypes)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceSubtypes(this, layerIndex, subtypes);
+
+    // Replaces the resource published at layerIndex. Delegates to
+    // Mixins.WebAppFixtureMetadataV2GraphMutationMixin.
+    public Task UpdateV2ResourceAsync(int layerIndex, Func<MetadataV2Object, MetadataV2Object> mutate)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceAsync(this, layerIndex, mutate);
 
     /// <summary>
     /// Sets (or clears with <c>null</c>) the Esri attribute-rule set on the resource

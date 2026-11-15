@@ -15,7 +15,7 @@ using Honua.TestKit.Infrastructure;
 using Xunit;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
-namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic;
+namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
 [Collection("Database")]
 public sealed class CapabilitiesMetadataXmlTests
@@ -35,7 +35,7 @@ public sealed class CapabilitiesMetadataXmlTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
     public Task Wms_GetCapabilities_MetadataProducesValidXml(string version, string input, string expected)
-        => AssertCapabilitiesAsync(new CapabilitiesRequest(MetadataV2ServiceProtocols.Wms, MetadataV2PublicationType.WmsLayer,
+        => AssertCapabilitiesAsync(new CapabilitiesRequest(MetadataV2ServiceProtocols.Wms, MetadataV2LayerType.WmsLayer,
             $"/rest/services/capabilities_extents/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}"), input, expected);
 
     [Theory]
@@ -51,7 +51,7 @@ public sealed class CapabilitiesMetadataXmlTests
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
     public Task Wfs_GetCapabilities_MetadataProducesValidXml(string version, string input, string expected)
-        => AssertCapabilitiesAsync(new CapabilitiesRequest(MetadataV2ServiceProtocols.Wfs20, MetadataV2PublicationType.WfsFeatureType,
+        => AssertCapabilitiesAsync(new CapabilitiesRequest(MetadataV2ServiceProtocols.Wfs20, MetadataV2LayerType.WfsFeatureType,
             $"/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION={version}"), input, expected);
 
     [Theory]
@@ -63,13 +63,13 @@ public sealed class CapabilitiesMetadataXmlTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
     public Task Wmts_GetCapabilities_MetadataProducesValidXml(string version, string input, string expected)
-        => AssertCapabilitiesAsync(new CapabilitiesRequest(MetadataV2ServiceProtocols.Wmts, MetadataV2PublicationType.WmtsLayer,
+        => AssertCapabilitiesAsync(new CapabilitiesRequest(MetadataV2ServiceProtocols.Wmts, MetadataV2LayerType.WmtsLayer,
             $"/rest/services/capabilities_extents/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION={version}"), input, expected);
 
     private static async Task AssertCapabilitiesAsync(
         CapabilitiesRequest request, string input, string expected)
     {
-        var provider = CapabilitiesExtentFixture.PublishedLayers(request.Protocol, request.PublicationType);
+        var provider = CapabilitiesExtentFixture.PublishedLayers(request.Protocol, request.LayerType);
         await SetMetadataAsync(provider, input);
         await using var fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
@@ -88,7 +88,7 @@ public sealed class CapabilitiesMetadataXmlTests
         Assert.All(layers, layer =>
         {
             Assert.Equal(expected, layer.Elements().Single(child => child.Name.LocalName == "Title").Value);
-            if (request.PublicationType != MetadataV2PublicationType.WmtsLayer)
+            if (request.LayerType != MetadataV2LayerType.WmtsLayer)
             {
                 Assert.Equal(expected, layer.Elements().Single(child => child.Name.LocalName == "Abstract").Value);
             }
@@ -96,7 +96,7 @@ public sealed class CapabilitiesMetadataXmlTests
     }
 
     private sealed record CapabilitiesRequest(
-        string Protocol, MetadataV2PublicationType PublicationType, string Url);
+        string Protocol, MetadataV2LayerType LayerType, string Url);
 
     private static async Task SetMetadataAsync(TestMetadataV2GraphProvider provider, string input)
     {

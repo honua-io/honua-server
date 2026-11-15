@@ -19,5 +19,10 @@ internal sealed class OperatorJourneyMcpProjection : IAuditedAdminMcpProjection
             "admin.connections.test",
             "admin.import.upload-url",
             "admin.import.upload-object",
+            "admin.import.formats",
+            "admin.import.limits",
+            "admin.import.preview",
+            "admin.import.preview-url",
+            "admin.connections.tables.validate",
         };
 }

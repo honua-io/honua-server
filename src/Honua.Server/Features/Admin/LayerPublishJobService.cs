@@ -73,22 +73,25 @@ internal sealed class LayerPublishJobService(
             ExpectedMetadataEtag = request.ExpectedMetadataEtag,
             ExpectedSourceFingerprint = request.ExpectedSourceFingerprint,
         };
-        var queued = new LayerPublishJobProgress
-        {
-            OperationId = jobId,
-            Status = OperationStatus.Queued,
-            RowsMaterialized = 0,
-            RowsTotal = rowCount,
-            ConnectionId = connectionId,
-            ConnectionKey = routeId,
-            TenantId = tenantContext.TenantId,
-            StartedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Queued",
-        };
+        var queued = CreateQueuedProgress(jobId, payload);
 
         await dispatcher.DispatchAsync(payload, queued, request.Table).ConfigureAwait(false);
         return Queued(jobId, rowCount, routeId);
     }
+
+    private static LayerPublishJobProgress CreateQueuedProgress(string jobId, LayerPublishJobPayload payload)
+        => new()
+        {
+            OperationId = jobId,
+            Status = OperationStatus.Queued,
+            RowsMaterialized = 0,
+            RowsTotal = payload.RowCount,
+            ConnectionId = payload.ConnectionId,
+            ConnectionKey = payload.ConnectionKey,
+            TenantId = payload.TenantId,
+            StartedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Queued",
+        };
 
     private async Task RevalidateCommittedSourceAsync(
         LayerPublishRequest request, Guid connectionId, CancellationToken cancellationToken)
