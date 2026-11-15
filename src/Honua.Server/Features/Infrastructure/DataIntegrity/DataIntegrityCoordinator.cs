@@ -10,6 +10,28 @@ using Npgsql;
 
 namespace Honua.Infrastructure.DataIntegrity;
 
+public interface IDataIntegrityTransaction : IAsyncDisposable
+{
+    NpgsqlTransaction DatabaseTransaction { get; }
+
+    NpgsqlConnection Connection { get; }
+
+    void RegisterFileOperation(
+        string operationType,
+        string filePath,
+        Func<CancellationToken, Task> commitAction,
+        Func<CancellationToken, Task> rollbackAction);
+
+    void RegisterCacheOperation(
+        string cacheKey,
+        Func<CancellationToken, Task> commitAction,
+        Func<CancellationToken, Task> rollbackAction);
+
+    Task CommitAsync(CancellationToken cancellationToken = default);
+
+    Task RollbackAsync(CancellationToken cancellationToken = default);
+}
+
 internal sealed class DataIntegrityCoordinator
 {
     private readonly NpgsqlDataSource _dataSource;
@@ -55,7 +77,7 @@ internal sealed class DataIntegrityCoordinator
 
     public async Task<T> ExecuteCoordinatedTransactionAsync<T>(
         string operationId,
-        Func<DataIntegrityTransaction, CancellationToken, Task<T>> operation,
+        Func<IDataIntegrityTransaction, CancellationToken, Task<T>> operation,
         IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
@@ -175,7 +197,7 @@ internal sealed class DataIntegrityCoordinator
         return new DistributedLock(lockKey, operationId, entry, _logger);
     }
 
-    internal sealed class DataIntegrityTransaction : IAsyncDisposable
+    private sealed class DataIntegrityTransaction : IDataIntegrityTransaction
     {
         private readonly string _operationId;
         private readonly ILogger _logger;
