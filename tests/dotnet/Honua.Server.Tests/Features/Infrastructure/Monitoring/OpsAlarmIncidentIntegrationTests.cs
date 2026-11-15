@@ -186,9 +186,8 @@ public sealed class OpsAlarmIncidentIntegrationTests : IAsyncLifetime
         queue.Deleted.Should().Equal("unrelated");
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
     [Operation(Operations.TestInfrastructure)]
-    [Theory]
     [InlineData(0, 1)]
     [InlineData(1, 0)]
     public async Task ProcessAsync_SubsecondTransitions_OrderByAlarmStateTimestamp(int first, int second)
@@ -206,13 +205,16 @@ public sealed class OpsAlarmIncidentIntegrationTests : IAsyncLifetime
         var observations = (await ReadObservationsAsync(provider)).Observations;
         observations.Should().HaveCount(2);
         observations.Select(o => o.ObservedAt).Distinct().Should().HaveCount(2);
-        (await ReadEpisodesAsync()).Should().HaveCount(first == 0 ? 1 : 0)
-            .And.OnlyContain(e => e.State == OpsIncidentEpisodeState.Recovered);
+        var episodes = await ReadEpisodesAsync();
+        episodes.Should().HaveCount(first == 0 ? 1 : 0);
+        if (first == 0)
+        {
+            episodes.Single().State.Should().Be(OpsIncidentEpisodeState.Recovered);
+        }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
     [Operation(Operations.TestInfrastructure)]
-    [Theory]
     [InlineData(null)]
     [InlineData("invalid")]
     [InlineData("2026-11-15T06:00:00")]
