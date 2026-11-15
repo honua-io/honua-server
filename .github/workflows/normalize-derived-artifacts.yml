@@ -5,7 +5,7 @@ name: Derived Artifact Normalization
 # consumer validates that artifact without executing anything from this head.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]
     branches: [trunk]
     paths:
       - 'src/**'
@@ -37,10 +37,12 @@ permissions:
   packages: read
   pull-requests: read
 
+# A newer push is the only subject that can publish. Cancel the superseded
+# run instead of holding a hosted runner until it finishes and the next one
+# sheds. The live superseded check below still covers a run that started first.
 concurrency:
   group: normalization-producer-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
-  queue: max
+  cancel-in-progress: true
 
 env:
   DOTNET_VERSION: '11.0.x'

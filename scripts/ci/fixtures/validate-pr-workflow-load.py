@@ -91,9 +91,15 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=name):
                 self.assertIn("github.event.pull_request.number", concurrency.get("group", ""))
                 cancellation = concurrency.get("cancel-in-progress")
-                if name in ("normalize-derived-artifacts.yml", "auto-merge-ready.yml"):
+                if name == "auto-merge-ready.yml":
+                    # Live eligibility is applied in event order. Cancelling an
+                    # in-flight enable can let that mutation land after a newer
+                    # hold or draft event has been shed.
                     self.assertEqual(cancellation, "false")
                     self.assertEqual(concurrency.get("queue"), "max")
+                elif name == "normalize-derived-artifacts.yml":
+                    self.assertEqual(cancellation, "true")
+                    self.assertNotIn("queue", concurrency)
                 else:
                     self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
 

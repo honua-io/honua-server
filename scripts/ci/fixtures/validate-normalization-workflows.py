@@ -99,8 +99,8 @@ def validate(
     require(producer, "  pull_request:\n", "producer must use an unprivileged pull_request event")
     require(
         producer,
-        "    types: [opened, synchronize, reopened, ready_for_review, edited]",
-        "producer must observe ready and retargeted heads",
+        "    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]",
+        "producer must observe ready, retargeted and draft-conversion heads",
     )
     require(producer, "  contents: read", "producer contents permission must be read-only")
     require(producer, "  packages: read", "producer package permission must be read-only")
