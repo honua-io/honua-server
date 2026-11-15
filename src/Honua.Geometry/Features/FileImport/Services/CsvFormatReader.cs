@@ -196,7 +196,9 @@ internal static class CsvFormatReader
             if (headers == null)
             {
                 headers = NormalizeHeaders(fields);
-                mapping = BuildMapping(headers, options);
+                // Spreadsheets in most European locales write ';'-separated files with decimal-comma numbers.
+                // A comma inside a field is unambiguous only when the comma is not the delimiter.
+                mapping = BuildMapping(headers, options) with { DecimalComma = delimiter != ',' };
                 return null;
             }
 
@@ -373,8 +375,8 @@ internal static class CsvFormatReader
             var longitudeValue = GetField(fields, mapping.LongitudeIndex.Value);
             var latitudeValue = GetField(fields, mapping.LatitudeIndex.Value);
 
-            if (double.TryParse(longitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude) &&
-                double.TryParse(latitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude))
+            if (ParseCoordinate(longitudeValue, mapping) is { } longitude &&
+                ParseCoordinate(latitudeValue, mapping) is { } latitude)
             {
                 // A parseable coordinate pair supersedes an unparseable WKT column.
                 unparseableGeometryValue = null;
@@ -527,8 +529,24 @@ internal static class CsvFormatReader
             return false;
         }
 
-        return !double.TryParse(longitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
-            || !double.TryParse(latitudeValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+        return ParseCoordinate(longitudeValue, mapping) is null || ParseCoordinate(latitudeValue, mapping) is null;
+    }
+
+    // Invariant numbers always; a decimal comma ("11,575490": one comma, digits on both sides, no point) only when
+    // the file's delimiter is not a comma.
+    private static double? ParseCoordinate(string value, CsvColumnMapping mapping)
+    {
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var invariant))
+            return invariant;
+        var trimmed = value.Trim();
+        var comma = trimmed.IndexOf(',', StringComparison.Ordinal);
+        if (!mapping.DecimalComma || comma <= 0 || comma == trimmed.Length - 1
+            || trimmed.IndexOf(',', comma + 1) >= 0 || trimmed.Contains('.', StringComparison.Ordinal)
+            || !char.IsAsciiDigit(trimmed[comma - 1]) || !char.IsAsciiDigit(trimmed[comma + 1]))
+            return null;
+        return double.TryParse(trimmed.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var decimalComma)
+            ? decimalComma
+            : null;
     }
 
     private static void RestoreUnparseableCoordinate(
@@ -880,7 +898,11 @@ internal static class CsvFormatReader
         int? LongitudeIndex,
         int? LatitudeIndex,
         int? AddressIndex = null,
-        bool ExplicitCoordinates = false);
+        bool ExplicitCoordinates = false)
+    {
+        // Set when the file's delimiter is not a comma, so a comma inside a coordinate can only be a decimal comma.
+        public bool DecimalComma { get; init; }
+    }
 }
 
 /// <summary>

@@ -432,6 +432,40 @@ public sealed class CsvFormatReaderTests
             .Which.Message.Should().Contain("mutually exclusive");
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_SemicolonFileWithDecimalCommaCoordinates_ImportsPoints()
+    {
+        var csv = """
+            id;name;lon;lat
+            1;München Marienplatz;11,575490;48,137393
+            2;Köln Dom;6,958281;50,941278
+            """;
+
+        var (features, diagnostics) = await ReadAllAsync(csv);
+
+        features.Should().HaveCount(2);
+        var first = features[0].Geometry.Should().BeOfType<Point>().Subject;
+        first.X.Should().Be(11.575490);
+        first.Y.Should().Be(48.137393);
+        features[1].Geometry.Should().BeOfType<Point>().Which.Y.Should().Be(50.941278);
+        features[0].Attributes.Exists("lon").Should().BeFalse();
+        diagnostics.UnparseableGeometryRows.Should().Be(0);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("id,lon,lat\n1,\"11,5\",\"48,1\"")]
+    [InlineData("id;lon;lat\n1;1.234,5;48,1")]
+    [InlineData("id;lon;lat\n1;1,234,5;48,1")]
+    public async Task ReadStreamingAsync_AmbiguousCommaNumbers_AreNotReadAsCoordinates(string csv)
+    {
+        var (features, diagnostics) = await ReadAllAsync(csv);
+
+        features.Should().ContainSingle().Which.Geometry.Should().BeNull();
+        diagnostics.UnparseableGeometryRows.Should().Be(1);
+    }
+
     private static Task<(List<IFeature> Features, CsvGeometryDiagnostics Diagnostics)> ReadAllAsync(string csv)
         => ReadAllAsync(csv, options: null);
 
