@@ -20,15 +20,26 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]
-public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
+public sealed class AdminLayerDisplaySpatialTests
+    : IClassFixture<AdminLayerDisplaySpatialTests.SeededHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
+    private readonly SeededHost _host;
+    private readonly WebAppFixture _fixture;
+
+    public AdminLayerDisplaySpatialTests(SeededHost host)
+    {
+        _host = host;
+        _fixture = host.Application;
+    }
+
+    public Task InitializeAsync() => _host.RestoreSeededStateAsync();
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    public sealed class SeededHost() : SeededMetadataHost(new WebAppFixture()
         .ConfigureWebHost(builder => builder.UseEnvironment("Test")
             .UseSetting("HONUA_DEV_AUTH", "false")
-            .UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword));
-
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+            .UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword)));
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/display")]
@@ -236,7 +247,7 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            candidate.LayerIndex == 1 && candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+            candidate.LayerIndex == 1 && candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
         var service = snapshot.Index.ServicesById[publication.ServiceId];
         var duplicate = service with { Metadata = service.Metadata with { Id = "other-feature-service" } };
         var competing = publication with

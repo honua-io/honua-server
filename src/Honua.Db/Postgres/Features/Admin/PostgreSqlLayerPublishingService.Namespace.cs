@@ -141,7 +141,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var resourcesById = graph.Resources.ToDictionary(resource => resource.Metadata.Id, StringComparer.Ordinal);
         var resourceIds = bindings.Select(binding => binding.ResourceId).ToHashSet(StringComparer.Ordinal);
         var bindingsById = graph.StorageBindings.ToDictionary(binding => binding.Metadata.Id, StringComparer.Ordinal);
-        bool SelectLegacyPublication(MetadataV2Publication publication)
+        bool SelectLegacyPublication(MetadataV2Layer publication)
         {
             if (publication.LayerIndex is not { } id || layerIds?.Contains(id) != true)
             {

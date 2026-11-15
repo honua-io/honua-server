@@ -11,5 +11,12 @@ internal sealed class McpDiscoverResult
     public IReadOnlyList<string> SupportedVersions { get; set; } = McpModernProtocol.SupportedVersions;
 
     [JsonPropertyName("capabilities")]
-    public McpServerCapabilities Capabilities { get; set; } = new();
+    public McpServerCapabilities Capabilities { get; set; } = new()
+    {
+        Extensions = new Dictionary<string, System.Text.Json.JsonElement>(StringComparer.Ordinal)
+        {
+            ["io.modelcontextprotocol/skills"] = System.Text.Json.JsonSerializer.SerializeToElement(
+                new Dictionary<string, System.Text.Json.JsonElement>(), McpJsonContext.Default.DictionaryStringJsonElement)
+        }
+    };
 }

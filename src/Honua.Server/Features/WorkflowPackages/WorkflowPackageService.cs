@@ -283,14 +283,11 @@ internal sealed class WorkflowPackageService(
         if (request.Target == WorkflowPublicationTarget.Schedule)
         {
             // A Schedule publication's scheduler receipt is the compiled WorkflowDefinition
-            // written to the Redis-backed IWorkflowDefinitionStore: that record is what the cron
-            // scheduler enumerates. The publication row itself is durable when PostGIS is composed.
-            // On a host composed without it (a Redis-less install — see
-            // OrchestrationServiceCollectionExtensions.AddOrchestration, which registers nothing
-            // when IConnectionMultiplexer is absent) this method used to skip the write and still
-            // return a WorkflowPublication carrying a WorkflowDefinitionId and an Active status for
-            // a definition that was never persisted and that nothing would ever fire. That is a
-            // fabricated success — a skipped write cannot satisfy a write step. Refuse up front
+            // written to the IWorkflowDefinitionStore in the system database: that record is what
+            // the cron scheduler enumerates. On a host without a system database
+            // (OrchestrationServiceCollectionExtensions.AddOrchestration registers no store), a
+            // skipped write would return a WorkflowPublication carrying a WorkflowDefinitionId and
+            // an Active status for a definition that nothing would ever fire. Refuse up front
             // with the capability-unavailable receipt instead, the same contract geoprocessing
             // submission and the proposal control plane use (honua-server#3585, honua-release#202).
             if (workflowDefinitionStore is null)
