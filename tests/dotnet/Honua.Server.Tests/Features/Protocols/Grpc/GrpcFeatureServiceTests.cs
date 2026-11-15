@@ -2123,7 +2123,7 @@ public sealed class GrpcFeatureServiceTests
         ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
     }
 
-    private static MetadataV2Service CreateService(
+    internal static MetadataV2Service CreateService(
         string name,
         AccessPolicy? accessPolicy = null,
         IReadOnlyList<string>? protocols = null,
@@ -2248,7 +2248,7 @@ public sealed class GrpcFeatureServiceTests
             ]
         };
 
-    private static MetadataV2ServiceLayerTriple CreateTriple(
+    internal static MetadataV2ServiceLayerTriple CreateTriple(
         MetadataV2Service service,
         MetadataV2Object resource)
         => new(
@@ -2277,7 +2277,7 @@ public sealed class GrpcFeatureServiceTests
     private static TestServerCallContext CreateCallContext(ClaimsPrincipal? user = null)
         => CreateCallContext(user, resolverGrants: null);
 
-    private static TestServerCallContext CreateCallContext(
+    internal static TestServerCallContext CreateCallContext(
         ClaimsPrincipal? user,
         params PermissionGrant[]? resolverGrants)
         => CreateCallContext(user, tenantId: null, resolverGrants);
@@ -2288,7 +2288,7 @@ public sealed class GrpcFeatureServiceTests
         params PermissionGrant[]? resolverGrants)
         => CreateCallContext(user, tenantId, resolverGrants);
 
-    private static TestServerCallContext CreateCallContext(
+    internal static TestServerCallContext CreateCallContext(
         ClaimsPrincipal? user,
         string? tenantId,
         PermissionGrant[]? resolverGrants,
@@ -2337,7 +2337,7 @@ public sealed class GrpcFeatureServiceTests
         return ctx;
     }
 
-    private static ClaimsPrincipal CreateAuthenticatedUser(params string[] roles)
+    internal static ClaimsPrincipal CreateAuthenticatedUser(params string[] roles)
     {
         var claims = new List<Claim>
         {
@@ -2368,7 +2368,7 @@ public sealed class GrpcFeatureServiceTests
     /// <summary>
     /// Minimal ServerCallContext for unit testing gRPC services.
     /// </summary>
-    private sealed class TestServerCallContext : ServerCallContext, IDisposable
+    internal sealed class TestServerCallContext : ServerCallContext, IDisposable
     {
         private readonly CancellationTokenSource _cts = new();
         public void Dispose() => _cts.Dispose();
