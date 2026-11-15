@@ -6,6 +6,7 @@ import argparse
 import json
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 from okf_frontmatter import split_document
 
@@ -56,6 +57,14 @@ def compact(text):
     return re.sub(r"[^a-z0-9]", "", spaced(text))
 
 
+class Context(NamedTuple):
+    """Repository root plus the retired-terms policy literals."""
+
+    root: Path
+    rules: list[str]
+    review: list[str]
+
+
 def policy_literals(root):
     path = root / POLICY
     if not path.is_file():
@@ -90,8 +99,9 @@ def source_file(root, source):
     return path
 
 
-def check_binding(root, surface, binding, rules, review):
-    path = source_file(root, binding["source"])
+def check_binding(context, surface, binding):
+    rules, review = context.rules, context.review
+    path = source_file(context.root, binding["source"])
     operation = binding["operation"]
     if surface == "rest":
         document = json.loads(path.read_text())
@@ -122,7 +132,7 @@ def check_binding(root, surface, binding, rules, review):
         raise ValueError(f"retired operation spelling needs literalReason: {operation}")
 
 
-def check_surfaces(root, row, rules, review):
+def check_surfaces(context, row):
     if set(row["surfaces"]) != set(SURFACES):
         raise ValueError("every REST/SDK/CLI/MCP/skill surface must be recorded")
     for surface, entry in row["surfaces"].items():
@@ -132,9 +142,11 @@ def check_surfaces(root, row, rules, review):
         for binding in bindings:
             if binding.get("verb") != row["verb"]:
                 raise ValueError(f"{surface} verb differs from stage verb")
-            check_binding(root, surface, binding, rules, review)
+            check_binding(context, surface, binding)
 
-def check_row(root, row, action, rules, review):
+
+def check_row(context, row, action):
+    rules = context.rules
     if (row["verb"] != action["verb"]
             or matches_words(row["verb"], rules) or matches_run_together(row["verb"], rules)
             or matches_words(row["verb"], WORKFLOW_TERMS)
@@ -143,13 +155,13 @@ def check_row(root, row, action, rules, review):
     if sorted(item["concept"] for item in row["objects"]) != concepts(action):
         raise ValueError("objects differ from OKF action inputs/outputs")
     for item in row["objects"]:
-        terms = canonical_terms(root).get(item["concept"])
+        terms = canonical_terms(context.root).get(item["concept"])
         if item["terms"] != terms or any(
                 matches_words(term, rules) or matches_run_together(term, rules)
                 or matches_words(term, WORKFLOW_TERMS)
                 or matches_run_together(term, WORKFLOW_TERMS) for term in item["terms"]):
             raise ValueError(f"object term differs from canonical concept: {item['concept']}")
-    check_surfaces(root, row, rules, review)
+    check_surfaces(context, row)
     for interface in action.get("interfaces", []):
         if interface["kind"] not in KINDS:
             continue
@@ -168,11 +180,11 @@ def check(root, document):
     ids = [row["okf"] for row in rows]
     if document["schemaVersion"] != 1 or len(ids) != len(set(ids)) or set(ids) != set(expected):
         return ["map must contain exactly one row per OKF workflow action"]
-    rules, review = policy_literals(root)
+    context = Context(root, *policy_literals(root))
     errors = []
     for row in rows:
         try:
-            check_row(root, row, expected[row["okf"]], rules, review)
+            check_row(context, row, expected[row["okf"]])
         except (KeyError, TypeError, ValueError, OSError) as exc:
             errors.append(f"{row['okf']}: {exc}")
     return errors
