@@ -119,8 +119,12 @@ public sealed class AnalysisContentLayerAccessTests
                 new MetadataV2GraphSnapshot(new MetadataV2Graph(), "test", DateTimeOffset.UtcNow));
             Store.GetVersionAsync("item", 1, Arg.Any<CancellationToken>()).Returns(new AnalysisContentVersion
             {
-                ItemId = "item", VersionId = "item:v1", Version = 1, Kind = kind,
-                ContentHash = "test", CreatedAt = DateTimeOffset.UtcNow,
+                ItemId = "item",
+                VersionId = "item:v1",
+                Version = 1,
+                Kind = kind,
+                ContentHash = "test",
+                CreatedAt = DateTimeOffset.UtcNow,
                 SavedQuery = kind == AnalysisContentKind.SavedQuery ? new SavedQueryContent { LayerId = 42 } : null,
                 AnalysisPackage = kind == AnalysisContentKind.AnalysisPackage ? new AnalysisPackageContent
                 {
@@ -152,7 +156,8 @@ public sealed class AnalysisContentLayerAccessTests
 
         private static AnalysisPlanStep LayerStep(int layerId) => new()
         {
-            StepId = $"layer-{layerId}", Kind = AnalysisPlanStepKind.QueryFeatures,
+            StepId = $"layer-{layerId}",
+            Kind = AnalysisPlanStepKind.QueryFeatures,
             Inputs = new Dictionary<string, string> { ["layerId"] = layerId.ToString(System.Globalization.CultureInfo.InvariantCulture) }
         };
     }

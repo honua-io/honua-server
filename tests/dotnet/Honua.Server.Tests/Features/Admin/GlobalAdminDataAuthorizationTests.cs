@@ -66,6 +66,10 @@ public sealed class GlobalAdminDataAuthorizationTests : IAsyncLifetime
     [InlineData("GET", "/api/v1/analysis/jobs/test/logs")]
     [InlineData("GET", "/api/v1/analysis/jobs/test/failure")]
     [InlineData("POST", "/hubs/admin/negotiate?negotiateVersion=1")]
+    [Endpoint("GET /api/v1/admin/feature-events/replay")]
+    [Endpoint("GET /api/v1/admin/observability/audit")]
+    [Endpoint("POST /api/v1/analysis/content/items")]
+    [Endpoint("POST /hubs/admin/negotiate")]
     public async Task GlobalAdministration_TenantAdministrator_IsForbidden(string method, string path)
     {
         using var client = CreateClient("admin", "tenant-a");
