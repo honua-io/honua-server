@@ -61,14 +61,15 @@ internal sealed partial class HonuaFeatureService
     private static void AddEditingMetadata(Proto.LayerDescriptor descriptor, MetadataV2Resource resource,
         ISet<string> visible)
     {
-        if (resource.Editing is { } editing)
+        var editing = resource.Editing;
+        if (editing is not null || resource.OwnerEditPolicy is not null)
         {
             descriptor.EditingInfo = new()
             {
-                CreatorField = GrpcMetadataProjector.Visible(editing.CreatorField, visible),
-                CreatedAtField = GrpcMetadataProjector.Visible(editing.CreatedAtField, visible),
-                EditorField = GrpcMetadataProjector.Visible(editing.EditorField, visible),
-                EditedAtField = GrpcMetadataProjector.Visible(editing.UpdatedAtField, visible),
+                CreatorField = GrpcMetadataProjector.Visible(editing?.CreatorField, visible),
+                CreatedAtField = GrpcMetadataProjector.Visible(editing?.CreatedAtField, visible),
+                EditorField = GrpcMetadataProjector.Visible(editing?.EditorField, visible),
+                EditedAtField = GrpcMetadataProjector.Visible(editing?.UpdatedAtField, visible),
                 OwnershipAccessControlEnabled = resource.OwnerEditPolicy?.Enabled ?? false
             };
             // Tracking timestamps and ownership exceptions are omitted unless canonical metadata specifies them.

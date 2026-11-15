@@ -84,8 +84,8 @@ internal sealed partial class HonuaFeatureService
             Composite = relationship.Composite,
             Role = relationship.Role.ToLowerInvariant() switch
             {
-                "origin" => Proto.RelationshipRole.Origin,
-                "destination" => Proto.RelationshipRole.Destination,
+                "origin" or "esrirelroleorigin" => Proto.RelationshipRole.Origin,
+                "destination" or "esrirelroledestination" => Proto.RelationshipRole.Destination,
                 _ => Proto.RelationshipRole.Unspecified
             },
             Cardinality = relationship.Cardinality.ToLowerInvariant() switch
