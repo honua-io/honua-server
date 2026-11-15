@@ -138,9 +138,17 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertNotIn('if', verify)
 
     def test_store_measurement_uses_heavy_runner_and_separate_profile_caches(self):
-        job = workflow('store-image-size.yml')['jobs']['measure']
-        self.assertIn('fromJSON(vars.HONUA_HEAVY_RUNNER)', job['runs-on'])
-        self.assertIn('head.repo.full_name == github.repository', job['runs-on'])
+        jobs = workflow('store-image-size.yml')['jobs']
+        job = jobs['measure']
+        selector = jobs['runner-select']
+        self.assertEqual(selector['uses'], './.github/workflows/advisory-runner-select.yml')
+        self.assertEqual(selector['with']['hosted-runner'], 'ubuntu-24.04')
+        self.assertEqual(job['needs'], 'runner-select')
+        self.assertEqual(job['runs-on'], '${{ fromJSON(needs.runner-select.outputs.runner || \'"ubuntu-24.04"\') }}')
+        self.assertIn('always() && !cancelled()', job['if'])
+        admission = workflow('advisory-runner-select.yml')['jobs']['select']
+        self.assertIn('head.repo.full_name == github.repository', admission['runs-on'])
+        self.assertIn('fromJSON(vars.HONUA_LIGHT_RUNNER)', admission['runs-on'])
         self.assertLessEqual(int(job['timeout-minutes']), 30)
         build = next(step for step in job['steps'] if step.get('name') == 'Build serving image')
         self.assertIn('matrix.profile', build['with']['cache-to'])
