@@ -22,7 +22,10 @@ jobs:
     timeout-minutes: 15
     concurrency:
       group: review-event-bridge-pr-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      # Queue rather than cancel: a cancelled bridge run is a red mark on the
+      # PR page, and the shed step ends a superseded event green.
+      cancel-in-progress: false
+      queue: max
     steps:
       - name: Shed superseded review event
         id: stale
