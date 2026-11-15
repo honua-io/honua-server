@@ -10,6 +10,8 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Schema;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -76,9 +78,48 @@ public sealed class McpPlatformOpsToolTests
             .EnumerateArray()
             .Select(element => element.GetString())
             .Should()
-            .Equal("AdminConfigChange", "Deploy");
+            .Equal("AdminConfigChange", "Deploy", "Geoprocess", "MetadataRelease");
+        var structured = JToken.Parse(result.StructuredContent.Value.GetRawText());
+        var text = JToken.Parse(result.Content.Single().Text!);
+        JToken.DeepEquals(text, structured).Should().BeTrue();
+        var schema = JSchema.Parse(tool.Describe().OutputSchema!.Value.GetRawText());
+        structured.IsValid(schema, out IList<string> errors).Should().BeTrue(string.Join("; ", errors));
         reader.SupportedOperationKindsCalls.Should().Be(1);
         reader.LastPrincipal.Should().BeSameAs(context.User);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("deploy_operations", "deploy_operations_result_posture.json")]
+    [InlineData("platform_release_status", "platform_release_status_result_null_serving.json")]
+    [InlineData("platform_release_status", "platform_release_status_result_null_execution.json")]
+    public async Task PlatformOperationTool_Invoke_PreservesCanonicalResultsInBothChannels(string toolName, string fixture)
+    {
+        var root = Path.Join(AppContext.BaseDirectory, "ConformanceSchemas");
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(
+            Path.Join(root, "fixtures", "tools", toolName, fixture)));
+        var payload = document.RootElement.GetProperty("inputs").Clone();
+        var context = BuildContext(new FakePlatformOpsReader { ResultOverride = payload });
+        IMcpTool tool = toolName == "deploy_operations"
+            ? new DeployOperationsTool(NullLogger<DeployOperationsTool>.Instance)
+            : new PlatformReleaseStatusTool(NullLogger<PlatformReleaseStatusTool>.Instance);
+
+        var result = await tool.InvokeAsync(context, Json("{}"), CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        var expected = JToken.Parse(payload.GetRawText());
+        var live = JSchema.Parse(tool.Describe().OutputSchema!.Value.GetRawText());
+        var reference = JSchema.Parse(await File.ReadAllTextAsync(
+            Path.Join(root, "geospatial-mcp", "tools", $"{toolName}.result.schema.json")));
+        var channels = new[] { result.StructuredContent!.Value.GetRawText(), result.Content.Single().Text! };
+        foreach (var channel in channels)
+        {
+            var actual = JToken.Parse(channel);
+            JToken.DeepEquals(actual, expected).Should().BeTrue();
+            actual.IsValid(live, out IList<string> liveErrors).Should().BeTrue(string.Join("; ", liveErrors));
+            actual.IsValid(reference, out IList<string> referenceErrors).Should().BeTrue(string.Join("; ", referenceErrors));
+        }
     }
 
     [UnitTest]
@@ -170,6 +211,8 @@ public sealed class McpPlatformOpsToolTests
 
     private sealed class FakePlatformOpsReader : IMcpPlatformOpsReader
     {
+        public JsonElement? ResultOverride { get; init; }
+
         public int PlatformReleaseStatusCalls { get; private set; }
 
         public int SupportedOperationKindsCalls { get; private set; }
@@ -186,7 +229,7 @@ public sealed class McpPlatformOpsToolTests
         {
             LastPrincipal = principal;
             PlatformReleaseStatusCalls++;
-            return Task.FromResult(Json("""{"releaseDeclared":true,"isCoVersioned":true,"serving":[],"execution":[],"skewedIds":[]}"""));
+            return Task.FromResult(ResultOverride ?? Json("""{"releaseDeclared":true,"isCoVersioned":true,"serving":[],"execution":[],"skewedIds":[]}"""));
         }
 
         public Task<JsonElement> GetDeployOperationsAsync(
@@ -196,7 +239,7 @@ public sealed class McpPlatformOpsToolTests
         {
             LastPrincipal = principal;
             DeployOperationsArgument = argument;
-            return Task.FromResult(Json("""{"items":[],"page":1,"pageSize":50,"totalCount":0,"hasMore":false}"""));
+            return Task.FromResult(ResultOverride ?? Json("""{"items":[],"page":1,"pageSize":50,"totalCount":0,"hasMore":false}"""));
         }
 
         public Task<McpSupportedOperationKindsOutput> GetSupportedOperationKindsAsync(
@@ -207,7 +250,7 @@ public sealed class McpPlatformOpsToolTests
             SupportedOperationKindsCalls++;
             return Task.FromResult(new McpSupportedOperationKindsOutput
             {
-                SupportedKinds = ["AdminConfigChange", "Deploy"]
+                SupportedKinds = ["AdminConfigChange", "Deploy", "Geoprocess", "MetadataRelease"]
             });
         }
 
