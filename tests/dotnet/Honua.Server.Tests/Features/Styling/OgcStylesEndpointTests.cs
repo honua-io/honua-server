@@ -177,6 +177,25 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/styles/{styleId}")]
+    [Endpoint("GET /tiles/{layerId}/tile.json")]
+    public async Task GetStylesheet_OwnedTileSource_AdvertisesTileRouteZoomRange()
+    {
+        var client = _fixture.CreateAdminClient();
+        var styleId = await SeedAndResolveStyleIdAsync(client);
+        using var tileJson = JsonDocument.Parse(await client.GetStringAsync($"/tiles/{WebAppFixture.TestLayerId}/tile.json"));
+
+        var response = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var source = document.RootElement.GetProperty("sources").GetProperty(StyleDefaults.GetSourceId(WebAppFixture.TestLayerId));
+        source.GetProperty("maxzoom").GetInt32().Should().Be(tileJson.RootElement.GetProperty("maxzoom").GetInt32());
+        source.GetProperty("minzoom").GetInt32().Should().Be(tileJson.RootElement.GetProperty("minzoom").GetInt32());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/styles/{styleId}")]
     public async Task GetStylesheet_AcceptSld10_ReturnsDerivedSld()
     {
         var client = _fixture.CreateAdminClient();

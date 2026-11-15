@@ -87,7 +87,7 @@ The page should render features over an empty background; the browser dev-tools 
 - **Blank map, tile requests fail with CORS errors** — the page origin is not allowed by the server's CORS configuration; serve the page from an allowed origin or adjust the CORS settings. See [troubleshooting](../deploy/troubleshooting.md).
 - **Tiles return 404** — wrong layer id, or the layer is not tile-enabled; `/tiles/{layerId}/tile.json` should return metadata, not an error.
 - **Tiles load but nothing draws** — the style's `source-layer` must be `layer`, and the layer `type` (`circle`/`line`/`fill`) must match the geometry type; also check the TileJSON `bounds` and pan there.
-- **Features missing at low zoom** — requests outside the configured zoom range return no data; respect `minzoom`/`maxzoom` from the TileJSON.
+- **Features missing beyond a zoom level** — the server serves tiles only inside `Limits:Tiles` (default `0` to `18`) and refuses other levels with an error. The TileJSON and the server-generated style advertise that range as the source `minzoom`/`maxzoom`, so MapLibre overzooms the last level instead of requesting it. A hand-written style source must not set a wider range.
 
 ## Next steps
 

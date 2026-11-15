@@ -4,21 +4,34 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Honua.Core.Configuration;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Helpers;
 
 // TileJSON requires absolute tile endpoints, and the canonical and deprecated style routes must emit the same document.
+// Sources served only by the owned /tiles route advertise a zoom range no wider than that route accepts:
+// MapLibre requests every level up to a source's maxzoom rather than overzooming the last served one.
+internal sealed record StyleUrlContext(string BaseUrl, HttpRequest? Request, TileLimits TileLimits)
+{
+    public static StyleUrlContext From(HttpContext context) => new(
+        BaseUrlResolver.GetBaseUrl(context),
+        context.Request,
+        context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles);
+}
+
 internal static class StyleEndpointUrlResolver
 {
-    public static JsonElement Resolve(JsonElement style, string baseUrl, HttpRequest? request = null)
+    public static JsonElement Resolve(JsonElement style, StyleUrlContext urlContext)
     {
         if (style.ValueKind != JsonValueKind.Object)
         {
             return style;
         }
 
-        var resolved = Resolve(style.GetRawText(), baseUrl, request, out var changed);
+        var resolved = Resolve(style.GetRawText(), urlContext, out var changed);
         if (!changed)
         {
             return style;
@@ -28,11 +41,12 @@ internal static class StyleEndpointUrlResolver
         return document.RootElement.Clone();
     }
 
-    public static string Resolve(string styleJson, string baseUrl, HttpRequest? request = null)
-        => Resolve(styleJson, baseUrl, request, out _);
+    public static string Resolve(string styleJson, StyleUrlContext urlContext)
+        => Resolve(styleJson, urlContext, out _);
 
-    private static string Resolve(string styleJson, string baseUrl, HttpRequest? request, out bool changed)
+    private static string Resolve(string styleJson, StyleUrlContext urlContext, out bool changed)
     {
+        var (baseUrl, request, tileLimits) = urlContext;
         changed = false;
 
         JsonNode? node;
@@ -80,6 +94,11 @@ internal static class StyleEndpointUrlResolver
                         }
                     }
                 }
+
+                if (IsServedOnlyByOwnedVectorTiles(tiles, baseUrl))
+                {
+                    changed |= ClampZoomRange(sourceObject, tileLimits);
+                }
             }
         }
 
@@ -124,6 +143,56 @@ internal static class StyleEndpointUrlResolver
 
         return BaseUrlResolver.PreserveToken(request, resolved);
     }
+
+    private static bool IsServedOnlyByOwnedVectorTiles(JsonArray tiles, string baseUrl)
+    {
+        if (tiles.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var tile in tiles)
+        {
+            if (tile is not JsonValue value || !value.TryGetValue<string>(out var url) ||
+                !IsOwnedTileUrl(url, baseUrl) || !url.Split('?')[0].EndsWith("/{z}/{x}/{y}.mvt", StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // Narrow only: an author's tighter range (for example maxzoom 14 to overzoom) is kept, and a
+    // range that lies wholly outside the route's is left as authored rather than inverted.
+    private static bool ClampZoomRange(JsonObject source, TileLimits tileLimits)
+    {
+        var maxZoom = ReadZoom(source, "maxzoom");
+        var minZoom = ReadZoom(source, "minzoom");
+        var clampMax = maxZoom is null || maxZoom > tileLimits.MaxTileZoom;
+        var clampMin = minZoom is null ? tileLimits.MinTileZoom > 0 : minZoom < tileLimits.MinTileZoom;
+        var newMax = clampMax ? tileLimits.MaxTileZoom : maxZoom!.Value;
+        var newMin = clampMin ? tileLimits.MinTileZoom : minZoom ?? 0;
+        if ((!clampMax && !clampMin) || newMin > newMax)
+        {
+            return false;
+        }
+
+        if (clampMax)
+        {
+            source["maxzoom"] = tileLimits.MaxTileZoom;
+        }
+
+        if (clampMin)
+        {
+            source["minzoom"] = tileLimits.MinTileZoom;
+        }
+
+        return true;
+    }
+
+    private static double? ReadZoom(JsonObject source, string propertyName)
+        => source[propertyName] is JsonValue value && value.TryGetValue(out double zoom) && double.IsFinite(zoom) ? zoom : null;
 
     private static bool IsOwnedTileUrl(string url, string baseUrl)
     {
