@@ -50,7 +50,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     /// <param name="filter">Filter expression to translate.</param>
     /// <param name="resource">Metadata v2 resource.</param>
     /// <returns>SQL fragment with parameters.</returns>
-    public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
+    public SqlFragment Translate(FilterExpression filter, MetadataV2Object resource)
         => Translate(filter, FilterTranslationContext.FromResource(resource));
 
     protected override string TranslateBinary(BinaryExpression binary, FilterTranslationContext context)
