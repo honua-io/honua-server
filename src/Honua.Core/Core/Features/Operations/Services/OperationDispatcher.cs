@@ -34,8 +34,7 @@ public sealed partial class OperationDispatcher : IOperationInvoker, IOperationP
         IOperationApprovalBridge? approvalBridge = null,
         IOperationInstanceStore? instanceStore = null,
         IAuditLog? auditLog = null,
-        IOperationApprovalReplayVerifier? approvalReplayVerifier = null,
-        IAgentAuthorityStore? agentAuthorityStore = null)
+        OperationActuationGuards? guards = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(executors);
@@ -48,8 +47,8 @@ public sealed partial class OperationDispatcher : IOperationInvoker, IOperationP
         _instanceStore = instanceStore ?? new VolatileOperationInstanceStore();
         _auditLog = auditLog ?? new VolatileOperationAuditLog();
         _envelopeFactory = new OperationEnvelopeFactory(_instanceStore, _auditLog, clock);
-        _approvalReplayVerifier = approvalReplayVerifier;
-        _agentAuthorityStore = agentAuthorityStore;
+        _approvalReplayVerifier = guards?.ApprovalReplayVerifier;
+        _agentAuthorityStore = guards?.AgentAuthorityStore;
         _executors = executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
     }
 

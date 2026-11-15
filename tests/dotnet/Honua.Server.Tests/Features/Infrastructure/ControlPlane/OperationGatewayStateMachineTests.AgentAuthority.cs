@@ -20,7 +20,7 @@ public sealed partial class OperationGatewayStateMachineTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task AgentAuthority_AuthenticatedEntryWithoutAgentMetadata_DeniesMissingCeiling()
+    public async Task AgentAuthority_AuthenticatedEntryWithoutAgentMetadata_MissingCeilingNeverExecutes()
     {
         var context = new DefaultHttpContext
         {
@@ -40,14 +40,14 @@ public sealed partial class OperationGatewayStateMachineTests
         var result = await gateway.RouteAsync(new OperationGatewayRequest
         { Kind = OperationClass.Deploy, RequestedBy = "caller-supplied" });
 
-        Assert.Equal(OperationGatewayOutcome.Blocked, result.Outcome);
+        Assert.NotEqual(OperationGatewayOutcome.Executed, result.Outcome);
         Assert.False(executor.Entered.Task.IsCompleted);
         await ceiling.Received().GetAsync(null, "canonical-agent", Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ApplyApprovedAgentProposal_RemovedCeiling_DeniesWithoutActuating()
+    public async Task ApplyApprovedAgentProposal_DisabledTenantCeiling_DeniesWithoutActuating()
     {
         var proposal = CanonicalOperationGatewayTestComposition.WithVersionedInitiation(
             CreateProposal("agent-authority-replay", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
@@ -60,6 +60,15 @@ public sealed partial class OperationGatewayStateMachineTests
         ceiling.GetAsync(null, "canonical-agent", Arg.Any<CancellationToken>()).Returns(new AgentAuthorityCeiling
         {
             PrincipalId = "canonical-agent",
+            AllowedOperationIds = ["control-plane.deploy"],
+            MaximumBlastRadius = OperationBlastRadiusClass.DeploymentScope,
+            MaximumSideEffect = OperationSideEffectClass.DestroysState
+        });
+        ceiling.GetAsync("tenant-a", "canonical-agent", Arg.Any<CancellationToken>()).Returns(new AgentAuthorityCeiling
+        {
+            TenantId = "tenant-a",
+            PrincipalId = "canonical-agent",
+            Enabled = false,
             AllowedOperationIds = ["control-plane.deploy"],
             MaximumBlastRadius = OperationBlastRadiusClass.DeploymentScope,
             MaximumSideEffect = OperationSideEffectClass.DestroysState

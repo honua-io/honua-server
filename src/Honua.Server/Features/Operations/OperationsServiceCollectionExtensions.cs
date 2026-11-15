@@ -290,11 +290,14 @@ internal static class OperationsServiceCollectionExtensions
                 environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
                     : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
-                !Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(
-                    sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>())
-                    ? null
-                    : sp.GetRequiredService<IOperationApprovalReplayVerifier>(),
-                sp.GetService<IAgentAuthorityStore>()));
+                new OperationActuationGuards
+                {
+                    ApprovalReplayVerifier = !Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(
+                        sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>())
+                        ? null
+                        : sp.GetRequiredService<IOperationApprovalReplayVerifier>(),
+                    AgentAuthorityStore = sp.GetService<IAgentAuthorityStore>(),
+                }));
 
         return services;
     }

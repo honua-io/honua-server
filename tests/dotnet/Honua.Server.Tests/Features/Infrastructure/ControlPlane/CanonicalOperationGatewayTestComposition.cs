@@ -62,8 +62,11 @@ internal static class CanonicalOperationGatewayTestComposition
             bridge,
             provider.GetRequiredService<IOperationInstanceStore>(),
             new TestAuditLog(),
-            approvalReplayVerifier: new OperationApprovalReplayVerifier(proposalStore),
-            agentAuthorityStore: provider.GetService<IAgentAuthorityStore>()));
+            guards: new OperationActuationGuards
+            {
+                ApprovalReplayVerifier = new OperationApprovalReplayVerifier(proposalStore),
+                AgentAuthorityStore = provider.GetService<IAgentAuthorityStore>(),
+            }));
 
         var provider = services.BuildServiceProvider();
         var gateway = new OperationGateway(

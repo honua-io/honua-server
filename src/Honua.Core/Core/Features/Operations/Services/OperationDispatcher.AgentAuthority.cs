@@ -16,15 +16,22 @@ public sealed partial class OperationDispatcher
         OperationPolicyContext invocationContext,
         CancellationToken cancellationToken)
     {
-        if (!await AgentAuthorityPolicy.AllowsAsync(_agentAuthorityStore, descriptor, invocationContext, cancellationToken)
-            .ConfigureAwait(false))
+        var verdict = await AgentAuthorityPolicy.EvaluateAsync(_agentAuthorityStore, descriptor, invocationContext, cancellationToken)
+            .ConfigureAwait(false);
+        if (verdict == AgentAuthorityVerdict.Denied)
         {
             return new PolicyDecision { Kind = PolicyDecisionKind.Deny, Reason = "Operation exceeds the agent authority ceiling." };
         }
 
-        return string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)
-            ? await _policy.EvaluateAsync(descriptor, request, invocationContext, cancellationToken).ConfigureAwait(false)
-            : PolicyDecision.Allowed;
+        if (!string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId))
+        {
+            return PolicyDecision.Allowed;
+        }
+
+        var decision = await _policy.EvaluateAsync(descriptor, request, invocationContext, cancellationToken).ConfigureAwait(false);
+        return verdict == AgentAuthorityVerdict.ApprovalRequired && !request.DryRun && decision.Kind == PolicyDecisionKind.Allow
+            ? AgentApprovalRule.Decision
+            : decision;
     }
 
     // Only trusted proposal submission adds an approval floor. A refusal is never promoted,
@@ -40,7 +47,8 @@ public sealed partial class OperationDispatcher
             : decision;
 
     // Re-reads the ceiling just before actuation. Returns the persisted denial when authority was
-    // revoked after policy evaluation, or null when actuation may start. Cancellation here happens
+    // revoked after policy evaluation (or now needs a human approval this call does not carry), or
+    // null when actuation may start. Cancellation here happens
     // before any side effect and is recorded as such.
     private async Task<OperationHandle?> RefuseRevokedAgentAuthorityAsync(
         OperationHandle envelope,
@@ -50,8 +58,10 @@ public sealed partial class OperationDispatcher
     {
         try
         {
-            if (await AgentAuthorityPolicy.AllowsAsync(_agentAuthorityStore, descriptor, invocationContext, cancellationToken)
-                .ConfigureAwait(false))
+            var verdict = await AgentAuthorityPolicy.EvaluateAsync(_agentAuthorityStore, descriptor, invocationContext, cancellationToken)
+                .ConfigureAwait(false);
+            if (verdict == AgentAuthorityVerdict.Unrestricted
+                || (verdict == AgentAuthorityVerdict.ApprovalRequired && !string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)))
             {
                 return null;
             }
