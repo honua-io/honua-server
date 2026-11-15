@@ -79,7 +79,7 @@ internal static partial class ManagedImportConnection
         var connectionString = await ResolveServerConnectionStringAsync(services, configuration, cancellationToken)
             .ConfigureAwait(false);
         var target = ReadDatabase(connectionString);
-        if (target is null || connectionString is null)
+        if (target is null)
         {
             return null;
         }
@@ -88,7 +88,7 @@ internal static partial class ManagedImportConnection
         {
             Registry = registry,
             Encryption = encryption,
-            ConnectionString = connectionString,
+            ConnectionString = NormalizeForSecureResolver(connectionString!),
             Target = target.Value,
             CancellationToken = cancellationToken,
         };
@@ -257,6 +257,11 @@ internal static partial class ManagedImportConnection
         CancellationToken cancellationToken)
     {
         var running = RunningConnection(services);
+        if (running is not null && HasPassword(running))
+        {
+            return running;
+        }
+
         var configured = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
             configuration,
             services.GetService<IConnectionSecretResolver>(),
@@ -266,12 +271,23 @@ internal static partial class ManagedImportConnection
             return configured;
         }
 
-        if (HasPassword(running) || !SameDatabase(running, configured))
+        if (!SameDatabase(running, configured))
         {
             return running;
         }
 
         return configured;
+    }
+
+    private static string NormalizeForSecureResolver(string connectionString)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        // Runtime pool/startup settings are owned by the server data source. Secure
+        // connections use the resolver's own pool and explicit schema-qualified queries.
+        var changed = builder.Remove("Persist Security Info");
+        changed |= builder.Remove("Multiplexing");
+        changed |= builder.Remove("Options");
+        return changed ? builder.ConnectionString : connectionString;
     }
 
     private static string? RunningConnection(IServiceProvider services)

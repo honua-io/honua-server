@@ -8,6 +8,7 @@ using Honua.Server.Features.Admin.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -123,19 +124,13 @@ public sealed class ManagedImportConnectionTests
     }
 
     [UnitTest]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability",
-        "CA2000:Dispose objects before losing scope",
-        Justification = "The service provider disposes the registered data source.")]
     public async Task RunningDatabaseWinsOverAReloadedConfiguration()
     {
         var encryption = new RememberingEncryption();
         var running = ConnectionString.Replace("db.internal", "db.running", StringComparison.Ordinal);
         var reloaded = ConnectionString.Replace("db.internal", "db.reloaded", StringComparison.Ordinal);
-        var builder = new Npgsql.NpgsqlConnectionStringBuilder(running) { PersistSecurityInfo = true };
-#pragma warning disable CA2000 // The service provider disposes the registered data source.
-        var dataSource = Npgsql.NpgsqlDataSource.Create(builder.ConnectionString);
-#pragma warning restore CA2000
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(running) { PersistSecurityInfo = true, Multiplexing = true, Options = "-c search_path=public" };
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(builder.ConnectionString);
         using var services = Services(encryption, reloaded, dataSource);
 
         await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
@@ -146,21 +141,41 @@ public sealed class ManagedImportConnectionTests
         Assert.Contains("db.running", encryption.Stored, StringComparison.Ordinal);
         Assert.DoesNotContain("db.reloaded", encryption.Stored, StringComparison.Ordinal);
         Assert.Equal(1, encryption.EncryptCalls);
+        var stored = new Npgsql.NpgsqlConnectionStringBuilder(encryption.Stored);
+        Assert.DoesNotContain("Persist Security Info", stored.Keys);
+        Assert.DoesNotContain("Multiplexing", stored.Keys);
+        Assert.DoesNotContain("Options", stored.Keys);
+        Assert.Equal(Password, stored.Password);
     }
 
     [UnitTest]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability",
-        "CA2000:Dispose objects before losing scope",
-        Justification = "The service provider disposes the registered data source.")]
+    public async Task RunningPasswordAvoidsAnUnavailableConfiguredSecret()
+    {
+        var encryption = new RememberingEncryption();
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(ConnectionString) { PersistSecurityInfo = true };
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(builder.ConnectionString);
+        var resolver = Substitute.For<IConnectionSecretResolver>();
+        resolver.CanResolveSecretAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new InvalidOperationException("Secret provider unavailable.")));
+        var registrations = Compose(encryption, "vault:database", new InMemorySecureConnectionRegistry());
+        registrations.AddSingleton(dataSource);
+        registrations.AddSingleton(resolver);
+        using var services = registrations.BuildServiceProvider();
+
+        await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
+
+        Assert.Single(await services.GetRequiredService<ISecureConnectionRegistry>().GetActiveConnectionsAsync());
+        Assert.Equal(Password, new Npgsql.NpgsqlConnectionStringBuilder(encryption.Stored).Password);
+        await resolver.DidNotReceive().CanResolveSecretAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task PasswordlessRunningDatabaseWinsOverAReloadedConfiguration()
     {
         var encryption = new RememberingEncryption();
         var running = "Host=db.running;Port=5432;Database=honua;Username=honua_app;SSL Mode=Disable";
         var reloaded = ConnectionString.Replace("db.internal", "db.reloaded", StringComparison.Ordinal);
-#pragma warning disable CA2000 // The service provider disposes the registered data source.
-        var dataSource = Npgsql.NpgsqlDataSource.Create(running);
-#pragma warning restore CA2000
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(running);
         using var services = Services(encryption, reloaded, dataSource);
 
         await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
@@ -172,17 +187,11 @@ public sealed class ManagedImportConnectionTests
     }
 
     [UnitTest]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability",
-        "CA2000:Dispose objects before losing scope",
-        Justification = "The service provider disposes the registered data source.")]
     public async Task PasswordlessRunningDatabaseKeepsTheConfiguredPasswordForThatDatabase()
     {
         var encryption = new RememberingEncryption();
         var running = "Host=db.internal;Port=5432;Database=honua;Username=honua_app;SSL Mode=Disable";
-#pragma warning disable CA2000 // The service provider disposes the registered data source.
-        var dataSource = Npgsql.NpgsqlDataSource.Create(running);
-#pragma warning restore CA2000
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(running);
         using var services = Services(encryption, ConnectionString, dataSource);
 
         await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
@@ -193,18 +202,12 @@ public sealed class ManagedImportConnectionTests
     }
 
     [UnitTest]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability",
-        "CA2000:Dispose objects before losing scope",
-        Justification = "The service provider disposes the registered data source.")]
     public async Task PasswordlessRunningDatabaseDoesNotFollowADifferentCaseName()
     {
         var encryption = new RememberingEncryption();
         var running = "Host=db.internal;Port=5432;Database=honua;Username=honua_app;SSL Mode=Disable";
         var configured = ConnectionString.Replace("Database=honua", "Database=Honua", StringComparison.Ordinal);
-#pragma warning disable CA2000 // The service provider disposes the registered data source.
-        var dataSource = Npgsql.NpgsqlDataSource.Create(running);
-#pragma warning restore CA2000
+        using var dataSource = Npgsql.NpgsqlDataSource.Create(running);
         using var services = Services(encryption, configured, dataSource);
 
         await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
