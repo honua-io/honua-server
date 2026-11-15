@@ -3044,7 +3044,10 @@ jobs:
     # under a 45-minute ceiling, so it is not expected to extend the batch
     # critical path.
     if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && fromJson(needs.changes.outputs.specialized_lanes).aot && needs.changes.outputs.non_test_changes == 'true' }}
-    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
+    # Native AOT does not fit the 45-minute ceiling on a hosted runner, so
+    # trusted runs use the honua-heavy pool when vars.HONUA_HEAVY_RUNNER is
+    # set; fork code never does.
+    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
     steps:
