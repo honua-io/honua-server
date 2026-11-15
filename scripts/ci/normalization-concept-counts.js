@@ -67,7 +67,8 @@ function updateProofCount(bytes, key, { previous, next }) {
 async function deriveConceptCountOutputs({ outputs, readBlob }) {
   const matrix = outputs.find(output => output.path === MATRIX_PATH);
   if (!matrix) throw new Error('validated normalization plan has no capability matrix');
-  const original = await readBlob(MATRIX_PATH, MAX_MATRIX_BYTES, true);
+  const original = await readBlob(MATRIX_PATH, MAX_MATRIX_BYTES);
+  if (original === null) throw new Error('capability matrix is absent from the exact PR tree');
   const next = proofCounts(Buffer.from(matrix.content_base64, 'base64'));
   const previous = proofCounts(original);
   const derived = [];
@@ -76,7 +77,7 @@ async function deriveConceptCountOutputs({ outputs, readBlob }) {
     // New/removed concepts and unpublished concepts remain the author's concern.
     if (!previous.has(key) || previous.get(key) === count) continue;
     const path = `docs/okf/capabilities/${key}.md`;
-    const current = await readBlob(path, MAX_PAGE_BYTES, false);
+    const current = await readBlob(path, MAX_PAGE_BYTES);
     if (current === null) continue;
     const updated = updateProofCount(current, key, { previous: previous.get(key), next: count });
     if (updated === null) continue;

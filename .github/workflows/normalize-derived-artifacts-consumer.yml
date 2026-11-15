@@ -267,12 +267,9 @@ jobs:
             });
             if (tree.truncated) throw new Error('PR tree query was truncated.');
             const entries = new Map(tree.tree.map(entry => [entry.path, entry]));
-            const readBlob = async (path, limit, required) => {
+            const readBlob = async (path, limit) => {
               const entry = entries.get(path);
-              if (!entry) {
-                if (required) throw new Error(`${path} is absent from the exact PR tree.`);
-                return null;
-              }
+              if (!entry) return null;
               if (entry.type !== 'blob' || entry.mode !== '100644' || !entry.sha ||
                   !Number.isSafeInteger(entry.size) || entry.size < 1 || entry.size > limit) {
                 throw new Error(`${path} is not a bounded regular Git blob.`);

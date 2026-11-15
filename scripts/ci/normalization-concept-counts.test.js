@@ -15,8 +15,8 @@ const matrix = counts => Buffer.from(JSON.stringify({ capabilities: counts.map((
 async function derive(previous, next, pages = { [path]: page }) {
   const reads = [];
   const outputs = [{ path: matrixPath, content_base64: matrix(next).toString('base64') }];
-  const result = await deriveConceptCountOutputs({ outputs, readBlob: async (name, limit, required) => {
-    reads.push({ name, limit, required });
+  const result = await deriveConceptCountOutputs({ outputs, readBlob: async (name, limit) => {
+    reads.push({ name, limit });
     return name === matrixPath ? matrix(previous) : pages[name] ?? null;
   } });
   assert.equal(outputs.length, 1, 'derivation must not mutate the validated envelope');
@@ -58,8 +58,6 @@ test('unchanged, new and unpublished capabilities generate no pages', async () =
   const { result, reads } = await derive([[key, 597], ['serve.unpublished', 1]], [[key, 597], ['serve.new', 2], ['serve.unpublished', 2]]);
   assert.deepEqual(result, []);
   assert.deepEqual(reads.map(read => read.name), [matrixPath, 'docs/okf/capabilities/serve.unpublished.md']);
-  assert.equal(reads[0].required, true);
-  assert.equal(reads[1].required, false);
 });
 
 test('malformed counts and unsafe keys fail before reading any concept page', async () => {
@@ -111,4 +109,9 @@ test('UTF-8 BOM and unrelated bytes survive numeric projection', async () => {
   const { result } = await derive([[key, 597]], [[key, 599]], { [path]: original });
   assert.deepEqual(Buffer.from(result[0].content_base64, 'base64'),
     Buffer.from(original.toString().replace('| Proving tests | 597 |', '| Proving tests | 599 |')));
+});
+
+test('missing exact-head matrix fails closed at the mandatory caller', async () => {
+  const outputs = [{ path: matrixPath, content_base64: matrix([[key, 598]]).toString('base64') }];
+  await assert.rejects(deriveConceptCountOutputs({ outputs, readBlob: async () => null }), /matrix is absent/);
 });
