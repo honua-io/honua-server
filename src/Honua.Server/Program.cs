@@ -334,9 +334,8 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
 {
     // The key ring lives in the system database so that every node unprotects what any node
     // protected: an operation secret consumed on another node is deleted before it is
-    // unprotected. Native AOT cannot run EncryptedXml, so there each key is wrapped with the
-    // certificate using RSA-OAEP and AES-GCM instead.
-    var nativeAot = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
+    // unprotected. Both runtimes wrap new keys with the certificate using RSA-OAEP and AES-GCM,
+    // so a JIT and a native AOT node (or an upgrade or rollback between them) read one ring.
     builder.Services.AddSingleton(static provider => new PostgresDataProtectionKeyRepository(
         provider.GetRequiredService<Npgsql.NpgsqlDataSource>(),
         provider.GetRequiredService<Honua.ControlPlane.JobStoreDatabase>()));
@@ -378,14 +377,7 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
         new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
 
-    if (nativeAot)
-    {
-        keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
-    }
-    else
-    {
-        keyRing.ProtectKeysWithCertificate(keyRingCertificate);
-    }
+    keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
 }
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
