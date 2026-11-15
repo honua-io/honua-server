@@ -33,7 +33,7 @@ namespace Honua.Server.Tests.Features.Temporal;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class TemporalHistorySliceEndpointsTests : IAsyncLifetime
+public sealed partial class TemporalHistorySliceEndpointsTests : IAsyncLifetime
 {
     private const string ServiceId = "svc-temporal";
     private const int TemporalLayerId = 10;
@@ -293,7 +293,11 @@ public sealed class TemporalHistorySliceEndpointsTests : IAsyncLifetime
 
         public Task<IReadOnlyList<TemporalChangeRecord>> GetFeatureRevisionsAsync(
             int storageLayerId, long objectId, long afterGeneration, int limit, CancellationToken cancellationToken = default)
-            => Task.FromResult(FeatureRevisions);
+            => Task.FromResult<IReadOnlyList<TemporalChangeRecord>>(FeatureRevisions
+                .Where(row => row.Generation > afterGeneration)
+                .OrderBy(row => row.Generation)
+                .Take(limit)
+                .ToArray());
 
         public Task<IReadOnlyList<TemporalChangeRecord>> GetChangesInWindowAsync(
             int storageLayerId, long fromGeneration, long toGeneration, long afterObjectId, int limit, CancellationToken cancellationToken = default)
