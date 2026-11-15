@@ -4,10 +4,3 @@
 namespace Honua.Infrastructure.Abstractions;
 
 internal sealed record StreamingSubscriptionInfo(Guid SubscriberId, DateTimeOffset ConnectedAt, string? ClientLabel);
-
-internal interface IStreamingSubscriptionManager
-{
-    IReadOnlyList<StreamingSubscriptionInfo> GetSubscriptions();
-
-    bool DisconnectSubscriber(Guid subscriberId);
-}
