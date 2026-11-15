@@ -9,22 +9,30 @@ namespace Honua.ControlPlane;
 
 internal sealed partial class JobExecutionService
 {
-    private async Task<bool> TryRecoverExhaustedOutcomeAsync(
+    private const string OutcomeRecoveryPhase = "Recovering committed import outcome";
+
+    private async Task<bool> TryRecoverPendingOutcomeAsync(
         ExecutionJobRecord job, string workerId, CancellationToken cancellationToken)
     {
-        if (job.AttemptCount <= (job.RetryPolicy ?? JobRetryPolicy.Default).MaxAttempts ||
+        if (job.AttemptCount <= 1 ||
             ResolveExecutor(job.Spec.Kind, job.Spec.RuntimeProfile) is not IJobOutcomeRecoveryExecutor)
         {
             return false;
         }
 
-        if (!await TryRecoverOutcomeAsync(job, workerId, cancellationToken).ConfigureAwait(false))
+        if (await TryRecoverOutcomeAsync(job, workerId, cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        if (job.AttemptCount > (job.RetryPolicy ?? JobRetryPolicy.Default).MaxAttempts)
         {
             await TerminateJobAsync(job.OperationId, workerId, ExecutionJobStatus.Failed,
                 "Execution retry budget exhausted; no committed import outcome was found.", cancellationToken).ConfigureAwait(false);
+            return true;
         }
 
-        return true;
+        return false;
     }
 
     private async Task<bool> TryRecoverOutcomeAsync(
@@ -55,8 +63,9 @@ internal sealed partial class JobExecutionService
         }
         catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
         {
-            await TerminateJobAsync(job.OperationId, workerId, ExecutionJobStatus.Failed,
-                "license expired", CancellationToken.None).ConfigureAwait(false);
+            // License expiry stops execution and publication, but cannot establish whether COMMIT landed.
+            // Keep the receipt lookup pending until a valid license permits recovery.
+            await RequeueOutcomeRecoveryAsync(job, workerId).ConfigureAwait(false);
         }
         // An unavailable receipt is an unknown outcome, never evidence that no rows committed.
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -98,7 +107,7 @@ internal sealed partial class JobExecutionService
             UpdatedAt = now,
             CompletedAt = null,
             NextRetryAt = now.Add(delay),
-            CurrentPhase = "Recovering committed import outcome"
+            CurrentPhase = OutcomeRecoveryPhase
         };
         if (!await jobStore.TrySetAsync(queued, cancellationToken: cleanup.Token).ConfigureAwait(false))
         {

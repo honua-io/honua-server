@@ -382,7 +382,7 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
-        if (await TryRecoverExhaustedOutcomeAsync(job, workerId, stoppingToken).ConfigureAwait(false))
+        if (await TryRecoverPendingOutcomeAsync(job, workerId, stoppingToken).ConfigureAwait(false))
         {
             return;
         }
@@ -1047,7 +1047,7 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
-        if (terminalStatus == ExecutionJobStatus.Cancelled &&
+        if ((terminalStatus == ExecutionJobStatus.Cancelled || reason == "license expired") &&
             await TryRecoverOutcomeAsync(job, workerId, cancellationToken).ConfigureAwait(false))
         {
             return;
