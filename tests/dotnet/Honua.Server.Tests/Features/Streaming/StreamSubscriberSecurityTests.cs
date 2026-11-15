@@ -160,20 +160,31 @@ public sealed class StreamSubscriberSecurityTests
     }
 
     [UnitTheory]
-    [InlineData(BinaryOperator.Like, false)]
-    [InlineData(BinaryOperator.NotLike, false)]
-    [InlineData(BinaryOperator.Like, true)]
-    [InlineData(BinaryOperator.NotLike, true)]
-    public void Broadcast_UnevaluableRowPredicate_OnlyDeniesThatSubscriber(BinaryOperator operation, bool negate)
+    [InlineData(BinaryOperator.Like)]
+    [InlineData(BinaryOperator.NotLike)]
+    public void Broadcast_UnevaluableRowPredicate_OnlyDeniesThatSubscriber(BinaryOperator operation)
     {
-        FilterExpression predicate = new BinaryExpression(new PropertyReference("region"), operation,
+        var predicate = new BinaryExpression(new PropertyReference("region"), operation,
             new Literal(new string('%', 33), LiteralType.Text));
-        if (negate)
-        {
-            predicate = new UnaryExpression(UnaryOperator.Not,
-                new BinaryExpression(predicate, BinaryOperator.Or, new Literal(false, LiteralType.Boolean)));
-        }
 
+        AssertOnlyRestrictedSubscriberDenied(predicate);
+    }
+
+    [UnitTheory]
+    [InlineData(BinaryOperator.Like)]
+    [InlineData(BinaryOperator.NotLike)]
+    public void Broadcast_NegatedUnevaluableRowPredicate_OnlyDeniesThatSubscriber(BinaryOperator operation)
+    {
+        var predicate = new BinaryExpression(new PropertyReference("region"), operation,
+            new Literal(new string('%', 33), LiteralType.Text));
+        var negated = new UnaryExpression(UnaryOperator.Not,
+            new BinaryExpression(predicate, BinaryOperator.Or, new Literal(false, LiteralType.Boolean)));
+
+        AssertOnlyRestrictedSubscriberDenied(negated);
+    }
+
+    private static void AssertOnlyRestrictedSubscriberDenied(FilterExpression predicate)
+    {
         var policy = new StreamLayerReadPolicy([predicate], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         var security = new StreamSubscriberSecurity(
             new HashSet<string>(["svc"], StringComparer.Ordinal),

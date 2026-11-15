@@ -245,44 +245,29 @@ public sealed class InMemoryFilterEvaluatorTests
     }
 
     [UnitTheory]
-    [InlineData(256, true)]
-    [InlineData(257, false)]
-    public void Evaluate_Like_EnforcesPatternLengthBoundary(int length, bool accepted)
+    [InlineData(256, 'a')]
+    [InlineData(32, '_')]
+    public void Evaluate_Like_AcceptsPatternAtBoundary(int count, char character)
     {
-        var pattern = new string('a', length);
         var expression = new BinaryExpression(new PropertyReference("name"), BinaryOperator.Like,
-            new Literal(pattern, LiteralType.Text));
-        var properties = CreateProperties($"{{\"name\":\"{pattern}\"}}");
+            new Literal(new string(character, count), LiteralType.Text));
+        var properties = CreateProperties($"{{\"name\":\"{new string('a', count)}\"}}");
 
-        if (accepted)
-        {
-            InMemoryFilterEvaluator.Evaluate(expression, properties).Should().BeTrue();
-        }
-        else
-        {
-            Action act = () => InMemoryFilterEvaluator.Evaluate(expression, properties);
-            act.Should().Throw<UnevaluableLikePatternException>();
-        }
+        InMemoryFilterEvaluator.Evaluate(expression, properties).Should().BeTrue();
     }
 
     [UnitTheory]
-    [InlineData(32, true)]
-    [InlineData(33, false)]
-    public void Evaluate_Like_EnforcesWildcardBoundary(int count, bool accepted)
+    [InlineData(257, 'a')]
+    [InlineData(33, '_')]
+    public void Evaluate_Like_RefusesPatternBeyondBoundary(int count, char character)
     {
         var expression = new BinaryExpression(new PropertyReference("name"), BinaryOperator.Like,
-            new Literal(new string('_', count), LiteralType.Text));
+            new Literal(new string(character, count), LiteralType.Text));
         var properties = CreateProperties($"{{\"name\":\"{new string('a', count)}\"}}");
 
-        if (accepted)
-        {
-            InMemoryFilterEvaluator.Evaluate(expression, properties).Should().BeTrue();
-        }
-        else
-        {
-            Action act = () => InMemoryFilterEvaluator.Evaluate(expression, properties);
-            act.Should().Throw<UnevaluableLikePatternException>();
-        }
+        Action act = () => InMemoryFilterEvaluator.Evaluate(expression, properties);
+
+        act.Should().Throw<UnevaluableLikePatternException>();
     }
 
     private static Dictionary<string, JsonElement> CreateProperties(string json)
