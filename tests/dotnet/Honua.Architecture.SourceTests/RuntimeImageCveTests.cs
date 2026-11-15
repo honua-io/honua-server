@@ -45,7 +45,7 @@ public sealed class RuntimeImageCveTests
         dockerfile.Should().Contain(
             "ARG DOTNET_RUNTIME_DEPS_FULL_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute-chiseled-extra@sha256:",
             "SQL Server and Oracle need ICU, so the full profile keeps it");
-        dockerfile.Should().Contain("FROM chiseled-base-${HONUA_STORE_PROFILE} AS chiseled-base");
+        dockerfile.Should().Contain("FROM chiseled-base-${HONUA_STORE_PROFILE:-postgis} AS chiseled-base");
         dockerfile.Should().Contain(
             "if [ \"${HONUA_STORE_PROFILE:-postgis}\" = postgis ]; then set -- \"$@\" \"-p:InvariantGlobalization=true\"; fi");
         runtimeStage.Should().NotContain("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT",

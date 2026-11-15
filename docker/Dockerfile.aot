@@ -11,8 +11,8 @@
 # libraries: ParquetSharp's ParquetSharpNative (the GeoParquet f=parquet encoder) and DuckDB's
 # libduckdb have no musl asset, so a musl RID publish copies the glibc binaries and
 # they cannot load. On Alpine every f=parquet request returned the typed 501, and gcompat +
-# libatomic loaded the library but segfaulted the server on the first request. These are the
-# same Ubuntu-based SDK/runtime-deps digests as docker/Dockerfile.lambda.aot.
+# libatomic loaded the library but segfaulted the server on the first request. The SDK digest
+# and the full-profile runtime-deps digest match docker/Dockerfile.lambda.aot.
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
 # The default (postgis) image is published with invariant globalization, so it uses the plain
 # chiseled base without ICU (about 41 MB less); stage-runtime.sh adds tzdata because IANA time
@@ -25,7 +25,7 @@ ARG HONUA_STORE_PROFILE=postgis
 
 FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS chiseled-base-postgis
 FROM ${DOTNET_RUNTIME_DEPS_FULL_IMAGE} AS chiseled-base-full
-FROM chiseled-base-${HONUA_STORE_PROFILE} AS chiseled-base
+FROM chiseled-base-${HONUA_STORE_PROFILE:-postgis} AS chiseled-base
 
 # Extract restore inputs with their directory structure. Ordinary source edits,
 # including JSON content, rerun this inexpensive extraction but leave the
