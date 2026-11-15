@@ -42,7 +42,7 @@ permissions:
 # Repeated events for one head cancel; draft and metadata-only events stay
 # separate because they cannot generate a replacement envelope.
 concurrency:
-  group: normalization-producer-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}-${{ github.event.pull_request.draft && 'draft' || (github.event.action == 'edited' && github.event.changes.base.ref.from == null) && 'metadata' || 'generation' }}
+  group: normalization-producer-${{ !github.event.pull_request.draft && (github.event.action != 'edited' || github.event.changes.base.ref.from != null) && format('{0}-{1}', github.event.pull_request.number, github.event.pull_request.head.sha) || format('ignored-{0}', github.run_id) }}
   cancel-in-progress: true
 
 env:

@@ -26,9 +26,9 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
         ["031_CreateMetadataV2Snapshot.sql", "113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql",
             "141_CreateImportedDatasetSpatialMetadata.sql", "147_CreateJobSubstrate.sql",
             "148_CreateControlPlaneState.sql", "149_CreateSecurityState.sql",
-            "150_CreateOAuthClientsAndOperationProgress.sql", "154_CreatePackageDraftsAndMcpSessions.sql",
-            "156_CreateConfigurationDocuments.sql", "158_CreateRealtimeEventLog.sql",
-            "161_CreateOpsNotificationSchedules.sql",
+            "150_CreateOAuthClientsAndOperationProgress.sql", "153_CreateVersionJobsAndTileGenerationCheckpoints.sql",
+            "154_CreatePackageDraftsAndMcpSessions.sql", "156_CreateConfigurationDocuments.sql",
+            "158_CreateRealtimeEventLog.sql", "161_CreateOpsNotificationSchedules.sql",
             "166_CreateSourceWatermarks.sql", "167_CreateWorkflowStores.sql"];
 
     // Upload tests run with HONUA_SKIP_MIGRATIONS and a seed that mirrors older import

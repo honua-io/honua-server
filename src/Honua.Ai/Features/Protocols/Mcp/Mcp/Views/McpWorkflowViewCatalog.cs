@@ -216,9 +216,23 @@ internal static class McpWorkflowViewCatalog
         Description =
             "The bounded path an admin uses to connect or ingest data, publish a layer, set access, "
             + "style and render a map. Use the setup view for Studio authoring and publication. Select the folders view to organize folders or move services.",
-        Revision = "configure.v3",
+        Revision = "configure.v4",
         Stages =
         [
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "inspect",
+                Title = "Inspect dataset",
+                Description = "Read supported formats and limits, preview a file or URL, and validate a connection table before publishing.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_formats"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_limits"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_preview"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_import_preview_url"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_connections_tables_validate"),
+                ],
+            },
             new McpWorkflowViewStageDefinition
             {
                 Id = "admin",

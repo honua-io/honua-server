@@ -52,8 +52,8 @@ def evaluate(condition, event, context=None):
     expression = expression.replace("needs.runner-select", 'needs["runner-select"]')
     for step_id in ("docs-only", "generated-only"):
         expression = expression.replace(f"steps.{step_id}", f'steps["{step_id}"]')
-    probe = """const {expression, github, needs, cancelled, env, steps} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', 'fromJSON', 'env', 'steps', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''}, JSON.parse, env, steps)));
+    probe = r"""const {expression, github, needs, cancelled, env, steps} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', 'fromJSON', 'env', 'steps', 'format', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''}, JSON.parse, env, steps, (template, ...args) => template.replace(/\{(\d+)\}/g, (_, index) => args[Number(index)]))));
 """
     result = subprocess.run(["node", "-e", probe], input=json.dumps({
         "expression": expression, "github": event, "needs": context.get("needs", {}),
@@ -126,6 +126,27 @@ class PullRequestLoadTests(unittest.TestCase):
         # A delayed event for A must not cancel B and then shed as stale.
         for action in ("opened", "reopened", "synchronize", "ready_for_review", "edited"):
             self.assertNotEqual(admission(action, head="head-a", base_from="old-base"), ready, action)
+
+    def test_normalization_cancels_only_eligible_pr_work(self):
+        definition = workflow("normalize-derived-artifacts.yml")
+        group = definition["concurrency"]["group"]
+        self.assertEqual(definition["concurrency"]["cancel-in-progress"], "true")
+        self.assertIn("!github.event.pull_request.draft", group)
+        self.assertIn("github.event.changes.base.ref.from != null", group)
+        self.assertIn("format('ignored-{0}', github.run_id)", group)
+        condition = definition["jobs"]["generate"]["if"]
+        for draft, action, changes, admitted in (
+            (True, "synchronize", {}, False),
+            (False, "synchronize", {}, True),
+            (False, "ready_for_review", {}, True),
+            (False, "edited", {"base": {"ref": {"from": "old-base"}}}, True),
+            (False, "edited", {"base": {"ref": {"from": None}}}, False),
+        ):
+            with self.subTest(draft=draft, action=action, changes=changes):
+                event = {"event_name": "pull_request", "event": {
+                    "pull_request": {"draft": draft}, "action": action, "changes": changes,
+                }}
+                self.assertEqual(evaluate(condition, event), admitted)
 
     def test_stale_draft_events_cannot_cancel_ready_gate(self):
         gate = workflow("pr-gate.yml")
@@ -305,7 +326,7 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=path.name):
                 types = definition["on"]["pull_request"].get("types", [])
                 self.assertIn("ready_for_review", types)
-                if definition.get("concurrency", {}).get("cancel-in-progress") != "false":
+                if path.name != "normalize-derived-artifacts.yml" and definition.get("concurrency", {}).get("cancel-in-progress") != "false":
                     self.assertIn("converted_to_draft", types)
             for key, job in definition["jobs"].items():
                 with self.subTest(workflow=path.name, job=key):
