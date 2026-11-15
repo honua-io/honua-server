@@ -33,14 +33,14 @@ public sealed class BinaryQueryWriteEndpointTests
             await using (var command = connection.CreateCommand())
             {
                 command.CommandText = """
-                    UPDATE features SET attributes = attributes || jsonb_build_object('Name',
+                    UPDATE features SET attributes = attributes || jsonb_build_object('name',
                         (SELECT string_agg(md5(objectid::text || ':' || n::text), '') FROM generate_series(1, 128) n))
                     WHERE layer_id = 0;
                     """;
                 await command.ExecuteNonQueryAsync();
             }
 
-            var path = $"/rest/services/test/FeatureServer/0/query?where=1%3D1&f={format}&outFields=Name&resultRecordCount=300";
+            var path = $"/rest/services/test/FeatureServer/0/query?where=1%3D1&f={format}&outFields=name&resultRecordCount=300";
             for (var attempt = 0; attempt < 2; attempt++)
             {
                 writes.LargestWrite = 0;
