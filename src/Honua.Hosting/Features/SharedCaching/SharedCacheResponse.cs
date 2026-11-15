@@ -80,7 +80,8 @@ internal static class SharedCacheResponse
         if (options.CacheTagsEnabled && CdnCacheTags.ForResponse(Subject(context), context.Request.Path, context.Request.RouteValues["serviceId"]?.ToString())
                 is { Length: > 0 } tags)
         {
-            context.Response.Headers[options.CacheTagHeader!] = string.Join(',', tags);
+            var tileOptions = context.RequestServices.GetService<IOptions<TileOptions>>()?.Value ?? new TileOptions();
+            context.Response.Headers[options.CacheTagHeader!] = string.Join(',', tags.Concat(CdnTileRegionTags.ForNativeTile(context.Request.Path, tileOptions)));
         }
     }
 

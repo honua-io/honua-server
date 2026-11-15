@@ -296,7 +296,8 @@ def test_disc02_feature_type_metadata(wfs: WebFeatureService, typename: str,
 def test_ext_service_metadata(wfs: WebFeatureService,
                               wfs_collector: CertificationEvidenceCollector) -> None:
     """Service identification, provider and DCP metadata must all be present."""
-    assert wfs.identification.title and wfs.identification.abstract
+    assert wfs.identification.title == fx.CATALOG_TITLE
+    assert wfs.identification.abstract == fx.CATALOG_DESCRIPTION
     operations = {op.name for op in wfs.operations}
     required = {"GetCapabilities", "DescribeFeatureType", "GetFeature",
                 "GetPropertyValue", "ListStoredQueries", "DescribeStoredQueries"}

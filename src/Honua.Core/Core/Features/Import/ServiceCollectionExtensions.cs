@@ -1,14 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.Import.Abstractions;
-using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
-using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
-using Microsoft.Extensions.DependencyInjection;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.Migration.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Features.Import;
 
@@ -19,7 +19,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IGeoServicesConstructCapabilityRegistry>(
             _ => new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors));
         services.TryAddScoped<IFileFormatDetectionService, FileFormatDetectionService>();
-        services.TryAddSingleton<IImportSchemaSuggestionService, ImportSchemaSuggestionService>();
+        services.TryAddSingleton<ImportSchemaSuggestionService>();
         services.TryAddTransient<MigrationRequestCountingHandler>();
         services.AddResilientHttpClient<OgcApiFeaturesMigrationScanner>(
             "ogc-api-features-migration",

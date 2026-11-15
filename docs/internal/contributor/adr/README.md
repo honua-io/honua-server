@@ -60,7 +60,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0052](0052-kubernetes-closed-loop-promotion-via-argo-rollouts.md) | Kubernetes Closed-Loop Promotion via Argo Rollouts | Accepted | 2026-06 |
 | [0053](0053-oauth2-client-credentials-grant.md) | OAuth2 Client-Credentials Grant for Service-to-Service Named Clients | Accepted | 2026-06 |
 | [0054](0054-evidence-based-feature-catalog.md) | Evidence-Based Feature Catalog (Generated, Drift-Gated Capability Map) | Accepted | 2026-06 |
-| [0055](0055-optimistic-batch-merge-train.md) | Optimistic Batch Merge Train | Accepted | 2026-06 |
+| [0055](0055-optimistic-batch-merge-train.md) | Optimistic Batch Merge Train | Superseded | 2026-06 |
 | [0056](0056-mcp-redesign-unified-governed-surface.md) | MCP Redesign — Unified, Client-Agnostic, Governed Surface (Sequencing Plan) | Proposed | 2026-06 |
 | [0057](0057-geoprocessing-capability-boundaries.md) | Geoprocessing Capability Boundaries (Server-Canonical Engine, Thin SDKs, Cloud-Delegated ML) | Accepted | 2026-06 |
 | [0058](0058-unified-capability-registry-single-source-of-truth.md) | Unified Capability Registry as Single Source of Truth for MCP, Spec Conformance, and Studio AI | Accepted | 2026-07 |

@@ -144,6 +144,9 @@ public sealed class PMTilesWriter
         return (long)(tileDataOffset + tileDataLength);
     }
 
+    private static readonly HashSet<string> ReservedMetadataMembers =
+        new(["name", "attribution", "description", "type", "format", "vector_layers"], StringComparer.Ordinal);
+
     private static byte[] BuildJsonMetadata(PMTilesArchiveMetadata metadata)
     {
         using var stream = new MemoryStream();
@@ -194,6 +197,16 @@ public sealed class PMTilesWriter
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
+
+        foreach (var extension in metadata.Extensions)
+        {
+            if (ReservedMetadataMembers.Contains(extension.Key))
+            {
+                throw new ArgumentException($"PMTiles metadata extension '{extension.Key}' collides with a standard member.", nameof(metadata));
+            }
+
+            writer.WriteString(extension.Key, extension.Value);
+        }
 
         writer.WriteEndObject();
         writer.Flush();
