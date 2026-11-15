@@ -1495,3 +1495,7 @@ Analyze jobs must succeed before completed evidence suppresses a duplicate.
 Managed Code Quality keeps draft coverage. Trunk and scheduled analysis with no
 PR identity remains enabled. This controller changes admission only; it removes
 no security query suites and publishes no substitute success checks.
+
+OpenAPI governance admits changes to `scripts/ci/lib/python-resolve.sh`, the
+shared Python resolver sourced by its contract validator. A helper-only change
+therefore runs the consuming PR check under the existing non-draft condition.
