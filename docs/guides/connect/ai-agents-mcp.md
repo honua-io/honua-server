@@ -115,7 +115,7 @@ every tool call still requires its usual authorization.
 
 Give an agent its own key with the `agent` grant, never the bootstrap admin password or a full-admin key. Every call on `/mcp` is treated as an agent call whatever key it carries, and so is any request made with an `agent`-grant key. For an agent caller:
 
-- An access-policy change or a publish (`honua_admin_services_access_policy_set`, `honua_admin_layer_publish`, `honua_publish_service`, or the same operations through `POST /api/v1/operations/{operationId}/submit`) does not execute. It files a proposal and returns `status: "RequiresApproval"` with its `proposalId`. A person approves it in Console **Approvals**; see [approve an agent-proposed change](../secure/approve-agent-changes.md).
+- An access-policy change, a staged dataset import or a publish (`honua_admin_services_access_policy_set`, `honua_op_dataset_stage_import`, `honua_admin_layer_publish`, `honua_publish_service`, or the same operations through `POST /api/v1/operations/{operationId}/submit`) does not execute. It files a proposal and returns `status: "RequiresApproval"` with its `proposalId`. A person approves it in Console **Approvals**; see [approve an agent-proposed change](../secure/approve-agent-changes.md).
 - The administrator exemption from approval does not apply, even when the key also carries `admin` or `admin:write`. A direct admin REST call to change an access policy or publish a layer is refused with `type: "urn:honua:approval-required"`, and the message says how to submit the change for approval.
 - A Studio publication an agent requests is a proposal too, even when the caller is an administrator.
 - Some changes are refused for an agent and must be made by a person in Console: a layer's access settings, enabling, disabling or refreshing a layer, role permissions, OAuth scopes, and publishing, republishing or rolling back Console content publications or changing their sharing.
@@ -230,6 +230,27 @@ Mutating control-plane requests use schema-closed proposal tools: `honua_propose
 
 To upgrade the platform, an agent reads `honua_platform_release_status` and `GET /api/v1/admin/deploy/preflight`, then calls `honua_propose_platform_release_convergence` with an optional `targetVersion` (for example `2026.1-rc.3`; `honua-` and `v` prefixes and a `.0` patch are normalized). If the server's declared release differs, the tool returns `outcome: "rejected"` with `code: "platform_release_version_mismatch"`, `declaredVersion`, `servingArtifactReference` and `isCoVersioned` instead of a proposal; a tenant-bound key still gets `platform_admin_required` first. After a separate principal approves, `honua_propose_rollback` is the way back. The server never resolves a version to an image: version-to-digest resolution lives in the signed release lock, which the provisioning executor writes into `ControlPlane__PlatformRelease__*`. See [Agent-driven upgrade over MCP](../deploy/upgrade-and-rollback.md#agent-driven-upgrade-over-mcp).
 
+### Stage a job artifact for publication
+
+Import a completed job artifact in two steps, without touching an existing table.
+
+1. `honua_op_dataset_stage_preview` (`dataset.stage.preview`) is read-only. It reads the artifact with your own job access, checks it is the server's verified result, and returns:
+   - `previewFingerprint`;
+   - the content SHA-256, feature count, source CRS and target SRID;
+   - the server-owned `stagingTable`.
+
+   You cannot name the table. It is derived from your tenant, your identity and the `intentId`, and a request that supplies `table` is refused.
+2. `honua_op_dataset_stage_import` (`dataset.stage.import`) takes the same inputs plus `previewFingerprint`. The server previews the artifact again and refuses the call if anything changed since your preview. Each preview persists a unique, tenant- and requester-scoped identity with an `expiresAt` timestamp 30 minutes after preview creation. A proposal seals that original expiry into the request; proposing later or previewing the same source again cannot renew an older identity. Clients cannot supply the binding.
+
+For an agent the import files a proposal and returns `RequiresApproval`. Nothing is imported until a person approves it. On approval, the import:
+
+- runs with the approving person's request;
+- stays bound to the requester's tenant and identity;
+- creates a new table and never appends to or overwrites one;
+- refuses an expired window, changed artifact content, or a different tenant or requester.
+
+Both tools need admin write (import) authority; the approving person needs it too. OAuth-scoped agent tokens cannot call them yet. Within one approved proposal, a retried execution returns the original receipt; after the approval window, preview and propose again. Discarding a staged table is not available yet; until it is, a person removes an unpublished staging table.
+
 ### Apply a catalog style
 
 `honua_apply_style_preset` applies a catalog style to a layer. It requires admin write access in addition to the published-service publish grant, uses the `style.apply-preset` operation, and honors operator approval and `Operations:Policy` rules (see [Operation policy in Production](#operation-policy-in-production)) before changing the layer. An approval-required result has `approvalRequired: true`; when a durable proposal is created, use its returned `proposalId` and resource URI to track approval. Only a completed application returns `applied: true`. Set `dryRun: true` to validate without changing the layer; a completed preview returns `dryRun: true` and `applied: false`. Approval plans pin the service, layer, preset, publication, resource and storage binding; replay refuses a rebound target and requires a new approval request. If the binding commits but metadata reconciliation fails, the result keeps `applied: true` with a `warning`; re-apply the preset to retry.
@@ -337,7 +358,7 @@ Required-input descriptions identify caller-supplied values or their producer to
 
 The `configure` inspection stage exposes import formats and limits, file and URL previews, and connection-table validation through the canonical admin operations. These tools require admin authorization and do not import or edit feature data. For `honua_admin_import_preview`, supply base64-encoded `file` content and `fileName` with its format extension. URL preview requires `sourceUrl`. Table validation requires a connection `id` from `honua_admin_connections_list` and `schema` / `table` from `honua_admin_connection_tables_list`.
 
-Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `layerId` from `honua_list_layers`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
+Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `serviceLayerIndex` from `honua_list_layers`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
 
 Layer display and spatial configuration are available through the admin `full` catalog as
 `honua_admin_layer_display_get`, `honua_admin_layer_display_set`,

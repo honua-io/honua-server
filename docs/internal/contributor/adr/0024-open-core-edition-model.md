@@ -3,6 +3,8 @@
 ## Status
 Accepted
 
+> **Licensing amendment (2026-10-23):** [ADR-0080](0080-fair-core-license.md) supersedes the ELv2 licensing references below. Current Honua Server releases use the Fair Core License (FCL-1.0-ALv2); prior releases remain under ELv2. See the repository [LICENSE](../../../../LICENSE) and [current licensing guide](../../../concepts/editions-and-licensing.md).
+
 > **Commercial amendment (2026-10-03):** The [current commercial boundaries](../../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261) supersede older tier descriptions below. Core branch versioning is Pro; organisational approval/policy is Enterprise; existing Community 3D serving/discovery/elevation/feature-layer generation stays Community; specialised ingest and I3S stay Enterprise. Multi-tenancy is internal, used only on Honua's demo infrastructure at demo.honua.io, and is not offered for customer deployment. Essential secure operation and recoverability are baseline in all editions.
 
 ## Context

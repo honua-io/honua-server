@@ -52,13 +52,14 @@ def evaluate(condition, event, context=None):
     expression = expression.replace("needs.runner-select", 'needs["runner-select"]')
     for step_id in ("docs-only", "generated-only"):
         expression = expression.replace(f"steps.{step_id}", f'steps["{step_id}"]')
-    probe = r"""const {expression, github, needs, cancelled, env, steps} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', 'fromJSON', 'env', 'steps', 'format', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''}, JSON.parse, env, steps, (template, ...args) => template.replace(/\{(\d+)\}/g, (_, index) => args[Number(index)]))));
+    probe = r"""const {expression, github, needs, cancelled, env, steps, matrix} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', 'fromJSON', 'env', 'steps', 'matrix', 'format', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''}, JSON.parse, env, steps, matrix, (template, ...args) => template.replace(/\{(\d+)\}/g, (_, index) => args[Number(index)]))));
 """
     result = subprocess.run(["node", "-e", probe], input=json.dumps({
         "expression": expression, "github": event, "needs": context.get("needs", {}),
         "cancelled": context.get("cancelled", False),
         "env": context.get("env", {}), "steps": context.get("steps", {}),
+        "matrix": context.get("matrix", {}),
     }), text=True, capture_output=True, check=True, timeout=10)
     return json.loads(result.stdout)
 
@@ -312,8 +313,32 @@ class PullRequestLoadTests(unittest.TestCase):
                 with self.subTest(step=name or "checkout", draft=draft, attempt=attempt):
                     review_wait = not draft and attempt == 1
                     self.assertEqual(
-                        evaluate(step.get("if", "true"), event, {"env": env, "steps": steps}),
+                        evaluate(step.get("if", "true"), event, {
+                            "env": env, "steps": steps, "matrix": {"format": "true"},
+                        }),
                         review_wait if name == "Await exact-head review" else not review_wait,
+                    )
+
+    def test_only_formatter_restores_before_the_shared_action(self):
+        job = workflow("pr-gate.yml")["jobs"]["format"]
+        condition = next(step["if"] for step in job["steps"] if step.get("name") == "Restore")
+        event = {"event_name": "pull_request", "run_attempt": 2,
+                 "event": {"pull_request": {"draft": False}}}
+        rows = evaluate(job["strategy"]["matrix"]["include"], event)
+        self.assertEqual(len(rows), 4)
+        for row in rows:
+            for docs_only, generated_only in ((False, False), (True, False), (False, True)):
+                with self.subTest(check=row["check"], docs=docs_only, generated=generated_only):
+                    context = {
+                        "matrix": row, "env": {"REVIEW_FIRST_MODE": "enforce"},
+                        "steps": {
+                            "docs-only": {"outputs": {"docs_only": str(docs_only).lower()}},
+                            "generated-only": {"outputs": {"generated_only": str(generated_only).lower()}},
+                        },
+                    }
+                    self.assertEqual(
+                        evaluate(condition, event, context),
+                        row["format"] == "true" and not docs_only and not generated_only,
                     )
 
     def test_optional_pr_jobs_refuse_drafts(self):

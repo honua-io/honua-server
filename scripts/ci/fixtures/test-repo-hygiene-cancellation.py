@@ -43,8 +43,16 @@ class HygieneCancellationTests(unittest.TestCase):
         self.assertIn('evidence-paths', self.job['needs'])
         self.assertIn('retired-cache-mentions', self.job['needs'])
         self.assertIn('generated-file-ownership', self.job['needs'])
+        self.assertIn('shard-identities', self.job['needs'])
         self.assertIn('shared-hygiene', self.job['needs'])
         self.assertEqual(len(self.verdict['env']), len(self.job['needs']))
+
+    def test_shard_validation_uses_merge_tree_and_production_checker(self):
+        workflow = yaml.safe_load((ROOT / '.github/workflows/repo-hygiene.yml').read_text())
+        job = workflow['jobs']['shard-identities']
+        self.assertNotIn('ref', job['steps'][0].get('with', {}))
+        self.assertIn('python3 scripts/ci/check-shard-identities.py', job['steps'][1]['run'])
+        self.assertLessEqual(job['timeout-minutes'], 5)
 
 
 if __name__ == '__main__':

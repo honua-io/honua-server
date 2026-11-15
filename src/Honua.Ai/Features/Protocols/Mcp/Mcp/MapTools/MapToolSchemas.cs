@@ -54,6 +54,7 @@ internal static class MapToolSchemas
     private const string QueryFeaturesArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["serviceId", "serviceLayerIndex"],
           "properties": {
             "serviceId": {

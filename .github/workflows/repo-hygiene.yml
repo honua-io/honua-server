@@ -111,13 +111,26 @@ jobs:
             git show "$policy_ref:scripts/ci/$script" > "$policy_dir/$script"
           done
           python3 "$policy_dir/check-generated-file-ownership.py" --base "$policy_ref" --head "$HEAD_SHA"
+  shard-identities:
+    name: Shard inventory identities
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Validate GitHub's merge tree so independent additions collide before landing.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require unique shard identities
+        run: |
+          python3 scripts/ci/check-shard-identities.test.py
+          python3 scripts/ci/check-shard-identities.py
   shared-hygiene:
     uses: honua-io/.github/.github/workflows/repo-hygiene.yml@d05acacf878e6abe755cab07bbb8f127d3802ac3 # light runner switch
   repo-hygiene:
     name: repo-hygiene / Repository hygiene
     # A superseded run must cancel rather than run a failing aggregate.
     if: ${{ !cancelled() && !contains(needs.*.result, 'cancelled') }}
-    needs: [evidence-paths, retired-cache-mentions, generated-file-ownership, shared-hygiene]
+    needs: [evidence-paths, retired-cache-mentions, generated-file-ownership, shard-identities, shared-hygiene]
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     steps:
       - name: Use the job's own temp directory
@@ -133,5 +146,6 @@ jobs:
           EVIDENCE_RESULT: ${{ needs.evidence-paths.result }}
           CACHE_RESULT: ${{ needs.retired-cache-mentions.result }}
           GENERATED_RESULT: ${{ needs.generated-file-ownership.result }}
+          SHARDS_RESULT: ${{ needs.shard-identities.result }}
           SHARED_RESULT: ${{ needs.shared-hygiene.result }}
-        run: test "$EVIDENCE_RESULT" = success && test "$CACHE_RESULT" = success && test "$GENERATED_RESULT" = success && test "$SHARED_RESULT" = success
+        run: test "$EVIDENCE_RESULT" = success && test "$CACHE_RESULT" = success && test "$GENERATED_RESULT" = success && test "$SHARDS_RESULT" = success && test "$SHARED_RESULT" = success
