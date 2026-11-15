@@ -5,8 +5,9 @@ using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
 
-// Binary tile routes never produce a compressible type, so their body and strong validator are the same for every
-// coding. Sharing one entry keeps mixed clients from storing a copy of each tile per negotiated coding.
+// Compression runs outside the output cache, so stored bodies are uncompressed, and these routes never compute a coded
+// validator (MVT and PNG tiles, and the JSON tile-budget envelope, carry nothing that depends on the coding). Sharing one
+// entry keeps mixed clients from storing a copy of each tile per negotiated coding.
 // Runs after the base policy and overwrites its content-coding key.
 internal sealed class IdentityCodingOutputCachePolicy : IOutputCachePolicy
 {

@@ -5,8 +5,8 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Caching;
 
-// The one writer that adds request headers to Vary. Compares whole tokens, so an existing Accept-Encoding entry
-// does not hide a missing Accept, and appends, so entries written earlier in the pipeline survive.
+// Adds request headers to Vary for the shared-cache, validator and scene paths. Compares whole tokens, so an existing
+// Accept-Encoding entry does not hide a missing Accept, and appends, so entries written earlier in the pipeline survive.
 internal static class VaryHeader
 {
     // Each value may itself be a comma-separated list.

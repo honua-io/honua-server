@@ -595,7 +595,7 @@ internal static class OutputCachingRegistration
     // Keys on the negotiated coding, not the raw header, so equivalent Accept-Encoding strings share an entry and
     // arbitrary client values cannot multiply entries. It uses the same negotiation as ConfigurationResponseETag but,
     // unlike the validator, cannot see the response type: a non-compressible response is stored once per coding unless
-    // its route adds IdentityCodingOutputCachePolicy, as the binary tile routes do.
+    // its route adds IdentityCodingOutputCachePolicy, as MvtTile, H3MvtTile and TerrainTile do.
     internal static KeyValuePair<string, string> ResolveContentCodingOutputCacheKey(HttpContext context)
         => new(ContentCodingKey, context.Request.Headers.AcceptEncoding.Count == 0
             ? IdentityCoding
