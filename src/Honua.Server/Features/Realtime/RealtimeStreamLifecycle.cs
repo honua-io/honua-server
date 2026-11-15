@@ -93,6 +93,7 @@ internal sealed class RealtimeStreamLifecycle(TimeProvider clock, IOptions<Realt
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested)
         {
+            // The drain budget expired; the finally block aborts the remaining transports.
         }
         finally
         {
