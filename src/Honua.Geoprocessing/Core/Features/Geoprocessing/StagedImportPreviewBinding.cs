@@ -9,11 +9,13 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Geoprocessing;
 
 // Each preview has its own durable identity. Re-previewing an unchanged source cannot renew an older binding.
-internal sealed record StagedImportPreviewBinding(string Identity, StagedImportPin Pin)
+internal sealed class StagedImportPreviewBindings(IServiceProvider services)
 {
+    internal sealed record Binding(string Identity, StagedImportPin Pin);
+
     private const string InstancePrefix = "stage-preview-";
 
-    internal static async Task<StagedImportPreviewBinding> CreateAsync(IServiceProvider services,
+    internal async Task<Binding> CreateAsync(
         OperationPolicyContext context, ServerJobArtifactStagePreview preview, CancellationToken cancellationToken)
     {
         var (tenantId, actorId) = StagedImportOperation.RequireScope(context);
@@ -33,10 +35,10 @@ internal sealed record StagedImportPreviewBinding(string Identity, StagedImportP
             throw new GeoprocessingPreconditionFailedException("The preview could not be persisted; preview it again.");
         }
 
-        return new StagedImportPreviewBinding(identity, pin);
+        return new Binding(identity, pin);
     }
 
-    internal static async Task<StagedImportPin> ReadAsync(IServiceProvider services, OperationPolicyContext context,
+    internal async Task<StagedImportPin> ReadAsync(OperationPolicyContext context,
         string identity, CancellationToken cancellationToken)
     {
         var (tenantId, actorId) = StagedImportOperation.RequireScope(context);
