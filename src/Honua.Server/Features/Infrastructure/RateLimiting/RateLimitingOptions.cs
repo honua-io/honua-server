@@ -24,8 +24,6 @@ internal sealed class RateLimitingOptions
     [Range(1, 10000, ErrorMessage = "MetadataRequestsPerMinute must be between 1 and 10000")]
     public int MetadataRequestsPerMinute { get; set; } = 200;
 
-    public bool IncludeHeaders { get; set; } = true;
-
     [Range(400, 599, ErrorMessage = "StatusCode must be a valid HTTP status code")]
     public int StatusCode { get; set; } = 429;
 }

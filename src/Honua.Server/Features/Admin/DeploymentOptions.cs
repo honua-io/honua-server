@@ -12,11 +12,5 @@ internal sealed class DeploymentOptions
     [Required]
     public string Mode { get; set; } = "SingleInstance";
 
-    public bool EnableDeploymentControl { get; set; }
-
-    public int MaxRollbackHistory { get; set; } = 10;
-
     public int TimeoutSeconds { get; set; } = 300;
-
-    public bool EnablePreflightChecks { get; set; } = true;
 }

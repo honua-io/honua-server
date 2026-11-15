@@ -55,7 +55,6 @@
     "QueryRequestsPerMinute": 100,
     "UploadRequestsPerMinute": 10,
     "MetadataRequestsPerMinute": 200,
-    "IncludeHeaders": true,
     "StatusCode": 429
   },
   "FileUpload": {

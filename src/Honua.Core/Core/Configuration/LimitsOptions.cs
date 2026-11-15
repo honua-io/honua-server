@@ -9,12 +9,6 @@ public class LimitsOptions
     [Range(1, 1000000)]
     public int MaxFeatures { get; set; } = 10000;
 
-    [Range(1, 600)]
-    public int MaxQueryTimeoutSeconds { get; set; } = 60;
-
-    [Range(1, 1000)]
-    public int MaxConcurrentRequests { get; set; } = 100;
-
     [Range(1, long.MaxValue)]
     public long MaxUploadSizeBytes { get; set; } = 100 * 1024 * 1024; // 100MB
 
@@ -73,9 +67,6 @@ public class ElevationLimits
 
 public class QueryLimits
 {
-    [Range(1, 10000)]
-    public int MaxComplexity { get; set; } = 1000;
-
     [Range(1, 100)]
     public int MaxSpatialOperations { get; set; } = 10;
 
@@ -84,9 +75,6 @@ public class QueryLimits
 
     [Range(1, 50)]
     public int MaxFilterDepth { get; set; } = 10;
-
-    [Range(1, 1000)]
-    public int MaxFilterConditions { get; set; } = 100;
 
     [Range(0, 1000000)]
     public int MaxOffset { get; set; } = 1000000;
@@ -153,7 +141,6 @@ public class AttachmentLimits
     // that scan is keyed on the file extension, not on the declared MIME type.
     public string AllowedMimeTypes { get; set; } = "image/*,application/pdf,text/plain,text/csv,application/json";
 }
-
 
 public class ConnectionLimits
 {

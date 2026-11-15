@@ -18,10 +18,6 @@ public sealed class GeometryValidationOptions
     [Range(1, 10_000)]
     public int MaxRings { get; set; } = 1_000;
 
-    public bool StrictValidation { get; set; } = true;
-
-    public bool ValidateCoordinatePrecision { get; set; }
-
     [Range(1, 15)]
     public int MaxCoordinatePrecision { get; set; } = 10;
 

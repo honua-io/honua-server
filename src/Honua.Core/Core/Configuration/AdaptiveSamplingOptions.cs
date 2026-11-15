@@ -7,22 +7,13 @@ public class AdaptiveSamplingOptions
     public const string SectionName = "AdaptiveSampling";
 
     [Range(0.0, 1.0)]
-    public double DefaultSamplingRate { get; set; } = 0.01;
-
-    [Range(0.0, 1.0)]
     public double MinSamplingRate { get; set; } = 0.001;
 
     [Range(0.0, 1.0)]
     public double MaxSamplingRate { get; set; } = 1.0;
 
-    public bool EnableLoadBasedSampling { get; set; } = true;
-
-    public bool EnableImportanceBasedSampling { get; set; } = true;
-
     [Range(10, 10000)]
     public int SampleSize { get; set; } = 1000;
-
-    public TimeSpan TimeWindow { get; set; } = TimeSpan.FromMinutes(5);
 
     public bool Enabled { get; set; } = true;
 
@@ -75,18 +66,6 @@ public class ErrorSamplingOptions
 public class LoadSamplingOptions
 {
     public bool Enabled { get; set; } = true;
-
-    [Range(0.0, 1.0)]
-    public double LowLoadThreshold { get; set; } = 0.3;
-
-    [Range(0.0, 1.0)]
-    public double NormalLoadThreshold { get; set; } = 0.6;
-
-    [Range(0.0, 1.0)]
-    public double HighLoadThreshold { get; set; } = 0.8;
-
-    [Range(0.0, 1.0)]
-    public double CriticalLoadThreshold { get; set; } = 0.95;
 
     [Range(0.0, 1.0)]
     public double CpuThreshold { get; set; } = 0.7;
