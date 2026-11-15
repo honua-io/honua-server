@@ -53,18 +53,18 @@ and tool-binding references must use the same definitions.
 flowchart LR
     A[Human intent] --> B[Environment]
     B --> C[Connection or import]
-    C --> D[Published layer and service]
-    D --> E[Map and app composition]
-    E --> F[Saved version]
-    F --> G[Publication and audience]
+    C --> D[Layer and Service]
+    D --> E[Map and App]
+    E --> F[Saved Version]
+    F --> G[Released Version and audience]
     B --> H[Observe and operate]
     G --> H
     E --> E
 ```
 
 The arrows carry concrete results: the environment endpoint and identity, the
-connection or imported dataset, the published layer and service, then the
-composition, saved version, and publication. Operations continue throughout the
+Connection or imported Dataset, the Layer and Service, then the
+Map or App, saved Version, and Released state. Operations continue throughout the
 journey. The Studio loop is ask, see, refine, and undo; Git is optional.
 
 For a hands-on walkthrough, use [Get started with AI](../../get-started/with-ai.md).
@@ -80,7 +80,7 @@ For a hands-on walkthrough, use [Get started with AI](../../get-started/with-ai.
 | Analyze | Subject, condition, units, result | “Show shelters within 500 meters of these flood zones; keep the result as a separate analysis layer.” |
 | Compose | Selected drawing, appearance, interaction | “Add those shelters to this map, style them by capacity, and put a table beside it.” |
 | Save | Durable content checkpoint | “Save this version so I can reopen it tomorrow.” |
-| Publish a map/app | Saved composition, destination, audience | “Publish this saved app back to Honua for the planning team.” |
+| Publish a map/app | Saved Map, destination, audience | “Publish this saved app back to Honua for the planning team.” |
 | Operate | Environment, intended change, recovery expectation | “Update this deployment to the selected release, check compatibility, and verify its available recovery protection.” |
 | Resume | Prior outcome and next task | “Reopen the app we saved and continue styling; reuse the layers already published.” |
 
@@ -98,7 +98,7 @@ parameters that materially change its result before execution.
 | Set up Honua | Use the authorized host's deployment tools and a documented install path; connect MCP after the server starts. | The intended artifact is running, authentication works, and the required state and capabilities are available. |
 | Add services and layers | Register or inspect a connection, publish the intended data, attach it to the requested service, and check access. | A client using the intended identity can discover and query the right data through the selected interface. |
 | Operate Honua | Read health and findings, choose a supported operation, and follow its returned state. | The intended operational outcome is observed; acceptance or a pending proposal alone is incomplete. |
-| Make maps in realtime | Add or change drawing references, styles, controls, and view state; show the result and refine or undo it. | The current composition and renderer show the requested change, with unrelated content preserved. |
+| Make maps in realtime | Add or change drawing references, styles, controls, and view state; show the result and refine or undo it. | The current Map content and renderer show the requested change, with unrelated content preserved. |
 
 Start with [install and configure](install-configure.md),
 [connect and publish data](connect-publish-data.md),
@@ -131,7 +131,7 @@ explains how to interpret phrases without requiring a prompt grammar.
 - “Add this layer” in a map usually adds a drawing reference to existing data.
 - “Publish this table” exposes a data resource through a service.
 - “Hide flood zones” changes drawing visibility; it does not delete a layer.
-- “Save this” checkpoints composition; it does not grant an audience access.
+- “Save this” checkpoints Map content; it does not grant an audience access.
 - “Make this public” requires an explicit artifact and audience, including its
   data dependencies.
 
@@ -156,7 +156,7 @@ workflow:
     - name: map
       concept: /concepts/domain/map.md
       required: true
-      description: Current draft identity, generation, and composition.
+      description: Current draft identity, generation, and Map content.
     - name: drawing
       concept: /concepts/domain/map-layer.md
       required: true
@@ -210,7 +210,7 @@ workflow:
 
 The `from` references connect named slots. `$inputs.map` selects a workflow
 input; `$actions.hide.map` selects an action output. Types are exact concept
-identities: a published layer cannot fill a slot typed as a drawing layer.
+identities: a Layer cannot fill a slot typed as a drawing layer.
 Bindings determine dependency order. The profile has no executable `if`,
 retry loop, or automatic approval step; runtime-dependent branches must be
 resolved using the selected operation's actual result.
@@ -227,7 +227,7 @@ or a mandatory call sequence. Bind the real draft and drawing IDs, generation,
 and requested visibility using that schema. Do not invent identifiers or infer
 them from display names.
 
-Routine Studio composition should remain direct and responsive. A deployment
+Routine Studio editing should remain direct and responsive. A deployment
 can currently impose a different guardrail; the
 [Studio policy boundary](../../studio/mcp-tools.md#composition-policy)
 describes this implementation limit. Report an unexpected policy outcome as
@@ -267,7 +267,7 @@ and geometry. Report source-data problems through findings and recommendations.
 
 A task may finish before the overall goal does. Installation produces a verified
 environment that the data task consumes; publication produces resource identities
-that map composition consumes. Carry those observed outputs forward instead of
+that Map consumes. Carry those observed outputs forward instead of
 asking the person to reconstruct the context or repeating completed work.
 
 The [session and handoff contract](../../concepts/domain/session.md) should retain:
@@ -277,7 +277,7 @@ The [session and handoff contract](../../concepts/domain/session.md) should reta
 | Goal, accepted choices, constraints, next unresolved task | Preserve user intent and avoid unnecessary clarification. |
 | Environment endpoint, tenant/actor context, artifact revision | Reconnect to the correct target and reauthenticate. |
 | Connection, dataset, service and layer identities | Reuse actual resources rather than names or invented IDs. |
-| Draft/item identity, current generation, saved version and hash | Resume the right composition while detecting intervening edits. |
+| Map/App Draft identity, current generation, saved version and hash | Resume the right Map content while detecting intervening edits. |
 | Job, operation and proposal identities with observed states | Reconcile uncertain or pending work before retrying. |
 | Verification observations, limitations and recovery scope | Distinguish completed work from claims and incomplete steps. |
 | Secret references and source links, never secret values | Recover the appropriate bindings without copying credentials. |

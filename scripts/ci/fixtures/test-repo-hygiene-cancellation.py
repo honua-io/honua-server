@@ -39,6 +39,8 @@ class HygieneCancellationTests(unittest.TestCase):
     def test_required_contract_stays_intact(self):
         self.assertEqual(self.job['name'], 'repo-hygiene / Repository hygiene')
         self.assertIn('evidence-paths', self.job['needs'])
+        self.assertIn('retired-cache-mentions', self.job['needs'])
+        self.assertIn('generated-file-ownership', self.job['needs'])
         self.assertIn('shared-hygiene', self.job['needs'])
         self.assertEqual(len(self.job['steps'][0]['env']), len(self.job['needs']))
 
