@@ -344,6 +344,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
         var before = await catalog.GetStylesForLayerAsync(WebAppFixture.TestLayerId);
         var proposal = await ProposePresetAsync(client, session, styleId);
+        proposal.GetProperty("code").GetString().Should().Be("failed_precondition");
         proposal.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
         proposal.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace();
         (await catalog.GetStylesForLayerAsync(WebAppFixture.TestLayerId))

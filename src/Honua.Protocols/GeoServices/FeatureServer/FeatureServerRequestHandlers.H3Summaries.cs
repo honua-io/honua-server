@@ -45,7 +45,7 @@ internal static partial class FeatureServerEndpoints
         IReadOnlyDictionary<string, StringValues> values,
         string serviceId,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IFeatureReader featureReader,
         FeatureQuery featureQuery,
@@ -196,7 +196,7 @@ internal static partial class FeatureServerEndpoints
         IReadOnlyDictionary<string, StringValues> values,
         string serviceId,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out SpatialAggregationRequestPlan plan,
         out IResult? error)
     {
@@ -247,7 +247,7 @@ internal static partial class FeatureServerEndpoints
     private static bool TryParseSpatialAggregationSummaries(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out ImmutableArray<SpatialAggregationSummaryDefinition> summaries,
         out IResult? error)
     {
@@ -432,7 +432,7 @@ internal static partial class FeatureServerEndpoints
     private static bool TryParseSpatialAggregationGroupBy(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out ImmutableArray<ParsedGroupBy> groupBy,
         out IResult? error)
     {
@@ -517,7 +517,7 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<Dictionary<string, SpatialAggregationSummaryValueResponse>?> BuildSpatialAggregationTotalsAsync(
         IFeatureReader featureReader,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         FeatureQuery featureQuery,
         ImmutableArray<SpatialAggregationSummaryDefinition> summaries,
@@ -652,7 +652,7 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<SpatialAggregationSummaryValueResponse> BuildHistogramTotalAsync(
         IFeatureReader featureReader,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         FeatureQuery featureQuery,
         SpatialAggregationSummaryDefinition summary,
@@ -780,7 +780,7 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<SpatialAggregationSummaryValueResponse> BuildRangeTotalAsync(
         IFeatureReader featureReader,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         FeatureQuery featureQuery,
         SpatialAggregationSummaryDefinition summary,
@@ -831,7 +831,7 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<long?> CountRangeAsync(
         IFeatureReader featureReader,
-        MetadataV2Resource? resource,
+        MetadataV2Object? resource,
         int storageLayerId,
         FeatureQuery featureQuery,
         string field,
@@ -1675,7 +1675,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static bool TryResolveSpatialAggregationFieldType(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string fieldName,
         out MetadataV2FieldType fieldType)
     {

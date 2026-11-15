@@ -1,15 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
+using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
 
 namespace Honua.Server.Features.Admin;
 
@@ -198,7 +198,7 @@ internal static class ObservabilityAlertEndpoints
                 $"'{IdempotencyKeyHeader}' must not exceed {MaxIdempotencyKeyLength} characters.");
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.Name);
         var correlationId = context.TraceIdentifier;
         var command = new AlertLifecycleCommand
         {
@@ -297,11 +297,6 @@ internal static class ObservabilityAlertEndpoints
         };
 
         return true;
-    }
-
-    private static string ResolveActor(HttpContext context)
-    {
-        return context.User?.Identity?.Name ?? AuditEvent.AnonymousActor;
     }
 
     private static IResult BadRequest(string detail)

@@ -136,7 +136,7 @@ public sealed class FeatureServerQueryHandlerExtentFallbackTests
         resolvedExtent.MaxY.Should().Be(4556748.2);
     }
 
-    private static MetadataV2Resource CreateResource(FeatureExtent extent)
+    private static MetadataV2Object CreateResource(FeatureExtent extent)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -144,13 +144,13 @@ public sealed class FeatureServerQueryHandlerExtentFallbackTests
                 Id = "res-test",
                 Name = "Test Layer"
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
                 new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = true }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

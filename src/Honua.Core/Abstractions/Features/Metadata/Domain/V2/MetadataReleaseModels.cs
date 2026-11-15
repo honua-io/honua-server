@@ -26,7 +26,7 @@ public sealed record MetadataSemanticInventoryFilter
 {
     public MetadataSemanticArtifactKind? ArtifactKind { get; init; }
 
-    public MetadataV2ResourceType? ResourceType { get; init; }
+    public MetadataV2ObjectType? ResourceType { get; init; }
 }
 
 public sealed record MetadataSemanticInventoryResponse
@@ -57,13 +57,13 @@ public sealed record MetadataSemanticInventoryEntry
     public required MetadataSemanticArtifactKind ArtifactKind { get; init; }
 
     [JsonPropertyName("resourceType")]
-    public MetadataV2ResourceType? ResourceType { get; init; }
+    public MetadataV2ObjectType? ResourceType { get; init; }
 
     [JsonPropertyName("serviceType")]
     public MetadataV2ServiceType? ServiceType { get; init; }
 
     [JsonPropertyName("publicationType")]
-    public MetadataV2PublicationType? PublicationType { get; init; }
+    public MetadataV2LayerType? PublicationType { get; init; }
 
     [JsonPropertyName("parentSemanticId")]
     public string? ParentSemanticId { get; init; }
@@ -175,7 +175,7 @@ public sealed record MetadataBoundResourceSummary
     public string? Title { get; init; }
 
     [JsonPropertyName("resourceType")]
-    public required MetadataV2ResourceType ResourceType { get; init; }
+    public required MetadataV2ObjectType ResourceType { get; init; }
 
     [JsonPropertyName("primaryStorageBindingId")]
     public string? PrimaryStorageBindingId { get; init; }
@@ -229,7 +229,7 @@ public sealed record MetadataBoundPublicationSummary
     public required string ServiceId { get; init; }
 
     [JsonPropertyName("publicationType")]
-    public required MetadataV2PublicationType PublicationType { get; init; }
+    public required MetadataV2LayerType PublicationType { get; init; }
 
     [JsonPropertyName("path")]
     public string? Path { get; init; }
@@ -462,7 +462,9 @@ public sealed record MetadataReleasePackageListResponse
     public required int Offset { get; init; }
 }
 
-public sealed record MetadataReleaseEntry
+// The artifact and desired revision shared by a stored release entry and its GitOps manifest form.
+// Derived records give their own properties JsonPropertyOrder(1) so they serialize after these.
+public abstract record MetadataReleaseEntryTarget
 {
     [JsonPropertyName("semanticId")]
     public required string SemanticId { get; init; }
@@ -471,7 +473,7 @@ public sealed record MetadataReleaseEntry
     public required MetadataSemanticArtifactKind ArtifactKind { get; init; }
 
     [JsonPropertyName("resourceType")]
-    public MetadataV2ResourceType? ResourceType { get; init; }
+    public MetadataV2ObjectType? ResourceType { get; init; }
 
     [JsonPropertyName("sourceField")]
     public MetadataBoundFieldSummary? SourceField { get; init; }
@@ -484,17 +486,24 @@ public sealed record MetadataReleaseEntry
 
     [JsonPropertyName("desiredProvenance")]
     public IReadOnlyList<ConsoleProvenanceRef> DesiredProvenance { get; init; } = Array.Empty<ConsoleProvenanceRef>();
+}
 
+public sealed record MetadataReleaseEntry : MetadataReleaseEntryTarget
+{
     [JsonPropertyName("changeClass")]
+    [JsonPropertyOrder(1)]
     public MetadataReleaseChangeClass ChangeClass { get; init; } = MetadataReleaseChangeClass.Metadata;
 
     [JsonPropertyName("targetStates")]
+    [JsonPropertyOrder(1)]
     public IReadOnlyList<MetadataReleaseTargetState> TargetStates { get; init; } = Array.Empty<MetadataReleaseTargetState>();
 
     [JsonPropertyName("dependentSemanticIds")]
+    [JsonPropertyOrder(1)]
     public IReadOnlyList<string> DependentSemanticIds { get; init; } = Array.Empty<string>();
 
     [JsonPropertyName("status")]
+    [JsonPropertyOrder(1)]
     public MetadataReleaseEntryStatus Status { get; init; } = MetadataReleaseEntryStatus.Draft;
 }
 
@@ -566,36 +575,18 @@ public sealed record GitOpsMetadataReleaseTarget
     public required string Environment { get; init; }
 }
 
-public sealed record GitOpsMetadataReleaseEntry
+public sealed record GitOpsMetadataReleaseEntry : MetadataReleaseEntryTarget
 {
-    [JsonPropertyName("semanticId")]
-    public required string SemanticId { get; init; }
-
-    [JsonPropertyName("artifactKind")]
-    public required MetadataSemanticArtifactKind ArtifactKind { get; init; }
-
-    [JsonPropertyName("resourceType")]
-    public MetadataV2ResourceType? ResourceType { get; init; }
-
-    [JsonPropertyName("sourceField")]
-    public MetadataBoundFieldSummary? SourceField { get; init; }
-
-    [JsonPropertyName("desiredMetadataRevision")]
-    public required long DesiredMetadataRevision { get; init; }
-
-    [JsonPropertyName("desiredContentVersionId")]
-    public string? DesiredContentVersionId { get; init; }
-
-    [JsonPropertyName("desiredProvenance")]
-    public IReadOnlyList<ConsoleProvenanceRef> DesiredProvenance { get; init; } = Array.Empty<ConsoleProvenanceRef>();
-
     [JsonPropertyName("changeClass")]
+    [JsonPropertyOrder(1)]
     public required MetadataReleaseChangeClass ChangeClass { get; init; }
 
     [JsonPropertyName("targetStates")]
+    [JsonPropertyOrder(1)]
     public IReadOnlyList<MetadataReleaseTargetState> TargetStates { get; init; } =
         Array.Empty<MetadataReleaseTargetState>();
 
     [JsonPropertyName("dependentSemanticIds")]
+    [JsonPropertyOrder(1)]
     public IReadOnlyList<string> DependentSemanticIds { get; init; } = Array.Empty<string>();
 }
