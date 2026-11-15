@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -91,7 +92,8 @@ internal sealed class PairedPublicationReader(
             return null;
         }
         var source = PMTilesProxySourceResolver.Resolve(snapshot, pmtiles.Metadata);
-        if (source is null || source.Service.Metadata.Id != descriptor.SourceLayer.Service ||
+        if (source is null || !HasStorageStamp(pmtiles, snapshot.ResolveStorageLayerId(source.Publication, source.Resource)) ||
+            source.Service.Metadata.Id != descriptor.SourceLayer.Service ||
             source.Resource.Metadata.Id != descriptor.SourceLayer.Layer ||
             (!string.IsNullOrWhiteSpace(PMTilesProxySourceResolver.BindingId(source)) &&
                 !HasStampValue(pmtiles, PMTilesProxySourceResolver.StorageBindingIdMetadataKey)))
@@ -135,6 +137,14 @@ internal sealed class PairedPublicationReader(
            HasStampValue(file, PMTilesProxySourceResolver.ServiceIdMetadataKey) &&
            HasStampValue(file, PMTilesProxySourceResolver.ResourceIdMetadataKey) &&
            HasStampValue(file, PMTilesProxySourceResolver.PublicationIdMetadataKey);
+
+    // Unlike the general tile proxy, paired archives always stamp the storage
+    // handle. A service-local layer index cannot authorize a former store's bytes.
+    private static bool HasStorageStamp(CloudFile file, int? storageLayerId)
+        => storageLayerId.HasValue && file.Metadata.Any(pair =>
+            string.Equals(pair.Key, PMTilesProxySourceResolver.LayerIdMetadataKey, StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(pair.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var stamped) &&
+            stamped == storageLayerId.Value);
 
     private static bool HasStampValue(CloudFile file, string name)
         => file.Metadata.Any(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(pair.Value));

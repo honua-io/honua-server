@@ -132,9 +132,9 @@ public sealed partial class PairedPublishEndpointTests
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resource = snapshot.Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId];
         var objectId = resource.FindPrimaryIdField()!;
+        var published = await PublishAsync(IdentityField);
         _fixture.RestoreV2ResourceSchemaFields(WebAppFixture.TestLayerId,
             resource.SchemaFields.Where(field => field.Name != objectId.Name).ToArray());
-        var published = await PublishAsync(IdentityField);
         var descriptor = await ReadJsonAsync<PublicationDescriptor>(published.DescriptorKey);
         descriptor.Artifacts.Pmtiles.Fields.Should().Contain("objectid");
         descriptor.Artifacts.Geoparquet.Fields.Should().Contain("objectid");
@@ -240,6 +240,47 @@ public sealed partial class PairedPublishEndpointTests
         {
             using var response = await _client.GetAsync($"{PublicationRoute}/{suffix}");
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
+
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
+    [Endpoint("HEAD /api/v1/publications/{publicationId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("HEAD /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [InlineData("GET")]
+    [InlineData("HEAD")]
+    public async Task PublicationRead_ReboundStorage_RefusesCurrentAndArchivedArtifacts(string method)
+    {
+        var first = await PublishAsync(IdentityField);
+        var second = await PublishAsync(IdentityField);
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resource = snapshot.Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId];
+        var binding = snapshot.Index.StorageBindingsById[resource.PrimaryStorageBindingId!];
+        var publication = snapshot.Graph.Publications.Single(candidate =>
+            candidate.ResourceId == resource.Metadata.Id && candidate.LayerIndex == WebAppFixture.TestLayerId);
+        // Exercise the legacy resolver's index fallback: the old storage handle
+        // remains the public layer index after the same binding moves to another store.
+        binding.StorageLayerId.Should().Be(publication.LayerIndex);
+        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            StorageBindings = snapshot.Graph.StorageBindings.Select(candidate =>
+                candidate.Metadata.Id == binding.Metadata.Id ? candidate with { StorageLayerId = 700001 } : candidate).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
+
+        foreach (var suffix in new[] { "current.json" }.Concat(new[] { first, second }.SelectMany(published =>
+            new[] { $"{published.Version}/descriptor.json", $"{published.Version}/item.json",
+                $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })))
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
+            request.Headers.TryAddWithoutValidation("If-None-Match", "*");
+            request.Headers.Range = new RangeHeaderValue(0, 15);
+            using var response = await _client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.Headers.CacheControl!.NoStore.Should().BeTrue();
+            response.Headers.Location.Should().BeNull();
+            response.Content.Headers.ContentRange.Should().BeNull();
         }
     }
 
