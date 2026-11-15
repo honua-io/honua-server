@@ -452,21 +452,6 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                         cancellationToken)
                     .ConfigureAwait(false);
 
-            // Watermark taken IMMEDIATELY after the batch, before any other await. The collapsed change
-            // feed reports only the latest change per object, so a foreign edit landing between our
-            // commit and the change-log probe would otherwise be read as the generation our own edit
-            // produced — and a staleness check starting after it would never see it (#2430). Clamping
-            // to this watermark keeps any change recorded after the batch outside every conflict's
-            // base, and can only lower a base, never raise it past our own committed edit.
-            // Uncancellable for the same reason the detection-state writes below are: the batch has
-            // already committed, and a client disconnect here would skip straight past the base
-            // generation and applied-state updates, leaving a last-write-wins conflict recorded as
-            // not-applied with no base — which lets a later keepServer finalize as a no-op while the
-            // committed client overwrite is still in place (#2430).
-            var postBatchGeneration = layerConflictCount > 0
-                ? await _changeTracker.GetCurrentGenerationAsync(CancellationToken.None).ConfigureAwait(false)
-                : 0L;
-
             totalAdds += applyResult.AppliedAdds;
             totalUpdates += applyResult.AppliedUpdates;
             totalDeletes += applyResult.AppliedDeletes;
@@ -478,17 +463,12 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
 
             if (layerConflictCount > 0)
             {
-                var baseGenerations = await ResolveConflictBaseGenerationsAsync(
-                        layer,
-                        conflicts,
-                        layerConflictIndexes,
-                        layerConflictSlots,
-                        applyResult.CommittedEditIndexes,
-                        storageObjectIdsByPublicId,
-                        preBatchGeneration,
-                        postBatchGeneration,
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
+                var candidates = layerConflictIndexes.Select((index, position) =>
+                    new ConflictEvidenceCandidate(conflicts[index], layerConflictSlots[position]));
+                var baseGenerations = ResolveConflictBaseGenerations(
+                    new ConflictEvidenceContext(layer.StorageLayerId, preBatchGeneration, storageObjectIdsByPublicId),
+                    candidates,
+                    applyResult);
                 // The edit batch has already committed at this point, so the detection state that
                 // describes it must not be abandoned if the client disconnects: a record left without
                 // its applied flag or base generation would, after the settle window, let keepServer
@@ -646,7 +626,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
         List<int> layerConflictSlots,
         List<string> layerConflictIds,
         ReplicaLayerApplyResult applyResult,
-        IReadOnlyDictionary<string, long> baseGenerations,
+        Dictionary<string, long> baseGenerations,
         long preBatchGeneration,
         long withheldBaseGeneration,
         bool canRecordConflicts,
@@ -795,82 +775,6 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 throw;
             }
         }
-    }
-
-    /// <summary>
-    /// Derives, per conflict, the generation its own edit produced: the highest change generation this
-    /// batch recorded for that specific feature. Conflicts whose edit was withheld (manual review) or
-    /// never committed fall back to the pre-batch watermark, which is correct — nothing of theirs
-    /// landed, so any later change to the feature is genuinely post-conflict.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately object-scoped rather than a global post-batch watermark: sampling the watermark
-    /// after the batch can capture a concurrent edit to the same feature and bake it into the conflict
-    /// snapshot, which would let a later resolution overwrite that edit (#2430). Scoping the probe to
-    /// the conflicting object ids means unrelated churn on the layer cannot move any conflict's base.
-    /// <para>
-    /// The per-object result is nonetheless clamped to <paramref name="postBatchGeneration"/>, the
-    /// watermark taken immediately after the batch committed. The change feed collapses to the latest
-    /// change per object, so without the clamp a foreign edit to the same feature arriving between the
-    /// commit and this probe would be read as the generation our own edit produced, and a staleness
-    /// check starting after it would never see it. The clamp can only lower a base, never raise it past
-    /// our own committed edit, so it cannot mask a genuine post-conflict edit.
-    /// </para>
-    /// </remarks>
-    private async Task<IReadOnlyDictionary<string, long>> ResolveConflictBaseGenerationsAsync(
-        ReplicaUploadLayerEdits layer,
-        ImmutableArray<ReplicaSyncConflict>.Builder conflicts,
-        List<int> layerConflictIndexes,
-        List<int> layerConflictSlots,
-        ImmutableArray<int> committedEditIndexes,
-        IReadOnlyDictionary<long, long> storageObjectIdsByPublicId,
-        long preBatchGeneration,
-        long postBatchGeneration,
-        CancellationToken cancellationToken)
-    {
-        var committedSlots = committedEditIndexes.IsDefaultOrEmpty
-            ? []
-            : new HashSet<int>(committedEditIndexes);
-        var byStorageObjectId = layerConflictIndexes
-            .Select((index, position) => (Conflict: conflicts[index], Slot: layerConflictSlots[position]))
-            .Where(candidate => committedSlots.Contains(candidate.Slot))
-            .Select(candidate => candidate.Conflict)
-            .Where(conflict => conflict.ConflictId is { Length: > 0 })
-            .GroupBy(conflict => storageObjectIdsByPublicId.GetValueOrDefault(
-                conflict.ObjectId,
-                conflict.ObjectId))
-            .ToDictionary(group => group.Key, group => group.Select(conflict => conflict.ConflictId!).ToArray());
-
-        var generations = new Dictionary<string, long>(StringComparer.Ordinal);
-        if (byStorageObjectId.Count == 0)
-        {
-            return generations;
-        }
-
-        var changes = await _changeTracker
-            .GetChangesSinceAsync(
-                preBatchGeneration,
-                [layer.StorageLayerId],
-                new HashSet<long>(byStorageObjectId.Keys),
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        // Clamped to the post-batch watermark: the change feed collapses to the latest change per
-        // object, so a foreign edit that landed after this batch committed would otherwise become the
-        // conflict's base and hide itself from every later staleness check.
-        var candidates = changes
-            .Where(change => byStorageObjectId.ContainsKey(change.ObjectId))
-            .SelectMany(change => byStorageObjectId[change.ObjectId]
-                .Select(conflictId => (conflictId, Generation: Math.Min(change.Generation, postBatchGeneration))))
-            .Where(candidate => !generations.TryGetValue(candidate.conflictId, out var current)
-                || candidate.Generation > current);
-
-        foreach (var (conflictId, generation) in candidates)
-        {
-            generations[conflictId] = generation;
-        }
-
-        return generations;
     }
 
     // mustRecord: manual review skips the conflicting edit, so the record is the only carrier of the

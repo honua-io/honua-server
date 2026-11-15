@@ -66,6 +66,39 @@ public sealed class CapabilitiesMetadataXmlTests
         => AssertCapabilitiesAsync(new CapabilitiesRequest(MetadataV2ServiceProtocols.Wmts, MetadataV2LayerType.WmtsLayer,
             $"/rest/services/capabilities_extents/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION={version}"), input, expected);
 
+    [Theory]
+    [Trait("Tier", "Integration")]
+    [InlineData("1.1.1", null)]
+    [InlineData("1.3.0", null)]
+    [InlineData("1.1.1", " \t\n")]
+    [InlineData("1.3.0", " \t\n")]
+    [Protocol(TestProtocols.Wms13)]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    public async Task Wms_GetCapabilities_WithoutDescription_OmitsPlaceholderAbstracts(string version, string? description)
+    {
+        var provider = CapabilitiesExtentFixture.PublishedLayers(MetadataV2ServiceProtocols.Wms, MetadataV2LayerType.WmsLayer);
+        await SetMetadataAsync(provider, "Rivers", description);
+        await using var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
+            .ReplaceService<IMetadataV2GraphProvider>(provider)
+            .ReplaceService<ICoordinateTransformService>(new CapabilitiesExtentFixture.ExtentTransformProbe(false));
+        await fixture.InitializeAsync();
+
+        using var response = await fixture.Client.GetAsync(
+            $"/rest/services/capabilities_extents/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}");
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == HttpStatusCode.OK, content);
+        var document = XDocument.Parse(content);
+        Assert.DoesNotContain(document.Descendants(), element => element.Name.LocalName == "Abstract");
+        var namedLayers = document.Descendants()
+            .Where(element => element.Name.LocalName == "Layer" && element.Elements().Any(child => child.Name.LocalName == "Name"))
+            .ToArray();
+        Assert.Equal(2, namedLayers.Length);
+        Assert.All(namedLayers, layer => Assert.Equal("Rivers", layer.Elements().Single(child => child.Name.LocalName == "Title").Value));
+    }
+
     private static async Task AssertCapabilitiesAsync(
         CapabilitiesRequest request, string input, string expected)
     {
@@ -98,18 +131,21 @@ public sealed class CapabilitiesMetadataXmlTests
     private sealed record CapabilitiesRequest(
         string Protocol, MetadataV2LayerType LayerType, string Url);
 
-    private static async Task SetMetadataAsync(TestMetadataV2GraphProvider provider, string input)
+    private static Task SetMetadataAsync(TestMetadataV2GraphProvider provider, string input)
+        => SetMetadataAsync(provider, input, input);
+
+    private static async Task SetMetadataAsync(TestMetadataV2GraphProvider provider, string input, string? description)
     {
         var graph = (await provider.GetCurrentAsync()).Graph;
         provider.SetGraph(graph with
         {
             Services = graph.Services.Select(service => service with
             {
-                Metadata = service.Metadata with { Title = input, Description = input }
+                Metadata = service.Metadata with { Title = input, Description = description }
             }).ToArray(),
             Resources = graph.Resources.Select(resource => resource with
             {
-                Metadata = resource.Metadata with { Title = input, Description = input }
+                Metadata = resource.Metadata with { Title = input, Description = description }
             }).ToArray()
         });
     }

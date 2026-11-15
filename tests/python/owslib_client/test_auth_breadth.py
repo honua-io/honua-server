@@ -125,7 +125,7 @@ def test_core_read_suite_authenticated_matches_anonymous_baseline(
             )
             protected_types = {
                 name for name in set(authenticated.contents) - set(anonymous.contents)
-                if "authenticated_test_layer" in name.lower()
+                if name.split(":")[-1] == fixture.AUTHENTICATED_WFS_TYPE_LOCAL_NAME
             }
             assert len(protected_types) == 1, protected_types
             actual = json.loads(
@@ -181,7 +181,7 @@ def test_core_read_suite_invalid_credential_returns_protocol_challenge(
             client = WebFeatureService(lane_config.wfs_url, version="2.0.0", headers=valid_headers)
             protected_types = {
                 name for name in set(client.contents) - set(anonymous.contents)
-                if "authenticated_test_layer" in name.lower()
+                if name.split(":")[-1] == fixture.AUTHENTICATED_WFS_TYPE_LOCAL_NAME
             }
             assert len(protected_types) == 1, protected_types
             typename = protected_types.pop()

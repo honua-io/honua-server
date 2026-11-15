@@ -324,7 +324,28 @@ internal sealed partial class StreamingGeoJsonReader
 
     private sealed class ValidationState
     {
+        private int _warningCount;
+
         public List<ImportValidationIssue> Issues { get; } = [];
+
+        public int ErrorCount { get; private set; }
+
+        // Errors and warnings are capped separately so advisory warnings (null or repaired geometries, possibly
+        // one per feature) can never crowd out an error later in the file.
+        public void Add(IEnumerable<ImportValidationIssue> issues, int cap)
+        {
+            foreach (var issue in issues)
+            {
+                var isError = issue.Severity == ImportValidationSeverity.Error;
+                if ((isError ? ErrorCount : _warningCount) >= cap)
+                    continue;
+                Issues.Add(issue);
+                if (isError)
+                    ErrorCount++;
+                else
+                    _warningCount++;
+            }
+        }
         public int FeatureCount { get; set; }
         public bool IsFeatureCollection { get; set; }
         public bool HasFeaturesArray { get; set; }
@@ -352,10 +373,8 @@ internal sealed partial class StreamingGeoJsonReader
                     if (_limits.MaxFeaturesPerFile <= 0 || validation.FeatureCount < _limits.MaxFeaturesPerFile)
                     {
                         validation.FeatureCount++;
-                        foreach (var issue in ValidateFeature(feature.RootElement, validation.FeatureCount))
-                        {
-                            RetainValidationIssue(validation.Issues, issue);
-                        }
+                        if (validation.ErrorCount < MaxValidationIssues)
+                            validation.Add(ValidateFeature(feature.RootElement, validation.FeatureCount), MaxValidationIssues);
                     }
                 }
             }
@@ -530,6 +549,26 @@ internal sealed partial class StreamingGeoJsonReader
         return (features, reader.CurrentState, newProcessingState, lastConsumed);
     }
 
+    // An absent geometry member is an error. RFC 7946 section 3.2 gives an unlocated feature a null geometry: it is
+    // imported without geometry and reported as a warning, as CSV rows without geometry are.
+    private static ImportValidationIssue? GeometryPresenceIssue(JsonElement? geometry, int featureIndex)
+    {
+        if (geometry is null)
+        {
+            return ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryMissing, "GeoJSON feature is missing geometry.", featureIndex, "geometry");
+        }
+
+        return geometry.Value.ValueKind == JsonValueKind.Null
+            ? ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryMissing,
+                "GeoJSON feature has a null geometry; it was imported without geometry.",
+                featureIndex,
+                "geometry",
+                ImportValidationSeverity.Warning)
+            : null;
+    }
+
     private List<ImportValidationIssue> ValidateFeature(JsonElement root, int featureIndex)
     {
         var issues = new List<ImportValidationIssue>(1);
@@ -548,16 +587,15 @@ internal sealed partial class StreamingGeoJsonReader
 
         ValidateReservedAttributes(root, featureIndex, issues);
 
-        if (!root.TryGetProperty("geometry", out var geometryElement) ||
-            geometryElement.ValueKind == JsonValueKind.Null)
+        JsonElement? geometryMember = root.TryGetProperty("geometry", out var member) ? member : null;
+        var presence = GeometryPresenceIssue(geometryMember, featureIndex);
+        if (presence is not null)
         {
-            issues.Add(ImportValidationIssue.Create(
-                ImportValidationErrorCodes.GeometryMissing,
-                "GeoJSON feature is missing geometry.",
-                featureIndex,
-                "geometry"));
+            issues.Add(presence);
             return issues;
         }
+
+        var geometryElement = geometryMember!.Value;
 
         if (geometryElement.ValueKind != JsonValueKind.Object)
         {
