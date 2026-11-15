@@ -36,7 +36,7 @@ internal static class OgcMapsResourceResolver
     private static readonly ConditionalWeakTable<MetadataV2GraphSnapshot, ConcurrentDictionary<(string ResourceId, int TargetSrid), CachedTransform>>
         TransformCache = new();
 
-    internal sealed record AuthorizedCollection(MetadataV2Resource Resource, MetadataV2Service Service);
+    internal sealed record AuthorizedCollection(MetadataV2Object Resource, MetadataV2Service Service);
 
     internal static async Task<(AuthorizedCollection? Collection, IResult? Error)> ResolveAuthorizedCollectionAsync(
         MetadataV2GraphSnapshot snapshot,
@@ -79,12 +79,12 @@ internal static class OgcMapsResourceResolver
     /// operation. Falls back to the indexed resource for non-colliding / non-Maps layers so
     /// their behaviour is unchanged (#2799).
     /// </remarks>
-    public static List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)> EnumerateDatasetEntries(
+    public static List<(int LayerId, MetadataV2Object Resource, MetadataV2Service? Service)> EnumerateDatasetEntries(
         MetadataV2GraphSnapshot snapshot,
         ILogger logger,
         string? tenantId = null)
     {
-        var entries = new List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)>();
+        var entries = new List<(int LayerId, MetadataV2Object Resource, MetadataV2Service? Service)>();
         var seenStorageLayerIds = new HashSet<int>();
         foreach (var binding in snapshot.Graph.StorageBindings)
         {
@@ -126,7 +126,7 @@ internal static class OgcMapsResourceResolver
     /// whether a required transform could not be performed.
     /// </returns>
     public static async Task<(FeatureExtent? Extent, bool TransformUnavailable)> BuildDatasetExtentAsync(
-        IEnumerable<MetadataV2Resource> resources,
+        IEnumerable<MetadataV2Object> resources,
         ICoordinateTransformService? coordinateTransformService,
         CancellationToken cancellationToken,
         MetadataV2GraphSnapshot? snapshot = null)
@@ -181,7 +181,7 @@ internal static class OgcMapsResourceResolver
 
     private static async Task<FeatureExtent?> TransformCachedExtentAsync(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureExtent extent,
         int targetSrid,
         ICoordinateTransformService coordinateTransformService,
@@ -244,19 +244,19 @@ internal static class OgcMapsResourceResolver
     /// O(1) indexed entry and only falling back to a colliding binding when the indexed
     /// resource is not published through a Maps-enabled service.
     /// </summary>
-    public static (MetadataV2Resource? Resource, MetadataV2Service? Service) ResolveMapsResource(
+    public static (MetadataV2Object? Resource, MetadataV2Service? Service) ResolveMapsResource(
         MetadataV2GraphSnapshot snapshot,
         int storageLayerId,
         ILogger logger)
         => ResolveMapsResource(snapshot, (storageLayerId, logger), tenantId: null);
 
-    public static (MetadataV2Resource? Resource, MetadataV2Service? Service) ResolveMapsResource(
+    public static (MetadataV2Object? Resource, MetadataV2Service? Service) ResolveMapsResource(
         MetadataV2GraphSnapshot snapshot,
         (int StorageLayerId, ILogger Logger) request,
         string? tenantId)
     {
         var (storageLayerId, logger) = request;
-        MetadataV2Resource? indexedResource = null;
+        MetadataV2Object? indexedResource = null;
         if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out indexedResource))
         {
             var indexedService = ResolveOgcApiMapsService(snapshot, indexedResource, tenantId);
@@ -300,7 +300,7 @@ internal static class OgcMapsResourceResolver
     /// Returns the first Maps-enabled service that publishes <paramref name="resource"/>, or
     /// <see langword="null"/> when no Maps publication exists.
     /// </summary>
-    public static MetadataV2Service? ResolveOgcApiMapsService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource, string? tenantId = null)
+    public static MetadataV2Service? ResolveOgcApiMapsService(MetadataV2GraphSnapshot snapshot, MetadataV2Object resource, string? tenantId = null)
     {
         foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
                      snapshot, snapshot.Index.PublicationsByResource[resource.Metadata.Id], tenantId))

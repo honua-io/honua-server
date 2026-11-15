@@ -234,16 +234,16 @@ public class StyleRevisionMetadataTests
         Assert.NotNull(update.Style!.RevisedAt);
     }
 
-    private static MetadataV2Resource CreateResource(string name, MetadataV2GeometryType geometryType)
+    private static MetadataV2Object CreateResource(string name, MetadataV2GeometryType geometryType)
     {
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
                 Id = $"resource.{name}",
                 Name = name
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field
@@ -261,7 +261,7 @@ public class StyleRevisionMetadataTests
                     SemanticRoles = ["geometry.primary"]
                 }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = geometryType,
                 PrimaryGeometryField = "geometry"

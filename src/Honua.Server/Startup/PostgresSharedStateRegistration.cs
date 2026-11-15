@@ -56,6 +56,7 @@ internal static class PostgresSharedStateRegistration
         });
         services.TryAddSingleton<WorkflowOperationRetention>();
         services.TryAddSingleton<PostgresOperationProposalStore>();
+        services.TryAddSingleton<PostgresOpsNotificationStore>();
         services.TryAddSingleton<PostgresWorkflowOperationStore>();
         services.TryAddSingleton<PostgresOperationInstanceStore>();
         services.TryAddSingleton(provider => new PostgresOperationSecretStore(

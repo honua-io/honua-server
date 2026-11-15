@@ -67,13 +67,11 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
 
     // Browser sessions accept cookie-authenticated writes only over HTTPS, so a real-socket fixture also
     // listens with a test certificate. API-key clients stay on plain HTTP, and approved operations replayed
-    // over the TLS loopback trust the same certificate.
+    // over the TLS loopback use the production client, which trusts only the certificate the server served.
     public static WebAppFixture ConfigureKestrel(
         WebAppFixture fixture, AdminAuthEndpointsTests.StubHttpClientFactory provider) =>
         Configure(fixture, provider)
             .ConfigureWebHost(builder => builder.UseSetting("Security:DisableHttpsRedirection", "true"))
-            .ConfigureServices(services => services.AddHttpClient(AdminApiOperationExecutor.HttpClientName)
-                .ConfigurePrimaryHttpMessageHandler(CreateLoopbackTlsHandler))
             .UseKestrel(listeners =>
             {
                 listeners.Listen(IPAddress.Loopback, 0);

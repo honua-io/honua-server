@@ -68,7 +68,7 @@ public sealed class ResourceValidatorTests
 
         result.IsValid.Should().BeTrue();
         result.Resource.Resource.Metadata.Id.Should().Be("res-feature");
-        result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+        result.Resource.Publication.PublicationType.Should().Be(MetadataV2LayerType.EsriFeatureLayer);
         result.Resource.Snapshot.Should().BeSameAs(await provider.GetCurrentAsync());
     }
 
@@ -96,7 +96,7 @@ public sealed class ResourceValidatorTests
 
         result.IsValid.Should().BeTrue();
         result.Resource.Resource.Metadata.Id.Should().Be("res-feature");
-        result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+        result.Resource.Publication.PublicationType.Should().Be(MetadataV2LayerType.EsriFeatureLayer);
     }
 
     [UnitTest]
@@ -146,7 +146,7 @@ public sealed class ResourceValidatorTests
         result.IsValid.Should().BeTrue();
         result.Resource.Service.Metadata.Id.Should().Be("service-feature");
         result.Resource.Resource.Metadata.Id.Should().Be("res-feature");
-        result.Resource.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+        result.Resource.Publication.PublicationType.Should().Be(MetadataV2LayerType.EsriFeatureLayer);
     }
 
     [UnitTest]
@@ -267,8 +267,8 @@ public sealed class ResourceValidatorTests
         // A name split into per-publication services, all listing VectorTileServer (e.g. after a
         // by-name protocol update). No EsriVectorTileLayer exists; the feature layer is tileable.
         var validator = new ResourceValidator(new TestMetadataV2GraphProvider(
-            SplitVectorTileGraph(("service-ogc", MetadataV2PublicationType.OgcCollection),
-                                 ("service-feature", MetadataV2PublicationType.EsriFeatureLayer))));
+            SplitVectorTileGraph(("service-ogc", MetadataV2LayerType.OgcCollection),
+                                 ("service-feature", MetadataV2LayerType.EsriFeatureLayer))));
 
         var result = await validator.ValidateServiceV2Async("shared", ServiceProtocols.VectorTileServer);
 
@@ -281,8 +281,8 @@ public sealed class ResourceValidatorTests
     public async Task ValidateServiceV2Async_VectorTileServerWithTwoFeatureLayerServices_RemainsNotFound()
     {
         var validator = new ResourceValidator(new TestMetadataV2GraphProvider(
-            SplitVectorTileGraph(("service-feature-a", MetadataV2PublicationType.EsriFeatureLayer),
-                                 ("service-feature-b", MetadataV2PublicationType.EsriFeatureLayer))));
+            SplitVectorTileGraph(("service-feature-a", MetadataV2LayerType.EsriFeatureLayer),
+                                 ("service-feature-b", MetadataV2LayerType.EsriFeatureLayer))));
 
         var result = await validator.ValidateServiceV2Async("shared", ServiceProtocols.VectorTileServer);
 
@@ -291,7 +291,7 @@ public sealed class ResourceValidatorTests
     }
 
     private static MetadataV2Graph SplitVectorTileGraph(
-        params (string ServiceId, MetadataV2PublicationType Type)[] services)
+        params (string ServiceId, MetadataV2LayerType Type)[] services)
     {
         var graph = MixedProtocolPublicationGraph();
         return graph with
@@ -459,16 +459,16 @@ public sealed class ResourceValidatorTests
                 System.Globalization.CultureInfo.InvariantCulture),
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-ogc", Name = "OGC resource" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     Status = ActiveStatus(),
                 },
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-feature", Name = "FeatureServer resource" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     Status = ActiveStatus(),
                 },
             ],
@@ -483,23 +483,23 @@ public sealed class ResourceValidatorTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-ogc", Name = "7" },
                     Status = ActiveStatus(),
                     ResourceId = "res-ogc",
                     ServiceId = "mixed-service",
-                    PublicationType = MetadataV2PublicationType.OgcCollection,
-                    Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+                    PublicationType = MetadataV2LayerType.OgcCollection,
+                    Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
                 },
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-feature", Name = "7" },
                     Status = ActiveStatus(),
                     ResourceId = "res-feature",
                     ServiceId = "mixed-service",
-                    PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
-                    Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+                    PublicationType = MetadataV2LayerType.EsriFeatureLayer,
+                    Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
                 },
             ],
         };
@@ -519,18 +519,18 @@ public sealed class ResourceValidatorTests
             GeneratedAt = DateTimeOffset.Parse("2026-06-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-image-layer-2000", Name = "Browser Points imagery" },
-                    Type = MetadataV2ResourceType.RasterDataset,
+                    Type = MetadataV2ObjectType.RasterDataset,
                     Status = ActiveStatus(),
                     StorageBindingIds = ["storage-image-layer-2000"],
                     PrimaryStorageBindingId = "storage-image-layer-2000",
                 },
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-2000", Name = "Browser Points" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     Status = ActiveStatus(),
                     StorageBindingIds = ["storage-layer-2000"],
                     PrimaryStorageBindingId = "storage-layer-2000",
@@ -578,25 +578,25 @@ public sealed class ResourceValidatorTests
                 // Raster sidecar publication ordered first — the previous
                 // FirstOrDefault(LayerIndex == 2000) match returned this resource,
                 // which has no integer StorageLayerId and caused OGC API Maps 404s.
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-browser-compat-image-2000", Name = "2000" },
                     Status = ActiveStatus(),
                     ResourceId = "res-image-layer-2000",
                     ServiceId = "svc-browser-compat-image",
                     StorageBindingId = "storage-image-layer-2000",
-                    PublicationType = MetadataV2PublicationType.EsriImageLayer,
-                    Identifier = new MetadataV2PublicationIdentifier { Value = "2000", IsNumeric = true },
+                    PublicationType = MetadataV2LayerType.EsriImageLayer,
+                    Identifier = new MetadataV2LayerIdentifier { Value = "2000", IsNumeric = true },
                 },
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-browser-compat-map-2000", Name = "2000" },
                     Status = ActiveStatus(),
                     ResourceId = "res-layer-2000",
                     ServiceId = "svc-browser-compat-map",
                     StorageBindingId = "storage-layer-2000",
-                    PublicationType = MetadataV2PublicationType.EsriMapLayer,
-                    Identifier = new MetadataV2PublicationIdentifier { Value = "2000", IsNumeric = true },
+                    PublicationType = MetadataV2LayerType.EsriMapLayer,
+                    Identifier = new MetadataV2LayerIdentifier { Value = "2000", IsNumeric = true },
                 },
             ],
         };

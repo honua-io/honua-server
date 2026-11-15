@@ -567,7 +567,7 @@ internal static partial class WmsRequestHandlers
     }
 
     private static async Task<Wgs84Extent?> TryGetLayerWgs84ExtentAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ICoordinateTransformService? coordinateTransformService,
         CancellationToken cancellationToken)
     {

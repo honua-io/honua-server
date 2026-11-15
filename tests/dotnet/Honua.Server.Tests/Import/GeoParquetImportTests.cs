@@ -416,7 +416,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
     public async Task Upload_WithBoundedQueryWriterOutput_PreservesRowsAcrossRowGroupBoundaries()
     {
         const int rowCount = 10000;
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "query-export", Name = "query_export" },
             SchemaFields =
@@ -425,7 +425,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
                 new MetadataV2Field { Name = "geometry", Type = MetadataV2FieldType.Geometry, SemanticRoles = ["geometry.primary"] }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
@@ -439,7 +439,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         var (payload, _) = GeoParquetFeatureWriter.FormatAsGeoParquet(
             QueryResult<Feature>.Create(rowCount, features), resource, "objectid", true, 4326,
             false, false, new GeometryLimits());
-        using var content = CreateUploadContent(payload, "query-export.parquet", "geoparquet_query_roundtrip");
+        using var content = CreateUploadContent(payload.ToArray(), "query-export.parquet", "geoparquet_query_roundtrip");
         using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var responseJson = await response.Content.ReadAsStringAsync();

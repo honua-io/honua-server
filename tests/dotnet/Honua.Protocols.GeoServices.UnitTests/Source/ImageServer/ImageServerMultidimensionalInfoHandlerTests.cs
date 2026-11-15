@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Multidimensional.Abstractions;
@@ -27,7 +26,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerMultidimensionalInfoHandlerTests
 {
-    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
+    private readonly TestMetadataV2GraphProvider _graphProvider = ImageServerTestFixtures.BuildGraphWithLayer(1);
     private readonly IMultidimensionalCoverageStore _store = Substitute.For<IMultidimensionalCoverageStore>();
 
     private ImageServerMultidimensionalInfoHandler CreateHandler()
@@ -232,31 +231,8 @@ public class ImageServerMultidimensionalInfoHandlerTests
     }
 
     private static DefaultHttpContext CreateImageServerContext()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
+        => ImageServerTestFixtures.CreateContext("/rest/services/1/ImageServer/multidimensionalInfo");
 
-        var context = new DefaultHttpContext
-        {
-            RequestServices = services.BuildServiceProvider()
-        };
-        context.Request.Path = "/rest/services/1/ImageServer/multidimensionalInfo";
-        context.Response.Body = new MemoryStream();
-        return context;
-    }
-
-    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
-        => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
-            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication(
-                $"publication-{layerIndex}",
-                $"service-{layerIndex}",
-                $"resource-{layerIndex}",
-                layerIndex: layerIndex,
-                serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
-            .BuildProvider();
 }
 
 /// <summary>

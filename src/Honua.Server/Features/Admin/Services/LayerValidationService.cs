@@ -145,7 +145,7 @@ internal sealed class LayerValidationService(
     }
 
     private static void ValidateGeometry(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         StorageValidationMapping storageMapping,
         TableInfo table,
         List<LayerValidationCheck> checks)
@@ -236,7 +236,7 @@ internal sealed class LayerValidationService(
     }
 
     private static void ValidateDeclaredFields(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         TableInfo table,
         List<LayerValidationCheck> checks)
     {
@@ -267,7 +267,7 @@ internal sealed class LayerValidationService(
     }
 
     private void ValidatePermanentFilter(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         List<LayerValidationCheck> checks)
     {
         var permanentFilter = resource.PermanentFilter;
@@ -319,7 +319,7 @@ internal sealed class LayerValidationService(
     }
 
     private static StorageValidationMapping? ResolveStorageMapping(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2StorageBinding storageBinding,
         List<LayerValidationCheck> checks)
     {
@@ -487,7 +487,7 @@ internal sealed class LayerValidationService(
 
     private static LayerValidationResponse BuildResponse(
         int storageLayerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         StorageValidationMapping? storageMapping,
         IReadOnlyCollection<LayerValidationCheck> checks)
     {

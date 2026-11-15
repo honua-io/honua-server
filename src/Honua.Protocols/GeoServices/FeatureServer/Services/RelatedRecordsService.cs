@@ -43,7 +43,7 @@ internal interface IRelatedRecordsService
         int? geometryPrecision,
         double? maxAllowableOffset,
         ImmutableArray<string>? outFields,
-        MetadataV2Resource relatedResource,
+        MetadataV2Object relatedResource,
         ImmutableArray<OrderByClause>? orderBy = null,
         bool returnCountOnly = false);
 }
@@ -146,7 +146,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         int? geometryPrecision,
         double? maxAllowableOffset,
         ImmutableArray<string>? outFields,
-        MetadataV2Resource relatedResource,
+        MetadataV2Object relatedResource,
         ImmutableArray<OrderByClause>? orderBy = null,
         bool returnCountOnly = false)
     {
