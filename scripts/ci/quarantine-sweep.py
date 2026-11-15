@@ -21,7 +21,7 @@ WORKFLOW = '.github/workflows/flake-quarantine.yml'
 SOURCES = {'.github/workflows/ci.yml', '.github/workflows/pr-gate.yml'}
 ARTIFACT = re.compile(r'^(server-test-results-|pr-gate-affected-shard-)[a-zA-Z0-9_-]+$')
 ATTEMPT = re.compile(r'^(.*?)(?:-attempt-([0-9]+))?$')
-MAX_PAGES = 500
+MAX_PAGES = 1000
 MAX_BATCH_RUNS = 25
 MAX_ZIP_BYTES = 256 * 1024 * 1024
 MAX_EXPANDED_BYTES = 1024 * 1024 * 1024
@@ -37,12 +37,12 @@ def inventory(path, key):
     for page in range(1, MAX_PAGES + 1):
         response = api(f'{path}{"&" if "?" in path else "?"}per_page=100&page={page}')
         if response['total_count'] > MAX_PAGES * 100:
-            raise ValueError('Artifact inventory exceeds bounded sweep capacity; checkpoint unchanged')
+            raise ValueError('Actions inventory exceeds bounded sweep capacity; checkpoint unchanged')
         batch = response[key]
         found.update((item['id'], item) for item in batch)
         if len(batch) < 100:
             return list(found.values())
-    raise ValueError('Artifact inventory exceeded bounded pagination; checkpoint unchanged')
+    raise ValueError('Actions inventory exceeded bounded pagination; checkpoint unchanged')
 
 
 def download(artifact, destination):
@@ -127,6 +127,13 @@ def validate_cursor(cursor):
         raise ValueError('Invalid quarantine checkpoint')
     if any(type(identity) is not int or identity < 1 for identity in ids):
         raise ValueError('Invalid checkpoint artifact identity')
+    versions = cursor.get('run_versions', {})
+    if not isinstance(versions, dict) or len(versions) > MAX_PAGES * 100:
+        raise ValueError('Invalid checkpoint run versions')
+    for identity, version in versions.items():
+        if not identity.isdecimal() or int(identity) < 1 or not isinstance(version, str):
+            raise ValueError('Invalid checkpoint run version')
+        timestamp(version)
 
 
 def candidates(artifacts, seen):
@@ -168,28 +175,67 @@ def publish_run(run, artifacts, seen):
             PUBLISHER.publish(destination)
 
 
+def source_runs(since):
+    """Scan creation-ordered histories fully: a recent rerun may have an old ID."""
+    found = {}
+    for path in sorted(SOURCES):
+        workflow = Path(path).name
+        for run in inventory(f'actions/workflows/{workflow}/runs', 'workflow_runs'):
+            if (trusted(run, SOURCES) and run['status'] == 'completed'
+                    and run['conclusion'] in {'success', 'failure'}
+                    and timestamp(run['updated_at']) >= timestamp(since)):
+                found[run['id']] = run
+    return sorted(found.values(), key=lambda run: (timestamp(run['updated_at']), run['id']))
+
+
+def same_completed_attempt(run):
+    """Recheck after listing artifacts: a new attempt can start mid-sweep."""
+    current = api(f'actions/runs/{run["id"]}')
+    return (trusted(current, SOURCES) and current['status'] == 'completed'
+            and current['conclusion'] in {'success', 'failure'}
+            and current['run_attempt'] == run['run_attempt']
+            and current['updated_at'] == run['updated_at'])
+
+
 def sweep(checkpoint):
+    started = datetime.now(timezone.utc) - timedelta(minutes=5)
     cursor = load_cursor()
     validate_cursor(cursor)
-    artifacts = inventory('actions/artifacts', 'artifacts')
-    retained = {item['id'] for item in artifacts}
-    seen = set(cursor['artifact_ids']) & retained
-    grouped = candidates(artifacts, seen)
+    runs = source_runs(cursor['since'])
+    seen = set(cursor['artifact_ids'])
+    retained = set()
     completed = 0
-    for identity, items in sorted(grouped.items()):
-        run = api(f'actions/runs/{identity}')
-        if run['status'] != 'completed':
-            continue  # Revisit the same uploaded artifacts when the source finishes.
-        if (trusted(run, SOURCES) and run['conclusion'] in {'success', 'failure'}
-                and timestamp(run['updated_at']) >= timestamp(cursor['since'])):
+    inspected = 0
+    versions = cursor.get('run_versions', {})
+    recorded = {}
+    deferred = []
+    for run in runs:
+        identity = str(run['id'])
+        if versions.get(identity) == run['updated_at']:
+            recorded[identity] = run['updated_at']
+            continue
+        if inspected >= MAX_BATCH_RUNS:
+            deferred.append(timestamp(run['updated_at']))
+            continue
+        inspected += 1
+        artifacts = inventory(f'actions/runs/{run["id"]}/artifacts', 'artifacts')
+        if not same_completed_attempt(run):
+            deferred.append(timestamp(run['updated_at']))
+            continue
+        recorded[identity] = run['updated_at']
+        retained.update(item['id'] for item in artifacts)
+        items = candidates(artifacts, seen).get(run['id'], [])
+        if items:
             publish_run(run, items, seen)
             completed += 1
-        seen.update(item['id'] for item in items)
-        if completed >= MAX_BATCH_RUNS:
-            break  # The next event or scheduled sweep resumes the remaining backlog.
-    cursor['artifact_ids'] = sorted(seen)
+        seen.update(item['id'] for item in artifacts)
+    # Keep an overlap for completions racing this sweep; deferred runs remain eligible.
+    boundary = min([started, *deferred])
+    cursor['since'] = max(timestamp(cursor['since']), boundary).isoformat()
+    cursor['artifact_ids'] = sorted(seen & retained)
+    cursor['run_versions'] = recorded
     checkpoint.write_text(json.dumps(cursor, sort_keys=True) + '\n')
-    print(f'Published {completed} source run(s); checkpoint records {len(seen)} retained artifacts')
+    print(f'Published {completed} source run(s); checkpoint records {len(cursor["artifact_ids"])} retained artifacts')
 
 
 def main():

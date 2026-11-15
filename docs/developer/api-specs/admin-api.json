@@ -10688,7 +10688,7 @@
           "Proposals"
         ],
         "summary": "Reject Operation Proposal",
-        "description": "Rejects the proposal with a required reason. API keys require full admin authority or the narrow `admin:approve` grant; operator-bearer callers use RBAC `approve`. A missing or blank reason returns 400; a proposal that cannot be rejected in its current state returns 409.",
+        "description": "Rejects the proposal with a required reason. The caller must hold `approve` authority and use a verified interactive Console session; API keys, bearer tokens and MCP requests receive 403 and the refusal is audited as `human_session_required`. A missing or blank reason returns 400; a proposal that cannot be rejected in its current state returns 409.",
         "operationId": "rejectOperationProposal",
         "parameters": [
           {
@@ -26971,7 +26971,7 @@
           },
           "permissions": {
             "type": "array",
-            "description": "Permission labels assigned to the key. Admin grants are `admin:read` (safe-method reads), `admin:approve` (read plus proposal rejection; approval requires a verified interactive human session and private review capability), `admin:write`/`admin:manage` (write), and `admin:*` (full admin). Layer-scoped write grants use write:{service} or write:{service}/{layer}. Data read grants use read:{service}, read:{service}/{layer}, read:{service}/* (every layer of the service) or read:* (every service); a key without a full-admin grant reads no service or layer data without a matching read grant, and wildcards are rejected on write grants. The recommended agent key is [`admin:read`, `admin:write`, `read:*`]. The focused read/reject recipe is [`admin:read`, `admin:approve`]; an API key cannot approve.",
+            "description": "Permission labels assigned to the key. Admin grants are `admin:read` (safe-method reads), `admin:approve` (read; approving or rejecting a proposal also requires a verified interactive human session, and approval a private review capability), `admin:write`/`admin:manage` (write), and `admin:*` (full admin). Layer-scoped write grants use write:{service} or write:{service}/{layer}. Data read grants use read:{service}, read:{service}/{layer}, read:{service}/* (every layer of the service) or read:* (every service); a key without a full-admin grant reads no service or layer data without a matching read grant, and wildcards are rejected on write grants. The recommended agent key is [`admin:read`, `admin:write`, `read:*`]. The focused proposal-reading recipe is [`admin:read`, `admin:approve`]; an API key cannot approve or reject a proposal.",
             "items": {
               "type": "string",
               "minLength": 1,
@@ -48545,7 +48545,7 @@
         "properties": {
           "operation": {
             "type": "string",
-            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`."
+            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `paired-publish`."
           },
           "serviceId": {
             "type": "string",
@@ -48594,7 +48594,18 @@
           "tileCompression": {
             "type": "string",
             "nullable": true,
-            "description": "`none` or `gzip`: tile payload compression for `archive` and `publish` PMTiles output, case-insensitive. Defaults to `none`, which writes the same bytes as earlier releases. Rejected for other operations."
+            "description": "`none` or `gzip`: tile payload compression for `archive`, `publish` and `paired-publish` PMTiles output, case-insensitive. Defaults to `none`, which writes the same bytes as earlier releases. Rejected for other operations."
+          },
+          "publicationId": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+            "description": "Required for `paired-publish`: the publication whose versions and current pointer the run writes."
+          },
+          "identityField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Required for `paired-publish`: a visible text field that identifies each feature in both the PMTiles and the GeoParquet artifact."
           },
           "generationId": {
             "type": "string",
@@ -48735,6 +48746,9 @@
           "PublishedArtifact": {
             "$ref": "#/components/schemas/TileOpsPublishedArtifact"
           },
+          "PublishedPublication": {
+            "$ref": "#/components/schemas/TileOpsPublishedPublication"
+          },
           "StartedAt": {
             "type": "string",
             "format": "date-time"
@@ -48767,6 +48781,31 @@
           "Duration": {
             "type": "string",
             "description": "Elapsed time serialized as a .NET TimeSpan string (for example `00:01:23.4560000`)."
+          }
+        }
+      },
+      "TileOpsPublishedPublication": {
+        "type": "object",
+        "nullable": true,
+        "description": "The version a completed `paired-publish` activated. Property names are PascalCase.",
+        "properties": {
+          "PublicationId": {
+            "type": "string"
+          },
+          "Version": {
+            "type": "string"
+          },
+          "CaptureId": {
+            "type": "string",
+            "description": "Embedded in both artifacts' metadata as `honua:captureId`."
+          },
+          "DescriptorKey": {
+            "type": "string",
+            "description": "Storage key of the version's publication descriptor (publication-descriptor v1)."
+          },
+          "PointerKey": {
+            "type": "string",
+            "description": "Storage key of the publication's current-version pointer."
           }
         }
       },
@@ -50192,6 +50231,49 @@
         }
       },
       "MetadataV2ResourceEditing": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "globalIdField": {
+            "type": "string",
+            "nullable": true,
+            "description": "UUID field used as an edit-stable identifier."
+          },
+          "creatorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the creating user."
+          },
+          "createdAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the creation timestamp."
+          },
+          "editorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the last editing user."
+          },
+          "updatedAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Field tracking the last update timestamp."
+          },
+          "canModify": {
+            "type": "boolean",
+            "default": true
+          },
+          "supportsAttachments": {
+            "type": "boolean",
+            "default": false
+          },
+          "supportsRelatedRecords": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "MetadataV2ObjectEditing": {
         "type": "object",
         "nullable": true,
         "properties": {

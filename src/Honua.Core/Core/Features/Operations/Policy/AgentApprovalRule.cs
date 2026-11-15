@@ -16,7 +16,7 @@ public static class AgentApprovalRule
     public const string ApprovalLane = "control-plane";
 
     public const string Reason =
-        "built-in: an agent's access-policy or publish change needs one human approval. " +
+        "built-in: an agent's access-policy, import or publish change needs one human approval. " +
         "A proposal was submitted; a person approves it in Console Approvals.";
 
     private static readonly HashSet<string> GatedOperationIds = new(StringComparer.Ordinal)
@@ -24,6 +24,7 @@ public static class AgentApprovalRule
         "admin.services.access-policy.set",
         "admin.layer.publish",
         "service.publish",
+        "dataset.stage.import",
         StudioDraftMutationContext.PublicationOperationId,
         "studio.content.rollback",
     };

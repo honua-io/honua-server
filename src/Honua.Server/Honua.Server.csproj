@@ -35,7 +35,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/OgcApiProtocolModule.cs</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup Condition="'$(HonuaIncludeOgcClassic)' != 'true'">
-    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/OgcClassicProtocolModule.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/OgcClassicProtocolModule.cs;Features/Protocols/Wfs20/**/*.cs</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup Condition="'$(HonuaIncludeOData)' != 'true'">
     <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/ODataProtocolModule.cs</DefaultItemExcludes>
@@ -137,6 +137,7 @@
   </ItemGroup>
   <ItemGroup Condition="'$(HonuaIncludeOgcClassic)' != 'true'">
     <Compile Remove="Features\Infrastructure\Hosting\Modules\OgcClassicProtocolModule.cs" />
+    <Compile Remove="Features\Protocols\Wfs20\**\*.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(HonuaIncludeOData)' != 'true'">
     <Compile Remove="Features\Infrastructure\Hosting\Modules\ODataProtocolModule.cs" />

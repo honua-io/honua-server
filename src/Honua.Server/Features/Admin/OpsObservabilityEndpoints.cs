@@ -8,8 +8,8 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -99,7 +99,7 @@ internal static class OpsObservabilityEndpoints
     }
 
     private static async Task<IResult> HandleGetOpsHealthHistory(
-        [FromServices] IOpsHealthHistoryService service,
+        [FromServices] OpsHealthHistoryService service,
         HttpContext context,
         string? window = null,
         string? resolution = null,
@@ -484,11 +484,10 @@ internal static class OpsObservabilityEndpoints
 
         rules.UnionWith(options.Rules.Keys.Where(OpsAutonomyPolicyDefaults.IsValidRule));
 
-        rules.UnionWith(OpsAutonomyPolicyDefaults.BuiltInAutoSafeRules);
+        rules.UnionWith(OpsAutonomyPolicyDefaults.BuiltInKnownRules);
         var activeFindings = await findingsService.EvaluateAsync(cancellationToken).ConfigureAwait(false);
         rules.UnionWith(activeFindings
-            .Where(finding => finding.RecommendedAction is { AutoSafe: true } &&
-                OpsAutonomyPolicyDefaults.IsValidRule(finding.Rule))
+            .Where(finding => OpsAutonomyPolicyDefaults.IsValidRule(finding.Rule))
             .Select(finding => finding.Rule));
 
         return rules.OrderBy(static rule => rule, StringComparer.Ordinal).ToArray();

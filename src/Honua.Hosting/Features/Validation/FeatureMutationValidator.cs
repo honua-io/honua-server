@@ -547,6 +547,29 @@ internal static class MetadataV2AttributeValidation
                     ? null
                     : $"Field '{field.Name}' must be a number.";
 
+            case MetadataV2FieldType.Decimal:
+            case MetadataV2FieldType.TimestampOffset:
+                if (value is not string exactText)
+                {
+                    return $"Field '{field.Name}' must be an exact value encoded as text.";
+                }
+                try
+                {
+                    if (field.Type == MetadataV2FieldType.Decimal)
+                    {
+                        _ = ExactAttributeValues.ParseDecimal(exactText);
+                    }
+                    else
+                    {
+                        _ = ExactAttributeValues.ParseTimestampOffset(exactText);
+                    }
+                    return null;
+                }
+                catch (Exception exception) when (exception is ArgumentException or ExactValueRangeException)
+                {
+                    return $"Field '{field.Name}' contains an invalid or unsupported exact value.";
+                }
+
             case MetadataV2FieldType.Boolean:
                 if (value is bool)
                 {
@@ -631,6 +654,18 @@ internal static class MetadataV2AttributeValidation
             {
                 return null;
             }
+            if (field.Type == MetadataV2FieldType.Decimal && value is string exactText)
+            {
+                var numericDecimal = ExactAttributeValues.ParseDecimal(exactText);
+                if (!TryReadDecimalBound(domain.Range[0], out var decimalMin) ||
+                    !TryReadDecimalBound(domain.Range[1], out var decimalMax))
+                {
+                    return $"Field '{field.Name}' has unsupported decimal range bounds.";
+                }
+                return numericDecimal < decimalMin || numericDecimal > decimalMax
+                    ? $"Field '{field.Name}' value is outside the allowed range."
+                    : null;
+            }
             if (!TryGetDouble(value, out var numeric))
             {
                 // Non-numeric value against a numeric range — type validation
@@ -650,6 +685,28 @@ internal static class MetadataV2AttributeValidation
         }
 
         return null;
+    }
+
+    private static bool TryReadDecimalBound(JsonElement bound, out decimal value)
+    {
+        if (bound.ValueKind == JsonValueKind.Number)
+        {
+            return bound.TryGetDecimal(out value);
+        }
+        if (bound.ValueKind == JsonValueKind.String)
+        {
+            try
+            {
+                value = ExactAttributeValues.ParseDecimal(bound.GetString()!);
+                return true;
+            }
+            catch (Exception exception) when (exception is ArgumentException or ExactValueRangeException)
+            {
+                // Invalid bounds are ignored, matching unsupported range metadata below.
+            }
+        }
+        value = default;
+        return false;
     }
 
     private static bool CodedValueMatches(JsonElement code, object value)

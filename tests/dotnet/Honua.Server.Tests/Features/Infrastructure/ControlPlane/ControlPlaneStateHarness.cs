@@ -5,12 +5,14 @@ using Honua.ControlPlane;
 using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Infrastructure.SecurityState;
 using Honua.Server.Features.Infrastructure.McpSessions;
 using Honua.Server.Features.Studio.Drafts;
+using Honua.Server.Features.Protocols.Wfs20;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Microsoft.AspNetCore.DataProtection;
@@ -30,9 +32,12 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.148_CreateControlPlaneState.sql",
         "Honua.Server.Migrations.149_CreateSecurityState.sql",
         "Honua.Server.Migrations.150_CreateOAuthClientsAndOperationProgress.sql",
+        "Honua.Server.Migrations.153_CreateVersionJobsAndTileGenerationCheckpoints.sql",
         "Honua.Server.Migrations.154_CreatePackageDraftsAndMcpSessions.sql",
         "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql",
-        "Honua.Server.Migrations.161_CreateOpsNotificationSchedules.sql"
+        "Honua.Server.Migrations.161_CreateOpsNotificationSchedules.sql",
+        "Honua.Server.Migrations.174_CreateOperationProposalBatches.sql",
+        "Honua.Server.Migrations.192_CreateWfsStoredQueries.sql"
     ];
 
     private readonly PostgresJobSubstrateHarness _jobs;
@@ -110,9 +115,16 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public PostgresUniversalProgressStore CreateProgressStore() => new(_jobs.Database);
 
+    public PostgresVersionJobStore CreateVersionJobStore()
+        => new(_jobs.Database, NullLogger<PostgresVersionJobStore>.Instance);
+
+    public PostgresTileCacheGenerationCheckpointStore CreateTileCheckpointStore()
+        => new(_jobs.Database, NullLogger<PostgresTileCacheGenerationCheckpointStore>.Instance);
     public PostgresPackageDraftBacking CreatePackageDraftBacking() => new(_jobs.Database);
 
     public PostgresMcpSessionStore CreateMcpSessionStore() => new(_jobs.Database);
+
+    public PostgresWfsStoredQueryStore CreateWfsStoredQueryStore() => new(_jobs.Database);
 
     // Every stored column of the approval tables as text, so a leak through any field is seen.
     public async Task<StoredTextScan> ScanApprovalTablesForAsync(string text)

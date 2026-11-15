@@ -132,6 +132,12 @@ internal sealed partial class FeatureQueryBuilder
         string fieldExpr,
         MetadataV2FieldType? fieldType = null)
     {
+        if (fieldType is MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset
+            && statisticType != StatisticType.Count)
+        {
+            throw new NotSupportedException("Aggregates on exact decimal and offset timestamp fields require a lossless result contract.");
+        }
+
         var numericExpr = $"({fieldExpr})::numeric";
         var orderedExpr = IsNumericFieldType(fieldType)
             ? numericExpr

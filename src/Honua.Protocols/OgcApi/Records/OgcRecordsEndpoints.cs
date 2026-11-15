@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation;
@@ -506,15 +507,15 @@ internal static class OgcRecordsEndpoints
             .Order(StringComparer.Ordinal)
             .ToImmutableArray();
 
-        var properties = new OgcRecordProperties
+        var descriptive = DescriptiveMetadataResolver.ForService(snapshot.Graph, service);
+        links.AddRange(OgcRecordDescriptive.GovernanceLinks(descriptive));
+        var properties = OgcRecordDescriptive.Apply(new OgcRecordProperties
         {
-            Title = serviceMetadata.Title ?? service.EffectivePublicName,
-            Description = serviceMetadata.Description,
             Type = "service",
             ResourceType = "Service",
             ExternalIds = ImmutableArray.Create(serviceMetadata.Name),
             LayerIds = layerIds
-        };
+        }, descriptive);
 
         return new CatalogRecord(
             new OgcRecordFeature
@@ -568,15 +569,15 @@ internal static class OgcRecordsEndpoints
             links.Add(Link.Create($"{baseUrl}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, featureServerService)}/FeatureServer/{serviceLayerIndex}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
         }
 
-        var properties = new OgcRecordProperties
+        var descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, service, publication));
+        links.AddRange(OgcRecordDescriptive.GovernanceLinks(descriptive));
+        var properties = OgcRecordDescriptive.Apply(new OgcRecordProperties
         {
-            Title = resource.Metadata.Title ?? resource.Metadata.Name,
-            Description = resource.Metadata.Description,
             Type = "dataset",
             ResourceType = "Layer",
             GeometryType = resource.ReadGeometryType().ToString(),
             ExternalIds = ImmutableArray.Create(publicationId, resource.Metadata.Name)
-        };
+        }, descriptive);
 
         return new CatalogRecord(
             new OgcRecordFeature
@@ -594,8 +595,8 @@ internal static class OgcRecordsEndpoints
                 $"layer:{publicationId}",
                 publicationId,
                 resource.Metadata.Name,
-                resource.Metadata.Title,
-                resource.Metadata.Description));
+                properties.Title,
+                properties.Description));
     }
 
     private static OgcRecordGeometry? CreateExtentGeometry(ImmutableArray<double>? bbox)

@@ -138,6 +138,7 @@ internal sealed class McpLayerField
 // honua_query_features
 // -----------------------------------------------------------------------
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpQueryFeaturesArgument
 {
     [JsonPropertyName("serviceId")]
