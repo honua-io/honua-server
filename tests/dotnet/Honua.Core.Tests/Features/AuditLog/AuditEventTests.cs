@@ -187,8 +187,9 @@ public sealed class AuditEventTests
     {
         using var requestCancellation = new CancellationTokenSource();
         var audit = new CapturingAuditLog();
+        using var catalog = new OperationCatalog([new StubDescriptorProvider()], TimeProvider.System);
         var dispatcher = new OperationDispatcher(
-            new OperationCatalog([new StubDescriptorProvider()], TimeProvider.System),
+            catalog,
             [new CancelingDuringValidationExecutor(requestCancellation)],
             new AllowAllPolicyDecisionPoint(),
             TimeProvider.System,
@@ -216,8 +217,9 @@ public sealed class AuditEventTests
     public async Task SubmitAsync_AgentWithoutRequiredScope_AuditsDenialBeforeAcceptance()
     {
         var audit = new CapturingAuditLog();
+        using var catalog = new OperationCatalog([new StubDescriptorProvider()], TimeProvider.System);
         var dispatcher = new OperationDispatcher(
-            new OperationCatalog([new StubDescriptorProvider()], TimeProvider.System),
+            catalog,
             [], new AllowAllPolicyDecisionPoint(), TimeProvider.System, auditLog: audit);
         var result = await dispatcher.SubmitAsync(
             new OperationRequest { OperationId = OperationId },
