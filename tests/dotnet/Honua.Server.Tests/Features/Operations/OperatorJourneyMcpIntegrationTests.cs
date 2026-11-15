@@ -158,7 +158,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 ? physical.GetString()
                 : tableName;
 
-            await AssertPublishInspectionAsync(admin, connectionId!, schema!, table!);
+            await AssertPublishInspectionAsync(admin, (connectionId!, schema!, table!));
 
             // MCP callers are agents: publishing and access-policy changes file a proposal for
             // one human approval instead of executing, even with an administrator key.
@@ -205,8 +205,10 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
 
     // The read-only Publish inspection tools run end to end through tools/call: a multipart file
     // preview, a URL preview through the import source, and a dry-run table validation by route id.
-    private static async Task AssertPublishInspectionAsync(HttpClient admin, string connectionId, string schema, string table)
+    private static async Task AssertPublishInspectionAsync(
+        HttpClient admin, (string ConnectionId, string Schema, string Table) source)
     {
+        var (connectionId, schema, table) = source;
         var filePreview = await CallOkAsync(admin, "honua_admin_import_preview", new
         {
             file = Convert.ToBase64String(Encoding.UTF8.GetBytes(GeoJson)),
