@@ -27,6 +27,7 @@ internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorPr
         => Task.FromResult<IReadOnlyList<IOperationDescriptor>>(
         [
             ServicePublishOperation.BuildDescriptor(),
+            ServicePublicationPreviewOperation.BuildDescriptor(),
             StylePresetOperation.BuildDescriptor(),
             .. AiAdmissionControlOperation.Actions.Keys.Select(AiAdmissionControlOperation.Descriptor),
             .. StudioDraftOperations.BuildDescriptors(),

@@ -99,6 +99,11 @@ internal sealed class PublishServiceTool : IMcpTool
             ["primaryKey"] = argument.PrimaryKey,
         };
 
+        if (argument.PreviewReference is not null)
+        {
+            parameters["previewReference"] = argument.PreviewReference;
+        }
+
         if (argument.Srid is { } srid)
         {
             parameters["srid"] = srid.ToString(CultureInfo.InvariantCulture);

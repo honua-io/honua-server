@@ -108,6 +108,7 @@ internal static class McpWorkflowViewCatalog
                 Description = "Publish imported data as an addressable service and layer.",
                 Rules =
                 [
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("service.publication.preview")),
                     McpWorkflowViewMemberRule.Exact("honua_publish_service"),
                     McpWorkflowViewMemberRule.Exact("honua_publish_result"),
                 ],
@@ -261,6 +262,7 @@ internal static class McpWorkflowViewCatalog
                 Description = "Publish a service or an analysis result.",
                 Rules =
                 [
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("service.publication.preview")),
                     McpWorkflowViewMemberRule.Exact("honua_publish_service"),
                     McpWorkflowViewMemberRule.Exact("honua_publish_result"),
                 ],

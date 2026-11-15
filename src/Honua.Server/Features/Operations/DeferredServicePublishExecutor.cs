@@ -18,17 +18,32 @@ internal sealed class DeferredServicePublishExecutor(IServiceProvider services)
 {
     public string OperationId => ServicePublishOperation.OperationId;
 
-    public Task<OperationRequest> PrepareAsync(
+    public async Task<OperationRequest> PrepareAsync(
         OperationRequest request,
         OperationPolicyContext context,
         CancellationToken cancellationToken = default)
     {
         if (!TryResolve(out var executor, out _))
         {
-            return Task.FromResult(request);
+            return request;
         }
 
-        return executor!.PrepareAsync(request, context, cancellationToken);
+        var prepared = await executor!.PrepareAsync(request, context, cancellationToken).ConfigureAwait(false);
+        if (prepared.Parameters.ContainsKey(PublicationPreviewBindings.ReferenceKey))
+        {
+            if (services.GetRequiredService<ILayerPublishingService>() is not ILayerPublicationBaseReader baseReader)
+            {
+                throw new InvalidOperationException("Publication preview verification is unavailable.");
+            }
+            var currentBase = await baseReader.ReadPublicationBaseAsync(cancellationToken).ConfigureAwait(false);
+            if (ServicePublishMetadataPin.Require(prepared) != currentBase)
+            {
+                throw new InvalidOperationException("The approved publication metadata base is no longer current.");
+            }
+            await services.GetRequiredService<PublicationPreviewBindings>()
+                .VerifyAsync(prepared, context, currentBase, cancellationToken).ConfigureAwait(false);
+        }
+        return prepared;
     }
 
     public Task<OperationValidation> ValidateAsync(

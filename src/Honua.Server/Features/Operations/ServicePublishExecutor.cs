@@ -230,26 +230,7 @@ internal sealed class ServicePublishExecutor
 
         var connectionString = context.ResolvedConnectionString
             ?? await ResolveConnectionStringAsync(request.ConnectionId, cancellationToken).ConfigureAwait(false);
-        var publishRequest = new LayerPublishRequest
-        {
-            Schema = GetRequired(request, "schema"),
-            Table = GetRequired(request, "table"),
-            LayerName = GetRequired(request, "layerName"),
-            Description = GetOptional(request, "description"),
-            GeometryColumn = GetOptional(request, "geometryColumn"),
-            GeometryType = GetOptional(request, "geometryType"),
-            Srid = GetInt(request, "srid"),
-            PrimaryKey = GetOptional(request, "primaryKey"),
-            Fields = request.Fields,
-            ServiceName = request.ServiceName,
-            FolderId = request.Parameters.TryGetValue("folderId", out var folderId)
-                ? new MetadataV2FolderSelection(folderId) : default,
-            PublicName = request.Parameters.GetValueOrDefault("publicName"),
-            Namespace = request.Parameters.GetValueOrDefault("namespace"),
-            ConnectionId = Guid.TryParse(request.ConnectionId, out var connectionId) ? connectionId : null,
-            ConnectionEndpointFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey)
-        };
-        publishRequest.CommittedSinkPublication = request.VerifiedCommittedSinkPublication;
+        var publishRequest = CreatePublishRequest(request);
         // Only an approved proposal enforces its pin; a direct publish keeps conflict retries.
         if (context.ApprovedProposalId is not null && ServicePublishMetadataPin.TryRead(request) is { } pin)
         {
@@ -663,6 +644,31 @@ internal sealed class ServicePublishExecutor
         => request.Parameters.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value!
             : throw new ArgumentException($"Required operation parameter '{name}' is missing.");
+
+    internal static LayerPublishRequest CreatePublishRequest(OperationRequest request)
+    {
+        var publishRequest = new LayerPublishRequest
+        {
+            Schema = GetRequired(request, "schema"),
+            Table = GetRequired(request, "table"),
+            LayerName = GetRequired(request, "layerName"),
+            Description = GetOptional(request, "description"),
+            GeometryColumn = GetOptional(request, "geometryColumn"),
+            GeometryType = GetOptional(request, "geometryType"),
+            Srid = GetInt(request, "srid"),
+            PrimaryKey = GetOptional(request, "primaryKey"),
+            Fields = request.Fields,
+            ServiceName = request.ServiceName,
+            FolderId = request.Parameters.TryGetValue("folderId", out var folderId)
+                ? new MetadataV2FolderSelection(folderId) : default,
+            PublicName = request.Parameters.GetValueOrDefault("publicName"),
+            Namespace = request.Parameters.GetValueOrDefault("namespace"),
+            ConnectionId = Guid.TryParse(request.ConnectionId, out var connectionId) ? connectionId : null,
+            ConnectionEndpointFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey)
+        };
+        publishRequest.CommittedSinkPublication = request.VerifiedCommittedSinkPublication;
+        return publishRequest;
+    }
 
     private static void VerifyPreparedSink(OperationRequest request)
     {

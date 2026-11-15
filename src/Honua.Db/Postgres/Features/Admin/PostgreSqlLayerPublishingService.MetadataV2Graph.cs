@@ -157,137 +157,28 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // by its ETag; a rejected scope leaves the SQL layer transaction uncommitted.
         ValidatePublicationScope(graph, serviceName, publicationScope, requireExistingScopedService);
         var now = DateTimeOffset.UtcNow;
-        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
-        // Managed storage belongs to the server, even when the source route has a connection ID.
-        var storageConnectionId = storage.IsManagedStore ? null : request.ConnectionId;
-        var graphLayerKey = BuildLayerGraphId("layer", layerId, storageConnectionId);
-        var service = BuildPublishedService(graph, serviceName, srid, now);
-        service = service with { Metadata = ApplyPublicationScope(service.Metadata, publicationScope) };
-        var organizedGraph = PublishedImportTarget.PrepareFolder(graph, request, service.Metadata.Tenant);
-        service = PublishedImportTarget.BindService(organizedGraph, service, request);
-        service = PublishedServiceOrganization.Apply(organizedGraph, service, request);
-        var resource = BuildPublishedResource(
-            request,
-            layerId,
-            storageConnectionId,
-            resourcePrimaryKeyColumn,
-            resourceGeometryColumn,
-            geometryType,
-            srid,
-            storage.StorageSrid,
-            storageCoordinateEpoch,
-            fields,
-            extent,
-            now);
-        var binding = BuildPublishedStorageBinding(
-            request,
-            storage,
-            new PublishedStorageBindingContext(layerId, resource.Metadata.Id, now)
-            {
-                TemporalColumn = ResolveTemporalColumnForPublish(request.TemporalColumn, fields)
-            });
-        var featurePublication = BuildPublishedPublication(
-            service,
-            resource,
-            binding,
-            layerIdText,
-            graphLayerKey,
-            request.LayerName.Trim(),
-            MetadataV2LayerType.EsriFeatureLayer,
-            isPrimary: true,
-            idPrefix: "pub",
-            request.Enabled,
-            now,
-            capabilities);
-        var stacPublication = string.IsNullOrWhiteSpace(storage.GeometryColumn) ? null : BuildPublishedPublication(
-            service,
-            resource,
-            binding,
-            layerIdText,
-            graphLayerKey,
-            request.LayerName.Trim(),
-            MetadataV2LayerType.StacCollection,
-            isPrimary: false,
-            idPrefix: "pub-stac",
-            request.Enabled,
-            now);
-        var connection = BuildPublishedConnection(storageConnectionId, now);
-        if (connection is not null)
-        {
-            connection = connection with
-            {
-                Metadata = PreserveDependencyMetadata(
-                    graph.Connections.FirstOrDefault(candidate => candidate.Metadata.Id == connection.Metadata.Id)?.Metadata,
-                    connection.Metadata,
-                    publicationScope)
-            };
-        }
-        resource = resource with { Metadata = ApplyPublicationScope(resource.Metadata, publicationScope) };
-        binding = binding with { Metadata = ApplyPublicationScope(binding.Metadata, publicationScope) };
-        featurePublication = featurePublication with { Metadata = ApplyPublicationScope(featurePublication.Metadata, publicationScope) };
-        if (stacPublication is not null)
-        {
-            stacPublication = stacPublication with { Metadata = ApplyPublicationScope(stacPublication.Metadata, publicationScope) };
-        }
-        service = service with
-        {
-            PublicationIds = service.PublicationIds
-                .Append(featurePublication.Metadata.Id)
-                .Concat(stacPublication is null ? [] : new[] { stacPublication.Metadata.Id })
-                .Distinct(StringComparer.Ordinal)
-                .ToArray()
-        };
-
-        // ADR-0048 Phase 2 (#1389): project the independent style catalog into the
-        // canonical graph. Emit a Type=Style resource per associated catalog style and
-        // point the data resource's StyleResourceIds at them ([0] = primary), so the
-        // FeatureServer/MapServer StyleResourceIds read path lights up with real data
-        // and one style can be shared by many resources.
         var (styleResources, styleResourceIds) =
             await BuildStyleResourcesForLayerAsync(layerId, now, cancellationToken).ConfigureAwait(false);
-        if (styleResourceIds.Count > 0)
+        var updatedGraph = BuildPublishedLayerGraph(new PublishedLayerGraphPlan
         {
-            resource = resource with { StyleResourceIds = styleResourceIds };
-        }
-
-        var resourcesWithStyles = UpsertById(graph.Resources, resource, static item => item.Metadata.Id);
-        // codeql[cs/linq/missed-select]: folds each style into the graph with UpsertById and preserved dependency metadata
-        foreach (var styleResource in styleResources)
-        {
-            var scopedStyle = styleResource with
-            {
-                Metadata = PreserveDependencyMetadata(
-                    graph.Resources.FirstOrDefault(candidate => candidate.Metadata.Id == styleResource.Metadata.Id)?.Metadata,
-                    styleResource.Metadata,
-                    publicationScope)
-            };
-            resourcesWithStyles = UpsertById(resourcesWithStyles, scopedStyle, static item => item.Metadata.Id);
-        }
-
-        var updatedGraph = graph with
-        {
-            Revision = Math.Max(graph.Revision + 1, 1),
+            Graph = graph,
+            Request = request,
+            ServiceName = serviceName,
+            LayerId = layerId,
+            Storage = storage,
+            PrimaryKey = resourcePrimaryKeyColumn,
+            GeometryColumn = resourceGeometryColumn,
+            GeometryType = geometryType,
+            Srid = srid,
+            StorageCoordinateEpoch = storageCoordinateEpoch,
+            Fields = fields,
+            Extent = extent,
+            Capabilities = capabilities,
+            Scope = publicationScope,
             GeneratedAt = now,
-            Folders = organizedGraph.Folders,
-            Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
-            Resources = resourcesWithStyles,
-            StorageBindings = UpsertById(graph.StorageBindings, binding, static item => item.Metadata.Id),
-            Publications = stacPublication is null
-                ? UpsertPublication(graph.Publications, featurePublication)
-                : UpsertPublication(
-                UpsertPublication(graph.Publications, featurePublication),
-                stacPublication),
-            Connections = connection is null
-                ? graph.Connections
-                : UpsertById(graph.Connections, connection, static item => item.Metadata.Id)
-        };
-
-        var validation = MetadataV2GraphValidator.Validate(updatedGraph);
-        if (!validation.IsValid)
-        {
-            throw new InvalidOperationException(
-                $"Published layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
-        }
+            StyleResources = styleResources,
+            StyleResourceIds = styleResourceIds
+        });
 
         return await PersistMetadataV2MutationAsync(
                 graph,

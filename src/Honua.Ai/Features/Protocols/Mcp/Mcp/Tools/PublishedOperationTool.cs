@@ -80,7 +80,7 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
     private bool IsFolderOperation => FolderToolName(_descriptor.OperationId) is not null;
 
     private bool RequiresAdminAuthorization =>
-        IsFolderOperation || _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
+        IsFolderOperation || _descriptor.OperationId == "service.publication.preview" || _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
 
     private bool RequiresProposalSubmission =>
         _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
@@ -229,6 +229,7 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
             ConnectionId = connectionId,
             ServiceName = serviceName,
             Parameters = parameters,
+            Fields = _descriptor.OperationId == "service.publication.preview" ? ReadFields(arguments) : [],
             DryRun = dryRun,
         };
 
@@ -516,6 +517,21 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         }
 
         return parameters;
+    }
+
+    private static IReadOnlyList<string> ReadFields(JsonElement? arguments)
+    {
+        if (arguments is not { ValueKind: JsonValueKind.Object } args ||
+            !args.TryGetProperty("fields", out var fields))
+        {
+            return [];
+        }
+        if (fields.ValueKind != JsonValueKind.Array ||
+            fields.EnumerateArray().Any(field => field.ValueKind != JsonValueKind.String))
+        {
+            throw new GeoprocessingValidationException("fields must be an array of field names.");
+        }
+        return fields.EnumerateArray().Select(field => field.GetString()!).ToArray();
     }
 
     private static string? ReadString(JsonElement? arguments, string name)

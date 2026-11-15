@@ -54,6 +54,10 @@ internal static class McpToolSchemas
           "type": "object",
           "required": ["connectionId", "schema", "table", "layerName"],
           "properties": {
+            "previewReference": {
+              "type": "string",
+              "description": "Optional retained publication preview. The request, requester, tenant, original expiry and metadata base must still match."
+            },
             "connectionId": {
               "type": "string",
               "description": "Connection ID from honua_admin_connections_list."

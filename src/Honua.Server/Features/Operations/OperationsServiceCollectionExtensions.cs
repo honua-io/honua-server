@@ -142,6 +142,8 @@ internal static class OperationsServiceCollectionExtensions
 
         // Enumerate operation identities without resolving unrelated actuator dependencies.
         services.TryAddDeferredOperationExecutor<DeferredServicePublishExecutor>(ServicePublishOperation.OperationId);
+        services.TryAddSingleton<PublicationPreviewBindings>();
+        services.TryAddDeferredOperationExecutor<ServicePublicationPreviewExecutor>(ServicePublicationPreviewOperation.OperationId);
         services.AddServerInstanceIdentity();
         services.TryAddDeferredOperationExecutor<AdminServerStatusExecutor>(AdminServerStatusExecutor.OperationName);
         services.TryAddDeferredOperationExecutor<StudioDraftCreateExecutor>(StudioDraftOperations.Create);
@@ -301,6 +303,7 @@ internal static class OperationsServiceCollectionExtensions
     internal static readonly IReadOnlyList<string> RedisOffDirectOperationIds =
     [
         ServicePublishOperation.OperationId,
+        ServicePublicationPreviewOperation.OperationId,
         StylePresetOperation.OperationId,
         // Only direct policy-allowed controls use a transient generic envelope here.
         // Their actual ledger mutation and replay/audit receipt remain atomic and durable.

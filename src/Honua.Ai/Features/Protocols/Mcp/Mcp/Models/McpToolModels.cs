@@ -296,6 +296,9 @@ internal sealed class McpSupportedOperationKindsOutput
 
 internal sealed class McpPublishServiceArgument
 {
+    [JsonPropertyName("previewReference")]
+    public string? PreviewReference { get; set; }
+
     [JsonPropertyName("connectionId")]
     public string? ConnectionId { get; set; }
 
