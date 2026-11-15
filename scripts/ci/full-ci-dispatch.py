@@ -27,6 +27,7 @@ import os
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -49,56 +50,105 @@ def is_full_run(run: dict, branch: str) -> bool:
             and str(run.get("display_title", "")).startswith(FULL_TITLE_PREFIX))
 
 
-def decide(now: dt.datetime, runs: list[dict], trunk_head: str, *, branch: str = "trunk",
-           window_start_hour: int = 22, last_dispatch_hour: int = 3, zone: dt.tzinfo = PACIFIC,
-           max_per_night: int = 2) -> tuple[bool, str]:
-    """(dispatch, reason) for one trunk push or backup tick; the window hours are `zone` local time."""
-    local = now.astimezone(zone)
-    if last_dispatch_hour <= local.hour < window_start_hour:
-        return False, (f"outside the {window_start_hour:02d}:00-{last_dispatch_hour:02d}:00 {local:%Z} "
-                       f"dispatch window ({local:%H:%M} {local:%Z})")
-    full = [run for run in runs if is_full_run(run, branch)]
+@dataclass(frozen=True)
+class Policy:
+    """The overnight dispatch window, in `zone` local hours, and the nightly run limit."""
+    branch: str = "trunk"
+    window_start_hour: int = 22
+    last_dispatch_hour: int = 3
+    zone: dt.tzinfo = PACIFIC
+    max_per_night: int = 2
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    now: dt.datetime
+    runs: list[dict]
+    trunk_head: str
+
+
+def decide(snapshot: Snapshot, policy: Policy = Policy()) -> tuple[bool, str]:
+    """(dispatch, reason) for one trunk push or backup tick."""
+    local = snapshot.now.astimezone(policy.zone)
+    if policy.last_dispatch_hour <= local.hour < policy.window_start_hour:
+        return False, (f"outside the {policy.window_start_hour:02d}:00-{policy.last_dispatch_hour:02d}:00 "
+                       f"{local:%Z} dispatch window ({local:%H:%M} {local:%Z})")
+    full = [run for run in snapshot.runs if is_full_run(run, policy.branch)]
     active = [run for run in full if run.get("status") != "completed"]
     if active:
-        run = active[0]
-        return False, f"full run {run.get('id')} is {run.get('status')}"
-    start_day = local.date() if local.hour >= window_start_hour else local.date() - dt.timedelta(days=1)
-    window_start = dt.datetime.combine(start_day, dt.time(window_start_hour), tzinfo=zone)
+        return False, f"full run {active[0].get('id')} is {active[0].get('status')}"
     tonight = [run for run in full
-               if parse_time(run["created_at"]) >= window_start and run.get("conclusion") != "cancelled"]
-    if len(tonight) >= max_per_night:
-        return False, f"{len(tonight)} full runs already started tonight (limit {max_per_night})"
+               if parse_time(run["created_at"]) >= night_start(local, policy)
+               and run.get("conclusion") != "cancelled"]
+    if len(tonight) >= policy.max_per_night:
+        return False, f"{len(tonight)} full runs already started tonight (limit {policy.max_per_night})"
+    head = snapshot.trunk_head
     finished = sorted((run for run in full if run.get("conclusion") not in (None, "cancelled")),
                       key=lambda run: parse_time(run["created_at"]), reverse=True)
-    if finished and finished[0].get("head_sha") == trunk_head:
-        run = finished[0]
-        return False, f"trunk head {trunk_head[:12]} already has full result {run.get('id')} ({run.get('conclusion')})"
-    return True, f"no full run is active and trunk head {trunk_head[:12]} has no full result"
+    if finished and finished[0].get("head_sha") == head:
+        return False, (f"trunk head {head[:12]} already has full result {finished[0].get('id')} "
+                       f"({finished[0].get('conclusion')})")
+    return True, f"no full run is active and trunk head {head[:12]} has no full result"
 
 
-def gh(args: list[str], stdin: str | None = None, *, retry: bool = True) -> str:
+def night_start(local: dt.datetime, policy: Policy) -> dt.datetime:
+    day = local.date() if local.hour >= policy.window_start_hour else local.date() - dt.timedelta(days=1)
+    return dt.datetime.combine(day, dt.time(policy.window_start_hour), tzinfo=policy.zone)
+
+
+def gh_once(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess:
     env = dict(os.environ, NO_COLOR="1", GH_FORCE_TTY="0")
-    # A retried dispatch POST that GitHub had already accepted would queue a second full run.
-    delays = (10, 30, 60) if retry else ()
+    return subprocess.run(["gh", "api", *args], input=stdin, capture_output=True, text=True, env=env)
+
+
+def failure_detail(result: subprocess.CompletedProcess) -> str:
+    return " ".join((result.stderr or "").split())
+
+
+def gh_json(path: str) -> dict:
+    """GET with backoff on transient failures; a persistent refusal raises."""
+    delays = (10, 30, 60)
     for attempt in range(len(delays) + 1):
-        result = subprocess.run(["gh", "api", *args], input=stdin, capture_output=True, text=True, env=env)
+        result = gh_once([path])
         if result.returncode == 0:
-            return result.stdout
-        detail = " ".join((result.stderr or "").split())
+            return json.loads(result.stdout)
+        detail = failure_detail(result)
         if attempt == len(delays) or "HTTP 404" in detail or "HTTP 422" in detail:
-            raise DispatchError(f"gh api {args[0]} failed: {detail}")
-        print(f"::warning::gh api {args[0]} failed ({detail}); retrying in {delays[attempt]}s", file=sys.stderr)
+            raise DispatchError(f"gh api {path} failed: {detail}")
+        print(f"::warning::gh api {path} failed ({detail}); retrying in {delays[attempt]}s", file=sys.stderr)
         time.sleep(delays[attempt])
     raise AssertionError("unreachable")
 
 
-def gh_json(path: str) -> dict:
-    return json.loads(gh([path]))
+@dataclass(frozen=True)
+class Target:
+    repository: str
+    workflow: str
+    branch: str
 
 
-def list_runs(fetch: Callable[[str], dict], repository: str, workflow: str, branch: str) -> list[dict]:
-    path = f"repos/{repository}/actions/workflows/{workflow}/runs?branch={branch}&per_page=50"
+def list_runs(fetch: Callable[[str], dict], target: Target) -> list[dict]:
+    path = f"repos/{target.repository}/actions/workflows/{target.workflow}/runs?branch={target.branch}&per_page=50"
     return list(fetch(path).get("workflow_runs", []))
+
+
+def dispatch_once(target: Target) -> None:
+    """POST the dispatch exactly once: a retry GitHub had already accepted would queue a second full run."""
+    result = gh_once([f"repos/{target.repository}/actions/workflows/{target.workflow}/dispatches",
+                      "--method", "POST", "--input", "-"], json.dumps({"ref": target.branch}))
+    if result.returncode != 0:
+        raise DispatchError(f"dispatch of {target.workflow} failed: {failure_detail(result)}")
+
+
+def wait_for_new_run(target: Target, known: set) -> dict | None:
+    """Wait for the run to appear so the next serialized dispatcher sees it as active."""
+    for _ in range(36):
+        time.sleep(5)
+        new = [run for run in list_runs(gh_json, target)
+               if run.get("id") not in known and is_full_run(run, target.branch)]
+        if new:
+            return new[0]
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -106,39 +156,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", "honua-io/honua-server"))
     parser.add_argument("--workflow", default="ci.yml")
     parser.add_argument("--branch", default="trunk")
-    parser.add_argument("--window-start-hour", type=int, default=22, help="Pacific local hour")
-    parser.add_argument("--last-dispatch-hour", type=int, default=3, help="Pacific local hour")
-    parser.add_argument("--max-per-night", type=int, default=2)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
-    now = dt.datetime.now(dt.timezone.utc)
-    head = gh_json(f"repos/{args.repository}/commits/{args.branch}")["sha"]
-    runs = list_runs(gh_json, args.repository, args.workflow, args.branch)
-    dispatch, reason = decide(now, runs, head, branch=args.branch,
-                              window_start_hour=args.window_start_hour,
-                              last_dispatch_hour=args.last_dispatch_hour,
-                              max_per_night=args.max_per_night)
+    target = Target(args.repository, args.workflow, args.branch)
+    head = gh_json(f"repos/{target.repository}/commits/{target.branch}")["sha"]
+    runs = list_runs(gh_json, target)
+    dispatch, reason = decide(Snapshot(dt.datetime.now(dt.timezone.utc), runs, head), Policy(branch=target.branch))
     if not dispatch:
         print(f"::notice::no dispatch: {reason}")
         return 0
     if args.dry_run:
-        print(f"::notice::dry run, would dispatch full {args.workflow} on {args.branch}: {reason}")
+        print(f"::notice::dry run, would dispatch full {target.workflow} on {target.branch}: {reason}")
         return 0
-    known = {run.get("id") for run in runs}
-    gh([f"repos/{args.repository}/actions/workflows/{args.workflow}/dispatches", "--method", "POST",
-        "--input", "-"], stdin=json.dumps({"ref": args.branch}), retry=False)
-    # Wait for the run to appear so the next serialized dispatcher sees it as active. Fail if
-    # it does not, so a possible duplicate dispatch is visible.
-    for _ in range(36):
-        time.sleep(5)
-        new = [run for run in list_runs(gh_json, args.repository, args.workflow, args.branch)
-               if run.get("id") not in known and is_full_run(run, args.branch)]
-        if new:
-            print(f"::notice::dispatched full {args.workflow} run {new[0].get('id')} on {args.branch}: {reason}")
-            return 0
-    print(f"::error::dispatched full {args.workflow} on {args.branch} but the run is not listed after 180 s")
-    return 1
+    dispatch_once(target)
+    run = wait_for_new_run(target, {run.get("id") for run in runs})
+    if run is None:
+        # Red, so a possible duplicate dispatch by the next serialized run is visible.
+        print(f"::error::dispatched full {target.workflow} on {target.branch} but the run is not listed after 180 s")
+        return 1
+    print(f"::notice::dispatched full {target.workflow} run {run.get('id')} on {target.branch}: {reason}")
+    return 0
 
 
 if __name__ == "__main__":

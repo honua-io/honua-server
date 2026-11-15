@@ -27,86 +27,91 @@ def at(text: str) -> dt.datetime:
     return dt.datetime.fromisoformat(text + "+00:00")
 
 
-def run(run_id: int, created: str, *, event: str = "schedule", title: str = "CI full ",
-        status: str = "completed", conclusion: str | None = "failure", sha: str = OLD,
-        branch: str = "trunk") -> dict:
-    return dict(id=run_id, created_at=created + "Z", event=event, display_title=title, status=status,
-                conclusion=conclusion, head_sha=sha, head_branch=branch)
+RUN_DEFAULTS = dict(event="schedule", display_title="CI full ", status="completed",
+                    conclusion="failure", head_sha=OLD, head_branch="trunk")
+
+
+def run(run_id: int, created: str, **fields) -> dict:
+    return {**RUN_DEFAULTS, "id": run_id, "created_at": created + "Z", **fields}
+
+
+def decide(moment: str, runs: list[dict]) -> tuple[bool, str]:
+    return MODULE.decide(MODULE.Snapshot(at(moment), runs, HEAD))
 
 
 class DecideTests(unittest.TestCase):
     def test_dispatches_inside_window_when_trunk_head_has_no_full_result(self):
         runs = [run(1, "2026-11-15T01:05:40", conclusion="cancelled")]
-        self.assertTrue(MODULE.decide(at("2026-11-15T06:10:00"), runs, HEAD)[0])
+        self.assertTrue(decide("2026-11-15T06:10:00", runs)[0])
 
     def test_never_dispatches_outside_window(self):
         for moment in ("2026-11-15T05:59:59", "2026-11-15T11:00:00", "2026-11-15T20:00:00",
                        "2027-07-15T04:30:00", "2027-07-15T10:00:00"):
-            dispatch, reason = MODULE.decide(at(moment), [], HEAD)
+            dispatch, reason = decide(moment, [])
             self.assertFalse(dispatch, moment)
             self.assertIn("outside", reason)
 
     def test_last_minute_of_window_still_dispatches(self):
-        self.assertTrue(MODULE.decide(at("2026-11-15T10:59:00"), [], HEAD)[0])
+        self.assertTrue(decide("2026-11-15T10:59:00", [])[0])
 
     def test_window_follows_pacific_daylight_time(self):
         # PDT: 22:00-03:00 Pacific is 05:00-10:00 UTC.
-        self.assertTrue(MODULE.decide(at("2027-07-15T05:00:00"), [], HEAD)[0])
-        self.assertTrue(MODULE.decide(at("2027-07-15T09:59:00"), [], HEAD)[0])
-        self.assertFalse(MODULE.decide(at("2027-07-15T10:00:00"), [], HEAD)[0])
+        self.assertTrue(decide("2027-07-15T05:00:00", [])[0])
+        self.assertTrue(decide("2027-07-15T09:59:00", [])[0])
+        self.assertFalse(decide("2027-07-15T10:00:00", [])[0])
 
     def test_night_starts_at_pacific_window_open_across_midnight(self):
         # 08:30 UTC is 00:30 PST; a run created at 06:05 UTC (22:05 PST the day before) counts.
         runs = [run(20, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="success"),
                 run(21, "2026-11-15T07:30:00", event="schedule", conclusion="failure")]
-        self.assertFalse(MODULE.decide(at("2026-11-15T08:30:00"), runs, HEAD)[0])
+        self.assertFalse(decide("2026-11-15T08:30:00", runs)[0])
         # The previous evening's 05:59 UTC run (21:59 PST) is outside tonight's window.
         runs[0]["created_at"] = "2026-11-15T05:59:00Z"
-        self.assertTrue(MODULE.decide(at("2026-11-15T08:30:00"), runs, HEAD)[0])
+        self.assertTrue(decide("2026-11-15T08:30:00", runs)[0])
 
     def test_active_full_run_blocks_dispatch(self):
         for status in ("queued", "in_progress", "waiting", "pending"):
             runs = [run(7, "2026-11-15T03:00:00", status=status, conclusion=None)]
-            dispatch, reason = MODULE.decide(at("2026-11-15T07:00:00"), runs, HEAD)
+            dispatch, reason = decide("2026-11-15T07:00:00", runs)
             self.assertFalse(dispatch, status)
             self.assertIn(status, reason)
 
     def test_active_affected_run_does_not_block(self):
         runs = [run(8, "2026-11-15T06:30:00", event="workflow_dispatch", status="in_progress",
-                    conclusion=None, title="CI affected affected 98c4e5355c31..b54d93edd04d")]
-        self.assertTrue(MODULE.decide(at("2026-11-15T07:00:00"), runs, HEAD)[0])
+                    conclusion=None, display_title="CI affected affected 98c4e5355c31..b54d93edd04d")]
+        self.assertTrue(decide("2026-11-15T07:00:00", runs)[0])
 
     def test_branch_runs_are_ignored(self):
-        runs = [run(9, "2026-11-15T06:30:00", status="in_progress", conclusion=None, branch="train/batch/x")]
-        self.assertTrue(MODULE.decide(at("2026-11-15T07:00:00"), runs, HEAD)[0])
+        runs = [run(9, "2026-11-15T06:30:00", status="in_progress", conclusion=None, head_branch="train/batch/x")]
+        self.assertTrue(decide("2026-11-15T07:00:00", runs)[0])
 
     def test_trunk_head_with_full_result_is_not_rerun(self):
-        runs = [run(10, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="success", sha=HEAD)]
-        dispatch, reason = MODULE.decide(at("2026-11-15T09:30:00"), runs, HEAD)
+        runs = [run(10, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="success", head_sha=HEAD)]
+        dispatch, reason = decide("2026-11-15T09:30:00", runs)
         self.assertFalse(dispatch)
         self.assertIn("already has full result", reason)
 
     def test_failed_full_result_on_head_is_not_rerun(self):
-        runs = [run(10, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="failure", sha=HEAD)]
-        self.assertFalse(MODULE.decide(at("2026-11-15T09:30:00"), runs, HEAD)[0])
+        runs = [run(10, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="failure", head_sha=HEAD)]
+        self.assertFalse(decide("2026-11-15T09:30:00", runs)[0])
 
     def test_cancelled_full_run_on_head_does_not_count(self):
-        runs = [run(11, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="cancelled", sha=HEAD)]
-        self.assertTrue(MODULE.decide(at("2026-11-15T09:30:00"), runs, HEAD)[0])
+        runs = [run(11, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="cancelled", head_sha=HEAD)]
+        self.assertTrue(decide("2026-11-15T09:30:00", runs)[0])
 
     def test_second_run_of_the_night_when_trunk_moved(self):
-        runs = [run(12, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="success", sha=OLD)]
-        self.assertTrue(MODULE.decide(at("2026-11-15T09:10:00"), runs, HEAD)[0])
+        runs = [run(12, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="success", head_sha=OLD)]
+        self.assertTrue(decide("2026-11-15T09:10:00", runs)[0])
 
     def test_nightly_limit_counts_runs_that_were_not_cancelled(self):
         runs = [run(13, "2026-11-15T06:05:00", event="workflow_dispatch", conclusion="success"),
                 run(14, "2026-11-15T09:05:00", event="schedule", conclusion="failure"),
                 run(15, "2026-11-15T05:00:00", conclusion="success")]
-        dispatch, reason = MODULE.decide(at("2026-11-15T10:50:00"), runs, HEAD)
+        dispatch, reason = decide("2026-11-15T10:50:00", runs)
         self.assertFalse(dispatch)
         self.assertIn("2 full runs", reason)
         runs[1]["conclusion"] = "cancelled"
-        self.assertTrue(MODULE.decide(at("2026-11-15T10:50:00"), runs, HEAD)[0])
+        self.assertTrue(decide("2026-11-15T10:50:00", runs)[0])
 
 
 class WorkflowTests(unittest.TestCase):
