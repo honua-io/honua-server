@@ -349,7 +349,7 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         source.ReadLatestReleaseAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<OpsPublishedRelease?>(null));
         using var checks = new OpsSelfChecks(clock, source);
         var sample = await checks.EvaluateWithEvidenceAsync();
-        return EvidencePostureFactory.Build(clock.GetUtcNow(), sample.Sources);
+        return EvidencePostureFactory.Build(clock.GetUtcNow(), [.. sample.Sources]);
     }
 
     [IntegrationTest]
