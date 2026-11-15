@@ -6,7 +6,6 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>Validates exact calendar, time, timestamp and decimal attribute values without rounding.</summary>
 public static partial class ExactAttributeValues
 {
     private const string DateFormat = "yyyy'-'MM'-'dd";
@@ -34,7 +33,6 @@ public static partial class ExactAttributeValues
     [GeneratedRegex(@"^-?(0|[1-9][0-9]*)(\.[0-9]+)?\z", RegexOptions.CultureInvariant)]
     private static partial Regex DecimalPattern();
 
-    /// <summary>Parses a Gregorian YYYY-MM-DD calendar date, years 0001–9999.</summary>
     public static DateOnly ParseDate(string value)
     {
         if (!DatePattern().IsMatch(value)
@@ -46,7 +44,6 @@ public static partial class ExactAttributeValues
         return date;
     }
 
-    /// <summary>Parses a local HH:mm:ss time with up to seven fractional digits.</summary>
     public static TimeOnly ParseTime(string value)
     {
         // TimeOnly parsing accepts 24:00:00; the wire range ends at 23:59:59.9999999.
@@ -60,7 +57,6 @@ public static partial class ExactAttributeValues
         return time;
     }
 
-    /// <summary>Parses an RFC 3339 timestamp with a required offset within ±14:00.</summary>
     public static DateTimeOffset ParseTimestampOffset(string value)
     {
         var match = TimestampOffsetPattern().Match(value);
@@ -99,7 +95,6 @@ public static partial class ExactAttributeValues
         }
     }
 
-    /// <summary>Parses a decimal exactly, rejecting values that require rounding or exceed the decimal range.</summary>
     public static decimal ParseDecimal(string value)
     {
         if (!DecimalPattern().IsMatch(value))
@@ -130,5 +125,4 @@ public static partial class ExactAttributeValues
             : value;
 }
 
-/// <summary>A valid lexical value exceeds the supported exact representation.</summary>
 public sealed class ExactValueRangeException(string message) : Exception(message);
