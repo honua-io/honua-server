@@ -2622,10 +2622,10 @@
       "category": "Streaming",
       "edition": "Pro",
       "status": "experimental",
-      "entryCount": 7,
-      "provingTestCount": 129,
+      "entryCount": 5,
+      "provingTestCount": 127,
       "maturity": {
-        "experimental": 7
+        "experimental": 5
       },
       "noSurface": null,
       "cite": [],

@@ -6316,34 +6316,6 @@
       "capability": "streaming.feature-subscriptions"
     },
     {
-      "id": "get-api-v1-streaming-jobs",
-      "route": "/api/v1/streaming/jobs",
-      "method": "GET",
-      "family": "Streaming",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Streaming.RealtimeNotificationReplayTests.Jobs_EventCommittedOnAnotherTask_ReplaysAfterCursorWithRequesterAuthorization"
-      ],
-      "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "experimental",
-      "capability": "streaming.feature-subscriptions"
-    },
-    {
-      "id": "get-api-v1-streaming-layers",
-      "route": "/api/v1/streaming/layers",
-      "method": "GET",
-      "family": "Streaming",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Streaming.RealtimeNotificationReplayTests.Layers_CatalogCommittedOnAnotherTask_ReplaysReadableDefinitionChange"
-      ],
-      "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "experimental",
-      "capability": "streaming.feature-subscriptions"
-    },
-    {
       "id": "get-api-v1-studio-ai-capabilities",
       "route": "/api/v1/studio/ai/capabilities",
       "method": "GET",
