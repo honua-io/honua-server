@@ -4,9 +4,10 @@ run-name: "CI ${{ github.ref == 'refs/heads/trunk' && (github.event_name == 'sch
 on:
   schedule:
     # Full integration lane. PR CI is selective; release workflows own
-    # packaging/publishing smoke.
-    - cron: '23 9 * * *'
-    - cron: '23 21 * * *'
+    # packaging/publishing smoke. Keep full runs outside 07:00–22:00 Pacific
+    # standard time: 23:23 and 05:23 PST.
+    - cron: '23 7 * * *'
+    - cron: '23 13 * * *'
   # Per-PR verification lives in pr-gate.yml. Full CI runs on trunk twice
   # daily or by dispatch, keeping runtime proofs and protocol builds off the
   # per-push critical path while preserving complete integration coverage.
