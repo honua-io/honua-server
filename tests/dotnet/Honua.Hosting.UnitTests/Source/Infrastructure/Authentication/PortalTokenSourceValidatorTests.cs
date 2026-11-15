@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,6 +38,24 @@ public sealed class PortalTokenSourceValidatorTests
     [UnitTest]
     public Task IsStillValidAsync_AfterSuccessfulRead_UnavailableAuthorityRefuses() =>
         AssertAuthorityRefusesAsync(() => Task.FromException<AdminApiKeyRecord?>(new InvalidOperationException("unavailable")));
+
+    [UnitTest]
+    public async Task ResolveAdminPasswordAsync_CachedSecretDiffers_UsesFreshAuthority()
+    {
+        const string reference = "aws:secretsmanager:portal/password";
+        const string currentPassword = "Current-Password-673!";
+        var resolver = Substitute.For<IConnectionSecretResolver>();
+        resolver.CanResolveSecretAsync(reference, Arg.Any<CancellationToken>()).Returns(true);
+        resolver.ResolveConnectionStringAsync(reference, Arg.Any<CancellationToken>()).Returns("Previous-Password-829!");
+        resolver.ResolveSecretFreshAsync(reference, Arg.Any<CancellationToken>()).Returns(currentPassword);
+
+        var password = await PortalCredentialSourceVersion.ResolveAdminPasswordAsync(
+            new ApiKeyAuthenticationOptions { AdminPassword = reference, EnvironmentName = "Production" },
+            resolver, CancellationToken.None);
+
+        password.Should().Be(currentPassword);
+        await resolver.DidNotReceive().ResolveConnectionStringAsync(reference, Arg.Any<CancellationToken>());
+    }
 
     private static async Task AssertAuthorityRefusesAsync(Func<Task<AdminApiKeyRecord?>> resolveAuthority)
     {
