@@ -255,14 +255,6 @@ internal sealed class ConnectionSecretResolverFactory : IConnectionSecretResolve
         LoggerMessage.Define<string>(LogLevel.Error, new EventId(2, nameof(_logResolverCreationFailure)),
             "Failed to create secret resolver for provider type '{ProviderType}'");
 
-    private static readonly Action<ILogger, string, Exception?> _logFactoryAlreadyRegistered =
-        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(3, nameof(_logFactoryAlreadyRegistered)),
-            "Secret resolver factory for provider type '{ProviderType}' is already registered");
-
-    private static readonly Action<ILogger, string, Exception?> _logFactoryRegistered =
-        LoggerMessage.Define<string>(LogLevel.Information, new EventId(4, nameof(_logFactoryRegistered)),
-            "Registered secret resolver factory for provider type '{ProviderType}'");
-
     public ConnectionSecretResolverFactory(ILogger<ConnectionSecretResolverFactory> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -298,34 +290,5 @@ internal sealed class ConnectionSecretResolverFactory : IConnectionSecretResolve
             _logResolverCreationFailure(_logger, providerType, ex);
             throw;
         }
-    }
-
-    public string[] GetAllSupportedProviders()
-    {
-        return _resolverFactories.Keys.ToArray();
-    }
-
-    /// <summary>
-    /// Registers a new resolver factory for a provider type.
-    /// </summary>
-    /// <param name="providerType">Provider type identifier</param>
-    /// <param name="factory">Factory function to create resolver instances</param>
-    /// <returns>True if registered, false if provider type already exists</returns>
-    public bool RegisterResolverFactory(string providerType, Func<IConnectionSecretResolver> factory)
-    {
-        if (string.IsNullOrWhiteSpace(providerType))
-            throw new ArgumentException("Provider type cannot be null or empty", nameof(providerType));
-
-        ArgumentNullException.ThrowIfNull(factory);
-
-        if (_resolverFactories.ContainsKey(providerType))
-        {
-            _logFactoryAlreadyRegistered(_logger, providerType, null);
-            return false;
-        }
-
-        _resolverFactories[providerType] = factory;
-        _logFactoryRegistered(_logger, providerType, null);
-        return true;
     }
 }

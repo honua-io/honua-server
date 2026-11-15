@@ -263,10 +263,6 @@ internal sealed partial class GdalRasterClipJobExecutor(
             "GDAL raster clip executor timed out job {OperationId} after {Timeout}")]
         public static partial void ToolTimedOut(ILogger logger, string operationId, TimeSpan timeout);
 
-        [LoggerMessage(9255, LogLevel.Information,
-            "GDAL raster clip executor completed job {OperationId}: bytes={Bytes}")]
-        public static partial void ClipCompleted(ILogger logger, string operationId, long bytes);
-
         [LoggerMessage(9256, LogLevel.Warning,
             "GDAL raster clip executor could not parse boundary WKB for job {OperationId}")]
         public static partial void BoundaryParseFailed(ILogger logger, string operationId, Exception exception);

@@ -5,9 +5,4 @@ namespace Honua.Infrastructure.Caching;
 
 internal static class CachingEndpoints
 {
-    public static IEndpointRouteBuilder MapCachingEndpoints(this IEndpointRouteBuilder endpoints)
-    {
-        ArgumentNullException.ThrowIfNull(endpoints);
-        return endpoints;
-    }
 }

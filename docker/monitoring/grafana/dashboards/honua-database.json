@@ -151,46 +151,6 @@
       "fieldConfig": {
         "defaults": {
           "min": 0,
-          "unit": "ms"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
-      },
-      "id": 4,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(honua_db_connection_acquisition_duration_ms_bucket[5m])) by (le))",
-          "legendFormat": "p95",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(honua_db_connection_acquisition_duration_ms_bucket[5m])) by (le))",
-          "legendFormat": "p99",
-          "refId": "B"
-        }
-      ],
-      "title": "Connection Acquisition Latency",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
           "unit": "ops"
         },
         "overrides": []

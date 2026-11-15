@@ -122,14 +122,6 @@ internal ref struct ProtobufWriter
         WriteRawVarint(ZigZagEncode32(value));
     }
 
-    public void WriteSInt64(int fieldNumber, long value)
-    {
-        if (value == 0)
-            return;
-        WriteTag(fieldNumber, 0);
-        WriteRawVarint(ZigZagEncode64(value));
-    }
-
     public void WriteBool(int fieldNumber, bool value)
     {
         if (!value)

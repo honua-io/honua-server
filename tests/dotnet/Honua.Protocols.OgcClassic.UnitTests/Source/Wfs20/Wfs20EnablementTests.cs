@@ -229,8 +229,7 @@ public sealed class Wfs20EnablementTests
             new OgcFeaturesGeometryServices(
                 Substitute.For<IGeometryService>(),
                 coordinateTransformService,
-                Options.Create(new LimitsOptions()),
-                NullLogger<OgcFeaturesGeometryServices>.Instance),
+                Options.Create(new LimitsOptions())),
             coordinateTransformService,
             Substitute.For<ICrsRegistry>());
 

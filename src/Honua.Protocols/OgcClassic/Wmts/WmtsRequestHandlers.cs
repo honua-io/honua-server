@@ -1589,69 +1589,6 @@ internal static class WmtsRequestHandlers
     // Continuous resolution is "0". "PT0S" is a zero-length duration, and ArcGIS Pro rejects a dimension declared that way.
     private const string ContinuousTemporalResolution = "0";
 
-    private static async Task<WmtsDimensionDefinition[]> GetWmtsDimensionDefinitionsAsync(
-        WmtsLayer layer,
-        IFeatureReader? featureReader,
-        CancellationToken cancellationToken)
-    {
-        var staticDimensions = GetWmtsDimensionDefinitions(layer);
-        if (staticDimensions.Length == 0 || featureReader is null)
-        {
-            return staticDimensions;
-        }
-
-        if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layer.Resource, out _))
-        {
-            return staticDimensions;
-        }
-
-        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
-            layer.Resource,
-            layer.StorageLayerId,
-            featureReader,
-            cancellationToken).ConfigureAwait(false);
-        if (range is null || !range.Value.HasExtent || range.Value.Min is null || range.Value.Max is null)
-        {
-            return staticDimensions;
-        }
-
-        var min = TemporalExtentHelpers.FormatOgcTemporalValue(range.Value.Min.Value);
-        var max = TemporalExtentHelpers.FormatOgcTemporalValue(range.Value.Max.Value);
-        var populated = new WmtsDimensionDefinition(
-            Identifier: "time",
-            Values: [$"{min}/{max}/{ContinuousTemporalResolution}"],
-            DefaultValue: max,
-            SupportsCurrent: true,
-            CurrentValue: max);
-
-        // Replace any stub time dimension already present (from the sync path)
-        // with the populated entry; preserve other dimensions in their order.
-        var resolved = new WmtsDimensionDefinition[staticDimensions.Length];
-        var replaced = false;
-        for (var i = 0; i < staticDimensions.Length; i++)
-        {
-            if (!replaced && string.Equals(staticDimensions[i].Identifier, "time", StringComparison.OrdinalIgnoreCase))
-            {
-                resolved[i] = populated;
-                replaced = true;
-            }
-            else
-            {
-                resolved[i] = staticDimensions[i];
-            }
-        }
-
-        if (!replaced)
-        {
-            var combined = new WmtsDimensionDefinition[resolved.Length + 1];
-            Array.Copy(resolved, combined, resolved.Length);
-            combined[^1] = populated;
-            return combined;
-        }
-
-        return resolved;
-    }
-
     private static WmtsDimensionDefinition[] GetWmtsDimensionDefinitionsFromRange(
         WmtsLayer layer,
         MetadataV2TemporalRange? temporalRange)

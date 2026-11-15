@@ -456,12 +456,6 @@ internal static partial class SecurityHeadersLog
     public static partial void SecurityHeadersApplied(ILogger logger, string requestPath, string requestMethod);
 
     [LoggerMessage(
-        EventId = 4201,
-        Level = LogLevel.Information,
-        Message = "Security headers configuration validated successfully")]
-    public static partial void SecurityHeadersConfigurationValidated(ILogger logger);
-
-    [LoggerMessage(
         EventId = 4202,
         Level = LogLevel.Warning,
         Message = "Security headers configuration warning: {Warning}")]

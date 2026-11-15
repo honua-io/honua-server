@@ -1587,20 +1587,6 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
             : null;
     }
 
-    private async Task<bool> VersionExistsAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        Guid itemId,
-        Guid versionId,
-        CancellationToken cancellationToken)
-    {
-        var sql = $"SELECT 1 FROM {_versionsTable} WHERE item_id = @item_id AND version_id = @version_id";
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
-        command.Parameters.AddWithValue("@item_id", itemId);
-        command.Parameters.AddWithValue("@version_id", versionId);
-        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
-    }
-
     private async Task<int> NextVersionNumberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,

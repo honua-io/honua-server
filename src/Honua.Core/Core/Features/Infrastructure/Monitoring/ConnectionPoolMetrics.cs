@@ -8,7 +8,6 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 public sealed class ConnectionPoolMetrics : IDisposable
 {
     private readonly Meter _meter;
-    private readonly Histogram<double> _connectionAcquisitionLatency;
     private readonly ObservableGauge<int> _activeConnections;
     private readonly ObservableGauge<int> _poolSize;
     private readonly ObservableGauge<double> _poolUtilization;
@@ -35,11 +34,6 @@ public sealed class ConnectionPoolMetrics : IDisposable
         // SLO-contract comment block in HonuaTelemetry.cs, eng/telemetry/metric-name-contract.v1.json, and
         // MetricNameContractTests, which scrapes the real /metrics exposition and fails on drift.
 
-        _connectionAcquisitionLatency = _meter.CreateHistogram<double>(
-            "honua_db_connection_acquisition_duration_ms",
-            unit: null,
-            "Duration of database connection acquisition");
-
         _activeConnections = _meter.CreateObservableGauge<int>(
             "honua_db_active_connections",
             () => _connectionTracker.GetActiveCount(),
@@ -62,11 +56,6 @@ public sealed class ConnectionPoolMetrics : IDisposable
         _connectionTimeouts = _meter.CreateCounter<long>(
             "honua_db_connection_timeouts_total",
             description: "Total number of database connection timeouts");
-    }
-
-    public void RecordConnectionAcquisitionLatency(TimeSpan latency, params KeyValuePair<string, object?>[] tags)
-    {
-        _connectionAcquisitionLatency.Record(latency.TotalMilliseconds, tags);
     }
 
     public void RecordConnectionAcquisitionFailure(string reason)

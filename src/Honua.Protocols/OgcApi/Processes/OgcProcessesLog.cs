@@ -33,9 +33,6 @@ internal static partial class OgcProcessesLog
     [LoggerMessage(8121, LogLevel.Information, "OGC Process job created: JobId={JobId}, ProcessId={ProcessId}")]
     public static partial void JobCreated(ILogger logger, string jobId, string processId);
 
-    [LoggerMessage(8122, LogLevel.Warning, "OGC Process sync execution not supported: ProcessId={ProcessId}")]
-    public static partial void SyncExecutionNotSupported(ILogger logger, string processId);
-
     [LoggerMessage(8123, LogLevel.Warning, "OGC Process execution request invalid (missing plan): ProcessId={ProcessId}")]
     public static partial void ExecutionRequestInvalid(ILogger logger, string processId);
 
@@ -44,9 +41,6 @@ internal static partial class OgcProcessesLog
 
     [LoggerMessage(8125, LogLevel.Warning, "OGC Process unsupported response mode: ProcessId={ProcessId}, Response={ResponseMode}")]
     public static partial void UnsupportedResponseMode(ILogger logger, string processId, string responseMode);
-
-    [LoggerMessage(8126, LogLevel.Warning, "OGC synchronous execution cleanup failed: JobId={JobId}")]
-    public static partial void SyncExecutionCleanupFailed(ILogger logger, string jobId, Exception exception);
 
     // 8130-8139: Job lifecycle
     [LoggerMessage(8130, LogLevel.Information, "OGC Job status requested: JobId={JobId}")]

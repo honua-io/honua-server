@@ -78,18 +78,6 @@ internal static partial class FeatureServerLog
     public static partial void QueryFailed(ILogger logger, string serviceId, int layerId, string errorMessage, Exception? exception = null);
 
     [LoggerMessage(
-        EventId = 2204,
-        Level = LogLevel.Warning,
-        Message = "Query limit exceeded: {Parameter} value {ActualValue} exceeds limit {LimitValue}")]
-    public static partial void QueryLimitExceeded(ILogger logger, string parameter, int actualValue, int limitValue);
-
-    [LoggerMessage(
-        EventId = 2205,
-        Level = LogLevel.Warning,
-        Message = "Query parameter invalid: {Parameter} value {ActualValue}")]
-    public static partial void QueryParameterInvalid(ILogger logger, string parameter, int actualValue);
-
-    [LoggerMessage(
         EventId = 2206,
         Level = LogLevel.Information,
         Message = "Query {Operation} executed: {ServiceId}/FeatureServer/{LayerId} in {ElapsedMilliseconds} ms")]
@@ -135,12 +123,6 @@ internal static partial class FeatureServerLog
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to update feature {Index}: {ErrorMessage}")]
     public static partial void FeatureUpdateFailed(ILogger logger, int index, string errorMessage, Exception exception);
-
-    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to delete feature {Index}: {ErrorMessage}")]
-    public static partial void FeatureDeleteFailed(ILogger logger, int index, string errorMessage, Exception exception);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to read pre-delete snapshot for layer {LayerId} objectId {ObjectId}; delete events will omit the feature payload")]
-    public static partial void DeleteSnapshotReadFailed(ILogger logger, int layerId, long objectId, Exception exception);
 
     [LoggerMessage(
         EventId = 2310,

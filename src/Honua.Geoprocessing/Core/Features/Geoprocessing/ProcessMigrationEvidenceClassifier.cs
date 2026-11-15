@@ -104,9 +104,6 @@ internal static class ProcessMigrationEvidenceClassifier
             MigrationFidelityAutomationStatuses.ManualReview => ProcessMigrationAutomationTier.ManualReview,
             _ => ProcessMigrationAutomationTier.Unsupported
         };
-
-    public static bool IsFirstSliceOgcProcess(ProcessDefinition definition)
-        => Classify(definition).IsProjectedThroughOgcApiProcesses;
 }
 
 internal sealed record ProcessMigrationEvidenceClassification(

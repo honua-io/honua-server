@@ -7,9 +7,4 @@ namespace Honua.FileStorage;
 
 internal static class FileStorageEndpoints
 {
-    public static IEndpointRouteBuilder MapFileStorageEndpoints(this IEndpointRouteBuilder endpoints)
-    {
-        ArgumentNullException.ThrowIfNull(endpoints);
-        return endpoints;
-    }
 }

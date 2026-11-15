@@ -708,9 +708,6 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
     internal static string BuildOperationIdLabelValue(string operationId)
         => SanitizeLabelValue(operationId);
 
-    internal static string BuildOperationIdSelector(string operationId)
-        => $"{OperationIdLabel}={BuildOperationIdLabelValue(operationId)}";
-
     internal static string BuildJobPodSelector(string jobName)
         => $"job-name={jobName}";
 

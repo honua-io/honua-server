@@ -126,29 +126,6 @@ internal sealed class RestoreGuardedDeployOperationExecutor(
     }
 }
 
-internal sealed class DeployPriorImageStarter(DeployOperationExecutor inner, TimeSpan budget) : IPriorImageStarter
-{
-    public async Task<string?> StartAsync(
-        OperationGatewayRequest request,
-        string? executionPayload,
-        CancellationToken cancellationToken)
-    {
-        var operationId = await inner.ExecuteAsync(request, executionPayload, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(operationId))
-        {
-            return null;
-        }
-
-        var serving = await PriorImageReadiness.WaitAsync(
-                cancellationToken => inner.GetBackendStatusAsync(operationId, cancellationToken),
-                budget,
-                TimeSpan.FromSeconds(2),
-                cancellationToken)
-            .ConfigureAwait(false);
-        return serving ? operationId : null;
-    }
-}
-
 internal static class PriorImageReadiness
 {
     public static async Task<bool> WaitAsync(

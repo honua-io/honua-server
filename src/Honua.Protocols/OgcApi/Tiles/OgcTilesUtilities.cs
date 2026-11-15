@@ -238,23 +238,6 @@ internal static class OgcTilesUtilities
         return matrixLimits.ToImmutable();
     }
 
-    public static TileMatrixSetItem BuildWebMercatorQuadItem(string baseUrl)
-    {
-        var selfHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{WebMercatorQuadId}";
-        return new TileMatrixSetItem
-        {
-            Id = WebMercatorQuadId,
-            Title = WebMercatorTitle,
-            Uri = WebMercatorQuadUri,
-            Crs = WebMercatorCrs,
-            Links = ImmutableArray.Create(Link.Create(
-                href: selfHref,
-                rel: RelationTypes.Self,
-                type: MediaTypes.Json,
-                title: "Tile matrix set definition"))
-        };
-    }
-
     public static TileMatrixSetDefinition BuildWebMercatorQuadDefinition(TileLimits limits)
     {
         var minZoom = Math.Max(0, limits.MinTileZoom);
@@ -289,26 +272,6 @@ internal static class OgcTilesUtilities
             Crs = WebMercatorCrs,
             WellKnownScaleSet = WebMercatorScaleSet,
             TileMatrices = tileMatrices.ToImmutableArray()
-        };
-    }
-
-    /// <summary>
-    /// Builds a <see cref="TileMatrixSetItem"/> for WorldCRS84Quad.
-    /// </summary>
-    public static TileMatrixSetItem BuildWorldCrs84QuadItem(string baseUrl)
-    {
-        var selfHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{WorldCrs84QuadId}";
-        return new TileMatrixSetItem
-        {
-            Id = WorldCrs84QuadId,
-            Title = WorldCrs84Title,
-            Uri = WorldCrs84QuadUri,
-            Crs = Crs84,
-            Links = ImmutableArray.Create(Link.Create(
-                href: selfHref,
-                rel: RelationTypes.Self,
-                type: MediaTypes.Json,
-                title: "Tile matrix set definition"))
         };
     }
 
@@ -421,21 +384,6 @@ internal static class OgcTilesUtilities
 
         var vectorQuality = ContentNegotiationHelpers.GetBestQuality(_vectorTileMediaTypes, accept);
         return vectorQuality > 0;
-    }
-
-    /// <summary>
-    /// Checks whether the request asks for a PNG raster tile.
-    /// </summary>
-    public static bool AcceptsPngTiles(HttpRequest request)
-    {
-        var accept = request.Headers.Accept;
-        if (Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(accept))
-        {
-            return false;
-        }
-
-        var pngQuality = ContentNegotiationHelpers.GetBestQuality(_pngTileMediaTypes, accept);
-        return pngQuality > 0;
     }
 
     /// <summary>

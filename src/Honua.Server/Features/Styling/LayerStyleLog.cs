@@ -14,12 +14,6 @@ internal static partial class LayerStyleLog
     public static partial void UnsupportedRendererType(ILogger logger, string rendererType, int layerId);
 
     [LoggerMessage(
-        EventId = 6401,
-        Level = LogLevel.Warning,
-        Message = "Failed to resolve optional drawingInfo for layer {LayerId}. Returning metadata without drawingInfo.")]
-    public static partial void OptionalDrawingInfoUnavailable(ILogger logger, int layerId, Exception exception);
-
-    [LoggerMessage(
         EventId = 6402,
         Level = LogLevel.Debug,
         Message = "Applied {Theme} theme transform for layer {LayerId}.")]

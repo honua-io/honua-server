@@ -545,21 +545,6 @@ internal static class AccessPolicyHelpers
         return evaluator.Evaluate(AnonymousPrincipal, resource.AccessPolicy, service?.AccessPolicy, scope).IsAllowed;
     }
 
-    public static bool AllowsAnonymousServiceAccess(
-        HttpContext context,
-        MetadataV2Service service,
-        AccessScope scope = AccessScope.Read)
-    {
-        ArgumentNullException.ThrowIfNull(service);
-        if (!TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
-        {
-            return false;
-        }
-
-        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
-        return evaluator.Evaluate(AnonymousPrincipal, null, service.AccessPolicy, scope).IsAllowed;
-    }
-
     public static async Task<IResult?> RequireAnyMutatingOperationAccessAsync(
         HttpContext context,
         MetadataV2Object resource,

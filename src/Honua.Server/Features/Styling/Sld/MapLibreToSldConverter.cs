@@ -652,18 +652,6 @@ internal static class MapLibreToSldConverter
     private static string FormatNumber(double value)
         => value.ToString("R", CultureInfo.InvariantCulture);
 
-    public static string SerializeMapLibreLayers(JsonElement style, out string? error)
-    {
-        error = null;
-        if (style.ValueKind != JsonValueKind.Object || !style.TryGetProperty("layers", out var layersElement) || layersElement.ValueKind != JsonValueKind.Array)
-        {
-            error = "Stored style is missing the layers array.";
-            return string.Empty;
-        }
-
-        return layersElement.GetRawText();
-    }
-
     private static SldConversionDiagnostic Warn(string construct, string message, string? ruleName) => new()
     {
         Severity = SldDiagnosticSeverity.Warning,

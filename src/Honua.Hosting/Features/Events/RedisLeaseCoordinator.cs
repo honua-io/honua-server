@@ -72,35 +72,6 @@ internal sealed class RedisLeaseCoordinator(
         }
     }
 
-    internal async Task MaintainLeaseAsync(TimeSpan renewalInterval, CancellationToken cancellationToken)
-    {
-        if (_database == null || !HasLease)
-        {
-            return;
-        }
-
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(renewalInterval, TimeSpan.Zero);
-
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested && HasLease)
-            {
-                await Task.Delay(renewalInterval, cancellationToken).ConfigureAwait(false);
-                if (!await TryAcquireOrExtendAsync().ConfigureAwait(false))
-                {
-                    break;
-                }
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // Intentional no-op: this fires on ordinary host shutdown (the Task.Delay above
-            // observes cancellationToken). There is nothing to clean up here — the lease
-            // either expires naturally in Redis or is released explicitly via ReleaseAsync()
-            // by the caller's finally block — so swallowing and letting the loop exit is safe.
-        }
-    }
-
     public async Task ReleaseAsync()
     {
         if (_database == null || !HasLease)

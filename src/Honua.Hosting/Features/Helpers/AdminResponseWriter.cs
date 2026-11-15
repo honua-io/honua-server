@@ -18,9 +18,6 @@ internal static class AdminResponseWriter
     public static Task WriteErrorAsync(HttpContext context, string message, int statusCode)
         => WriteErrorAsync(context, statusCode, message);
 
-    public static Task WriteMethodNotAllowedAsync(HttpContext context)
-        => WriteErrorAsync(context, StatusCodes.Status405MethodNotAllowed, "Method not allowed");
-
     public static async Task WriteJsonAsync<T>(
         HttpContext context,
         T response,

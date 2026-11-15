@@ -610,9 +610,6 @@ internal static partial class GeoServerImportEndpoints
         [LoggerMessage(7954, LogLevel.Information, "GeoServer import job {JobId} cancelled by user")]
         public static partial void ImportJobCancelled(ILogger logger, string jobId);
 
-        [LoggerMessage(7955, LogLevel.Warning, "Failed to list import jobs")]
-        public static partial void JobListFailed(ILogger logger, Exception exception);
-
         [LoggerMessage(7956, LogLevel.Warning, "Failed to get import job status for {JobId}")]
         public static partial void JobStatusFailed(ILogger logger, string jobId, Exception exception);
 

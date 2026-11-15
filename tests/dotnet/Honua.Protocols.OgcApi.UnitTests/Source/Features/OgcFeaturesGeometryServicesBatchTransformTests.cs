@@ -106,8 +106,7 @@ public sealed class OgcFeaturesGeometryServicesBatchTransformTests
         => new(
             new Honua.Infrastructure.Services.GeometryService(Options.Create(new LimitsOptions())),
             transformService,
-            Options.Create(new LimitsOptions()),
-            NullLogger<OgcFeaturesGeometryServices>.Instance);
+            Options.Create(new LimitsOptions()));
 
     private static (double X, double Y) Affine(double x, double y)
         => ((x * 2.0) + 100.0, (y * 0.5) - 50.0);

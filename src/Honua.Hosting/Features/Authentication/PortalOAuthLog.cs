@@ -26,10 +26,6 @@ internal static partial class PortalOAuthLog
         Message = "Portal OAuth callback rejected: {Reason}.")]
     public static partial void CallbackRejected(ILogger logger, string reason);
 
-    [LoggerMessage(EventId = 7106, Level = LogLevel.Warning,
-        Message = "Portal OAuth token exchange rejected: {Reason}.")]
-    public static partial void TokenRejected(ILogger logger, string reason);
-
     [LoggerMessage(EventId = 7107, Level = LogLevel.Warning,
         Message = "Portal OAuth identity provider unavailable for provider {ProviderKey}.")]
     public static partial void ProviderUnavailable(ILogger logger, string providerKey, Exception exception);

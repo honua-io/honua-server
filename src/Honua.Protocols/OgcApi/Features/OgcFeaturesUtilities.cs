@@ -281,21 +281,6 @@ internal static class OgcFeaturesUtilities
             resource, out startFieldName, out startPropertyType, out endFieldName, out endPropertyType);
 
     /// <summary>
-    /// Invalidates output cache for a layer after mutation operations.
-    /// </summary>
-    public static async Task InvalidateLayerCacheAsync(
-        HttpContext context,
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
-        if (cacheInvalidator != null)
-        {
-            await cacheInvalidator.InvalidateLayerAsync(null, layerId, cancellationToken);
-        }
-    }
-
-    /// <summary>
     /// Builds standard OGC feature links (self, alternates, collection).
     /// </summary>
     public static ImmutableArray<Link> BuildFeatureLinks(

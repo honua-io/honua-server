@@ -46,8 +46,7 @@ internal static class Wfs20HandlerTestFactory
             new OgcFeaturesGeometryServices(
                 Substitute.For<IGeometryService>(),
                 coordinateTransform,
-                Options.Create(new LimitsOptions()),
-                NullLogger<OgcFeaturesGeometryServices>.Instance),
+                Options.Create(new LimitsOptions())),
             coordinateTransform,
             Substitute.For<ICrsRegistry>());
         return new Wfs20Handler(NullLogger<Wfs20Handler>.Instance, queryServices, editServices, spatialServices);

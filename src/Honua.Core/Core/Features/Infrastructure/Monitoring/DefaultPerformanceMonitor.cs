@@ -589,37 +589,7 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
                 _samples[nextIndex % SampleSize] = latencyMs;
             }
         }
-
-        public LatencyPercentiles GetPercentiles()
-        {
-            lock (_lock)
-            {
-                var values = _samples.Where(v => v > 0).ToArray();
-                if (values.Length == 0)
-                {
-                    return new LatencyPercentiles(0, 0, 0, 0);
-                }
-
-                Array.Sort(values);
-
-                var p50Index = (int)(values.Length * 0.5) - 1;
-                var p95Index = (int)(values.Length * 0.95) - 1;
-                var p99Index = (int)(values.Length * 0.99) - 1;
-
-                p50Index = Math.Max(0, p50Index);
-                p95Index = Math.Max(0, p95Index);
-                p99Index = Math.Max(0, p99Index);
-
-                return new LatencyPercentiles(
-                    values.Average(),
-                    values[p50Index],
-                    values[p95Index],
-                    values[p99Index]);
-            }
-        }
     }
-
-    private sealed record LatencyPercentiles(double Average, double P50, double P95, double P99);
 
     private sealed class MemoryPressureTracker
     {

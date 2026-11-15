@@ -39,8 +39,7 @@ public sealed class OgcGeoJsonPageOwnershipTests
         var geometry = new OgcFeaturesGeometryServices(
             new GeometryService(Options.Create(new LimitsOptions())),
             Substitute.For<ICoordinateTransformService>(),
-            Options.Create(new LimitsOptions()),
-            NullLogger<OgcFeaturesGeometryServices>.Instance);
+            Options.Create(new LimitsOptions()));
         GeoJsonFeature Create() => encoded
             ? OgcGeoJsonFeatureBuilder.Create(EncodedGeoJsonFeature.Create(7, null, attributes), resource, AxisOrder.EastNorth, geometry)
             : OgcGeoJsonFeatureBuilder.Create(Feature.Create(7, null, attributes), resource, AxisOrder.EastNorth, geometry);

@@ -33,15 +33,4 @@ public static class MemoryPool
     {
         DoubleArray.Return(array, clearArray);
     }
-
-    public static char[] RentCharArray(int minimumLength)
-    {
-        return CharArray.Rent(minimumLength);
-    }
-
-    // Clears by default so a later renter cannot read the previous caller's text.
-    public static void ReturnCharArray(char[] array, bool clearArray = true)
-    {
-        CharArray.Return(array, clearArray);
-    }
 }

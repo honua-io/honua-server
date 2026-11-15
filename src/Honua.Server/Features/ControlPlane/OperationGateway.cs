@@ -1850,12 +1850,6 @@ internal sealed partial class OperationGateway : IOperationGateway
         [LoggerMessage(9206, LogLevel.Error, "Approval audit for proposal {ProposalId} failed before actuation")]
         public static partial void ProposalApprovalAuditFailed(ILogger logger, string proposalId, Exception exception);
 
-        [LoggerMessage(9202, LogLevel.Warning, "No executor registered for direct-execute of operation kind {Kind}; returning NotSupported")]
-        public static partial void NoExecutorRegisteredForDirect(ILogger logger, string kind);
-
-        [LoggerMessage(9203, LogLevel.Warning, "No executor registered for approval of proposal {ProposalId} with kind {Kind}; failing proposal to terminal Failed")]
-        public static partial void NoExecutorRegisteredForApproval(ILogger logger, string proposalId, string kind);
-
         [LoggerMessage(9204, LogLevel.Warning, "Failed to enqueue ops-autonomy notification for finding {FindingId}")]
         public static partial void AutonomyNotificationFailed(ILogger logger, string findingId, Exception exception);
 

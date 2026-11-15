@@ -20,12 +20,6 @@ internal static partial class McpLog
     [LoggerMessage(8154, LogLevel.Information, "MCP authorization denied: ToolOrResource={Target}, Authenticated={Authenticated}")]
     public static partial void AuthorizationDenied(ILogger logger, string target, bool authenticated);
 
-    [LoggerMessage(8155, LogLevel.Information, "MCP boundary rejection: Target={Target}, Reason={Reason}")]
-    public static partial void BoundaryRejection(ILogger logger, string target, string reason);
-
-    [LoggerMessage(8156, LogLevel.Debug, "MCP stub tool invoked: ToolName={ToolName}, BlockedBy={BlockedBy}")]
-    public static partial void StubToolInvoked(ILogger logger, string toolName, string blockedBy);
-
     [LoggerMessage(8157, LogLevel.Information, "MCP operator surface initialized: Tools={ToolCount}, Resources={ResourceCount}")]
     public static partial void SurfaceInitialized(ILogger logger, int toolCount, int resourceCount);
 

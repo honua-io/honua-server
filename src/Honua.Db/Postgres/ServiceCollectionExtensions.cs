@@ -1107,42 +1107,6 @@ internal static class ServiceCollectionExtensions
         return services;
     }
 
-    private static string ResolveConnectionString(IServiceProvider serviceProvider, IConfiguration configuration)
-    {
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new InvalidOperationException("DefaultConnection connection string is required for PostgreSQL services");
-        }
-
-        var resolver = serviceProvider.GetService<IConnectionSecretResolver>();
-        if (resolver == null)
-        {
-            return connectionString;
-        }
-
-        try
-        {
-            var canResolve = resolver.CanResolve(connectionString);
-            if (!canResolve)
-            {
-                return connectionString;
-            }
-
-            var resolved = resolver.ResolveSecretAsync(connectionString, CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
-            return resolved ?? connectionString;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentionally broad: a startup-time secret resolution failure must fail fast with a
-            // domain exception (rather than letting a raw secret-provider exception, which may carry
-            // provider/network details, propagate out of DI registration).
-            throw new InvalidOperationException("Failed to resolve DefaultConnection via secret provider.", ex);
-        }
-    }
-
     private static int ParsePositiveIntOrDefault(string? value, int defaultValue)
     {
         return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0

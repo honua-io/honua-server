@@ -219,24 +219,6 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
     }
 
     /// <summary>
-    /// Normalize score to 0-100 range
-    /// </summary>
-    /// <param name="rawScore">Raw score from provider</param>
-    /// <param name="minScore">Minimum possible score</param>
-    /// <param name="maxScore">Maximum possible score</param>
-    /// <returns>Normalized score (0-100)</returns>
-    protected static double NormalizeScore(double rawScore, double minScore = 0.0, double maxScore = 1.0)
-    {
-        if (maxScore <= minScore)
-        {
-            return 0.0;
-        }
-
-        var normalized = (rawScore - minScore) / (maxScore - minScore);
-        return Math.Clamp(normalized * 100.0, 0.0, 100.0);
-    }
-
-    /// <summary>
     /// Build common attributes dictionary for results
     /// </summary>
     /// <param name="providerId">Provider-specific ID</param>

@@ -83,10 +83,6 @@ internal sealed record PostgresSchemaConfiguration(
     public IReadOnlyList<string> MetadataSchemas
         => NormalizeSchemaNames([MetadataSchema, DefaultMetadataSchema]);
 
-    public bool IsMetadataSchema(string schema)
-        => MetadataSchemas.Any(metadataSchema =>
-            string.Equals(metadataSchema, schema, StringComparison.OrdinalIgnoreCase));
-
     public string ResolveImportTargetSchema(string? requestedSchema)
     {
         var schema = string.IsNullOrWhiteSpace(requestedSchema)

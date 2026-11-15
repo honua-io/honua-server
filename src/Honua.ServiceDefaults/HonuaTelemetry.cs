@@ -127,11 +127,6 @@ public static class HonuaTelemetry
     private const double MediumLatencyThresholdMs = 1000.0;
     private const double SlowLatencyThresholdMs = 5000.0;
 
-    // Memory categorization thresholds
-    private const long SmallMemoryThresholdBytes = 1024; // 1KB
-    private const long MediumMemoryThresholdBytes = 1024 * 1024; // 1MB
-    private const long LargeMemoryThresholdBytes = 10 * 1024 * 1024; // 10MB
-
     // Stack trace detail threshold
     internal const int MinStackTraceDetailLength = 2048;
     private static readonly Regex EmailPattern = new(
@@ -673,46 +668,6 @@ public static class HonuaTelemetry
     }
 
     /// <summary>
-    /// Starts a new business intelligence activity for analytics tracking.
-    /// </summary>
-    /// <param name="metricType">The type of business metric being calculated.</param>
-    /// <param name="userId">User identifier (optional).</param>
-    /// <param name="clientId">Client identifier (optional).</param>
-    /// <returns>The started activity, or null if not sampled.</returns>
-    public static Activity? StartBusinessIntelligenceActivity(string metricType, string? userId = null, string? clientId = null)
-    {
-        var activity = ActivitySource.StartActivity(Activities.BusinessIntelligence, ActivityKind.Internal);
-        activity?.SetTag(Tags.BusinessMetric, metricType);
-
-        if (userId != null)
-        {
-            activity?.SetTag(Tags.UserId, userId);
-        }
-
-        if (clientId != null)
-        {
-            activity?.SetTag(Tags.ClientId, clientId);
-        }
-
-        return activity;
-    }
-
-    /// <summary>
-    /// Starts a new security monitoring activity.
-    /// </summary>
-    /// <param name="checkType">The type of security check being performed.</param>
-    /// <param name="riskLevel">The assessed risk level.</param>
-    /// <returns>The started activity, or null if not sampled.</returns>
-    public static Activity? StartSecurityActivity(string checkType, string riskLevel = "low")
-    {
-        var activity = ActivitySource.StartActivity(Activities.SecurityMonitoring, ActivityKind.Internal);
-        activity?.SetTag(Tags.Operation, checkType);
-        activity?.SetTag(Tags.SecurityRisk, riskLevel);
-
-        return activity;
-    }
-
-    /// <summary>
     /// Records an error on the current activity.
     /// </summary>
     /// <param name="activity">The activity to record the error on.</param>
@@ -845,29 +800,6 @@ public static class HonuaTelemetry
         };
 
         activity.SetTag(Tags.LatencyCategory, category);
-    }
-
-    /// <summary>
-    /// Adds memory allocation categorization to an activity.
-    /// </summary>
-    /// <param name="activity">The activity to categorize.</param>
-    /// <param name="allocationBytes">The memory allocation in bytes.</param>
-    public static void CategorizeMemoryAllocation(Activity? activity, long allocationBytes)
-    {
-        if (activity == null)
-        {
-            return;
-        }
-
-        var category = allocationBytes switch
-        {
-            <= SmallMemoryThresholdBytes => "small",
-            < MediumMemoryThresholdBytes => "medium",
-            < LargeMemoryThresholdBytes => "large",
-            _ => "xlarge"
-        };
-
-        activity.SetTag(Tags.MemoryCategory, category);
     }
 }
 

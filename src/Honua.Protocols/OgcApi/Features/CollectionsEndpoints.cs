@@ -927,10 +927,6 @@ internal static partial class CollectionsEndpointLogging
         Message = "Invalid collections request received")]
     public static partial void LogInvalidCollectionsRequest(ILogger logger, Exception exception);
 
-    [LoggerMessage(EventId = 5202, Level = LogLevel.Warning,
-        Message = "Invalid collections operation attempted")]
-    public static partial void LogInvalidCollectionsOperation(ILogger logger, Exception exception);
-
     [LoggerMessage(EventId = 5203, Level = LogLevel.Error,
         Message = "Collections query failed")]
     public static partial void LogCollectionsQueryFailed(ILogger logger, Exception exception);

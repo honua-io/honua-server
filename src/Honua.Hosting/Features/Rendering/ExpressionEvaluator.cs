@@ -32,15 +32,6 @@ internal static class ExpressionEvaluator
         return ConvertToFloat(result, defaultValue);
     }
 
-    public static string? EvaluateString(
-        MapLibreExpression expression,
-        ImmutableDictionary<string, object?> properties,
-        RenderZoom zoom)
-    {
-        var result = Evaluate(expression, properties, zoom);
-        return result?.ToString();
-    }
-
     public static object? Evaluate(
         MapLibreExpression expression,
         ImmutableDictionary<string, object?> properties,

@@ -92,19 +92,6 @@ CollectionIdRequired = "Collection ID is required.";
 ServiceIdRequired = "Service ID is required.";
         public const string         /// <inheritdoc/>
 CollectionIdInvalid = "Collection '{0}' is invalid.";
-        private static readonly CompositeFormat _collectionIdInvalidFormat = CompositeFormat.Parse(CollectionIdInvalid);
-
-        public static string FormatRange(string field, object min, object max) =>
-            $"{field} must be between {min} and {max}";
-
-        public static string FormatRangeWithUnits(string field, object min, object max, string units) =>
-            $"{field} must be between {min} and {max} {units}";
-
-        public static string FormatMinimum(string field, object min) =>
-            $"{field} must be at least {min}";
-
-        public static string FormatCollectionIdInvalid(string collectionId) =>
-            string.Format(CultureInfo.InvariantCulture, _collectionIdInvalidFormat, collectionId);
     }
 
     public static class RangeValidation
@@ -277,14 +264,6 @@ UnauthorizedOperation = "Unauthorized to perform {0}";
 InvalidToken = "Invalid or expired authentication token.";
         public const string         /// <inheritdoc/>
 TokenRequired = "Authentication token is required.";
-        private static readonly CompositeFormat _forbiddenFormat = CompositeFormat.Parse(Forbidden);
-        private static readonly CompositeFormat _unauthorizedOperationFormat = CompositeFormat.Parse(UnauthorizedOperation);
-
-        public static string FormatForbidden(string operation) =>
-            string.Format(CultureInfo.InvariantCulture, _forbiddenFormat, operation);
-
-        public static string FormatUnauthorized(string operation) =>
-            string.Format(CultureInfo.InvariantCulture, _unauthorizedOperationFormat, operation);
     }
 
     public static class System
@@ -320,22 +299,6 @@ TokenRequired = "Authentication token is required.";
         public const string InvalidTimeParameterFormat = "Invalid time parameter format: {0}";
 
         public const string RequiredParameterMissing = Validation.RequiredParameterMissing;
-        private static readonly CompositeFormat _invalidSpatialParametersFormat = CompositeFormat.Parse(InvalidSpatialParameters);
-        private static readonly CompositeFormat _invalidTemporalParametersFormat = CompositeFormat.Parse(InvalidTemporalParameters);
-        private static readonly CompositeFormat _invalidTimeParameterFormatValue = CompositeFormat.Parse(InvalidTimeParameter);
-        private static readonly CompositeFormat _invalidTimeParameterFormatFormat = CompositeFormat.Parse(InvalidTimeParameterFormat);
-
-        public static string FormatInvalidSpatialParameters(string details) =>
-            string.Format(CultureInfo.InvariantCulture, _invalidSpatialParametersFormat, details);
-
-        public static string FormatInvalidTemporalParameters(string details) =>
-            string.Format(CultureInfo.InvariantCulture, _invalidTemporalParametersFormat, details);
-
-        public static string FormatInvalidTimeParameter(string details) =>
-            string.Format(CultureInfo.InvariantCulture, _invalidTimeParameterFormatValue, details);
-
-        public static string FormatInvalidTimeParameterFormat(string timeValue) =>
-            string.Format(CultureInfo.InvariantCulture, _invalidTimeParameterFormatFormat, timeValue);
     }
 
     public static class OData

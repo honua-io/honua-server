@@ -169,23 +169,6 @@ internal static class ODataRequestValidation
         return true;
     }
 
-    public static IResult? TryParsePagingOrError(
-        HttpContext context,
-        ODataValidationService validationService,
-        string? top,
-        string? skip,
-        string? skiptoken,
-        string? count,
-        out ODataPagingParameters? paging)
-    {
-        if (!TryParsePaging(context, validationService, top, skip, skiptoken, count, out paging, out var error))
-        {
-            return error;
-        }
-
-        return null;
-    }
-
     public static IResult? TryGetPagingValues(
         HttpContext context,
         ODataValidationService validationService,

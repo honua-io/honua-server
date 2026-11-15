@@ -101,9 +101,6 @@ public readonly record struct FeatureQuery
     public static FeatureQuery WithSqlFilter(SqlFragment sqlFilter)
         => new() { SqlFilter = sqlFilter };
 
-    public static FeatureQuery WithPaging(int offset, int limit)
-        => new() { Offset = offset, Limit = limit };
-
     public static FeatureQuery WithSpatialFilter(SpatialFilter spatialFilter)
         => new() { SpatialFilter = spatialFilter };
 }

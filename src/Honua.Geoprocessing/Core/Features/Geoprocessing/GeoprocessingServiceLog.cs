@@ -91,16 +91,6 @@ internal static partial class GeoprocessingServiceLog
         ILogger logger,
         string jobId);
 
-    [LoggerMessage(8012, LogLevel.Debug, "Job result package unavailable: JobId={JobId}")]
-    public static partial void JobResultsUnavailable(
-        ILogger logger,
-        string jobId);
-
-    [LoggerMessage(8013, LogLevel.Warning, "Job {JobId} queued in stub mode: backend dispatch deferred until execution engine is available")]
-    public static partial void JobSubmittedStubbed(
-        ILogger logger,
-        string jobId);
-
     [LoggerMessage(8014, LogLevel.Warning, "Cancel rejected: approval required (policy: {PolicyRef})")]
     public static partial void CancelRejectedApprovalRequired(
         ILogger logger,
@@ -135,25 +125,6 @@ internal static partial class GeoprocessingServiceLog
         string jobId,
         Exception exception);
 
-    [LoggerMessage(8020, LogLevel.Information, "Map package created: MapPackageId={MapPackageId}, Status={Status}")]
-    public static partial void MapPackageCreated(
-        ILogger logger,
-        string mapPackageId,
-        string status);
-
-    [LoggerMessage(8021, LogLevel.Information, "App package created: AppPackageId={AppPackageId}, TargetSdk={TargetSdk}")]
-    public static partial void AppPackageCreated(
-        ILogger logger,
-        string appPackageId,
-        string targetSdk);
-
-    [LoggerMessage(8022, LogLevel.Information, "Package status changed: PackageId={PackageId}, OldStatus={OldStatus}, NewStatus={NewStatus}")]
-    public static partial void PackageStatusChanged(
-        ILogger logger,
-        string packageId,
-        string oldStatus,
-        string newStatus);
-
     [LoggerMessage(8023, LogLevel.Information, "Destructive plan detected: PlanId={PlanId}, ProcessId={ProcessId}")]
     public static partial void DestructivePlanDetected(
         ILogger logger,
@@ -168,11 +139,6 @@ internal static partial class GeoprocessingServiceLog
 
     [LoggerMessage(8024, LogLevel.Warning, "Remote cancel CAS conflict for job {JobId}: retrying with fresh record")]
     public static partial void RemoteCancelCasRetry(
-        ILogger logger,
-        string jobId);
-
-    [LoggerMessage(8025, LogLevel.Warning, "Post-start CAS conflict for job {JobId}: returning authoritative store record")]
-    public static partial void SubmitPostStartCasConflict(
         ILogger logger,
         string jobId);
 

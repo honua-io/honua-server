@@ -971,31 +971,6 @@ internal static partial class WmsRequestHandlers
         return defaultAxisOrder;
     }
 
-    private static bool IsExtentWithinCrsBounds(SkiaMapRenderer.RenderExtent extent, string normalizedCrs)
-    {
-        if (string.Equals(normalizedCrs, "CRS:84", StringComparison.OrdinalIgnoreCase))
-        {
-            return extent.MinX >= -180 && extent.MaxX <= 180 &&
-                   extent.MinY >= -90 && extent.MaxY <= 90;
-        }
-
-        if (string.Equals(normalizedCrs, "EPSG:4326", StringComparison.OrdinalIgnoreCase))
-        {
-            return extent.MinX >= -180 && extent.MaxX <= 180 &&
-                   extent.MinY >= -90 && extent.MaxY <= 90;
-        }
-
-        if (string.Equals(normalizedCrs, "EPSG:3857", StringComparison.OrdinalIgnoreCase))
-        {
-            return Math.Abs(extent.MinX) <= WmsWebMercatorMax &&
-                   Math.Abs(extent.MaxX) <= WmsWebMercatorMax &&
-                   Math.Abs(extent.MinY) <= WmsWebMercatorMax &&
-                   Math.Abs(extent.MaxY) <= WmsWebMercatorMax;
-        }
-
-        return true;
-    }
-
     private static bool DoesExtentIntersectCrsBounds(SkiaMapRenderer.RenderExtent extent, string normalizedCrs)
     {
         if (string.Equals(normalizedCrs, "CRS:84", StringComparison.OrdinalIgnoreCase) ||

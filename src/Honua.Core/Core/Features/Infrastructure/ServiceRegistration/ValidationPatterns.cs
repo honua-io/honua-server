@@ -68,41 +68,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    protected static void ValidateUri(string? uriString, string propertyName, List<string> errors, UriKind uriKind = UriKind.Absolute)
-    {
-        if (!string.IsNullOrWhiteSpace(uriString) && !Uri.TryCreate(uriString, uriKind, out _))
-        {
-            errors.Add($"{propertyName} must be a valid URI, but was '{uriString}'.");
-        }
-    }
-
-    protected static void ValidateFilePath(string? filePath, string propertyName, List<string> errors, bool mustExist = false)
-    {
-        if (string.IsNullOrWhiteSpace(filePath))
-        {
-            errors.Add($"{propertyName} is required and cannot be empty.");
-            return;
-        }
-
-        try
-        {
-            var fullPath = Path.GetFullPath(filePath);
-            if (mustExist && !File.Exists(fullPath) && !Directory.Exists(fullPath))
-            {
-                errors.Add($"{propertyName} path '{filePath}' does not exist.");
-            }
-        }
-        // Path.GetFullPath/File.Exists/Directory.Exists can throw several distinct types
-        // (ArgumentException, PathTooLongException, NotSupportedException, IOException,
-        // SecurityException, UnauthorizedAccessException) for a malformed operator-supplied
-        // path. This is startup configuration validation: any of them should surface as a
-        // validation error, not crash the host, so catching broadly here is intentional.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            errors.Add($"{propertyName} path '{filePath}' is invalid: {ex.Message}");
-        }
-    }
-
     protected static void ValidateConnectionString(string? connectionString, string propertyName, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(connectionString))

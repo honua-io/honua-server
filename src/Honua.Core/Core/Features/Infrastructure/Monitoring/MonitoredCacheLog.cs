@@ -68,18 +68,6 @@ internal static partial class MonitoredCacheLog
     #region Cache Analytics (8400-8499)
 
     [LoggerMessage(
-        EventId = 8401,
-        Level = LogLevel.Information,
-        Message = "Cache analytics {CacheType}: {HitRatio:F1}% hit ratio ({Hits} hits, {Misses} misses, {TotalOperations} total)")]
-    public static partial void CacheAnalytics(ILogger logger, string cacheType, double hitRatio, long totalOperations, long hits, long misses);
-
-    [LoggerMessage(
-        EventId = 8402,
-        Level = LogLevel.Warning,
-        Message = "Cache effectiveness below threshold for {CacheType}: {HitRatio:F1}% (threshold: {Threshold:F1}%). Recommendation: {Recommendation}")]
-    public static partial void LowCacheEffectiveness(ILogger logger, string cacheType, double hitRatio, double threshold, string recommendation);
-
-    [LoggerMessage(
         EventId = 8403,
         Level = LogLevel.Debug,
         Message = "Cache storage {CacheType}: {EntryCount} entries, {AvgEntrySize:F0} bytes avg, {TotalSize:N0} bytes total")]
@@ -88,18 +76,6 @@ internal static partial class MonitoredCacheLog
     #endregion
 
     #region Cache Performance Alerts (8500-8599)
-
-    [LoggerMessage(
-        EventId = 8501,
-        Level = LogLevel.Warning,
-        Message = "Slow cache {Operation} for {CacheType}: {ElapsedMs:F2}ms (threshold: {ThresholdMs:F0}ms)")]
-    public static partial void SlowCacheOperation(ILogger logger, string operation, string cacheType, double elapsedMs, double thresholdMs);
-
-    [LoggerMessage(
-        EventId = 8502,
-        Level = LogLevel.Warning,
-        Message = "High cache memory usage for {CacheType}: {MemoryUsageMB:F0}MB/{LimitMB:F0}MB ({UtilizationPercent:F1}%)")]
-    public static partial void HighCacheMemoryUsage(ILogger logger, string cacheType, double memoryUsageMB, double limitMB, double utilizationPercent);
 
     #endregion
 }

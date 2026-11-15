@@ -140,10 +140,4 @@ public static class GeocodeProviderNames
     /// Local, self-hosted PostGIS-backed geocoder provider name
     /// </summary>
     public const string Local = "local";
-
-    /// <summary>
-    /// Get all available provider names
-    /// </summary>
-    /// <returns>Array of provider names</returns>
-    public static string[] GetAll() => [Nominatim, AmazonLocation, AzureMaps, Local];
 }

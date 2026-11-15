@@ -9,43 +9,6 @@ internal static class AdminAuthSessionTokenBridgeExtensions
 {
     private const string SessionBridgedItemKey = "Honua.AdminAuth.SessionBridged";
 
-    public static IApplicationBuilder UseAdminAuthSessionTokenBridge(this IApplicationBuilder app)
-    {
-        return app.Use(async (context, next) =>
-        {
-            // #6100: never turn the session cookie into a bearer for a cross-site unsafe request.
-            if (context.Request.Headers.ContainsKey(HeaderNames.Authorization) ||
-                !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) ||
-                AdminSessionCrossSiteRequestGuard.IsCrossSiteUnsafeRequest(context.Request))
-            {
-                await next().ConfigureAwait(false);
-                return;
-            }
-
-            if (!context.Request.Cookies.TryGetValue(AdminAuthSessionStore.AuthSessionCookieName, out var sessionId) ||
-                string.IsNullOrWhiteSpace(sessionId))
-            {
-                await next().ConfigureAwait(false);
-                return;
-            }
-
-            var sessionStore = context.RequestServices.GetRequiredService<AdminAuthSessionStore>();
-            var session = await sessionStore.GetAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
-            if (session is null || string.IsNullOrWhiteSpace(session.AccessToken))
-            {
-                await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
-                DeleteCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName);
-                await next().ConfigureAwait(false);
-                return;
-            }
-
-            context.Items[SessionBridgedItemKey] = true;
-            context.Request.Headers.Authorization = $"Bearer {session.AccessToken}";
-
-            await next().ConfigureAwait(false);
-        });
-    }
-
     public static bool IsAdminAuthSessionBridged(this HttpContext context)
     {
         return context.Items.ContainsKey(SessionBridgedItemKey);

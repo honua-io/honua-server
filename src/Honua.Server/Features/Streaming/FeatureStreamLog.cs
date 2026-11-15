@@ -27,14 +27,6 @@ internal static partial class FeatureStreamLog
         Message = "Replaying {Count} events from cursor {Cursor} for session {SessionId}")]
     public static partial void ReplayStarted(ILogger logger, int count, long cursor, Guid sessionId);
 
-    [LoggerMessage(EventId = 5006, Level = LogLevel.Debug,
-        Message = "Feature stream event broadcast to {Count} sessions (cursor={Cursor})")]
-    public static partial void EventBroadcast(ILogger logger, int count, long cursor);
-
-    [LoggerMessage(EventId = 5007, Level = LogLevel.Warning,
-        Message = "Feature stream broadcast failed for session {SessionId}")]
-    public static partial void BroadcastFailed(ILogger logger, Exception exception, Guid sessionId);
-
     [LoggerMessage(EventId = 5008, Level = LogLevel.Information,
         Message = "Feature stream heartbeat service started (interval={Interval})")]
     public static partial void HeartbeatServiceStarted(ILogger logger, TimeSpan interval);

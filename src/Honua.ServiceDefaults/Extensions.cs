@@ -707,39 +707,6 @@ public static partial class Extensions
     }
 
     /// <summary>
-    /// Adds the baseline health checks used by all Honua-hosted services.
-    /// </summary>
-    /// <param name="builder">The application builder being configured.</param>
-    /// <returns>The application builder for chaining.</returns>
-    public static IHostApplicationBuilder AddDefaultHealthChecks(this IHostApplicationBuilder builder)
-    {
-        builder.Services.AddHealthChecks()
-            .AddCheck("self", () => HealthCheckResult.Healthy(), ["live"]);
-
-        return builder;
-    }
-
-    /// <summary>
-    /// Maps the default infrastructure endpoints exposed by Honua services.
-    /// </summary>
-    /// <param name="app">The web application being configured.</param>
-    /// <returns>The web application for chaining.</returns>
-    public static WebApplication MapDefaultEndpoints(this WebApplication app)
-    {
-        // Map development health endpoints
-        if (app.Environment.IsDevelopment())
-        {
-            app.MapHealthChecks("/healthz");
-            app.MapHealthChecks("/alive", new HealthCheckOptions
-            {
-                Predicate = r => r.Tags.Contains("live")
-            });
-        }
-
-        return app;
-    }
-
-    /// <summary>
     /// Adds adaptive sampling services for intelligent distributed tracing.
     /// </summary>
     private static IHostApplicationBuilder AddAdaptiveSampling(this IHostApplicationBuilder builder)

@@ -21,7 +21,6 @@ internal sealed partial class OgcFeaturesGeometryServices
     private readonly IGeometryService _geometryService;
     private readonly ICoordinateTransformService _coordinateTransformService;
     private readonly GeometryLimits _geometryLimits;
-    private readonly ILogger<OgcFeaturesGeometryServices> _logger;
 
     // Registered scoped (per-request) and invoked sequentially within a request, so a single
     // reused GeoJsonWriter and WKBReader are safe and avoids allocating one per feature conversion (PA-101).
@@ -31,13 +30,11 @@ internal sealed partial class OgcFeaturesGeometryServices
     public OgcFeaturesGeometryServices(
         IGeometryService geometryService,
         ICoordinateTransformService coordinateTransformService,
-        IOptions<LimitsOptions> limitsOptions,
-        ILogger<OgcFeaturesGeometryServices> logger)
+        IOptions<LimitsOptions> limitsOptions)
     {
         _geometryService = geometryService ?? throw new ArgumentNullException(nameof(geometryService));
         _coordinateTransformService = coordinateTransformService ?? throw new ArgumentNullException(nameof(coordinateTransformService));
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
-        _logger = logger;
     }
 
     public bool CanUsePreformattedGeoJson => _geometryLimits.SimplifyTolerance is not > 0;
@@ -366,17 +363,6 @@ internal sealed partial class OgcFeaturesGeometryServices
         return WriteGeometryAsWkb(ntsGeometry, targetSrid > 0 ? targetSrid : inputSrid);
     }
 
-    public static bool ValidateGeometryComplexity(Geometry geometry, int maxVertices = 10000)
-    {
-        if (geometry == null)
-        {
-            return true;
-        }
-
-        var vertexCount = CountVertices(geometry);
-        return vertexCount <= maxVertices;
-    }
-
     public static int CountVertices(Geometry geometry)
     {
         return geometry switch
@@ -392,75 +378,9 @@ internal sealed partial class OgcFeaturesGeometryServices
         };
     }
 
-    public Geometry? SimplifyIfNeeded(Geometry? geometry, double tolerance = 0.0001)
-    {
-        if (geometry == null)
-        {
-            return geometry;
-        }
-
-        // Check if simplification is needed based on vertex count
-        const int maxVerticesBeforeSimplification = 5000;
-        if (CountVertices(geometry) <= maxVerticesBeforeSimplification)
-        {
-            return geometry;
-        }
-
-        try
-        {
-            var simplified = NetTopologySuite.Simplify.TopologyPreservingSimplifier.Simplify(geometry, tolerance);
-            return simplified ?? geometry;
-        }
-        // Intentionally generic: NTS simplification can throw a range of topology/argument
-        // exceptions depending on the input geometry's shape. Simplification is an optional
-        // optimization, so any failure here degrades to the original, unsimplified geometry
-        // rather than failing the request.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Log.GeometrySimplificationFailed(_logger, tolerance, ex);
-            return geometry;
-        }
-    }
-
-    public bool ValidateTopology(Geometry geometry)
-    {
-        if (geometry == null)
-        {
-            return true;
-        }
-
-        try
-        {
-            return geometry.IsValid;
-        }
-        // Intentionally generic: NTS topology validation can throw a range of exceptions for
-        // malformed or degenerate geometries. Any failure here means the geometry cannot be
-        // proven valid, so it is treated as invalid rather than propagating the exception.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Log.TopologyValidationFailed(_logger, ex);
-            return false;
-        }
-    }
-
     public static (bool hasZ, bool hasM) GetHasZandM(Geometry geometry)
     {
         return Honua.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
-    }
-
-    public static Envelope? GetBoundingBox(Geometry geometry)
-    {
-        return geometry?.EnvelopeInternal;
-    }
-
-    public static Geometry? TransformGeometry(Geometry geometry, int fromSrid, int toSrid)
-    {
-        if (geometry == null || fromSrid == toSrid)
-        {
-            return geometry;
-        }
-
-        throw new NotSupportedException("In-memory CRS transforms are not supported. Use PostGIS ST_Transform.");
     }
 
     private async Task<bool> TryTransformGeometryAsync(
@@ -655,11 +575,6 @@ internal sealed partial class OgcFeaturesGeometryServices
 
     private static partial class Log
     {
-        [LoggerMessage(EventId = 5460, Level = LogLevel.Debug, Message = "Geometry simplification failed with tolerance {Tolerance}, returning original geometry")]
-        public static partial void GeometrySimplificationFailed(ILogger logger, double tolerance, Exception exception);
-
-        [LoggerMessage(EventId = 5461, Level = LogLevel.Debug, Message = "Topology validation failed, treating geometry as invalid")]
-        public static partial void TopologyValidationFailed(ILogger logger, Exception exception);
     }
 
 }

@@ -177,10 +177,6 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
             Message = "Generated ETag {ETag} for {Path}")]
         public static partial void ETagGenerated(ILogger logger, string path, string etag);
 
-        [LoggerMessage(EventId = 4102, Level = LogLevel.Debug,
-            Message = "Generated ETag for object {ObjectType} at {Path}")]
-        public static partial void ETagGeneratedForObject(ILogger logger, string path, string objectType);
-
         [LoggerMessage(EventId = 4103, Level = LogLevel.Debug,
             Message = "Resource not modified for {Path}, If-None-Match: {IfNoneMatch}, ETag: {ETag}")]
         public static partial void NotModified(ILogger logger, string path, string ifNoneMatch, string etag);

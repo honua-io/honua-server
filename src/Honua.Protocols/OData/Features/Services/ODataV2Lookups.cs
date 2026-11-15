@@ -81,19 +81,6 @@ internal static class ODataV2Lookups
         return resolved.ToArray();
     }
 
-    public static async Task<int?> ResolveStorageLayerIdAsync(
-        HttpContext context,
-        MetadataV2Layer? publication,
-        MetadataV2Object resource,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(resource);
-
-        var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        return ResolveStorageLayerId(snapshot, publication, resource);
-    }
-
     internal static int? ResolveStorageLayerId(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer? publication,

@@ -433,20 +433,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
             bool shouldSample);
 
         [LoggerMessage(
-            EventId = 4,
-            Level = LogLevel.Information,
-            Message = "Adaptive sampling rate adjusted from {OldRate:P2} to {NewRate:P2} (Load: CPU={CpuUsage:F1}%, Memory={MemoryUsage:F1}%, Requests={ActiveRequests}, AvgResponse={AvgResponseTime:F1}ms, ErrorRate={ErrorRate:F1}%)")]
-        public static partial void SamplingRateAdjusted(
-            ILogger logger,
-            double oldRate,
-            double newRate,
-            double cpuUsage,
-            double memoryUsage,
-            int activeRequests,
-            double avgResponseTime,
-            double errorRate);
-
-        [LoggerMessage(
             EventId = 5,
             Level = LogLevel.Warning,
             Message = "Error during adaptive sampling evaluation, maintaining current rate {CurrentRate:P2}")]

@@ -775,13 +775,6 @@
       "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
     },
     {
-      "instrument": "honua_db_connection_acquisition_duration_ms",
-      "kind": "Histogram",
-      "unit": null,
-      "series": ["honua_db_connection_acquisition_duration_ms_bucket", "honua_db_connection_acquisition_duration_ms_count", "honua_db_connection_acquisition_duration_ms_sum"],
-      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
-    },
-    {
       "instrument": "honua_db_connection_acquisition_failures_total",
       "kind": "Counter",
       "unit": null,

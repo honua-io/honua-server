@@ -694,16 +694,6 @@ internal sealed partial class OgcFilterProcessor
         public static BboxFilterResult Failure(string errorMessage) => new() { IsSuccess = false, ErrorMessage = errorMessage };
     }
 
-    private sealed class TemporalParseResult
-    {
-        public bool IsSuccess { get; init; }
-        public string? ErrorMessage { get; init; }
-        public TemporalFilter? TemporalFilter { get; init; }
-
-        public static TemporalParseResult Success(TemporalFilter? temporalFilter) => new() { IsSuccess = true, TemporalFilter = temporalFilter };
-        public static TemporalParseResult Failure(string errorMessage) => new() { IsSuccess = false, ErrorMessage = errorMessage };
-    }
-
     private sealed class TemporalFilterResult
     {
         public bool IsSuccess { get; init; }
@@ -716,10 +706,6 @@ internal sealed partial class OgcFilterProcessor
 
     private static partial class FilterLog
     {
-        [LoggerMessage(EventId = 5470, Level = LogLevel.Warning,
-            Message = "Axis swap failed for spatial filter geometry, returning original geometry")]
-        public static partial void AxisSwapFailed(ILogger logger, Exception exception);
-
         [LoggerMessage(EventId = 5471, Level = LogLevel.Warning,
             Message = "Filter processing failed with an unexpected exception")]
         public static partial void FilterProcessingFailed(ILogger logger, Exception exception);

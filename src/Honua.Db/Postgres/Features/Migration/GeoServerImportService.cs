@@ -723,35 +723,11 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         [LoggerMessage(7995, LogLevel.Information, "Importing {Count} workspaces")]
         public static partial void ImportingWorkspaces(ILogger logger, int count);
 
-        [LoggerMessage(7996, LogLevel.Information, "Would create workspace: {WorkspaceName}")]
-        public static partial void WorkspaceImported(ILogger logger, string workspaceName);
-
-        [LoggerMessage(7997, LogLevel.Error, "Failed to import workspace {WorkspaceName}")]
-        public static partial void WorkspaceImportFailed(ILogger logger, string workspaceName, Exception exception);
-
         [LoggerMessage(7998, LogLevel.Information, "Importing {Count} datastores")]
         public static partial void ImportingDataStores(ILogger logger, int count);
 
-        [LoggerMessage(7999, LogLevel.Warning, "Skipping incompatible datastore {DataStoreName}: {Reason}")]
-        public static partial void DataStoreSkipped(ILogger logger, string dataStoreName, string reason);
-
-        [LoggerMessage(8000, LogLevel.Information, "Would create datastore: {WorkspaceName}/{DataStoreName} (type: {Type})")]
-        public static partial void DataStoreImported(ILogger logger, string workspaceName, string dataStoreName, string type);
-
-        [LoggerMessage(8001, LogLevel.Error, "Failed to import datastore {WorkspaceName}/{DataStoreName}")]
-        public static partial void DataStoreImportFailed(ILogger logger, string workspaceName, string dataStoreName, Exception exception);
-
         [LoggerMessage(8002, LogLevel.Information, "Importing {Count} layers")]
         public static partial void ImportingLayers(ILogger logger, int count);
-
-        [LoggerMessage(8003, LogLevel.Warning, "Skipping incompatible layer {LayerName}: {Reason}")]
-        public static partial void LayerSkipped(ILogger logger, string layerName, string reason);
-
-        [LoggerMessage(8004, LogLevel.Information, "Would create layer: {WorkspaceName}/{LayerName}")]
-        public static partial void LayerImported(ILogger logger, string workspaceName, string layerName);
-
-        [LoggerMessage(8005, LogLevel.Error, "Failed to import layer {WorkspaceName}/{LayerName}")]
-        public static partial void LayerImportFailed(ILogger logger, string workspaceName, string layerName, Exception exception);
 
         [LoggerMessage(8006, LogLevel.Information, "Importing {Count} styles")]
         public static partial void ImportingStyles(ILogger logger, int count);
@@ -761,30 +737,6 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
         [LoggerMessage(8008, LogLevel.Warning, "SLD style {StyleName} requires conversion to MapLibre format (issue #375)")]
         public static partial void StyleRequiresConversion(ILogger logger, string styleName);
-
-        [LoggerMessage(8009, LogLevel.Information, "Would convert and import style: {WorkspaceName}/{StyleName} (format: {Format})")]
-        public static partial void StyleImported(ILogger logger, string workspaceName, string styleName, string format);
-
-        [LoggerMessage(8010, LogLevel.Error, "Failed to import style {WorkspaceName}/{StyleName}")]
-        public static partial void StyleImportFailed(ILogger logger, string workspaceName, string styleName, Exception exception);
-
-        [LoggerMessage(8011, LogLevel.Information, "Creating workspace metadata: {WorkspaceName}")]
-        public static partial void CreatingWorkspaceMetadata(ILogger logger, string workspaceName);
-
-        [LoggerMessage(8012, LogLevel.Information, "Validating imported resources")]
-        public static partial void ValidatingImportedResources(ILogger logger);
-
-        [LoggerMessage(8013, LogLevel.Information, "Import validation completed successfully")]
-        public static partial void ImportValidationCompleted(ILogger logger);
-
-        [LoggerMessage(8014, LogLevel.Information, "Created datastore configuration: {WorkspaceName}/{DataStoreName}")]
-        public static partial void DataStoreConfigurationCreated(ILogger logger, string workspaceName, string dataStoreName);
-
-        [LoggerMessage(8015, LogLevel.Information, "Created layer configuration: {WorkspaceName}/{LayerName}")]
-        public static partial void LayerConfigurationCreated(ILogger logger, string workspaceName, string layerName);
-
-        [LoggerMessage(8016, LogLevel.Information, "Starting style conversion: {StyleName}")]
-        public static partial void StyleConversionStarted(ILogger logger, string styleName);
 
         [LoggerMessage(8017, LogLevel.Information, "Migration run metrics emitted for {SourceKind}/{SourceFamily}: {DurationMs}ms, {RequestCount} source requests, {ResourceCount} resources across {PhaseCount} phases")]
         public static partial void MigrationRunMetricsEmitted(

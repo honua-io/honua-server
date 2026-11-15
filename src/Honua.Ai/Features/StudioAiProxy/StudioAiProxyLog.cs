@@ -45,12 +45,6 @@ internal static partial class StudioAiProxyLog
     public static partial void ProviderResponseParseFailed(ILogger logger, string provider, string failureType);
 
     [LoggerMessage(
-        EventId = 6756,
-        Level = LogLevel.Warning,
-        Message = "Studio AI proxy chat request rejected: {Reason}")]
-    public static partial void ChatRequestRejected(ILogger logger, string reason);
-
-    [LoggerMessage(
         EventId = 6757,
         Level = LogLevel.Warning,
         Message = "Studio AI proxy stream frame rejected: Provider={Provider}, EventType={EventType}, BlockType={BlockType}, DeltaType={DeltaType}, ProviderErrorType={ProviderErrorType}, PayloadCharacters={PayloadCharacters}")]
