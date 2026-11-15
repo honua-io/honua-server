@@ -13,7 +13,8 @@ internal sealed record NetworkTopologyRebuildSubmissionResult(string OperationId
 
 internal sealed class NetworkTopologyRebuildUnavailableException(string message) : Exception(message);
 
-// If the execution-job record is never created the unclaimed attempt is abandoned so the generation can be submitted again, and the job store is resolved lazily so a Redis-less host still starts.
+// If the execution-job record is never created the unclaimed attempt is abandoned so the generation can be submitted again.
+// Resolve the job store lazily so hosts without durable job orchestration still start.
 internal sealed partial class NetworkTopologyRebuildSubmissionService
 {
     private readonly INetworkTopologyRebuildStore _rebuildStore;
@@ -42,7 +43,7 @@ internal sealed partial class NetworkTopologyRebuildSubmissionService
 
         var jobStore = _serviceProvider.GetService<IExecutionJobStore>()
             ?? throw new NetworkTopologyRebuildUnavailableException(
-                "Topology rebuild requires durable job orchestration (Redis) to be configured on this deployment.");
+                "Topology rebuild requires durable job orchestration to be configured on this deployment.");
 
         var operationId = $"topology-rebuild-{Guid.NewGuid():N}";
         var attempt = await _rebuildStore.CreateAttemptAsync(

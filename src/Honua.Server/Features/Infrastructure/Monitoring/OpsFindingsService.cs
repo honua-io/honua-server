@@ -379,10 +379,8 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
             });
         }
 
-        // Degraded mode: the operation gateway is only wired when the durable control-plane graph is
-        // registered (which requires Redis — see Program.cs). Without it the server still evaluates
-        // and serves findings, but their recommended fixes cannot be routed for approval. Report a
-        // clear degraded outcome instead of failing to construct the service at startup (#2511).
+        // The operation gateway requires the durable control-plane graph and its system database.
+        // Without it findings still evaluate, but recommended fixes cannot be routed for approval.
         if (_gateway is null)
         {
             return WithRoot(new OpsFindingProposalResult
@@ -390,7 +388,7 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
                 Status = OpsFindingProposalStatus.GatewayUnavailable,
                 FindingId = findingId,
                 Message = "The durable control-plane operation gateway is unavailable "
-                    + "(it requires the durable backend / Redis); the recommended action cannot be proposed.",
+                    + "(it requires a configured system database); the recommended action cannot be proposed.",
             });
         }
 
