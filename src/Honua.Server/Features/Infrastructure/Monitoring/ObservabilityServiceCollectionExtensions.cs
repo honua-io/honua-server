@@ -93,6 +93,7 @@ internal static class ObservabilityServiceCollectionExtensions
             CollectionLedger = sp.GetRequiredService<OpsFindingsCollectionLedger>(),
             TimeProvider = sp.GetService<TimeProvider>(),
             ManagedComposeObserver = sp.GetService<IManagedComposeObserver>(),
+            CdnPurgeBudget = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.ICdnPurgeBudget>(),
         });
         // One scoped instance behind both seams: callers that only need findings keep the domain
         // abstraction, while the read/proposal surfaces resolve the evidence-carrying view.

@@ -22,7 +22,8 @@ internal static partial class OAuthClientEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "OAuth Clients")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         clients.MapGet("/", HandleListClients)
             .WithDisplayName("List OAuth Clients")
@@ -49,7 +50,8 @@ internal static partial class OAuthClientEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "OAuth Scopes")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         scopes.MapGet("/", HandleListScopes)
             .WithDisplayName("List OAuth Scopes")
