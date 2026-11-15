@@ -22,7 +22,7 @@ public sealed class DescriptiveMetadataResolverTests
         ContactPoint = new MetadataV2ContactPoint { Name = "Parks desk", Email = "parks@example.org" },
     };
 
-    [Theory]
+    [UnitTheory]
     [InlineData("  Rivers 🌊\t\r\n")]
     [InlineData("\r\nMultiline\r\ntext  ")]
     [Operation(Operations.Metadata)]
@@ -38,7 +38,7 @@ public sealed class DescriptiveMetadataResolverTests
         DescriptiveMetadataResolver.ForCatalog(graph).Description.Should().Be(description);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData(" \t\r\n")]
