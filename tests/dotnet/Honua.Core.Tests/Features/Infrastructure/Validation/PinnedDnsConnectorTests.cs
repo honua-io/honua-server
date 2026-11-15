@@ -35,7 +35,7 @@ public sealed class PinnedDnsConnectorTests
             },
             new("Destination is unavailable.", "Connection failed."));
         using var handler = connector.CreateHandler(4);
-        handler.Proxy = new UnexpectedProxy();
+        handler.Proxy = new WebProxy("http://proxy.example:8080");
         using var client = new HttpClient(handler, disposeHandler: false);
 
         var exception = await Assert.ThrowsAsync<HttpRequestException>(
@@ -43,16 +43,5 @@ public sealed class PinnedDnsConnectorTests
 
         Assert.Equal(new[] { "destination.example" }, resolvedHosts);
         Assert.Contains("Destination is unavailable.", exception.ToString(), StringComparison.Ordinal);
-    }
-
-    private sealed class UnexpectedProxy : IWebProxy
-    {
-        public ICredentials? Credentials { get; set; }
-
-        public Uri GetProxy(Uri destination)
-            => throw new InvalidOperationException("Proxy routing was attempted.");
-
-        public bool IsBypassed(Uri host)
-            => throw new InvalidOperationException("Proxy routing was attempted.");
     }
 }
