@@ -217,6 +217,19 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
         using var filePreviewBody = ResponseJson(filePreview);
         filePreviewBody.RootElement.GetRawText().Should().Contain("Parcel");
 
+        var malformed = await CallAsync(admin, "honua_admin_import_preview", new
+        {
+            file = Convert.ToBase64String(Encoding.UTF8.GetBytes("{not-json")),
+            fileName = "invalid.geojson",
+        });
+        var malformedResult = malformed.GetProperty("result");
+        var refusal = malformedResult.GetProperty("structuredContent");
+        refusal.GetProperty("status").GetString().Should().Be("Failed");
+        refusal.GetProperty("details").GetProperty("statusCode").GetInt32().Should().Be(400);
+        var refusalText = malformedResult.GetProperty("content")[0].GetProperty("text").GetString();
+        using var refusalDocument = JsonDocument.Parse(refusalText!);
+        JsonElement.DeepEquals(refusalDocument.RootElement, refusal).Should().BeTrue();
+
         var urlPreview = await CallOkAsync(admin, "honua_admin_import_preview_url", new
         {
             sourceUrl = SourceUrl,
