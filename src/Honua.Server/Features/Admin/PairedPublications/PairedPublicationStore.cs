@@ -59,6 +59,9 @@ internal sealed class PairedPublicationStore
         => await ReadJsonAsync($"{_publicationKey}/{pointer.Descriptor}", PublicationDescriptorJsonContext.Default.PublicationDescriptor, cancellationToken)
             .ConfigureAwait(false);
 
+    public Task<PublicationDescriptor?> ReadVersionAsync(string version, CancellationToken cancellationToken)
+        => ReadJsonAsync(VersionKey(version, "descriptor.json"), PublicationDescriptorJsonContext.Default.PublicationDescriptor, cancellationToken);
+
     public async Task<PointerState> PointerStateAsync(string version)
     {
         try
@@ -84,7 +87,19 @@ internal sealed class PairedPublicationStore
 
         await using (stream.ConfigureAwait(false))
         {
-            return await JsonSerializer.DeserializeAsync(stream, typeInfo, cancellationToken).ConfigureAwait(false);
+            const int maxJsonBytes = 1024 * 1024;
+            using var bounded = new MemoryStream();
+            var buffer = new byte[8192];
+            int read;
+            while ((read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+            {
+                if (bounded.Length + read > maxJsonBytes)
+                {
+                    throw new JsonException("Publication JSON exceeds its size limit.");
+                }
+                bounded.Write(buffer, 0, read);
+            }
+            return JsonSerializer.Deserialize(bounded.GetBuffer().AsSpan(0, checked((int)bounded.Length)), typeInfo);
         }
     }
 
