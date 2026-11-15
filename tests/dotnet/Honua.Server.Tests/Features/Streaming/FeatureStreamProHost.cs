@@ -11,9 +11,8 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-// One Pro host for the default streaming cases. Per-test hosts were the measured
-// cost (about 6s of boot and schema seed each). Cases that need a different
-// license, metadata graph or configuration still build their own host.
+// Default streaming cases share a Pro host. Cases that need a different
+// license, metadata graph or configuration build their own host.
 public sealed class FeatureStreamProHost : IAsyncLifetime
 {
     private readonly TestLicenseEntitlementService _license = new(HonuaEdition.Pro);
