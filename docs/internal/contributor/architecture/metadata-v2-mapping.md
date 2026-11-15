@@ -14,6 +14,22 @@ Companion to:
 - [metadata-v2-extensions.md](metadata-v2-extensions.md) — Extensions
   vocabulary specification
 
+## Exact attribute values
+
+The additive `decimal` and `timestamp-offset` schema field types use JSON strings
+in managed feature storage. Decimal text retains its sign and scale, including
+negative zero; timestamp text retains its explicit offset and up to seven
+fractional digits. Shared mutation validation rejects values outside the supported
+.NET decimal or offset timestamp range rather than rounding them.
+
+The native gRPC adapter requires the matching `decimal_value` or
+`timestamp_offset_value` case on edits and emits that case on queries using the
+resource schema. A mismatched wire case fails the entire call before writes.
+Existing `double`, `datetime`, `date` and `time` fields retain their wire behavior.
+Managed queries compare and order exact fields as PostgreSQL `numeric` and
+`timestamptz`, while returning their original text. Aggregates other than count
+are refused until the result contract can preserve their representation.
+
 ## Document conventions
 
 Each mapping row uses the form:
